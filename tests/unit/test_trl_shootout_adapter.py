@@ -12,6 +12,7 @@ from benchmarks.adapters.trl_grpo import (
     GSM8KTask,
     canonical_digest,
     completion_text,
+    require_supported_kwargs,
     supported_kwargs,
 )
 
@@ -34,6 +35,41 @@ def test_supported_kwargs_filters_versioned_api() -> None:
         CurrentConfig,
         {"max_steps": 4, "num_generations": 8, "removed_option": True},
     ) == {"max_steps": 4, "num_generations": 8}
+
+
+def test_required_objective_kwargs_fail_closed_on_trl_drift() -> None:
+    class OldConfig:
+        def __init__(self, epsilon: float) -> None:
+            pass
+
+    with pytest.raises(RuntimeError, match="importance_sampling_level"):
+        require_supported_kwargs(
+            OldConfig,
+            {"epsilon": 3e-4, "importance_sampling_level": "sequence"},
+            {"epsilon", "importance_sampling_level"},
+        )
+
+
+def test_pinned_trl_can_express_matched_gspo_objective(tmp_path: Path) -> None:
+    trl = pytest.importorskip("trl")
+    from trl import GRPOConfig
+
+    values = {
+        "importance_sampling_level": "sequence",
+        "epsilon": 3e-4,
+        "epsilon_high": 4e-4,
+        "loss_type": "grpo",
+        "scale_rewards": "group",
+    }
+    selected = require_supported_kwargs(GRPOConfig, values, set(values))
+    config = GRPOConfig(
+        output_dir=str(tmp_path), report_to=[], use_cpu=True, bf16=False, **selected
+    )
+    assert trl.__version__ == "1.12.0"
+    assert config.importance_sampling_level == "sequence"
+    assert config.epsilon == pytest.approx(3e-4)
+    assert config.epsilon_high == pytest.approx(4e-4)
+    assert config.loss_type == "grpo"
 
 
 def test_completion_text_supports_current_trl_shapes() -> None:

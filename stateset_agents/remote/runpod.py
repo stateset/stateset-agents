@@ -143,6 +143,7 @@ class RunPodApi:
         container_disk_gb: int = 40,
         cloud_type: str = "SECURE",
         support_public_ip: bool = True,
+        global_networking: bool = False,
         network_volume_id: str | None = None,
         volume_mount_path: str | None = None,
         data_center_id: str | None = None,
@@ -171,6 +172,10 @@ class RunPodApi:
             payload["dockerEntrypoint"] = docker_entrypoint
         if docker_start_cmd is not None:
             payload["dockerStartCmd"] = docker_start_cmd
+        if global_networking:
+            payload["globalNetworking"] = True
+        if data_center_id:
+            payload["dataCenterIds"] = [data_center_id]
         if network_volume_id:
             # Field names verified against the live REST API: the pod payload
             # takes ``networkVolumeId`` + ``volumeMountPath``, and datacenter
@@ -179,8 +184,6 @@ class RunPodApi:
             # datacenter or provisioning fails with "no capacity".
             payload["networkVolumeId"] = network_volume_id
             payload["volumeMountPath"] = volume_mount_path or _REMOTE_WORKDIR
-            if data_center_id:
-                payload["dataCenterIds"] = [data_center_id]
         try:
             response = self._send(
                 lambda: requests.post(

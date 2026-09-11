@@ -25,14 +25,43 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from backend_conformance import (
-    ConformanceError,
-    canonical_digest,
-    load_evidence,
-    load_manifest,
-    verify_harness_revision,
-    write_json_once,
-)
+try:
+    from .backend_conformance import (
+        ConformanceError,
+        canonical_digest,
+        load_evidence,
+        load_manifest,
+        verify_harness_revision,
+        write_json_once,
+    )
+    from .dataset_content import DatasetContentError, canonical_dataset_content_sha256
+except ImportError:
+    try:
+        from backend_conformance import (
+            ConformanceError,
+            canonical_digest,
+            load_evidence,
+            load_manifest,
+            verify_harness_revision,
+            write_json_once,
+        )
+        from dataset_content import (
+            DatasetContentError,
+            canonical_dataset_content_sha256,
+        )
+    except ImportError:
+        from benchmarks.backend_conformance import (
+            ConformanceError,
+            canonical_digest,
+            load_evidence,
+            load_manifest,
+            verify_harness_revision,
+            write_json_once,
+        )
+        from benchmarks.dataset_content import (
+            DatasetContentError,
+            canonical_dataset_content_sha256,
+        )
 
 from stateset_agents.remote.executor import RemoteExecutionError
 from stateset_agents.remote.ledger import (
@@ -131,6 +160,16 @@ def build_plan(
     expected_digest = manifest["experiment"]["dataset_sha256"]
     if digest != expected_digest:
         raise RunPodConformanceError("local dataset SHA-256 does not match manifest")
+    declared_content = manifest["experiment"].get("dataset_content_sha256")
+    if declared_content is not None:
+        try:
+            observed_content = canonical_dataset_content_sha256(dataset)
+        except DatasetContentError as exc:
+            raise RunPodConformanceError(str(exc)) from exc
+        if observed_content != declared_content:
+            raise RunPodConformanceError(
+                "local canonical dataset content does not match manifest"
+            )
     remote_dataset = PurePosixPath(str(manifest["experiment"]["dataset_uri"]))
     if (
         not remote_dataset.is_absolute()
@@ -196,6 +235,7 @@ def build_plan(
         "worst_case_cost_usd": worst_case,
         "max_cost_usd": ceiling,
         "dataset_sha256": digest,
+        "dataset_content_sha256": declared_content,
         "catalog_source": _CATALOG_URL,
         "catalog_quote_is_authoritative": False,
         "provisions_hardware": False,

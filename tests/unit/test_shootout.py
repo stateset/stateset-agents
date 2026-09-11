@@ -84,6 +84,37 @@ def test_manifest_requires_matched_three_seed_matrix(tmp_path: Path) -> None:
         shootout.load_manifest(path)
 
 
+def test_checked_in_v4_manifest_is_complete_and_current() -> None:
+    manifest = shootout.load_manifest(BENCHMARKS / "shootout_manifest_v4.json")
+    assert manifest["protocol"] == "stateset-trl-gspo-shootout-v4"
+    assert manifest["seeds"] == [42, 1337, 2026]
+    assert [item["name"] for item in manifest["implementations"]] == [
+        "stateset-agents-gspo",
+        "trl",
+    ]
+    assert manifest["implementations"][0]["version"] == "0.54.0"
+    assert manifest["implementations"][1]["version"] == "1.12.0"
+    assert {
+        key: manifest["config"][key]
+        for key in (
+            "objective",
+            "importance_sampling_level",
+            "epsilon",
+            "epsilon_high",
+            "loss_type",
+            "scale_rewards",
+        )
+    } == {
+        "objective": "gspo-sequence",
+        "importance_sampling_level": "sequence",
+        "epsilon": 3e-4,
+        "epsilon_high": 4e-4,
+        "loss_type": "grpo",
+        "scale_rewards": "group",
+    }
+    assert manifest["config"]["trl_version"] == "1.12.0"
+
+
 def test_manifest_requires_commands_to_receive_neutral_protocol(tmp_path: Path) -> None:
     manifest = _manifest()
     manifest["implementations"][0]["command"].remove("{config_json}")
@@ -180,7 +211,10 @@ def test_run_implementation_emits_valid_evidence(
     )
     evidence = json.loads(evidence_path.read_text(encoding="utf-8"))
     assert evidence["measured"] is True
+    assert evidence["schema_version"] == 2
+    assert evidence["artifact_path"].startswith("runs/")
     assert evidence["framework"] == "stateset-agents"
+    assert evidence["manifest_sha256"] == shootout.canonical_digest(manifest)
     assert evidence["metrics"]["samples_per_second"] > 0
     assert len(evidence["artifact_sha256"]) == 64
 
@@ -415,11 +449,71 @@ def test_existing_evidence_fails_closed_on_a_corrupt_file(tmp_path: Path) -> Non
     path = tmp_path / "stateset-agents-seed42.json"
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ShootoutError, match="unreadable"):
-        shootout.existing_evidence(tmp_path, implementation, 42)
+        shootout.existing_evidence(tmp_path, _manifest(), implementation, 42, tmp_path)
     path.write_text(json.dumps({"measured": True}), encoding="utf-8")
     with pytest.raises((ShootoutError, shootout.EvidenceError)):
-        shootout.existing_evidence(tmp_path, implementation, 42)
-    assert shootout.existing_evidence(tmp_path, implementation, 1337) is None
+        shootout.existing_evidence(tmp_path, _manifest(), implementation, 42, tmp_path)
+    assert (
+        shootout.existing_evidence(
+            tmp_path, _manifest(), implementation, 1337, tmp_path
+        )
+        is None
+    )
+
+
+def test_existing_evidence_rejects_a_different_manifest_or_harness(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    output = tmp_path / "evidence"
+    implementation = {
+        **_manifest()["implementations"][0],
+        "command": [sys.executable, "-c", "raise SystemExit(1)"],
+    }
+    manifest = _manifest(
+        implementations=[implementation, _manifest()["implementations"][1]]
+    )
+    artifact = output / "runs" / "stateset-agents-seed42" / "artifact"
+    artifact.mkdir(parents=True)
+    (artifact / "weights").write_bytes(b"x")
+    evidence = {
+        "schema_version": 2,
+        "measured": True,
+        "framework": implementation["name"],
+        "framework_version": implementation["version"],
+        "harness_commit": "c" * 40,
+        "manifest_sha256": shootout.canonical_digest(manifest),
+        **{field: manifest[field] for field in shootout.MANIFEST_FIELDS},
+        "seed": 42,
+        "timestamp": "2026-09-10T00:00:00+00:00",
+        "command": "adapter",
+        "config": manifest["config"],
+        "hardware": {**manifest["hardware"], "cuda": "12.8"},
+        "metrics": {
+            "samples_per_second": 1.0,
+            "wall_clock_seconds": 1.0,
+            "peak_vram_mb": 1.0,
+            "eval_score_baseline": 0.0,
+            "eval_score_final": 0.1,
+        },
+        "artifact_sha256": shootout.hash_artifact(artifact),
+        "artifact_path": "runs/stateset-agents-seed42/artifact",
+    }
+    path = output / "stateset-agents-seed42.json"
+    path.write_text(json.dumps(evidence), encoding="utf-8")
+    monkeypatch.setattr(shootout, "git_commit", lambda _root: "c" * 40)
+    assert (
+        shootout.existing_evidence(output, manifest, implementation, 42, root) == path
+    )
+
+    changed = {**manifest, "protocol": "corrected-protocol-v2"}
+    with pytest.raises(ShootoutError, match="manifest_sha256 differ"):
+        shootout.existing_evidence(output, changed, implementation, 42, root)
+
+    monkeypatch.setattr(shootout, "git_commit", lambda _root: "e" * 40)
+    with pytest.raises(ShootoutError, match="harness_commit differ"):
+        shootout.existing_evidence(output, manifest, implementation, 42, root)
 
 
 def _adapter_raw(**metric_overrides: Any) -> dict[str, Any]:

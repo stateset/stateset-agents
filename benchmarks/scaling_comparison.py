@@ -13,12 +13,20 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from framework_comparison import (
-    EvidenceError,
-    RunEvidence,
-    discover_inputs,
-    validate_document,
-)
+try:
+    from .framework_comparison import (
+        EvidenceError,
+        RunEvidence,
+        discover_inputs,
+        validate_document,
+    )
+except ImportError:  # pragma: no cover - direct script execution
+    from framework_comparison import (
+        EvidenceError,
+        RunEvidence,
+        discover_inputs,
+        validate_document,
+    )
 
 MATCH_FIELDS = (
     "framework",
@@ -42,15 +50,24 @@ def _required_positive_int(value: Any, field: str, source: Path) -> int:
     return value
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def validate_execution_contract(run: RunEvidence) -> None:
-    """Bind v3 throughput to the exact weak/strong work partition."""
+    """Bind v3+ throughput to the exact work partition and v4 artifacts/topology."""
     protocol = str(run.data["protocol"])
-    if not protocol.endswith("-scaling-v3"):
+    if not protocol.endswith(("-scaling-v3", "-scaling-v4")):
         return
 
     config = run.data["config"]
     mode = config.get("scaling_mode")
-    expected_protocol = f"stateset-ddp-policy-{mode}-scaling-v3"
+    version = protocol.rsplit("v", 1)[-1]
+    expected_protocol = f"stateset-ddp-policy-{mode}-scaling-v{version}"
     if mode not in {"weak", "strong"} or protocol != expected_protocol:
         raise EvidenceError(
             f"{run.source}: protocol does not match config.scaling_mode"
@@ -118,6 +135,70 @@ def validate_execution_contract(run: RunEvidence) -> None:
         raise EvidenceError(
             f"{run.source}: throughput does not match measured work and wall clock"
         )
+
+    if version == "4":
+        hardware = run.data["hardware"]
+        node_count = _required_positive_int(
+            hardware.get("node_count"), "hardware.node_count", run.source
+        )
+        node_ids = hardware.get("node_ids")
+        ranks_per_node = hardware.get("ranks_per_node")
+        node_identity_sources = hardware.get("node_identity_sources")
+        if (
+            not isinstance(node_ids, list)
+            or len(node_ids) != node_count
+            or len(set(node_ids)) != node_count
+            or any(not isinstance(item, str) or not item for item in node_ids)
+        ):
+            raise EvidenceError(
+                f"{run.source}: hardware.node_ids must contain one unique ID per node"
+            )
+        if not isinstance(ranks_per_node, Mapping) or set(ranks_per_node) != set(
+            node_ids
+        ):
+            raise EvidenceError(
+                f"{run.source}: hardware.ranks_per_node must cover every node"
+            )
+        if not isinstance(node_identity_sources, Mapping) or set(
+            node_identity_sources
+        ) != set(node_ids):
+            raise EvidenceError(
+                f"{run.source}: hardware.node_identity_sources must cover every node"
+            )
+        if any(
+            source not in {"dmi-product-uuid", "machine-id", "hostname-fallback"}
+            for source in node_identity_sources.values()
+        ):
+            raise EvidenceError(f"{run.source}: unsupported node identity source")
+        rank_total = sum(
+            _required_positive_int(
+                ranks_per_node[node_id],
+                f"hardware.ranks_per_node.{node_id}",
+                run.source,
+            )
+            for node_id in node_ids
+        )
+        if rank_total != gpu_count:
+            raise EvidenceError(
+                f"{run.source}: ranks_per_node does not total hardware.gpu_count"
+            )
+        artifact_path = run.data.get("artifact_path")
+        if not isinstance(artifact_path, str) or not artifact_path:
+            raise EvidenceError(f"{run.source}: v4 evidence requires artifact_path")
+        if Path(artifact_path).is_absolute():
+            raise EvidenceError(f"{run.source}: artifact_path must be relative")
+        evidence_root = run.source.parent.resolve()
+        artifact_candidate = run.source.parent / artifact_path
+        artifact = artifact_candidate.resolve()
+        if artifact.parent != evidence_root or artifact_candidate.is_symlink():
+            raise EvidenceError(
+                f"{run.source}: artifact_path must name a regular sibling file"
+            )
+        if not artifact.is_file():
+            raise EvidenceError(f"{run.source}: artifact does not exist: {artifact}")
+        digest = _sha256_file(artifact)
+        if digest != run.data["artifact_sha256"]:
+            raise EvidenceError(f"{run.source}: artifact_sha256 mismatch")
 
 
 def load_scaling_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
@@ -198,7 +279,8 @@ def validate_scaling_comparison(
 
     expected_seeds: set[int] | None = None
     for gpu_count in expected:
-        seeds = [run.seed for run in grouped[gpu_count]]
+        topology_runs = grouped[gpu_count]
+        seeds = [run.seed for run in topology_runs]
         if len(seeds) != len(set(seeds)):
             raise EvidenceError(
                 f"{gpu_count} GPU: duplicate seed evidence is forbidden"
@@ -215,6 +297,18 @@ def validate_scaling_comparison(
                 f"{gpu_count} GPU: seed set {sorted(seed_set)} does not match "
                 f"{sorted(expected_seeds)}"
             )
+        if str(topology_runs[0].data["protocol"]).endswith("-scaling-v4"):
+            signatures = {
+                (
+                    run.data["hardware"]["node_count"],
+                    tuple(sorted(run.data["hardware"]["ranks_per_node"].values())),
+                )
+                for run in topology_runs
+            }
+            if len(signatures) != 1:
+                raise EvidenceError(
+                    f"{gpu_count} GPU: physical topology differs between seeds"
+                )
 
 
 def summarize_scaling(runs: Sequence[RunEvidence]) -> dict[str, Any]:
@@ -254,7 +348,7 @@ def summarize_scaling(runs: Sequence[RunEvidence]) -> dict[str, Any]:
 def validate_scaling_performance(
     summary: Mapping[str, Any],
     *,
-    min_efficiency: float = 0.5,
+    min_efficiency: float = 0.7,
     require_monotonic: bool = True,
 ) -> None:
     """Apply the predeclared publication threshold to measured means."""
@@ -294,13 +388,20 @@ def validate_scaling_performance(
 
 def render_markdown(summary: Mapping[str, Any]) -> str:
     """Render scale results and the predeclared publication gate."""
+    gate = summary.get("publication_gate", {})
+    min_efficiency = float(gate.get("min_efficiency", 0.7))
+    monotonic = bool(gate.get("require_monotonic", True))
+    enforced = bool(gate.get("enforced", True))
     lines = [
         "# Measured distributed-scaling comparison",
         "",
         f"Workload digest: `{summary['workload_config_sha256']}`",
         f"GPU: {summary['gpu']}",
         f"Scaling mode: {summary['scaling_mode']}",
-        "Default publication gate: monotonic throughput and at least 50% efficiency",
+        "Publication gate: "
+        + ("enforced" if enforced else "recorded but not enforced")
+        + f"; at least {min_efficiency:.0%} efficiency; "
+        + ("monotonic throughput required" if monotonic else "monotonicity waived"),
         "",
         "| GPUs | Seeds | Samples/s | Speedup | Scaling efficiency | Wall clock (s) | Peak VRAM/GPU (MiB) |",
         "|---:|---:|---:|---:|---:|---:|---:|",
@@ -332,7 +433,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("inputs", nargs="+", type=Path)
     parser.add_argument("--gpu-counts", nargs="+", type=int, default=[1, 2, 4, 8])
     parser.add_argument("--min-seeds", type=int, default=3)
-    parser.add_argument("--min-efficiency", type=float, default=0.5)
+    parser.add_argument("--min-efficiency", type=float, default=0.7)
     parser.add_argument(
         "--allow-non-monotonic",
         action="store_true",
@@ -354,6 +455,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         runs = load_scaling_evidence(args.inputs)
         validate_scaling_comparison(runs, args.gpu_counts, args.min_seeds)
         result = summarize_scaling(runs)
+        result["publication_gate"] = {
+            "enforced": not args.no_performance_gate,
+            "min_efficiency": args.min_efficiency,
+            "require_monotonic": not args.allow_non_monotonic,
+        }
         if not args.no_performance_gate:
             validate_scaling_performance(
                 result,

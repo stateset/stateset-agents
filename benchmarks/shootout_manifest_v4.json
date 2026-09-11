@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "protocol": "stateset-trl-gspo-shootout-v4",
+  "algorithm": "gspo",
+  "algorithm_revision": "matched-gspo-sequence-trl-1.12-v1",
+  "model": "Qwen/Qwen2.5-1.5B-Instruct",
+  "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+  "task": "gsm8k",
+  "dataset_revision": "740312add88f781978c0658806c59bc2815b9866",
+  "cache_policy": "prewarmed-model-and-dataset-v1",
+  "config": {
+    "num_train_examples": 800,
+    "num_eval_examples": 256,
+    "max_steps": 200,
+    "per_device_train_batch_size": 4,
+    "gradient_accumulation_steps": 1,
+    "learning_rate": 0.000005,
+    "adam_beta1": 0.9,
+    "adam_beta2": 0.99,
+    "weight_decay": 0.01,
+    "max_grad_norm": 1.0,
+    "warmup_ratio": 0.1,
+    "lr_scheduler_type": "cosine",
+    "num_train_epochs": 1,
+    "num_generations": 4,
+    "num_iterations": 1,
+    "max_prompt_length": 512,
+    "max_completion_length": 256,
+    "temperature": 0.7,
+    "top_p": 0.9,
+    "beta": 0.0,
+    "lora_r": 16,
+    "lora_alpha": 32,
+    "lora_dropout": 0.05,
+    "lora_target_modules": ["q_proj", "k_proj", "v_proj", "o_proj"],
+    "gradient_checkpointing": true,
+    "bf16": true,
+    "objective": "gspo-sequence",
+    "importance_sampling_level": "sequence",
+    "epsilon": 0.0003,
+    "epsilon_high": 0.0004,
+    "loss_type": "grpo",
+    "scale_rewards": "group",
+    "trl_version": "1.12.0"
+  },
+  "seeds": [42, 1337, 2026],
+  "hardware": {"gpu": "NVIDIA L40S", "gpu_count": 1},
+  "implementations": [
+    {
+      "name": "stateset-agents-gspo",
+      "version": "0.54.0",
+      "command": [
+        "python", "scripts/run_phase0_benchmark.py",
+        "--trainer", "gspo", "--task", "{task}",
+        "--model", "{model}", "--model-revision", "{model_revision}",
+        "--dataset-revision", "{dataset_revision}",
+        "--num-train-examples", "800", "--num-eval-examples", "256",
+        "--seed", "{seed}", "--train", "--output", "{phase0_output}",
+        "--output-dir", "{artifact_dir}",
+        "--adapter-output", "{adapter_output}",
+        "--shootout-config-json", "{config_json}"
+      ]
+    },
+    {
+      "name": "trl",
+      "version": "1.12.0",
+      "command": [
+        "python", "benchmarks/adapters/trl_grpo.py",
+        "--task", "{task}", "--model", "{model}",
+        "--model-revision", "{model_revision}",
+        "--dataset-revision", "{dataset_revision}", "--seed", "{seed}",
+        "--config-json", "{config_json}",
+        "--artifact-dir", "{artifact_dir}",
+        "--adapter-output", "{adapter_output}"
+      ]
+    }
+  ]
+}

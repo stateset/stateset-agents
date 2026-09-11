@@ -12,6 +12,8 @@ import pytest
 from benchmarks.agent_quality_evidence import (
     REQUIRED_SUITES,
     AgentQualityEvidenceError,
+    hash_artifact,
+    load_runs,
     summarize,
     validate_matrix,
     validate_run,
@@ -21,7 +23,7 @@ from benchmarks.agent_quality_evidence import (
 def _run(suite: str, seed: int, improvement: float = 0.08) -> dict[str, Any]:
     config = {"temperature": 0.0, "max_turns": 20}
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "stateset-agent-quality-evidence",
         "status": "completed",
         "measured": True,
@@ -54,6 +56,7 @@ def _run(suite: str, seed: int, improvement: float = 0.08) -> dict[str, Any]:
         "cost_source": "provider-api",
         "cost_per_successful_episode_usd": 0.10,
         "artifact_sha256": "d" * 64,
+        "artifact_path": "../runs/artifact",
     }
 
 
@@ -78,6 +81,11 @@ def test_matched_standard_suite_matrix_passes() -> None:
 
 def test_run_rejects_synthetic_bad_digest_and_bad_cost() -> None:
     run = _run("tau3-bench", 42)
+    run["schema_version"] = 2
+    with pytest.raises(AgentQualityEvidenceError, match="schema_version=3"):
+        validate_run(run, Path("legacy.json"))
+
+    run = _run("tau3-bench", 42)
     run["measured"] = False
     with pytest.raises(AgentQualityEvidenceError, match="measured"):
         validate_run(run, Path("synthetic.json"))
@@ -101,6 +109,47 @@ def test_run_rejects_synthetic_bad_digest_and_bad_cost() -> None:
     run["paired_task_ids_sha256"] = "different-tasks"
     with pytest.raises(AgentQualityEvidenceError, match="paired_task"):
         validate_run(run, Path("pairing.json"))
+
+
+def test_load_runs_verifies_retained_artifact_bytes(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    artifact = tmp_path / "runs" / "artifact"
+    evidence_dir.mkdir()
+    artifact.mkdir(parents=True)
+    (artifact / "tasks.jsonl").write_text('{"task_id":"one"}\n', encoding="utf-8")
+    run = _run("tau3-bench", 42)
+    run["artifact_sha256"] = hash_artifact(artifact)
+    source = evidence_dir / "run.json"
+    source.write_text(json.dumps(run), encoding="utf-8")
+
+    assert load_runs([source])[0]["run_id"] == "tau3-bench-42"
+
+    (artifact / "tasks.jsonl").write_text('{"task_id":"tampered"}\n', encoding="utf-8")
+    with pytest.raises(AgentQualityEvidenceError, match="digest does not match"):
+        load_runs([source])
+
+
+def test_retained_artifact_rejects_escape_and_symlink(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "bundle" / "evidence"
+    artifact = tmp_path / "bundle" / "runs" / "artifact"
+    evidence_dir.mkdir(parents=True)
+    artifact.mkdir(parents=True)
+    payload = artifact / "tasks.jsonl"
+    payload.write_text("{}\n", encoding="utf-8")
+    run = _run("tau3-bench", 42)
+    run["artifact_sha256"] = hash_artifact(artifact)
+    source = evidence_dir / "run.json"
+
+    run["artifact_path"] = "../../../outside"
+    source.write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(AgentQualityEvidenceError, match="escapes"):
+        load_runs([source])
+
+    run["artifact_path"] = "../runs/artifact"
+    (artifact / "alias").symlink_to(payload)
+    source.write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(AgentQualityEvidenceError, match="symlink"):
+        load_runs([source])
 
 
 def test_matrix_rejects_missing_suite_seed_drift_and_weak_effect() -> None:

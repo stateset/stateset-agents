@@ -24,11 +24,13 @@ try:
     from .agent_quality_evidence import (
         REQUIRED_SUITES,
         AgentQualityEvidenceError,
+        hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
     )
+    from .benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 except ImportError:  # pragma: no cover - direct script execution
     from adapters.official_suite_pipeline import (
         OfficialPipelineError,
@@ -37,11 +39,13 @@ except ImportError:  # pragma: no cover - direct script execution
     from agent_quality_evidence import (
         REQUIRED_SUITES,
         AgentQualityEvidenceError,
+        hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
     )
+    from benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 
 
 class AgentQualityRunnerError(ValueError):
@@ -85,27 +89,6 @@ def canonical_digest(value: Mapping[str, Any]) -> str:
     """Return a deterministic SHA-256 for JSON configuration."""
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
-
-
-def hash_artifact(path: Path) -> str:
-    """Hash a retained result file or directory tree deterministically."""
-    if not path.exists():
-        raise AgentQualityRunnerError(f"artifact does not exist: {path}")
-    digest = hashlib.sha256()
-    if path.is_file():
-        digest.update(path.read_bytes())
-        return digest.hexdigest()
-    files = sorted(item for item in path.rglob("*") if item.is_file())
-    if not files:
-        raise AgentQualityRunnerError(f"artifact directory is empty: {path}")
-    for item in files:
-        relative = item.relative_to(path).as_posix().encode()
-        digest.update(len(relative).to_bytes(8, "big"))
-        digest.update(relative)
-        with item.open("rb") as stream:
-            while chunk := stream.read(1024 * 1024):
-                digest.update(chunk)
-    return digest.hexdigest()
 
 
 def load_manifest(path: Path) -> dict[str, Any]:
@@ -190,28 +173,58 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return dict(raw)
 
 
+def validate_execution_ready(
+    manifest: Mapping[str, Any], expected_framework_version: str
+) -> None:
+    """Reject templates and stale framework contracts before evaluation."""
+    placeholders: list[str] = []
+
+    def walk(value: Any, path: str) -> None:
+        if isinstance(value, Mapping):
+            for key, item in value.items():
+                walk(item, f"{path}.{key}")
+        elif isinstance(value, list):
+            for index, item in enumerate(value):
+                walk(item, f"{path}[{index}]")
+        elif isinstance(value, str) and value.startswith("REPLACE_WITH_"):
+            placeholders.append(path)
+
+    walk(manifest, "manifest")
+    if placeholders:
+        raise AgentQualityRunnerError(
+            "measured execution rejects template placeholders: "
+            + ", ".join(placeholders)
+        )
+    revisions = [
+        ("manifest.baseline_policy.revision", manifest["baseline_policy"]["revision"]),
+        ("manifest.trained_policy.revision", manifest["trained_policy"]["revision"]),
+        (
+            "manifest.trained_policy.artifact_sha256",
+            manifest["trained_policy"]["artifact_sha256"],
+        ),
+        *[
+            (f"manifest.suites[{index}].revision", suite["revision"])
+            for index, suite in enumerate(manifest["suites"])
+        ],
+    ]
+    for path, revision in revisions:
+        if revision == "0" * len(revision):
+            raise AgentQualityRunnerError(
+                f"{path} must not be the template zero revision"
+            )
+    if manifest["framework_version"] != expected_framework_version:
+        raise AgentQualityRunnerError(
+            "manifest.framework_version must match the installed StateSet version "
+            f"({expected_framework_version})"
+        )
+
+
 def git_commit(root: Path) -> str:
     """Resolve the harness commit and reject collection from a dirty tree."""
-    status = subprocess.run(
-        ["git", "status", "--porcelain"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if status.returncode != 0 or status.stdout.strip():
-        raise AgentQualityRunnerError("benchmark harness worktree must be clean")
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=root,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    commit = result.stdout.strip()
-    if result.returncode != 0 or len(commit) != 40:
-        raise AgentQualityRunnerError("could not resolve a full harness commit")
-    return commit
+    try:
+        return resolve_harness_commit(root)
+    except BenchmarkProvenanceError as exc:
+        raise AgentQualityRunnerError(str(exc)) from exc
 
 
 def _format_command(command: Sequence[str], values: Mapping[str, Any]) -> list[str]:
@@ -390,8 +403,9 @@ def run_suite(
         )
     trained_successes = int(result["trained_successful_episodes"])
     cost = float(result["evaluation_cost_usd"])
+    destination = output_dir / "evidence" / f"{suite_name}-seed{seed}.json"
     evidence = {
-        "schema_version": 2,
+        "schema_version": 3,
         "kind": "stateset-agent-quality-evidence",
         "status": "completed",
         "measured": True,
@@ -424,8 +438,8 @@ def run_suite(
             cost / trained_successes if trained_successes else 0.0
         ),
         "artifact_sha256": hash_artifact(artifact_path),
+        "artifact_path": os.path.relpath(artifact_path, destination.parent),
     }
-    destination = output_dir / "evidence" / f"{suite_name}-seed{seed}.json"
     destination.parent.mkdir(parents=True, exist_ok=True)
     validate_run(evidence, destination)
     destination.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
@@ -483,6 +497,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for suite in manifest["suites"]:
                     print(f"seed={seed} suite={suite['name']}")
             return 0
+        from stateset_agents import __version__
+
+        validate_execution_ready(manifest, __version__)
         commit = git_commit(args.root)
         args.output_dir.mkdir(parents=True, exist_ok=True)
         attempts: list[dict[str, Any]] = []

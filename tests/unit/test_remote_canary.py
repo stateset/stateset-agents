@@ -2,15 +2,47 @@
 
 from __future__ import annotations
 
+import subprocess
 from types import SimpleNamespace
 from typing import Any, cast
 
-from stateset_agents.remote.canary import run_provider_canary
+from stateset_agents.remote.canary import canary_source_identity, run_provider_canary
 from stateset_agents.remote.executor import RemoteExecutor
 
 
 def _executor(**attributes: Any) -> RemoteExecutor:
     return cast(RemoteExecutor, SimpleNamespace(**attributes))
+
+
+def test_canary_source_identity_requires_clean_matching_checkout(
+    monkeypatch, tmp_path
+) -> None:
+    responses = iter(
+        (
+            subprocess.CompletedProcess([], 0, "a" * 40 + "\n", ""),
+            subprocess.CompletedProcess([], 0, "", ""),
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: next(responses))
+    monkeypatch.setenv("GITHUB_SHA", "a" * 40)
+
+    assert canary_source_identity(tmp_path) == ("a" * 40, True)
+
+    responses = iter(
+        (
+            subprocess.CompletedProcess([], 0, "a" * 40 + "\n", ""),
+            subprocess.CompletedProcess([], 0, " M file\n", ""),
+        )
+    )
+    monkeypatch.setattr(subprocess, "run", lambda *args, **kwargs: next(responses))
+    assert canary_source_identity(tmp_path) == ("a" * 40, False)
+
+    monkeypatch.setattr(
+        subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(FileNotFoundError("git")),
+    )
+    assert canary_source_identity(tmp_path) == (None, False)
 
 
 def test_missing_credentials_skip_without_loading_sdk(monkeypatch) -> None:

@@ -44,6 +44,18 @@ def test_cli_version_json_output():
     assert payload["version"] == __version__
 
 
+def test_cli_version_does_not_import_optional_dependencies():
+    """Version metadata must not initialize CUDA or optional runtimes."""
+    with patch(
+        "stateset_agents.cli.importlib.import_module",
+        side_effect=AssertionError("optional dependency import attempted"),
+    ):
+        result = runner.invoke(app, ["version", "--json"])
+
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["version"] == __version__
+
+
 # ===========================
 # Train Command Tests
 # ===========================

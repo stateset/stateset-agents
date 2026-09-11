@@ -36,7 +36,7 @@ import torch
 
 pytest.importorskip("transformers")
 
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2Config, GPT2LMHeadModel
 
 from stateset_agents.core.reward_base import RewardResult
 from stateset_agents.training.gspo_config import GSPOConfig
@@ -58,6 +58,7 @@ def _tiny_gpt2() -> GPT2LMHeadModel:
             n_embd=32,
             n_layer=2,
             n_head=2,
+            vocab_size=256,
             n_positions=64,
             resid_pdrop=0.0,
             embd_pdrop=0.0,
@@ -92,8 +93,9 @@ def _run_convergence_training() -> tuple[float, float, list[float]]:
 
     Returns (initial_target_prob, final_target_prob, per_step_avg_rewards).
     """
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    from tests._tiny_tokenizer import tiny_tokenizer
+
+    tokenizer = tiny_tokenizer()
     model = _tiny_gpt2()
 
     prompt_ids = tokenizer(PROMPT, return_tensors="pt")["input_ids"][0]

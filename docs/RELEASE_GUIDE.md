@@ -133,6 +133,10 @@ make test
 # Validate publish readiness gate (format, types, tests, security, build)
 make publish-readiness
 
+# This also imports the built wheel from a fresh virtual environment outside
+# the checkout; StateSet installs offline while validated dependencies are inherited.
+# Keep its schema-v2 summary with dist/, coverage.xml, and the security reports.
+
 # Build and test package
 make build
 make test-package

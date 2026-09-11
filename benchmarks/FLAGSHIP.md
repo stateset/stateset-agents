@@ -44,8 +44,10 @@ retains stdout/stderr and failed attempts, and refuses partial matrices.
    template, decoding params, and judge as the post-training eval
    (`--skip-baseline` is forbidden for the flagship).
 4. **Provenance** — harness commit, manifest/config digests, model, dataset and
-   judge revisions, exact GPU/CUDA/driver, policy digest, external wall time,
-   and provider-derived cost are bound to the evidence.
+   judge revisions, exact GPU/CUDA/driver, policy digest, portable artifact
+   path, external wall time, and provider-derived cost are bound to schema-v2
+   evidence. Publication re-hashes each retained artifact and rejects symlinks,
+   path escapes, mixed harnesses, or mixed manifests.
 5. **A negative or null result still gets committed** to
    `benchmark_results/flagship_v1/` — the credibility of every other number
    in this repo depends on not silently discarding runs.
@@ -63,3 +65,12 @@ retains stdout/stderr and failed attempts, and refuses partial matrices.
 - CI never runs this (GPU); the nightly `-m slow` convergence test
   (`tests/e2e/test_gspo_convergence_tiny.py`) is the automated proxy that the
   training loop still learns.
+
+After collection, independently revalidate the retained bundle without
+executing a provider command:
+
+```bash
+python benchmarks/run_flagship_matrix.py benchmarks/flagship_manifest.json \
+  --validate-existing benchmark_results/flagship_v1/measured/evidence \
+  --output-dir benchmark_results/flagship_v1/validated
+```

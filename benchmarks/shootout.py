@@ -352,12 +352,14 @@ def run_implementation(
     if not artifact_path.is_relative_to(artifact_dir.resolve()):
         raise ShootoutError("adapter artifact_path must stay inside {artifact_dir}")
     samples = float(adapter["metrics"]["samples_processed"])
+    destination = output_dir / f"{slug}-seed{seed}.json"
     evidence = {
-        "schema_version": 1,
+        "schema_version": 2,
         "measured": True,
         "framework": implementation["name"],
         "framework_version": implementation["version"],
         "harness_commit": git_commit(root),
+        "manifest_sha256": canonical_digest(manifest),
         **{
             field: manifest[field]
             for field in MANIFEST_FIELDS
@@ -388,18 +390,27 @@ def run_implementation(
             },
         },
         "artifact_sha256": hash_artifact(artifact_path),
+        "artifact_path": os.path.relpath(artifact_path, destination.parent),
     }
-    destination = output_dir / f"{slug}-seed{seed}.json"
     validate_document(evidence, destination)
     destination.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")
     return destination
 
 
 def existing_evidence(
-    output_dir: Path, implementation: Mapping[str, Any], seed: int
+    output_dir: Path,
+    manifest: Mapping[str, Any],
+    implementation: Mapping[str, Any],
+    seed: int,
+    root: Path,
 ) -> Path | None:
-    """The validated evidence file a previous run left for this pair, or
-    ``None``. An unreadable or invalid file fails closed: delete it to rerun.
+    """Return exact-match evidence left by an earlier run, or ``None``.
+
+    Resume is deliberately stricter than comparison validation. A file must
+    belong to the exact manifest and harness checkout being executed, not just
+    share a framework name and seed. An unreadable, invalid, or stale file
+    fails closed so evidence from a superseded protocol cannot be mixed into a
+    corrected matrix.
     """
     slug = str(implementation["name"]).lower().replace(" ", "-")
     destination = output_dir / f"{slug}-seed{seed}.json"
@@ -411,15 +422,26 @@ def existing_evidence(
         raise ShootoutError(f"{destination}: existing evidence unreadable") from exc
     if not isinstance(document, Mapping):
         raise ShootoutError(f"{destination}: existing evidence must be an object")
-    validate_document(dict(document), destination)
-    if (
-        document.get("framework") != implementation["name"]
-        or int(document.get("seed", -1)) != int(seed)
-        or document.get("measured") is not True
-    ):
+    if document.get("schema_version") != 2:
         raise ShootoutError(
-            f"{destination}: existing evidence is not a measured "
-            f"{implementation['name']} seed {seed} run"
+            f"{destination}: resumable evidence requires schema_version=2"
+        )
+    validate_document(dict(document), destination)
+    expected = {
+        "framework": implementation["name"],
+        "framework_version": implementation["version"],
+        "seed": seed,
+        "harness_commit": git_commit(root),
+        "manifest_sha256": canonical_digest(manifest),
+    }
+    mismatched = [
+        field for field, value in expected.items() if document.get(field) != value
+    ]
+    if mismatched:
+        raise ShootoutError(
+            f"{destination}: existing evidence does not match the active manifest "
+            f"and harness ({', '.join(mismatched)} differ); move or delete it to "
+            "rerun this pair"
         )
     return destination
 
@@ -522,7 +544,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         for index, seed in enumerate(seeds):
             for implementation in execution_order(manifest["implementations"], index):
                 framework = str(implementation["name"])
-                present = existing_evidence(args.output_dir, implementation, seed)
+                present = existing_evidence(
+                    args.output_dir,
+                    manifest,
+                    implementation,
+                    seed,
+                    args.root,
+                )
                 if present is not None:
                     _progress(
                         f"run skipped seed={seed} framework={framework} "
