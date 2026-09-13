@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1789213219156,
+  "lastUpdate": 1789303625261,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -386,6 +386,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.4490182750658275e-8",
             "extra": "mean: 284.81678521746056 nsec\nrounds: 176992"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Dom Steil",
+            "username": "domsteil",
+            "email": "domsteil14@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "5ee45381e7911f163b2433f058343f668f4b14bf",
+          "message": "Merge pull request #79 from stateset/release/0.54.0\n\nchore(release): v0.54.0 — Rollouts sample in inference mode",
+          "timestamp": "2026-09-09T02:03:18Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/5ee45381e7911f163b2433f058343f668f4b14bf"
+        },
+        "date": 1789303624625,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10910.731994210191,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009904529508800991",
+            "extra": "mean: 91.65287906720214 usec\nrounds: 2059"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11953.704366566579,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009079497856430507",
+            "extra": "mean: 83.65607591876781 usec\nrounds: 2068"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8601.051084400948,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000010962206086888131",
+            "extra": "mean: 116.26485997898813 usec\nrounds: 2871"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1037.306400217397,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000441584101049191",
+            "extra": "mean: 964.0353127970884 usec\nrounds: 844"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 259.26033998059296,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00027412548691936253",
+            "extra": "mean: 3.8571267787230994 msec\nrounds: 235"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2786475.2207709025,
+            "unit": "iter/sec",
+            "range": "stddev: 3.78032332892955e-8",
+            "extra": "mean: 358.8763296891409 nsec\nrounds: 137081"
           }
         ]
       }
