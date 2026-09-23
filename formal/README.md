@@ -13,6 +13,8 @@ The [formal verification workflow](../.github/workflows/formal-verification.yml)
 runs the six TLC configurations and both Lean files on relevant pull requests. It pins
 Lean 4.15.0 and checks the SHA-256 of the TLA+ v1.7.4 tool JAR; the existing
 Python CI job runs the regression and refinement tests.
+The root Lake manifest declares an empty dependency set for the Lean setup
+action; the proof files are checked directly by `formal/check.sh`.
 
 | Priority | Artifact | Python implementation | Checked contract |
 | --- | --- | --- | --- |
