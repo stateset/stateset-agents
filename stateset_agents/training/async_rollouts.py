@@ -16,9 +16,9 @@ import asyncio
 import math
 import re
 from collections import deque
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Coroutine, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any
+from typing import Any, TypeVar
 
 
 class AsyncRolloutError(RuntimeError):
@@ -31,6 +31,36 @@ class AsyncRolloutClosed(AsyncRolloutError):
 
 class AsyncRolloutTimeout(AsyncRolloutError):
     """Raised when bounded backpressure or batch collection times out."""
+
+
+_T = TypeVar("_T")
+
+
+async def _await_bounded(
+    operation: Coroutine[Any, Any, _T], timeout_seconds: float, message: str
+) -> _T:
+    """Resolve a timed operation after cancellation before reporting timeout.
+
+    ``wait_for`` can report a timeout even when the child committed a queue
+    change just before cancellation reached it. Awaiting the cancelled task's
+    outcome distinguishes that committed result from a cancelled wait.
+    """
+    task = asyncio.create_task(operation)
+    try:
+        done, _ = await asyncio.wait({task}, timeout=timeout_seconds)
+        if done:
+            return task.result()
+        task.cancel()
+        outcome = (await asyncio.gather(task, return_exceptions=True))[0]
+        if isinstance(outcome, asyncio.CancelledError):
+            raise AsyncRolloutTimeout(message)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+    finally:
+        if not task.done():
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
 
 
 @dataclass(frozen=True)
@@ -268,13 +298,22 @@ class AsyncRolloutCoordinator:
         self._queue = retained
 
     async def submit(
-        self, record: RolloutRecord, *, timeout_seconds: float | None = None
+        self,
+        record: RolloutRecord,
+        *,
+        timeout_seconds: float | None = None,
+        admission_check: Callable[[], None] | None = None,
+        on_admitted: Callable[[], None] | None = None,
     ) -> bool:
         """Submit one rollout, applying bounded backpressure.
 
         Returns ``False`` when a rollout is already outside the configured
-        staleness window.  Future-policy records are rejected because they
-        indicate a weight-versioning or routing defect.
+        staleness window. Future-policy records are rejected because they
+        indicate a weight-versioning or routing defect. ``admission_check``
+        runs synchronously after backpressure clears, immediately before the
+        queue append, so a distributed caller can fence a replaced lease.
+        ``on_admitted`` runs synchronously after the append and counters update;
+        it must not raise or suspend.
         """
         if timeout_seconds is not None and timeout_seconds <= 0:
             raise ValueError("timeout_seconds must be positive")
@@ -319,21 +358,21 @@ class AsyncRolloutCoordinator:
                         "rollout deduplication capacity exhausted; checkpoint and "
                         "start a new coordinator epoch"
                     )
+                if admission_check is not None:
+                    admission_check()
                 self._queue.append(record)
                 self._seen_rollout_ids.add(record.rollout_id)
                 self._submitted += 1
+                if on_admitted is not None:
+                    on_admitted()
                 self._condition.notify_all()
                 return True
 
-        try:
-            if timeout_seconds is None:
-                return await _submit()
-            operation = asyncio.create_task(_submit())
-            return await asyncio.wait_for(operation, timeout=timeout_seconds)
-        except (TimeoutError, asyncio.TimeoutError) as exc:
-            raise AsyncRolloutTimeout(
-                "timed out waiting for rollout queue capacity"
-            ) from exc
+        if timeout_seconds is None:
+            return await _submit()
+        return await _await_bounded(
+            _submit(), timeout_seconds, "timed out waiting for rollout queue capacity"
+        )
 
     async def next_batch(
         self,
@@ -385,13 +424,11 @@ class AsyncRolloutCoordinator:
                     policy_lags=lags,
                 )
 
-        try:
-            if timeout_seconds is None:
-                return await _collect()
-            operation = asyncio.create_task(_collect())
-            return await asyncio.wait_for(operation, timeout=timeout_seconds)
-        except (TimeoutError, asyncio.TimeoutError) as exc:
-            raise AsyncRolloutTimeout("timed out waiting for a rollout batch") from exc
+        if timeout_seconds is None:
+            return await _collect()
+        return await _await_bounded(
+            _collect(), timeout_seconds, "timed out waiting for a rollout batch"
+        )
 
     async def advance_policy(self, new_version: int | None = None) -> int:
         """Advance learner weights and evict samples beyond the lag bound."""

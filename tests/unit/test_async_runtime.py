@@ -157,6 +157,42 @@ async def test_policy_version_is_not_exposed_until_publish_completes() -> None:
 
 
 @pytest.mark.asyncio
+async def test_failed_update_publication_does_not_advance_visible_version() -> None:
+    """A completed learner step cannot expose weights whose publish failed."""
+    coordinator = AsyncRolloutCoordinator()
+    published: list[int] = []
+    next_id = 0
+
+    async def publish(version: int) -> None:
+        if version == 1:
+            raise RuntimeError("update publication failed")
+        published.append(version)
+
+    async def produce(_worker_id: int, version: int) -> RolloutRecord:
+        nonlocal next_id
+        assert version in published
+        next_id += 1
+        return _record(f"rollout-{next_id}", version)
+
+    async def learn(_batch: RolloutBatch) -> dict[str, float]:
+        return {"loss": 0.1}
+
+    runtime = AsyncRolloutRuntime(
+        coordinator=coordinator,
+        producer=produce,
+        learner_step=learn,
+        publish_policy=publish,
+        config=AsyncRolloutRuntimeConfig(batch_timeout_seconds=1.0),
+    )
+
+    with pytest.raises(RuntimeError, match="update publication failed"):
+        await runtime.run()
+    assert published == [0]
+    assert coordinator.current_policy_version == 0
+    assert coordinator.stats().closed is True
+
+
+@pytest.mark.asyncio
 async def test_worker_failure_propagates_and_closes_runtime() -> None:
     coordinator = AsyncRolloutCoordinator()
 

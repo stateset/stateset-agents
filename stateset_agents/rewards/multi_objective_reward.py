@@ -1,6 +1,7 @@
 """Multi-objective reward composition and factory helpers."""
 
 import logging
+import math
 from typing import Any, cast
 
 import numpy as np
@@ -62,16 +63,35 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
     def _normalize_component_weights(self) -> None:
         """Normalize component weights to a stable sum of 1.0."""
+        for component in self.components:
+            self._validate_component_weight(component)
         total_weight = sum(component.weight for component in self.components)
+        if not math.isfinite(total_weight):
+            raise ValueError("total component weight must be finite")
         if total_weight <= 0:
             return
         for component in self.components:
             component.weight = component.weight / total_weight
 
+    @staticmethod
+    def _validate_component_weight(component: BaseRewardComponent) -> None:
+        """Reject weights outside the nonnegative finite proof domain."""
+        try:
+            valid = math.isfinite(component.weight) and component.weight >= 0
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("component weight must be finite and nonnegative") from exc
+        if not valid:
+            raise ValueError("component weight must be finite and nonnegative")
+
     def add_component(self, component: BaseRewardComponent) -> None:
         """Add a reward component."""
+        self._validate_component_weight(component)
         self.components.append(component)
-        self._normalize_component_weights()
+        try:
+            self._normalize_component_weights()
+        except ValueError:
+            self.components.pop()
+            raise
 
     def remove_component(self, name: str) -> None:
         """Remove a reward component by name."""
@@ -123,6 +143,8 @@ class MultiObjectiveRewardFunction(RewardFunction):
         for component in self.components:
             try:
                 score = await component.compute_score(normalized_turns, context)
+                if not math.isfinite(score):
+                    raise ValueError("component score must be finite")
                 component_scores[component.name] = score
                 weighted_scores.append(score * component.weight)
 

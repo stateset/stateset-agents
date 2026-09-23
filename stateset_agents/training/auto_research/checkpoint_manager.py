@@ -12,6 +12,7 @@ import json
 import logging
 import shutil
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, cast
 
@@ -35,20 +36,36 @@ class CheckpointManager:
         self.checkpoints_dir = output_dir / "checkpoints"
         self.best_dir = self.checkpoints_dir / "best"
         self.checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        old_best = self.checkpoints_dir / ".best_old"
+        if (
+            not self.best_dir.exists()
+            and (old_best / "metadata.json").is_file()
+            and (old_best / ".complete").is_file()
+        ):
+            old_best.rename(self.best_dir)
+            logger.info("Recovered interrupted best checkpoint swap")
 
     def save_best(
         self,
         agent: Any,
         experiment_id: str,
         params: dict[str, Any],
+        *,
+        defer_commit: bool = False,
     ) -> Path:
         """Save current agent state as the new best checkpoint.
 
-        Uses atomic directory swap to prevent corruption.
+        Uses a directory swap to preserve the previous best. When
+        ``defer_commit`` is true, the previous checkpoint remains available
+        until the caller persists its experiment record and calls
+        :meth:`commit_best`.
         Returns the path to the saved checkpoint.
         """
+        if (self.best_dir / ".pending").exists():
+            raise RuntimeError("previous best checkpoint is not committed")
         # Write to temp directory first
         tmp_dir = Path(tempfile.mkdtemp(dir=self.checkpoints_dir, prefix=".best_tmp_"))
+        old_best = self.checkpoints_dir / ".best_old"
         try:
             model_path = tmp_dir / "model"
             model_path.mkdir(exist_ok=True)
@@ -61,9 +78,10 @@ class CheckpointManager:
 
             # Write completion marker
             (tmp_dir / ".complete").touch()
+            if defer_commit:
+                (tmp_dir / ".pending").touch()
 
             # Atomic swap: remove old best, rename tmp to best
-            old_best = self.checkpoints_dir / ".best_old"
             if self.best_dir.exists():
                 # Rename current best out of the way
                 if old_best.exists():
@@ -72,8 +90,9 @@ class CheckpointManager:
 
             tmp_dir.rename(self.best_dir)
 
-            # Clean up old best
-            if old_best.exists():
+            # Deferred commits keep the prior checkpoint for recovery if the
+            # experiment record is never persisted.
+            if old_best.exists() and not defer_commit:
                 shutil.rmtree(old_best, ignore_errors=True)
 
             logger.info("Saved best checkpoint: %s → %s", experiment_id, self.best_dir)
@@ -83,7 +102,52 @@ class CheckpointManager:
             # Clean up temp dir on failure
             if tmp_dir.exists():
                 shutil.rmtree(tmp_dir, ignore_errors=True)
+            if not self.best_dir.exists() and old_best.exists():
+                old_best.rename(self.best_dir)
             raise
+
+    def commit_best(self, experiment_id: str) -> None:
+        """Commit a provisional best after its experiment record is written."""
+        metadata = self.load_best_metadata()
+        if metadata is None or metadata.get("experiment_id") != experiment_id:
+            raise ValueError("best checkpoint does not match experiment record")
+        (self.best_dir / ".pending").unlink(missing_ok=True)
+        old_best = self.checkpoints_dir / ".best_old"
+        if old_best.exists():
+            shutil.rmtree(old_best)
+
+    def reconcile_best(self, committed_experiment_id: str | None) -> bool:
+        """Match a provisional checkpoint to the replayed experiment log.
+
+        An unrecorded checkpoint is moved aside rather than deleted, then the
+        previous best is restored when available. Return whether the active
+        checkpoint matches the log's best experiment.
+        """
+        metadata = self.load_best_metadata() if self.has_best() else None
+        if metadata is None:
+            return False
+        current_id = metadata.get("experiment_id")
+        old_best = self.checkpoints_dir / ".best_old"
+        if (self.best_dir / ".pending").exists():
+            if isinstance(current_id, str) and current_id == committed_experiment_id:
+                self.commit_best(current_id)
+            else:
+                orphan = self.checkpoints_dir / f".uncommitted_{uuid.uuid4().hex}"
+                self.best_dir.rename(orphan)
+                if (old_best / "metadata.json").is_file() and (
+                    old_best / ".complete"
+                ).is_file():
+                    old_best.rename(self.best_dir)
+                logger.warning("Set aside unrecorded best checkpoint %s", current_id)
+        elif old_best.exists():
+            # A crash after removing the pending marker can leave the backup.
+            shutil.rmtree(old_best)
+
+        active = self.load_best_metadata() if self.has_best() else None
+        return (
+            active is not None
+            and active.get("experiment_id") == committed_experiment_id
+        )
 
     def save_experiment(
         self,

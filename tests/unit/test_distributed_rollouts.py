@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+from typing import Any
 
 import pytest
 
@@ -93,6 +94,36 @@ async def test_registration_heartbeat_and_submission_are_policy_exact() -> None:
     stats = await control.stats()
     assert stats.active_workers == 1
     assert stats.accepted_submissions == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("timeout_seconds", [None, 1.0])
+async def test_cancellation_after_admission_preserves_accepted_counter(
+    monkeypatch: pytest.MonkeyPatch, timeout_seconds: float | None
+) -> None:
+    """The queue and control counters commit together at the admission point."""
+    coordinator = AsyncRolloutCoordinator()
+    control = DistributedRolloutControlPlane(coordinator=coordinator)
+    lease = await control.register("worker-a")
+    original_submit = coordinator.submit
+
+    async def cancelled_after_commit(record: RolloutRecord, **kwargs: Any) -> bool:
+        assert await original_submit(record, **kwargs)
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(coordinator, "submit", cancelled_after_commit)
+    with pytest.raises(asyncio.CancelledError):
+        await control.submit(
+            "worker-a",
+            lease.lease_id,
+            _record("committed", 0),
+            timeout_seconds=timeout_seconds,
+        )
+
+    state = await control.state_dict()
+    assert state["coordinator"]["queue"][0]["rollout_id"] == "committed"
+    assert state["coordinator"]["counters"]["submitted"] == 1
+    assert (await control.stats()).accepted_submissions == 1
 
 
 @pytest.mark.asyncio
@@ -275,6 +306,53 @@ async def test_checkpoint_waits_for_admitted_backpressured_submission() -> None:
     state = await checkpoint
     assert state["counters"]["accepted_submissions"] == 2
     assert state["coordinator"]["queue"][0]["rollout_id"] == "in-flight"
+
+
+@pytest.mark.asyncio
+async def test_replacement_fences_submission_waiting_for_queue_capacity() -> None:
+    coordinator = AsyncRolloutCoordinator(
+        AsyncRolloutConfig(queue_capacity=1, max_batch_size=1)
+    )
+    control = DistributedRolloutControlPlane(coordinator=coordinator)
+    old = await control.register("worker-a")
+    assert await control.submit("worker-a", old.lease_id, _record("first", 0))
+
+    blocked = asyncio.create_task(
+        control.submit("worker-a", old.lease_id, _record("old-generation", 0))
+    )
+    await asyncio.sleep(0)
+    assert not blocked.done()
+    replacement = await control.register("worker-a")
+    assert replacement.generation == old.generation + 1
+
+    await coordinator.next_batch()
+    with pytest.raises(WorkerLeaseError, match="no longer current"):
+        await blocked
+    assert (await coordinator.state_dict())["queue"] == []
+    assert (await control.stats()).accepted_submissions == 1
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_fences_old_assignment_waiting_for_capacity() -> None:
+    coordinator = AsyncRolloutCoordinator(
+        AsyncRolloutConfig(queue_capacity=1, max_batch_size=1)
+    )
+    control = DistributedRolloutControlPlane(coordinator=coordinator)
+    lease = await control.register("worker-a")
+    assert await control.submit("worker-a", lease.lease_id, _record("first", 0))
+
+    blocked = asyncio.create_task(
+        control.submit("worker-a", lease.lease_id, _record("old-policy", 0))
+    )
+    await asyncio.sleep(0)
+    await coordinator.advance_policy()
+    renewed = await control.heartbeat("worker-a", lease.lease_id)
+    assert renewed.policy_version == 1
+
+    await coordinator.next_batch()
+    with pytest.raises(WorkerLeaseError, match="assignment"):
+        await blocked
+    assert (await coordinator.state_dict())["queue"] == []
 
 
 @pytest.mark.asyncio
