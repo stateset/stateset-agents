@@ -27,7 +27,11 @@ run_tlc() {
         cat "$output" >&2
         return 1
     fi
-    rg 'Model checking completed|distinct states found' "$output"
+    if command -v rg >/dev/null 2>&1; then
+        rg 'Model checking completed|distinct states found' "$output"
+    else
+        grep -E 'Model checking completed|distinct states found' "$output"
+    fi
 }
 
 cd "$repo_root/formal/tla"

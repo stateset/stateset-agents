@@ -1,7 +1,7 @@
 # Initial formal verification models
 
-Run `bash formal/check.sh /path/to/tla2tools.jar` from any directory with Lean 4,
-Java, and ripgrep installed. The script compiles both Lean files and checks
+Run `bash formal/check.sh /path/to/tla2tools.jar` from any directory with Lean 4
+and Java installed. The script compiles both Lean files and checks
 five bounded TLA+ specifications in six configurations. The configuration files
 bound workers, rollout IDs, policy versions, scores, and
 experiments; passing TLC means all states *within those bounds* were checked.
