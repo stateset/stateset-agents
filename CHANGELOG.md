@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkpoint is finalized.
 - Rejected invalid reward weights and treated non-finite component scores as
   failed components.
+- Updated the development lock to NLTK 3.10.3 after the security scan
+  identified advisories against the previous version.
 
 ## [0.55.0] - 2026-09-11 — Evidence-backed A+ release gates
 

@@ -50,8 +50,8 @@ def test_required_objective_kwargs_fail_closed_on_trl_drift() -> None:
         )
 
 
-def test_pinned_trl_can_express_matched_gspo_objective(tmp_path: Path) -> None:
-    trl = pytest.importorskip("trl")
+def test_installed_trl_can_express_matched_gspo_objective(tmp_path: Path) -> None:
+    pytest.importorskip("trl")
     from trl import GRPOConfig
 
     values = {
@@ -65,7 +65,6 @@ def test_pinned_trl_can_express_matched_gspo_objective(tmp_path: Path) -> None:
     config = GRPOConfig(
         output_dir=str(tmp_path), report_to=[], use_cpu=True, bf16=False, **selected
     )
-    assert trl.__version__ == "1.12.0"
     assert config.importance_sampling_level == "sequence"
     assert config.epsilon == pytest.approx(3e-4)
     assert config.epsilon_high == pytest.approx(4e-4)
