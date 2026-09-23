@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-09-23 — Formal verification foundations
+
+### Added
+
+- Added bounded TLA+ models for rollout admission, asynchronous policy
+  publication, auto-research selection, checkpoint replacement, and recovery
+  after a crash between checkpoint installation and experiment logging.
+- Added Lean proofs for clipped objectives and reward composition, plus a
+  pinned CI workflow and Python refinement tests for the modeled behaviors.
+
+### Fixed
+
+- Fenced stale rollout submissions at admission, rejected missing strict
+  policy artifacts, and kept accepted counters consistent across cancellation
+  and timeout boundaries.
+- Recovered interrupted best-checkpoint swaps and rejected non-finite research
+  scores before promotion; made experiment-log appends durable before the
+  checkpoint is finalized.
+- Rejected invalid reward weights and treated non-finite component scores as
+  failed components.
+
 ## [0.55.0] - 2026-09-11 — Evidence-backed A+ release gates
 
 - Made schema-v2 release evidence fail closed on retained security contents:
