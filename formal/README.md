@@ -2,7 +2,7 @@
 
 Run `bash formal/check.sh /path/to/tla2tools.jar` from any directory with Lean 4
 and Java installed. The script compiles both Lean files and checks
-five bounded TLA+ specifications in six configurations. The configuration files
+five bounded TLA+ specifications in seven configurations. The configuration files
 bound workers, rollout IDs, policy versions, scores, and
 experiments; passing TLC means all states *within those bounds* were checked.
 To run the Python refinement and regression tests in the same command, use
@@ -10,7 +10,7 @@ To run the Python refinement and regression tests in the same command, use
 The Python mode requires the project's test dependencies; optional PyTorch and
 Hypothesis checks skip when those packages are unavailable.
 The [formal verification workflow](../.github/workflows/formal-verification.yml)
-runs the six TLC configurations and both Lean files on relevant pull requests. It pins
+runs the seven TLC configurations and both Lean files on relevant pull requests. It pins
 Lean 4.15.0 and checks the SHA-256 of the TLA+ v1.7.4 tool JAR; the existing
 Python CI job runs the regression and refinement tests.
 The root Lake manifest declares an empty dependency set for the Lean setup
@@ -19,7 +19,7 @@ action; the proof files are checked directly by `formal/check.sh`.
 | Priority | Artifact | Python implementation | Checked contract |
 | --- | --- | --- | --- |
 | 1 | `tla/RolloutControl.tla` | `training/distributed_rollouts.py`, `training/async_rollouts.py` | Queue capacity, unique admitted IDs, accepted-counter equality, bounded lag, seen-ID admission, artifact availability, lease fencing at admission, and rejection of bad hashes. |
-| 2 | `tla/AsyncRuntime.tla` | `training/async_runtime.py` | Initial publication precedes worker start; each later version is published before visibility; updates are bounded. A Python regression also checks that failed publication does not advance the visible version. |
+| 2 | `tla/AsyncRuntime.tla` | `training/async_runtime.py` | Initial publication precedes worker start; each later version is published before visibility; updates are bounded. A separate fair, failure-free configuration checks eventual completion. A Python regression also checks that failed publication does not advance the visible version. |
 | 3 | `lean/Objective.lean` | `training/objectives.py`, `training/rl_losses.py` | Log-ratio clipping bounds and idempotence, clipped-surrogate behavior including zero advantage, zero-mask behavior, and exact cross-multiplied group centering. |
 | 4 | `tla/AutoResearch.tla`, `tla/CheckpointSwap.tla`, `tla/ResearchCommit.tla` | `training/auto_research/experiment_loop.py`, `experiment_tracker.py`, `checkpoint_manager.py` | Only evaluated improvements become best in either maximize or minimize mode, crashed records cannot become best, interrupted directory swaps recover, and provisional checkpoints reconcile with the experiment log after restart. |
 | 5 | `lean/Reward.lean` | `rewards/multi_objective_reward.py`, `core/trajectory.py` | Final score clamp and idempotence, failed/zero-weight component behavior, and a weighted-sum bound for normalized, bounded components. |
@@ -74,6 +74,12 @@ autograd, or GPU-kernel behavior. `tests/unit/test_formal_numeric_refinement.py`
 exhaustively compares small score, weight, failure, clipping, and group domains
 against the Python implementations. Larger tensors, GPU kernels, and optimizer
 updates remain outside these checks.
+
+`AsyncRuntimeProgress.cfg` checks that a run reaches `done` when no operation
+fails and every enabled phase eventually executes. Its `Learn` step assumes a
+batch becomes available and the learner finishes; `PublishUpdate` assumes the
+publisher finishes. It does not claim progress if a callback hangs, a worker
+fails, or the coordinator cannot supply a batch.
 
 For reward composition, Python now rejects negative or non-finite component
 weights and treats a non-finite component score as a failed component with zero

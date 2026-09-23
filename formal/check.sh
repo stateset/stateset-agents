@@ -37,6 +37,7 @@ run_tlc() {
 cd "$repo_root/formal/tla"
 run_tlc RolloutControl.tla RolloutControl.cfg
 run_tlc AsyncRuntime.tla AsyncRuntime.cfg
+run_tlc AsyncRuntime.tla AsyncRuntimeProgress.cfg
 run_tlc AutoResearch.tla AutoResearch.cfg
 run_tlc AutoResearch.tla AutoResearchMin.cfg
 run_tlc CheckpointSwap.tla CheckpointSwap.cfg

@@ -50,6 +50,18 @@ Fail == /\ phase \in {"initial", "ready", "running", "publishing", "advancing"}
 Next == PublishInitial \/ StartWorkers \/ Learn \/ PublishUpdate \/ Advance \/ Fail
 Spec == Init /\ [][Next]_vars
 
+\* Progress requires each enabled phase to be scheduled. Learn abstracts an
+\* available batch and a terminating learner step; publication also terminates.
+SuccessNext == PublishInitial \/ StartWorkers \/ Learn \/ PublishUpdate \/ Advance
+SuccessSpec == /\ Init
+               /\ [][SuccessNext]_vars
+               /\ WF_vars(PublishInitial)
+               /\ WF_vars(StartWorkers)
+               /\ WF_vars(Learn)
+               /\ WF_vars(PublishUpdate)
+               /\ WF_vars(Advance)
+EventuallyDone == <>(phase = "done")
+
 TypeOK == /\ phase \in {"initial", "ready", "running", "publishing", "advancing", "done", "stopped"}
           /\ visible \in Nat
           /\ published \in Int
