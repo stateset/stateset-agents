@@ -390,7 +390,9 @@ def run_implementation(
             },
         },
         "artifact_sha256": hash_artifact(artifact_path),
-        "artifact_path": os.path.relpath(artifact_path, destination.parent),
+        "artifact_path": Path(
+            os.path.relpath(artifact_path, destination.parent)
+        ).as_posix(),
     }
     validate_document(evidence, destination)
     destination.write_text(json.dumps(evidence, indent=2) + "\n", encoding="utf-8")

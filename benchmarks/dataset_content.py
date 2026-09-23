@@ -8,7 +8,8 @@ import json
 import sys
 from pathlib import Path
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 class DatasetContentError(ValueError):
@@ -57,16 +58,26 @@ def _parquet_records(path: Path) -> list[Any]:
 
 def canonical_dataset_content_sha256(path: Path | str) -> str:
     """Hash ordered logical records independently of JSON/Parquet encoding."""
-    raw_path = str(path)
-    parsed = urlparse(raw_path)
-    if parsed.scheme == "file":
-        if parsed.netloc not in ("", "localhost"):
-            raise DatasetContentError("file dataset URI must not name a remote host")
-        path = Path(unquote(parsed.path)).resolve()
-    elif parsed.scheme:
-        raise DatasetContentError("dataset content hashing requires a local file")
+    if isinstance(path, Path):
+        path = path.resolve()
     else:
-        path = Path(raw_path).resolve()
+        native_path = Path(path)
+        if native_path.drive:
+            path = native_path.resolve()
+        else:
+            parsed = urlparse(path)
+            if parsed.scheme == "file":
+                if parsed.netloc not in ("", "localhost"):
+                    raise DatasetContentError(
+                        "file dataset URI must not name a remote host"
+                    )
+                path = Path(url2pathname(parsed.path)).resolve()
+            elif parsed.scheme:
+                raise DatasetContentError(
+                    "dataset content hashing requires a local file"
+                )
+            else:
+                path = native_path.resolve()
     if not path.is_file():
         raise DatasetContentError(f"dataset is not a file: {path}")
     suffix = path.suffix.lower()

@@ -438,7 +438,9 @@ def run_suite(
             cost / trained_successes if trained_successes else 0.0
         ),
         "artifact_sha256": hash_artifact(artifact_path),
-        "artifact_path": os.path.relpath(artifact_path, destination.parent),
+        "artifact_path": Path(
+            os.path.relpath(artifact_path, destination.parent)
+        ).as_posix(),
     }
     destination.parent.mkdir(parents=True, exist_ok=True)
     validate_run(evidence, destination)

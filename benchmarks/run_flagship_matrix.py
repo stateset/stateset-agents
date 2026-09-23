@@ -540,7 +540,9 @@ def run_seed(
         text=True,
         shell=False,
     )
-    elapsed = time.monotonic() - started
+    elapsed = max(
+        time.monotonic() - started, time.get_clock_info("monotonic").resolution
+    )
     (attempt / "stdout.log").write_text(completed.stdout, encoding="utf-8")
     (attempt / "stderr.log").write_text(completed.stderr, encoding="utf-8")
     if completed.returncode != 0:

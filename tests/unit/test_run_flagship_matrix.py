@@ -314,7 +314,7 @@ def test_run_seed_measures_externally_and_hashes_owned_artifact(
     assert evidence["artifact_path"] == "artifacts/seed-42"
     assert evidence["artifact_sha256"] == runner.hash_artifact(artifact)
     assert runner.validate_retained_evidence(evidence, value, evidence_path)
-    assert evidence["wall_clock_seconds"] >= 0
+    assert evidence["wall_clock_seconds"] > 0
     assert (tmp_path / "out/attempts/seed-42/stdout.log").read_text() == "ok"
 
     (artifact / "weights.bin").write_bytes(b"tampered")
