@@ -85,8 +85,10 @@ publication, or cleanup after the last update. The runtime checks that fault
 channel at commit boundaries and after stopping producers before returning.
 
 For reward composition, Python now rejects negative or non-finite component
-weights and treats a non-finite component score as a failed component with zero
-contribution. The Lean weighted-sum and weighted-average bounds still assume
-each successful component score lies in `[0, 1]`; the Python composer clamps
-the final score but does not impose that range on every component. The average
+weights at each evaluation, snapshots normalized weights before awaiting
+component callbacks, and treats a non-finite component score as a failed
+component with zero contribution. The Lean weighted-sum and weighted-average
+bounds still assume each successful component score lies in `[0, 1]`; the
+Python composer clamps the final score but does not impose that range on every
+component. The average
 proof permits any nonnegative total weight, including zero.

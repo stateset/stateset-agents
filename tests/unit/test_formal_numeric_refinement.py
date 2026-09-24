@@ -95,6 +95,47 @@ async def test_nonfinite_component_score_contributes_zero() -> None:
     assert result.components == {"invalid": 0.0, "valid": 1.0}
 
 
+@pytest.mark.asyncio
+async def test_mutated_weights_are_normalized_and_revalidated_at_evaluation() -> None:
+    """A mutable component cannot bypass the Lean weight premise."""
+    first = FixedComponent("first", 1.0, 1.0)
+    second = FixedComponent("second", 1.0, 0.0)
+    reward = MultiObjectiveRewardFunction(components=[first, second])
+
+    first.weight = 2.0
+    result = await reward.compute_reward(turns=[])
+    assert result.score == pytest.approx(0.8)
+
+    first.weight = -1.0
+    with pytest.raises(ValueError, match="finite and nonnegative"):
+        await reward.compute_reward(turns=[])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("normalization_method", ["weighted_sum", "weighted_average"])
+async def test_component_weight_changes_during_score_use_evaluation_snapshot(
+    normalization_method: str,
+) -> None:
+    """A component callback cannot change its own weight mid-evaluation."""
+
+    class MutatingComponent(FixedComponent):
+        async def compute_score(
+            self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+        ) -> float:
+            self.weight = 100.0
+            return self.score
+
+    first = MutatingComponent("first", 1.0, 1.0)
+    reward = MultiObjectiveRewardFunction(
+        components=[first, FixedComponent("second", 1.0, 0.0)],
+        normalization_method=normalization_method,
+    )
+
+    result = await reward.compute_reward(turns=[])
+    assert result.score == pytest.approx(0.5)
+    assert result.metadata["weights"] == {"first": 0.5, "second": 0.5}
+
+
 def test_bounded_clipping_and_surrogate_match_integer_model() -> None:
     """Compare the Lean clipping formula with the production tensor helpers."""
     torch = pytest.importorskip("torch")

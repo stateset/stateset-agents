@@ -136,17 +136,25 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 metadata={"error": "No components configured"},
             )
 
+        # Components are mutable and their callbacks may suspend. Revalidate
+        # and use one weight snapshot for the whole evaluation.
+        self._normalize_component_weights()
+        components = tuple(self.components)
+        component_weights = tuple(component.weight for component in components)
+
         # Compute scores for each component
         component_scores: dict[str, float] = {}
         weighted_scores: list[float] = []
 
-        for component in self.components:
+        for component, component_weight in zip(
+            components, component_weights, strict=True
+        ):
             try:
                 score = await component.compute_score(normalized_turns, context)
                 if not math.isfinite(score):
                     raise ValueError("component score must be finite")
                 component_scores[component.name] = score
-                weighted_scores.append(score * component.weight)
+                weighted_scores.append(score * component_weight)
 
                 # Track component performance
                 if component.name not in self.component_scores:
@@ -162,7 +170,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         if self.normalization_method == "weighted_sum":
             final_score = sum(weighted_scores)
         elif self.normalization_method == "weighted_average":
-            total_weight = sum(component.weight for component in self.components)
+            total_weight = sum(component_weights)
             final_score = (
                 sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
             )
@@ -183,7 +191,10 @@ class MultiObjectiveRewardFunction(RewardFunction):
         self.evaluation_count += 1
 
         # Create breakdown
-        weights = {c.name: c.weight for c in self.components}
+        weights = {
+            component.name: weight
+            for component, weight in zip(components, component_weights, strict=True)
+        }
         breakdown: dict[str, Any] = {
             "total_score": final_score,
             "evaluation_count": float(self.evaluation_count),
