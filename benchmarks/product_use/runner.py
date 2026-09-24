@@ -12,6 +12,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+TASK_SCHEMA_VERSION = "0.1"
+
 
 def _load_json(path: Path) -> Any:
     with path.open(encoding="utf-8") as handle:
@@ -62,14 +64,23 @@ def run(tasks_path: Path, submissions_path: Path) -> dict[str, Any]:
     submissions = _load_json(submissions_path)
     if not isinstance(tasks, list) or not isinstance(submissions, list):
         raise ValueError("tasks and submissions must be JSON arrays")
-    task_map = {task["id"]: task for task in tasks if isinstance(task, dict)}
-    if len(task_map) != len(tasks):
-        raise ValueError("tasks must have unique string ids")
+    task_map = {task.get("id"): task for task in tasks if isinstance(task, dict)}
+    if (
+        len(task_map) != len(tasks)
+        or any(not isinstance(task_id, str) for task_id in task_map)
+        or any(task.get("schema_version") != TASK_SCHEMA_VERSION for task in tasks)
+    ):
+        raise ValueError(
+            f"tasks must have unique ids and schema_version {TASK_SCHEMA_VERSION}"
+        )
     submission_map = {
         item.get("task_id"): item for item in submissions if isinstance(item, dict)
     }
     if len(submission_map) != len(submissions):
         raise ValueError("submissions must have unique task_id values")
+    unknown = sorted(set(submission_map) - set(task_map))
+    if unknown:
+        raise ValueError(f"submissions contain unknown task ids: {unknown}")
     results = [
         score_submission(task, submission_map[task_id])
         for task_id, task in task_map.items()
@@ -77,12 +88,13 @@ def run(tasks_path: Path, submissions_path: Path) -> dict[str, Any]:
     ]
     missing = sorted(set(task_map) - set(submission_map))
     return {
+        "schema_version": TASK_SCHEMA_VERSION,
         "task_count": len(tasks),
         "submitted_count": len(results),
         "missing_task_ids": missing,
         "mean_score": (
-            round(sum(item["score"] for item in results) / len(results), 4)
-            if results
+            round(sum(item["score"] for item in results) / len(tasks), 4)
+            if tasks
             else 0.0
         ),
         "results": results,

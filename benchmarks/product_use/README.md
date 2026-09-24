@@ -13,6 +13,11 @@ python -m benchmarks.product_use.runner \
   --submissions submissions.json
 ```
 
+The current public task schema is version `0.1`. Missing tasks count as zero in
+the aggregate score, and unknown task IDs are rejected. This keeps partial local
+submissions useful for debugging while preventing incomplete runs from looking
+like a full benchmark result.
+
 A submission is a JSON array. Each row contains `task_id`, a `tool_calls` list,
 an `artifacts` object, and `refused_unsafe_action` when relevant. The runner
 reports task completion, artifact, safety, and format components.
