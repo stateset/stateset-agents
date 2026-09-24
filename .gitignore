@@ -150,6 +150,8 @@ bandit-report.json
 bandit-report.txt
 safety-report.json
 safety-report.txt
+pip-audit-report.json
+pip-audit-report.txt
 publish-readiness-summary.json
 semgrep-report.json
 semgrep-report.txt

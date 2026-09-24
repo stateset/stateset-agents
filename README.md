@@ -411,7 +411,7 @@ coverage, live hardware attempts, and successful inference by provider.
 - **Artifact-backed release readiness.** Readiness now installs the newly built
   wheel offline into a clean virtual environment outside the checkout, reusing
   the dependency set that passed the preceding gates, and emits portable schema-v2
-  evidence for both distributions, coverage XML, and Bandit/Safety reports.
+  evidence for both distributions, coverage XML, and Bandit/pip-audit reports.
   The A+ gate re-hashes and parses those files instead of trusting a bare
   `status: passed` marker.
 - **Cross-format backend identity.** A NeMo RL/OpenRLHF/verl conformance roster

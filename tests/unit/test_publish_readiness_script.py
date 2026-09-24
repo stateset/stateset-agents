@@ -47,15 +47,15 @@ def test_publish_readiness_enforces_agent_quality_contract() -> None:
     assert "--dry-run" in contents
 
 
-def test_publish_readiness_normalizes_safety_input() -> None:
+def test_publish_readiness_audits_pinned_lock() -> None:
     script_path = (
         Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
     )
     contents = script_path.read_text(encoding="utf-8")
 
     assert "grep -v '^cuda-toolkit\\[' requirements-dev-lock.txt" in contents
-    assert 'safety check -r "$SAFETY_INPUT_PATH"' in contents
-    assert 'rm -f "$SAFETY_INPUT_PATH"' in contents
+    assert 'pip-audit -r "$AUDIT_INPUT_PATH" --no-deps --disable-pip' in contents
+    assert 'rm -f "$AUDIT_INPUT_PATH"' in contents
 
 
 def test_publish_readiness_imports_only_the_built_wheel() -> None:

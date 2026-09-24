@@ -911,7 +911,7 @@ GitHub Actions (`.github/workflows/`) runs:
 - **Test matrix** — Python 3.10/3.11/3.12/3.13 on Ubuntu; 3.10/3.13 on Windows.
 - **Lint and type checks** — `ruff`, `black`, `isort`, `mypy` (strict mode gated per-module).
 - **Tests** — `pytest` with Codecov upload. Coverage reporting reflects only paths exercised by the in-process unit and integration tests (~49% of total LOC). End-to-end serving, Helm-rendering, and GPU-only training paths are tested but don't contribute to per-line coverage; the headline number understates the tested surface. The CI gate requires the core-abstractions modules to stay above a stricter threshold via Codecov component scoping.
-- **Security scans** — `bandit` and `safety` SBOM generation.
+- **Security scans** — `bandit` static analysis and `pip-audit` dependency auditing.
 - **Helm validation** — `helm lint` and template rendering across all values overlays.
 - **Docs** — Sphinx build with RTD theme.
 

@@ -44,7 +44,7 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev,api]"
-        pip install bandit safety build twine
+        pip install bandit pip-audit build twine
 
     - name: Run repo hygiene checks
       run: |
@@ -101,7 +101,7 @@ jobs:
       if: always()
       run: |
         touch bandit-report.json
-        touch safety-report.json
+        touch pip-audit-report.json
         touch coverage.xml
         touch publish-readiness-summary.json
 
@@ -112,7 +112,7 @@ jobs:
         name: publish-readiness-reports
         path: |
           bandit-report.json
-          safety-report.json
+          pip-audit-report.json
           coverage.xml
           publish-readiness-summary.json
 
@@ -261,7 +261,7 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install bandit safety
+        pip install bandit pip-audit
 
     - name: Run strict security scan
       run: |
@@ -273,7 +273,7 @@ jobs:
         name: security-reports
         path: |
           bandit-report.json
-          safety-report.json
+          pip-audit-report.json
 
   docs:
     runs-on: ubuntu-latest

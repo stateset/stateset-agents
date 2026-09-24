@@ -818,15 +818,15 @@ release-prep: ## Final readiness check before publishing — smoke + build + twi
 
 security-scan: ## Run basic security scanning tools
 	bandit -c pyproject.toml -r stateset_agents || true
-	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
-	safety check -r /tmp/stateset-safety-requirements.txt --no-prompt || true
+	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
+	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip || true
 	semgrep --config=auto . || true
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json || true
-	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
-	safety check -r /tmp/stateset-safety-requirements.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
-	$(PYTHON_BIN) scripts/check_security_findings.py
+	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
+	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip --format json --output pip-audit-report.json || true
+	$(PYTHON_BIN) -m scripts.check_security_findings
 
 publish-readiness: ## Run pre-publish release readiness gate
 	bash scripts/publish_readiness.sh

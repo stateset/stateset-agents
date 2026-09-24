@@ -127,7 +127,7 @@ gh auth login
 
 ```bash
 # Install build tools
-pip install build twine bandit safety
+pip install build twine bandit pip-audit
 
 # Install GitHub CLI (optional)
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
@@ -302,7 +302,7 @@ make publish-readiness
 The run emits `publish-readiness-summary.json`. Successful schema-v2 summaries
 record the exact commit/version and complete check roster, plus relative path,
 size, and SHA-256 identities for `dist/` wheel/source artifacts, `coverage.xml`,
-`bandit-report.json`, and `safety-report.json`. The wheel smoke uses a fresh
+`bandit-report.json`, and `pip-audit-report.json`. The wheel smoke uses a fresh
 virtual environment outside the checkout, inherits the already validated
 runtime dependency paths, installs StateSet itself offline and `--no-deps`
 from the built wheel, and asserts the import resolves inside that environment.
@@ -314,7 +314,7 @@ identities. Failed summaries retain `failed_step`, optional
 `failure_detail`, duration, and Git metadata.
 
 The A+ decision also re-evaluates the retained scan contents: Bandit must have
-no execution errors or medium-and-higher findings, and Safety must report zero
+no execution errors or medium-and-higher findings, and pip-audit must report zero
 known vulnerabilities. A parseable or hash-matching report alone is not enough.
 
 ```bash

@@ -1,9 +1,8 @@
-"""Guardrail: the mypy typed-surface allowlist only ever grows.
+"""Guardrail: the blocking mypy source surface only ever grows.
 
-mypy.ini gates CI on an explicit `files =` allowlist while the rest of the
-repo is incrementally typed. This ratchet stops the allowlist from silently
-shrinking: removing a file from the gate must be a deliberate act that also
-lowers the floor here, in the same change, where a reviewer can see it.
+The `files =` setting may name individual files or package directories. This
+ratchet expands directories before counting, so switching to a package-wide
+gate cannot accidentally look like one checked file.
 """
 
 from __future__ import annotations
@@ -13,17 +12,29 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = number of files in mypy.ini's `files =` list as of 2026-08-24.
-# Raise this whenever files are added to the gate; never lower it without
-# a written justification in the commit that does so.
-ALLOWLIST_FLOOR = 40
+# Floor = all 329 packaged Python files at v0.56.0.
+ALLOWLIST_FLOOR = 329
 
 
 def _allowlisted_files() -> list[str]:
     parser = configparser.ConfigParser()
     parser.read(MYPY_INI)
     raw = parser.get("mypy", "files")
-    return [entry.strip() for entry in raw.split(",") if entry.strip()]
+    repo_root = MYPY_INI.parent
+    files: set[str] = set()
+    for entry in (part.strip() for part in raw.split(",")):
+        if not entry:
+            continue
+        path = repo_root / entry
+        if path.is_dir():
+            files.update(
+                child.relative_to(repo_root).as_posix()
+                for child in path.rglob("*.py")
+                if child.is_file()
+            )
+        else:
+            files.add(entry)
+    return sorted(files)
 
 
 def test_mypy_allowlist_never_shrinks() -> None:

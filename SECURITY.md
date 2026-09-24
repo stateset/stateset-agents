@@ -85,7 +85,7 @@ necessary to demonstrate the issue. It is not a bug-bounty promise.
 
 ## Security controls and updates
 
-CI runs dependency review, secret detection, CodeQL, Bandit, Safety, Trivy, and
+CI runs dependency review, secret detection, CodeQL, Bandit, pip-audit, Trivy, and
 Rust advisory checks where applicable. Release readiness fails closed on high
 severity dependency findings except the narrowly reviewed, expiring
 Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md).
