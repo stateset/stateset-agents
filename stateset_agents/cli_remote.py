@@ -1067,7 +1067,10 @@ def provider_canary(
     """Run non-billable live authentication and cleanup canaries."""
     import json
 
-    from stateset_agents.remote.canary import run_canary_matrix
+    from stateset_agents.remote.canary import (
+        provider_canary_envelope,
+        run_canary_matrix,
+    )
 
     selected = provider or ["river", "runpod", "fireworks"]
     try:
@@ -1076,11 +1079,7 @@ def provider_canary(
         _echo(str(exc), err=True)
         raise typer.Exit(code=2) from exc
 
-    payload = {
-        "schema_version": 1,
-        "billable_resources_created": 0,
-        "results": [result.to_dict() for result in results],
-    }
+    payload = provider_canary_envelope(results)
     rendered = json.dumps(payload, indent=2, sort_keys=True) + "\n"
     if output is not None:
         try:

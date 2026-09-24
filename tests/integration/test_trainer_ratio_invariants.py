@@ -4,8 +4,10 @@ These integration tests exercise real (tiny) GPT2 models end-to-end through
 each trainer's actual ``train_step``/log-prob/ratio machinery, checking the
 invariants every importance-sampling trainer must satisfy:
 
-  (a) On the very first (on-policy) evaluation, the mean importance ratio
-      must be ~1 (log probs computed under identical, unchanged weights).
+  (a) On the very first (on-policy) evaluation, DAPO/GSPO importance ratios
+      must be ~1. GEPO's probability-weighted group coefficient must equal its
+      closed-form value for identical learner and sampler log probabilities;
+      unlike a likelihood ratio, that coefficient is not generally 1.
   (b) After one real optimizer step, recomputing the ratio against the
       frozen "old" log probs must diverge from 1 (the policy moved).
   (c) The training loss is finite (no NaN/Inf).
@@ -32,13 +34,14 @@ import torch
 
 pytest.importorskip("transformers")
 
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2Config, GPT2LMHeadModel
 
 from stateset_agents.core.reward_base import RewardResult
 from stateset_agents.training.dapo_trainer import DAPOConfig, DAPOTrainer
 from stateset_agents.training.gepo_trainer import GEPOConfig, GEPOTrainer
 from stateset_agents.training.gspo_config import GSPOConfig
 from stateset_agents.training.gspo_trainer import GSPOTrainer
+from tests._tiny_tokenizer import tiny_tokenizer
 
 
 def _tiny_gpt2(vocab_size: int = 200) -> GPT2LMHeadModel:
@@ -65,6 +68,7 @@ class TrainerHarness:
     run_train_step: Callable[[], Awaitable[dict[str, float]]]
     onpolicy_ratios: Callable[[], torch.Tensor]
     recompute_ratio_after_step: Callable[[], torch.Tensor]
+    onpolicy_expected: Callable[[], torch.Tensor] | None = None
 
 
 # --------------------------------------------------------------------------
@@ -152,10 +156,11 @@ def _make_dapo_harness() -> TrainerHarness:
 
 def _make_gepo_harness() -> TrainerHarness:
     model = _tiny_gpt2(vocab_size=50257)
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
 
-    config = GEPOConfig(model_name="gpt2", group_size=2)
+    config = GEPOConfig(
+        model_name="gpt2", group_size=2, learning_rate=1e-3, warmup_ratio=0.0
+    )
 
     def reward_fn(prompt: str, response: str) -> float:
         return 1.0 if "ok" in response else 0.0
@@ -231,11 +236,16 @@ def _make_gepo_harness() -> TrainerHarness:
             )
         return trainer.compute_gepo_coefficient(new_log_probs, frozen_old_log_probs[0])
 
+    def onpolicy_expected() -> torch.Tensor:
+        old = frozen_old_log_probs[0]
+        return trainer.compute_gepo_coefficient(old, old)
+
     return TrainerHarness(
         model=model,
         run_train_step=run_train_step,
         onpolicy_ratios=onpolicy_ratios,
         recompute_ratio_after_step=recompute_ratio_after_step,
+        onpolicy_expected=onpolicy_expected,
     )
 
 
@@ -254,8 +264,7 @@ class _StubRewardModel:
 
 def _make_gspo_harness() -> TrainerHarness:
     model = _tiny_gpt2(vocab_size=50257)
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
 
     config = GSPOConfig(
         model_name="gpt2",
@@ -344,17 +353,22 @@ async def test_ratio_and_gradient_invariants(trainer_name: str) -> None:
     assert loss_value is not None
     assert math.isfinite(loss_value), f"{trainer_name}: non-finite loss {loss_value}"
 
-    # (a) On-policy first evaluation: mean ratio in [0.99, 1.01].
+    # (a) On-policy first evaluation matches the objective's exact identity.
     onpolicy = harness.onpolicy_ratios()
-    mean_ratio = onpolicy.mean().item()
-    assert (
-        0.99 <= mean_ratio <= 1.01
-    ), f"{trainer_name}: on-policy mean ratio {mean_ratio} not close to 1"
+    expected = (
+        harness.onpolicy_expected()
+        if harness.onpolicy_expected is not None
+        else torch.ones_like(onpolicy)
+    )
+    assert torch.allclose(
+        onpolicy, expected, atol=1e-5
+    ), f"{trainer_name}: on-policy coefficient does not match its exact identity"
 
-    # (b) After one real optimizer step, recomputed ratio must diverge from 1.
+    # (b) After one real optimizer step, the coefficient must move away from
+    # its exact on-policy value (1 for DAPO/GSPO, group expectation for GEPO).
     ratio_after = harness.recompute_ratio_after_step()
     assert not torch.allclose(
-        ratio_after, torch.ones_like(ratio_after), atol=1e-5
+        ratio_after, expected, atol=1e-5
     ), f"{trainer_name}: ratio unchanged after optimizer step"
 
     # (d) At least one parameter must have a nonzero gradient after train_step.

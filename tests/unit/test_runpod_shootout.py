@@ -32,7 +32,7 @@ for _name in (
         _load(_name, BENCHMARKS / f"{_name}.py")
 launcher = _load("runpod_shootout", BENCHMARKS / "runpod_shootout.py")
 
-SHA = "0" * 40
+SHA = "a" * 40
 
 
 def _shootout_manifest() -> dict[str, Any]:
@@ -183,6 +183,15 @@ def test_manifest_requires_lifetime_headroom_and_matching_gpu(tmp_path: Path) ->
         )
 
 
+def test_manifest_rejects_template_harness_revision(tmp_path: Path) -> None:
+    path = _write_inputs(tmp_path)
+    raw = json.loads(path.read_text())
+    raw["harness_revision"] = "0" * 40
+    path.write_text(json.dumps(raw))
+    with pytest.raises(launcher.RunPodShootoutError, match="non-zero"):
+        launcher.load_launcher_manifest(path, tmp_path)
+
+
 def test_cli_refuses_execution_without_exact_spend_confirmation(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture
 ) -> None:
@@ -237,6 +246,9 @@ def test_execute_runs_shootout_downloads_records_and_terminates(tmp_path: Path) 
     assert api.terminated == ["pod-123"]
     record = json.loads((out / "runpod-provider.json").read_text())
     assert record["status"] == "completed" and record["termination_confirmed"]
+    assert record["schema_version"] == 2
+    assert record["provider"] == "runpod"
+    assert record["cost_source"] == ("authoritative-provider-rate-x-observed-lifetime")
     assert record["harness_revision"] == SHA
     ledger = (tmp_path / "ledger.jsonl").read_text()
     assert "pod-123" in ledger and "runpod" in ledger
@@ -386,13 +398,44 @@ def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
     plan = launcher.build_plan(manifest, _catalog())
     out = tmp_path / "evidence"
     out.mkdir()
-    (out / "trl-seed42.json").write_text(
-        json.dumps({"measured": True, "framework": "trl", "seed": 42})
+    shootout = manifest["_shootout"]
+    trl_version = next(
+        item["version"] for item in shootout["implementations"] if item["name"] == "trl"
     )
-    (out / "trl-seed1337.json").write_text("{not json")  # ignored, not uploaded
+    run_dir = out / "runs" / "trl-seed42"
+    artifact = run_dir / "artifact"
+    artifact.mkdir(parents=True)
+    (artifact / "weights").write_bytes(b"retained")
+    (run_dir / "stdout.log").write_text("first pod log")
+    comparison = sys.modules["framework_comparison"]
+    completed = {
+        "schema_version": 2,
+        "measured": True,
+        "framework": "trl",
+        "framework_version": trl_version,
+        "seed": 42,
+        "harness_commit": SHA,
+        "manifest_sha256": launcher.canonical_digest(shootout),
+        **{field: shootout[field] for field in sys.modules["shootout"].MANIFEST_FIELDS},
+        "timestamp": "2026-09-10T00:00:00+00:00",
+        "command": "trl adapter",
+        "config": shootout["config"],
+        "hardware": {**shootout["hardware"], "cuda": "12.8"},
+        "metrics": {
+            "samples_per_second": 1.0,
+            "wall_clock_seconds": 1.0,
+            "peak_vram_mb": 1.0,
+            "eval_score_baseline": 0.0,
+            "eval_score_final": 0.1,
+        },
+        "artifact_path": "runs/trl-seed42/artifact",
+        "artifact_sha256": comparison.hash_artifact(artifact),
+    }
+    (out / "trl-seed42.json").write_text(json.dumps(completed))
+    (out / "trl-seed1337.json").write_text(
+        json.dumps({**completed, "seed": 1337, "harness_commit": "f" * 40})
+    )
     (out / "runpod-provider.json").write_text(json.dumps({"kind": "provider"}))
-    (out / "runs" / "trl-seed42").mkdir(parents=True)
-    (out / "runs" / "trl-seed42" / "stdout.log").write_text("first pod log")
     (out / "_accounting").mkdir()
     (out / "_accounting" / "shootout-summary.json").write_text("{}")
     ssh = _UploadSsh()
@@ -412,6 +455,14 @@ def test_resume_uploads_completed_evidence_and_reuses_the_output_dir(
     assert evidence_uploads == [
         ("trl-seed42.json", f"{launcher._REMOTE_OUTPUT}/trl-seed42.json")
     ]
+    assert (
+        "weights",
+        f"{launcher._REMOTE_OUTPUT}/runs/trl-seed42/artifact/weights",
+    ) in ssh.uploads
+    assert (
+        "stdout.log",
+        f"{launcher._REMOTE_OUTPUT}/runs/trl-seed42/stdout.log",
+    ) in ssh.uploads
     mkdir_index = next(
         i for i, c in enumerate(ssh.commands) if c.startswith("mkdir -p ")
     )

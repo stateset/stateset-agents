@@ -371,39 +371,55 @@ class DistributedRolloutControlPlane:
         """Validate a worker assignment, then submit through the rollout queue."""
         if not isinstance(record, RolloutRecord):
             raise TypeError("record must be RolloutRecord")
-        async with self._condition:
-            await self._condition.wait_for(lambda: not self._checkpointing)
-            now = self._now()
-            lease = self._require_locked(worker_id, lease_id, now)
-            if record.policy_version != lease.policy_version:
+
+        def check_admission() -> None:
+            # This callback contains no await. The coordinator invokes it
+            # immediately before appending while running on the same event
+            # loop as register, heartbeat, and artifact publication.
+            current = self._require_locked(worker_id, lease_id, self._now())
+            if record.policy_version != current.policy_version:
                 self._counters["rejected_policy_assignment"] += 1
                 raise WorkerLeaseError(
                     "rollout policy version does not match the worker assignment"
                 )
-            artifact = self._policy_artifacts.get(lease.policy_version)
-            if artifact is not None:
-                if record.policy_artifact_sha256 is None:
-                    if self.config.require_policy_artifact:
-                        raise PolicyArtifactError(
-                            "rollout must identify its assigned policy artifact"
-                        )
-                elif record.policy_artifact_sha256 != artifact.sha256:
-                    raise PolicyArtifactError(
-                        "rollout policy artifact does not match the worker assignment"
+            artifact = self._policy_artifacts.get(current.policy_version)
+            if artifact is None:
+                if self.config.require_policy_artifact or (
+                    record.policy_artifact_sha256 is not None
+                ):
+                    raise PolicyArtifactUnavailable(
+                        "assigned policy artifact is no longer available"
                     )
+            elif record.policy_artifact_sha256 is None:
+                if self.config.require_policy_artifact:
+                    raise PolicyArtifactError(
+                        "rollout must identify its assigned policy artifact"
+                    )
+            elif record.policy_artifact_sha256 != artifact.sha256:
+                raise PolicyArtifactError(
+                    "rollout policy artifact does not match the worker assignment"
+                )
+
+        async with self._condition:
+            await self._condition.wait_for(lambda: not self._checkpointing)
+            check_admission()
             self._inflight_submissions += 1
 
-        accepted = False
+        def count_admission() -> None:
+            # Run in the same event-loop turn as the queue append. A caller may
+            # be cancelled after admission but before submit returns.
+            self._counters["accepted_submissions"] += 1
+
         try:
-            accepted = await self.coordinator.submit(
-                record, timeout_seconds=timeout_seconds
+            return await self.coordinator.submit(
+                record,
+                timeout_seconds=timeout_seconds,
+                admission_check=check_admission,
+                on_admitted=count_admission,
             )
-            return accepted
         finally:
             async with self._condition:
                 self._inflight_submissions -= 1
-                if accepted:
-                    self._counters["accepted_submissions"] += 1
                 self._condition.notify_all()
 
     async def unregister(self, worker_id: str, lease_id: str) -> None:

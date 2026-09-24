@@ -7,6 +7,8 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import math
+import os
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -34,6 +36,12 @@ class ExperimentRecord:
     timestamp: float = 0.0
 
     def __post_init__(self):
+        try:
+            finite = math.isfinite(self.objective_value)
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("objective_value must be finite and numeric") from exc
+        if not finite:
+            raise ValueError("objective_value must be finite and numeric")
         if self.timestamp == 0.0:
             self.timestamp = time.time()
 
@@ -114,19 +122,23 @@ class ExperimentTracker:
                 except json.JSONDecodeError:
                     continue
 
-                record = ExperimentRecord(
-                    experiment_id=data.get("experiment_id", "unknown"),
-                    params=data.get("params", {}),
-                    metrics=data.get("metrics", {}),
-                    objective_value=data.get("objective_value", 0.0),
-                    training_time=data.get("training_time", 0.0),
-                    status=data.get("status", "unknown"),
-                    description=data.get("description", ""),
-                    checkpoint_path=data.get("checkpoint_path"),
-                    provenance_path=data.get("provenance_path"),
-                    proof_path=data.get("proof_path"),
-                    timestamp=data.get("timestamp", 0.0),
-                )
+                try:
+                    record = ExperimentRecord(
+                        experiment_id=data.get("experiment_id", "unknown"),
+                        params=data.get("params", {}),
+                        metrics=data.get("metrics", {}),
+                        objective_value=data.get("objective_value", 0.0),
+                        training_time=data.get("training_time", 0.0),
+                        status=data.get("status", "unknown"),
+                        description=data.get("description", ""),
+                        checkpoint_path=data.get("checkpoint_path"),
+                        provenance_path=data.get("provenance_path"),
+                        proof_path=data.get("proof_path"),
+                        timestamp=data.get("timestamp", 0.0),
+                    )
+                except ValueError as exc:
+                    logger.warning("Skipping invalid experiment record: %s", exc)
+                    continue
                 tracker.load_record(record)
 
         return tracker
@@ -188,6 +200,11 @@ class ExperimentTracker:
                     objective = float(avg_reward)
                 except (ValueError, TypeError):
                     objective = 0.0
+                if not math.isfinite(objective):
+                    logger.warning(
+                        "Skipping legacy experiment with non-finite score: %s", commit
+                    )
+                    continue
 
                 record = ExperimentRecord(
                     experiment_id=commit,
@@ -241,6 +258,8 @@ class ExperimentTracker:
 
     def is_improvement(self, value: float) -> bool:
         """Check if a value is an improvement over the current best."""
+        if not math.isfinite(value):
+            return False
         if self._best_value is None:
             return True
         if self.direction == "maximize":
@@ -248,7 +267,7 @@ class ExperimentTracker:
         return value < self._best_value
 
     def record(self, record: ExperimentRecord) -> None:
-        """Record an experiment result. Persists to JSONL + TSV.
+        """Record an experiment result with JSONL as the commit point.
 
         Raises ValueError if the experiment_id was already recorded
         (prevents double-persistence on resume).
@@ -259,6 +278,10 @@ class ExperimentTracker:
                 "Did you accidentally re-record a resumed experiment?"
             )
 
+        # The JSONL log is replayed on restart. Do not advance in-memory best
+        # state if that append fails; the TSV is only a derived summary.
+        self._append_jsonl(record)
+
         self.records.append(record)
         self._known_ids.add(record.experiment_id)
 
@@ -266,9 +289,10 @@ class ExperimentTracker:
             self._best_value = record.objective_value
             self._best_record = record
 
-        # Persist — append to both files
-        self._append_jsonl(record)
-        self._append_tsv(record)
+        try:
+            self._append_tsv(record)
+        except OSError as exc:
+            logger.warning("Could not append experiment TSV summary: %s", exc)
 
         logger.info(
             "Experiment %s: %s=%.6f status=%s — %s",
@@ -324,9 +348,19 @@ class ExperimentTracker:
             writer.writerow(_TSV_HEADER)
 
     def _append_jsonl(self, record: ExperimentRecord) -> None:
+        created = not self._json_path.exists()
         with open(self._json_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(record.to_dict()) + "\n")
             f.flush()
+            os.fsync(f.fileno())
+        if created and os.name == "posix":
+            # The first append also creates the directory entry. Sync it so
+            # a checkpoint commit cannot outlive an unlinked JSONL file.
+            directory_fd = os.open(self.output_dir, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
 
     def _append_tsv(self, record: ExperimentRecord) -> None:
         with open(self._tsv_path, "a", newline="", encoding="utf-8") as f:

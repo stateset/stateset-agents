@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import signal
 import time
 from collections.abc import Sequence
@@ -83,6 +84,7 @@ class AutoResearchLoop:
         self._stop_requested = False
         self._loop_start_time: float = 0.0
         self._wandb: Any = None
+        self._resumed_existing_records = False
 
         # Optional reward calibration to prevent scale drift
         self._calibrated_reward_fn: Any = None
@@ -242,6 +244,7 @@ class AutoResearchLoop:
         """
         jsonl_path = self.config.output_path / "experiments.jsonl"
         if not jsonl_path.exists():
+            self.checkpoint_mgr.reconcile_best(None)
             return 1
 
         logger.info("Found previous run at %s — attempting resume", jsonl_path)
@@ -258,16 +261,20 @@ class AutoResearchLoop:
                 except json.JSONDecodeError:
                     continue
 
-                record = ExperimentRecord(
-                    experiment_id=data["experiment_id"],
-                    params=data.get("params", {}),
-                    metrics=data.get("metrics", {}),
-                    objective_value=data.get("objective_value", 0.0),
-                    training_time=data.get("training_time", 0.0),
-                    status=data.get("status", "unknown"),
-                    description=data.get("description", ""),
-                    timestamp=data.get("timestamp", 0.0),
-                )
+                try:
+                    record = ExperimentRecord(
+                        experiment_id=data["experiment_id"],
+                        params=data.get("params", {}),
+                        metrics=data.get("metrics", {}),
+                        objective_value=data.get("objective_value", 0.0),
+                        training_time=data.get("training_time", 0.0),
+                        status=data.get("status", "unknown"),
+                        description=data.get("description", ""),
+                        timestamp=data.get("timestamp", 0.0),
+                    )
+                except ValueError as exc:
+                    logger.warning("Skipping invalid experiment record: %s", exc)
+                    continue
 
                 # Load without re-persisting to disk
                 self.tracker.load_record(record)
@@ -282,6 +289,14 @@ class AutoResearchLoop:
 
                 loaded += 1
 
+        self._resumed_existing_records = loaded > 0
+        committed_best = (
+            self.tracker.best_record.experiment_id
+            if self.tracker.best_record is not None
+            else None
+        )
+        checkpoint_matches_log = self.checkpoint_mgr.reconcile_best(committed_best)
+
         if loaded > 0:
             logger.info(
                 "Resumed %d experiments (best %s=%.6f)",
@@ -291,7 +306,7 @@ class AutoResearchLoop:
             )
 
             # Restore best checkpoint if available
-            if self.checkpoint_mgr.has_best():
+            if checkpoint_matches_log:
                 self.checkpoint_mgr.restore_best(self.agent)
                 logger.info("Restored best model checkpoint")
 
@@ -345,7 +360,7 @@ class AutoResearchLoop:
         # Try to resume from previous run
         next_experiment_num = self._try_resume()
 
-        if next_experiment_num == 1:
+        if not self._resumed_existing_records:
             # Fresh run — establish baseline
             await self._run_baseline()
         else:
@@ -424,6 +439,14 @@ class AutoResearchLoop:
 
         objective = eval_result.get(self.config.objective_metric, 0.0)
 
+        if not math.isfinite(objective):
+            logger.warning("Baseline objective is non-finite; recording a crash")
+            self._cleanup_gpu()
+            self._record_crash(
+                "baseline", self.baseline_params, "non-finite baseline objective"
+            )
+            return
+
         if objective == 0.0:
             logger.warning(
                 "Baseline %s is 0.0 — evaluation may have failed or "
@@ -440,12 +463,18 @@ class AutoResearchLoop:
             status="keep",
             description="baseline (no training)",
         )
-        self.tracker.record(record)
-        self._log_wandb(record)
-
         # Save baseline as first checkpoint
         if self.config.save_checkpoints:
-            self.checkpoint_mgr.save_best(self.agent, "baseline", self.baseline_params)
+            self.checkpoint_mgr.save_best(
+                self.agent,
+                "baseline",
+                self.baseline_params,
+                defer_commit=True,
+            )
+        self.tracker.record(record)
+        if self.config.save_checkpoints:
+            self.checkpoint_mgr.commit_best("baseline")
+        self._log_wandb(record)
 
     async def _run_experiment(self, experiment_id: str) -> None:
         """Run a single experiment: propose → train → eval → keep/revert."""
@@ -502,6 +531,15 @@ class AutoResearchLoop:
         training_time = time.time() - train_start
         objective = eval_result.get(self.config.objective_metric, 0.0)
 
+        if not math.isfinite(objective):
+            self._cleanup_gpu()
+            self._record_crash(
+                experiment_id, proposed_params, "non-finite experiment objective"
+            )
+            self._report_to_proposer(0.0, crashed=True)
+            self.checkpoint_mgr.restore_best(self.agent)
+            return
+
         # 4. Keep or revert
         is_better = self.tracker.is_improvement(objective)
 
@@ -509,7 +547,10 @@ class AutoResearchLoop:
             status = "keep"
             if self.config.save_checkpoints:
                 self.checkpoint_mgr.save_best(
-                    self.agent, experiment_id, proposed_params
+                    self.agent,
+                    experiment_id,
+                    proposed_params,
+                    defer_commit=True,
                 )
             logger.info(
                 "KEEP %s: %s=%.6f (improved from %.6f)",
@@ -539,6 +580,8 @@ class AutoResearchLoop:
             description=description,
         )
         self.tracker.record(record)
+        if status == "keep" and self.config.save_checkpoints:
+            self.checkpoint_mgr.commit_best(experiment_id)
         self._log_wandb(record)
         self._report_to_proposer(objective, crashed=False)
 

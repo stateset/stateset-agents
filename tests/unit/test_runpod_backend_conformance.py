@@ -118,6 +118,21 @@ def test_plan_rejects_launcher_owned_dataset_path(tmp_path: Path) -> None:
         launcher.build_plan(manifest, dataset, _catalog())
 
 
+def test_plan_verifies_canonical_dataset_content_before_allocation(
+    tmp_path: Path,
+) -> None:
+    manifest, dataset = _inputs(tmp_path)
+    observed = launcher.canonical_dataset_content_sha256(dataset)
+    manifest["experiment"]["dataset_content_sha256"] = observed
+    assert (
+        launcher.build_plan(manifest, dataset, _catalog())["dataset_content_sha256"]
+        == observed
+    )
+    manifest["experiment"]["dataset_content_sha256"] = "0" * 64
+    with pytest.raises(launcher.RunPodConformanceError, match="canonical dataset"):
+        launcher.build_plan(manifest, dataset, _catalog())
+
+
 def test_default_cli_is_public_plan_only(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

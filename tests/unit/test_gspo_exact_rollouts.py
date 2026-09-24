@@ -19,10 +19,11 @@ pytest.importorskip("transformers")
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402
 from stateset_agents.core.trajectory import ConversationTurn  # noqa: E402
 from stateset_agents.training import loss_computation as lc  # noqa: E402
+from tests._tiny_tokenizer import tiny_tokenizer  # noqa: E402
 
 
 def _tiny_hf_agent(max_new_tokens: int = 6):
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+    from transformers import GPT2Config, GPT2LMHeadModel
 
     torch.manual_seed(0)
     model = GPT2LMHeadModel(
@@ -30,15 +31,14 @@ def _tiny_hf_agent(max_new_tokens: int = 6):
             n_embd=32,
             n_layer=2,
             n_head=2,
-            vocab_size=50257,
+            vocab_size=256,
             n_positions=128,
             resid_pdrop=0.0,
             embd_pdrop=0.0,
             attn_pdrop=0.0,
         )
     )
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
     agent = MultiTurnAgent(
         AgentConfig(
             model_name="gpt2",
@@ -196,17 +196,16 @@ async def test_gspo_hf_generation_batches_the_group_and_skips_rescoring(monkeypa
 
 
 def _gspo_trainer(rescore: bool):
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+    from transformers import GPT2Config, GPT2LMHeadModel
 
     from stateset_agents.training.gspo_config import GSPOConfig
     from stateset_agents.training.gspo_trainer import GSPOTrainer
 
     torch.manual_seed(1)
     model = GPT2LMHeadModel(
-        GPT2Config(n_embd=32, n_layer=2, n_head=2, vocab_size=50257, n_positions=128)
+        GPT2Config(n_embd=32, n_layer=2, n_head=2, vocab_size=256, n_positions=128)
     )
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
 
     class Reward:
         async def compute_reward(self, turns, context=None):

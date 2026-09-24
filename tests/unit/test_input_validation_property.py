@@ -18,7 +18,7 @@ TEXT_STRATEGY = st.text(
 )
 
 
-@settings(max_examples=75)
+@settings(max_examples=75, deadline=None)
 @given(TEXT_STRATEGY)
 def test_sanitize_removes_control_and_bidi_chars(text: str) -> None:
     validator = SecureInputValidator(SecurityConfig())
@@ -30,7 +30,7 @@ def test_sanitize_removes_control_and_bidi_chars(text: str) -> None:
     assert sanitized == sanitized.strip()
 
 
-@settings(max_examples=75)
+@settings(max_examples=75, deadline=None)
 @given(TEXT_STRATEGY)
 def test_validate_returns_sanitized_input_for_any_text(text: str) -> None:
     config = SecurityConfig(

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-scaling-launcher-manifest",
+  "topologies": {
+    "1": {"node_count": 1, "nproc_per_node": 1},
+    "2": {"node_count": 1, "nproc_per_node": 2},
+    "4": {"node_count": 1, "nproc_per_node": 4},
+    "8": {"node_count": 2, "nproc_per_node": 4}
+  },
+  "command": [
+    "python", "benchmarks/runpod_scaling_launcher.py",
+    "--gpu-count", "{gpu_count}",
+    "--node-count", "{node_count}",
+    "--nproc-per-node", "{nproc_per_node}",
+    "--seed", "{seed}",
+    "--harness-commit", "{harness_commit}",
+    "--config-json", "{config_json}",
+    "--command-label", "{command_label}",
+    "--output", "{output}",
+    "--workload", "{workload}",
+    "--gpu-name", "NVIDIA A40",
+    "--image", "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204",
+    "--cloud-type", "SECURE",
+    "--data-center-id", "US-TX-3",
+    "--container-disk-gb", "80",
+    "--timeout-seconds", "1800",
+    "--max-lifetime-seconds", "2700",
+    "--max-cost-usd", "3.0",
+    "--execute",
+    "--confirm-max-cost-usd", "3.0"
+  ]
+}

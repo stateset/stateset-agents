@@ -45,6 +45,7 @@ import torch
 logger = logging.getLogger(__name__)
 
 VLLM_EXCEPTIONS = (
+    ImportError,
     RuntimeError,
     ValueError,
     TypeError,
@@ -60,14 +61,15 @@ try:
 
     VLLM_AVAILABLE = True
     logger.info("vLLM is available - high-performance generation enabled")
-except ImportError:
+except VLLM_EXCEPTIONS as exc:
     VLLM_AVAILABLE = False
     LLM = None
     SamplingParams = None
     RequestOutput = None
     logger.info(
-        "vLLM not installed. Install with `pip install vllm` for 5-20x faster generation. "
-        "Falling back to HuggingFace generation."
+        "vLLM is not installed or cannot initialize (%s). Falling back to "
+        "HuggingFace generation.",
+        exc,
     )
 
 

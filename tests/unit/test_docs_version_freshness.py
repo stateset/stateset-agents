@@ -79,6 +79,16 @@ def test_wheel_version_mentions_match_current_version():
     assert not stale, "stale wheel version mentions found:\n" + "\n".join(stale)
 
 
+def test_readme_release_install_surfaces_match_current_version() -> None:
+    """The advertised stable installs must move with every package release."""
+    text = (ROOT / "README.md").read_text(encoding="utf-8")
+    current = stateset_agents.__version__
+
+    assert f"**Current Python release:** `stateset-agents=={current}`" in text
+    assert f'pip install "stateset-agents=={current}" # current stable release' in text
+    assert f"stateset-agents.git@v{current}" in text
+
+
 def test_marker_exempts_the_next_line():
     text = (
         "intro\n"

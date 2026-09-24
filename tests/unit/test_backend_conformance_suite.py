@@ -36,8 +36,9 @@ def _manifest(
     seed: int = 42,
     harness: str = "a" * 40,
     max_cost_usd: float = 1.0,
+    dataset_content_sha256: str | None = "9" * 64,
 ) -> dict[str, Any]:
-    return {
+    value = {
         "schema_version": 3,
         "backend": backend,
         "backend_version": f"{backend}-version",
@@ -59,11 +60,15 @@ def _manifest(
             "model_revision": "b" * 40,
             "dataset_uri": "/workspace/train.jsonl",
             "dataset_sha256": "c" * 64,
+            "dataset_content_sha256": dataset_content_sha256,
             "seed": seed,
             "task": "math-conformance",
             "config": {"max_steps": 1},
         },
     }
+    if dataset_content_sha256 is None:
+        del value["experiment"]["dataset_content_sha256"]
+    return value
 
 
 def _write_evidence(
@@ -74,12 +79,19 @@ def _write_evidence(
     seed: int = 42,
     harness: str = "a" * 40,
     max_cost_usd: float = 1.0,
+    dataset_content_sha256: str | None = "9" * 64,
 ) -> Path:
     directory = root / (label or backend)
     artifact = directory / "run" / "artifact"
     artifact.mkdir(parents=True)
     (artifact / "weights.bin").write_bytes(backend.encode())
-    manifest = _manifest(backend, seed=seed, harness=harness, max_cost_usd=max_cost_usd)
+    manifest = _manifest(
+        backend,
+        seed=seed,
+        harness=harness,
+        max_cost_usd=max_cost_usd,
+        dataset_content_sha256=dataset_content_sha256,
+    )
     evidence = {
         "schema_version": 3,
         "kind": "stateset-external-backend-conformance",
@@ -159,12 +171,31 @@ def test_suite_rejects_missing_duplicate_and_unexpected_backends(
         suite.validate_suite(suite.load_records(paths), ["unknown"])
 
 
+def test_suite_requires_cross_format_canonical_dataset_identity(
+    tmp_path: Path,
+) -> None:
+    paths = [
+        _write_evidence(tmp_path, "nemo-rl"),
+        _write_evidence(tmp_path, "openrlhf"),
+        _write_evidence(tmp_path, "verl", dataset_content_sha256=None),
+    ]
+    with pytest.raises(
+        suite.ConformanceSuiteError, match="requires experiment.dataset_content_sha256"
+    ):
+        suite.validate_suite(suite.load_records(paths))
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [
         ("seed", 7, "experiment.seed"),
         ("harness", "d" * 40, "harness_revision"),
         ("max_cost_usd", 2.0, "execution.max_cost_usd"),
+        (
+            "dataset_content_sha256",
+            "e" * 64,
+            "experiment.dataset_content_sha256",
+        ),
     ],
 )
 def test_suite_rejects_cross_backend_semantic_drift(

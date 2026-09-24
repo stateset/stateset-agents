@@ -94,6 +94,136 @@ def test_rejects_simulated_evidence(tmp_path: Path) -> None:
         framework_comparison.load_evidence([path])
 
 
+def test_schema_v2_rehashes_portable_artifacts(tmp_path: Path) -> None:
+    artifact = tmp_path / "runs" / "stateset" / "artifact"
+    artifact.mkdir(parents=True)
+    payload = artifact / "metrics.json"
+    payload.write_text("{}\n", encoding="utf-8")
+    data = _document(
+        "stateset-agents",
+        42,
+        schema_version=2,
+        artifact_path="runs/stateset/artifact",
+        artifact_sha256=framework_comparison.hash_artifact(artifact),
+        manifest_sha256="e" * 64,
+    )
+    source = tmp_path / "stateset-agents-42.json"
+    source.write_text(json.dumps(data), encoding="utf-8")
+    assert framework_comparison.load_evidence([source])[0].seed == 42
+
+    payload.write_text('{"tampered":true}\n', encoding="utf-8")
+    with pytest.raises(EvidenceError, match="digest does not match"):
+        framework_comparison.load_evidence([source])
+
+
+def test_comparison_rejects_mixed_evidence_schemas(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    changed = dict(runs[-1].data)
+    changed["schema_version"] = 2
+    runs[-1] = framework_comparison.RunEvidence(runs[-1].source, changed)
+    with pytest.raises(EvidenceError, match="schema_version"):
+        framework_comparison.validate_comparison(runs)
+
+
+def test_provider_cost_bundle_is_bound_and_arithmetically_verified(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "runs" / "stateset" / "artifact"
+    artifact.mkdir(parents=True)
+    (artifact / "metrics.json").write_text("{}\n", encoding="utf-8")
+    document = _document(
+        "stateset-agents",
+        42,
+        schema_version=2,
+        manifest_sha256="e" * 64,
+        artifact_path="runs/stateset/artifact",
+        artifact_sha256=framework_comparison.hash_artifact(artifact),
+    )
+    evidence = tmp_path / "stateset-agents-42.json"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    runs = framework_comparison.load_evidence([evidence])
+    provider = {
+        "schema_version": 2,
+        "kind": "stateset-runpod-shootout-provider-record",
+        "provider": "runpod",
+        "cost_source": framework_comparison.PROVIDER_COST_SOURCE,
+        "status": "completed",
+        "shootout_manifest_sha256": "e" * 64,
+        "harness_revision": "a" * 40,
+        "termination_confirmed": True,
+        "pod_id": "pod-1",
+        "authoritative_pod_cost_per_hr_usd": 1.0,
+        "pod_lifetime_seconds": 3600.0,
+        "estimated_cost_usd": 1.0,
+    }
+    path = tmp_path / "runpod-provider.json"
+    path.write_text(json.dumps(provider), encoding="utf-8")
+
+    cost = framework_comparison.load_provider_cost_bundle(tmp_path, runs)
+    assert cost["records"] == 1
+    assert cost["total_cost_usd"] == pytest.approx(1.0)
+    report = tmp_path / "report"
+    framework_comparison.write_report(runs, report, cost)
+    payload = json.loads((report / "comparison.json").read_text(encoding="utf-8"))
+    markdown = (report / "comparison.md").read_text(encoding="utf-8")
+    assert payload["provider_cost"]["total_cost_usd"] == pytest.approx(1.0)
+    assert "Provider cost: $1.0000" in markdown
+    assert framework_comparison.PROVIDER_COST_SOURCE in markdown
+
+    provider["estimated_cost_usd"] = 2.0
+    path.write_text(json.dumps(provider), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="arithmetic"):
+        framework_comparison.load_provider_cost_bundle(tmp_path, runs)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("shootout_manifest_sha256", "f" * 64, "manifest mismatch"),
+        ("harness_revision", "b" * 40, "harness mismatch"),
+        ("termination_confirmed", False, "cleanup is not confirmed"),
+        ("status", "cleanup-pending", "lifecycle status is incomplete"),
+    ],
+)
+def test_provider_cost_bundle_rejects_unbound_or_unclosed_lifecycle(
+    tmp_path: Path, field: str, value: object, message: str
+) -> None:
+    artifact = tmp_path / "artifact"
+    artifact.write_text("measured\n", encoding="utf-8")
+    document = _document(
+        "stateset-agents",
+        42,
+        schema_version=2,
+        manifest_sha256="e" * 64,
+        artifact_path="artifact",
+        artifact_sha256=framework_comparison.hash_artifact(artifact),
+    )
+    evidence = tmp_path / "stateset-agents-42.json"
+    evidence.write_text(json.dumps(document), encoding="utf-8")
+    runs = framework_comparison.load_evidence([evidence])
+    provider = {
+        "schema_version": 2,
+        "kind": "stateset-runpod-shootout-provider-record",
+        "provider": "runpod",
+        "cost_source": framework_comparison.PROVIDER_COST_SOURCE,
+        "status": "completed",
+        "shootout_manifest_sha256": "e" * 64,
+        "harness_revision": "a" * 40,
+        "termination_confirmed": True,
+        "pod_id": "pod-1",
+        "authoritative_pod_cost_per_hr_usd": 1.0,
+        "pod_lifetime_seconds": 1800.0,
+        "estimated_cost_usd": 0.5,
+    }
+    provider[field] = value
+    (tmp_path / "runpod-provider.json").write_text(
+        json.dumps(provider), encoding="utf-8"
+    )
+
+    with pytest.raises(EvidenceError, match=message):
+        framework_comparison.load_provider_cost_bundle(tmp_path, runs)
+
+
 def test_rejects_non_finite_metrics(tmp_path: Path) -> None:
     data = _document("stateset-agents", 42)
     data["metrics"]["samples_per_second"] = float("nan")
@@ -118,6 +248,24 @@ def test_rejects_mismatched_hardware(tmp_path: Path) -> None:
 
     with pytest.raises(EvidenceError, match="hardware.gpu"):
         framework_comparison.validate_comparison(runs)
+
+
+def test_rejects_mismatched_harness_commit(tmp_path: Path) -> None:
+    runs = _runs(tmp_path)
+    mismatched = dict(runs[-1].data)
+    mismatched["harness_commit"] = "d" * 40
+    runs[-1] = framework_comparison.RunEvidence(runs[-1].source, mismatched)
+
+    with pytest.raises(EvidenceError, match="harness_commit"):
+        framework_comparison.validate_comparison(runs)
+
+
+def test_rejects_non_hex_immutable_revision(tmp_path: Path) -> None:
+    data = _document("stateset-agents", 42)
+    data["model_revision"] = "z" * 40
+
+    with pytest.raises(EvidenceError, match="lowercase hex commit"):
+        framework_comparison.validate_document(data, tmp_path / "run.json")
 
 
 def test_rejects_mismatched_cuda(tmp_path: Path) -> None:
@@ -201,7 +349,9 @@ def test_report_contains_digest_and_no_subjective_winner(tmp_path: Path) -> None
     payload = json.loads((output / "comparison.json").read_text())
     markdown = (output / "comparison.md").read_text()
     assert len(payload["evidence_sha256"]) == 64
+    assert payload["comparison"]["harness_commit"] == "a" * 40
     assert "Descriptive results only" in markdown
+    assert "Harness commit" in markdown
     assert "Winner" not in markdown
 
 
@@ -209,6 +359,20 @@ def test_cli_fails_closed_on_bad_input(tmp_path: Path) -> None:
     path = tmp_path / "bad.json"
     path.write_text("{}", encoding="utf-8")
     assert framework_comparison.main([str(path), "--validate-only"]) == 2
+
+
+def test_cli_requires_verifiable_schema_by_default(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    _runs(tmp_path)
+    assert framework_comparison.main([str(tmp_path), "--validate-only"]) == 2
+    assert "schema_version>=2" in capsys.readouterr().err
+    assert (
+        framework_comparison.main(
+            [str(tmp_path), "--validate-only", "--allow-legacy-schema-v1"]
+        )
+        == 0
+    )
 
 
 def test_directory_discovery_skips_launcher_records(tmp_path):

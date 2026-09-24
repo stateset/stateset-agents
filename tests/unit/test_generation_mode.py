@@ -8,6 +8,7 @@ from types import SimpleNamespace
 import pytest
 
 from stateset_agents.core.generation_mode import inference_mode
+from tests._tiny_tokenizer import tiny_tokenizer
 
 
 class _Model:
@@ -60,16 +61,15 @@ pytest.importorskip("transformers")
 
 
 def _tiny_hf_agent():
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+    from transformers import GPT2Config, GPT2LMHeadModel
 
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
     torch.manual_seed(0)
     model = GPT2LMHeadModel(
-        GPT2Config(n_embd=32, n_layer=2, n_head=2, vocab_size=50257, n_positions=128)
+        GPT2Config(n_embd=32, n_layer=2, n_head=2, vocab_size=256, n_positions=128)
     )
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
     agent = MultiTurnAgent(
         AgentConfig(
             model_name="gpt2",

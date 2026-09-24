@@ -1,5 +1,10 @@
 {
   "gpu": "NVIDIA GeForce RTX 5080",
+  "publication_gate": {
+    "enforced": true,
+    "min_efficiency": 0.7,
+    "require_monotonic": true
+  },
   "report_kind": "measured-scaling-comparison",
   "scaling_mode": "weak",
   "schema_version": 1,

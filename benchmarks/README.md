@@ -122,6 +122,29 @@ python benchmarks/algorithm_comparison.py EVIDENCE --output-dir REPORT
 python benchmarks/scaling_comparison.py EVIDENCE \
   --gpu-counts 1 2 4 8 --output-dir REPORT
 
+# Validate, then run the provider-specific physical multi-node launcher
+make benchmark-scaling-multi-node-contract
+make benchmark-scaling-multi-node-run \
+  MANIFEST=benchmarks/scaling_launcher_manifest.json OUTPUT_DIR=RESULTS
+
+# Plan an immutable CUDA/PyTorch scaling image without building or pushing it
+make benchmark-scaling-image-plan \
+  BASE_IMAGE=registry/pytorch@sha256:<digest> \
+  IMAGE=registry/stateset-scaling:0.54.0
+
+# After review, build/push with maximal provenance + SBOM and retain the result
+make benchmark-scaling-image-push \
+  BASE_IMAGE=registry/pytorch@sha256:<digest> \
+  IMAGE=registry/stateset-scaling:0.54.0 \
+  CONFIRM_PUSH=registry/stateset-scaling:0.54.0 \
+  OUTPUT=benchmark_results/scaling/image-attestation.json
+
+# Concrete RunPod Pods adapter (copy, pin, and approve its explicit ceiling)
+cp benchmarks/scaling_launcher_runpod.example.json runpod-scaling.json
+
+# High-bandwidth CoreWeave/Nebius Kubernetes template
+cp benchmarks/scaling_launcher_kubernetes.example.json kubernetes-scaling.json
+
 # Worker, controller, and network recovery evidence
 python benchmarks/reliability_evidence.py EVIDENCE --output REPORT.json
 
@@ -147,6 +170,42 @@ make benchmark-agent-quality-gate \
   INPUTS=benchmark_results/agent_quality/evidence \
   OUTPUT=benchmark_results/agent_quality/report.json
 ```
+
+Standard RunPod Pod global networking is documented at 100 Mbps. Its adapter
+is suitable for validating orchestration and failure behavior, but is not
+presented as a likely path to the A+ efficiency threshold; use high-bandwidth
+cluster nodes for publication.
+
+Once every measured bundle exists for one immutable release commit, run the
+single leadership decision gate:
+
+```bash
+make benchmark-a-plus-gate \
+  FRAMEWORK_EVIDENCE=benchmark_results/framework_comparison/evidence \
+  SCALING_EVIDENCE=benchmark_results/scaling/multi_node/evidence \
+  SCALING_PROVIDER_EVIDENCE=benchmark_results/scaling/multi_node/kubernetes-provider \
+  SCALING_IMAGE_ATTESTATION=benchmark_results/scaling/image-attestation.json \
+  SCALING_BILLING_EVIDENCE=benchmark_results/scaling/multi_node/billing \
+  RELIABILITY_EVIDENCE=benchmark_results/reliability/evidence \
+  DISTRIBUTED_ASYNC_EVIDENCE=benchmark_results/distributed_async/evidence \
+  PROVIDER_EVIDENCE=benchmark_results/provider_canaries/current \
+  AGENT_QUALITY_EVIDENCE=benchmark_results/agent_quality/evidence \
+  FLAGSHIP_MANIFEST=benchmarks/flagship_manifest.json \
+  FLAGSHIP_EVIDENCE=benchmark_results/flagship_v1/evidence \
+  RELEASE_READINESS=publish-readiness-summary.json \
+  OUTPUT=benchmark_results/a_plus/report.json
+```
+
+The command cannot pass on the existing partial evidence. It requires five
+matched framework implementations including native StateSet GSPO, complete
+provider-derived cost, a lifecycle record for every scaling row, one
+commit/version-bound digest-pinned scaling image built with maximal provenance
+and an SBOM request, raw provider billing bound to every Kubernetes Job with
+matrix-level cost per optimizer step, 70%
+strong-scaling efficiency across at least two
+physical nodes, zero-loss recovery, a 12-hour multi-node soak, fresh passing
+River/RunPod/Fireworks/CoreWeave/Nebius canaries, all three standard agent
+suites, the 7–9B flagship, and publish readiness for the same commit.
 
 Start from `agent_quality_manifest.example.json` and
 `agent_quality_harnesses.example.json`. The included

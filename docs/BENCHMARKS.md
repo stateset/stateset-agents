@@ -22,8 +22,10 @@ throughput, framework superiority, GPU scaling, or production capacity.
 External-backend conformance is a live proof rather than a measured comparison.
 Each engine-specific output directory contains portable evidence plus its
 checkpoint bytes. `benchmarks/backend_conformance_suite.py` revalidates the
-complete NeMo RL/OpenRLHF/verl roster and rejects semantic drift, but the gate
-does not support quality or throughput claims.
+complete NeMo RL/OpenRLHF/verl roster and rejects semantic drift. Cross-format
+datasets must share `dataset_content_sha256`, while each JSONL or Parquet input
+retains its own transport-byte `dataset_sha256`; the gate does not support
+quality or throughput claims.
 
 The v3 conformance manifest also fixes the provider tier, immutable image
 digest, GPU name/count, container disk, workload timeout, total billable
@@ -97,8 +99,17 @@ rejected from a dirty harness worktree.
 The official-suite pipeline receives the model, model revision, seed, suite
 revision, split, canonical evaluation config, output path, artifact directory,
 and verified upstream checkout as separate argv values. Each configured stage
-uses whole-argument placeholders only. After official evaluation, the pipeline
-writes one JSON object per line to `{output}`:
+uses whole-argument placeholders only. Every suite declares one model-revision
+binding: `command-argument` requires `{model_revision}` in an evaluator argv;
+`local-marker` requires the model to be a local directory whose
+`.stateset-model-revision` file exactly matches the manifest revision. The
+chosen binding and fully expanded argv are retained in the execution manifest.
+Every command that consumes `{model}` must carry `{model_revision}` under the
+command-argument binding; placing the revision only on an unrelated stage is
+rejected. Standalone execution also verifies that the clean upstream checkout's
+HEAD exactly equals `{suite_revision}`.
+After official evaluation, the pipeline writes one JSON object per line to
+`{output}`:
 
 ```json
 {"task_id": "stable-upstream-id", "success": true, "cost_usd": 0.0123}
@@ -108,6 +119,11 @@ The paired adapter requires unique, identical, ordered task IDs for baseline
 and trained policies. It calculates the task digest, scores, success counts, and
 combined measured cost; writes the neutral `{adapter_output}`; and retains a
 paired summary plus both policies' records and logs beneath `{artifact_dir}`.
+Each evidence row stores a portable relative artifact path and tree digest; the
+publication gate resolves the path inside its evidence bundle, rejects symlinks
+or escapes, and re-hashes the retained bytes before accepting the row.
+This retained-artifact requirement is agent-quality evidence schema v3; v2
+rows fail closed and must be recollected rather than upgraded by hand.
 The outer runner rehashes that artifact itself. Evidence schema v2 also binds
 the trained-policy artifact digest, preventing a model name from standing in
 for checkpoint identity.
@@ -180,6 +196,7 @@ RUNPOD_API_KEY=... python benchmarks/runpod_shootout.py \
 # validate and report
 python benchmarks/framework_comparison.py \
   benchmark_results/framework_comparison_v2/raw/evidence \
+  --allow-legacy-schema-v1 \
   --output-dir benchmark_results/framework_comparison_v2/report
 ```
 
@@ -230,7 +247,25 @@ that reward function, though the adapter at that revision did not retain
 TRL's log history. The fix (task prompts with full scenario
 context, rotating through every prompt, a fail-closed check that rejects any
 run whose training reward was identically zero) is in `0.53.0`; the native
-GSPO rows are re-measured under the v3 protocol.
+GSPO rows require remeasurement. New shootout evidence is bound to its exact
+manifest digest and harness commit, so the corrected matrix will use a fresh
+protocol and rerun every framework/seed pair instead of combining new results
+with the partial legacy v3 run.
+
+Corrected runs emit framework-comparison evidence schema v2. Each row carries
+a bundle-relative raw-artifact path, and validation re-hashes the retained tree
+while rejecting missing files, traversal, and symlinks. Historical schema-v1
+rows remain readable as legacy results, but cannot be mixed with v2 evidence or
+resumed into a corrected local or RunPod run. RunPod resume restores the full
+verified raw run directory before uploading its evidence row.
+The comparison CLI requires schema v2 by default. Its
+`--allow-legacy-schema-v1` switch exists only to reproduce historical reports,
+not for corrected or leadership evidence.
+
+The v4 direct-TRL leg pins TRL 1.12.0 and fails before model loading if the
+installed version differs. Its adapter also verifies that `GRPOConfig` exposes
+the sequence importance-level and asymmetric clipping fields; unsupported
+versions cannot silently fall back to token-level GRPO.
 
 What the remaining rows establish: throughput parity within the
 run-to-run band (StateSet's TRL-backed path is 7% slower than direct TRL),
@@ -252,7 +287,8 @@ evidence streamed incrementally.
 ### Single-node DDP weak and strong scaling
 
 Three matched seeds on one RunPod host with eight identical NVIDIA RTX 5080
-GPUs passed the predeclared monotonic-throughput and 50%-efficiency gate:
+GPUs passed the monotonic-throughput results now evaluated against the 70%
+publication gate:
 
 | GPUs | Samples/s | Speedup | Weak-scaling efficiency | Peak VRAM/GPU |
 |---:|---:|---:|---:|---:|
@@ -275,7 +311,7 @@ diagnostic.
 The corrected fixed-work strong-scaling protocol holds the effective global
 batch at `196,608` samples and divides the 96 one-GPU microbatches exactly
 across ranks. The same host and GPU class passed the same three-seed,
-monotonic-throughput, 50%-efficiency gate:
+monotonic-throughput, 70%-efficiency gate:
 
 | GPUs | Samples/s | Speedup | Strong-scaling efficiency | Peak VRAM/GPU |
 |---:|---:|---:|---:|---:|
@@ -365,12 +401,18 @@ make benchmark-flagship-contract
 make benchmark-flagship-run \
   MANIFEST=benchmarks/flagship_manifest.json \
   OUTPUT_DIR=benchmark_results/flagship_v1
+
+python benchmarks/run_flagship_matrix.py benchmarks/flagship_manifest.json \
+  --validate-existing benchmark_results/flagship_v1/evidence \
+  --output-dir benchmark_results/flagship_v1/validated
 ```
 
 Add `EXTRA_ARGS=--preflight` and use a separate preflight output directory for
 one bounded diagnostic seed. Preflight is retained but can never pass the
 publication gate. The measured command rejects a dirty harness tree and does
-not select successful seeds after execution.
+not select successful seeds after execution. The independent validation command
+re-hashes every schema-v2 policy artifact from its portable bundle-relative
+path and rejects tampering, symlinks, path escapes, or mixed harnesses.
 
 ### Measured algorithm comparison
 
@@ -428,14 +470,22 @@ python benchmarks/framework_comparison.py \
   --required-framework verl \
   --required-framework nemo-rl \
   --required-framework openrlhf \
+  --require-provider-cost \
   --output-dir benchmark_results/framework_comparison/report
 ```
 
 The validator rejects simulated or estimated evidence, mismatched algorithm,
 model, dataset, canonical config, GPU/CUDA environment, non-identical seed sets,
 mixed framework versions, missing artifact digests, and fewer than three seeds
-per framework. Required-roster flags prevent a partial comparison from passing
-the full competitive gate.
+per framework. It also binds schema-v2 rows to one exact shootout-manifest
+digest and requires one exact harness commit across all rows. Required-roster
+flags prevent a partial comparison from passing the
+full competitive gate. `--require-provider-cost` additionally requires one
+evidence directory containing every schema-v2 RunPod lifecycle record, verifies
+its manifest/harness binding, post-allocation rate arithmetic, unique pod ID,
+and confirmed termination, then includes total provider-derived cost in both
+reports. This is an estimate from authoritative rate times observed lifetime,
+not a settled invoice.
 See the [`framework comparison schema`](../benchmark_results/framework_comparison/SCHEMA.md).
 
 To collect a shootout on rented hardware with the same fail-closed guarantees
@@ -456,6 +506,38 @@ The remote shootout runs detached on the pod and the launcher downloads every
 finished seed-and-framework evidence file as it lands, so a dropped session
 cannot lose completed runs. Start the launcher itself detached from your shell
 (`setsid nohup ... &`) for multi-hour runs.
+
+### Reproducible scaling image
+
+Multi-node publication uses `deployment/docker/Dockerfile.scaling`, not the
+general trainer image. Plan a build with an immutable CUDA/PyTorch base first:
+
+```bash
+make benchmark-scaling-image-plan \
+  BASE_IMAGE=registry/pytorch@sha256:<digest> \
+  IMAGE=registry/stateset-scaling:0.54.0
+```
+
+The push target requires the same destination as an explicit confirmation. It
+uses BuildKit with maximal provenance and an SBOM request, then records the
+returned registry digest, exact source commit, package version, Dockerfile,
+base image, and Buildx metadata in
+`benchmark_results/scaling/image-attestation.json`. The A+ gate re-hashes that
+metadata and Dockerfile; it also validates registry-read SLSA provenance, SPDX
+SBOM, source/version OCI labels, and the manifest digest before requiring every
+scaling provider record to name the resolved `repository@sha256:...` image.
+Planning is read-only; pushing is an explicit external action.
+This follows Docker's registry-backed
+[build-attestation model](https://docs.docker.com/build/metadata/attestations/)
+and uses the documented `imagetools inspect` provenance and SBOM views.
+
+Kubernetes capacity must additionally retain provider billing evidence using
+the [`Kubernetes billing contract`](../benchmarks/KUBERNETES_BILLING.md).
+Resource-request summaries and pricing-page estimates are diagnostic only. The
+gate requires one uniquely attributed provider-exported allocation per Job,
+re-hashes the raw exports, verifies that their windows cover the measured Job
+lifecycles, rejects reused line items, and emits total scaling cost and cost per
+measured optimizer step.
 
 Use [`benchmarks/shootout.py`](../benchmarks/shootout.py) and the ready-to-fill
 [`shootout manifest`](../benchmarks/shootout_manifest.example.json) to execute every
@@ -505,11 +587,12 @@ python benchmarks/run_scaling_matrix.py \
 python benchmarks/scaling_comparison.py \
   benchmark_results/scaling/evidence \
   --gpu-counts 1 2 4 8 \
+  --min-efficiency 0.70 \
   --output-dir benchmark_results/scaling/report
 ```
 
 The default gate requires the same three seeds and workload digest at every
-topology, monotonic mean throughput, and at least 50% scaling efficiency. The
+topology, monotonic mean throughput, and at least 70% scaling efficiency. The
 generated policy workload executes real BF16 optimization and DDP gradient
 synchronization as a weak-scaling test with a fixed per-device batch. It
 measures the single-node training path, not strong scaling, LLM quality, or
@@ -519,6 +602,45 @@ Set `--config-json '{"scaling_mode":"strong"}'` and use a separate output
 directory to hold total effective work fixed. V3 evidence is rejected unless
 its execution shape and `samples/s × wall time` reproduce the declared sample
 count exactly.
+
+For A+ evidence, use protocol v4 and the physical multi-node launcher:
+
+```bash
+make benchmark-scaling-multi-node-contract
+make benchmark-scaling-multi-node-run \
+  MANIFEST=benchmarks/scaling_launcher_manifest.json \
+  OUTPUT_DIR=benchmark_results/scaling/multi_node
+```
+
+The argv-only provider driver must launch the supplied workload on the exact
+declared nodes and retrieve its output. DMI product UUIDs are hashed and gathered from
+the distributed ranks themselves; ranks-per-node and retained policy bytes
+are independently validated. The A+ gate rejects v3 and single-node evidence.
+`scaling_launcher_runpod.example.json` is executable after the operator pins
+its datacenter, GPU, price ceiling, and explicit confirmation. It provisions
+ordinary Secure Cloud Pods with private global networking and retains a
+per-pod cleanup/cost record. Because that network is documented at 100 Mbps,
+the RunPod Pod adapter is a functional/negative-evidence path; high-speed
+Instant Clusters or an equivalent provider fabric are the appropriate
+environment for the 70% publication threshold.
+
+CoreWeave and Nebius Kubernetes users should copy
+`scaling_launcher_kubernetes.example.json`, replace its intentionally invalid
+context, digest, selector, and fabric values, then validate and run it:
+
+```bash
+make benchmark-scaling-multi-node-contract MANIFEST=kubernetes-scaling.json
+make benchmark-scaling-multi-node-run \
+  MANIFEST=kubernetes-scaling.json \
+  OUTPUT_DIR=benchmark_results/scaling/multi_node
+```
+
+The Kubernetes adapter uses a stable Indexed Job plus headless Service,
+requires an extended fabric resource, enforces hard cross-node anti-affinity,
+and records hashed scheduled-node and Pod identities before unconditional
+resource deletion. The image must be digest-pinned. Provider billing exports
+remain necessary because these clusters are billed as capacity, not isolated
+Jobs.
 
 ### Measured fault recovery
 

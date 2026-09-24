@@ -299,8 +299,23 @@ LABEL org.opencontainers.image.licenses="Business Source License 1.1"
 make publish-readiness
 ```
 
-The run emits `publish-readiness-summary.json` with a compact machine-readable result:
-`status`, `failed_step`, optional `failure_detail`, `duration_seconds`, and git metadata.
+The run emits `publish-readiness-summary.json`. Successful schema-v2 summaries
+record the exact commit/version and complete check roster, plus relative path,
+size, and SHA-256 identities for `dist/` wheel/source artifacts, `coverage.xml`,
+`bandit-report.json`, and `safety-report.json`. The wheel smoke uses a fresh
+virtual environment outside the checkout, inherits the already validated
+runtime dependency paths, installs StateSet itself offline and `--no-deps`
+from the built wheel, and asserts the import resolves inside that environment.
+Keep those files together: downstream A+ validation rejects missing, escaping,
+symlinked, malformed, or modified evidence. It also opens both archives without
+extracting them, rejects unsafe or duplicate members, and checks package name,
+version, module, wheel `WHEEL`/`RECORD`, source `pyproject.toml`, and metadata
+identities. Failed summaries retain `failed_step`, optional
+`failure_detail`, duration, and Git metadata.
+
+The A+ decision also re-evaluates the retained scan contents: Bandit must have
+no execution errors or medium-and-higher findings, and Safety must report zero
+known vulnerabilities. A parseable or hash-matching report alone is not enough.
 
 ```bash
 # Example summary keys (for CI/automation)

@@ -108,6 +108,7 @@ jobs:
         import json
         import sys
         from pathlib import Path
+        from scripts.security_exceptions import is_approved_safety_exception
 
         parse_errors = []
 
@@ -165,6 +166,19 @@ jobs:
                 safety_issues = []
 
         semgrep_issues = []
+        approved_safety_issues = [
+            item for item in safety_issues if is_approved_safety_exception(item)
+        ]
+        safety_issues = [
+            item for item in safety_issues if not is_approved_safety_exception(item)
+        ]
+        for item in approved_safety_issues:
+            print(
+                "⚠️ Approved, time-limited Safety exception: "
+                f"{item['package_name']} {item['analyzed_version']} "
+                f"{item['vulnerability_id']} ({item['CVE']})"
+            )
+
         semgrep_path = Path("semgrep-report.json")
         if semgrep_path.exists():
             try:
@@ -230,7 +244,7 @@ jobs:
                 print(f"  - Trivy findings: {len(trivy_issues)}")
             sys.exit(1)
 
-        print("✅ No critical security findings detected")
+        print("✅ No unapproved critical security findings detected")
         PY
 
   dependency-review:

@@ -108,6 +108,12 @@ def test_manifest_rejects_unknown_and_missing_experiment_fields(tmp_path: Path) 
     with pytest.raises(ConformanceError, match="missing experiment fields"):
         backend_conformance.load_manifest(path)
 
+    invalid_content = _manifest()
+    invalid_content["experiment"]["dataset_content_sha256"] = "not-a-digest"
+    path.write_text(json.dumps(invalid_content), encoding="utf-8")
+    with pytest.raises(ConformanceError, match="dataset_content_sha256"):
+        backend_conformance.load_manifest(path)
+
 
 @pytest.mark.parametrize(
     ("field", "value", "message"),
@@ -443,6 +449,26 @@ def test_run_conformance_rejects_timeout_and_hardware_contract_drift(
         },
     )
     with pytest.raises(ConformanceError, match="GPU name"):
+        backend_conformance.run_conformance(manifest, tmp_path, 60, tmp_path)
+
+
+def test_run_conformance_verifies_canonical_dataset_content_before_gpu(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest = _manifest()
+    manifest["experiment"]["dataset_content_sha256"] = "a" * 64
+    monkeypatch.setattr(backend_conformance, "verify_harness_revision", lambda *_: None)
+    monkeypatch.setattr(
+        backend_conformance,
+        "canonical_dataset_content_sha256",
+        lambda _path: "b" * 64,
+    )
+    monkeypatch.setattr(
+        backend_conformance,
+        "collect_nvidia_hardware",
+        lambda: pytest.fail("GPU inspection must follow content verification"),
+    )
+    with pytest.raises(ConformanceError, match="canonical dataset content"):
         backend_conformance.run_conformance(manifest, tmp_path, 60, tmp_path)
 
 

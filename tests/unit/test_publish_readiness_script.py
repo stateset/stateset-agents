@@ -56,3 +56,39 @@ def test_publish_readiness_normalizes_safety_input() -> None:
     assert "grep -v '^cuda-toolkit\\[' requirements-dev-lock.txt" in contents
     assert 'safety check -r "$SAFETY_INPUT_PATH"' in contents
     assert 'rm -f "$SAFETY_INPUT_PATH"' in contents
+
+
+def test_publish_readiness_imports_only_the_built_wheel() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
+    )
+    contents = script_path.read_text(encoding="utf-8")
+
+    assert "mktemp -d /tmp/stateset-wheel-smoke.XXXXXX" in contents
+    assert 'venv --system-site-packages "$SMOKE_VENV"' in contents
+    assert "--no-index --no-deps dist/*.whl" in contents
+    assert "stateset-readiness-dependencies.pth" in contents
+    assert "cd /tmp" in contents
+    assert "import stateset_agents, stateset_agents.api" in contents
+    assert "assert stateset_agents.__version__" in contents
+    assert "is_relative_to(Path(sys.prefix).resolve())" in contents
+
+
+def test_publish_readiness_emits_portable_schema_v2_evidence() -> None:
+    script_path = (
+        Path(__file__).resolve().parents[2] / "scripts" / "publish_readiness.sh"
+    )
+    contents = script_path.read_text(encoding="utf-8")
+
+    assert '"schema_version": 2' in contents
+    assert '"kind": "stateset-publish-readiness-summary"' in contents
+    for field in (
+        '"framework_version"',
+        '"checks"',
+        '"working_tree_clean"',
+        '"distributions"',
+        '"security_reports"',
+        '"coverage_reports"',
+        '"coverage_percent"',
+    ):
+        assert field in contents

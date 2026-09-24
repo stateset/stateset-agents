@@ -208,6 +208,15 @@ class AsyncRolloutRuntime:
         if not task.cancelled():
             task.exception()
 
+    @staticmethod
+    def _raise_worker_failure(
+        failures: asyncio.Queue[tuple[int, Exception]],
+    ) -> None:
+        """Propagate a worker fault at each learner commit boundary."""
+        if not failures.empty():
+            worker_id, cause = failures.get_nowait()
+            raise AsyncRolloutWorkerError(worker_id, cause) from cause
+
     async def _stop_producers(
         self, tasks: list[asyncio.Task[None]], stop: asyncio.Event
     ) -> None:
@@ -258,19 +267,22 @@ class AsyncRolloutRuntime:
         try:
             for _ in range(self.config.max_updates):
                 batch = await self._next_batch_or_failure(failures)
-                if not failures.empty():
-                    worker_id, cause = failures.get_nowait()
-                    raise AsyncRolloutWorkerError(worker_id, cause) from cause
+                self._raise_worker_failure(failures)
                 step_metrics = _validate_metrics(await self.learner_step(batch))
+                self._raise_worker_failure(failures)
 
                 # The learner has updated its weights, but producers must not
                 # observe the new version until publication completes.
                 target_version = self.coordinator.current_policy_version + 1
                 await self.publish_policy(target_version)
+                self._raise_worker_failure(failures)
                 await self.coordinator.advance_policy(target_version)
+                self._raise_worker_failure(failures)
                 metrics.append(step_metrics)
         finally:
             await self._stop_producers(tasks, stop)
+
+        self._raise_worker_failure(failures)
 
         return AsyncRolloutRunResult(
             initial_policy_version=initial_version,

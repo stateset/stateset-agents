@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import torch
+from benchmark_provenance import resolve_harness_commit
 from recovery_worker import NETWORK_EXIT_CODE, WORKER_EXIT_CODE
 from reliability_evidence import load_runs, summarize, validate_matrix
 
@@ -131,15 +132,6 @@ def _worker_command(
         "--heartbeat-port",
         str(heartbeat_port),
     ]
-
-
-def _commit() -> str:
-    return subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        check=True,
-        capture_output=True,
-        text=True,
-    ).stdout.strip()
 
 
 def run_fault(
@@ -278,10 +270,12 @@ def run_fault(
 def run_matrix(args: argparse.Namespace) -> None:
     if args.device == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA reliability matrix requested without CUDA")
+    harness_commit = resolve_harness_commit(
+        REPOSITORY_ROOT, claimed=args.harness_commit
+    )
     args.output_dir.mkdir(parents=True, exist_ok=True)
     evidence_dir = args.output_dir / "evidence"
     evidence_dir.mkdir()
-    harness_commit = args.harness_commit or _commit()
     for fault in FAULTS:
         for seed in args.seeds:
             evidence = run_fault(args, fault, seed, harness_commit)

@@ -26,6 +26,49 @@ class EvidenceError(ValueError):
     """Raised when benchmark evidence is incomplete or incomparable."""
 
 
+def hash_artifact(path: Path) -> str:
+    """Hash a retained result file or directory tree without following links."""
+    if not path.exists() or path.is_symlink():
+        raise EvidenceError(f"artifact is missing or unsafe: {path}")
+    digest = hashlib.sha256()
+    if path.is_file():
+        digest.update(path.read_bytes())
+        return digest.hexdigest()
+    entries = sorted(path.rglob("*"))
+    if any(item.is_symlink() for item in entries):
+        raise EvidenceError(f"artifact tree contains a symlink: {path}")
+    files = [item for item in entries if item.is_file()]
+    if not files:
+        raise EvidenceError(f"artifact directory is empty: {path}")
+    for item in files:
+        relative = item.relative_to(path).as_posix().encode()
+        digest.update(len(relative).to_bytes(8, "big"))
+        digest.update(relative)
+        with item.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def verify_retained_artifact(data: Mapping[str, Any], source: Path) -> Path:
+    """Verify a schema-v2 artifact path and digest within its evidence bundle."""
+    raw_path = data.get("artifact_path")
+    if not isinstance(raw_path, str) or not raw_path.strip():
+        raise EvidenceError(f"{source}: artifact_path must be non-empty")
+    candidate = Path(raw_path)
+    if candidate.is_absolute():
+        raise EvidenceError(f"{source}: artifact_path must be relative")
+    bundle_root = source.resolve().parent
+    artifact = (bundle_root / candidate).resolve()
+    if not artifact.is_relative_to(bundle_root):
+        raise EvidenceError(f"{source}: artifact_path escapes the evidence bundle")
+    if hash_artifact(artifact) != data.get("artifact_sha256"):
+        raise EvidenceError(
+            f"{source}: retained artifact digest does not match artifact_sha256"
+        )
+    return artifact
+
+
 REQUIRED_STRINGS = (
     "framework",
     "framework_version",
@@ -50,6 +93,7 @@ REQUIRED_METRICS = (
 )
 REQUIRED_HARDWARE = ("gpu", "gpu_count", "cuda")
 MATCH_FIELDS = (
+    "harness_commit",
     "protocol",
     "cache_policy",
     "algorithm",
@@ -59,6 +103,7 @@ MATCH_FIELDS = (
     "task",
     "dataset_revision",
 )
+PROVIDER_COST_SOURCE = "authoritative-provider-rate-x-observed-lifetime"
 
 
 @dataclass(frozen=True)
@@ -83,11 +128,15 @@ class RunEvidence:
     @property
     def comparison_key(self) -> tuple[Any, ...]:
         hardware = self.data["hardware"]
-        return tuple(self.data[field] for field in MATCH_FIELDS) + (
-            json.dumps(self.data["config"], sort_keys=True, separators=(",", ":")),
-            hardware["gpu"],
-            hardware["gpu_count"],
-            hardware["cuda"],
+        return (
+            (self.data["schema_version"], self.data.get("manifest_sha256"))
+            + tuple(self.data[field] for field in MATCH_FIELDS)
+            + (
+                json.dumps(self.data["config"], sort_keys=True, separators=(",", ":")),
+                hardware["gpu"],
+                hardware["gpu_count"],
+                hardware["cuda"],
+            )
         )
 
 
@@ -112,8 +161,9 @@ def _require_finite_number(
 
 def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
     """Validate one evidence document and return its typed representation."""
-    if data.get("schema_version") != 1:
-        raise EvidenceError(f"{source}: schema_version must be 1")
+    schema_version = data.get("schema_version")
+    if schema_version not in {1, 2}:
+        raise EvidenceError(f"{source}: schema_version must be 1 or 2")
     if data.get("measured") is not True:
         raise EvidenceError(
             f"{source}: measured must be true; simulated or estimated runs are forbidden"
@@ -123,8 +173,10 @@ def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
         _require_nonempty_string(data, field, source)
     for field in ("harness_commit", "model_revision", "dataset_revision"):
         value = str(data[field])
-        if len(value) != 40:
-            raise EvidenceError(f"{source}: {field} must be a full 40-character commit")
+        if len(value) != 40 or any(char not in "0123456789abcdef" for char in value):
+            raise EvidenceError(
+                f"{source}: {field} must be a full 40-character lowercase hex commit"
+            )
 
     try:
         parsed_timestamp = datetime.fromisoformat(
@@ -177,6 +229,18 @@ def validate_document(data: Mapping[str, Any], source: Path) -> RunEvidence:
         bytes.fromhex(artifact_sha256)
     except ValueError as exc:
         raise EvidenceError(f"{source}: artifact_sha256 is not hexadecimal") from exc
+
+    if schema_version == 2:
+        manifest_sha256 = data.get("manifest_sha256")
+        if (
+            not isinstance(manifest_sha256, str)
+            or len(manifest_sha256) != 64
+            or any(char not in "0123456789abcdef" for char in manifest_sha256)
+        ):
+            raise EvidenceError(
+                f"{source}: manifest_sha256 must be 64 lowercase hex characters"
+            )
+        verify_retained_artifact(data, source)
 
     return RunEvidence(source=source, data=data)
 
@@ -237,18 +301,101 @@ def load_evidence(inputs: Sequence[Path]) -> list[RunEvidence]:
     return runs
 
 
+def load_provider_cost_bundle(
+    bundle: Path, runs: Sequence[RunEvidence]
+) -> dict[str, Any]:
+    """Validate every RunPod lifecycle record and return complete matrix cost."""
+    if not bundle.is_dir():
+        raise EvidenceError("provider cost accounting requires one evidence directory")
+    paths = sorted(bundle.glob("runpod-provider*.json"))
+    if not paths:
+        raise EvidenceError(f"{bundle}: no RunPod provider cost records found")
+    expected_manifests = {str(run.data.get("manifest_sha256")) for run in runs}
+    expected_harnesses = {str(run.data["harness_commit"]) for run in runs}
+    if len(expected_manifests) != 1 or "None" in expected_manifests:
+        raise EvidenceError("evidence does not share one shootout manifest digest")
+    if len(expected_harnesses) != 1:
+        raise EvidenceError("evidence does not share one harness revision")
+    total_cost = 0.0
+    total_lifetime = 0.0
+    pod_ids: set[str] = set()
+    for path in paths:
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            raise EvidenceError(f"{path}: invalid provider record") from exc
+        if (
+            not isinstance(record, Mapping)
+            or record.get("schema_version") != 2
+            or record.get("kind") != "stateset-runpod-shootout-provider-record"
+            or record.get("provider") != "runpod"
+            or record.get("cost_source") != PROVIDER_COST_SOURCE
+        ):
+            raise EvidenceError(f"{path}: invalid provider cost schema")
+        if record.get("status") not in {"completed", "failed"}:
+            raise EvidenceError(f"{path}: provider lifecycle status is incomplete")
+        if record.get("shootout_manifest_sha256") not in expected_manifests:
+            raise EvidenceError(f"{path}: provider record manifest mismatch")
+        if record.get("harness_revision") not in expected_harnesses:
+            raise EvidenceError(f"{path}: provider record harness mismatch")
+        if record.get("termination_confirmed") is not True:
+            raise EvidenceError(f"{path}: provider cleanup is not confirmed")
+        pod_id = record.get("pod_id")
+        if not isinstance(pod_id, str) or not pod_id or pod_id in pod_ids:
+            raise EvidenceError(f"{path}: provider pod_id must be unique")
+        pod_ids.add(pod_id)
+        rate = _require_finite_number(
+            record, "authoritative_pod_cost_per_hr_usd", path, minimum=0.0
+        )
+        lifetime = _require_finite_number(
+            record, "pod_lifetime_seconds", path, minimum=0.0
+        )
+        cost = _require_finite_number(record, "estimated_cost_usd", path, minimum=0.0)
+        if rate <= 0 or lifetime <= 0 or cost <= 0:
+            raise EvidenceError(
+                f"{path}: provider rate, lifetime, and cost must be > 0"
+            )
+        if not math.isclose(cost, rate * lifetime / 3600.0, rel_tol=0.0, abs_tol=1e-4):
+            raise EvidenceError(f"{path}: provider cost arithmetic is inconsistent")
+        total_cost += cost
+        total_lifetime += lifetime
+    return {
+        "provider": "runpod",
+        "cost_source": PROVIDER_COST_SOURCE,
+        "records": len(paths),
+        "pod_ids": sorted(pod_ids),
+        "total_lifetime_seconds": round(total_lifetime, 3),
+        "total_cost_usd": round(total_cost, 6),
+    }
+
+
 def validate_comparison(
     runs: Sequence[RunEvidence],
     min_seeds: int = 3,
     required_frameworks: Sequence[str] = (),
+    minimum_schema_version: int = 1,
 ) -> None:
     """Require matched protocols, unique seeds, and adequate replication."""
     if min_seeds < 1:
         raise EvidenceError("min_seeds must be >= 1")
+    if minimum_schema_version not in {1, 2}:
+        raise EvidenceError("minimum_schema_version must be 1 or 2")
+    legacy = [
+        run.source
+        for run in runs
+        if int(run.data["schema_version"]) < minimum_schema_version
+    ]
+    if legacy:
+        raise EvidenceError(
+            "comparison requires verifiable schema_version>=2 evidence; "
+            "legacy schema-v1 rows need explicit historical opt-in"
+        )
     keys = {run.comparison_key for run in runs}
     if len(keys) != 1:
         differing: list[str] = []
         fields = (
+            "schema_version",
+            "manifest_sha256",
             *MATCH_FIELDS,
             "config",
             "hardware.gpu",
@@ -319,6 +466,8 @@ def summarize(runs: Sequence[RunEvidence]) -> dict[str, Any]:
     first = runs[0]
     result: dict[str, Any] = {
         "schema_version": 1,
+        "evidence_schema_version": first.data["schema_version"],
+        "manifest_sha256": first.data.get("manifest_sha256"),
         "comparison": {field: first.data[field] for field in MATCH_FIELDS},
         "hardware": dict(first.data["hardware"]),
         "frameworks": {},
@@ -367,13 +516,30 @@ def render_markdown(summary: Mapping[str, Any]) -> str:
         "> task, and hardware. This report does not assign subjective feature scores.",
         "",
         f"- Protocol: `{comparison['protocol']}`",
+        f"- Harness commit: `{comparison['harness_commit']}`",
         f"- Model: `{comparison['model']}` at `{comparison['model_revision']}`",
         f"- Task/data: `{comparison['task']}` at `{comparison['dataset_revision']}`",
         f"- Hardware: {hardware['gpu_count']}× {hardware['gpu']} (CUDA {hardware['cuda']})",
-        "",
-        "| Framework | Version | Seeds | Samples/s | Wall clock (s) | Peak VRAM (MiB) | Baseline | Final | Improvement |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
     ]
+    manifest_sha256 = summary.get("manifest_sha256")
+    if isinstance(manifest_sha256, str):
+        lines.append(f"- Shootout manifest SHA-256: `{manifest_sha256}`")
+    provider_cost = summary.get("provider_cost")
+    if isinstance(provider_cost, Mapping):
+        lines.extend(
+            [
+                f"- Provider cost: ${float(provider_cost['total_cost_usd']):.4f} "
+                f"across {provider_cost['records']} pod lifecycle record(s)",
+                f"- Cost source: `{provider_cost['cost_source']}`",
+            ]
+        )
+    lines.extend(
+        [
+            "",
+            "| Framework | Version | Seeds | Samples/s | Wall clock (s) | Peak VRAM (MiB) | Baseline | Final | Improvement |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+    )
     for framework, values in summary["frameworks"].items():
         lines.append(
             f"| {framework} | {values['version']} | {len(values['seeds'])} |"
@@ -406,10 +572,16 @@ def evidence_digest(runs: Sequence[RunEvidence]) -> str:
     return hashlib.sha256("\n".join(sorted(canonical)).encode()).hexdigest()
 
 
-def write_report(runs: Sequence[RunEvidence], output_dir: Path) -> None:
+def write_report(
+    runs: Sequence[RunEvidence],
+    output_dir: Path,
+    provider_cost: Mapping[str, Any] | None = None,
+) -> None:
     """Write machine-readable and human-readable comparison artifacts."""
     output_dir.mkdir(parents=True, exist_ok=True)
     result = summarize(runs)
+    if provider_cost is not None:
+        result["provider_cost"] = dict(provider_cost)
     result["evidence_sha256"] = evidence_digest(runs)
     (output_dir / "comparison.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -437,6 +609,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="Framework required in the comparison (repeatable).",
     )
     parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument(
+        "--require-provider-cost",
+        action="store_true",
+        help="require and total schema-v2 RunPod records in one input directory",
+    )
+    parser.add_argument(
+        "--allow-legacy-schema-v1",
+        action="store_true",
+        help="allow historical rows whose retained artifact cannot be re-hashed",
+    )
     args = parser.parse_args(argv)
     try:
         runs = load_evidence(args.inputs)
@@ -444,9 +626,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             runs,
             min_seeds=args.min_seeds,
             required_frameworks=args.required_framework,
+            minimum_schema_version=1 if args.allow_legacy_schema_v1 else 2,
         )
+        provider_cost = None
+        if args.require_provider_cost:
+            if len(args.inputs) != 1:
+                raise EvidenceError(
+                    "--require-provider-cost needs exactly one evidence directory"
+                )
+            provider_cost = load_provider_cost_bundle(args.inputs[0], runs)
         if not args.validate_only:
-            write_report(runs, args.output_dir)
+            write_report(runs, args.output_dir, provider_cost)
     except EvidenceError as exc:
         print(f"framework comparison rejected: {exc}", file=sys.stderr)
         return 2

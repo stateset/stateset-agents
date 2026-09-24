@@ -19,6 +19,7 @@
     "parallelism": 1,
     "official_suite_pipelines": {
       "tau3-bench": {
+        "model_revision_binding": "local-marker",
         "command_timeout_seconds": 14400,
         "results_path": "official/results.json",
         "commands": [[
@@ -36,6 +37,7 @@
         ]]
       },
       "bfcl-v4": {
+        "model_revision_binding": "local-marker",
         "command_timeout_seconds": 14400,
         "results_path": "official/result",
         "scores_path": "official/score",
@@ -60,6 +62,7 @@
         ]
       },
       "swe-bench-verified": {
+        "model_revision_binding": "local-marker",
         "command_timeout_seconds": 43200,
         "results_path": "official/report",
         "cost_records_path": "official/costs.jsonl",

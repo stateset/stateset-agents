@@ -42,6 +42,8 @@ class OfficialPipelineError(ValueError):
 
 SUPPORTED_SUITES = {"tau3-bench", "bfcl-v4", "swe-bench-verified"}
 REQUIRED_COMMAND_PLACEHOLDERS = {"{model}"}
+MODEL_REVISION_BINDINGS = {"command-argument", "local-marker"}
+IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}")
 RESERVED_VALUES = {
     "policy",
     "model",
@@ -61,6 +63,18 @@ RESERVED_VALUES = {
 def _canonical_digest(value: Any) -> str:
     payload = json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(payload).hexdigest()
+
+
+def _require_immutable_revision(value: Any, *, label: str) -> str:
+    if (
+        not isinstance(value, str)
+        or IMMUTABLE_REVISION.fullmatch(value) is None
+        or value == "0" * 40
+    ):
+        raise OfficialPipelineError(
+            f"{label} must be a non-zero 40-character lowercase hex revision"
+        )
+    return value
 
 
 def _safe_artifact_path(artifact_dir: Path, raw: Any, *, label: str) -> Path:
@@ -114,6 +128,24 @@ def load_pipeline_config(
         raise OfficialPipelineError(f"no official pipeline configured for {suite}")
     config = dict(raw)
     config["commands"] = _command_list(config.get("commands"), suite=suite)
+    binding = config.get("model_revision_binding")
+    if binding not in MODEL_REVISION_BINDINGS:
+        raise OfficialPipelineError(
+            f"{suite} model_revision_binding must be one of "
+            f"{sorted(MODEL_REVISION_BINDINGS)}"
+        )
+    if binding == "command-argument":
+        unbound = [
+            index
+            for index, command in enumerate(config["commands"], start=1)
+            if "{model}" in command and "{model_revision}" not in command
+        ]
+        if unbound:
+            joined = ", ".join(map(str, unbound))
+            raise OfficialPipelineError(
+                f"{suite} model-consuming command(s) {joined} requires "
+                "{model_revision}"
+            )
     timeout = config.get("command_timeout_seconds", 14400)
     if isinstance(timeout, bool) or not isinstance(timeout, int) or timeout < 1:
         raise OfficialPipelineError(f"{suite} command timeout must be positive")
@@ -195,10 +227,40 @@ def _repository_is_clean(repository: Path) -> bool:
     return completed.returncode == 0 and not completed.stdout.strip()
 
 
+def _repository_revision(repository: Path) -> str | None:
+    completed = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repository,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        return None
+    revision = completed.stdout.strip()
+    return revision if IMMUTABLE_REVISION.fullmatch(revision) else None
+
+
+def _verify_local_model_revision(model: str, expected_revision: str) -> None:
+    model_path = Path(model).resolve()
+    marker = model_path / ".stateset-model-revision"
+    if not model_path.is_dir() or not marker.is_file():
+        raise OfficialPipelineError(
+            "local-marker model binding requires a local model directory with "
+            ".stateset-model-revision"
+        )
+    if marker.read_text(encoding="utf-8").strip() != expected_revision:
+        raise OfficialPipelineError(
+            "local model revision marker does not match the evaluation manifest"
+        )
+
+
 def execute_pipeline(args: argparse.Namespace) -> list[dict[str, Any]]:
     """Run configured upstream commands and return normalized task records."""
     if args.suite not in SUPPORTED_SUITES:
         raise OfficialPipelineError(f"unsupported suite: {args.suite}")
+    _require_immutable_revision(args.model_revision, label="model_revision")
+    _require_immutable_revision(args.suite_revision, label="suite_revision")
     try:
         evaluation_config = json.loads(args.evaluation_config_json)
     except json.JSONDecodeError as exc:
@@ -218,8 +280,16 @@ def execute_pipeline(args: argparse.Namespace) -> list[dict[str, Any]]:
         raise OfficialPipelineError(
             "upstream repository must be clean before execution"
         )
+    actual_revision = _repository_revision(repository)
+    if actual_revision != args.suite_revision:
+        raise OfficialPipelineError(
+            "upstream repository revision mismatch: expected "
+            f"{args.suite_revision}, got {actual_revision or 'unresolved'}"
+        )
 
     pipeline, paths = load_pipeline_config(evaluation_config, args.suite, artifact_dir)
+    if pipeline["model_revision_binding"] == "local-marker":
+        _verify_local_model_revision(args.model, args.model_revision)
     pipeline_owned = [
         artifact_dir / "execution-manifest.json",
         *[
@@ -266,6 +336,7 @@ def execute_pipeline(args: argparse.Namespace) -> list[dict[str, Any]]:
         "suite_revision": args.suite_revision,
         "split": args.split,
         "evaluation_config_sha256": _canonical_digest(evaluation_config),
+        "model_revision_binding": pipeline["model_revision_binding"],
         "commands": commands,
         "artifacts": {name: str(path) for name, path in paths.items()},
     }

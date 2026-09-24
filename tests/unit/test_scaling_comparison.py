@@ -91,7 +91,24 @@ def test_performance_gate_rejects_low_efficiency(tmp_path: Path) -> None:
             runs[index] = scaling_comparison.RunEvidence(run.source, changed)
     summary = scaling_comparison.summarize_scaling(runs)
 
-    with pytest.raises(EvidenceError, match="below 50.0%"):
+    with pytest.raises(EvidenceError, match="below 70.0%"):
+        scaling_comparison.validate_scaling_performance(
+            summary, require_monotonic=False
+        )
+
+
+def test_default_leadership_gate_rejects_efficiency_between_50_and_70_percent(
+    tmp_path: Path,
+) -> None:
+    runs = _runs(tmp_path)
+    for index, run in enumerate(runs):
+        if run.data["hardware"]["gpu_count"] == 8:
+            changed = dict(run.data)
+            changed["metrics"] = dict(run.metrics, samples_per_second=48.0)
+            runs[index] = scaling_comparison.RunEvidence(run.source, changed)
+    summary = scaling_comparison.summarize_scaling(runs)
+
+    with pytest.raises(EvidenceError, match="8 GPU=60.0%"):
         scaling_comparison.validate_scaling_performance(
             summary, require_monotonic=False
         )
@@ -257,4 +274,60 @@ def test_v3_execution_contract_rejects_unbound_throughput(tmp_path: Path) -> Non
     path = tmp_path / "bad-throughput.json"
     path.write_text(json.dumps(document), encoding="utf-8")
     with pytest.raises(EvidenceError, match="throughput does not match"):
+        scaling_comparison.load_scaling_evidence([path])
+
+
+def _v4_document(tmp_path: Path) -> tuple[Path, dict[str, Any]]:
+    artifact = tmp_path / "policy.pt"
+    artifact.write_bytes(b"measured-policy")
+    document = _v3_document()
+    document["protocol"] = "stateset-ddp-policy-strong-scaling-v4"
+    document["hardware"] = {
+        **document["hardware"],
+        "node_count": 2,
+        "node_ids": ["node-a", "node-b"],
+        "ranks_per_node": {"node-a": 4, "node-b": 4},
+        "node_identity_sources": {
+            "node-a": "dmi-product-uuid",
+            "node-b": "dmi-product-uuid",
+        },
+    }
+    document["artifact_path"] = artifact.name
+    document["artifact_sha256"] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    path = tmp_path / "v4.json"
+    return path, document
+
+
+def test_v4_binds_physical_topology_and_retained_artifact(tmp_path: Path) -> None:
+    path, document = _v4_document(tmp_path)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    runs = scaling_comparison.load_scaling_evidence([path])
+    assert runs[0].data["hardware"]["node_count"] == 2
+
+
+def test_v4_rejects_tampered_artifact(tmp_path: Path) -> None:
+    path, document = _v4_document(tmp_path)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    (tmp_path / "policy.pt").write_bytes(b"tampered")
+    with pytest.raises(EvidenceError, match="artifact_sha256 mismatch"):
+        scaling_comparison.load_scaling_evidence([path])
+
+
+def test_v4_rejects_symlinked_artifact(tmp_path: Path) -> None:
+    path, document = _v4_document(tmp_path)
+    target = tmp_path / "target.pt"
+    (tmp_path / "policy.pt").rename(target)
+    (tmp_path / "policy.pt").symlink_to(target)
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="regular sibling"):
+        scaling_comparison.load_scaling_evidence([path])
+
+
+def test_v4_rejects_rank_topology_that_does_not_total_gpu_count(
+    tmp_path: Path,
+) -> None:
+    path, document = _v4_document(tmp_path)
+    document["hardware"]["ranks_per_node"] = {"node-a": 3, "node-b": 4}
+    path.write_text(json.dumps(document), encoding="utf-8")
+    with pytest.raises(EvidenceError, match="does not total"):
         scaling_comparison.load_scaling_evidence([path])

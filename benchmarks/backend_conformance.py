@@ -27,6 +27,20 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from .dataset_content import DatasetContentError, canonical_dataset_content_sha256
+except ImportError:  # pragma: no cover - direct script/spec execution
+    try:
+        from dataset_content import (
+            DatasetContentError,
+            canonical_dataset_content_sha256,
+        )
+    except ImportError:
+        from benchmarks.dataset_content import (
+            DatasetContentError,
+            canonical_dataset_content_sha256,
+        )
+
 from stateset_agents.training import TrainingExperiment
 from stateset_agents.training.adapters.nemo_rl import nemo_rl_backend
 from stateset_agents.training.adapters.openrlhf import openrlhf_backend
@@ -44,6 +58,7 @@ _EXPERIMENT_FIELDS = frozenset(
         "model_revision",
         "dataset_uri",
         "dataset_sha256",
+        "dataset_content_sha256",
         "seed",
         "config",
         "task",
@@ -187,6 +202,14 @@ def validate_manifest(raw: Any) -> dict[str, Any]:
         )
     if missing:
         raise ConformanceError("missing experiment fields: " + ", ".join(missing))
+    content_digest = experiment.get("dataset_content_sha256")
+    if content_digest is not None and (
+        not isinstance(content_digest, str)
+        or not re.fullmatch(r"[0-9a-f]{64}", content_digest)
+    ):
+        raise ConformanceError(
+            "experiment.dataset_content_sha256 must be 64 lowercase hex characters"
+        )
     canonical_digest(raw)
     return dict(raw)
 
@@ -538,6 +561,19 @@ def run_conformance(
         )
     timeout_seconds = declared_timeout
     verify_harness_revision(str(manifest["harness_revision"]), root)
+    declared_content = manifest["experiment"].get("dataset_content_sha256")
+    if declared_content is not None:
+        try:
+            observed_content = canonical_dataset_content_sha256(
+                str(manifest["experiment"]["dataset_uri"])
+            )
+        except DatasetContentError as exc:
+            raise ConformanceError(str(exc)) from exc
+        if observed_content != declared_content:
+            raise ConformanceError(
+                "canonical dataset content does not match "
+                "experiment.dataset_content_sha256"
+            )
     hardware = collect_nvidia_hardware()
     validate_hardware_contract(hardware, manifest["execution"])
     backend_name = str(manifest["backend"])

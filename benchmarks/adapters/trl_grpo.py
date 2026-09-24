@@ -38,6 +38,13 @@ CONFIG_FIELDS = {
     "lora_target_modules",
     "gradient_checkpointing",
     "bf16",
+    "objective",
+    "importance_sampling_level",
+    "epsilon",
+    "epsilon_high",
+    "loss_type",
+    "scale_rewards",
+    "trl_version",
 }
 
 
@@ -83,6 +90,20 @@ def supported_kwargs(callable_obj: Any, values: dict[str, Any]) -> dict[str, Any
     if any(item.kind is inspect.Parameter.VAR_KEYWORD for item in parameters.values()):
         return values
     return {name: value for name, value in values.items() if name in parameters}
+
+
+def require_supported_kwargs(
+    callable_obj: Any, values: dict[str, Any], required: set[str]
+) -> dict[str, Any]:
+    """Filter versioned kwargs but fail if objective-critical fields disappear."""
+    selected = supported_kwargs(callable_obj, values)
+    missing = sorted(required - set(selected))
+    if missing:
+        raise RuntimeError(
+            "pinned TRL cannot express the declared objective fields: "
+            + ", ".join(missing)
+        )
+    return selected
 
 
 def completion_text(completion: Any) -> str:
@@ -138,6 +159,16 @@ def main() -> int:
         parser.error(f"invalid --config-json: {exc}")
     if not isinstance(config, dict) or set(config) != CONFIG_FIELDS:
         parser.error("--config-json has an unsupported schema")
+    expected_objective = {
+        "objective": "gspo-sequence",
+        "importance_sampling_level": "sequence",
+        "epsilon": 3e-4,
+        "epsilon_high": 4e-4,
+        "loss_type": "grpo",
+        "scale_rewards": "group",
+    }
+    if any(config.get(key) != value for key, value in expected_objective.items()):
+        parser.error("--config-json must declare the matched GSPO objective")
 
     import torch
     import trl
@@ -148,6 +179,12 @@ def main() -> int:
 
     from stateset_agents.evaluation.framework_protocol import evaluate_causal_lm
     from stateset_agents.utils.reproducibility import set_all_seeds
+
+    if trl.__version__ != config["trl_version"]:
+        parser.error(
+            "installed TRL version does not match config: "
+            f"expected {config['trl_version']}, got {trl.__version__}"
+        )
 
     if not torch.cuda.is_available():
         parser.error("the measured TRL adapter requires CUDA")
@@ -197,7 +234,7 @@ def main() -> int:
         ]
 
     training_args = GRPOConfig(
-        **supported_kwargs(
+        **require_supported_kwargs(
             GRPOConfig,
             {
                 "output_dir": str(args.artifact_dir),
@@ -228,8 +265,20 @@ def main() -> int:
                 "seed": args.seed,
                 "bf16": bool(config["bf16"]),
                 "gradient_checkpointing": bool(config["gradient_checkpointing"]),
+                "importance_sampling_level": str(config["importance_sampling_level"]),
+                "epsilon": float(config["epsilon"]),
+                "epsilon_high": float(config["epsilon_high"]),
+                "loss_type": str(config["loss_type"]),
+                "scale_rewards": str(config["scale_rewards"]),
                 "report_to": [],
                 "save_strategy": "no",
+            },
+            {
+                "importance_sampling_level",
+                "epsilon",
+                "epsilon_high",
+                "loss_type",
+                "scale_rewards",
             },
         )
     )

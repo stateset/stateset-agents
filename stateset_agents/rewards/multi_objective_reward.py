@@ -1,6 +1,7 @@
 """Multi-objective reward composition and factory helpers."""
 
 import logging
+import math
 from typing import Any, cast
 
 import numpy as np
@@ -62,16 +63,35 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
     def _normalize_component_weights(self) -> None:
         """Normalize component weights to a stable sum of 1.0."""
+        for component in self.components:
+            self._validate_component_weight(component)
         total_weight = sum(component.weight for component in self.components)
+        if not math.isfinite(total_weight):
+            raise ValueError("total component weight must be finite")
         if total_weight <= 0:
             return
         for component in self.components:
             component.weight = component.weight / total_weight
 
+    @staticmethod
+    def _validate_component_weight(component: BaseRewardComponent) -> None:
+        """Reject weights outside the nonnegative finite proof domain."""
+        try:
+            valid = math.isfinite(component.weight) and component.weight >= 0
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("component weight must be finite and nonnegative") from exc
+        if not valid:
+            raise ValueError("component weight must be finite and nonnegative")
+
     def add_component(self, component: BaseRewardComponent) -> None:
         """Add a reward component."""
+        self._validate_component_weight(component)
         self.components.append(component)
-        self._normalize_component_weights()
+        try:
+            self._normalize_component_weights()
+        except ValueError:
+            self.components.pop()
+            raise
 
     def remove_component(self, name: str) -> None:
         """Remove a reward component by name."""
@@ -116,15 +136,25 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 metadata={"error": "No components configured"},
             )
 
+        # Components are mutable and their callbacks may suspend. Revalidate
+        # and use one weight snapshot for the whole evaluation.
+        self._normalize_component_weights()
+        components = tuple(self.components)
+        component_weights = tuple(component.weight for component in components)
+
         # Compute scores for each component
         component_scores: dict[str, float] = {}
         weighted_scores: list[float] = []
 
-        for component in self.components:
+        for component, component_weight in zip(
+            components, component_weights, strict=True
+        ):
             try:
                 score = await component.compute_score(normalized_turns, context)
+                if not math.isfinite(score):
+                    raise ValueError("component score must be finite")
                 component_scores[component.name] = score
-                weighted_scores.append(score * component.weight)
+                weighted_scores.append(score * component_weight)
 
                 # Track component performance
                 if component.name not in self.component_scores:
@@ -140,7 +170,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         if self.normalization_method == "weighted_sum":
             final_score = sum(weighted_scores)
         elif self.normalization_method == "weighted_average":
-            total_weight = sum(component.weight for component in self.components)
+            total_weight = sum(component_weights)
             final_score = (
                 sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
             )
@@ -161,7 +191,10 @@ class MultiObjectiveRewardFunction(RewardFunction):
         self.evaluation_count += 1
 
         # Create breakdown
-        weights = {c.name: c.weight for c in self.components}
+        weights = {
+            component.name: weight
+            for component, weight in zip(components, component_weights, strict=True)
+        }
         breakdown: dict[str, Any] = {
             "total_score": final_score,
             "evaluation_count": float(self.evaluation_count),

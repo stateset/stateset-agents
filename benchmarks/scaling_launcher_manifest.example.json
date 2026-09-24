@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-scaling-launcher-manifest",
+  "topologies": {
+    "1": {"node_count": 1, "nproc_per_node": 1},
+    "2": {"node_count": 1, "nproc_per_node": 2},
+    "4": {"node_count": 1, "nproc_per_node": 4},
+    "8": {"node_count": 2, "nproc_per_node": 4}
+  },
+  "command": [
+    "provider-scaling-driver",
+    "--gpu-count", "{gpu_count}",
+    "--node-count", "{node_count}",
+    "--nproc-per-node", "{nproc_per_node}",
+    "--seed", "{seed}",
+    "--harness-commit", "{harness_commit}",
+    "--config-json", "{config_json}",
+    "--command-label", "{command_label}",
+    "--output", "{output}",
+    "--workload", "{workload}"
+  ]
+}

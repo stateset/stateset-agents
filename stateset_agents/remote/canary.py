@@ -9,10 +9,12 @@ run so cleanup regressions become visible without deleting user resources.
 from __future__ import annotations
 
 import os
+import subprocess
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from itertools import islice
+from pathlib import Path
 from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
@@ -252,10 +254,68 @@ def run_canary_matrix(providers: list[str]) -> list[ProviderCanaryResult]:
     return [run_provider_canary(provider) for provider in providers]
 
 
+def canary_source_identity(root: Path | None = None) -> tuple[str | None, bool]:
+    """Resolve the current clean Git revision for evidence provenance."""
+    checkout = (root or Path.cwd()).resolve()
+    try:
+        revision = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=checkout,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        status = subprocess.run(
+            ["git", "status", "--porcelain", "--untracked-files=all"],
+            cwd=checkout,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return None, False
+    commit = revision.stdout.strip()
+    valid_commit = (
+        revision.returncode == 0
+        and len(commit) == 40
+        and all(character in "0123456789abcdef" for character in commit)
+        and commit != "0" * 40
+    )
+    github_sha = os.environ.get("GITHUB_SHA", "").strip().lower()
+    github_matches = not github_sha or (valid_commit and github_sha == commit)
+    clean = (
+        valid_commit
+        and status.returncode == 0
+        and not status.stdout.strip()
+        and github_matches
+    )
+    return (commit if valid_commit else None), clean
+
+
+def provider_canary_envelope(
+    results: list[ProviderCanaryResult], *, root: Path | None = None
+) -> dict[str, Any]:
+    """Build a source-bound, non-billable provider evidence envelope."""
+    from stateset_agents import __version__
+
+    commit, clean = canary_source_identity(root)
+    return {
+        "schema_version": 2,
+        "kind": "stateset-provider-canary-evidence",
+        "framework_version": __version__,
+        "harness_commit": commit,
+        "harness_clean": clean,
+        "billable_resources_created": 0,
+        "results": [result.to_dict() for result in results],
+    }
+
+
 __all__ = [
     "CANARY_RESOURCE_PREFIX",
     "ProviderCanaryResult",
+    "canary_source_identity",
     "missing_credentials",
+    "provider_canary_envelope",
     "run_canary_matrix",
     "run_provider_canary",
 ]

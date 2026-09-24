@@ -210,6 +210,31 @@ async def test_artifact_history_is_bounded_and_checkpointed() -> None:
 
 
 @pytest.mark.asyncio
+async def test_pruned_assigned_artifact_rejects_rollout() -> None:
+    control = DistributedRolloutControlPlane(
+        coordinator=AsyncRolloutCoordinator(),
+        config=DistributedRolloutConfig(
+            policy_artifact_capacity=1, require_policy_artifact=True
+        ),
+    )
+    await control.register_initial_policy_artifact(_artifact(0))
+    old = await control.register("worker-a")
+    await control.publish_policy_artifact(_artifact(1))
+    assert await control.policy_artifact(0) is None
+
+    record = RolloutRecord(
+        rollout_id="wrong-hash-after-prune",
+        policy_version=0,
+        sampler_log_probs=(-0.5,),
+        payload={},
+        policy_artifact_sha256="b" * 64,
+    )
+    with pytest.raises(PolicyArtifactUnavailable, match="no longer available"):
+        await control.submit("worker-a", old.lease_id, record)
+    assert (await control.coordinator.state_dict())["queue"] == []
+
+
+@pytest.mark.asyncio
 async def test_artifact_versions_are_immutable_and_monotonic() -> None:
     control = DistributedRolloutControlPlane(coordinator=AsyncRolloutCoordinator())
     await control.register_initial_policy_artifact(_artifact(0))

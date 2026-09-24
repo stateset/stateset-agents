@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-kubernetes-scaling-billing",
+  "status": "provider-exported",
+  "provider": "coreweave",
+  "harness_commit": "0000000000000000000000000000000000000000",
+  "job": "REPLACE_WITH_PROVIDER_RECORD_JOB",
+  "namespace": "stateset-benchmarks",
+  "gpu_count": 8,
+  "seed": 42,
+  "currency": "USD",
+  "billing_export_id": "REPLACE_WITH_PROVIDER_EXPORT_ID",
+  "allocation_id": "REPLACE_WITH_UNIQUE_JOB_ALLOCATION_ID",
+  "billing_window": {
+    "started_at": "2026-09-10T00:00:00+00:00",
+    "finished_at": "2026-09-10T01:00:00+00:00"
+  },
+  "line_items": [
+    {
+      "provider_line_item_id": "REPLACE_WITH_PROVIDER_LINE_ITEM_ID",
+      "meter": "REPLACE_WITH_PROVIDER_METER",
+      "quantity": 1.0,
+      "cost_usd": 0.0
+    }
+  ],
+  "total_cost_usd": 0.0,
+  "raw_export_path": "REPLACE_WITH_RAW_EXPORT_FILE",
+  "raw_export_sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+}

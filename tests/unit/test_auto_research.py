@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from stateset_agents.training.auto_research.checkpoint_manager import CheckpointManager
 from stateset_agents.training.auto_research.config import AutoResearchConfig
+from stateset_agents.training.auto_research.experiment_loop import AutoResearchLoop
 from stateset_agents.training.auto_research.experiment_tracker import (
     ExperimentRecord,
     ExperimentTracker,
@@ -97,6 +99,30 @@ class TestAutoResearchConfig:
 
 
 class TestExperimentTracker:
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_nonfinite_objective_is_rejected(self, value: float):
+        with pytest.raises(ValueError, match="objective_value must be finite"):
+            ExperimentRecord(
+                experiment_id="invalid",
+                params={},
+                metrics={},
+                objective_value=value,
+                training_time=0.0,
+                status="keep",
+            )
+
+    def test_legacy_import_skips_nonfinite_objective(self, tmp_dir: Path):
+        tsv_path = tmp_dir / "legacy.tsv"
+        tsv_path.write_text(
+            "commit\tavg_reward\tmemory_gb\tstatus\tdescription\n"
+            "invalid\tnan\t0\tkeep\tbad score\n"
+            "valid\t0.4\t0\tkeep\tgood score\n",
+            encoding="utf-8",
+        )
+        tracker = ExperimentTracker.from_legacy_tsv(tsv_path)
+        assert tracker.num_experiments == 1
+        assert tracker.best_record.experiment_id == "valid"
+
     def test_record_and_best(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir, direction="maximize")
 
@@ -148,6 +174,32 @@ class TestExperimentTracker:
         assert tracker.is_improvement(0.4) is True
         assert tracker.is_improvement(0.6) is False
 
+    def test_minimize_best_survives_discard_crash_and_replay(self, tmp_dir: Path):
+        tracker = ExperimentTracker(tmp_dir, direction="minimize")
+        for experiment_id, value, status in (
+            ("first", 0.5, "keep"),
+            ("worse", 0.8, "discard"),
+            ("crashed", 0.0, "crash"),
+            ("better", 0.2, "keep"),
+        ):
+            tracker.record(
+                ExperimentRecord(
+                    experiment_id=experiment_id,
+                    params={},
+                    metrics={},
+                    objective_value=value,
+                    training_time=0,
+                    status=status,
+                )
+            )
+        assert tracker.best_record.experiment_id == "better"
+        assert tracker.best_value == 0.2
+
+        replayed = ExperimentTracker.load(tmp_dir, direction="minimize")
+        assert replayed.best_record.experiment_id == "better"
+        assert replayed.best_value == 0.2
+        assert replayed.num_crashed == 1
+
     def test_crash_counting(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
 
@@ -163,6 +215,34 @@ class TestExperimentTracker:
         )
         assert tracker.num_crashed == 1
         assert tracker.num_kept == 0
+
+    def test_crashed_record_cannot_become_best_after_replay(self, tmp_dir: Path):
+        tracker = ExperimentTracker(tmp_dir, direction="maximize")
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="baseline",
+                params={},
+                metrics={},
+                objective_value=0.5,
+                training_time=0,
+                status="keep",
+            )
+        )
+        tracker.record(
+            ExperimentRecord(
+                experiment_id="crashed",
+                params={},
+                metrics={},
+                objective_value=1.0,
+                training_time=0,
+                status="crash",
+            )
+        )
+        assert tracker.best_record.experiment_id == "baseline"
+
+        replayed = ExperimentTracker.load(tmp_dir, direction="maximize")
+        assert replayed.best_record.experiment_id == "baseline"
+        assert replayed.num_crashed == 1
 
     def test_tsv_output(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
@@ -203,6 +283,61 @@ class TestExperimentTracker:
         data = json.loads(jsonl)
         assert data["experiment_id"] == "exp_1"
         assert data["objective_value"] == 0.5
+
+    def test_jsonl_failure_does_not_advance_best(self, tmp_dir: Path):
+        tracker = ExperimentTracker(tmp_dir)
+        tracker._append_jsonl = MagicMock(side_effect=OSError("disk full"))
+        record = ExperimentRecord(
+            experiment_id="exp_1",
+            params={},
+            metrics={},
+            objective_value=0.5,
+            training_time=0.0,
+            status="keep",
+        )
+
+        with pytest.raises(OSError, match="disk full"):
+            tracker.record(record)
+        assert tracker.best_record is None
+        assert tracker.num_experiments == 0
+
+    def test_tsv_failure_preserves_jsonl_commit(self, tmp_dir: Path):
+        tracker = ExperimentTracker(tmp_dir)
+        tracker._append_tsv = MagicMock(side_effect=OSError("TSV unavailable"))
+        record = ExperimentRecord(
+            experiment_id="exp_1",
+            params={},
+            metrics={},
+            objective_value=0.5,
+            training_time=0.0,
+            status="keep",
+        )
+
+        tracker.record(record)
+        assert tracker.best_record is record
+        assert '"experiment_id": "exp_1"' in (tmp_dir / "experiments.jsonl").read_text(
+            encoding="utf-8"
+        )
+
+    def test_jsonl_sync_failure_does_not_advance_best(self, tmp_dir: Path):
+        tracker = ExperimentTracker(tmp_dir)
+        record = ExperimentRecord(
+            experiment_id="exp_1",
+            params={},
+            metrics={},
+            objective_value=0.5,
+            training_time=0.0,
+            status="keep",
+        )
+
+        with patch(
+            "stateset_agents.training.auto_research.experiment_tracker.os.fsync",
+            side_effect=OSError("sync failed"),
+        ):
+            with pytest.raises(OSError, match="sync failed"):
+                tracker.record(record)
+        assert tracker.best_record is None
+        assert tracker.num_experiments == 0
 
     def test_history_for_proposer(self, tmp_dir: Path):
         tracker = ExperimentTracker(tmp_dir)
@@ -299,6 +434,73 @@ class TestCheckpointManager:
         # Should NOT be considered valid
         assert mgr.has_best() is False
 
+    def test_restart_recovers_best_moved_before_install(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "exp_1", {"lr": 0.001})
+        mgr.best_dir.rename(mgr.checkpoints_dir / ".best_old")
+
+        restarted = CheckpointManager(tmp_dir)
+        assert restarted.has_best()
+        assert restarted.load_best_metadata()["experiment_id"] == "exp_1"
+
+    def test_failed_install_restores_previous_best(
+        self, tmp_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "exp_1", {})
+        rename = Path.rename
+
+        def fail_install(path: Path, target: Path) -> Path:
+            if path.name.startswith(".best_tmp_") and target == mgr.best_dir:
+                raise OSError("install failed")
+            return rename(path, target)
+
+        monkeypatch.setattr(Path, "rename", fail_install)
+        with pytest.raises(OSError, match="install failed"):
+            mgr.save_best(agent, "exp_2", {})
+        assert mgr.has_best()
+        assert mgr.load_best_metadata()["experiment_id"] == "exp_1"
+
+    def test_unrecorded_pending_best_rolls_back_on_restart(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "baseline", {})
+        mgr.save_best(agent, "exp_1", {}, defer_commit=True)
+
+        restarted = CheckpointManager(tmp_dir)
+        assert restarted.reconcile_best("baseline")
+        assert restarted.load_best_metadata()["experiment_id"] == "baseline"
+        assert len(list(restarted.checkpoints_dir.glob(".uncommitted_*"))) == 1
+
+    def test_recorded_pending_best_commits_on_restart(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "baseline", {})
+        mgr.save_best(agent, "exp_1", {}, defer_commit=True)
+
+        restarted = CheckpointManager(tmp_dir)
+        assert restarted.reconcile_best("exp_1")
+        assert restarted.load_best_metadata()["experiment_id"] == "exp_1"
+        assert not (restarted.best_dir / ".pending").exists()
+        assert not (restarted.checkpoints_dir / ".best_old").exists()
+
+    def test_unrecorded_first_checkpoint_is_set_aside(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "baseline", {}, defer_commit=True)
+
+        restarted = CheckpointManager(tmp_dir)
+        assert not restarted.reconcile_best(None)
+        assert not restarted.has_best()
+        assert len(list(restarted.checkpoints_dir.glob(".uncommitted_*"))) == 1
+
     def test_restore_returns_false_when_no_checkpoint(self, tmp_dir: Path):
         mgr = CheckpointManager(tmp_dir)
         agent = MagicMock()
@@ -332,6 +534,94 @@ class TestCheckpointManager:
 
         # save_pretrained should have been called
         mock_model.save_pretrained.assert_called_once()
+
+
+def test_resume_reconciles_checkpoint_against_valid_log(tmp_dir: Path) -> None:
+    previous = ExperimentTracker(tmp_dir)
+    previous.record(
+        ExperimentRecord(
+            experiment_id="baseline",
+            params={},
+            metrics={"eval_reward": 0.4},
+            objective_value=0.4,
+            training_time=0.0,
+            status="keep",
+        )
+    )
+    agent = MagicMock()
+    agent.model = None
+    checkpoints = CheckpointManager(tmp_dir)
+    checkpoints.save_best(agent, "baseline", {})
+    checkpoints.save_best(agent, "exp_0001", {}, defer_commit=True)
+    with (tmp_dir / "experiments.jsonl").open("a", encoding="utf-8") as log:
+        log.write(
+            json.dumps(
+                {
+                    "experiment_id": "exp_0001",
+                    "objective_value": float("nan"),
+                    "status": "keep",
+                }
+            )
+            + "\n"
+        )
+
+    loop = AutoResearchLoop.__new__(AutoResearchLoop)
+    loop.config = SimpleNamespace(output_path=tmp_dir, objective_metric="eval_reward")
+    loop.tracker = ExperimentTracker(tmp_dir)
+    loop.checkpoint_mgr = CheckpointManager(tmp_dir)
+    loop.agent = agent
+    loop._resumed_existing_records = False
+
+    assert loop._try_resume() == 1
+    assert loop._resumed_existing_records
+    assert loop.tracker.best_record.experiment_id == "baseline"
+    assert loop.checkpoint_mgr.load_best_metadata()["experiment_id"] == "baseline"
+    assert ExperimentTracker.load(tmp_dir).best_record.experiment_id == "baseline"
+
+
+@pytest.mark.asyncio
+async def test_nonfinite_baseline_is_not_promoted(tmp_dir: Path) -> None:
+    loop = AutoResearchLoop.__new__(AutoResearchLoop)
+    loop.config = SimpleNamespace(objective_metric="eval_reward")
+    loop.baseline_params = {}
+    loop._current_experiment_timeout = lambda: 1.0
+    loop._evaluate = AsyncMock(return_value={"eval_reward": float("nan")})
+    loop._cleanup_gpu = MagicMock()
+    loop._record_crash = MagicMock()
+    loop.checkpoint_mgr = MagicMock()
+
+    await loop._run_baseline()
+
+    loop._record_crash.assert_called_once_with(
+        "baseline", {}, "non-finite baseline objective"
+    )
+    loop._cleanup_gpu.assert_called_once()
+    loop.checkpoint_mgr.save_best.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_nonfinite_experiment_is_not_promoted(tmp_dir: Path) -> None:
+    loop = AutoResearchLoop.__new__(AutoResearchLoop)
+    loop.config = SimpleNamespace(objective_metric="eval_reward")
+    loop.baseline_params = {}
+    loop.tracker = MagicMock(best_record=None)
+    loop.proposer = MagicMock()
+    loop.proposer.propose.return_value = ({"lr": 0.01}, "candidate")
+    loop._current_experiment_timeout = lambda: 1.0
+    loop._execute_experiment = AsyncMock(return_value={"eval_reward": float("inf")})
+    loop._cleanup_gpu = MagicMock()
+    loop._record_crash = MagicMock()
+    loop._report_to_proposer = MagicMock()
+    loop.checkpoint_mgr = MagicMock()
+    loop.agent = MagicMock()
+
+    await loop._run_experiment("exp_0001")
+
+    loop._record_crash.assert_called_once_with(
+        "exp_0001", {"lr": 0.01}, "non-finite experiment objective"
+    )
+    loop.checkpoint_mgr.save_best.assert_not_called()
+    loop.checkpoint_mgr.restore_best.assert_called_once_with(loop.agent)
 
 
 # ---------------------------------------------------------------------------

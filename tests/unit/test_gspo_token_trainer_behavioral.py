@@ -14,11 +14,12 @@ import torch
 
 pytest.importorskip("transformers")
 
-from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+from transformers import GPT2Config, GPT2LMHeadModel
 
 from stateset_agents.core.reward_base import RewardResult
 from stateset_agents.training.gspo_config import GSPOConfig
 from stateset_agents.training.gspo_token_trainer import GSPOTokenTrainer
+from tests._tiny_tokenizer import tiny_tokenizer
 
 
 def _tiny_model():
@@ -30,7 +31,7 @@ def _tiny_model():
             n_embd=32,
             n_layer=2,
             n_head=2,
-            vocab_size=50257,
+            vocab_size=256,
             n_positions=64,
             resid_pdrop=0.0,
             embd_pdrop=0.0,
@@ -52,8 +53,7 @@ class _StubRewardModel:
 
 @pytest.fixture
 def gspo_token_trainer_tiny(monkeypatch):
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
 
     model = _tiny_model()
 

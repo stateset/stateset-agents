@@ -1,0 +1,69 @@
+name: Formal verification
+
+permissions:
+  contents: read
+
+on:
+  push:
+    branches: [main, master, develop]
+    paths:
+      - ".github/workflows/formal-verification.yml"
+      - "formal/**"
+      - "lean-toolchain"
+      - "lakefile.toml"
+      - "lake-manifest.json"
+      - "stateset_agents/training/async_rollouts.py"
+      - "stateset_agents/training/distributed_rollouts.py"
+      - "stateset_agents/training/async_runtime.py"
+      - "stateset_agents/training/objectives.py"
+      - "stateset_agents/training/rl_losses.py"
+      - "stateset_agents/training/auto_research/**"
+      - "stateset_agents/rewards/multi_objective_reward.py"
+      - "stateset_agents/core/trajectory.py"
+  pull_request:
+    branches: [main, master, develop]
+    paths:
+      - ".github/workflows/formal-verification.yml"
+      - "formal/**"
+      - "lean-toolchain"
+      - "lakefile.toml"
+      - "lake-manifest.json"
+      - "stateset_agents/training/async_rollouts.py"
+      - "stateset_agents/training/distributed_rollouts.py"
+      - "stateset_agents/training/async_runtime.py"
+      - "stateset_agents/training/objectives.py"
+      - "stateset_agents/training/rl_losses.py"
+      - "stateset_agents/training/auto_research/**"
+      - "stateset_agents/rewards/multi_objective_reward.py"
+      - "stateset_agents/core/trajectory.py"
+  workflow_dispatch:
+
+jobs:
+  model-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          auto-config: false
+          build: false
+          test: false
+          lint: false
+          use-github-cache: false
+
+      - name: Download pinned TLA+ tools
+        run: |
+          curl --fail --location --silent --show-error --retry 3 \
+            --output "$RUNNER_TEMP/tla2tools.jar" \
+            https://github.com/tlaplus/tlaplus/releases/download/v1.7.4/tla2tools.jar
+          echo "936a262061c914694dfd669a543be24573c45d5aa0ff20a8b96b23d01e050e88  $RUNNER_TEMP/tla2tools.jar" | sha256sum --check --status
+
+      - name: Check TLA+ models and Lean proofs
+        run: bash formal/check.sh "$RUNNER_TEMP/tla2tools.jar"

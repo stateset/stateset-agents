@@ -7,6 +7,7 @@ BANDIT_REPORT_PATH="$REPORT_DIR/bandit-report.json"
 SAFETY_REPORT_PATH="$REPORT_DIR/safety-report.json"
 SUMMARY_PATH="$REPORT_DIR/publish-readiness-summary.json"
 SAFETY_INPUT_PATH="$(mktemp /tmp/stateset-publish-safety.XXXXXX.txt)"
+SMOKE_VENV=""
 PYTHON_BIN="${PYTHON_BIN:-}"
 cd "$ROOT_DIR"
 START_TIME="$(date -u +%s)"
@@ -72,6 +73,10 @@ write_summary() {
 import json
 import sys
 import os
+import hashlib
+import re
+import xml.etree.ElementTree as ET
+from pathlib import Path
 
 status = sys.argv[1]
 failed_step = sys.argv[2] if status != "passed" else None
@@ -83,6 +88,8 @@ git_ref = sys.argv[7]
 git_branch = sys.argv[8]
 
 summary = {
+    "schema_version": 2,
+    "kind": "stateset-publish-readiness-summary",
     "status": status,
     "failed_step": failed_step,
     "generated_at_unix": end_time,
@@ -93,6 +100,61 @@ summary = {
         "branch": git_branch,
     },
 }
+if status == "passed":
+    root = Path(summary_path).resolve().parent
+    version_match = re.search(
+        r'^version = "(\d+\.\d+\.\d+)"$',
+        (root / "pyproject.toml").read_text(encoding="utf-8"),
+        flags=re.MULTILINE,
+    )
+    if version_match is None:
+        raise SystemExit("could not bind readiness summary to package version")
+
+    def retained(path):
+        if not path.is_file() or path.is_symlink():
+            raise SystemExit(f"readiness artifact is missing or symlinked: {path}")
+        data = path.read_bytes()
+        return {
+            "path": str(path.relative_to(root)),
+            "sha256": hashlib.sha256(data).hexdigest(),
+            "size_bytes": len(data),
+        }
+
+    distributions = sorted((root / "dist").iterdir())
+    wheels = [path for path in distributions if path.suffix == ".whl"]
+    sdists = [path for path in distributions if path.name.endswith(".tar.gz")]
+    if len(wheels) != 1 or len(sdists) != 1 or len(distributions) != 2:
+        raise SystemExit("readiness requires exactly one wheel and one source archive")
+    summary.update(
+        {
+            "framework_version": version_match.group(1),
+            "checks": [
+                "linters",
+                "type_checks",
+                "api_compatibility",
+                "release_governance",
+                "agent_quality_contract",
+                "tests_with_coverage",
+                "security_scans",
+                "build",
+                "twine_check",
+                "isolated_wheel_smoke",
+                "working_tree_clean",
+            ],
+            "working_tree_clean": True,
+            "distributions": [retained(path) for path in [*wheels, *sdists]],
+            "security_reports": [
+                retained(root / "bandit-report.json"),
+                retained(root / "safety-report.json"),
+            ],
+            "coverage_reports": [retained(root / "coverage.xml")],
+            "coverage_percent": round(
+                float(ET.parse(root / "coverage.xml").getroot().attrib["line-rate"])
+                * 100,
+                4,
+            ),
+        }
+    )
 failure_detail = os.environ.get("READINESS_FAILURE_DETAIL")
 if failure_detail:
     summary["failure_detail"] = failure_detail
@@ -108,7 +170,17 @@ PY
 on_exit() {
     local exit_code="$?"
     rm -f "$SAFETY_INPUT_PATH"
-    write_summary "$exit_code" "$CURRENT_STEP"
+    case "$SMOKE_VENV" in
+        /tmp/stateset-wheel-smoke.*)
+            rm -rf -- "$SMOKE_VENV"
+            ;;
+    esac
+    if ! write_summary "$exit_code" "$CURRENT_STEP"; then
+        echo "ERROR: could not write a complete publish-readiness summary" >&2
+        exit_code=1
+    fi
+    trap - EXIT
+    exit "$exit_code"
 }
 trap on_exit EXIT
 
@@ -246,9 +318,31 @@ printf "\n[9/11] Verifying built distribution metadata...\n"
 CURRENT_STEP="twine_check"
 "$PYTHON_BIN" -m twine check dist/*
 
-printf "\n[10/11] Running package smoke test...\n"
-CURRENT_STEP="smoke_test"
-"$PYTHON_BIN" -c "import stateset_agents, stateset_agents.api; print(stateset_agents.__version__)"
+printf "\n[10/11] Installing and importing the built wheel in isolation...\n"
+CURRENT_STEP="isolated_wheel_smoke"
+SMOKE_VENV="$(mktemp -d /tmp/stateset-wheel-smoke.XXXXXX)"
+# Reuse the dependency environment that already ran the test/security gates,
+# but install StateSet itself only from the freshly built wheel.  A completely
+# empty --no-deps venv cannot import the API (Pydantic is a declared runtime
+# dependency), while resolving dependencies again here would make this smoke
+# network-dependent and test the package index rather than our distribution.
+"$PYTHON_BIN" -m venv --system-site-packages "$SMOKE_VENV"
+PIP_DISABLE_PIP_VERSION_CHECK=1 "$SMOKE_VENV/bin/python" -m pip install \
+  --no-index --no-deps dist/*.whl
+SMOKE_SITE_PACKAGES="$("$SMOKE_VENV/bin/python" -c \
+  'import site; print(site.getsitepackages()[0])')"
+DEPENDENCY_SITE_PACKAGES="$("$PYTHON_BIN" -c \
+  'import site; print("\n".join(site.getsitepackages()))')"
+printf '%s\n' "$DEPENDENCY_SITE_PACKAGES" > \
+  "$SMOKE_SITE_PACKAGES/stateset-readiness-dependencies.pth"
+EXPECTED_VERSION="$("$PYTHON_BIN" -c \
+  'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')"
+(
+  cd /tmp
+  "$SMOKE_VENV/bin/python" -c \
+    "import sys; from pathlib import Path; import stateset_agents, stateset_agents.api; assert stateset_agents.__version__ == sys.argv[1]; assert Path(stateset_agents.__file__).resolve().is_relative_to(Path(sys.prefix).resolve()); print(stateset_agents.__version__)" \
+    "$EXPECTED_VERSION"
+)
 
 printf "\n[11/11] Verifying working tree is clean...\n"
 CURRENT_STEP="working_tree_clean"

@@ -15,6 +15,7 @@ import contextlib
 import hashlib
 import json
 import os
+import socket
 import subprocess
 import sys
 import time
@@ -34,7 +35,7 @@ if str(REPOSITORY_ROOT) not in sys.path:
 
 from stateset_agents import __version__  # noqa: E402
 
-PROTOCOL_VERSION = 3
+PROTOCOL_VERSION = 4
 MODEL_NAME = "stateset/synthetic-residual-policy-v1"
 MODEL_REVISION = hashlib.sha1(
     b"stateset-residual-policy-v1", usedforsecurity=False
@@ -43,6 +44,11 @@ DATASET_REVISION = hashlib.sha1(
     b"stateset-indexed-policy-data-v1", usedforsecurity=False
 ).hexdigest()
 ALGORITHM_REVISION = "stateset-group-policy-gradient-v1"
+NODE_ID_SOURCES = (
+    (Path("/sys/class/dmi/id/product_uuid"), "dmi-product-uuid"),
+    (Path("/sys/devices/virtual/dmi/id/product_uuid"), "dmi-product-uuid"),
+    (Path("/etc/machine-id"), "machine-id"),
+)
 
 DEFAULT_WORKLOAD: dict[str, Any] = {
     "feature_dim": 512,
@@ -235,6 +241,41 @@ def _artifact_digest(model: nn.Module, output: Path) -> str:
     return digest.hexdigest()
 
 
+def _node_identity() -> tuple[str, str]:
+    """Derive a hashed machine identity, preferring host-level DMI metadata."""
+    for path, source in NODE_ID_SOURCES:
+        try:
+            value = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if value:
+            material = f"{source}:{value}".encode()
+            return hashlib.sha256(material).hexdigest()[:16], source
+    material = f"hostname-fallback:{socket.gethostname()}".encode()
+    return hashlib.sha256(material).hexdigest()[:16], "hostname-fallback"
+
+
+def _distributed_node_topology(
+    world_size: int,
+) -> tuple[list[str], dict[str, int], dict[str, str]]:
+    """Return privacy-preserving node IDs and the number of ranks on each node."""
+    identity = _node_identity()
+    rank_identities: list[tuple[str, str] | None] = [None] * world_size
+    dist.all_gather_object(rank_identities, identity)
+    if any(value is None for value in rank_identities):
+        raise RuntimeError("could not collect a node identity from every rank")
+    counts: dict[str, int] = {}
+    sources: dict[str, str] = {}
+    for value in rank_identities:
+        assert value is not None
+        node_id, source = value
+        if node_id in sources and sources[node_id] != source:
+            raise RuntimeError("one node identity was reported by conflicting sources")
+        counts[node_id] = counts.get(node_id, 0) + 1
+        sources[node_id] = source
+    return sorted(counts), dict(sorted(counts.items())), dict(sorted(sources.items()))
+
+
 def run(args: argparse.Namespace) -> None:
     """Execute one topology/seed measurement under ``torchrun``."""
     if not torch.cuda.is_available():
@@ -358,6 +399,9 @@ def run(args: argparse.Namespace) -> None:
             torch.cuda.max_memory_allocated(device) / (1024**2), device=device
         )
         dist.all_reduce(peak, op=dist.ReduceOp.MAX)
+        node_ids, ranks_per_node, node_identity_sources = _distributed_node_topology(
+            world_size
+        )
 
         if rank == 0:
             args.output.parent.mkdir(parents=True, exist_ok=True)
@@ -394,6 +438,10 @@ def run(args: argparse.Namespace) -> None:
                 "hardware": {
                     "gpu": torch.cuda.get_device_name(0),
                     "gpu_count": world_size,
+                    "node_count": len(node_ids),
+                    "node_ids": node_ids,
+                    "ranks_per_node": ranks_per_node,
+                    "node_identity_sources": node_identity_sources,
                     "cuda": str(torch.version.cuda),
                     "topology": _topology(),
                 },
@@ -409,6 +457,7 @@ def run(args: argparse.Namespace) -> None:
                     "eval_score_baseline": baseline,
                     "eval_score_final": final,
                 },
+                "artifact_path": args.output.with_suffix(".pt").name,
                 "artifact_sha256": artifact_sha256,
             }
             args.output.write_text(

@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current release line: **v0.47.x (beta)**.
+Current release line: **v0.54.x (strong beta)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -73,6 +73,10 @@ evaluation, and lineage contracts.
 The tag pipeline now generates GitHub build attestations for Python artifacts
 and requests maximal provenance plus SBOMs for both container images. This gate
 remains unchecked until a tagged run retains and verifies those attestations.
+The scaling benchmark now has a separate digest-pinned BuildKit path and the
+A+ gate binds its source/image attestation to every scaling lifecycle record;
+the checkbox remains open until a real registry push retains the resulting
+provenance and SBOM artifacts.
 
 ### Comparative evidence
 
@@ -108,6 +112,12 @@ remains unchecked until a tagged run retains and verifies those attestations.
 - [ ] Execute and retain the complete live three-seed fault-injection matrix
 - [ ] Report cost per rollout, training step, and measured eval improvement
 - [ ] Add soak tests for long-running remote training and serving sessions
+
+The implementation now calculates cost per accepted rollout for distributed
+async evidence, cost per successful episode for agent suites, and
+raw-provider-exported cost per measured optimizer step for scaling. The item
+remains open until the live matrices populate all three metrics alongside
+measured evaluation improvement.
 
 ### Stable product surface
 
@@ -145,18 +155,30 @@ estimated targets in marketing material.
 | Portability | One StateSet experiment contract can execute through native and external training backends |
 | Trust | Signed provenance, stable v1 compatibility policy, public security process, independent reproduction |
 
+All locally machine-verifiable rows above must pass together through
+`benchmarks/a_plus_gate.py`. The gate has no diagnostic opt-out: it revalidates
+raw artifacts, requires native StateSet GSPO plus TRL/verl/NeMo RL/OpenRLHF,
+enforces StateSet throughput within 10% of the fastest, requires strong scaling
+across at least two physical nodes at 70% efficiency, permits zero lost or
+duplicate optimizer updates, requires the 12-hour soak and five fresh provider
+canaries, and binds every benchmark and publish-readiness result to one commit.
+
 ## Next implementation sequence
 
-1. Complete npm trusted publishing (or its scoped-token fallback), and
-   configure Fireworks and Docker credentials so every tag job completes
-   green.
-2. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
+1. Execute the checked-in corrected 1.5B native-GSPO versus direct-TRL v4
+   protocol and retain all six framework/seed pairs. Its non-billable dry run
+   passes, and both sides are pinned to the same sequence-level importance
+   ratio, asymmetric GSPO clipping, group-normalized rewards, and aggregation
+   semantics. The legacy v3 directory retains two direct-TRL seeds, but exact
+   manifest, harness, evidence-schema, and artifact binding prevents those rows
+   from entering or resuming the corrected matrix.
+2. Fill the immutable flagship manifest, run its bounded preflight, then run
+   the complete 7–9B three-seed matrix and report quality, throughput, memory,
+   and provider-derived cost per successful held-out episode.
+3. Live-preflight the implemented NeMo RL, verl, and OpenRLHF adapters, then run
    the matched three-seed roster.
    The orchestrator enforces a required roster and accounts for every attempt
    after errors.
-3. Fill the immutable flagship manifest, run its bounded preflight, then run
-   the complete 7–9B three-seed matrix and report quality, throughput, memory,
-   and provider-derived cost per successful held-out episode.
 4. Complete native and external engine coverage on the versioned backend
    protocol so StateSet environments, rewards, evals, and lineage target TRL,
    verl, NeMo RL, or OpenRLHF execution without semantic drift.
@@ -164,8 +186,9 @@ estimated targets in marketing material.
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
    τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
-7. Remove the scoped PyPI-token fallback after the trusted-publisher identity
-   is independently verified.
+7. Bootstrap `@stateset/agents` with an npm automation token, configure
+   Fireworks and Docker credentials, and remove the scoped PyPI-token fallback
+   after the trusted-publisher identity is independently verified.
 
 ## Contribution policy
 
@@ -174,4 +197,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-09-01.
+Last updated: 2026-09-10.

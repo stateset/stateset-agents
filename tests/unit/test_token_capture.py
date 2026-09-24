@@ -15,10 +15,11 @@ transformers = pytest.importorskip("transformers")
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402
 from stateset_agents.core.trajectory import ConversationTurn  # noqa: E402
+from tests._tiny_tokenizer import tiny_tokenizer  # noqa: E402
 
 
 def _tiny_hf_agent():
-    from transformers import GPT2Config, GPT2LMHeadModel, GPT2Tokenizer
+    from transformers import GPT2Config, GPT2LMHeadModel
 
     torch.manual_seed(0)
     model = GPT2LMHeadModel(
@@ -26,15 +27,14 @@ def _tiny_hf_agent():
             n_embd=32,
             n_layer=2,
             n_head=2,
-            vocab_size=50257,
+            vocab_size=256,
             n_positions=128,
             resid_pdrop=0.0,
             embd_pdrop=0.0,
             attn_pdrop=0.0,
         )
     )
-    tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer = tiny_tokenizer()
     config = AgentConfig(
         model_name="gpt2",
         max_new_tokens=6,

@@ -597,6 +597,9 @@ class TestProviderCanaryCommand:
                 )
             ],
         )
+        monkeypatch.setattr(
+            canary, "canary_source_identity", lambda root=None: ("a" * 40, True)
+        )
         output = tmp_path / "canary.json"
 
         result = runner.invoke(
@@ -613,7 +616,10 @@ class TestProviderCanaryCommand:
 
         assert result.exit_code == 0, result.output
         payload = json.loads(output.read_text(encoding="utf-8"))
-        assert payload["schema_version"] == 1
+        assert payload["schema_version"] == 2
+        assert payload["kind"] == "stateset-provider-canary-evidence"
+        assert payload["harness_commit"] == "a" * 40
+        assert payload["harness_clean"] is True
         assert payload["billable_resources_created"] == 0
         assert payload["results"][0]["cleanup_verified"] is True
 

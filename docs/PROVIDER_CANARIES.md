@@ -15,6 +15,21 @@ Repeat `--provider` to build a matrix. Omitting it probes the established
 River/RunPod/Fireworks scheduled set. Add
 `--output canary.json` to retain schema-versioned JSON evidence.
 
+The A+ publication validator requires retained passing reports for River,
+RunPod, Fireworks, CoreWeave, and Nebius by default. Reports older than 30 days
+or materially future-dated are rejected. Schema-v2 reports bind the canary to
+the exact 40-character harness commit, installed framework version, and a clean
+checkout; the A+ gate rejects legacy or source-unverified reports:
+
+```bash
+python benchmarks/provider_evidence.py benchmark_results/provider_canaries \
+  --output benchmark_results/provider_canaries/report.json
+```
+
+Older three-provider matrices remain valid historical evidence only; they do
+not satisfy the expanded publication roster. Existing schema-v1 files remain
+readable for historical diagnostics but cannot satisfy the A+ decision.
+
 ## What it proves
 
 - **River:** the key authenticates, service health responds, and account
@@ -29,6 +44,15 @@ River/RunPod/Fireworks scheduled set. Add
   no workload is created.
 - Every report states `billable_resources_created: 0`. Credential values are
   redacted from provider errors.
+
+Publication validation rechecks provider-specific observations rather than
+trusting the result label: River must retain health and capabilities; RunPod
+must retain an empty ephemeral/lease inventory; Fireworks must retain model,
+job, deployment, and empty-leftover counts; CoreWeave must prove Job-create
+authorization without creating one; and Nebius must retain an authenticated
+list response. Missing fields fail closed.
+Evidence loaders also reject symlinked files, invalid status/duration/cleanup
+envelopes, malformed UTF-8/JSON, duplicates, and unexpected providers.
 
 The read-only canary does not replace lifecycle tests. RunPod's weekly
 `gpu-verify.yml` workflow still creates a cheap pod, trains, retrieves the

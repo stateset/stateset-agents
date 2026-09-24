@@ -26,6 +26,7 @@ import argparse
 import json
 import math
 import os
+import re
 import shlex
 import sys
 import time
@@ -36,6 +37,11 @@ from pathlib import Path
 from typing import Any
 
 from backend_conformance import ConformanceError, canonical_digest, write_json_once
+from framework_comparison import (
+    EvidenceError,
+    validate_document,
+    verify_retained_artifact,
+)
 from runpod_backend_conformance import (
     _CATALOG_URL,
     _REMOTE_REPOSITORY,
@@ -101,9 +107,14 @@ def load_launcher_manifest(path: Path, root: Path) -> dict[str, Any]:
     if not isinstance(raw, Mapping) or raw.get("schema_version") != 1:
         raise RunPodShootoutError("manifest must be an object with schema_version=1")
     revision = raw.get("harness_revision")
-    if not isinstance(revision, str) or len(revision) != 40:
+    if (
+        not isinstance(revision, str)
+        or re.fullmatch(r"[0-9a-f]{40}", revision) is None
+        or revision == "0" * 40
+    ):
         raise RunPodShootoutError(
-            "manifest.harness_revision must be a 40-character StateSet commit"
+            "manifest.harness_revision must be a non-zero 40-character "
+            "lowercase hex StateSet commit"
         )
     execution = raw.get("execution")
     if not isinstance(execution, Mapping):
@@ -248,24 +259,86 @@ def _archive_previous_pod_dirs(output_dir: Path) -> list[Path]:
     return moved
 
 
-def _resumable_evidence(output_dir: Path) -> list[Path]:
+def _resumable_evidence(
+    output_dir: Path,
+    shootout: Mapping[str, Any],
+    harness_revision: str,
+) -> list[Path]:
     """Measured evidence files in ``output_dir`` worth carrying into a resumed
     run (top-level ``<framework>-seed<N>.json`` documents with
-    ``measured: true``); anything else there is left alone."""
+    ``measured: true``) that exactly match this manifest and harness revision;
+    anything stale or malformed is left alone and will be rerun."""
+    manifest_sha256 = canonical_digest(shootout)
+    implementations = {
+        str(implementation["name"]): str(implementation["version"])
+        for implementation in shootout["implementations"]
+    }
+    seeds = {int(seed) for seed in shootout["seeds"]}
     found: list[Path] = []
     for path in sorted(output_dir.glob("*-seed*.json")):
         try:
             document = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             continue
+        framework = document.get("framework") if isinstance(document, Mapping) else None
+        seed = document.get("seed") if isinstance(document, Mapping) else None
         if (
             isinstance(document, Mapping)
+            and document.get("schema_version") == 2
             and document.get("measured") is True
-            and "framework" in document
-            and "seed" in document
+            and isinstance(framework, str)
+            and framework in implementations
+            and document.get("framework_version") == implementations[framework]
+            and isinstance(seed, int)
+            and not isinstance(seed, bool)
+            and seed in seeds
+            and document.get("harness_commit") == harness_revision
+            and document.get("manifest_sha256") == manifest_sha256
         ):
+            try:
+                validate_document(document, path)
+            except EvidenceError:
+                continue
             found.append(path)
     return found
+
+
+def _upload_resume_bundle(
+    ssh: Any, evidence_paths: Sequence[Path], output_dir: Path
+) -> None:
+    """Restore verified evidence and its complete raw run directories remotely."""
+    root = output_dir.resolve()
+    for evidence in evidence_paths:
+        document = json.loads(evidence.read_text(encoding="utf-8"))
+        artifact = verify_retained_artifact(document, evidence)
+        relative = artifact.relative_to(root)
+        if len(relative.parts) < 3 or relative.parts[0] != "runs":
+            raise RunPodShootoutError(
+                f"resumable artifact is outside a standard run directory: {artifact}"
+            )
+        run_dir = root / relative.parts[0] / relative.parts[1]
+        entries = sorted(run_dir.rglob("*"))
+        if any(entry.is_symlink() for entry in entries):
+            raise RunPodShootoutError(
+                f"resumable run directory contains a symlink: {run_dir}"
+            )
+        files = [entry for entry in entries if entry.is_file()]
+        remote_dirs = sorted(
+            {
+                f"{_REMOTE_OUTPUT}/{entry.parent.relative_to(root).as_posix()}"
+                for entry in files
+            }
+        )
+        if remote_dirs:
+            _run_checked(
+                ssh,
+                "mkdir -p " + " ".join(shlex.quote(item) for item in remote_dirs),
+                "resume artifact directories",
+            )
+        for entry in files:
+            remote = f"{_REMOTE_OUTPUT}/{entry.relative_to(root).as_posix()}"
+            ssh.upload(entry, remote)
+        ssh.upload(evidence, f"{_REMOTE_OUTPUT}/{evidence.name}")
 
 
 def _print_progress(output_dir: Path, elapsed_s: float) -> None:
@@ -345,9 +418,15 @@ def execute(
             f"refusing to overwrite output: {output_dir} (pass --resume to "
             "finish a matrix whose completed runs are already there)"
         )
-    resumed = _resumable_evidence(output_dir) if resume else []
-    if resume:
-        _archive_previous_pod_dirs(output_dir)
+    resumed = (
+        _resumable_evidence(
+            output_dir,
+            manifest["_shootout"],
+            str(manifest["harness_revision"]),
+        )
+        if resume
+        else []
+    )
     execution = manifest["execution"]
     shootout = manifest["_shootout"]
     pod_id = ""
@@ -439,13 +518,15 @@ def execute(
         # runs, and a relaunch only has to re-download what is missing.
         if resumed:
             _run_checked(ssh, f"mkdir -p {shlex.quote(_REMOTE_OUTPUT)}", "resume dir")
-            for path in resumed:
-                ssh.upload(path, f"{_REMOTE_OUTPUT}/{path.name}")
+            _upload_resume_bundle(ssh, resumed, output_dir)
+            _archive_previous_pod_dirs(output_dir)
             print(
                 f"resuming: {len(resumed)} completed run(s) uploaded, "
                 "the remote shootout skips them",
                 flush=True,
             )
+        elif resume:
+            _archive_previous_pod_dirs(output_dir)
         _run_checked(
             ssh,
             f"rm -f {shlex.quote(_REMOTE_EXIT)} && "
@@ -511,8 +592,10 @@ def execute(
         )
         if output_dir.exists():
             report = {
-                "schema_version": 1,
+                "schema_version": 2,
                 "kind": "stateset-runpod-shootout-provider-record",
+                "provider": "runpod",
+                "cost_source": "authoritative-provider-rate-x-observed-lifetime",
                 "recorded_at": _utc_now(),
                 "manifest_sha256": plan["manifest_sha256"],
                 "shootout_manifest_sha256": plan["shootout_manifest_sha256"],
