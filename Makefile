@@ -34,14 +34,16 @@ lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
 	@cp requirements-dev-lock.txt requirements-dev-lock.txt.bak
 	@pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml >/dev/null
 	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
-	@if ! diff -q requirements-lock.txt requirements-lock.txt.bak >/dev/null || \
-	    ! diff -q requirements-dev-lock.txt requirements-dev-lock.txt.bak >/dev/null; then \
+	@if ! $(PYTHON_BIN) scripts/check_lockfile_bodies.py \
+	    requirements-lock.txt.bak requirements-lock.txt \
+	    requirements-dev-lock.txt.bak requirements-dev-lock.txt; then \
 	  echo "::error:: Lock files are stale. Run 'make lock' and commit the result." >&2; \
 	  mv requirements-lock.txt.bak requirements-lock.txt; \
 	  mv requirements-dev-lock.txt.bak requirements-dev-lock.txt; \
 	  exit 1; \
 	fi
-	@rm -f requirements-lock.txt.bak requirements-dev-lock.txt.bak
+	@mv requirements-lock.txt.bak requirements-lock.txt
+	@mv requirements-dev-lock.txt.bak requirements-dev-lock.txt
 	@echo "Lock files are in sync with pyproject.toml."
 
 dev-setup: ## Install development dependencies and pre-commit hooks
