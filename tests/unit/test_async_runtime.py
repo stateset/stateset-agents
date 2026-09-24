@@ -221,6 +221,82 @@ async def test_worker_failure_propagates_and_closes_runtime() -> None:
 
 
 @pytest.mark.asyncio
+async def test_worker_failure_during_final_learn_cannot_report_success() -> None:
+    coordinator = AsyncRolloutCoordinator()
+    fail_after_first = asyncio.Event()
+    produced = 0
+    published: list[int] = []
+
+    async def produce(_worker_id: int, version: int) -> RolloutRecord:
+        nonlocal produced
+        produced += 1
+        if produced == 1:
+            return _record("first", version)
+        await fail_after_first.wait()
+        raise RuntimeError("worker failed during learn")
+
+    async def learn(_batch: RolloutBatch) -> dict[str, float]:
+        fail_after_first.set()
+        while not coordinator.stats().closed:
+            await asyncio.sleep(0)
+        return {"loss": 0.1}
+
+    async def publish(version: int) -> None:
+        published.append(version)
+
+    runtime = AsyncRolloutRuntime(
+        coordinator=coordinator,
+        producer=produce,
+        learner_step=learn,
+        publish_policy=publish,
+        config=AsyncRolloutRuntimeConfig(max_updates=1, batch_timeout_seconds=1.0),
+    )
+
+    with pytest.raises(AsyncRolloutWorkerError, match="worker failed during learn"):
+        await asyncio.wait_for(runtime.run(), timeout=1.0)
+    assert published == [0]
+    assert coordinator.current_policy_version == 0
+
+
+@pytest.mark.asyncio
+async def test_worker_failure_during_final_shutdown_cannot_report_success() -> None:
+    coordinator = AsyncRolloutCoordinator()
+    second_started = asyncio.Event()
+    produced = 0
+
+    async def produce(_worker_id: int, version: int) -> RolloutRecord:
+        nonlocal produced
+        produced += 1
+        if produced == 1:
+            return _record("first", version)
+        second_started.set()
+        try:
+            await asyncio.sleep(10)
+        except asyncio.CancelledError as exc:
+            raise RuntimeError("worker failed during shutdown") from exc
+        return _record("unreachable", version)
+
+    async def learn(_batch: RolloutBatch) -> dict[str, float]:
+        await second_started.wait()
+        return {"loss": 0.1}
+
+    async def publish(_version: int) -> None:
+        return None
+
+    runtime = AsyncRolloutRuntime(
+        coordinator=coordinator,
+        producer=produce,
+        learner_step=learn,
+        publish_policy=publish,
+        config=AsyncRolloutRuntimeConfig(max_updates=1, batch_timeout_seconds=1.0),
+    )
+
+    with pytest.raises(AsyncRolloutWorkerError, match="worker failed during shutdown"):
+        await asyncio.wait_for(runtime.run(), timeout=1.0)
+    assert coordinator.stats().closed is True
+
+
+@pytest.mark.asyncio
 async def test_wrong_producer_policy_version_fails_closed() -> None:
     async def produce(_worker_id: int, version: int) -> RolloutRecord:
         return _record("wrong-version", version + 1)
