@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import shutil
 import tempfile
 import uuid
@@ -156,6 +157,10 @@ class CheckpointManager:
         params: dict[str, Any],
     ) -> Path:
         """Save a named experiment checkpoint (kept experiments only)."""
+        if not isinstance(experiment_id, str) or not re.fullmatch(
+            r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", experiment_id
+        ):
+            raise ValueError("experiment ID must be a safe checkpoint name")
         exp_dir = self.checkpoints_dir / experiment_id
         if exp_dir.exists():
             shutil.rmtree(exp_dir)
@@ -245,9 +250,13 @@ class CheckpointManager:
             logger.debug("Saved state_dict to %s", path / "model_state.pt")
         except Exception as exc:
             logger.warning("Could not save model weights: %s", exc)
+            raise RuntimeError("could not save model weights") from exc
 
     def _restore_agent_state(self, agent: Any, path: Path) -> bool:
         """Restore agent model state from disk. Returns True on success."""
+        from ...core.checkpoint_io import validate_local_shard_indexes
+
+        validate_local_shard_indexes(path)
         model = getattr(agent, "model", None)
         if model is None:
             logger.debug("Agent has no .model attribute; skipping weight restore")

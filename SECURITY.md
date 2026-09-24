@@ -70,6 +70,10 @@ necessary to demonstrate the issue. It is not a bug-bounty promise.
 - Checkpoints load with `weights_only=True` by default. Pass `trusted=True`
   only for artifacts you produced or independently trust; pickle-capable model
   files can execute code.
+- Framework-owned local model and adapter restores reject sharded checkpoint
+  indexes whose shard paths escape the artifact directory or name symlinks or
+  non-regular files. This preflight cannot protect arbitrary third-party
+  loaders or a directory that another process can change during loading.
 - Redis-backed caches deserialize trusted internal values. Only connect them to
   a Redis deployment whose writers are fully controlled.
 - `API_REQUIRE_AUTH` must remain enabled in production. Disabling it is a
@@ -83,7 +87,9 @@ necessary to demonstrate the issue. It is not a bug-bounty promise.
 
 CI runs dependency review, secret detection, CodeQL, Bandit, Safety, Trivy, and
 Rust advisory checks where applicable. Release readiness fails closed on high
-severity dependency findings. Security fixes and disclosures are published as
+severity dependency findings except the narrowly reviewed, expiring
+Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md).
+Security fixes and disclosures are published as
 GitHub Security Advisories.
 
 The machine-readable response commitments live in

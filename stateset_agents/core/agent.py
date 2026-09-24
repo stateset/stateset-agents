@@ -605,6 +605,9 @@ class MultiTurnAgent(Agent):
             adapter_path = Path(self.config.peft_path).expanduser().resolve()
             if not adapter_path.exists():
                 raise FileNotFoundError(f"peft_path does not exist: {adapter_path}")
+            from .checkpoint_io import validate_local_shard_indexes
+
+            validate_local_shard_indexes(adapter_path)
             self.model = PeftModel.from_pretrained(self.model, str(adapter_path))
             logger.info("Loaded LoRA adapter from %s", adapter_path)
         # Otherwise apply a fresh PEFT config if requested (training-time path).
