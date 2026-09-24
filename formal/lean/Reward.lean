@@ -75,6 +75,30 @@ theorem normalized_weighted_sum_bound (components : List (Nat × Nat))
   rw [normalized] at bound
   omega
 
+/-- The weighted-average branch divides by the total weight, returning zero
+    when every weight is zero. Failed components are represented by score zero
+    while their weights remain in the denominator. -/
+def weightedAverage (components : List (Nat × Nat)) : Nat :=
+  if totalWeight components = 0 then 0
+  else weightedSum components / totalWeight components
+
+theorem weightedAverage_zero_weight (components : List (Nat × Nat))
+    (zero : totalWeight components = 0) : weightedAverage components = 0 := by
+  simp [weightedAverage, zero]
+
+theorem weightedAverage_at_most_100 (components : List (Nat × Nat))
+    (bounded : ∀ pair ∈ components, pair.2 ≤ 100) :
+    weightedAverage components ≤ 100 := by
+  by_cases zero : totalWeight components = 0
+  · simp [weightedAverage, zero]
+  · have positive : 0 < totalWeight components := Nat.pos_of_ne_zero zero
+    have sum_bound := weightedSum_bound components bounded
+    have strict_bound : weightedSum components < 101 * totalWeight components := by
+      omega
+    have quotient_bound := (Nat.div_lt_iff_lt_mul positive).2 strict_bound
+    simp only [weightedAverage, zero, ite_false]
+    omega
+
 /-- Two group-mean advantages sum to zero, matching TrajectoryGroup's
     centered reward computation before floating-point conversion. -/
 theorem two_rewards_center (a b : Int) : (a - b) + (b - a) = 0 := by

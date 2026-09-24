@@ -22,7 +22,7 @@ action; the proof files are checked directly by `formal/check.sh`.
 | 2 | `tla/AsyncRuntime.tla` | `training/async_runtime.py` | Initial publication precedes worker start; each later version is published before visibility; updates are bounded. A pending worker fault cannot produce a successful result, including after the final update. A separate fair, failure-free configuration checks eventual completion. Python regressions cover failed publication and worker failure during learning. |
 | 3 | `lean/Objective.lean` | `training/objectives.py`, `training/rl_losses.py` | Log-ratio clipping bounds and idempotence, clipped-surrogate behavior including zero advantage, zero-mask behavior, and exact cross-multiplied group centering. |
 | 4 | `tla/AutoResearch.tla`, `tla/CheckpointSwap.tla`, `tla/ResearchCommit.tla` | `training/auto_research/experiment_loop.py`, `experiment_tracker.py`, `checkpoint_manager.py` | Only evaluated improvements become best in either maximize or minimize mode, crashed records cannot become best, interrupted directory swaps recover, and provisional checkpoints reconcile with the experiment log after restart. |
-| 5 | `lean/Reward.lean` | `rewards/multi_objective_reward.py`, `core/trajectory.py` | Final score clamp and idempotence, failed/zero-weight component behavior, and a weighted-sum bound for normalized, bounded components. |
+| 5 | `lean/Reward.lean` | `rewards/multi_objective_reward.py`, `core/trajectory.py` | Final score clamp and idempotence, failed/zero-weight component behavior, a weighted-sum bound for normalized, bounded components, and a weighted-average bound including zero total weight. |
 
 The research model ranges over bounded integer scores, including negative
 values. The Python record now
@@ -86,6 +86,7 @@ channel at commit boundaries and after stopping producers before returning.
 
 For reward composition, Python now rejects negative or non-finite component
 weights and treats a non-finite component score as a failed component with zero
-contribution. The Lean weighted-sum theorem still assumes each successful
-component score lies in `[0, 1]`; the Python composer clamps the final score
-but does not impose that range on every component.
+contribution. The Lean weighted-sum and weighted-average bounds still assume
+each successful component score lies in `[0, 1]`; the Python composer clamps
+the final score but does not impose that range on every component. The average
+proof permits any nonnegative total weight, including zero.

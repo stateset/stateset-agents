@@ -31,8 +31,11 @@ class FixedComponent(BaseRewardComponent):
 
 
 @pytest.mark.asyncio
-async def test_bounded_weighted_reward_matches_integer_model() -> None:
-    """Enumerate scores, weights, and failure states within the Lean domain."""
+@pytest.mark.parametrize("normalization_method", ["weighted_sum", "weighted_average"])
+async def test_bounded_weighted_reward_matches_integer_model(
+    normalization_method: str,
+) -> None:
+    """Enumerate both sum and average paths within the Lean domain."""
     for weight_a, weight_b, score_a, score_b, fail_a, fail_b in itertools.product(
         (0, 1, 2),
         (0, 1, 2),
@@ -45,7 +48,8 @@ async def test_bounded_weighted_reward_matches_integer_model() -> None:
             components=[
                 FixedComponent("a", weight_a, score_a, fail_a),
                 FixedComponent("b", weight_b, score_b, fail_b),
-            ]
+            ],
+            normalization_method=normalization_method,
         )
         result = await reward.compute_reward(turns=[])
         total = weight_a + weight_b
