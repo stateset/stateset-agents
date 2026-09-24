@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Compare resolved lock entries while ignoring pip-compile's local header."""
 
 import sys
