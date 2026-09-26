@@ -13,12 +13,12 @@ private holdouts. Run the public demonstration with:
 
 ```bash
 python -m benchmarks.product_use.execution \
-  --tasks benchmarks/product_use/tasks.v0.2.public.json \
-  --submissions benchmarks/product_use/demonstrations.v0.2.json
+  --tasks benchmarks/product_use/tasks.v0.3.public.json \
+  --submissions benchmarks/product_use/demonstrations.v0.3.json
 ```
 
-The public task set measures improvement-loop usage, training configuration, and
-basic safety behavior. It is separate from the GPU performance evidence below:
+The public task set measures improvement-loop usage, tool discovery, and
+training configuration. It is separate from the GPU performance evidence below:
 tool-use scores must not be presented as training throughput or model-quality
 claims.
 

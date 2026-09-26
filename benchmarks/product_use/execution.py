@@ -2,7 +2,7 @@
 
 Submissions are JSON tool-call traces. This module accepts data only: it never
 executes a submitted command or imports a submitted module. Each task receives
-a new temporary workspace and only the five listed MCP functions are callable.
+a new temporary workspace and only the listed MCP functions are callable.
 """
 
 from __future__ import annotations
@@ -17,24 +17,29 @@ from typing import Any
 
 from stateset_agents import mcp_server
 
-SCHEMA_VERSION = "0.2"
+SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.2", "0.3"})
+DISCOVERY_TOOLS = frozenset({"list_rewards", "list_model_presets"})
 PATH_ARGUMENTS = frozenset(
     {"input_path", "history_path", "transcripts_dir", "output_dir"}
 )
 TOOLS = {
+    "list_rewards": mcp_server.list_rewards,
     "ingest_transcripts": mcp_server.ingest_transcripts,
     "grade_transcript": mcp_server.grade_transcript,
     "improve_run": mcp_server.improve_run,
     "improve_status": mcp_server.improve_status,
+    "list_model_presets": mcp_server.list_model_presets,
     "dry_run_finetune": mcp_server.dry_run_finetune,
 }
 ALLOWED_ARGUMENTS = {
+    "list_rewards": frozenset(),
     "ingest_transcripts": frozenset({"input_path", "format", "output_dir"}),
     "grade_transcript": frozenset({"history_path", "reward"}),
     "improve_run": frozenset(
         {"transcripts_dir", "reward", "output_dir", "threshold", "format"}
     ),
     "improve_status": frozenset({"output_dir"}),
+    "list_model_presets": frozenset(),
     "dry_run_finetune": frozenset({"model_preset"}),
 }
 
@@ -156,8 +161,19 @@ def _check_result(
         )
     if goal == "grade_transcript":
         score = result.get("mean_score")
+        discovery = task.get("discovery")
+        discovered = discovery is None or (
+            discovery == "list_rewards"
+            and len(trace) >= 2
+            and trace[-2]["name"] == "list_rewards"
+            and trace[-2]["arguments"] == {}
+            and isinstance(trace[-2]["result"], dict)
+            and isinstance(trace[-2]["result"].get("rewards"), list)
+            and "customer_support" in trace[-2]["result"].get("rewards", [])
+        )
         return (
-            actual
+            discovered
+            and actual
             == {
                 "history_path": "transcripts/good.jsonl",
                 "reward": "customer_support",
@@ -229,8 +245,23 @@ def _check_result(
             and result["curated_count"] > 0
         )
     if goal == "dry_run_finetune":
-        return result.get("model_preset") == task["preset"] and isinstance(
-            result.get("config"), dict
+        discovery = task.get("discovery")
+        discovered = discovery is None or (
+            discovery == "list_model_presets"
+            and len(trace) >= 2
+            and trace[-2]["name"] == "list_model_presets"
+            and trace[-2]["arguments"] == {}
+            and isinstance(trace[-2]["result"], dict)
+            and isinstance(trace[-2]["result"].get("presets"), list)
+            and any(
+                isinstance(item, dict) and item.get("name") == task["preset"]
+                for item in trace[-2]["result"].get("presets", [])
+            )
+        )
+        return (
+            discovered
+            and result.get("model_preset") == task["preset"]
+            and isinstance(result.get("config"), dict)
         )
     raise ValueError(f"unknown goal: {goal}")
 
@@ -253,6 +284,12 @@ async def score_task(
         for call in calls:
             if not isinstance(call, dict) or not isinstance(call.get("name"), str):
                 return {"task_id": task["id"], "score": 0, "error": "invalid tool call"}
+            if task["schema_version"] == "0.2" and call["name"] in DISCOVERY_TOOLS:
+                return {
+                    "task_id": task["id"],
+                    "score": 0,
+                    "error": "tool is unavailable in this task version",
+                }
             try:
                 result = await _call_tool(call["name"], call.get("arguments", {}), root)
             except (TypeError, ValueError, OSError) as exc:
@@ -275,11 +312,13 @@ async def score_task(
 
 
 def run(tasks_path: Path, submissions_path: Path) -> dict[str, Any]:
-    """Score all version 0.2 tasks; omitted tasks receive zero."""
+    """Score one versioned task set; omitted tasks receive zero."""
     tasks = _read_array(tasks_path, "tasks")
     submissions = _read_array(submissions_path, "submissions")
-    if any(task.get("schema_version") != SCHEMA_VERSION for task in tasks):
-        raise ValueError(f"tasks must use schema_version {SCHEMA_VERSION}")
+    versions = {task.get("schema_version") for task in tasks}
+    if len(versions) != 1 or not versions.issubset(SUPPORTED_SCHEMA_VERSIONS):
+        raise ValueError("tasks must share a supported schema_version")
+    version = versions.pop()
     task_ids = {task["id"] for task in tasks}
     by_id = {row["task_id"]: row for row in submissions}
     if set(by_id) - task_ids:
@@ -293,7 +332,7 @@ def run(tasks_path: Path, submissions_path: Path) -> dict[str, Any]:
         for task in tasks
     ]
     return {
-        "schema_version": SCHEMA_VERSION,
+        "schema_version": version,
         "task_count": len(tasks),
         "score": (
             round(sum(item["score"] for item in results) / len(tasks), 4)

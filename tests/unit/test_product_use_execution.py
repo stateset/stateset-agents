@@ -5,19 +5,34 @@ import inspect
 import json
 from pathlib import Path
 
-from benchmarks.product_use.execution import TOOLS, run, score_task
+import pytest
+
+from benchmarks.product_use.execution import DISCOVERY_TOOLS, TOOLS, run, score_task
 from benchmarks.product_use.export_examples import export_examples
 
 TASKS = Path("benchmarks/product_use/tasks.v0.2.public.json")
 DEMONSTRATIONS = Path("benchmarks/product_use/demonstrations.v0.2.json")
 TOOL_CATALOG = Path("benchmarks/product_use/tools.v0.2.json")
+TASKS_V03 = Path("benchmarks/product_use/tasks.v0.3.public.json")
+DEMONSTRATIONS_V03 = Path("benchmarks/product_use/demonstrations.v0.3.json")
+TOOL_CATALOG_V03 = Path("benchmarks/product_use/tools.v0.3.json")
 
 
-def test_public_tool_catalog_matches_mcp_functions() -> None:
-    catalog = json.loads(TOOL_CATALOG.read_text(encoding="utf-8"))
+@pytest.mark.parametrize(
+    ("catalog_path", "expected_names"),
+    [
+        (TOOL_CATALOG, set(TOOLS) - DISCOVERY_TOOLS),
+        (TOOL_CATALOG_V03, set(TOOLS)),
+    ],
+)
+def test_public_tool_catalog_matches_mcp_functions(
+    catalog_path: Path, expected_names: set[str]
+) -> None:
+    catalog = json.loads(catalog_path.read_text(encoding="utf-8"))
     entries = {entry["name"]: entry for entry in catalog["tools"]}
-    assert set(entries) == set(TOOLS)
-    for name, function in TOOLS.items():
+    assert set(entries) == expected_names
+    for name in expected_names:
+        function = TOOLS[name]
         signature = inspect.signature(function)
         parameters = entries[name]["parameters"]
         assert set(parameters["properties"]) == set(signature.parameters)
@@ -30,12 +45,28 @@ def test_public_tool_catalog_matches_mcp_functions() -> None:
 
 
 def test_verified_corpus_matches_real_tool_demonstrations() -> None:
-    rows = export_examples(TASKS, DEMONSTRATIONS, TOOL_CATALOG)
-    committed = Path("benchmarks/product_use/examples.v0.2.jsonl").read_text(
-        encoding="utf-8"
-    )
-    assert len(rows) == 5
-    assert committed == "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
+    for tasks, demonstrations, tools, expected_count, version in (
+        (TASKS, DEMONSTRATIONS, TOOL_CATALOG, 5, "0.2"),
+        (TASKS_V03, DEMONSTRATIONS_V03, TOOL_CATALOG_V03, 7, "0.3"),
+    ):
+        rows = export_examples(tasks, demonstrations, tools)
+        committed = Path(f"benchmarks/product_use/examples.v{version}.jsonl").read_text(
+            encoding="utf-8"
+        )
+        assert len(rows) == expected_count
+        assert committed == "".join(
+            json.dumps(row, sort_keys=True) + "\n" for row in rows
+        )
+
+
+def test_discovery_task_requires_discovery_call() -> None:
+    discovery_tasks = json.loads(TASKS_V03.read_text(encoding="utf-8"))[-2:]
+    old_demonstrations = json.loads(DEMONSTRATIONS.read_text(encoding="utf-8"))
+    for task, demonstration in zip(
+        discovery_tasks, (old_demonstrations[1], old_demonstrations[4]), strict=True
+    ):
+        result = asyncio.run(score_task(task, demonstration))
+        assert result["score"] == 0
 
 
 def test_forged_artifact_does_not_pass() -> None:

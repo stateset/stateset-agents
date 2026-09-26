@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .execution import SCHEMA_VERSION, run
+from .execution import run
 
 
 def export_examples(
@@ -15,6 +15,7 @@ def export_examples(
 ) -> list[dict[str, Any]]:
     """Join public prompts and successful traces after replaying every example."""
     report = run(tasks_path, demonstrations_path)
+    version = report["schema_version"]
     if report["score"] != 1.0:
         failed = [row["task_id"] for row in report["results"] if row["score"] != 1]
         raise ValueError(f"demonstrations failed execution: {', '.join(failed)}")
@@ -24,13 +25,13 @@ def export_examples(
         for row in json.loads(demonstrations_path.read_text(encoding="utf-8"))
     }
     catalog = json.loads(tools_path.read_text(encoding="utf-8"))
-    if catalog.get("schema_version") != SCHEMA_VERSION or not isinstance(
+    if catalog.get("schema_version") != version or not isinstance(
         catalog.get("tools"), list
     ):
         raise ValueError("tool catalog schema version does not match the benchmark")
     return [
         {
-            "schema_version": SCHEMA_VERSION,
+            "schema_version": version,
             "task_id": task["id"],
             "interface": task["interface"],
             "prompt": task["prompt"],
