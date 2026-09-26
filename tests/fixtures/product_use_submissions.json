@@ -1,0 +1,7 @@
+[
+  {
+    "task_id": "ingest-openai-trace",
+    "tool_calls": [{"name": "ingest_transcripts"}],
+    "artifacts": {"output_dir": "workspace/transcripts"}
+  }
+]

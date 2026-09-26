@@ -104,8 +104,8 @@ def validate_repository_state(root: Path, expected_commit: str) -> None:
         raise APlusGateError("A+ evidence gate requires a clean checkout")
 
 
-def validate_security_report_payloads(bandit: Any, safety: Any) -> dict[str, int]:
-    """Re-evaluate retained Bandit and Safety results fail-closed."""
+def validate_security_report_payloads(bandit: Any, audit: Any) -> dict[str, int]:
+    """Re-evaluate retained Bandit and pip-audit results fail-closed."""
     if not isinstance(bandit, Mapping):
         raise APlusGateError("Bandit report must be a JSON object")
     errors = bandit.get("errors")
@@ -126,20 +126,28 @@ def validate_security_report_payloads(bandit: Any, safety: Any) -> dict[str, int
             "Bandit report contains medium/high/critical security findings"
         )
 
-    if not isinstance(safety, Mapping):
-        raise APlusGateError("Safety report must be a JSON object")
-    vulnerabilities = safety.get("vulnerabilities")
-    scanned = safety.get("scanned_packages")
-    if not isinstance(vulnerabilities, list) or not isinstance(scanned, list):
-        raise APlusGateError(
-            "Safety report is missing vulnerabilities/scanned_packages arrays"
-        )
+    if not isinstance(audit, Mapping):
+        raise APlusGateError("pip-audit report must be a JSON object")
+    dependencies = audit.get("dependencies")
+    if not isinstance(dependencies, list) or not dependencies:
+        raise APlusGateError("pip-audit report has no dependencies array")
+    if any(
+        not isinstance(item, Mapping)
+        or not isinstance(item.get("name"), str)
+        or not isinstance(item.get("version"), str)
+        or not isinstance(item.get("vulns"), list)
+        for item in dependencies
+    ):
+        raise APlusGateError("pip-audit report contains invalid dependency entries")
+    vulnerabilities = [
+        vulnerability for item in dependencies for vulnerability in item["vulns"]
+    ]
     if vulnerabilities:
-        raise APlusGateError("Safety report contains known vulnerabilities")
+        raise APlusGateError("pip-audit report contains known vulnerabilities")
     return {
         "bandit_findings": len(results),
-        "safety_vulnerabilities": len(vulnerabilities),
-        "safety_scanned_packages": len(scanned),
+        "dependency_vulnerabilities": len(vulnerabilities),
+        "audited_packages": len(dependencies),
     }
 
 
@@ -364,7 +372,7 @@ def validate_release_readiness(
     )
     security_reports = retained_artifacts("security_reports", 2)
     report_names = {Path(str(item["path"])).name for item in security_reports}
-    if report_names != {"bandit-report.json", "safety-report.json"}:
+    if report_names != {"bandit-report.json", "pip-audit-report.json"}:
         raise APlusGateError(f"{path}: security report pair is invalid")
     security_payloads: dict[str, Any] = {}
     for report in security_reports:
@@ -377,7 +385,7 @@ def validate_release_readiness(
             raise APlusGateError(f"{path}: security report is not valid JSON") from exc
     security_validation = validate_security_report_payloads(
         security_payloads["bandit-report.json"],
-        security_payloads["safety-report.json"],
+        security_payloads["pip-audit-report.json"],
     )
     coverage_reports = retained_artifacts("coverage_reports", 1)
     coverage_path = path.parent / str(coverage_reports[0]["path"])

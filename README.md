@@ -155,6 +155,11 @@ serving, and provider claims.
   publication unless every suite clears the three-seed significance and
   cost-accounting gate. The suites still require measured execution; an
   implemented runner is not a benchmark result.
+- **Public product-use benchmark:** [`benchmarks/product_use/`](benchmarks/product_use/)
+  provides versioned MCP tasks, example traces, and a scorer that runs the
+  real tools for teaching and evaluating how agents use StateSet. Public scores
+  are separate from GPU performance evidence; private holdouts are required
+  for a leaderboard.
 - **Distributed evidence collection:** a shell-free manifest runner executes
   the two-node, three-seed soak and fault matrix, rotates scenario order,
   measures wall time outside provider adapters, hashes retained artifacts,
@@ -411,7 +416,7 @@ coverage, live hardware attempts, and successful inference by provider.
 - **Artifact-backed release readiness.** Readiness now installs the newly built
   wheel offline into a clean virtual environment outside the checkout, reusing
   the dependency set that passed the preceding gates, and emits portable schema-v2
-  evidence for both distributions, coverage XML, and Bandit/Safety reports.
+  evidence for both distributions, coverage XML, and Bandit/pip-audit reports.
   The A+ gate re-hashes and parses those files instead of trusting a bare
   `status: passed` marker.
 - **Cross-format backend identity.** A NeMo RL/OpenRLHF/verl conformance roster

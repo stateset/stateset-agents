@@ -36,7 +36,7 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install bandit safety semgrep
+        pip install bandit pip-audit semgrep
 
     - name: Install Trivy
       run: |
@@ -48,13 +48,13 @@ jobs:
         bandit -r stateset_agents -f json -o bandit-report.json || true
         bandit -r stateset_agents -f txt -o bandit-report.txt || true
 
-    - name: Run Safety dependency check
+    - name: Run pip-audit dependency check
       run: |
-        # Safety 3.8.1 crashes on the cuda-toolkit extras meta-package. Its
-        # concrete CUDA component packages remain pinned and scanned below.
-        grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
-        safety check -r /tmp/stateset-safety-requirements.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
-        safety check -r /tmp/stateset-safety-requirements.txt --no-prompt > safety-report.txt || true
+        # cuda-toolkit is an extras meta-package; concrete CUDA components
+        # remain pinned and audited below.
+        grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
+        pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip --format json --output pip-audit-report.json || true
+        pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip > pip-audit-report.txt || true
 
     - name: Run Semgrep security analysis
       run: |
@@ -73,8 +73,8 @@ jobs:
         path: |
           bandit-report.json
           bandit-report.txt
-          safety-report.json
-          safety-report.txt
+          pip-audit-report.json
+          pip-audit-report.txt
           semgrep-report.json
           semgrep-report.txt
           trivy-report.json
@@ -92,10 +92,10 @@ jobs:
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         fi
 
-        if [ -f safety-report.txt ]; then
-          echo "### Safety Results" >> $GITHUB_STEP_SUMMARY
+        if [ -f pip-audit-report.txt ]; then
+          echo "### pip-audit Results" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          cat safety-report.txt >> $GITHUB_STEP_SUMMARY
+          cat pip-audit-report.txt >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
         fi
 
@@ -108,13 +108,13 @@ jobs:
         import json
         import sys
         from pathlib import Path
-        from scripts.security_exceptions import is_approved_safety_exception
+        from scripts.security_exceptions import classify_pip_audit_findings
 
         parse_errors = []
 
         expected_reports = [
             "bandit-report.json",
-            "safety-report.json",
+            "pip-audit-report.json",
             "semgrep-report.json",
             "trivy-report.json",
         ]
@@ -147,37 +147,17 @@ jobs:
                 parse_errors.append("bandit-report.json could not be parsed")
                 bandit_issues = []
 
-        safety_issues = []
-        safety_path = Path("safety-report.json")
-        if safety_path.exists():
-            try:
-                payload = json.loads(safety_path.read_text(encoding="utf-8"))
-                if isinstance(payload, list):
-                    safety_issues = payload
-                elif isinstance(payload, dict):
-                    safety_issues = (
-                        payload.get("vulnerabilities")
-                        or payload.get("issues")
-                        or payload.get("dependencies")
-                        or []
-                    )
-            except (json.JSONDecodeError, OSError):
-                parse_errors.append("safety-report.json could not be parsed")
-                safety_issues = []
+        audit_issues = []
+        approved_audit_issues = []
+        try:
+            audit_report = json.loads(Path("pip-audit-report.json").read_text(encoding="utf-8"))
+            approved_audit_issues, audit_issues = classify_pip_audit_findings(audit_report)
+        except (json.JSONDecodeError, OSError, ValueError):
+            parse_errors.append("pip-audit-report.json could not be parsed")
+        for item in approved_audit_issues:
+            print(f"⚠️ Approved, time-limited dependency exception: {item}")
 
         semgrep_issues = []
-        approved_safety_issues = [
-            item for item in safety_issues if is_approved_safety_exception(item)
-        ]
-        safety_issues = [
-            item for item in safety_issues if not is_approved_safety_exception(item)
-        ]
-        for item in approved_safety_issues:
-            print(
-                "⚠️ Approved, time-limited Safety exception: "
-                f"{item['package_name']} {item['analyzed_version']} "
-                f"{item['vulnerability_id']} ({item['CVE']})"
-            )
 
         semgrep_path = Path("semgrep-report.json")
         if semgrep_path.exists():
@@ -232,12 +212,12 @@ jobs:
                 print(f"  - {item}")
             sys.exit(1)
 
-        if bandit_issues or safety_issues or semgrep_issues or trivy_issues:
+        if bandit_issues or audit_issues or semgrep_issues or trivy_issues:
             print("🚨 Security gate failed: high-severity findings detected.")
             if bandit_issues:
                 print(f"  - Bandit findings: {len(bandit_issues)}")
-            if safety_issues:
-                print(f"  - Safety findings: {len(safety_issues)}")
+            if audit_issues:
+                print(f"  - pip-audit findings: {len(audit_issues)}")
             if semgrep_issues:
                 print(f"  - Semgrep findings: {len(semgrep_issues)}")
             if trivy_issues:

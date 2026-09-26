@@ -77,11 +77,14 @@ def test_release_readiness_is_bound_to_exact_commit(tmp_path: Path) -> None:
     dist.mkdir()
     wheel, sdist = _distribution_pair(dist)
     bandit = tmp_path / "bandit-report.json"
-    safety = tmp_path / "safety-report.json"
+    audit = tmp_path / "pip-audit-report.json"
     coverage = tmp_path / "coverage.xml"
     for artifact, content in (
         (bandit, b'{"errors": [], "results": []}'),
-        (safety, b'{"scanned_packages": [], "vulnerabilities": []}'),
+        (
+            audit,
+            b'{"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]}',
+        ),
         (coverage, b'<coverage line-rate="0.64"/>'),
     ):
         artifact.write_bytes(content)
@@ -117,7 +120,7 @@ def test_release_readiness_is_bound_to_exact_commit(tmp_path: Path) -> None:
                 ],
                 "working_tree_clean": True,
                 "distributions": [retained(wheel), retained(sdist)],
-                "security_reports": [retained(bandit), retained(safety)],
+                "security_reports": [retained(bandit), retained(audit)],
                 "coverage_reports": [retained(coverage)],
                 "coverage_percent": 64.0,
             }
@@ -165,18 +168,18 @@ def test_distribution_archive_validation_rejects_unsafe_and_wrong_identity(
 def test_release_security_reports_are_revalidated_fail_closed() -> None:
     valid = gate.validate_security_report_payloads(
         {"errors": [], "results": []},
-        {"scanned_packages": [{"name": "numpy"}], "vulnerabilities": []},
+        {"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]},
     )
     assert valid == {
         "bandit_findings": 0,
-        "safety_vulnerabilities": 0,
-        "safety_scanned_packages": 1,
+        "dependency_vulnerabilities": 0,
+        "audited_packages": 1,
     }
 
     with pytest.raises(gate.APlusGateError, match="execution errors"):
         gate.validate_security_report_payloads(
             {"errors": ["parse failed"], "results": []},
-            {"scanned_packages": [], "vulnerabilities": []},
+            {"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]},
         )
 
 
@@ -201,14 +204,15 @@ def test_coverage_line_rate_rejects_xml_preamble_injection(tmp_path: Path) -> No
                 "errors": [],
                 "results": [{"issue_severity": "MEDIUM"}],
             },
-            {"scanned_packages": [], "vulnerabilities": []},
+            {"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]},
         )
     with pytest.raises(gate.APlusGateError, match="known vulnerabilities"):
         gate.validate_security_report_payloads(
             {"errors": [], "results": []},
             {
-                "scanned_packages": [{"name": "example"}],
-                "vulnerabilities": [{"package_name": "example"}],
+                "dependencies": [
+                    {"name": "example", "version": "1", "vulns": [{"id": "PYSEC-1"}]}
+                ],
             },
         )
 
