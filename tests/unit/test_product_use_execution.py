@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from benchmarks.product_use.execution import TOOLS, run, score_task
+from benchmarks.product_use.export_examples import export_examples
 
 TASKS = Path("benchmarks/product_use/tasks.v0.2.public.json")
 DEMONSTRATIONS = Path("benchmarks/product_use/demonstrations.v0.2.json")
@@ -28,10 +29,13 @@ def test_public_tool_catalog_matches_mcp_functions() -> None:
         }
 
 
-def test_real_tool_demonstrations_pass() -> None:
-    report = run(TASKS, DEMONSTRATIONS)
-    assert report["score"] == 1.0
-    assert report["task_count"] == 5
+def test_verified_corpus_matches_real_tool_demonstrations() -> None:
+    rows = export_examples(TASKS, DEMONSTRATIONS, TOOL_CATALOG)
+    committed = Path("benchmarks/product_use/examples.v0.2.jsonl").read_text(
+        encoding="utf-8"
+    )
+    assert len(rows) == 5
+    assert committed == "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows)
 
 
 def test_forged_artifact_does_not_pass() -> None:
