@@ -126,6 +126,22 @@ def _check_result(
         return False
     if goal == "ingest_transcripts":
         paths = sorted((root / "transcripts").glob("conversation_*.jsonl"))
+        try:
+            source = [
+                json.loads(line)["messages"]
+                for line in (root / "logs.jsonl")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            written = [
+                [
+                    json.loads(line)
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                ]
+                for path in paths
+            ]
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
         return (
             actual
             == {
@@ -134,8 +150,10 @@ def _check_result(
                 "output_dir": "transcripts",
             }
             and result.get("conversation_count") == 2
+            and result.get("turn_count") == 4
+            and result.get("files") == [str(path) for path in paths]
             and len(paths) == 2
-            and all(path.read_text(encoding="utf-8").strip() for path in paths)
+            and written == source
         )
     if goal == "grade_transcript":
         score = result.get("mean_score")
@@ -154,6 +172,23 @@ def _check_result(
     if goal == "improve_run":
         curated = root / "improved" / "curated.jsonl"
         summary = root / "improved" / "improve_summary.json"
+        try:
+            examples = [
+                json.loads(line)
+                for line in curated.read_text(encoding="utf-8").splitlines()
+            ]
+            saved_summary = json.loads(summary.read_text(encoding="utf-8"))
+            source_pairs = {}
+            for name in ("good.jsonl", "bad.jsonl"):
+                turns = [
+                    json.loads(line)
+                    for line in (root / "transcripts" / name)
+                    .read_text(encoding="utf-8")
+                    .splitlines()
+                ]
+                source_pairs[name] = (turns[0]["content"], turns[1]["content"])
+        except (OSError, ValueError, KeyError, IndexError, TypeError):
+            return False
         return (
             actual.get("transcripts_dir") == "transcripts"
             and actual.get("reward") == "customer_support"
@@ -161,9 +196,27 @@ def _check_result(
             and actual.get("threshold") == 0.7
             and isinstance(result.get("curated_count"), int)
             and result["curated_count"] > 0
-            and curated.is_file()
-            and bool(curated.read_text(encoding="utf-8").strip())
-            and summary.is_file()
+            and len(examples) == result["curated_count"]
+            and all(
+                isinstance(example, dict)
+                and example.get("source") in source_pairs
+                and isinstance(example.get("prompt"), str)
+                and isinstance(example.get("response"), str)
+                and (example["prompt"], example["response"])
+                == source_pairs[example["source"]]
+                and isinstance(example.get("score"), (int, float))
+                and math.isfinite(example["score"])
+                and 0.7 <= example["score"] <= 1
+                for example in examples
+            )
+            and isinstance(saved_summary, dict)
+            and saved_summary.get("reward") == "customer_support"
+            and saved_summary.get("threshold") == 0.7
+            and saved_summary.get("transcript_count") == 2
+            and saved_summary.get("assistant_turn_count") == 2
+            and saved_summary.get("curated_count") == len(examples)
+            and saved_summary.get("curated_path") == str(curated)
+            and result.get("summary_path") == str(summary)
         )
     if goal == "improve_status":
         return (

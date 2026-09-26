@@ -3,8 +3,9 @@
 This public starter set evaluates whether an agent can use the StateSet MCP
 improvement loop. Version 0.2 executes submitted tool calls against the real
 StateSet functions in a fresh temporary workspace, then checks returned data
-and generated files. The five tasks cover ingestion, grading, curation, status,
-and training preview.
+and generated files. Ingestion must reproduce the source conversations, and
+curated examples must match their source transcripts and saved summary. The five
+tasks cover ingestion, grading, curation, status, and training preview.
 
 Run the version 0.2 demonstration to verify the harness:
 

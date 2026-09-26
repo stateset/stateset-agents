@@ -53,6 +53,51 @@ def test_forged_artifact_does_not_pass() -> None:
     assert result["score"] == 0
 
 
+def test_ingest_rejects_corrupt_output_with_plausible_metadata(monkeypatch) -> None:
+    task = json.loads(TASKS.read_text(encoding="utf-8"))[0]
+
+    def fake_ingest(input_path: str, format: str, output_dir: str) -> dict:
+        destination = Path(output_dir)
+        destination.mkdir()
+        files = [destination / f"conversation_{index}.jsonl" for index in range(2)]
+        for path in files:
+            path.write_text(
+                '{"role":"assistant","content":"wrong"}\n', encoding="utf-8"
+            )
+        return {
+            "conversation_count": 2,
+            "turn_count": 4,
+            "files": [str(path) for path in files],
+        }
+
+    monkeypatch.setitem(TOOLS, "ingest_transcripts", fake_ingest)
+    demonstration = json.loads(DEMONSTRATIONS.read_text(encoding="utf-8"))[0]
+    result = asyncio.run(score_task(task, demonstration))
+    assert result["score"] == 0
+
+
+def test_curation_rejects_corrupt_artifact_with_plausible_count(monkeypatch) -> None:
+    task = json.loads(TASKS.read_text(encoding="utf-8"))[2]
+
+    def fake_improve(
+        transcripts_dir: str,
+        reward: str,
+        output_dir: str,
+        threshold: float = 0.7,
+        format: str = "transcripts",
+    ) -> dict:
+        destination = Path(output_dir)
+        destination.mkdir()
+        (destination / "curated.jsonl").write_text("not JSON\n", encoding="utf-8")
+        (destination / "improve_summary.json").write_text("{}", encoding="utf-8")
+        return {"curated_count": 1}
+
+    monkeypatch.setitem(TOOLS, "improve_run", fake_improve)
+    demonstration = json.loads(DEMONSTRATIONS.read_text(encoding="utf-8"))[2]
+    result = asyncio.run(score_task(task, demonstration))
+    assert result["score"] == 0
+
+
 def test_wrong_transcript_does_not_pass() -> None:
     task = json.loads(TASKS.read_text(encoding="utf-8"))[1]
     result = asyncio.run(
