@@ -16,7 +16,7 @@ python -m benchmarks.product_use.execution \
 
 A submission is a JSON array of `{ "task_id": ..., "calls": [...] }` rows.
 Each call has a tool `name` and an `arguments` object. Participants receive the
-task prompts and tool schemas, then submit their chosen calls. The harness
+task prompts and [`tools.v0.2.json`](tools.v0.2.json), then submit their chosen calls. The harness
 executes only five allowlisted MCP functions. Path arguments must be relative to
 the task workspace; absolute paths and traversal are rejected. Missing tasks
 score zero, and unknown task IDs are rejected. The demonstrations are public
@@ -29,10 +29,11 @@ replays every trace and refuses to label a failing trace as verified:
 python -m benchmarks.product_use.export_examples \
   --tasks benchmarks/product_use/tasks.v0.2.public.json \
   --demonstrations benchmarks/product_use/demonstrations.v0.2.json \
+  --tools benchmarks/product_use/tools.v0.2.json \
   --output product-use-examples.jsonl
 ```
 
-Each row contains the prompt, MCP interface, tool calls, and verified score.
+Each row contains the prompt, tool schemas, MCP interface, tool calls, and verified score.
 Provider-specific training formats can be derived from these rows.
 
 The earlier version 0.1 task file and plan scorer remain available for

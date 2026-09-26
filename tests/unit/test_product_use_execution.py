@@ -1,13 +1,31 @@
 """The public execution score must follow observed StateSet tool behavior."""
 
 import asyncio
+import inspect
 import json
 from pathlib import Path
 
-from benchmarks.product_use.execution import run, score_task
+from benchmarks.product_use.execution import TOOLS, run, score_task
 
 TASKS = Path("benchmarks/product_use/tasks.v0.2.public.json")
 DEMONSTRATIONS = Path("benchmarks/product_use/demonstrations.v0.2.json")
+TOOL_CATALOG = Path("benchmarks/product_use/tools.v0.2.json")
+
+
+def test_public_tool_catalog_matches_mcp_functions() -> None:
+    catalog = json.loads(TOOL_CATALOG.read_text(encoding="utf-8"))
+    entries = {entry["name"]: entry for entry in catalog["tools"]}
+    assert set(entries) == set(TOOLS)
+    for name, function in TOOLS.items():
+        signature = inspect.signature(function)
+        parameters = entries[name]["parameters"]
+        assert set(parameters["properties"]) == set(signature.parameters)
+        assert parameters["additionalProperties"] is False
+        assert set(parameters["required"]) == {
+            key
+            for key, parameter in signature.parameters.items()
+            if parameter.default is inspect.Parameter.empty
+        }
 
 
 def test_real_tool_demonstrations_pass() -> None:

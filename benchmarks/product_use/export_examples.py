@@ -11,7 +11,7 @@ from .execution import SCHEMA_VERSION, run
 
 
 def export_examples(
-    tasks_path: Path, demonstrations_path: Path
+    tasks_path: Path, demonstrations_path: Path, tools_path: Path
 ) -> list[dict[str, Any]]:
     """Join public prompts and successful traces after replaying every example."""
     report = run(tasks_path, demonstrations_path)
@@ -22,12 +22,18 @@ def export_examples(
         row["task_id"]: row
         for row in json.loads(demonstrations_path.read_text(encoding="utf-8"))
     }
+    catalog = json.loads(tools_path.read_text(encoding="utf-8"))
+    if catalog.get("schema_version") != SCHEMA_VERSION or not isinstance(
+        catalog.get("tools"), list
+    ):
+        raise ValueError("tool catalog schema version does not match the benchmark")
     return [
         {
             "schema_version": SCHEMA_VERSION,
             "task_id": task["id"],
             "interface": task["interface"],
             "prompt": task["prompt"],
+            "tools": catalog["tools"],
             "calls": demonstrations[task["id"]]["calls"],
             "verified_score": 1,
         }
@@ -40,9 +46,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tasks", type=Path, required=True)
     parser.add_argument("--demonstrations", type=Path, required=True)
+    parser.add_argument("--tools", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    rows = export_examples(args.tasks, args.demonstrations)
+    rows = export_examples(args.tasks, args.demonstrations, args.tools)
     args.output.write_text(
         "".join(json.dumps(row, sort_keys=True) + "\n" for row in rows),
         encoding="utf-8",
