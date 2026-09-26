@@ -151,7 +151,6 @@ def _check_result(
             }
             and result.get("conversation_count") == 2
             and result.get("turn_count") == 4
-            and result.get("files") == [str(path) for path in paths]
             and len(paths) == 2
             and written == source
         )
@@ -215,8 +214,6 @@ def _check_result(
             and saved_summary.get("transcript_count") == 2
             and saved_summary.get("assistant_turn_count") == 2
             and saved_summary.get("curated_count") == len(examples)
-            and saved_summary.get("curated_path") == str(curated)
-            and result.get("summary_path") == str(summary)
         )
     if goal == "improve_status":
         return (

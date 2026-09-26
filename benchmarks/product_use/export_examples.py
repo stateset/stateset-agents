@@ -16,7 +16,8 @@ def export_examples(
     """Join public prompts and successful traces after replaying every example."""
     report = run(tasks_path, demonstrations_path)
     if report["score"] != 1.0:
-        raise ValueError("all demonstrations must pass the execution benchmark")
+        failed = [row["task_id"] for row in report["results"] if row["score"] != 1]
+        raise ValueError(f"demonstrations failed execution: {', '.join(failed)}")
     tasks = json.loads(tasks_path.read_text(encoding="utf-8"))
     demonstrations = {
         row["task_id"]: row
