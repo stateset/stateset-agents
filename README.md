@@ -156,10 +156,10 @@ serving, and provider claims.
   cost-accounting gate. The suites still require measured execution; an
   implemented runner is not a benchmark result.
 - **Public product-use benchmark:** [`benchmarks/product_use/`](benchmarks/product_use/)
-  provides versioned MCP/CLI tasks and a deterministic scorer for teaching and
-  evaluating how agents use StateSet. Public scores are separate from GPU
-  performance evidence; private execution-backed holdouts are required for a
-  leaderboard.
+  provides versioned MCP tasks, example traces, and a scorer that runs the
+  real tools for teaching and evaluating how agents use StateSet. Public scores
+  are separate from GPU performance evidence; private holdouts are required
+  for a leaderboard.
 - **Distributed evidence collection:** a shell-free manifest runner executes
   the two-node, three-seed soak and fault matrix, rotates scenario order,
   measures wall time outside provider adapters, hashes retained artifacts,

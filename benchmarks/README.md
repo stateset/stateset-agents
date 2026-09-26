@@ -8,13 +8,13 @@ performance claims.
 
 The starter benchmark for teaching and evaluating agent interaction with the
 StateSet product surface lives in [`product_use/`](product_use/). It contains
-versioned MCP/CLI tasks, a deterministic local scorer, and guidance for running
-private execution-backed holdouts. Run the public scorer with:
+versioned MCP tasks, an execution-backed local scorer, and guidance for running
+private holdouts. Run the public demonstration with:
 
 ```bash
-python -m benchmarks.product_use.runner \
-  --tasks benchmarks/product_use/tasks.public.json \
-  --submissions submissions.json
+python -m benchmarks.product_use.execution \
+  --tasks benchmarks/product_use/tasks.v0.2.public.json \
+  --submissions benchmarks/product_use/demonstrations.v0.2.json
 ```
 
 The public task set measures improvement-loop usage, training configuration, and

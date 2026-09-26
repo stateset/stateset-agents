@@ -1,0 +1,43 @@
+[
+  {
+    "id": "ingest-openai-support",
+    "schema_version": "0.2",
+    "interface": "mcp",
+    "fixture": "openai_support",
+    "goal": "ingest_transcripts",
+    "prompt": "Ingest logs.jsonl in OpenAI format into the transcripts directory."
+  },
+  {
+    "id": "grade-support-transcript",
+    "schema_version": "0.2",
+    "interface": "mcp",
+    "fixture": "transcripts_support",
+    "goal": "grade_transcript",
+    "prompt": "Grade transcripts/good.jsonl using the customer_support reward."
+  },
+  {
+    "id": "curate-support-transcripts",
+    "schema_version": "0.2",
+    "interface": "mcp",
+    "fixture": "transcripts_support",
+    "goal": "improve_run",
+    "prompt": "Run the customer_support improvement loop on transcripts at threshold 0.7 and save it under improved."
+  },
+  {
+    "id": "read-improvement-status",
+    "schema_version": "0.2",
+    "interface": "mcp",
+    "fixture": "transcripts_support",
+    "goal": "improve_status",
+    "prompt": "Run the customer_support improvement loop at threshold 0.7 under improved, then read back its status."
+  },
+  {
+    "id": "preview-qwen-training",
+    "schema_version": "0.2",
+    "interface": "mcp",
+    "fixture": "none",
+    "goal": "dry_run_finetune",
+    "preset": "qwen3.5-0.8b",
+    "prompt": "Preview a fine-tuning config for qwen3.5-0.8b without starting training."
+  }
+]
