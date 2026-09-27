@@ -780,8 +780,8 @@ class HybridCache(CacheInterface):
 
     async def connect(self) -> bool:
         """Connect to Redis."""
-        self._use_redis = await self._redis.connect()
-        if not self._use_redis:
+        self._use_redis = bool(self.config.redis_url)
+        if self._use_redis and not await self._redis.health_check():
             logger.warning("Redis unavailable, using memory cache only")
         return True
 

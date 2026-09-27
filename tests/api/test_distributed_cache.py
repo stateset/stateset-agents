@@ -379,6 +379,53 @@ class TestHybridCache:
         assert hybrid_cache._redis._client is None
 
     @pytest.mark.asyncio
+    async def test_recovers_redis_after_failed_initial_connection(self, monkeypatch):
+        """A configured Redis backend is retried after the health interval."""
+        config = CacheConfig(
+            backend=CacheBackend.HYBRID,
+            redis_url="redis://example.invalid:6379",
+            health_check_interval=0,
+        )
+        cache = HybridCache(config)
+        client = SimpleNamespace(get=AsyncMock(return_value=b'"remote"'))
+        attempts = 0
+
+        async def connect() -> bool:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                return False
+            cache._redis._connected = True
+            cache._redis._client = client
+            return True
+
+        monkeypatch.setattr(cache._redis, "connect", connect)
+        await cache.connect()
+        assert await cache._memory.set("key", "local")
+
+        assert await cache.get("key") == "remote"
+        assert attempts == 2
+        assert await cache._memory.get("key") == "remote"
+
+    @pytest.mark.asyncio
+    async def test_failed_redis_retry_respects_health_interval(self, monkeypatch):
+        """Requests during an outage do not retry Redis on every cache access."""
+        config = CacheConfig(
+            backend=CacheBackend.HYBRID,
+            redis_url="redis://example.invalid:6379",
+            health_check_interval=60,
+        )
+        cache = HybridCache(config)
+        connect = AsyncMock(return_value=False)
+        monkeypatch.setattr(cache._redis, "connect", connect)
+
+        await cache.connect()
+        await cache.set("key", "local")
+        assert await cache.get("key") == "local"
+        assert await cache.exists("key")
+        connect.assert_awaited_once()
+
+    @pytest.mark.asyncio
     async def test_health_check_memory_only(self, hybrid_cache):
         """Test health check with memory only."""
         await hybrid_cache.connect()
