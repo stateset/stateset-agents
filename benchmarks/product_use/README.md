@@ -45,6 +45,39 @@ The version 0.2 executable task set and version 0.1 plan scorer remain
 available for reproducibility. Version 0.1 uses self-reported tool calls and
 artifacts, so its score is diagnostic only.
 
+## Generated transfer checks (version 0.4)
+
+Generate synthetic tasks with fresh paths and a choice of two model presets.
+The generator produces five task families per variant: ingestion, grading,
+training preview, reward discovery before grading, and preset discovery before
+preview. Store the seed outside the repository and keep it private for an
+independent evaluation:
+
+```bash
+python -c 'import secrets; from pathlib import Path; Path("/tmp/product-use.seed").write_text(secrets.token_hex(32))'
+python -m benchmarks.product_use.generate \
+  --seed-file /tmp/product-use.seed --variants 3 \
+  --tasks-output /tmp/product-use.tasks.json \
+  --prompts-output /tmp/product-use.prompts.json
+```
+
+Give participants only the prompts file and
+[`tools.v0.4.json`](tools.v0.4.json). Keep the full task file with the
+evaluator. Participants submit the same `{ "task_id": ..., "calls": [...] }`
+format used by version 0.3. Score their submission with:
+
+```bash
+python -m benchmarks.product_use.execution \
+  --tasks /tmp/product-use.tasks.json --submissions participant.json
+```
+
+For a local harness check, add `--oracle-output /tmp/product-use.oracle.json`
+to the generation command and replay that file as the submission. Do not give
+the oracle or seed to participants in an independent evaluation. The generated
+set varies task paths and preset names but reuses the same synthetic support
+conversations and task families, so it is a transfer check rather than a broad
+measure of product competence.
+
 This local runner is for trusted submissions. Temporary directories and path
 checks confine the supported tool arguments, but they do not provide OS-level
 isolation for hostile code. A hosted leaderboard must run each participant in

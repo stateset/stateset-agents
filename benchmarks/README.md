@@ -9,7 +9,7 @@ performance claims.
 The starter benchmark for teaching and evaluating agent interaction with the
 StateSet product surface lives in [`product_use/`](product_use/). It contains
 versioned MCP tasks, an execution-backed local scorer, and guidance for running
-private holdouts. Run the public demonstration with:
+private generated transfer checks. Run the public demonstration with:
 
 ```bash
 python -m benchmarks.product_use.execution \
@@ -18,7 +18,9 @@ python -m benchmarks.product_use.execution \
 ```
 
 The public task set measures improvement-loop usage, tool discovery, and
-training configuration. It is separate from the GPU performance evidence below:
+training configuration. Version 0.4 can generate evaluator-only task files and
+prompts-only participant files from a private seed. These checks are separate
+from the GPU performance evidence below:
 tool-use scores must not be presented as training throughput or model-quality
 claims.
 

@@ -9,6 +9,7 @@ import pytest
 
 from benchmarks.product_use.execution import DISCOVERY_TOOLS, TOOLS, run, score_task
 from benchmarks.product_use.export_examples import export_examples
+from benchmarks.product_use.generate import generate
 
 TASKS = Path("benchmarks/product_use/tasks.v0.2.public.json")
 DEMONSTRATIONS = Path("benchmarks/product_use/demonstrations.v0.2.json")
@@ -16,6 +17,7 @@ TOOL_CATALOG = Path("benchmarks/product_use/tools.v0.2.json")
 TASKS_V03 = Path("benchmarks/product_use/tasks.v0.3.public.json")
 DEMONSTRATIONS_V03 = Path("benchmarks/product_use/demonstrations.v0.3.json")
 TOOL_CATALOG_V03 = Path("benchmarks/product_use/tools.v0.3.json")
+TOOL_CATALOG_V04 = Path("benchmarks/product_use/tools.v0.4.json")
 
 
 @pytest.mark.parametrize(
@@ -23,6 +25,7 @@ TOOL_CATALOG_V03 = Path("benchmarks/product_use/tools.v0.3.json")
     [
         (TOOL_CATALOG, set(TOOLS) - DISCOVERY_TOOLS),
         (TOOL_CATALOG_V03, set(TOOLS)),
+        (TOOL_CATALOG_V04, set(TOOLS)),
     ],
 )
 def test_public_tool_catalog_matches_mcp_functions(
@@ -67,6 +70,44 @@ def test_discovery_task_requires_discovery_call() -> None:
     ):
         result = asyncio.run(score_task(task, demonstration))
         assert result["score"] == 0
+
+
+def test_generated_holdout_replays_and_hides_evaluator_fields(tmp_path: Path) -> None:
+    tasks, prompts, oracle = generate("private-test-seed", variants=1)
+    assert len(tasks) == len(prompts) == len(oracle) == 5
+    assert [task["id"] for task in tasks] == [prompt["id"] for prompt in prompts]
+    assert all(
+        {"params", "fixture", "goal", "discovery"}.isdisjoint(prompt)
+        for prompt in prompts
+    )
+    assert [task["id"] for task in tasks] != [
+        task["id"] for task in generate("another-seed")[0]
+    ]
+
+    tasks_path = tmp_path / "tasks.json"
+    oracle_path = tmp_path / "oracle.json"
+    tasks_path.write_text(json.dumps(tasks), encoding="utf-8")
+    oracle_path.write_text(json.dumps(oracle), encoding="utf-8")
+    report = run(tasks_path, oracle_path)
+    assert report["schema_version"] == "0.4"
+    assert report["score"] == 1.0
+
+    wrong = {
+        "calls": [
+            {
+                "name": "ingest_transcripts",
+                "arguments": {
+                    **oracle[0]["calls"][0]["arguments"],
+                    "output_dir": "wrong-directory",
+                },
+            }
+        ]
+    }
+    assert asyncio.run(score_task(tasks[0], wrong))["score"] == 0
+    assert (
+        asyncio.run(score_task(tasks[3], {"calls": oracle[3]["calls"][1:]}))["score"]
+        == 0
+    )
 
 
 def test_forged_artifact_does_not_pass() -> None:

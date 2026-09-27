@@ -17,7 +17,7 @@ from typing import Any
 
 from stateset_agents import mcp_server
 
-SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.2", "0.3"})
+SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.2", "0.3", "0.4"})
 DISCOVERY_TOOLS = frozenset({"list_rewards", "list_model_presets"})
 PATH_ARGUMENTS = frozenset(
     {"input_path", "history_path", "transcripts_dir", "output_dir"}
@@ -102,6 +102,20 @@ def _prepare_fixture(root: Path, fixture: str) -> None:
             )
 
 
+def _prepare_generated_fixture(root: Path, task: dict[str, Any]) -> None:
+    """Move the synthetic fixture to the paths chosen for a generated task."""
+    _prepare_fixture(root, task["fixture"])
+    params = task["params"]
+    if task["fixture"] == "openai_support":
+        destination = Path(_workspace_path(root, params["input_path"]))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        (root / "logs.jsonl").replace(destination)
+    elif task["fixture"] == "transcripts_support":
+        destination = Path(_workspace_path(root, params["history_path"]))
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        (root / "transcripts" / "good.jsonl").replace(destination)
+
+
 async def _call_tool(name: str, arguments: dict[str, Any], root: Path) -> Any:
     """Dispatch an allowlisted MCP function with confined path arguments."""
     if name not in TOOLS:
@@ -116,6 +130,96 @@ async def _call_tool(name: str, arguments: dict[str, Any], root: Path) -> Any:
     if asyncio.iscoroutine(result):
         result = await result
     return result
+
+
+def _check_generated_result(
+    task: dict[str, Any], trace: list[dict[str, Any]], root: Path
+) -> bool:
+    """Check generated task arguments and observed MCP output."""
+    if not trace or trace[-1]["name"] != task["goal"]:
+        return False
+    actual = trace[-1]["arguments"]
+    result = trace[-1]["result"]
+    if not isinstance(result, dict) or "error" in result:
+        return False
+    params = task["params"]
+    if task["goal"] == "ingest_transcripts":
+        expected = {
+            "input_path": params["input_path"],
+            "format": "openai",
+            "output_dir": params["output_dir"],
+        }
+        try:
+            source = [
+                json.loads(line)["messages"]
+                for line in Path(_workspace_path(root, params["input_path"]))
+                .read_text(encoding="utf-8")
+                .splitlines()
+            ]
+            paths = sorted(
+                Path(_workspace_path(root, params["output_dir"])).glob(
+                    "conversation_*.jsonl"
+                )
+            )
+            written = [
+                [
+                    json.loads(line)
+                    for line in path.read_text(encoding="utf-8").splitlines()
+                ]
+                for path in paths
+            ]
+        except (OSError, ValueError, KeyError, TypeError):
+            return False
+        return (
+            actual == expected
+            and result.get("conversation_count") == len(source) == 2
+            and result.get("turn_count") == sum(map(len, source)) == 4
+            and len(paths) == 2
+            and written == source
+        )
+    if task["goal"] == "grade_transcript":
+        discovery = task.get("discovery")
+        discovered = discovery is None or (
+            discovery == "list_rewards"
+            and len(trace) >= 2
+            and trace[-2]["name"] == "list_rewards"
+            and trace[-2]["arguments"] == {}
+            and isinstance(trace[-2]["result"], dict)
+            and isinstance(trace[-2]["result"].get("rewards"), list)
+            and "customer_support" in trace[-2]["result"]["rewards"]
+        )
+        score = result.get("mean_score")
+        return (
+            discovered
+            and actual
+            == {"history_path": params["history_path"], "reward": "customer_support"}
+            and result.get("reward") == "customer_support"
+            and result.get("assistant_turn_count") == 1
+            and isinstance(score, (int, float))
+            and math.isfinite(score)
+            and 0 <= score <= 1
+        )
+    if task["goal"] == "dry_run_finetune":
+        discovery = task.get("discovery")
+        discovered = discovery is None or (
+            discovery == "list_model_presets"
+            and len(trace) >= 2
+            and trace[-2]["name"] == "list_model_presets"
+            and trace[-2]["arguments"] == {}
+            and isinstance(trace[-2]["result"], dict)
+            and isinstance(trace[-2]["result"].get("presets"), list)
+            and any(
+                isinstance(item, dict) and item.get("name") == params["preset"]
+                for item in trace[-2]["result"]["presets"]
+            )
+        )
+        return (
+            discovered
+            and actual == {"model_preset": params["preset"]}
+            and result.get("model_preset") == params["preset"]
+            and isinstance(result.get("config"), dict)
+        )
+    raise ValueError(f"unknown generated goal: {task['goal']}")
 
 
 def _check_result(
@@ -279,7 +383,10 @@ async def score_task(
         }
     with tempfile.TemporaryDirectory(prefix="stateset-product-use-") as directory:
         root = Path(directory)
-        _prepare_fixture(root, task["fixture"])
+        if task["schema_version"] == "0.4":
+            _prepare_generated_fixture(root, task)
+        else:
+            _prepare_fixture(root, task["fixture"])
         trace: list[dict[str, Any]] = []
         for call in calls:
             if not isinstance(call, dict) or not isinstance(call.get("name"), str):
@@ -303,7 +410,11 @@ async def score_task(
             )
             if isinstance(result, dict) and "error" in result:
                 break
-        passed = _check_result(task, trace, root)
+        passed = (
+            _check_generated_result(task, trace, root)
+            if task["schema_version"] == "0.4"
+            else _check_result(task, trace, root)
+        )
         return {
             "task_id": task["id"],
             "score": 1 if passed else 0,
