@@ -10,7 +10,7 @@ This module provides distributed training capabilities including:
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,7 +38,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DistributedConfig:
-    """Configuration for distributed training"""
+    """Configuration for distributed training.
+
+    An unset accumulation count inherits ``TrainingConfig``. An explicit value
+    overrides it for both the base trainer and Accelerate.
+    """
 
     # Basic distributed settings
     backend: str = "nccl"  # nccl, gloo, mpi
@@ -50,7 +54,7 @@ class DistributedConfig:
 
     # Training strategy
     strategy: str = "ddp"  # ddp, fsdp, deepspeed
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int | None = None  # Inherit TrainingConfig
 
     # FSDP specific
     fsdp_sharding_strategy: str = "full_shard"  # full_shard, shard_grad_op, no_shard
@@ -93,6 +97,28 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         self.accelerator: Accelerator | None = None
         self.is_main_process = True
         self.config = config or TrainingConfig()
+        accumulation_steps = self.distributed_config.gradient_accumulation_steps
+        if accumulation_steps is None:
+            accumulation_steps = self.config.gradient_accumulation_steps
+        if (
+            isinstance(accumulation_steps, bool)
+            or not isinstance(accumulation_steps, int)
+            or accumulation_steps < 1
+        ):
+            raise ValueError("gradient_accumulation_steps must be a positive integer")
+        self.config = replace(
+            self.config, gradient_accumulation_steps=accumulation_steps
+        )
+        self.distributed_config.gradient_accumulation_steps = accumulation_steps
+        if (
+            self.distributed_config.strategy == "accelerate"
+            and accumulation_steps > 1
+            and self.config.num_gradient_updates > 1
+        ):
+            raise ValueError(
+                "Accelerate cannot combine gradient accumulation with "
+                "multiple inner optimizer updates"
+            )
 
         # Initialize distributed environment
         self._init_distributed()

@@ -8,6 +8,7 @@ import torch
 from accelerate import Accelerator
 
 from stateset_agents.training import distributed
+from stateset_agents.training.config import TrainingConfig
 from stateset_agents.training.distributed import DistributedConfig, DistributedTrainer
 from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
@@ -43,6 +44,72 @@ def test_accelerate_topology_comes_from_runtime(monkeypatch):
     assert trainer.distributed_config.local_rank == 0
     assert trainer.is_main_process is False
     factory.assert_called_once()
+
+
+@pytest.mark.parametrize("override, expected", [(None, 4), (2, 2)])
+def test_accumulation_schedule_matches_base_trainer_and_accelerate(
+    monkeypatch, override, expected
+):
+    factory = MagicMock(
+        return_value=SimpleNamespace(
+            is_main_process=True,
+            num_processes=1,
+            process_index=0,
+            local_process_index=0,
+        )
+    )
+    monkeypatch.setattr(distributed, "Accelerator", factory)
+    monkeypatch.setattr(
+        MultiTurnGRPOTrainer, "__init__", lambda *_args, **_kwargs: None
+    )
+    training_config = TrainingConfig(gradient_accumulation_steps=4)
+
+    trainer = DistributedTrainer(
+        agent=SimpleNamespace(),
+        environment=SimpleNamespace(),
+        config=training_config,
+        distributed_config=DistributedConfig(
+            strategy="accelerate", gradient_accumulation_steps=override
+        ),
+    )
+
+    assert trainer.config.gradient_accumulation_steps == expected
+    assert trainer.distributed_config.gradient_accumulation_steps == expected
+    assert training_config.gradient_accumulation_steps == 4
+    assert factory.call_args.kwargs["gradient_accumulation_steps"] == expected
+
+
+def test_invalid_accumulation_count_fails_before_runtime_setup(monkeypatch):
+    factory = MagicMock()
+    monkeypatch.setattr(distributed, "Accelerator", factory)
+
+    with pytest.raises(ValueError, match="positive integer"):
+        DistributedTrainer(
+            agent=SimpleNamespace(),
+            environment=SimpleNamespace(),
+            distributed_config=DistributedConfig(
+                strategy="accelerate", gradient_accumulation_steps=0
+            ),
+        )
+
+    factory.assert_not_called()
+
+
+def test_accelerate_rejects_conflicting_inner_update_schedule(monkeypatch):
+    factory = MagicMock()
+    monkeypatch.setattr(distributed, "Accelerator", factory)
+
+    with pytest.raises(ValueError, match="multiple inner optimizer updates"):
+        DistributedTrainer(
+            agent=SimpleNamespace(),
+            environment=SimpleNamespace(),
+            config=TrainingConfig(
+                gradient_accumulation_steps=2, num_gradient_updates=2
+            ),
+            distributed_config=DistributedConfig(strategy="accelerate"),
+        )
+
+    factory.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -114,3 +181,35 @@ def test_real_accelerate_prepares_cpu_model_and_optimizer():
     assert isinstance(trainer.agent.model, torch.nn.Module)
     assert next(trainer.agent.model.parameters()).device.type == "cpu"
     assert trainer.optimizer is not None
+
+
+@pytest.mark.asyncio
+async def test_real_accelerate_accumulates_before_optimizer_step():
+    accelerator = Accelerator(cpu=True, gradient_accumulation_steps=2)
+    trainer = trainer_with_accelerator(accelerator)
+    trainer.config = TrainingConfig(
+        gradient_accumulation_steps=2,
+        bf16=False,
+        fp16=False,
+        rollout_sync=False,
+    )
+    trainer.continual_manager = None
+    trainer.reference_model = None
+    trainer.scaler = None
+    trainer._grad_accum_step = 0
+    trainer.global_step = 0
+    trainer.compute_grpo_loss = lambda _groups: {
+        "total_loss": trainer.agent.model(torch.ones(1, 1)).square().mean()
+    }
+    trainer._wrap_model_accelerate()
+    before = trainer.agent.model.weight.detach().clone()
+
+    first = await trainer.training_step([])
+    after_first = trainer.agent.model.weight.detach().clone()
+    second = await trainer.training_step([])
+
+    assert first["optimizer_step"] is False
+    assert second["optimizer_step"] is True
+    assert trainer.global_step == 1
+    assert torch.equal(before, after_first)
+    assert not torch.equal(after_first, trainer.agent.model.weight.detach())
