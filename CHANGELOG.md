@@ -35,6 +35,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   SHA-256 argument digests to prevent cross-function cache collisions.
 - Keep real-model streaming off the event loop, preserve inference mode, stop
   cleanly across chunk boundaries, and surface generation worker failures.
+- Validate rollout backend batch counts, prompt identity, token alignment, and
+  finite log-probabilities before handing samples to trainers. Invalid batches
+  use one native fallback and retain the backend error on each turn.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 
