@@ -38,6 +38,8 @@ python -m benchmarks.product_use.export_examples \
 Each row contains the prompt, tool schemas, MCP interface, tool calls, and verified score.
 The committed [`examples.v0.3.jsonl`](examples.v0.3.jsonl) contains the same
 rows. Provider-specific training formats can be derived from them.
+The dedicated Benchmark CI job replays both committed corpora against the real
+MCP functions before running performance measurements.
 
 The version 0.2 executable task set and version 0.1 plan scorer remain
 available for reproducibility. Version 0.1 uses self-reported tool calls and

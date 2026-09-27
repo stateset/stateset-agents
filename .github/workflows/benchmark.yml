@@ -6,11 +6,15 @@ on:
     paths:
       - 'stateset_agents/**/*.py'
       - 'benchmarks/**'
+      - 'tests/unit/test_product_use_execution.py'
+      - '.github/workflows/benchmark.yml'
   pull_request:
     branches: [ main, master, develop ]
     paths:
       - 'stateset_agents/**/*.py'
       - 'benchmarks/**'
+      - 'tests/unit/test_product_use_execution.py'
+      - '.github/workflows/benchmark.yml'
   workflow_dispatch:
 
 jobs:
@@ -38,6 +42,9 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -e ".[dev]"
+
+    - name: Verify product-use benchmark corpus
+      run: python -m pytest tests/unit/test_product_use_execution.py -q -n0
 
     - name: Run benchmarks
       run: |
