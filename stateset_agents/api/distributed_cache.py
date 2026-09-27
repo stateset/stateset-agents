@@ -511,11 +511,16 @@ class RedisCache(CacheInterface):
 
     async def get(self, key: str) -> Any | None:
         """Get a value from Redis."""
+        _, value = await self._get_with_status(key)
+        return value
+
+    async def _get_with_status(self, key: str) -> tuple[bool, Any | None]:
+        """Return whether Redis answered successfully, even for a cache miss."""
         if not self._connected:
-            return None
+            return False, None
         client = self._client
         if client is None:
-            return None
+            return False, None
 
         start = time.monotonic()
         prefixed_key = f"{self.config.key_prefix}{key}"
@@ -525,7 +530,7 @@ class RedisCache(CacheInterface):
 
             if data is None:
                 self._stats.misses += 1
-                return None
+                return True, None
 
             self._stats.hits += 1
             self._stats.bytes_read += len(data)
@@ -534,12 +539,12 @@ class RedisCache(CacheInterface):
             value = self._deserialize(data)
             self._stats.record_latency((time.monotonic() - start) * 1000)
 
-            return value
+            return True, value
 
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis get error: {e}")
             self._stats.errors += 1
-            return None
+            return False, None
 
     async def set(self, key: str, value: Any, ttl: int | None = None) -> bool:
         """Set a value in Redis."""
@@ -621,19 +626,25 @@ class RedisCache(CacheInterface):
 
     async def exists(self, key: str) -> bool:
         """Check if a key exists in Redis."""
+        _, exists = await self._exists_with_status(key)
+        return exists
+
+    async def _exists_with_status(self, key: str) -> tuple[bool, bool]:
+        """Return whether Redis answered successfully and the key exists."""
         if not self._connected:
-            return False
+            return False, False
         client = self._client
         if client is None:
-            return False
+            return False, False
 
         prefixed_key = f"{self.config.key_prefix}{key}"
 
         try:
-            return bool(await client.exists(prefixed_key) > 0)
+            return True, bool(await client.exists(prefixed_key) > 0)
         except CACHE_EXCEPTIONS as e:
             logger.error(f"Redis exists error: {e}")
-            return False
+            self._stats.errors += 1
+            return False, False
 
     async def clear(self) -> int:
         """Clear all keys with our prefix."""
@@ -777,8 +788,11 @@ class HybridCache(CacheInterface):
     async def get(self, key: str) -> Any | None:
         """Get from Redis first, then memory."""
         if self._use_redis and await self._redis.health_check():
-            value = await self._redis.get(key)
-            if value is not None:
+            answered, value = await self._redis._get_with_status(key)
+            if answered:
+                if value is None:
+                    await self._memory.delete(key)
+                    return None
                 # Populate memory cache
                 await self._memory.set(key, value)
                 return value
@@ -818,8 +832,11 @@ class HybridCache(CacheInterface):
     async def exists(self, key: str) -> bool:
         """Check if key exists in either cache."""
         if self._use_redis and await self._redis.health_check():
-            if await self._redis.exists(key):
-                return True
+            answered, exists = await self._redis._exists_with_status(key)
+            if answered:
+                if not exists:
+                    await self._memory.delete(key)
+                return exists
 
         return await self._memory.exists(key)
 

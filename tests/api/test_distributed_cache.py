@@ -12,6 +12,8 @@ Comprehensive tests for distributed caching including:
 import asyncio
 import os
 import time
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
@@ -395,6 +397,60 @@ class TestHybridCache:
         stats = hybrid_cache.get_stats()
         assert stats.sets >= 1
         assert stats.hits >= 1
+
+    @pytest.mark.asyncio
+    async def test_redis_miss_invalidates_stale_memory(self, hybrid_cache, monkeypatch):
+        """A healthy Redis miss is authoritative after another pod deletes a key."""
+        await hybrid_cache._memory.set("deleted", "stale")
+        hybrid_cache._redis._connected = True
+        hybrid_cache._redis._client = SimpleNamespace(
+            get=AsyncMock(return_value=None),
+            exists=AsyncMock(return_value=0),
+        )
+        monkeypatch.setattr(
+            hybrid_cache._redis, "health_check", AsyncMock(return_value=True)
+        )
+
+        assert await hybrid_cache.get("deleted") is None
+        assert not await hybrid_cache._memory.exists("deleted")
+
+        await hybrid_cache._memory.set("deleted", "stale-again")
+        assert not await hybrid_cache.exists("deleted")
+        assert not await hybrid_cache._memory.exists("deleted")
+
+    @pytest.mark.asyncio
+    async def test_redis_read_failure_uses_memory_fallback(
+        self, hybrid_cache, monkeypatch
+    ):
+        """A failed Redis read still permits the local availability fallback."""
+        await hybrid_cache._memory.set("key", "local")
+        hybrid_cache._redis._connected = True
+        hybrid_cache._redis._client = SimpleNamespace(
+            get=AsyncMock(side_effect=OSError("Redis unavailable")),
+            exists=AsyncMock(side_effect=OSError("Redis unavailable")),
+        )
+        monkeypatch.setattr(
+            hybrid_cache._redis, "health_check", AsyncMock(return_value=True)
+        )
+
+        assert await hybrid_cache.get("key") == "local"
+        assert await hybrid_cache.exists("key")
+        assert hybrid_cache._redis.get_stats().errors == 2
+
+    @pytest.mark.asyncio
+    async def test_redis_hit_replaces_stale_memory(self, hybrid_cache, monkeypatch):
+        """A healthy Redis hit refreshes the local copy."""
+        await hybrid_cache._memory.set("key", "stale")
+        hybrid_cache._redis._connected = True
+        hybrid_cache._redis._client = SimpleNamespace(
+            get=AsyncMock(return_value=b'"fresh"'),
+        )
+        monkeypatch.setattr(
+            hybrid_cache._redis, "health_check", AsyncMock(return_value=True)
+        )
+
+        assert await hybrid_cache.get("key") == "fresh"
+        assert await hybrid_cache._memory.get("key") == "fresh"
 
 
 # ============================================================================

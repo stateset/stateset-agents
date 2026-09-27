@@ -26,6 +26,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Bounded the API authentication failure tracker to 10,000 credential keys by
   default. It prunes expired records and rejects new invalid credentials when
   full without evicting active lockouts.
+- Made healthy Redis misses authoritative in the hybrid cache, so a key deleted
+  by another instance cannot reappear from stale local memory. Redis read
+  failures still use the local availability fallback.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 
