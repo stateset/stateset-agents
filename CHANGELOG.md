@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Capped the in-memory `SecurityMonitor` event history at 10,000 entries by
   default, so repeated authentication failures cannot grow it without bound;
   both security monitors now reject invalid event limits.
+- Bounded the API authentication failure tracker to 10,000 credential keys by
+  default. It prunes expired records and rejects new invalid credentials when
+  full without evicting active lockouts.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 

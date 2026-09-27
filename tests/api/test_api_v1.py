@@ -960,6 +960,38 @@ class TestAuthentication:
         for key in list(security_monitor.auth_tracker.failures):
             security_monitor.auth_tracker.clear_failures(key)
 
+    def test_auth_tracker_capacity_does_not_block_valid_credentials(
+        self, auth_required_client, monkeypatch
+    ):
+        """Saturation rejects new invalid keys without denying a valid key."""
+        from stateset_agents.api import security as security_module
+        from stateset_agents.api.security import APISecurityMonitor, AuthFailureTracker
+
+        monitor = APISecurityMonitor()
+        monitor.auth_tracker = AuthFailureTracker(max_keys=1)
+        monkeypatch.setattr(security_module, "_security_monitor", monitor)
+        payload = {"message": "test"}
+
+        first = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers={"X-API-Key": "invalid-credential-one"},
+        )
+        overflow = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers={"X-API-Key": "invalid-credential-two"},
+        )
+        valid = auth_required_client.post(
+            "/api/v1/conversations",
+            json=payload,
+            headers={"X-API-Key": "test-api-key-that-is-long-enough-32ch"},
+        )
+
+        assert first.status_code == overflow.status_code == 401
+        assert valid.status_code == 200
+        assert len(monitor.auth_tracker.failures) <= 1
+
 
 # ============================================================================
 # OpenAPI Documentation Tests
