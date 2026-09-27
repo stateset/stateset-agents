@@ -580,6 +580,10 @@ class DAPOTrainer:
             )
 
             results = grouped_results[prompt]
+            if len(results) != self.config.group_size or any(
+                getattr(result, "prompt", None) != prompt for result in results
+            ):
+                raise ValueError("vLLM returned an invalid DAPO response group")
             responses = []
 
             for result in results:

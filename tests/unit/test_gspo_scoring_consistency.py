@@ -205,13 +205,14 @@ async def test_generate_batch_groups_vllm_rescores_when_enabled(monkeypatch):
     from stateset_agents.training.gspo_config import GSPOConfig
 
     class FakeResult:
-        def __init__(self, response, cumulative_logprob):
+        def __init__(self, prompt, response, cumulative_logprob):
+            self.prompt = prompt
             self.response = response
             self.cumulative_logprob = cumulative_logprob
 
     class FakeVLLMGenerator:
         async def generate_groups(self, prompts, num_generations_per_prompt):
-            return {p: [FakeResult("there", -99.0)] for p in prompts}
+            return {p: [FakeResult(p, "there", -99.0)] for p in prompts}
 
     class FakeAgent:
         def __init__(self):
@@ -255,13 +256,14 @@ async def test_generate_batch_groups_vllm_returns_raw_logprob_when_rescore_disab
     from stateset_agents.training.gspo_config import GSPOConfig
 
     class FakeResult:
-        def __init__(self, response, cumulative_logprob):
+        def __init__(self, prompt, response, cumulative_logprob):
+            self.prompt = prompt
             self.response = response
             self.cumulative_logprob = cumulative_logprob
 
     class FakeVLLMGenerator:
         async def generate_groups(self, prompts, num_generations_per_prompt):
-            return {p: [FakeResult("there", -42.0)] for p in prompts}
+            return {p: [FakeResult(p, "there", -42.0)] for p in prompts}
 
     class FakeAgent:
         def __init__(self):

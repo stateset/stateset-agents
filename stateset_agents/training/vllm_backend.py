@@ -199,6 +199,14 @@ class BatchGenerationResult:
     tokens_per_second: float
 
 
+def _validate_group_request(prompts: list[str], group_size: int) -> None:
+    """Reject requests a prompt-keyed result cannot represent faithfully."""
+    if group_size <= 0:
+        raise ValueError("num_generations_per_prompt must be positive")
+    if len(prompts) != len(set(prompts)):
+        raise ValueError("grouped generation requires unique prompts")
+
+
 # Attribute names worth following from an ``LLM`` to reach the in-process
 # model whose ``load_weights(iterable[(name, tensor)])`` hot-swaps weights.
 # vLLM has moved this object several times (V0 ``driver_worker.model_runner``,
@@ -503,7 +511,7 @@ class VLLMGenerator:
         vLLM can batch all generations together.
 
         Args:
-            prompts: List of prompts
+            prompts: Unique prompt strings; the returned mapping is keyed by prompt
             num_generations_per_prompt: Number of responses per prompt (G in GRPO)
             sampling_params: vLLM SamplingParams
             **kwargs: Passed to create_sampling_params
@@ -513,6 +521,9 @@ class VLLMGenerator:
         """
         if not self.is_available:
             raise RuntimeError("vLLM not initialized")
+        _validate_group_request(prompts, num_generations_per_prompt)
+        if not prompts:
+            return {}
 
         # Expand prompts for batched generation
         expanded_prompts = []
@@ -521,10 +532,14 @@ class VLLMGenerator:
 
         # Generate all at once (vLLM handles batching efficiently)
         all_results = await self.generate(expanded_prompts, sampling_params, **kwargs)
+        if len(all_results) != len(expanded_prompts):
+            raise ValueError("vLLM returned an incomplete response group")
 
         # Group results by prompt
         grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
         for i, result in enumerate(all_results):
+            if getattr(result, "prompt", None) != expanded_prompts[i]:
+                raise ValueError("vLLM returned a response for the wrong prompt")
             prompt_idx = i // num_generations_per_prompt
             original_prompt = prompts[prompt_idx]
             grouped_results[original_prompt].append(result)
@@ -918,11 +933,14 @@ class HuggingFaceGeneratorFallback:
         **kwargs,
     ) -> dict[str, list[GenerationResult]]:
         """Generate multiple responses per prompt"""
+        _validate_group_request(prompts, num_generations_per_prompt)
         grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
 
         for prompt in prompts:
             for _ in range(num_generations_per_prompt):
                 results = await self.generate([prompt], **kwargs)
+                if len(results) != 1 or getattr(results[0], "prompt", None) != prompt:
+                    raise ValueError("HuggingFace returned an invalid response group")
                 grouped_results[prompt].append(results[0])
 
         return grouped_results
@@ -981,6 +999,12 @@ async def quick_generate(
 
     Automatically handles initialization and cleanup.
     """
+    if num_generations <= 0:
+        raise ValueError("num_generations must be positive")
+    if num_generations > 1:
+        _validate_group_request(
+            [prompts] if isinstance(prompts, str) else prompts, num_generations
+        )
     generator = create_generator(model_name)
     await generator.initialize()
 

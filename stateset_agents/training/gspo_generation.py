@@ -258,6 +258,10 @@ class GSPOTrajectoryGenerator:
             )
 
             results = grouped_results[prompt]
+            if len(results) != num_responses or any(
+                getattr(result, "prompt", None) != prompt for result in results
+            ):
+                raise ValueError("vLLM returned an invalid response group")
 
             if getattr(self.config, "rescore_old_log_probs", True):
                 tokenizer = getattr(self.agent, "tokenizer", None)
@@ -368,6 +372,10 @@ class GSPOTrajectoryGenerator:
         self, prompts: list[str], num_responses_per_prompt: int
     ) -> dict[str, list[tuple[str, float]]]:
         """Generate response groups for multiple prompts efficiently."""
+        if num_responses_per_prompt <= 0:
+            raise ValueError("num_responses_per_prompt must be positive")
+        if len(prompts) != len(set(prompts)):
+            raise ValueError("generate_batch_groups requires unique prompts")
         if self.using_vllm:
             try:
                 generator = self.vllm_generator
@@ -382,6 +390,15 @@ class GSPOTrajectoryGenerator:
                     prompts=prompts,
                     num_generations_per_prompt=num_responses_per_prompt,
                 )
+                if set(grouped_results) != set(prompts) or any(
+                    len(grouped_results[prompt]) != num_responses_per_prompt
+                    or any(
+                        getattr(result, "prompt", None) != prompt
+                        for result in grouped_results[prompt]
+                    )
+                    for prompt in prompts
+                ):
+                    raise ValueError("vLLM returned invalid response groups")
 
                 if getattr(self.config, "rescore_old_log_probs", True):
                     tokenizer = getattr(self.agent, "tokenizer", None)

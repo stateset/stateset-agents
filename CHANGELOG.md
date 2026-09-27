@@ -41,6 +41,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Require exact sampled-token log-probabilities from vLLM generation and exact
   prompt-aligned response-token probabilities from vLLM rescoring; missing data
   now raises instead of silently substituting unrelated values or zero.
+- Reject duplicate prompt keys, invalid group sizes, incomplete groups, and
+  misattributed responses in vLLM/HuggingFace group generation and the GSPO
+  and DAPO training paths.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 

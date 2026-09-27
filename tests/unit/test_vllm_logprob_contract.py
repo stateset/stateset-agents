@@ -1,10 +1,15 @@
 """Exact token log-probability contracts for the optional vLLM adapter."""
 
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 
-from stateset_agents.training.vllm_backend import VLLMGenerator
+from stateset_agents.training.vllm_backend import (
+    HuggingFaceGeneratorFallback,
+    VLLMGenerator,
+    quick_generate,
+)
 
 
 def logprob(value: float) -> SimpleNamespace:
@@ -153,3 +158,105 @@ def test_sequence_scoring_rejects_incomplete_evidence(output, message):
     adapter, _ = generator([output])
     with pytest.raises(ValueError, match=message):
         adapter.compute_log_probs_for_sequences(["P"], ["R"])
+
+
+@pytest.mark.asyncio
+async def test_group_generation_preserves_every_requested_sample():
+    adapter, _ = generator([])
+    adapter.generate = AsyncMock(
+        side_effect=lambda prompts, *_args, **_kwargs: [
+            SimpleNamespace(prompt=prompt) for prompt in prompts
+        ]
+    )
+
+    groups = await adapter.generate_groups(["A", "B"], 2)
+
+    assert len(groups["A"]) == len(groups["B"]) == 2
+    assert adapter.generate.await_args.args[0] == ["A", "A", "B", "B"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("prompts", "count", "message"),
+    [(["A", "A"], 2, "unique prompts"), (["A"], 0, "positive")],
+)
+async def test_group_generation_rejects_unrepresentable_requests(
+    prompts, count, message
+):
+    adapter, _ = generator([])
+    adapter.generate = AsyncMock()
+    with pytest.raises(ValueError, match=message):
+        await adapter.generate_groups(prompts, count)
+    adapter.generate.assert_not_awaited()
+
+    fallback = object.__new__(HuggingFaceGeneratorFallback)
+    fallback.generate = AsyncMock()
+    with pytest.raises(ValueError, match=message):
+        await fallback.generate_groups(prompts, count)
+    fallback.generate.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("returned_prompts", [["A"], ["B", "A"]])
+async def test_group_generation_rejects_incomplete_or_misattributed_results(
+    returned_prompts,
+):
+    adapter, _ = generator([])
+    adapter.generate = AsyncMock(
+        return_value=[SimpleNamespace(prompt=prompt) for prompt in returned_prompts]
+    )
+    with pytest.raises(ValueError, match="incomplete|wrong prompt"):
+        await adapter.generate_groups(["A"], 2)
+
+
+@pytest.mark.asyncio
+async def test_quick_generate_rejects_invalid_group_before_initialization(monkeypatch):
+    from stateset_agents.training import vllm_backend
+
+    create = AsyncMock()
+    monkeypatch.setattr(vllm_backend, "create_generator", create)
+    with pytest.raises(ValueError, match="unique prompts"):
+        await quick_generate("model", ["A", "A"], num_generations=2)
+    create.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_gspo_batch_api_rejects_duplicate_prompt_keys():
+    from stateset_agents.training.gspo_generation import GSPOTrajectoryGenerator
+
+    generator = object.__new__(GSPOTrajectoryGenerator)
+    with pytest.raises(ValueError, match="unique prompts"):
+        await generator.generate_batch_groups(["A", "A"], 2)
+
+
+@pytest.mark.asyncio
+async def test_gspo_rejects_short_group_before_scoring():
+    from stateset_agents.training.gspo_generation import GSPOTrajectoryGenerator
+
+    generator = object.__new__(GSPOTrajectoryGenerator)
+    generator.vllm_generator = SimpleNamespace(
+        generate_groups=AsyncMock(
+            return_value={"P": [SimpleNamespace(prompt="P", response="partial")]}
+        )
+    )
+    generator._generate_with_hf = AsyncMock(return_value=[("native", -0.5)])
+
+    assert await generator._generate_with_vllm("P", 2) == [("native", -0.5)]
+    generator._generate_with_hf.assert_awaited_once_with("P", 2)
+
+
+@pytest.mark.asyncio
+async def test_dapo_rejects_short_group_before_building_tensors():
+    from stateset_agents.training.dapo_trainer import DAPOTrainer
+
+    trainer = object.__new__(DAPOTrainer)
+    trainer.config = SimpleNamespace(group_size=2)
+    trainer.vllm_generator = SimpleNamespace(
+        generate_groups=AsyncMock(
+            return_value={"P": [SimpleNamespace(prompt="P", response="partial")]}
+        )
+    )
+    trainer._generate_with_hf = AsyncMock(return_value=[{"response": "native"}])
+
+    assert await trainer._generate_with_vllm("P") == [{"response": "native"}]
+    trainer._generate_with_hf.assert_awaited_once_with("P")
