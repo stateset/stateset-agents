@@ -63,7 +63,7 @@ class InteractiveSession:
         """Score the observed workspace and tool transcript."""
         passed = (
             _check_generated_result(self.task, self.trace, self.root)
-            if self.task["schema_version"] == "0.4"
+            if self.task["schema_version"] in {"0.4", "0.5"}
             else _check_result(self.task, self.trace, self.root)
         )
         return {
@@ -80,7 +80,7 @@ def open_task(task: dict[str, Any]) -> Iterator[InteractiveSession]:
     """Create and dispose a fresh workspace for one interactive task."""
     with tempfile.TemporaryDirectory(prefix="stateset-product-use-") as directory:
         root = Path(directory)
-        if task["schema_version"] == "0.4":
+        if task["schema_version"] in {"0.4", "0.5"}:
             _prepare_generated_fixture(root, task)
         else:
             _prepare_fixture(root, task["fixture"])

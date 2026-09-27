@@ -22,6 +22,42 @@ FAMILIES = (
     "discover_preview",
 )
 PRESETS = ("qwen3.5-27b", "qwen3.5-0.8b")
+FAMILIES_V05 = FAMILIES + ("ingest_grade",)
+
+
+def _fixture_data(seed: str, family: str, index: int) -> list[list[dict[str, str]]]:
+    """Derive evaluator-only conversations separately from public task IDs."""
+    private_token = _token(seed, f"fixture:{family}", index)
+    requests = (
+        "Please refund order {order}.",
+        "Can you check the delivery status of order {order}?",
+        "I need to change the address for order {order}.",
+        "Can you help with a damaged item in order {order}?",
+    )
+    helpful = (
+        "I can help with your refund for order {order} and explain the next steps.",
+        "I can check the delivery status of order {order} for you.",
+        "I can help update the address for order {order} before shipment.",
+        "I can help document the damage to order {order} and arrange a resolution.",
+    )
+    choice = int(private_token[:4], 16) % len(requests)
+    order = 1000 + int(private_token[4:8], 16) % 9000
+    bad_order = 1000 + int(private_token[8:12], 16) % 9000
+    return [
+        [
+            {"role": "user", "content": requests[choice].format(order=order)},
+            {"role": "assistant", "content": helpful[choice].format(order=order)},
+        ],
+        [
+            {
+                "role": "user",
+                "content": requests[(choice + index + 1) % len(requests)].format(
+                    order=bad_order
+                ),
+            },
+            {"role": "assistant", "content": "idk"},
+        ],
+    ]
 
 
 def _token(seed: str, family: str, index: int) -> str:
@@ -33,23 +69,25 @@ def _token(seed: str, family: str, index: int) -> str:
 
 
 def generate(
-    seed: str, variants: int = 1
+    seed: str, variants: int = 1, schema_version: str = SCHEMA_VERSION
 ) -> tuple[list[dict[str, Any]], list[dict[str, str]], list[dict[str, Any]]]:
     """Build evaluator tasks, participant prompts, and passing local traces."""
     if not seed:
         raise ValueError("seed must be nonempty")
     if not 1 <= variants <= 50:
         raise ValueError("variants must be between 1 and 50")
+    if schema_version not in {"0.4", "0.5"}:
+        raise ValueError("schema_version must be 0.4 or 0.5")
     tasks: list[dict[str, Any]] = []
     prompts: list[dict[str, str]] = []
     oracle: list[dict[str, Any]] = []
     for index in range(variants):
-        for family in FAMILIES:
+        for family in FAMILIES_V05 if schema_version == "0.5" else FAMILIES:
             token = _token(seed, family, index)
             task_id = f"{family}-{token}"
             task: dict[str, Any] = {
                 "id": task_id,
-                "schema_version": SCHEMA_VERSION,
+                "schema_version": schema_version,
                 "interface": "mcp",
             }
             calls: list[dict[str, Any]] = []
@@ -105,6 +143,45 @@ def generate(
                         },
                     }
                 )
+            elif family == "ingest_grade":
+                input_path = f"inputs/{token}.jsonl"
+                output_dir = f"converted/{token}"
+                history_path = f"{output_dir}/conversation_0.jsonl"
+                task.update(
+                    {
+                        "fixture": "openai_support",
+                        "goal": "grade_transcript",
+                        "discovery": "ingest_transcripts",
+                        "params": {
+                            "input_path": input_path,
+                            "output_dir": output_dir,
+                            "history_path": history_path,
+                        },
+                        "prompt": (
+                            f"Ingest {input_path} in OpenAI format under {output_dir}, "
+                            f"then grade {history_path} with the customer_support reward."
+                        ),
+                    }
+                )
+                calls.extend(
+                    [
+                        {
+                            "name": "ingest_transcripts",
+                            "arguments": {
+                                "input_path": input_path,
+                                "format": "openai",
+                                "output_dir": output_dir,
+                            },
+                        },
+                        {
+                            "name": "grade_transcript",
+                            "arguments": {
+                                "history_path": history_path,
+                                "reward": "customer_support",
+                            },
+                        },
+                    ]
+                )
             else:
                 preset = PRESETS[index % len(PRESETS)]
                 task.update(
@@ -127,11 +204,13 @@ def generate(
                         "arguments": {"model_preset": preset},
                     }
                 )
+            if schema_version == "0.5" and task["fixture"] != "none":
+                task["fixture_data"] = _fixture_data(seed, family, index)
             tasks.append(task)
             prompts.append(
                 {
                     "id": task_id,
-                    "schema_version": SCHEMA_VERSION,
+                    "schema_version": schema_version,
                     "interface": "mcp",
                     "prompt": task["prompt"],
                 }
@@ -151,6 +230,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--seed-file", type=Path, required=True)
     parser.add_argument("--variants", type=int, default=1)
+    parser.add_argument(
+        "--schema-version", choices=("0.4", "0.5"), default=SCHEMA_VERSION
+    )
     parser.add_argument("--tasks-output", type=Path, required=True)
     parser.add_argument("--prompts-output", type=Path, required=True)
     parser.add_argument("--oracle-output", type=Path)
@@ -162,7 +244,7 @@ def main() -> int:
     if len(set(resolved)) != len(resolved) or args.seed_file.resolve() in resolved:
         parser.error("seed and output files must have distinct paths")
     seed = args.seed_file.read_text(encoding="utf-8").strip()
-    tasks, prompts, oracle = generate(seed, args.variants)
+    tasks, prompts, oracle = generate(seed, args.variants, args.schema_version)
     _write_json(args.tasks_output, tasks)
     _write_json(args.prompts_output, prompts)
     if args.oracle_output:

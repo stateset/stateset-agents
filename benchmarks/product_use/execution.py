@@ -17,7 +17,7 @@ from typing import Any
 
 from stateset_agents import mcp_server
 
-SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.2", "0.3", "0.4"})
+SUPPORTED_SCHEMA_VERSIONS = frozenset({"0.2", "0.3", "0.4", "0.5"})
 DISCOVERY_TOOLS = frozenset({"list_rewards", "list_model_presets"})
 PATH_ARGUMENTS = frozenset(
     {"input_path", "history_path", "transcripts_dir", "output_dir"}
@@ -104,7 +104,24 @@ def _prepare_fixture(root: Path, fixture: str) -> None:
 
 def _prepare_generated_fixture(root: Path, task: dict[str, Any]) -> None:
     """Move the synthetic fixture to the paths chosen for a generated task."""
-    _prepare_fixture(root, task["fixture"])
+    fixture_data = task.get("fixture_data")
+    if fixture_data is None:
+        _prepare_fixture(root, task["fixture"])
+    elif task["fixture"] == "openai_support":
+        (root / "logs.jsonl").write_text(
+            "".join(json.dumps({"messages": turns}) + "\n" for turns in fixture_data),
+            encoding="utf-8",
+        )
+    elif task["fixture"] == "transcripts_support":
+        directory = root / "transcripts"
+        directory.mkdir()
+        for name, turns in zip(("good.jsonl", "bad.jsonl"), fixture_data, strict=True):
+            (directory / name).write_text(
+                "".join(json.dumps(turn) + "\n" for turn in turns),
+                encoding="utf-8",
+            )
+    else:
+        raise ValueError(f"unknown generated fixture: {task['fixture']}")
     params = task["params"]
     if task["fixture"] == "openai_support":
         destination = Path(_workspace_path(root, params["input_path"]))
@@ -132,6 +149,43 @@ async def _call_tool(name: str, arguments: dict[str, Any], root: Path) -> Any:
     return result
 
 
+def _check_generated_ingest(
+    task: dict[str, Any], actual: dict[str, Any], result: dict[str, Any], root: Path
+) -> bool:
+    """Verify ingestion reproduced the task's private source conversations."""
+    params = task["params"]
+    expected = {
+        "input_path": params["input_path"],
+        "format": "openai",
+        "output_dir": params["output_dir"],
+    }
+    try:
+        source = [
+            json.loads(line)["messages"]
+            for line in Path(_workspace_path(root, params["input_path"]))
+            .read_text(encoding="utf-8")
+            .splitlines()
+        ]
+        paths = sorted(
+            Path(_workspace_path(root, params["output_dir"])).glob(
+                "conversation_*.jsonl"
+            )
+        )
+        written = [
+            [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+            for path in paths
+        ]
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return (
+        actual == expected
+        and result.get("conversation_count") == len(source) == 2
+        and result.get("turn_count") == sum(map(len, source)) == 4
+        and len(paths) == 2
+        and written == source
+    )
+
+
 def _check_generated_result(
     task: dict[str, Any], trace: list[dict[str, Any]], root: Path
 ) -> bool:
@@ -144,50 +198,31 @@ def _check_generated_result(
         return False
     params = task["params"]
     if task["goal"] == "ingest_transcripts":
-        expected = {
-            "input_path": params["input_path"],
-            "format": "openai",
-            "output_dir": params["output_dir"],
-        }
-        try:
-            source = [
-                json.loads(line)["messages"]
-                for line in Path(_workspace_path(root, params["input_path"]))
-                .read_text(encoding="utf-8")
-                .splitlines()
-            ]
-            paths = sorted(
-                Path(_workspace_path(root, params["output_dir"])).glob(
-                    "conversation_*.jsonl"
-                )
-            )
-            written = [
-                [
-                    json.loads(line)
-                    for line in path.read_text(encoding="utf-8").splitlines()
-                ]
-                for path in paths
-            ]
-        except (OSError, ValueError, KeyError, TypeError):
-            return False
-        return (
-            actual == expected
-            and result.get("conversation_count") == len(source) == 2
-            and result.get("turn_count") == sum(map(len, source)) == 4
-            and len(paths) == 2
-            and written == source
-        )
+        return _check_generated_ingest(task, actual, result, root)
     if task["goal"] == "grade_transcript":
         discovery = task.get("discovery")
-        discovered = discovery is None or (
-            discovery == "list_rewards"
-            and len(trace) >= 2
-            and trace[-2]["name"] == "list_rewards"
-            and trace[-2]["arguments"] == {}
-            and isinstance(trace[-2]["result"], dict)
-            and isinstance(trace[-2]["result"].get("rewards"), list)
-            and "customer_support" in trace[-2]["result"]["rewards"]
-        )
+        if discovery == "ingest_transcripts":
+            discovered = (
+                len(trace) >= 2
+                and trace[-2]["name"] == "ingest_transcripts"
+                and isinstance(trace[-2]["result"], dict)
+                and "error" not in trace[-2]["result"]
+                and _check_generated_ingest(
+                    task, trace[-2]["arguments"], trace[-2]["result"], root
+                )
+                and params["history_path"]
+                == f"{params['output_dir']}/conversation_0.jsonl"
+            )
+        else:
+            discovered = discovery is None or (
+                discovery == "list_rewards"
+                and len(trace) >= 2
+                and trace[-2]["name"] == "list_rewards"
+                and trace[-2]["arguments"] == {}
+                and isinstance(trace[-2]["result"], dict)
+                and isinstance(trace[-2]["result"].get("rewards"), list)
+                and "customer_support" in trace[-2]["result"]["rewards"]
+            )
         score = result.get("mean_score")
         return (
             discovered
@@ -383,7 +418,7 @@ async def score_task(
         }
     with tempfile.TemporaryDirectory(prefix="stateset-product-use-") as directory:
         root = Path(directory)
-        if task["schema_version"] == "0.4":
+        if task["schema_version"] in {"0.4", "0.5"}:
             _prepare_generated_fixture(root, task)
         else:
             _prepare_fixture(root, task["fixture"])
@@ -412,7 +447,7 @@ async def score_task(
                 break
         passed = (
             _check_generated_result(task, trace, root)
-            if task["schema_version"] == "0.4"
+            if task["schema_version"] in {"0.4", "0.5"}
             else _check_result(task, trace, root)
         )
         return {

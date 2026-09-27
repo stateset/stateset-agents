@@ -46,6 +46,16 @@ def test_interactive_session_can_recover_from_rejected_path() -> None:
         assert session.report()["score"] == 1
 
 
+def test_v05_interactive_chained_workflow_uses_generated_conversations() -> None:
+    tasks, _, oracle = generate("interactive-test-seed", schema_version="0.5")
+    task = tasks[-1]
+    with open_task(task) as session:
+        for call in oracle[-1]["calls"]:
+            result = asyncio.run(session.call(call["name"], call["arguments"]))
+            assert isinstance(result, dict) and "error" not in result
+        assert session.report()["score"] == 1
+
+
 def test_jsonl_cli_returns_tool_feedback_and_observed_score() -> None:
     call = {"name": "dry_run_finetune", "arguments": {"model_preset": "qwen3.5-0.8b"}}
     completed = subprocess.run(
@@ -74,3 +84,40 @@ def test_jsonl_cli_returns_tool_feedback_and_observed_score() -> None:
     assert events[1]["result"]["model_preset"] == "qwen3.5-0.8b"
     assert events[2]["score"] == 1
     assert events[2]["evaluation_mode"] == "interactive"
+
+
+def test_v05_cli_hides_private_fixture_and_scores_chained_calls(
+    tmp_path: Path,
+) -> None:
+    tasks, _, oracle = generate("interactive-test-seed", schema_version="0.5")
+    tasks_path = tmp_path / "tasks.json"
+    tasks_path.write_text(json.dumps(tasks), encoding="utf-8")
+    calls = oracle[-1]["calls"]
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "benchmarks.product_use.interactive",
+            "--tasks",
+            str(tasks_path),
+            "--task-id",
+            tasks[-1]["id"],
+            "--tools",
+            "benchmarks/product_use/tools.v0.5.json",
+        ],
+        input="".join(json.dumps(call) + "\n" for call in calls),
+        text=True,
+        capture_output=True,
+        check=True,
+        timeout=40,
+        cwd=Path.cwd(),
+    )
+    events = [json.loads(line) for line in completed.stdout.splitlines()]
+    assert [event["type"] for event in events] == [
+        "task",
+        "tool_result",
+        "tool_result",
+        "report",
+    ]
+    assert "fixture_data" not in events[0]
+    assert events[-1]["score"] == 1

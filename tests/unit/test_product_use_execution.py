@@ -18,6 +18,7 @@ TASKS_V03 = Path("benchmarks/product_use/tasks.v0.3.public.json")
 DEMONSTRATIONS_V03 = Path("benchmarks/product_use/demonstrations.v0.3.json")
 TOOL_CATALOG_V03 = Path("benchmarks/product_use/tools.v0.3.json")
 TOOL_CATALOG_V04 = Path("benchmarks/product_use/tools.v0.4.json")
+TOOL_CATALOG_V05 = Path("benchmarks/product_use/tools.v0.5.json")
 
 
 @pytest.mark.parametrize(
@@ -26,6 +27,7 @@ TOOL_CATALOG_V04 = Path("benchmarks/product_use/tools.v0.4.json")
         (TOOL_CATALOG, set(TOOLS) - DISCOVERY_TOOLS),
         (TOOL_CATALOG_V03, set(TOOLS)),
         (TOOL_CATALOG_V04, set(TOOLS)),
+        (TOOL_CATALOG_V05, set(TOOLS)),
     ],
 )
 def test_public_tool_catalog_matches_mcp_functions(
@@ -108,6 +110,54 @@ def test_generated_holdout_replays_and_hides_evaluator_fields(tmp_path: Path) ->
         asyncio.run(score_task(tasks[3], {"calls": oracle[3]["calls"][1:]}))["score"]
         == 0
     )
+
+
+def test_generated_v05_varies_private_data_and_checks_chained_workflow(
+    tmp_path: Path,
+) -> None:
+    tasks, prompts, oracle = generate(
+        "private-test-seed", variants=2, schema_version="0.5"
+    )
+    assert len(tasks) == len(prompts) == len(oracle) == 12
+    assert all("fixture_data" not in prompt for prompt in prompts)
+    assert (
+        tasks[0]["fixture_data"]
+        != generate("another-seed", schema_version="0.5")[0][0]["fixture_data"]
+    )
+    assert tasks[0]["fixture_data"] != tasks[6]["fixture_data"]
+    public_token = tasks[0]["id"].rsplit("-", 1)[1]
+    public_order = 1000 + int(public_token[4:8], 16) % 9000
+    assert str(public_order) not in tasks[0]["fixture_data"][0][0]["content"]
+
+    tasks_path = tmp_path / "tasks.json"
+    oracle_path = tmp_path / "oracle.json"
+    tasks_path.write_text(json.dumps(tasks), encoding="utf-8")
+    oracle_path.write_text(json.dumps(oracle), encoding="utf-8")
+    report = run(tasks_path, oracle_path)
+    assert report["schema_version"] == "0.5"
+    assert report["score"] == 1.0
+
+    chained_task = tasks[5]
+    chained_calls = oracle[5]["calls"]
+    assert [call["name"] for call in chained_calls] == [
+        "ingest_transcripts",
+        "grade_transcript",
+    ]
+    assert (
+        asyncio.run(score_task(chained_task, {"calls": chained_calls[1:]}))["score"]
+        == 0
+    )
+    wrong_history = [
+        chained_calls[0],
+        {
+            "name": "grade_transcript",
+            "arguments": {
+                **chained_calls[1]["arguments"],
+                "history_path": f"{chained_task['params']['output_dir']}/conversation_1.jsonl",
+            },
+        },
+    ]
+    assert asyncio.run(score_task(chained_task, {"calls": wrong_history}))["score"] == 0
 
 
 def test_forged_artifact_does_not_pass() -> None:

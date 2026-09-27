@@ -78,6 +78,28 @@ set varies task paths and preset names but reuses the same synthetic support
 conversations and task families, so it is a transfer check rather than a broad
 measure of product competence.
 
+### Version 0.5 private transfer set
+
+Version 0.5 retains the v0.4 tasks and adds a two-call ingest-to-grade workflow.
+It derives private support conversations from the seed with a separate HMAC
+label from the public task IDs, so changing the seed changes both paths and
+evaluator input data. The participant prompts do not include those
+conversations. Generate six tasks per variant with:
+
+```bash
+python -m benchmarks.product_use.generate \
+  --schema-version 0.5 --seed-file /tmp/product-use.seed --variants 3 \
+  --tasks-output /tmp/product-use-v05.tasks.json \
+  --prompts-output /tmp/product-use-v05.prompts.json
+```
+
+Give participants the prompts file and
+[`tools.v0.5.json`](tools.v0.5.json); keep the task file and seed private. The
+same static and interactive evaluators accept version 0.5. This set tests
+transfer to new synthetic conversations and a dependent tool sequence. It is
+still a bounded local benchmark, not an independent measure of broad product
+competence. Version 0.4 outputs remain unchanged for reproducibility.
+
 ## Interactive tool sessions
 
 An agent adapter can evaluate one task at a time over JSON lines. The runner
@@ -94,7 +116,7 @@ python -m benchmarks.product_use.interactive \
 
 For example, an adapter can send `{"name":"list_model_presets","arguments":{}}`,
 inspect the returned presets, then send a `dry_run_finetune` call. The same
-protocol works with a private version 0.4 task file and its matching tool
+protocol works with a private version 0.4 or 0.5 task file and its matching tool
 catalog. Each task allows at most four calls. A rejected tool call counts
 toward that limit; the agent may use the feedback to correct its next call.
 The final score checks the actual tool results and workspace, not the agent's

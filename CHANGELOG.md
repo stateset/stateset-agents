@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a v0.5 private product-use transfer set with seed-varying support
+  conversations and a dependent ingest-to-grade task. Both static and
+  interactive evaluators verify its actual tool results and generated files.
+
 ### Fixed
 
 - Made `SecureConfig` fail closed when encrypted secrets lack a configured key
