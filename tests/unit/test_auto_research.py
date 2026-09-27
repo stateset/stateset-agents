@@ -414,6 +414,50 @@ class TestCheckpointManager:
         path = mgr.save_experiment(agent, "exp_1", {"lr": 0.001})
         assert path.exists()
         assert (path / "metadata.json").exists()
+        assert (path / ".complete").exists()
+
+    def test_save_experiment_rejects_existing_checkpoint(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        path = mgr.save_experiment(agent, "exp_1", {"lr": 0.001})
+
+        with pytest.raises(FileExistsError, match="already exists"):
+            mgr.save_experiment(agent, "exp_1", {"lr": 0.01})
+
+        assert json.loads((path / "metadata.json").read_text())["params"] == {
+            "lr": 0.001
+        }
+
+    def test_save_experiment_failure_leaves_no_partial_checkpoint(
+        self, tmp_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        mgr = CheckpointManager(tmp_dir)
+
+        def fail_save(_agent, _path):
+            raise RuntimeError("weight save failed")
+
+        monkeypatch.setattr(mgr, "_save_agent_state", fail_save)
+        with pytest.raises(RuntimeError, match="weight save failed"):
+            mgr.save_experiment(MagicMock(), "exp_1", {})
+
+        assert not (mgr.checkpoints_dir / "exp_1").exists()
+        assert list(mgr.checkpoints_dir.iterdir()) == []
+
+    @pytest.mark.parametrize("experiment_id", ["best", "BEST", "best."])
+    def test_save_experiment_cannot_replace_best(
+        self, tmp_dir: Path, experiment_id: str
+    ):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "exp_1", {})
+
+        with pytest.raises(ValueError, match="safe checkpoint name"):
+            mgr.save_experiment(agent, experiment_id, {})
+
+        assert mgr.has_best()
+        assert mgr.load_best_metadata()["experiment_id"] == "exp_1"
 
     @pytest.mark.parametrize("experiment_id", ["../escape", "..", "/tmp/escape", "a/b"])
     def test_save_experiment_rejects_unsafe_path(

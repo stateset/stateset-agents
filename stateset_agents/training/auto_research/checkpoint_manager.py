@@ -156,24 +156,36 @@ class CheckpointManager:
         experiment_id: str,
         params: dict[str, Any],
     ) -> Path:
-        """Save a named experiment checkpoint (kept experiments only)."""
-        if not isinstance(experiment_id, str) or not re.fullmatch(
-            r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", experiment_id
+        """Save an immutable named experiment checkpoint (kept experiments only)."""
+        if (
+            not isinstance(experiment_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", experiment_id)
+            or experiment_id.rstrip(".").casefold() == "best"
         ):
             raise ValueError("experiment ID must be a safe checkpoint name")
         exp_dir = self.checkpoints_dir / experiment_id
         if exp_dir.exists():
-            shutil.rmtree(exp_dir)
-        exp_dir.mkdir(parents=True, exist_ok=True)
+            raise FileExistsError(
+                f"experiment checkpoint already exists: {experiment_id}"
+            )
+        tmp_dir = Path(tempfile.mkdtemp(dir=self.checkpoints_dir, prefix=".exp_tmp_"))
+        try:
+            model_path = tmp_dir / "model"
+            model_path.mkdir()
+            self._save_agent_state(agent, model_path)
 
-        model_path = exp_dir / "model"
-        model_path.mkdir(exist_ok=True)
-        self._save_agent_state(agent, model_path)
-
-        meta = {"experiment_id": experiment_id, "params": params}
-        with open(exp_dir / "metadata.json", "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2)
-
+            meta = {"experiment_id": experiment_id, "params": params}
+            with open(tmp_dir / "metadata.json", "w", encoding="utf-8") as f:
+                json.dump(meta, f, indent=2)
+            (tmp_dir / ".complete").touch()
+            if exp_dir.exists():
+                raise FileExistsError(
+                    f"experiment checkpoint already exists: {experiment_id}"
+                )
+            tmp_dir.rename(exp_dir)
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
         return exp_dir
 
     def has_best(self) -> bool:
