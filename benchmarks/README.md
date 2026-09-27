@@ -8,8 +8,9 @@ performance claims.
 
 The starter benchmark for teaching and evaluating agent interaction with the
 StateSet product surface lives in [`product_use/`](product_use/). It contains
-versioned MCP tasks, an execution-backed local scorer, and guidance for running
-private generated transfer checks. Run the public demonstration with:
+versioned MCP tasks, an execution-backed local scorer, an interactive JSONL
+tool-session runner, and guidance for private generated transfer checks. Run
+the public demonstration with:
 
 ```bash
 python -m benchmarks.product_use.execution \

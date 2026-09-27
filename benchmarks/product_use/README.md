@@ -78,6 +78,30 @@ set varies task paths and preset names but reuses the same synthetic support
 conversations and task families, so it is a transfer check rather than a broad
 measure of product competence.
 
+## Interactive tool sessions
+
+An agent adapter can evaluate one task at a time over JSON lines. The runner
+first writes a `task` event with the prompt and tool schemas. Send one tool-call
+object per line; after each call, read the `tool_result` event before choosing
+the next call. Send `{ "done": true }` to finish and read the final `report`:
+
+```bash
+python -m benchmarks.product_use.interactive \
+  --tasks benchmarks/product_use/tasks.v0.3.public.json \
+  --task-id discover-and-preview-qwen \
+  --tools benchmarks/product_use/tools.v0.3.json
+```
+
+For example, an adapter can send `{"name":"list_model_presets","arguments":{}}`,
+inspect the returned presets, then send a `dry_run_finetune` call. The same
+protocol works with a private version 0.4 task file and its matching tool
+catalog. Each task allows at most four calls. A rejected tool call counts
+toward that limit; the agent may use the feedback to correct its next call.
+The final score checks the actual tool results and workspace, not the agent's
+claim of success. Interactive reports carry `evaluation_mode: interactive`;
+report them separately from static trace-replay scores because interactive
+agents can correct a rejected call within their budget.
+
 This local runner is for trusted submissions. Temporary directories and path
 checks confine the supported tool arguments, but they do not provide OS-level
 isolation for hostile code. A hosted leaderboard must run each participant in
