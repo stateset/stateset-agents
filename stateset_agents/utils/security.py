@@ -246,10 +246,17 @@ class SecureConfig:
 
 
 class SecurityMonitor:
-    """Monitor security events and anomalies."""
+    """Monitor a bounded history of security events and anomalies."""
 
-    def __init__(self):
+    def __init__(self, max_events: int = 10000) -> None:
+        if (
+            isinstance(max_events, bool)
+            or not isinstance(max_events, int)
+            or max_events < 1
+        ):
+            raise ValueError("max_events must be a positive integer")
         self.events: list[dict[str, Any]] = []
+        self.max_events = max_events
         self.logger = logging.getLogger(__name__ + ".SecurityMonitor")
 
     def log_security_event(
@@ -269,6 +276,8 @@ class SecurityMonitor:
         }
 
         self.events.append(event)
+        if len(self.events) > self.max_events:
+            del self.events[: len(self.events) - self.max_events]
 
         # Log based on severity
         log_method = getattr(self.logger, severity, self.logger.info)

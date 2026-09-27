@@ -458,6 +458,12 @@ class APISecurityMonitor:
     """
 
     def __init__(self, max_events: int = 10000):
+        if (
+            isinstance(max_events, bool)
+            or not isinstance(max_events, int)
+            or max_events < 1
+        ):
+            raise ValueError("max_events must be a positive integer")
         self.events: list[SecurityEvent] = []
         self.max_events = max_events
         self.auth_tracker = AuthFailureTracker()

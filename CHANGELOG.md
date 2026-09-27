@@ -14,6 +14,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   through `encrypt=False`.
 - Rejected expired `AuthService` sessions during authorization and made security
   timestamps timezone aware while accepting older naive UTC timestamps.
+- Capped the in-memory `SecurityMonitor` event history at 10,000 entries by
+  default, so repeated authentication failures cannot grow it without bound;
+  both security monitors now reject invalid event limits.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 

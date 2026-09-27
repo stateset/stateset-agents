@@ -293,6 +293,12 @@ class TestCSRFProtection:
 class TestAPISecurityMonitor:
     """Tests for API security monitor."""
 
+    @pytest.mark.parametrize("max_events", [0, -1, True, 1.5, "10"])
+    def test_rejects_invalid_capacity(self, max_events):
+        """Invalid capacity cannot disable the API event history limit."""
+        with pytest.raises(ValueError, match="max_events"):
+            APISecurityMonitor(max_events=max_events)
+
     def test_log_event(self):
         """Test event logging."""
         monitor = APISecurityMonitor()
