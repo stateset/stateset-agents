@@ -180,13 +180,15 @@ make publish
 
 For v0.56.0, the required security scan has a reviewed exception for the
 optional development lockfile dependency `accelerate==1.14.0`, finding
-`SFTY-20260810-08074` / `CVE-2026-69112`. Accelerate's sharded checkpoint
+`CVE-2026-69112` (formerly `SFTY-20260810-08074`, now
+`PYSEC-2026-3804` / `GHSA-4j2p-28q2-5m79`). Accelerate's sharded checkpoint
 `weight_map` loader does not validate paths in untrusted checkpoint indexes.
 Only load checkpoints from trusted sources. The upstream maintainers closed
 the proposed fixes as outside their security policy; no patched release was
 available on 2026-09-23. The CI exception matches the package, version,
-Safety ID, and CVE exactly, and expires after 2026-12-31. Reassess it when a
-patched release appears or by the expiry date. Other findings still fail CI.
+pip-audit advisory ID, GHSA alias, and CVE exactly. It expires after
+2026-12-31. Reassess it when a patched release appears or by the expiry date.
+Other findings still fail CI.
 
 ### Release
 - [ ] Package builds successfully (`make build`)

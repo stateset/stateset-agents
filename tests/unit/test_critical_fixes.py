@@ -237,25 +237,104 @@ class TestSecurityEncryption:
             else:
                 os.environ.pop("CONFIG_ENCRYPTION_KEY", None)
 
-    def test_encryption_without_key_uses_base64(self):
-        """Test that missing encryption key falls back to base64."""
-        import base64
-        import os
+    def test_encryption_without_key_fails_closed(self, monkeypatch):
+        """Encrypted secrets cannot silently fall back to reversible encoding."""
+        from stateset_agents.utils.security import SecureConfig
+
+        monkeypatch.delenv("CONFIG_ENCRYPTION_KEY", raising=False)
+        secure_config = SecureConfig()
+
+        with pytest.raises(RuntimeError, match="CONFIG_ENCRYPTION_KEY"):
+            secure_config.set_secret("api_key", "test_value")
+        assert secure_config.get_secret("api_key") is None
+
+    def test_encrypted_secret_requires_key_for_read(self, monkeypatch):
+        """Losing the key never exposes ciphertext as a plaintext secret."""
+        pytest.importorskip("cryptography")
+        from stateset_agents.utils.security import SecureConfig
+
+        monkeypatch.setenv("CONFIG_ENCRYPTION_KEY", "test-secret-key")
+        secure_config = SecureConfig()
+        secure_config.set_secret("api_key", "test_value")
+        assert secure_config.get_secret("api_key") == "test_value"
+
+        monkeypatch.delenv("CONFIG_ENCRYPTION_KEY")
+        with pytest.raises(RuntimeError, match="CONFIG_ENCRYPTION_KEY"):
+            secure_config.get_secret("api_key")
+
+    def test_explicit_plaintext_secret_round_trip(self, monkeypatch):
+        """Plaintext opt-in remains readable, even when its value is base64-like."""
+        from stateset_agents.utils.security import SecureConfig
+
+        monkeypatch.delenv("CONFIG_ENCRYPTION_KEY", raising=False)
+        secure_config = SecureConfig()
+        secure_config.set_secret("api_key", "dGVzdA==", encrypt=False)
+        assert secure_config.get_secret("api_key") == "dGVzdA=="
+
+    def test_overwriting_encrypted_secret_with_plaintext(self, monkeypatch):
+        """Changing storage mode keeps the later secret readable."""
+        pytest.importorskip("cryptography")
+        from stateset_agents.utils.security import SecureConfig
+
+        monkeypatch.setenv("CONFIG_ENCRYPTION_KEY", "test-secret-key")
+        secure_config = SecureConfig()
+        secure_config.set_secret("api_key", "encrypted")
+        secure_config.set_secret("api_key", "plaintext", encrypt=False)
+        assert secure_config.get_secret("api_key") == "plaintext"
+
+    def test_missing_cryptography_fails_closed(self, monkeypatch):
+        """An unavailable crypto dependency cannot downgrade encryption."""
+        from unittest.mock import patch
 
         from stateset_agents.utils.security import SecureConfig
 
+        monkeypatch.setenv("CONFIG_ENCRYPTION_KEY", "test-secret-key")
         secure_config = SecureConfig()
+        with patch.dict("sys.modules", {"cryptography.fernet": None}):
+            with pytest.raises(RuntimeError, match="cryptography"):
+                secure_config.set_secret("api_key", "test_value")
+        assert secure_config.get_secret("api_key") is None
 
-        # Remove encryption key
-        original_key = os.environ.pop("CONFIG_ENCRYPTION_KEY", None)
-        try:
-            test_value = "test_value"
-            result = secure_config._simple_encrypt(test_value)
-            # Should return base64 encoded value
-            assert result == base64.b64encode(test_value.encode()).decode()
-        finally:
-            if original_key is not None:
-                os.environ["CONFIG_ENCRYPTION_KEY"] = original_key
+
+def test_auth_service_rejects_expired_session():
+    """An expired session cannot authorize an otherwise valid role."""
+    from datetime import datetime, timedelta, timezone
+
+    from stateset_agents.utils.security import AuthService
+
+    service = AuthService("test-secret")
+    service.users["alice"] = {"roles": ["admin"]}
+    service.sessions["expired"] = {
+        "username": "alice",
+        "expires_at": (datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(),
+    }
+    service.sessions["active"] = {
+        "username": "alice",
+        "expires_at": (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat(),
+    }
+
+    assert not service.authorize("expired", "admin")
+    assert "expired" not in service.sessions
+    assert service.authorize("active", "admin")
+    assert not service.authorize("active", "viewer")
+
+
+def test_auth_service_accepts_legacy_naive_utc_expiry():
+    """Existing sessions with naive UTC timestamps remain readable."""
+    from datetime import datetime, timedelta, timezone
+
+    from stateset_agents.utils.security import AuthService
+
+    service = AuthService("test-secret")
+    service.users["alice"] = {"roles": ["admin"]}
+    legacy_expiry = (datetime.now(timezone.utc) + timedelta(minutes=5)).replace(
+        tzinfo=None
+    )
+    service.sessions["legacy"] = {
+        "username": "alice",
+        "expires_at": legacy_expiry.isoformat(),
+    }
+    assert service.authorize("legacy", "admin")
 
 
 class TestPPOClipping:

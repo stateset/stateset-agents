@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 REPORT_DIR="$ROOT_DIR"
 BANDIT_REPORT_PATH="$REPORT_DIR/bandit-report.json"
-SAFETY_REPORT_PATH="$REPORT_DIR/safety-report.json"
+AUDIT_REPORT_PATH="$REPORT_DIR/pip-audit-report.json"
 SUMMARY_PATH="$REPORT_DIR/publish-readiness-summary.json"
-SAFETY_INPUT_PATH="$(mktemp /tmp/stateset-publish-safety.XXXXXX.txt)"
+AUDIT_INPUT_PATH="$(mktemp /tmp/stateset-publish-audit.XXXXXX.txt)"
 SMOKE_VENV=""
 PYTHON_BIN="${PYTHON_BIN:-}"
 cd "$ROOT_DIR"
@@ -145,7 +145,7 @@ if status == "passed":
             "distributions": [retained(path) for path in [*wheels, *sdists]],
             "security_reports": [
                 retained(root / "bandit-report.json"),
-                retained(root / "safety-report.json"),
+                retained(root / "pip-audit-report.json"),
             ],
             "coverage_reports": [retained(root / "coverage.xml")],
             "coverage_percent": round(
@@ -169,7 +169,7 @@ PY
 
 on_exit() {
     local exit_code="$?"
-    rm -f "$SAFETY_INPUT_PATH"
+    rm -f "$AUDIT_INPUT_PATH"
     case "$SMOKE_VENV" in
         /tmp/stateset-wheel-smoke.*)
             rm -rf -- "$SMOKE_VENV"
@@ -211,7 +211,7 @@ REQUIRED_COMMANDS=(
   "isort"
   "mypy"
   "bandit"
-  "safety"
+  "pip-audit"
 )
 
 MISSING_COMMANDS=()
@@ -225,7 +225,7 @@ if [ "${#MISSING_COMMANDS[@]}" -ne 0 ]; then
   READINESS_FAILURE_DETAIL="missing_tools: $(printf '%s ' "${MISSING_COMMANDS[@]}")"
   echo "ERROR: Missing required publish-readiness tooling:"
   printf '  - %s\n' "${MISSING_COMMANDS[@]}"
-  echo "Install dependencies and retry: pip install -e \".[dev,api]\" ruff black isort mypy pytest bandit safety twine build"
+  echo "Install dependencies and retry: pip install -e \".[dev,api]\" ruff black isort mypy pytest bandit pip-audit twine build"
   exit 1
 fi
 
@@ -291,21 +291,13 @@ CURRENT_STEP="tests_with_coverage"
 printf "\n[7/11] Running security scans...\n"
 CURRENT_STEP="security_scans"
 bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
-# --save-json writes the JSON straight to a file; piping `--json` stdout to
-# a file (the previous form here) captures safety's banner/deprecation
-# notice ahead of the payload too, corrupting a naive json.loads() the same
-# way `make security-scan-strict` hit before it was fixed. Match the
-# Makefile's invocation exactly so both paths behave identically. Safety's
-# parser does not recognize the environment-marker form of cuda-toolkit even
-# though pip does, so omit that entry from Safety's normalized scan input.
-grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > "$SAFETY_INPUT_PATH"
-safety check -r "$SAFETY_INPUT_PATH" --save-json "$SAFETY_REPORT_PATH" \
-  --no-prompt > /dev/null 2>&1 || true
-# Route both reports through check_security_findings.py's lenient parser
-# (raw_decode from the first '{', ignoring any surrounding banner text)
-# instead of a second, stricter inline copy of this same parsing logic --
-# one implementation for both `make security-scan-strict` and this script.
-"$PYTHON_BIN" scripts/check_security_findings.py
+# The dev lock is fully pinned, so audit its exact packages without resolving
+# dependencies again. cuda-toolkit is an extras meta-package; its concrete
+# component packages remain pinned and audited.
+grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > "$AUDIT_INPUT_PATH"
+pip-audit -r "$AUDIT_INPUT_PATH" --no-deps --disable-pip --format json \
+  --output "$AUDIT_REPORT_PATH" > /dev/null 2>&1 || true
+"$PYTHON_BIN" -m scripts.check_security_findings
 
 printf "\n[8/11] Building package...\n"
 CURRENT_STEP="build"

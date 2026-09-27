@@ -1,0 +1,103 @@
+[
+  {
+    "task_id": "ingest-openai-support",
+    "calls": [
+      {
+        "name": "ingest_transcripts",
+        "arguments": {
+          "input_path": "logs.jsonl",
+          "format": "openai",
+          "output_dir": "transcripts"
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "grade-support-transcript",
+    "calls": [
+      {
+        "name": "grade_transcript",
+        "arguments": {
+          "history_path": "transcripts/good.jsonl",
+          "reward": "customer_support"
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "curate-support-transcripts",
+    "calls": [
+      {
+        "name": "improve_run",
+        "arguments": {
+          "transcripts_dir": "transcripts",
+          "reward": "customer_support",
+          "output_dir": "improved",
+          "threshold": 0.7
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "read-improvement-status",
+    "calls": [
+      {
+        "name": "improve_run",
+        "arguments": {
+          "transcripts_dir": "transcripts",
+          "reward": "customer_support",
+          "output_dir": "improved",
+          "threshold": 0.7
+        }
+      },
+      {
+        "name": "improve_status",
+        "arguments": {
+          "output_dir": "improved"
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "preview-qwen-training",
+    "calls": [
+      {
+        "name": "dry_run_finetune",
+        "arguments": {
+          "model_preset": "qwen3.5-0.8b"
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "discover-and-grade-support",
+    "calls": [
+      {
+        "name": "list_rewards",
+        "arguments": {}
+      },
+      {
+        "name": "grade_transcript",
+        "arguments": {
+          "history_path": "transcripts/good.jsonl",
+          "reward": "customer_support"
+        }
+      }
+    ]
+  },
+  {
+    "task_id": "discover-and-preview-qwen",
+    "calls": [
+      {
+        "name": "list_model_presets",
+        "arguments": {}
+      },
+      {
+        "name": "dry_run_finetune",
+        "arguments": {
+          "model_preset": "qwen3.5-0.8b"
+        }
+      }
+    ]
+  }
+]

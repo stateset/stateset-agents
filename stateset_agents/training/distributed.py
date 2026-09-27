@@ -10,7 +10,7 @@ This module provides distributed training capabilities including:
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -38,7 +38,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DistributedConfig:
-    """Configuration for distributed training"""
+    """Configuration for distributed training.
+
+    An unset accumulation count inherits ``TrainingConfig``. An explicit value
+    overrides it for both the base trainer and Accelerate.
+    """
 
     # Basic distributed settings
     backend: str = "nccl"  # nccl, gloo, mpi
@@ -50,7 +54,7 @@ class DistributedConfig:
 
     # Training strategy
     strategy: str = "ddp"  # ddp, fsdp, deepspeed
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int | None = None  # Inherit TrainingConfig
 
     # FSDP specific
     fsdp_sharding_strategy: str = "full_shard"  # full_shard, shard_grad_op, no_shard
@@ -93,6 +97,28 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         self.accelerator: Accelerator | None = None
         self.is_main_process = True
         self.config = config or TrainingConfig()
+        accumulation_steps = self.distributed_config.gradient_accumulation_steps
+        if accumulation_steps is None:
+            accumulation_steps = self.config.gradient_accumulation_steps
+        if (
+            isinstance(accumulation_steps, bool)
+            or not isinstance(accumulation_steps, int)
+            or accumulation_steps < 1
+        ):
+            raise ValueError("gradient_accumulation_steps must be a positive integer")
+        self.config = replace(
+            self.config, gradient_accumulation_steps=accumulation_steps
+        )
+        self.distributed_config.gradient_accumulation_steps = accumulation_steps
+        if (
+            self.distributed_config.strategy == "accelerate"
+            and accumulation_steps > 1
+            and self.config.num_gradient_updates > 1
+        ):
+            raise ValueError(
+                "Accelerate cannot combine gradient accumulation with "
+                "multiple inner optimizer updates"
+            )
 
         # Initialize distributed environment
         self._init_distributed()
@@ -113,6 +139,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 log_with=["wandb"] if self.config.report_to == "wandb" else None,
             )
             self.is_main_process = self.accelerator.is_main_process
+            self.distributed_config.world_size = self.accelerator.num_processes
+            self.distributed_config.rank = self.accelerator.process_index
+            self.distributed_config.local_rank = self.accelerator.local_process_index
 
         else:
             # Manual distributed setup
@@ -140,15 +169,16 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         await super().initialize()
 
         # Wrap model for distributed training
-        if self.distributed_config.world_size > 1:
+        if self.distributed_config.strategy == "accelerate":
+            # Accelerate also places and wraps single-process models.
+            self._wrap_model_accelerate()
+        elif self.distributed_config.world_size > 1:
             if self.distributed_config.strategy == "fsdp":
                 self._wrap_model_fsdp()
             elif self.distributed_config.strategy == "ddp":
                 self._wrap_model_ddp()
             elif self.distributed_config.strategy == "deepspeed":
                 self._wrap_model_deepspeed()
-            elif self.distributed_config.strategy == "accelerate":
-                self._wrap_model_accelerate()
 
     def _wrap_model_ddp(self):
         """Wrap model with DistributedDataParallel"""
@@ -275,9 +305,18 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
     def _wrap_model_accelerate(self):
         """Wrap model with Accelerate"""
-        self.agent.model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(
-            self.agent.model, self.optimizer, self.lr_scheduler
-        )
+        if self.accelerator is None or self.optimizer is None:
+            raise RuntimeError("Accelerate requires an initialized optimizer")
+        if self.lr_scheduler is None:
+            self.agent.model, self.optimizer = self.accelerator.prepare(
+                self.agent.model, self.optimizer
+            )
+        else:
+            self.agent.model, self.optimizer, self.lr_scheduler = (
+                self.accelerator.prepare(
+                    self.agent.model, self.optimizer, self.lr_scheduler
+                )
+            )
         logger.info("Model wrapped with Accelerate")
 
     async def training_step(self, trajectory_groups: list[Any]) -> dict[str, Any]:
@@ -301,11 +340,22 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         """Synchronize metrics across all processes"""
 
         synced_metrics: dict[str, Any] = {}
+        accelerator = self.accelerator
+        if accelerator is not None:
+            device = accelerator.device
+        else:
+            device = next(self.agent.model.parameters()).device
         for key, value in metrics.items():
-            if isinstance(value, (int, float)):
-                tensor = torch.tensor(value, device=self.agent.model.device)
-                dist.all_reduce(tensor, op=dist.ReduceOp.AVG)
-                synced_metrics[key] = tensor.item()
+            if isinstance(value, (int, float, bool)):
+                tensor = torch.tensor(float(value), device=device)
+                if accelerator is not None:
+                    tensor = accelerator.reduce(tensor, reduction="mean")
+                else:
+                    dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+                    tensor /= self.distributed_config.world_size
+                synced_metrics[key] = (
+                    tensor.item() == 1.0 if isinstance(value, bool) else tensor.item()
+                )
             else:
                 synced_metrics[key] = value
 

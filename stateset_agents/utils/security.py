@@ -5,20 +5,27 @@ This module provides security-related utilities including input validation,
 authentication helpers, secure configuration management, and security monitoring.
 """
 
-import binascii
 import hashlib
 import json
 import logging
 import os
 import re
 import secrets
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
 from stateset_agents.core.error_handling import ErrorCode, ValidationException
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_utc_timestamp(value: str) -> datetime:
+    """Read current or legacy naive UTC timestamps as aware UTC datetimes."""
+    timestamp = datetime.fromisoformat(value)
+    if timestamp.tzinfo is None:
+        return timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
 
 
 class InputValidator:
@@ -136,20 +143,21 @@ class SecureConfig:
         self.config_file = Path(config_file) if config_file else None
         self._config: dict[str, Any] = {}
         self._secrets: dict[str, str] = {}
+        self._plaintext_secret_keys: set[str] = set()
 
         # Load configuration if file provided
         if self.config_file and self.config_file.exists():
             self.load_config()
 
-    def set_secret(self, key: str, value: str, encrypt: bool = True):
-        """Securely store a secret."""
+    def set_secret(self, key: str, value: str, encrypt: bool = True) -> None:
+        """Store a secret; encryption requires a configured key and cryptography."""
         if encrypt:
-            # In production, use proper encryption
-            # This is a simplified example
             encrypted = self._simple_encrypt(value)
             self._secrets[key] = encrypted
+            self._plaintext_secret_keys.discard(key)
         else:
             self._secrets[key] = value
+            self._plaintext_secret_keys.add(key)
 
     def get_secret(self, key: str, decrypt: bool = True) -> str | None:
         """Retrieve a secret."""
@@ -157,26 +165,19 @@ class SecureConfig:
             return None
 
         value = self._secrets[key]
-        if decrypt:
+        if decrypt and key not in self._plaintext_secret_keys:
             return self._simple_decrypt(value)
         return value
 
     def _simple_encrypt(self, value: str) -> str:
         """Encrypt value using Fernet symmetric encryption.
 
-        Requires CONFIG_ENCRYPTION_KEY environment variable (32+ character key).
-        Falls back to a warning and base64 encoding if cryptography is not installed.
+        Requires CONFIG_ENCRYPTION_KEY and the cryptography package.
         """
         key_str = os.environ.get("CONFIG_ENCRYPTION_KEY")
 
         if not key_str:
-            logger.warning(
-                "CONFIG_ENCRYPTION_KEY not set. Secrets will be stored in plaintext. "
-                "Set a 32+ character key for production use."
-            )
-            import base64
-
-            return base64.b64encode(value.encode()).decode()
+            raise RuntimeError("CONFIG_ENCRYPTION_KEY is required to encrypt secrets")
 
         try:
             import base64
@@ -189,27 +190,15 @@ class SecureConfig:
             fernet_key = base64.urlsafe_b64encode(key_bytes)
             cipher = Fernet(fernet_key)
             return str(cipher.encrypt(value.encode()).decode())
-        except ImportError:
-            logger.warning(
-                "cryptography package not installed. Using base64 encoding only. "
-                "Install cryptography for secure secret storage: pip install cryptography"
-            )
-            import base64
-
-            return base64.b64encode(value.encode()).decode()
+        except ImportError as exc:
+            raise RuntimeError("cryptography is required to encrypt secrets") from exc
 
     def _simple_decrypt(self, value: str) -> str:
         """Decrypt value using Fernet symmetric encryption."""
         key_str = os.environ.get("CONFIG_ENCRYPTION_KEY")
 
         if not key_str:
-            # Assume base64 encoded if no key
-            import base64
-
-            try:
-                return base64.b64decode(value.encode()).decode()
-            except (binascii.Error, UnicodeDecodeError, ValueError):
-                return value
+            raise RuntimeError("CONFIG_ENCRYPTION_KEY is required to decrypt secrets")
 
         try:
             import base64
@@ -229,20 +218,8 @@ class SecureConfig:
                     error_code=ErrorCode.VALIDATION_FAILED,
                     details={"source": "fernet_decrypt"},
                 ) from e
-        except ImportError:
-            import base64
-
-            try:
-                return base64.b64decode(value.encode()).decode()
-            except (binascii.Error, UnicodeDecodeError, ValueError):
-                return value
-        except (binascii.Error, UnicodeDecodeError, ValueError) as e:
-            logger.error(f"Failed to decrypt secret: {e}")
-            raise ValidationException(
-                "Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.",
-                error_code=ErrorCode.VALIDATION_FAILED,
-                details={"source": "decrypt_fallback"},
-            ) from e
+        except ImportError as exc:
+            raise RuntimeError("cryptography is required to decrypt secrets") from exc
 
     def save_config(self):
         """Save configuration to file."""
@@ -269,10 +246,17 @@ class SecureConfig:
 
 
 class SecurityMonitor:
-    """Monitor security events and anomalies."""
+    """Monitor a bounded history of security events and anomalies."""
 
-    def __init__(self):
+    def __init__(self, max_events: int = 10000) -> None:
+        if (
+            isinstance(max_events, bool)
+            or not isinstance(max_events, int)
+            or max_events < 1
+        ):
+            raise ValueError("max_events must be a positive integer")
         self.events: list[dict[str, Any]] = []
+        self.max_events = max_events
         self.logger = logging.getLogger(__name__ + ".SecurityMonitor")
 
     def log_security_event(
@@ -284,7 +268,7 @@ class SecurityMonitor:
     ):
         """Log a security event."""
         event = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "type": event_type,
             "severity": severity,
             "details": details,
@@ -292,6 +276,8 @@ class SecurityMonitor:
         }
 
         self.events.append(event)
+        if len(self.events) > self.max_events:
+            del self.events[: len(self.events) - self.max_events]
 
         # Log based on severity
         log_method = getattr(self.logger, severity, self.logger.info)
@@ -299,12 +285,12 @@ class SecurityMonitor:
 
     def get_recent_events(self, hours: int = 24) -> list[dict[str, Any]]:
         """Get recent security events."""
-        cutoff = datetime.utcnow() - timedelta(hours=hours)
+        cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
 
         return [
             event
             for event in self.events
-            if datetime.fromisoformat(event["timestamp"]) > cutoff
+            if _parse_utc_timestamp(event["timestamp"]) > cutoff
         ]
 
     def detect_anomalies(self) -> list[dict[str, Any]]:
@@ -355,7 +341,7 @@ class AuthService:
         self.users[username] = {
             "password_hash": password_hash,
             "roles": roles or ["user"],
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "failed_attempts": 0,
             "locked_until": None,
         }
@@ -374,8 +360,8 @@ class AuthService:
 
         # Check if account is locked
         if user.get("locked_until"):
-            lock_time = datetime.fromisoformat(user["locked_until"])
-            if datetime.utcnow() < lock_time:
+            lock_time = _parse_utc_timestamp(user["locked_until"])
+            if datetime.now(timezone.utc) < lock_time:
                 self.monitor.log_security_event(
                     "failed_login", {"username": username, "reason": "account_locked"}
                 )
@@ -388,7 +374,7 @@ class AuthService:
             # Lock account after 5 failed attempts
             if user["failed_attempts"] >= 5:
                 user["locked_until"] = (
-                    datetime.utcnow() + timedelta(minutes=30)
+                    datetime.now(timezone.utc) + timedelta(minutes=30)
                 ).isoformat()
                 self.monitor.log_security_event(
                     "account_locked",
@@ -407,8 +393,10 @@ class AuthService:
         session_token = self._generate_session_token()
         self.sessions[session_token] = {
             "username": username,
-            "created_at": datetime.utcnow().isoformat(),
-            "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": (
+                datetime.now(timezone.utc) + timedelta(hours=24)
+            ).isoformat(),
         }
 
         self.monitor.log_security_event("successful_login", {"username": username})
@@ -421,6 +409,9 @@ class AuthService:
             return False
 
         session = self.sessions[session_token]
+        if _parse_utc_timestamp(session["expires_at"]) <= datetime.now(timezone.utc):
+            del self.sessions[session_token]
+            return False
         username = session["username"]
         user = self.users.get(username)
 

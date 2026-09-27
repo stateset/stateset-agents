@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added a v0.5 private product-use transfer set with seed-varying support
+  conversations and a dependent ingest-to-grade task. Both static and
+  interactive evaluators verify its actual tool results and generated files.
+
+### Fixed
+
+- Made `SecureConfig` fail closed when encrypted secrets lack a configured key
+  or the `cryptography` dependency; explicit plaintext storage remains available
+  through `encrypt=False`.
+- Rejected expired `AuthService` sessions during authorization and made security
+  timestamps timezone aware while accepting older naive UTC timestamps.
+- Capped the in-memory `SecurityMonitor` event history at 10,000 entries by
+  default, so repeated authentication failures cannot grow it without bound;
+  both security monitors now reject invalid event limits.
+- Bounded the API authentication failure tracker to 10,000 credential keys by
+  default. It prunes expired records and rejects new invalid credentials when
+  full without evicting active lockouts.
+- Made healthy Redis misses authoritative in the hybrid cache, so a key deleted
+  by another instance cannot reappear from stale local memory. Redis read
+  failures still use the local availability fallback.
+- Retry a configured Redis connection after a hybrid cache starts in memory
+  fallback mode, allowing the cache to recover when Redis becomes available.
+- Isolate API cache decorator keys by fully qualified function name and full
+  SHA-256 argument digests to prevent cross-function cache collisions.
+- Keep real-model streaming off the event loop, preserve inference mode, stop
+  cleanly across chunk boundaries, and surface generation worker failures.
+- Validate rollout backend batch counts, prompt identity, token alignment, and
+  finite log-probabilities before handing samples to trainers. Invalid batches
+  use one native fallback and retain the backend error on each turn.
+- Require exact sampled-token log-probabilities from vLLM generation and exact
+  prompt-aligned response-token probabilities from vLLM rescoring; missing data
+  now raises instead of silently substituting unrelated values or zero.
+- Reject duplicate prompt keys, invalid group sizes, incomplete groups, and
+  misattributed responses in vLLM/HuggingFace group generation and the GSPO
+  and DAPO training paths.
+
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 
 ### Added

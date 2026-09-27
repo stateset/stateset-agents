@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail the build if bandit/safety reports contain high-severity findings.
+"""Fail the build if Bandit or pip-audit reports contain unapproved findings.
 
 Used by `make security-scan-strict` (see Makefile). Extracted from an
 inline Makefile heredoc because multi-line heredocs are not portable
@@ -12,15 +12,13 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from scripts.security_exceptions import classify_pip_audit_findings
+
 
 def _load_json_lenient(text: str) -> Any:
     """Parse a JSON object out of text that may have extra content around it.
 
-    Newer `safety` CLI releases (3.x) print a banner/deprecation notice and
-    "brought to you by safetycli.com" ASCII art to stdout even with --json,
-    surrounding (not just prefixing) the actual JSON payload. Locate the
-    first '{' and let json.JSONDecoder consume only the balanced object that
-    follows, ignoring any trailing banner text.
+    Retain compatibility with Bandit output that may include surrounding text.
     """
     start = text.find("{")
     if start == -1:
@@ -31,7 +29,7 @@ def _load_json_lenient(text: str) -> Any:
 
 def main() -> int:
     bandit_path = Path("bandit-report.json")
-    safety_path = Path("safety-report.json")
+    audit_path = Path("pip-audit-report.json")
 
     if not bandit_path.exists() or not bandit_path.read_text().strip():
         print("Bandit report not generated")
@@ -66,32 +64,22 @@ def main() -> int:
         )
         return 1
 
-    if not safety_path.exists() or not safety_path.read_text().strip():
-        print("Safety report not generated; ensure safety is installed")
+    if not audit_path.exists() or not audit_path.read_text().strip():
+        print("pip-audit report not generated; ensure pip-audit is installed")
         return 1
 
     try:
-        safety_payload = _load_json_lenient(safety_path.read_text())
-    except Exception as exc:
-        print(f"Safety output parse failed: {exc}")
+        audit_payload = json.loads(audit_path.read_text(encoding="utf-8"))
+        approved, blocked = classify_pip_audit_findings(audit_payload)
+    except (json.JSONDecodeError, OSError, ValueError) as exc:
+        print(f"pip-audit output parse failed: {exc}")
         return 1
 
-    if isinstance(safety_payload, list):
-        vulns = safety_payload
-    elif isinstance(safety_payload, dict):
-        vulns = safety_payload.get("vulnerabilities", [])
-    else:
-        vulns = []
-
-    high = [
-        v for v in vulns if str(v.get("severity", "")).upper() in {"HIGH", "CRITICAL"}
-    ]
-
-    if high:
-        for v in high[:10]:
-            print(
-                f"High severity vulnerability: {v.get('package_name', 'unknown')} {v.get('id', '')}"
-            )
+    for finding in approved:
+        print(f"Approved, time-limited dependency exception: {finding}")
+    if blocked:
+        for finding in blocked[:10]:
+            print(f"Dependency vulnerability: {finding}")
         return 1
 
     return 0

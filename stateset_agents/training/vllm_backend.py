@@ -35,6 +35,7 @@ Reference:
 
 import asyncio
 import logging
+import math
 import os
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -196,6 +197,14 @@ class BatchGenerationResult:
     total_tokens_generated: int
     generation_time_seconds: float
     tokens_per_second: float
+
+
+def _validate_group_request(prompts: list[str], group_size: int) -> None:
+    """Reject requests a prompt-keyed result cannot represent faithfully."""
+    if group_size <= 0:
+        raise ValueError("num_generations_per_prompt must be positive")
+    if len(prompts) != len(set(prompts)):
+        raise ValueError("grouped generation requires unique prompts")
 
 
 # Attribute names worth following from an ``LLM`` to reach the in-process
@@ -409,44 +418,39 @@ class VLLMGenerator:
         if engine is None:
             raise RuntimeError("vLLM engine not initialized")
         outputs: list[RequestOutput] = engine.generate(prompts, sampling_params)
+        if len(outputs) != len(prompts):
+            raise ValueError("vLLM returned the wrong number of generation results")
 
         # Process outputs
         results = []
-        for output in outputs:
+        for expected_prompt, output in zip(prompts, outputs, strict=True):
             prompt = output.prompt
+            if prompt != expected_prompt:
+                raise ValueError("vLLM returned generation results out of prompt order")
 
             # Get the first (best) completion
             completion = output.outputs[0]
             response_text = completion.text
             response_token_ids = list(completion.token_ids)
 
-            # Extract log probabilities
+            # Exact sampled-token probabilities are required for importance
+            # ratios. A top-k alternative or zero would silently bias training.
             token_logprobs: list[float] = []
-            if completion.logprobs is not None:
-                for logprob_dict in completion.logprobs:
-                    if logprob_dict is not None:
-                        # Get the log prob of the actual sampled token
-                        # logprob_dict maps token_id -> LogProb object
-                        sampled_token_id = (
-                            response_token_ids[len(token_logprobs)]
-                            if len(token_logprobs) < len(response_token_ids)
-                            else None
-                        )
-                        if (
-                            sampled_token_id is not None
-                            and sampled_token_id in logprob_dict
-                        ):
-                            token_logprobs.append(
-                                logprob_dict[sampled_token_id].logprob
-                            )
-                        elif logprob_dict:
-                            # Fallback: get the first logprob
-                            first_key = next(iter(logprob_dict))
-                            token_logprobs.append(logprob_dict[first_key].logprob)
-                        else:
-                            token_logprobs.append(0.0)
-                    else:
-                        token_logprobs.append(0.0)
+            if response_token_ids and completion.logprobs is None:
+                raise ValueError("vLLM omitted sampled-token log-probabilities")
+            if completion.logprobs is not None and len(completion.logprobs) != len(
+                response_token_ids
+            ):
+                raise ValueError("vLLM omitted sampled-token log-probabilities")
+            for token_id, logprob_dict in zip(
+                response_token_ids, completion.logprobs or (), strict=True
+            ):
+                if logprob_dict is None or token_id not in logprob_dict:
+                    raise ValueError("vLLM omitted a sampled token's log-probability")
+                value = float(logprob_dict[token_id].logprob)
+                if not math.isfinite(value) or value > 1e-6:
+                    raise ValueError("vLLM returned an invalid sampled log-probability")
+                token_logprobs.append(value)
 
             # Compute cumulative log prob
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
@@ -507,7 +511,7 @@ class VLLMGenerator:
         vLLM can batch all generations together.
 
         Args:
-            prompts: List of prompts
+            prompts: Unique prompt strings; the returned mapping is keyed by prompt
             num_generations_per_prompt: Number of responses per prompt (G in GRPO)
             sampling_params: vLLM SamplingParams
             **kwargs: Passed to create_sampling_params
@@ -517,6 +521,9 @@ class VLLMGenerator:
         """
         if not self.is_available:
             raise RuntimeError("vLLM not initialized")
+        _validate_group_request(prompts, num_generations_per_prompt)
+        if not prompts:
+            return {}
 
         # Expand prompts for batched generation
         expanded_prompts = []
@@ -525,10 +532,14 @@ class VLLMGenerator:
 
         # Generate all at once (vLLM handles batching efficiently)
         all_results = await self.generate(expanded_prompts, sampling_params, **kwargs)
+        if len(all_results) != len(expanded_prompts):
+            raise ValueError("vLLM returned an incomplete response group")
 
         # Group results by prompt
         grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
         for i, result in enumerate(all_results):
+            if getattr(result, "prompt", None) != expanded_prompts[i]:
+                raise ValueError("vLLM returned a response for the wrong prompt")
             prompt_idx = i // num_generations_per_prompt
             original_prompt = prompts[prompt_idx]
             grouped_results[original_prompt].append(result)
@@ -555,9 +566,13 @@ class VLLMGenerator:
         """
         if not self.is_available:
             raise RuntimeError("vLLM not initialized")
+        if len(prompts) != len(responses):
+            raise ValueError("prompts and responses must have the same length")
+        if not prompts:
+            return []
 
         # Combine prompts and responses
-        full_sequences = [p + r for p, r in zip(prompts, responses, strict=False)]
+        full_sequences = [p + r for p, r in zip(prompts, responses, strict=True)]
 
         # Use prompt_logprobs to get log probs for the full sequence
         sampling_params = self.create_sampling_params(
@@ -570,24 +585,48 @@ class VLLMGenerator:
         if engine is None or tokenizer is None:
             raise RuntimeError("vLLM engine not initialized")
         outputs = engine.generate(full_sequences, sampling_params)
+        if len(outputs) != len(full_sequences):
+            raise ValueError("vLLM returned the wrong number of scoring results")
 
         results = []
         for i, output in enumerate(outputs):
+            if output.prompt != full_sequences[i]:
+                raise ValueError("vLLM returned scoring results out of prompt order")
             prompt = prompts[i]
-            prompt_tokens = tokenizer.encode(prompt)
+            prompt_tokens = list(tokenizer.encode(prompt))
             prompt_length = len(prompt_tokens)
+            full_token_ids = output.prompt_token_ids
+            if (
+                full_token_ids is None
+                or list(full_token_ids[:prompt_length]) != prompt_tokens
+            ):
+                raise ValueError(
+                    "response tokenization does not preserve the prompt prefix"
+                )
+            prompt_logprobs = output.prompt_logprobs
+            if prompt_logprobs is None and len(full_token_ids) > prompt_length:
+                raise ValueError("vLLM omitted response prompt log-probabilities")
+            if prompt_logprobs is not None and len(prompt_logprobs) != len(
+                full_token_ids
+            ):
+                raise ValueError("vLLM returned misaligned prompt log-probabilities")
 
             # Extract log probs for response tokens (after prompt)
             token_logprobs: list[float] = []
-            if output.prompt_logprobs is not None:
-                for j, logprob_dict in enumerate(output.prompt_logprobs):
-                    if j >= prompt_length and logprob_dict is not None:
-                        # This is a response token
-                        token_id = output.prompt_token_ids[j]
-                        if token_id in logprob_dict:
-                            token_logprobs.append(logprob_dict[token_id].logprob)
-                        else:
-                            token_logprobs.append(0.0)
+            if prompt_logprobs is not None:
+                for j in range(prompt_length, len(full_token_ids)):
+                    token_id = full_token_ids[j]
+                    logprob_dict = prompt_logprobs[j]
+                    if logprob_dict is None or token_id not in logprob_dict:
+                        raise ValueError(
+                            "vLLM omitted a response token's log-probability"
+                        )
+                    value = float(logprob_dict[token_id].logprob)
+                    if not math.isfinite(value) or value > 1e-6:
+                        raise ValueError(
+                            "vLLM returned an invalid response log-probability"
+                        )
+                    token_logprobs.append(value)
 
             cumulative = sum(token_logprobs) if token_logprobs else 0.0
             results.append((cumulative, token_logprobs))
@@ -764,8 +803,13 @@ class HuggingFaceGeneratorFallback:
     Provides the same interface as VLLMGenerator but with HF generation.
     """
 
-    def __init__(self, model_name: str, device: str | None = None):
-        self.model_name = model_name
+    def __init__(self, model_name: str | VLLMConfig, device: str | None = None):
+        self.config = (
+            model_name
+            if isinstance(model_name, VLLMConfig)
+            else VLLMConfig(model_name=model_name)
+        )
+        self.model_name = self.config.model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Any | None = None
         self.tokenizer: Any | None = None
@@ -778,13 +822,17 @@ class HuggingFaceGeneratorFallback:
 
             logger.info(f"Initializing HuggingFace fallback for {self.model_name}...")
 
-            # self.model_name is a caller-supplied config value (public HF
-            # model repo id), not attacker-controlled input; pinning a fixed
-            # revision would break support for arbitrary user-chosen models.
+            # Model and tokenizer identifiers are caller supplied. Respect an
+            # explicit revision and remote-code policy on either backend.
+            load_options: dict[str, Any] = {
+                "trust_remote_code": self.config.trust_remote_code,
+            }
+            if self.config.revision is not None:
+                load_options["revision"] = self.config.revision
             self.tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
-                self.model_name,
-                trust_remote_code=True,
+                self.config.tokenizer_name or self.model_name,
                 padding_side="left",
+                **load_options,
             )
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -793,7 +841,7 @@ class HuggingFaceGeneratorFallback:
                 self.model_name,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
-                trust_remote_code=True,
+                **load_options,
             )
 
             if self.device != "cuda":
@@ -815,9 +863,10 @@ class HuggingFaceGeneratorFallback:
     async def generate(
         self,
         prompts: str | list[str],
-        temperature: float = 0.7,
-        top_p: float = 0.9,
-        max_tokens: int = 512,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+        top_k: int | None = None,
         **kwargs,
     ) -> list[GenerationResult]:
         """Generate responses using HuggingFace"""
@@ -830,6 +879,11 @@ class HuggingFaceGeneratorFallback:
         tokenizer = self.tokenizer
         model = self.model
         assert tokenizer is not None and model is not None
+
+        temperature = self.config.temperature if temperature is None else temperature
+        top_p = self.config.top_p if top_p is None else top_p
+        max_tokens = self.config.max_tokens if max_tokens is None else max_tokens
+        top_k = self.config.top_k if top_k is None else top_k
 
         results = []
 
@@ -847,9 +901,10 @@ class HuggingFaceGeneratorFallback:
                 outputs = model.generate(
                     **inputs,
                     max_new_tokens=max_tokens,
-                    temperature=temperature,
+                    temperature=temperature if temperature > 0 else 1.0,
                     top_p=top_p,
-                    do_sample=True,
+                    top_k=0 if top_k == -1 else top_k,
+                    do_sample=temperature > 0,
                     pad_token_id=tokenizer.pad_token_id,
                     output_scores=True,
                     return_dict_in_generate=True,
@@ -859,7 +914,11 @@ class HuggingFaceGeneratorFallback:
             response_ids = generated_ids[prompt_length:]
             response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
 
-            # Compute log probs from scores
+            # Every sampled token needs its own score for importance ratios.
+            if outputs.scores is None or len(outputs.scores) != len(response_ids):
+                raise ValueError(
+                    "HuggingFace returned misaligned sampled-token log-probabilities"
+                )
             token_logprobs = []
             if outputs.scores:
                 import torch.nn.functional as F
@@ -868,7 +927,12 @@ class HuggingFaceGeneratorFallback:
                     if i < len(response_ids):
                         log_probs = F.log_softmax(score[0], dim=-1)
                         token_id = response_ids[i].item()
-                        token_logprobs.append(log_probs[token_id].item())
+                        value = log_probs[token_id].item()
+                        if not math.isfinite(value):
+                            raise ValueError(
+                                "HuggingFace returned an invalid sampled-token log-probability"
+                            )
+                        token_logprobs.append(value)
 
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
 
@@ -894,11 +958,14 @@ class HuggingFaceGeneratorFallback:
         **kwargs,
     ) -> dict[str, list[GenerationResult]]:
         """Generate multiple responses per prompt"""
+        _validate_group_request(prompts, num_generations_per_prompt)
         grouped_results: dict[str, list[GenerationResult]] = {p: [] for p in prompts}
 
         for prompt in prompts:
             for _ in range(num_generations_per_prompt):
                 results = await self.generate([prompt], **kwargs)
+                if len(results) != 1 or getattr(results[0], "prompt", None) != prompt:
+                    raise ValueError("HuggingFace returned an invalid response group")
                 grouped_results[prompt].append(results[0])
 
         return grouped_results
@@ -942,7 +1009,7 @@ def create_generator(
     if prefer_vllm and VLLM_AVAILABLE:
         return VLLMGenerator(config)
     else:
-        return HuggingFaceGeneratorFallback(config.model_name)
+        return HuggingFaceGeneratorFallback(config)
 
 
 # Convenience function for quick generation
@@ -957,6 +1024,12 @@ async def quick_generate(
 
     Automatically handles initialization and cleanup.
     """
+    if num_generations <= 0:
+        raise ValueError("num_generations must be positive")
+    if num_generations > 1:
+        _validate_group_request(
+            [prompts] if isinstance(prompts, str) else prompts, num_generations
+        )
     generator = create_generator(model_name)
     await generator.initialize()
 

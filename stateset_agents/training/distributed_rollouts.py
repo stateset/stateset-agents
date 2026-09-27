@@ -411,12 +411,15 @@ class DistributedRolloutControlPlane:
             self._counters["accepted_submissions"] += 1
 
         try:
-            return await self.coordinator.submit(
+            admitted = await self.coordinator.submit(
                 record,
                 timeout_seconds=timeout_seconds,
                 admission_check=check_admission,
                 on_admitted=count_admission,
             )
+            if not isinstance(admitted, bool):
+                raise TypeError("rollout coordinator must return an admission boolean")
+            return admitted
         finally:
             async with self._condition:
                 self._inflight_submissions -= 1

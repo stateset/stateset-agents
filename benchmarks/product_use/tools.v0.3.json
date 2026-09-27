@@ -1,0 +1,146 @@
+{
+  "schema_version": "0.3",
+  "tools": [
+    {
+      "name": "ingest_transcripts",
+      "description": "Convert an OpenAI or LangChain conversation log into grading transcripts.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "input_path": {
+            "type": "string",
+            "description": "Relative path to the input log."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "openai",
+              "langchain"
+            ]
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Relative output directory."
+          }
+        },
+        "required": [
+          "input_path",
+          "format",
+          "output_dir"
+        ]
+      }
+    },
+    {
+      "name": "grade_transcript",
+      "description": "Grade one transcript using a named reward function.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "history_path": {
+            "type": "string",
+            "description": "Relative transcript JSONL path."
+          },
+          "reward": {
+            "type": "string",
+            "description": "Reward name."
+          }
+        },
+        "required": [
+          "history_path",
+          "reward"
+        ]
+      }
+    },
+    {
+      "name": "improve_run",
+      "description": "Grade and curate transcripts into an improvement output directory.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "transcripts_dir": {
+            "type": "string",
+            "description": "Relative transcript directory."
+          },
+          "reward": {
+            "type": "string",
+            "description": "Reward name."
+          },
+          "output_dir": {
+            "type": "string",
+            "description": "Relative output directory."
+          },
+          "threshold": {
+            "type": "number",
+            "description": "Minimum score retained for curation."
+          },
+          "format": {
+            "type": "string",
+            "description": "Input format; defaults to transcripts."
+          }
+        },
+        "required": [
+          "transcripts_dir",
+          "reward",
+          "output_dir"
+        ]
+      }
+    },
+    {
+      "name": "improve_status",
+      "description": "Read the summary from a previous improvement run.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "output_dir": {
+            "type": "string",
+            "description": "Relative improvement output directory."
+          }
+        },
+        "required": [
+          "output_dir"
+        ]
+      }
+    },
+    {
+      "name": "dry_run_finetune",
+      "description": "Preview a model preset's training configuration without starting training.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "model_preset": {
+            "type": "string",
+            "description": "Model preset name."
+          }
+        },
+        "required": [
+          "model_preset"
+        ]
+      }
+    },
+    {
+      "name": "list_rewards",
+      "description": "List supported reward function names.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    },
+    {
+      "name": "list_model_presets",
+      "description": "List available model presets and configuration fields.",
+      "parameters": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {},
+        "required": []
+      }
+    }
+  ]
+}

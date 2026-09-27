@@ -34,14 +34,16 @@ lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
 	@cp requirements-dev-lock.txt requirements-dev-lock.txt.bak
 	@pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml >/dev/null
 	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
-	@if ! diff -q requirements-lock.txt requirements-lock.txt.bak >/dev/null || \
-	    ! diff -q requirements-dev-lock.txt requirements-dev-lock.txt.bak >/dev/null; then \
+	@if ! $(PYTHON_BIN) scripts/check_lockfile_bodies.py \
+	    requirements-lock.txt.bak requirements-lock.txt \
+	    requirements-dev-lock.txt.bak requirements-dev-lock.txt; then \
 	  echo "::error:: Lock files are stale. Run 'make lock' and commit the result." >&2; \
 	  mv requirements-lock.txt.bak requirements-lock.txt; \
 	  mv requirements-dev-lock.txt.bak requirements-dev-lock.txt; \
 	  exit 1; \
 	fi
-	@rm -f requirements-lock.txt.bak requirements-dev-lock.txt.bak
+	@mv requirements-lock.txt.bak requirements-lock.txt
+	@mv requirements-dev-lock.txt.bak requirements-dev-lock.txt
 	@echo "Lock files are in sync with pyproject.toml."
 
 dev-setup: ## Install development dependencies and pre-commit hooks
@@ -818,15 +820,15 @@ release-prep: ## Final readiness check before publishing — smoke + build + twi
 
 security-scan: ## Run basic security scanning tools
 	bandit -c pyproject.toml -r stateset_agents || true
-	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
-	safety check -r /tmp/stateset-safety-requirements.txt --no-prompt || true
+	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
+	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip || true
 	semgrep --config=auto . || true
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json || true
-	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-safety-requirements.txt
-	safety check -r /tmp/stateset-safety-requirements.txt --save-json safety-report.json --no-prompt > /dev/null 2>&1 || true
-	$(PYTHON_BIN) scripts/check_security_findings.py
+	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
+	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip --format json --output pip-audit-report.json || true
+	$(PYTHON_BIN) -m scripts.check_security_findings
 
 publish-readiness: ## Run pre-publish release readiness gate
 	bash scripts/publish_readiness.sh
