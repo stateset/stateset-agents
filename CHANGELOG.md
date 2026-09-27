@@ -38,6 +38,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Validate rollout backend batch counts, prompt identity, token alignment, and
   finite log-probabilities before handing samples to trainers. Invalid batches
   use one native fallback and retain the backend error on each turn.
+- Require exact sampled-token log-probabilities from vLLM generation and exact
+  prompt-aligned response-token probabilities from vLLM rescoring; missing data
+  now raises instead of silently substituting unrelated values or zero.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 

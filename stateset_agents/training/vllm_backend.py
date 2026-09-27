@@ -35,6 +35,7 @@ Reference:
 
 import asyncio
 import logging
+import math
 import os
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
@@ -409,44 +410,39 @@ class VLLMGenerator:
         if engine is None:
             raise RuntimeError("vLLM engine not initialized")
         outputs: list[RequestOutput] = engine.generate(prompts, sampling_params)
+        if len(outputs) != len(prompts):
+            raise ValueError("vLLM returned the wrong number of generation results")
 
         # Process outputs
         results = []
-        for output in outputs:
+        for expected_prompt, output in zip(prompts, outputs, strict=True):
             prompt = output.prompt
+            if prompt != expected_prompt:
+                raise ValueError("vLLM returned generation results out of prompt order")
 
             # Get the first (best) completion
             completion = output.outputs[0]
             response_text = completion.text
             response_token_ids = list(completion.token_ids)
 
-            # Extract log probabilities
+            # Exact sampled-token probabilities are required for importance
+            # ratios. A top-k alternative or zero would silently bias training.
             token_logprobs: list[float] = []
-            if completion.logprobs is not None:
-                for logprob_dict in completion.logprobs:
-                    if logprob_dict is not None:
-                        # Get the log prob of the actual sampled token
-                        # logprob_dict maps token_id -> LogProb object
-                        sampled_token_id = (
-                            response_token_ids[len(token_logprobs)]
-                            if len(token_logprobs) < len(response_token_ids)
-                            else None
-                        )
-                        if (
-                            sampled_token_id is not None
-                            and sampled_token_id in logprob_dict
-                        ):
-                            token_logprobs.append(
-                                logprob_dict[sampled_token_id].logprob
-                            )
-                        elif logprob_dict:
-                            # Fallback: get the first logprob
-                            first_key = next(iter(logprob_dict))
-                            token_logprobs.append(logprob_dict[first_key].logprob)
-                        else:
-                            token_logprobs.append(0.0)
-                    else:
-                        token_logprobs.append(0.0)
+            if response_token_ids and completion.logprobs is None:
+                raise ValueError("vLLM omitted sampled-token log-probabilities")
+            if completion.logprobs is not None and len(completion.logprobs) != len(
+                response_token_ids
+            ):
+                raise ValueError("vLLM omitted sampled-token log-probabilities")
+            for token_id, logprob_dict in zip(
+                response_token_ids, completion.logprobs or (), strict=True
+            ):
+                if logprob_dict is None or token_id not in logprob_dict:
+                    raise ValueError("vLLM omitted a sampled token's log-probability")
+                value = float(logprob_dict[token_id].logprob)
+                if not math.isfinite(value) or value > 1e-6:
+                    raise ValueError("vLLM returned an invalid sampled log-probability")
+                token_logprobs.append(value)
 
             # Compute cumulative log prob
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
@@ -555,9 +551,13 @@ class VLLMGenerator:
         """
         if not self.is_available:
             raise RuntimeError("vLLM not initialized")
+        if len(prompts) != len(responses):
+            raise ValueError("prompts and responses must have the same length")
+        if not prompts:
+            return []
 
         # Combine prompts and responses
-        full_sequences = [p + r for p, r in zip(prompts, responses, strict=False)]
+        full_sequences = [p + r for p, r in zip(prompts, responses, strict=True)]
 
         # Use prompt_logprobs to get log probs for the full sequence
         sampling_params = self.create_sampling_params(
@@ -570,24 +570,48 @@ class VLLMGenerator:
         if engine is None or tokenizer is None:
             raise RuntimeError("vLLM engine not initialized")
         outputs = engine.generate(full_sequences, sampling_params)
+        if len(outputs) != len(full_sequences):
+            raise ValueError("vLLM returned the wrong number of scoring results")
 
         results = []
         for i, output in enumerate(outputs):
+            if output.prompt != full_sequences[i]:
+                raise ValueError("vLLM returned scoring results out of prompt order")
             prompt = prompts[i]
-            prompt_tokens = tokenizer.encode(prompt)
+            prompt_tokens = list(tokenizer.encode(prompt))
             prompt_length = len(prompt_tokens)
+            full_token_ids = output.prompt_token_ids
+            if (
+                full_token_ids is None
+                or list(full_token_ids[:prompt_length]) != prompt_tokens
+            ):
+                raise ValueError(
+                    "response tokenization does not preserve the prompt prefix"
+                )
+            prompt_logprobs = output.prompt_logprobs
+            if prompt_logprobs is None and len(full_token_ids) > prompt_length:
+                raise ValueError("vLLM omitted response prompt log-probabilities")
+            if prompt_logprobs is not None and len(prompt_logprobs) != len(
+                full_token_ids
+            ):
+                raise ValueError("vLLM returned misaligned prompt log-probabilities")
 
             # Extract log probs for response tokens (after prompt)
             token_logprobs: list[float] = []
-            if output.prompt_logprobs is not None:
-                for j, logprob_dict in enumerate(output.prompt_logprobs):
-                    if j >= prompt_length and logprob_dict is not None:
-                        # This is a response token
-                        token_id = output.prompt_token_ids[j]
-                        if token_id in logprob_dict:
-                            token_logprobs.append(logprob_dict[token_id].logprob)
-                        else:
-                            token_logprobs.append(0.0)
+            if prompt_logprobs is not None:
+                for j in range(prompt_length, len(full_token_ids)):
+                    token_id = full_token_ids[j]
+                    logprob_dict = prompt_logprobs[j]
+                    if logprob_dict is None or token_id not in logprob_dict:
+                        raise ValueError(
+                            "vLLM omitted a response token's log-probability"
+                        )
+                    value = float(logprob_dict[token_id].logprob)
+                    if not math.isfinite(value) or value > 1e-6:
+                        raise ValueError(
+                            "vLLM returned an invalid response log-probability"
+                        )
+                    token_logprobs.append(value)
 
             cumulative = sum(token_logprobs) if token_logprobs else 0.0
             results.append((cumulative, token_logprobs))
