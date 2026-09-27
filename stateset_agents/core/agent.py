@@ -195,6 +195,32 @@ TOOL_EXEC_EXCEPTIONS: tuple[type[BaseException], ...] = (
     OSError,
 )
 
+STREAM_STOP_PHRASES = ("User:", "System:", "Human:", "AI:")
+
+
+def _stream_visible_text(pending: str) -> tuple[str, str, bool]:
+    """Hold back possible stop prefixes until later chunks resolve them."""
+    stop_positions = [
+        position
+        for phrase in STREAM_STOP_PHRASES
+        if (position := pending.find(phrase)) >= 0
+    ]
+    if stop_positions:
+        return pending[: min(stop_positions)], "", True
+
+    held = max(
+        (
+            length
+            for phrase in STREAM_STOP_PHRASES
+            for length in range(1, min(len(phrase), len(pending) + 1))
+            if pending.endswith(phrase[:length])
+        ),
+        default=0,
+    )
+    if held:
+        return pending[:-held], pending[-held:], False
+    return pending, "", False
+
 
 class StopOnSpecialTokens(StoppingCriteria):
     """Custom stopping criteria for conversation agents"""
@@ -1192,8 +1218,7 @@ class MultiTurnAgent(Agent):
         response = response.strip()
 
         # Remove stopping tokens that might have leaked through
-        stop_phrases = ["User:", "System:", "Human:", "AI:"]
-        for phrase in stop_phrases:
+        for phrase in STREAM_STOP_PHRASES:
             if phrase in response:
                 response = response.split(phrase)[0].strip()
 
@@ -1315,11 +1340,22 @@ class MultiTurnAgent(Agent):
                     self.tokenizer, skip_prompt=True, skip_special_tokens=True
                 )
 
+                stop_requested = threading.Event()
+
+                class StopOnRequest:
+                    def __call__(
+                        self, _input_ids: Any, _scores: Any, **_kwargs: Any
+                    ) -> bool:
+                        return stop_requested.is_set()
+
+                stopping_criteria = self._build_stopping_criteria()
+                stopping_criteria.append(StopOnRequest())
+
                 generation_kwargs = {
                     **inputs,
                     "generation_config": self.generation_config,
                     "streamer": streamer,
-                    "stopping_criteria": self._build_stopping_criteria(),
+                    "stopping_criteria": stopping_criteria,
                 }
                 model = self.model
                 if model is None:
@@ -1327,37 +1363,51 @@ class MultiTurnAgent(Agent):
                         "Agent model must be initialized before streaming"
                     )
 
-                # Run generation in separate thread
-                thread = threading.Thread(
-                    target=lambda: model.generate(**generation_kwargs)
-                )
+                generation_error: list[Exception] = []
+
+                def run_generation() -> None:
+                    try:
+                        with inference_mode(model), torch.no_grad():
+                            model.generate(**generation_kwargs)
+                    except Exception as exc:  # noqa: BLE001 - relay worker failure
+                        generation_error.append(exc)
+                        streamer.end()  # Unblock a reader waiting for the next chunk.
+
+                # The producer and blocking iterator both run off the event loop.
+                thread = threading.Thread(target=run_generation, daemon=True)
                 thread.start()
 
-                # Yield tokens as they arrive
-                accumulated = ""
-                response_chunks = []
-                for text in streamer:
-                    # Check for stop phrases
-                    accumulated += text
-                    should_stop = False
-                    for phrase in ["User:", "System:", "Human:", "AI:"]:
-                        if phrase in accumulated:
-                            # Yield up to the stop phrase
-                            idx = accumulated.index(phrase)
-                            if idx > len(accumulated) - len(text):
-                                remaining = accumulated[:idx]
-                                if remaining:
-                                    chunk = remaining[len(accumulated) - len(text) :]
-                                    response_chunks.append(chunk)
-                                    yield chunk
-                            should_stop = True
-                            break
-                    if should_stop:
-                        break
-                    response_chunks.append(text)
-                    yield text
+                iterator = iter(streamer)
 
-                thread.join()
+                def next_chunk() -> str | None:
+                    try:
+                        return cast(str, next(iterator))
+                    except StopIteration:
+                        return None
+
+                response_chunks: list[str] = []
+                pending = ""
+                stopped = False
+                try:
+                    while (text := await asyncio.to_thread(next_chunk)) is not None:
+                        visible, pending, stopped = _stream_visible_text(pending + text)
+                        if visible:
+                            response_chunks.append(visible)
+                            yield visible
+                        if stopped:
+                            stop_requested.set()
+                            break
+                    if not stopped and pending:
+                        response_chunks.append(pending)
+                        yield pending
+                finally:
+                    stop_requested.set()
+                    await asyncio.to_thread(thread.join)
+
+                if generation_error:
+                    raise RuntimeError(
+                        "Model generation failed during streaming"
+                    ) from (generation_error[0])
                 response_text = "".join(response_chunks)
 
             except ImportError:
