@@ -953,19 +953,15 @@ def cached(
             if key_builder:
                 cache_key = key_builder(*args, **kwargs)
             else:
-                # Default key from function name and args
-                key_parts = [key_prefix, func.__name__]
+                # Default key from qualified function name and arguments.
+                key_parts = [key_prefix, f"{func.__module__}.{func.__qualname__}"]
                 if args:
-                    key_parts.append(
-                        hashlib.md5(
-                            str(args).encode(), usedforsecurity=False
-                        ).hexdigest()[:8]
-                    )
+                    key_parts.append(hashlib.sha256(repr(args).encode()).hexdigest())
                 if kwargs:
                     key_parts.append(
-                        hashlib.md5(
-                            str(sorted(kwargs.items())).encode(), usedforsecurity=False
-                        ).hexdigest()[:8]
+                        hashlib.sha256(
+                            repr(sorted(kwargs.items())).encode()
+                        ).hexdigest()
                     )
                 cache_key = ":".join(filter(None, key_parts))
 

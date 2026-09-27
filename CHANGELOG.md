@@ -31,6 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   failures still use the local availability fallback.
 - Retry a configured Redis connection after a hybrid cache starts in memory
   fallback mode, allowing the cache to recover when Redis becomes available.
+- Isolate API cache decorator keys by fully qualified function name and full
+  SHA-256 argument digests to prevent cross-function cache collisions.
 
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 

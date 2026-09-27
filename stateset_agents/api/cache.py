@@ -115,6 +115,21 @@ def get_cache() -> SimpleCache:
     return _cache
 
 
+def _call_cache_key(
+    func: Callable[..., Any],
+    key_prefix: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
+) -> str:
+    """Build a key that isolates functions and retains full argument digests."""
+    parts = [key_prefix, f"{func.__module__}.{func.__qualname__}"]
+    if args:
+        parts.append(hashlib.sha256(repr(args).encode()).hexdigest())
+    if kwargs:
+        parts.append(hashlib.sha256(repr(sorted(kwargs.items())).encode()).hexdigest())
+    return ":".join(parts)
+
+
 def cached(
     ttl_seconds: float,
     key_prefix: str = "",
@@ -135,22 +150,7 @@ def cached(
     def decorator(func: Callable[P, Awaitable[T]]) -> Callable[P, Awaitable[T]]:
         @wraps(func)
         async def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            # Generate cache key
-            cache_key = f"{key_prefix}:{func.__name__}"
-            if args:
-                cache_key += (
-                    ":"
-                    + hashlib.md5(
-                        repr(args).encode(), usedforsecurity=False
-                    ).hexdigest()[:8]
-                )
-            if kwargs:
-                cache_key += (
-                    ":"
-                    + hashlib.md5(
-                        repr(sorted(kwargs.items())).encode(), usedforsecurity=False
-                    ).hexdigest()[:8]
-                )
+            cache_key = _call_cache_key(func, key_prefix, args, kwargs)
 
             # Try to get from cache
             cached_value = _cache.get(cache_key)
@@ -180,21 +180,7 @@ def cached_sync(ttl_seconds: float, key_prefix: str = ""):
     def decorator(func: Callable[P, T]) -> Callable[P, T]:
         @wraps(func)
         def wrapper(*args: P.args, **kwargs: P.kwargs) -> T:
-            cache_key = f"{key_prefix}:{func.__name__}"
-            if args:
-                cache_key += (
-                    ":"
-                    + hashlib.md5(
-                        repr(args).encode(), usedforsecurity=False
-                    ).hexdigest()[:8]
-                )
-            if kwargs:
-                cache_key += (
-                    ":"
-                    + hashlib.md5(
-                        repr(sorted(kwargs.items())).encode(), usedforsecurity=False
-                    ).hexdigest()[:8]
-                )
+            cache_key = _call_cache_key(func, key_prefix, args, kwargs)
 
             cached_value = _cache.get(cache_key)
             if cached_value is not None:
