@@ -803,8 +803,13 @@ class HuggingFaceGeneratorFallback:
     Provides the same interface as VLLMGenerator but with HF generation.
     """
 
-    def __init__(self, model_name: str, device: str | None = None):
-        self.model_name = model_name
+    def __init__(self, model_name: str | VLLMConfig, device: str | None = None):
+        self.config = (
+            model_name
+            if isinstance(model_name, VLLMConfig)
+            else VLLMConfig(model_name=model_name)
+        )
+        self.model_name = self.config.model_name
         self.device = device or ("cuda" if torch.cuda.is_available() else "cpu")
         self.model: Any | None = None
         self.tokenizer: Any | None = None
@@ -817,13 +822,17 @@ class HuggingFaceGeneratorFallback:
 
             logger.info(f"Initializing HuggingFace fallback for {self.model_name}...")
 
-            # self.model_name is a caller-supplied config value (public HF
-            # model repo id), not attacker-controlled input; pinning a fixed
-            # revision would break support for arbitrary user-chosen models.
+            # Model and tokenizer identifiers are caller supplied. Respect an
+            # explicit revision and remote-code policy on either backend.
+            load_options: dict[str, Any] = {
+                "trust_remote_code": self.config.trust_remote_code,
+            }
+            if self.config.revision is not None:
+                load_options["revision"] = self.config.revision
             self.tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
-                self.model_name,
-                trust_remote_code=True,
+                self.config.tokenizer_name or self.model_name,
                 padding_side="left",
+                **load_options,
             )
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -832,7 +841,7 @@ class HuggingFaceGeneratorFallback:
                 self.model_name,
                 torch_dtype=torch.float16 if self.device == "cuda" else torch.float32,
                 device_map="auto" if self.device == "cuda" else None,
-                trust_remote_code=True,
+                **load_options,
             )
 
             if self.device != "cuda":
@@ -854,9 +863,10 @@ class HuggingFaceGeneratorFallback:
     async def generate(
         self,
         prompts: str | list[str],
-        temperature: float = 0.7,
-        top_p: float = 0.9,
-        max_tokens: int = 512,
+        temperature: float | None = None,
+        top_p: float | None = None,
+        max_tokens: int | None = None,
+        top_k: int | None = None,
         **kwargs,
     ) -> list[GenerationResult]:
         """Generate responses using HuggingFace"""
@@ -869,6 +879,11 @@ class HuggingFaceGeneratorFallback:
         tokenizer = self.tokenizer
         model = self.model
         assert tokenizer is not None and model is not None
+
+        temperature = self.config.temperature if temperature is None else temperature
+        top_p = self.config.top_p if top_p is None else top_p
+        max_tokens = self.config.max_tokens if max_tokens is None else max_tokens
+        top_k = self.config.top_k if top_k is None else top_k
 
         results = []
 
@@ -886,9 +901,10 @@ class HuggingFaceGeneratorFallback:
                 outputs = model.generate(
                     **inputs,
                     max_new_tokens=max_tokens,
-                    temperature=temperature,
+                    temperature=temperature if temperature > 0 else 1.0,
                     top_p=top_p,
-                    do_sample=True,
+                    top_k=0 if top_k == -1 else top_k,
+                    do_sample=temperature > 0,
                     pad_token_id=tokenizer.pad_token_id,
                     output_scores=True,
                     return_dict_in_generate=True,
@@ -898,7 +914,11 @@ class HuggingFaceGeneratorFallback:
             response_ids = generated_ids[prompt_length:]
             response_text = tokenizer.decode(response_ids, skip_special_tokens=True)
 
-            # Compute log probs from scores
+            # Every sampled token needs its own score for importance ratios.
+            if outputs.scores is None or len(outputs.scores) != len(response_ids):
+                raise ValueError(
+                    "HuggingFace returned misaligned sampled-token log-probabilities"
+                )
             token_logprobs = []
             if outputs.scores:
                 import torch.nn.functional as F
@@ -907,7 +927,12 @@ class HuggingFaceGeneratorFallback:
                     if i < len(response_ids):
                         log_probs = F.log_softmax(score[0], dim=-1)
                         token_id = response_ids[i].item()
-                        token_logprobs.append(log_probs[token_id].item())
+                        value = log_probs[token_id].item()
+                        if not math.isfinite(value):
+                            raise ValueError(
+                                "HuggingFace returned an invalid sampled-token log-probability"
+                            )
+                        token_logprobs.append(value)
 
             cumulative_logprob = sum(token_logprobs) if token_logprobs else 0.0
 
@@ -984,7 +1009,7 @@ def create_generator(
     if prefer_vllm and VLLM_AVAILABLE:
         return VLLMGenerator(config)
     else:
-        return HuggingFaceGeneratorFallback(config.model_name)
+        return HuggingFaceGeneratorFallback(config)
 
 
 # Convenience function for quick generation
