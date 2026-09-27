@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made `SecureConfig` fail closed when encrypted secrets lack a configured key
+  or the `cryptography` dependency; explicit plaintext storage remains available
+  through `encrypt=False`.
+- Rejected expired `AuthService` sessions during authorization and made security
+  timestamps timezone aware while accepting older naive UTC timestamps.
+
 ## [0.56.0] - 2026-09-23 — Formal verification foundations
 
 ### Added
