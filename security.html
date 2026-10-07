@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Security &mdash; StateSet Agents 0.56.0 documentation</title>
+  <title>Security &mdash; StateSet Agents 0.57.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=36f06ebc"></script>
+      <script src="_static/documentation_options.js?v=472524e5"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -183,7 +183,12 @@
 <li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
 <li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
 <li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Security</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Security</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#secret-configuration">Secret configuration</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#gateway-authentication">Gateway authentication</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#security-event-retention">Security event retention</a></li>
+</ul>
+</li>
 </ul>
 <p class="caption" role="heading"><span class="caption-text">API Reference</span></p>
 <ul>
@@ -238,12 +243,34 @@
              
   <section id="security">
 <h1>Security<a class="headerlink" href="#security" title="Link to this heading"></a></h1>
+<section id="secret-configuration">
+<h2>Secret configuration<a class="headerlink" href="#secret-configuration" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">SecureConfig.set_secret</span></code> encrypts values by default. Set
+<code class="docutils literal notranslate"><span class="pre">CONFIG_ENCRYPTION_KEY</span></code> and install <code class="docutils literal notranslate"><span class="pre">cryptography</span></code> before storing or reading
+encrypted values. The operation raises <code class="docutils literal notranslate"><span class="pre">RuntimeError</span></code> if either requirement
+is missing; it never substitutes base64 encoding for encryption. Use
+<code class="docutils literal notranslate"><span class="pre">encrypt=False</span></code> only when plaintext storage is explicitly intended. Secrets
+are held in memory; <code class="docutils literal notranslate"><span class="pre">save_config</span></code> writes their names but not their values.</p>
+</section>
+<section id="gateway-authentication">
+<h2>Gateway authentication<a class="headerlink" href="#gateway-authentication" title="Link to this heading"></a></h2>
 <p>Gateway auth is controlled via environment variables such as:</p>
 <ul class="simple">
 <li><p><cite>API_REQUIRE_AUTH</cite></p></li>
 <li><p><cite>API_KEYS</cite></p></li>
 <li><p><cite>API_JWT_SECRET</cite> (required in production)</p></li>
 </ul>
+</section>
+<section id="security-event-retention">
+<h2>Security event retention<a class="headerlink" href="#security-event-retention" title="Link to this heading"></a></h2>
+<p><code class="docutils literal notranslate"><span class="pre">SecurityMonitor</span></code> retains the most recent 10,000 events by default. Pass a
+positive <code class="docutils literal notranslate"><span class="pre">max_events</span></code> value to choose another in-memory limit. Recent-event
+queries and anomaly detection operate on the retained events.</p>
+<p>The API authentication failure tracker retains at most 10,000 credential keys
+by default. When full, it prunes expired records before admitting a new key;
+if all records are still active, a new invalid credential is rejected without
+adding state. Existing lockouts remain in force.</p>
+</section>
 </section>
 
 
