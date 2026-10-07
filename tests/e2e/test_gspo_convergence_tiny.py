@@ -44,9 +44,9 @@ from stateset_agents.training.gspo_trainer import GSPOTrainer
 
 logger = logging.getLogger(__name__)
 
-PROMPT = "Say A"
-TARGET_RESPONSE = " A"
-OFF_TARGET_RESPONSE = " B"
+PROMPT = "Say"
+TARGET_RESPONSE = "A"
+OFF_TARGET_RESPONSE = "B"
 NUM_STEPS = 40
 WARMUP_STEPS = 10
 
@@ -60,6 +60,8 @@ def _tiny_gpt2() -> GPT2LMHeadModel:
             n_head=2,
             vocab_size=256,
             n_positions=64,
+            bos_token_id=None,
+            eos_token_id=1,  # align with tests/_tiny_tokenizer required tokens
             resid_pdrop=0.0,
             embd_pdrop=0.0,
             attn_pdrop=0.0,
@@ -99,8 +101,11 @@ def _run_convergence_training() -> tuple[float, float, list[float]]:
     model = _tiny_gpt2()
 
     prompt_ids = tokenizer(PROMPT, return_tensors="pt")["input_ids"][0]
+    # With the hermetic tiny tokenizer we tokenize at the character level.
+    # The preferred completion is a single-character token ("A"), so target
+    # the ID of that exact token rather than the leading-space variant.
     target_token_id = tokenizer(TARGET_RESPONSE, add_special_tokens=False)["input_ids"][
-        0
+        -1
     ]
 
     initial_prob = _target_token_probability(model, prompt_ids, target_token_id)
