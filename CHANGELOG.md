@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-10-07 — Industry fine-tuning workflows
+
+### Added
+
+- Add industry CLI commands and Python APIs for financial services, retail,
+  travel, healthcare, services, media, telecommunications, technology, and the
+  public sector. Include synthetic tool-calling examples and evaluation criteria.
+- Validate chat JSONL and tool-call references, deduplicate records, and split
+  related prompt/source groups deterministically without cross-split overlap.
+- Record dataset hashes and training status; verify prepared data before BF16
+  LoRA SFT. Explicit previews require no ML imports, while execution requires CUDA.
+- Keep validation records held out for independent evaluation; examples do not
+  establish industry performance or replace representative training data.
+
 ## [0.57.0] - 2026-10-07 — Small-model fine-tuning and tool-aware SFT
 
 ### Small-model training

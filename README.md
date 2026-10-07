@@ -121,7 +121,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.57.0`, published from the
+- **Current Python release:** `stateset-agents==0.58.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -428,7 +428,14 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.57.0 (latest release; publication triggered by tag):**
+**v0.58.0 (latest release; publication triggered by tag):**
+
+- Add industry fine-tuning recipes for all nine sectors, with CLI and Python APIs.
+- Validate chat/tool data, keep related cases in one split, and record dataset hashes.
+- Preview without ML dependencies or run BF16 LoRA SFT on CUDA. Holdout evaluation
+  remains an independent step. See [the industry guide](docs/INDUSTRY_FINETUNING.md).
+
+**v0.57.0:**
 
 - Add 18 small-model checkpoints across Gemma 4, Qwen, SmolLM3, Phi,
   Ministral, Liquid, Granite, Llama, Olmo, and DeepSeek. Provide 17 GSPO
@@ -1314,8 +1321,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.57.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.57.0"
+pip install "stateset-agents==0.58.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.58.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2127,7 +2134,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.57.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.58.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
@@ -2163,6 +2170,22 @@ Key docs:
 - Public API docs: https://docs.stateset.com
 
 ---
+
+## Industry fine-tuning
+
+Create task-specific training data for financial services, retail, travel,
+healthcare, services, media, telecommunications, technology, and the public sector:
+
+```bash
+stateset-agents industry init retail ./retail-source
+stateset-agents industry prepare retail ./retail-source/examples.jsonl ./retail-run
+stateset-agents industry train ./retail-run --dry-run
+```
+
+The starters contain synthetic format demonstrations. Replace them with reviewed
+conversations; preparation validates tool calls, groups related cases, and records
+dataset hashes. See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training,
+Python APIs, and evaluation boundaries.
 
 ## Contributing
 

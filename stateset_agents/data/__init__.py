@@ -14,6 +14,10 @@ from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS: dict[str, str] = {
+    "load_finetuning_data": "finetuning",
+    "validate_finetuning_row": "finetuning",
+    "split_finetuning_data": "finetuning",
+    "check_finetuning_overlap": "finetuning",
     "ConversationDataset": "conversation_dataset",
     "ConversationDatasetConfig": "conversation_dataset",
     "ConversationReplayBuffer": "conversation_dataset",

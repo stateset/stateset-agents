@@ -284,7 +284,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.57.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.58.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -1640,3 +1640,29 @@ Record a generation link by passing `--parent-adapter` to `train-remote`.
   - API extras for serving (`fastapi`, `uvicorn`)
   - Rich tooling for `advanced` workflows (`rich`, `ipython`)
 - If config loading fails, check file path, extension, and YAML/JSON syntax.
+
+### `stateset-agents industry`
+
+Prepare industry-specific chat/tool datasets and train through the existing SFT
+backend. See [Industry fine-tuning](INDUSTRY_FINETUNING.md) for all nine recipes.
+
+```bash
+stateset-agents industry list
+stateset-agents industry show retail
+stateset-agents industry init retail ./retail-source
+stateset-agents industry validate ./retail-source/examples.jsonl
+stateset-agents industry prepare retail ./retail-source/examples.jsonl ./retail-run --model qwen3.5-2b
+stateset-agents industry train ./retail-run --dry-run
+```
+
+- `init INDUSTRY OUTPUT`: create synthetic examples and guidance in a new directory.
+- `validate DATASET`: fail on malformed rows or broken tool-call references.
+- `prepare INDUSTRY DATASET OUTPUT`: deduplicate, split source groups, and record hashes.
+  Options: `--model` (registered preset, default `qwen3.5-2b`),
+  `--validation-fraction` (default `0.2`), `--seed` (split seed, default `42`).
+- `train PROJECT`: verify hashes and execute BF16 LoRA SFT. Options: `--dry-run`,
+  `--num-epochs` (default `3`), `--max-length` (default `1024`).
+
+Previews require no ML dependencies. Execution requires CUDA and the training
+extras. Validation data is reserved for an independent evaluator; this command
+does not grade the holdout or claim industry performance.
