@@ -83,6 +83,9 @@ def prepare_project(
         0.2, help="Fraction of source groups held out."
     ),
     seed: int = typer.Option(42, help="Deterministic dataset split seed."),
+    model_revision: str | None = typer.Option(
+        None, help="Immutable 40-character Hugging Face model commit."
+    ),
 ) -> None:
     """Validate, deduplicate, split, and hash data in a new training directory."""
     from stateset_agents.training.industry import prepare_industry_training
@@ -96,6 +99,7 @@ def prepare_project(
                 model=model,
                 validation_fraction=validation_fraction,
                 seed=seed,
+                model_revision=model_revision,
             )
         )
     except (OSError, ValueError) as exc:
@@ -125,3 +129,80 @@ def train_project(
         )
     except (OSError, ValueError, RuntimeError, ImportError) as exc:
         _error(exc)
+
+
+@industry_app.command("eval-export")
+def export_evaluation(
+    project: Path = typer.Argument(...), output: Path = typer.Argument(...)
+) -> None:
+    """Export held-out assistant prefixes for paired model inference."""
+    from stateset_agents.evaluation.industry import export_industry_evaluation
+
+    try:
+        requests = export_industry_evaluation(project)
+        with output.open("x", encoding="utf-8") as stream:
+            json.dump(requests, stream, indent=2, ensure_ascii=False, allow_nan=False)
+            stream.write("\n")
+        _emit(
+            {
+                "output": str(output),
+                "cases": len(requests["cases"]),
+                "suite_sha256": requests["suite_sha256"],
+            }
+        )
+    except (OSError, ValueError) as exc:
+        _error(exc)
+
+
+@industry_app.command("evaluate")
+def evaluate_project(
+    project: Path = typer.Argument(...),
+    baseline: Path = typer.Option(..., help="Base-model prediction bundle JSON."),
+    candidate: Path = typer.Option(..., help="Adapter prediction bundle JSON."),
+    output: Path = typer.Option(..., help="New comparison report path."),
+    min_groups: int = typer.Option(30, min=1),
+    min_success_rate: float = typer.Option(
+        0.9,
+        min=0,
+        max=1,
+        help="Minimum fraction of source groups matching every reference turn.",
+    ),
+    min_improvement: float = typer.Option(0.0, min=0, max=1),
+    max_regression_rate: float = typer.Option(0.0, min=0, max=1),
+    max_mean_latency_seconds: float | None = typer.Option(None, min=0),
+    max_mean_cost_usd: float | None = typer.Option(None, min=0),
+) -> None:
+    """Compare reference agreement; exit 1 for failed gates, 2 for invalid input."""
+    from stateset_agents.evaluation.industry import (
+        IndustryEvaluationPolicy,
+        evaluate_industry_project,
+    )
+
+    try:
+        report = evaluate_industry_project(
+            project,
+            json.loads(baseline.read_text(encoding="utf-8")),
+            json.loads(candidate.read_text(encoding="utf-8")),
+            policy=IndustryEvaluationPolicy(
+                min_groups=min_groups,
+                min_success_rate=min_success_rate,
+                min_improvement=min_improvement,
+                max_regression_rate=max_regression_rate,
+                max_mean_latency_seconds=max_mean_latency_seconds,
+                max_mean_cost_usd=max_mean_cost_usd,
+            ),
+        )
+        with output.open("x", encoding="utf-8") as stream:
+            json.dump(report, stream, indent=2, ensure_ascii=False, allow_nan=False)
+            stream.write("\n")
+        _emit(
+            {
+                "output": str(output),
+                "gate": report["gate"],
+                "group_reference_match_delta": report["group_reference_match_delta"],
+            }
+        )
+    except (OSError, ValueError) as exc:
+        _error(exc)
+    if not report["gate"]["passed"]:
+        raise typer.Exit(code=1)

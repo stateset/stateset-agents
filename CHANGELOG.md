@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Support immutable model revisions for industry preparation, tokenizer and
+  weight loading, adapter lineage, and paired evaluation. Add a reproducible
+  CUDA pilot harness for Qwen3.5 2B/4B with synthetic-data labeling, saved
+  adapter checks, reload-effect probes, and retained raw predictions.
+- Add paired industry reference evaluation through `industry eval-export`,
+  `industry evaluate`, and backend-independent Python prediction callbacks.
+  Evaluate every assistant turn, preserve typed tool arguments and failed
+  requests, bind reports to dataset/prediction hashes, and reject incomplete or
+  incomparable evidence. Configurable quality and resource gates count source
+  groups, detect per-case regressions, and refuse synthetic demonstrations.
+
 ## [0.58.0] - 2026-10-07 — Industry fine-tuning workflows
 
 ### Added

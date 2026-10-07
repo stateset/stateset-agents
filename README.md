@@ -68,13 +68,16 @@ measurable.
 
 ### Current verification status
 
-The `v0.54.0` release tree completed its Linux Python 3.10 suite on
-**2026-09-09** with **5,496 passed, 18 skipped, and 63.68% coverage**, while
-its release pull request passed the complete Linux Python 3.10–3.13 and
-Windows Python 3.10/3.13 matrices plus CodeQL, dependency and secret scanning,
-package-readiness, docs, Helm, npm-client, benchmark, and security gates. The
-tag-built wheel and source distribution passed isolated-install and attestation
-checks and are live on PyPI. See the retained
+The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
+**2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
+checks passed lint, typing, API compatibility, governance, security scanning,
+distribution metadata, and isolated wheel installation. The
+[tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
+published Python distributions, documentation, and the GitHub release; npm's
+initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
+should not be read as certification of every newer checkpoint or platform.
+See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -2184,8 +2187,11 @@ stateset-agents industry train ./retail-run --dry-run
 
 The starters contain synthetic format demonstrations. Replace them with reviewed
 conversations; preparation validates tool calls, groups related cases, and records
-dataset hashes. See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training,
-Python APIs, and evaluation boundaries.
+dataset hashes. Paired evaluation checks base-versus-adapter reference and tool
+agreement, retains per-case regressions, and gates on independent source groups
+and optional latency/cost limits. Synthetic starter data cannot pass this gate.
+See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training, prediction
+callbacks, CLI evaluation, and the distinction from autonomous task success.
 
 ## Contributing
 

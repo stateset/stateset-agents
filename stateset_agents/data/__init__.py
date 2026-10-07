@@ -18,6 +18,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "validate_finetuning_row": "finetuning",
     "split_finetuning_data": "finetuning",
     "check_finetuning_overlap": "finetuning",
+    "group_finetuning_data": "finetuning",
     "ConversationDataset": "conversation_dataset",
     "ConversationDatasetConfig": "conversation_dataset",
     "ConversationReplayBuffer": "conversation_dataset",

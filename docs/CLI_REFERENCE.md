@@ -1660,9 +1660,20 @@ stateset-agents industry train ./retail-run --dry-run
 - `prepare INDUSTRY DATASET OUTPUT`: deduplicate, split source groups, and record hashes.
   Options: `--model` (registered preset, default `qwen3.5-2b`),
   `--validation-fraction` (default `0.2`), `--seed` (split seed, default `42`).
+  `--model-revision` pins tokenizer and weights to an immutable 40-character commit.
 - `train PROJECT`: verify hashes and execute BF16 LoRA SFT. Options: `--dry-run`,
   `--num-epochs` (default `3`), `--max-length` (default `1024`).
+- `eval-export PROJECT OUTPUT`: export all held-out assistant prefixes, without
+  their current targets, for paired inference. Output must be a new JSON file.
+- `evaluate PROJECT --baseline BASE.json --candidate ADAPTER.json --output REPORT.json`:
+  compare complete prediction bundles and save a reference-regression gate report.
+  Defaults: `--min-groups 30`, `--min-success-rate 0.9`, `--min-improvement 0.0`,
+  `--max-regression-rate 0.0`. Optional `--max-mean-latency-seconds` and
+  `--max-mean-cost-usd` add resource limits. Exit `1` means a failed gate with
+  retained evidence; exit `2` means invalid input or an output error.
 
 Previews require no ML dependencies. Execution requires CUDA and the training
-extras. Validation data is reserved for an independent evaluator; this command
-does not grade the holdout or claim industry performance.
+extras. Evaluation works without ML dependencies and scores exact reference/tool
+agreement, not autonomous task success or business outcomes. Synthetic starter
+data cannot pass the gate. See the industry guide for prediction bundle and
+Python callback contracts.

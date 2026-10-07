@@ -23,6 +23,7 @@ true over time. The categories are strict:
 | Multi-GPU sharding (`--gpu-count`) | Live-verified (63GB across 2×48GB) | CHANGELOG v0.28.0 — device-map log `0=24 module(s), 1=36 module(s)` |
 | Single-host DDP strong scaling | Live-verified (2026-08-27, three seeds) | [`BENCHMARKS.md`](BENCHMARKS.md#single-node-ddp-weak-and-strong-scaling); fixed 196,608-sample work, 6.642× at 8× RTX 5080, 83.0% efficiency; 12 raw evidence rows retained |
 | Curation precision/recall 1.000/1.000 | Re-proved on every CI run | `make benchmark-loop`, floors ratcheted at 0.95 |
+| Industry base/adapter comparisons reject missing cases, stale data, changed decoding settings, and per-case regressions | Unit-pinned | `tests/unit/test_industry_evaluation.py`; source-group counts, typed tool arguments, unknown costs, and synthetic-data rejection are checked. This proves the reference evaluator's behavior, not live model quality or business outcomes. See [`INDUSTRY_FINETUNING.md`](INDUSTRY_FINETUNING.md#compare-the-base-model-and-adapter). |
 | A failed eval gate preserves its adapter | Unit-pinned (from a live incident) | `test_failed_job_still_attempts_fetch` — docstring cites the lost 10/12 adapter |
 | Unknown cost is refused, never treated as $0 | Unit-pinned | `tests/unit/test_remote_ledger.py` budget tests |
 | Pods terminate on every exit path, incl. client death | Live-verified + unit-pinned | self-destruct fired with the client force-killed (v0.26.0); armed-first ordering tested |

@@ -356,7 +356,7 @@ def log_cuda_memory_per_device() -> None:
         return
 
 
-def load_base_model_for_sft(base_model: str):
+def load_base_model_for_sft(base_model: str, *, revision: str | None = None):
     """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
 
     Composite multimodal checkpoints (e.g. ``zai-org/GLM-5.3-Flash`` and
@@ -375,6 +375,8 @@ def load_base_model_for_sft(base_model: str):
 
     kwargs = model_load_kwargs()
     kwargs["trust_remote_code"] = _trust_remote_code(base_model)
+    if revision is not None:
+        kwargs["revision"] = revision
     model, resolved_model_cls = load_generation_model(
         AutoModelForCausalLM,
         base_model,
@@ -718,6 +720,7 @@ def run_sft(
     resume: bool = False,
     dataset_path: Path | None = None,
     parent_adapter: str | None = None,
+    model_revision: str | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
 
@@ -753,12 +756,13 @@ def run_sft(
     # base_model is a caller-supplied CLI argument (public HF model repo id),
     # not attacker-controlled input; pinning a fixed revision would break
     # support for arbitrary user-chosen base models.
+    revision_kwargs = {"revision": model_revision} if model_revision is not None else {}
     tokenizer = AutoTokenizer.from_pretrained(
-        base_model, trust_remote_code=_trust_remote_code(base_model)
+        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
     )  # nosec: B615
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = load_base_model_for_sft(base_model)
+    model = load_base_model_for_sft(base_model, **revision_kwargs)
     log_device_map_summary(model)
     log_cuda_memory_per_device()
 
@@ -872,6 +876,7 @@ def run_sft(
             "per_device_batch_size": per_device_batch_size,
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "resumed": bool(resume),
+            "model_revision": model_revision,
         },
         parent_adapter=parent_adapter,
         package_version=_package_version(),

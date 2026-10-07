@@ -118,11 +118,13 @@ def test_functiongemma_targets_without_call_ids_are_supported():
     "key,value",
     [
         ("schema_version", 2),
+        ("schema_version", True),
         ("files", []),
         ("model_preset", []),
         ("industry", None),
         ("seed", True),
         ("train_rows", 99),
+        ("validation_rows", True),
     ],
 )
 def test_malformed_manifest_fails_before_execution(prepared, key, value):
@@ -269,3 +271,86 @@ def test_cli_end_to_end(tmp_path):
         assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["status"] == "planned"
     assert runner.invoke(app, ["industry", "show", "unknown"]).exit_code == 2
+
+
+@pytest.mark.parametrize("revision", ["main", "", True, "a" * 39, "G" * 40])
+def test_preparation_rejects_mutable_or_malformed_model_revisions(tmp_path, revision):
+    source = init_industry_project("retail", tmp_path / "source")
+    with pytest.raises(ValueError, match="model_revision"):
+        prepare_industry_training(
+            "retail",
+            source / "examples.jsonl",
+            tmp_path / "project",
+            model_revision=revision,
+        )
+    assert not (tmp_path / "project").exists()
+
+
+def test_pinned_revision_reaches_trainer_and_plan(tmp_path, monkeypatch):
+    from stateset_agents.training import sft
+
+    source = init_industry_project("retail", tmp_path / "source")
+    project = tmp_path / "project"
+    prepare_industry_training(
+        "retail", source / "examples.jsonl", project, model_revision="a" * 40
+    )
+    assert train_industry_project(project)["model_revision"] == "a" * 40
+    captured = {}
+    monkeypatch.setattr(sft, "gpu_available", lambda: True)
+    monkeypatch.setattr(sft, "run_sft", lambda **kwargs: captured.update(kwargs))
+    train_industry_project(project, dry_run=False)
+    assert captured["model_revision"] == "a" * 40
+
+
+def test_sft_model_loader_forwards_revision(monkeypatch):
+    from stateset_agents.core import transformers_compat
+    from stateset_agents.training import sft
+
+    captured = {}
+    sentinel = object()
+
+    def load(cls, name, kwargs):
+        captured.update(kwargs)
+        return sentinel, cls
+
+    monkeypatch.setattr(transformers_compat, "load_generation_model", load)
+    assert sft.load_base_model_for_sft("Qwen/Qwen3.5-2B", revision="a" * 40) is sentinel
+    assert captured["revision"] == "a" * 40
+
+
+def test_sft_tokenizer_receives_same_revision(tmp_path, monkeypatch):
+    from transformers import AutoTokenizer
+
+    from stateset_agents.training import sft
+
+    captured = {}
+
+    class StopBeforeWeights(Exception):
+        pass
+
+    def load(name, **kwargs):
+        captured.update(kwargs)
+        raise StopBeforeWeights
+
+    monkeypatch.setattr(AutoTokenizer, "from_pretrained", load)
+    with pytest.raises(StopBeforeWeights):
+        sft.run_sft(
+            [],
+            "Qwen/Qwen3.5-2B",
+            tmp_path,
+            1,
+            16,
+            32,
+            2e-5,
+            1024,
+            1,
+            8,
+            model_revision="a" * 40,
+        )
+    assert captured["revision"] == "a" * 40
+
+
+@pytest.mark.parametrize("synthetic", ["true", "false", 0, 1, None])
+def test_synthetic_metadata_cannot_bypass_the_evaluation_gate(synthetic):
+    with pytest.raises(ValueError, match="synthetic"):
+        validate_finetuning_row(chat("Question", synthetic=synthetic))

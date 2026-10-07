@@ -13,6 +13,7 @@ __all__ = [
     "validate_finetuning_row",
     "split_finetuning_data",
     "check_finetuning_overlap",
+    "group_finetuning_data",
 ]
 
 
@@ -34,6 +35,8 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     if not isinstance(row, dict):
         raise ValueError("Expected a JSON object")
     _json(row)  # Reject NaN/Infinity even for callers supplying Python objects.
+    if "synthetic" in row and type(row["synthetic"]) is not bool:
+        raise ValueError("synthetic must be a boolean when supplied")
     if "group_id" in row and (
         not isinstance(row["group_id"], str) or not row["group_id"].strip()
     ):
@@ -168,19 +171,14 @@ def check_finetuning_overlap(
         raise ValueError("Train/validation overlap: shared initial request or group_id")
 
 
-def split_finetuning_data(
-    rows: list[dict[str, Any]], validation_fraction: float = 0.2, seed: int = 42
-) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """Deduplicate and deterministically split connected prompt/source groups.
+def group_finetuning_data(
+    rows: list[dict[str, Any]],
+) -> list[list[dict[str, Any]]]:
+    """Deduplicate and group transitively linked source IDs and initial prompts.
 
-    The fraction applies to groups, so the row fraction may differ. Exact
-    duplicate records are removed. Transitive links through group_id and initial
-    requests stay in one split. Input order does not affect the resulting files.
+    Preparation and evaluation share this boundary so repeated turns or related
+    records cannot inflate the number of independent evaluation groups.
     """
-    if not math.isfinite(validation_fraction) or not 0 < validation_fraction < 1:
-        raise ValueError("validation_fraction must be between 0 and 1")
-    if isinstance(seed, bool) or not isinstance(seed, int):
-        raise ValueError("seed must be an integer")
     unique = {_json(validate_finetuning_row(row)): row for row in rows}
     ordered = [unique[key] for key in sorted(unique)]
     parents = list(range(len(ordered)))
@@ -200,10 +198,27 @@ def split_finetuning_data(
     groups: dict[int, list[dict[str, Any]]] = {}
     for index, row in enumerate(ordered):
         groups.setdefault(root(index), []).append(row)
+    return list(groups.values())
+
+
+def split_finetuning_data(
+    rows: list[dict[str, Any]], validation_fraction: float = 0.2, seed: int = 42
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Deduplicate and deterministically split connected prompt/source groups.
+
+    The fraction applies to groups, so the row fraction may differ. Exact
+    duplicate records are removed. Transitive links through group_id and initial
+    requests stay in one split. Input order does not affect the resulting files.
+    """
+    if not math.isfinite(validation_fraction) or not 0 < validation_fraction < 1:
+        raise ValueError("validation_fraction must be between 0 and 1")
+    if isinstance(seed, bool) or not isinstance(seed, int):
+        raise ValueError("seed must be an integer")
+    groups = group_finetuning_data(rows)
     if len(groups) < 2:
         raise ValueError("At least two independent prompt/source groups are required")
     ranked = sorted(
-        groups.values(),
+        groups,
         key=lambda group: hashlib.sha256(f"{seed}:{_json(group)}".encode()).hexdigest(),
     )
     count = max(1, min(len(ranked) - 1, round(len(ranked) * validation_fraction)))

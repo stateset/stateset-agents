@@ -284,8 +284,9 @@ def init_industry_project(industry: str, output: str | Path) -> Path:
         "stateset-agents industry train ./prepared\n```\n\n"
         "Training uses text-only BF16 LoRA through the existing SFT trainer. The model's\n"
         "chat template must support the roles and tools in your data. validation.jsonl\n"
-        "is a held-out artifact for your evaluator; this workflow does not grade it\n"
-        "automatically or establish industry performance. Evaluate: "
+        "is held out. Use industry eval-export and industry evaluate to compare\n"
+        "base/adapter reference agreement before promotion. Synthetic demonstrations\n"
+        "cannot pass that gate; it does not establish industry performance. Evaluate: "
         + ", ".join(recipe.evaluation_criteria)
         + ".\n",
         encoding="utf-8",
@@ -297,6 +298,17 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _validate_model_revision(revision: Any) -> None:
+    if revision is not None and (
+        not isinstance(revision, str)
+        or len(revision) != 40
+        or any(char not in "0123456789abcdef" for char in revision)
+    ):
+        raise ValueError(
+            "model_revision must be an immutable 40-character lowercase commit hash"
+        )
+
+
 def prepare_industry_training(
     industry: str,
     dataset: str | Path,
@@ -305,6 +317,7 @@ def prepare_industry_training(
     model: str = "qwen3.5-2b",
     validation_fraction: float = 0.2,
     seed: int = 42,
+    model_revision: str | None = None,
 ) -> dict[str, Any]:
     """Validate and split a dataset, retaining hashes and a runnable SFT config."""
     recipe = get_industry_recipe(industry)
@@ -312,6 +325,7 @@ def prepare_industry_training(
 
     if model not in PRESETS:
         raise ValueError("model must be a registered preset name")
+    _validate_model_revision(model_revision)
     source_hash = _sha256(Path(dataset))
     rows = load_finetuning_data(dataset)
     train, validation = split_finetuning_data(rows, validation_fraction, seed)
@@ -327,6 +341,7 @@ def prepare_industry_training(
         "schema_version": 1,
         "industry": recipe.name,
         "base_model": PRESETS[model].model_id,
+        "model_revision": model_revision,
         "model_preset": model,
         "seed": seed,
         "validation_fraction": validation_fraction,
@@ -344,6 +359,51 @@ def prepare_industry_training(
     }
     _write_json(output / "manifest.json", manifest)
     return manifest
+
+
+def load_industry_project(
+    project: str | Path,
+) -> tuple[dict[str, Any], list[dict[str, Any]], list[dict[str, Any]]]:
+    """Verify prepared manifest, dataset hashes, counts, and split integrity."""
+    project = Path(project)
+    manifest = json.loads((project / "manifest.json").read_text(encoding="utf-8"))
+    if (
+        not isinstance(manifest, dict)
+        or type(manifest.get("schema_version")) is not int
+        or manifest["schema_version"] != 1
+    ):
+        raise ValueError("Unsupported industry manifest schema")
+    if not isinstance(manifest.get("files"), dict):
+        raise ValueError("Manifest files must contain dataset hashes")
+    model_preset = manifest.get("model_preset")
+    if not isinstance(model_preset, str):
+        raise ValueError("Manifest model_preset must be a registered preset name")
+    if type(manifest.get("seed")) is not int:
+        raise ValueError("Manifest seed must be an integer")
+    _validate_model_revision(manifest.get("model_revision"))
+    industry = manifest.get("industry")
+    if not isinstance(industry, str):
+        raise ValueError("Manifest industry must be a recipe name")
+    get_industry_recipe(industry)
+    from stateset_agents.core.model_presets import PRESETS
+
+    preset = PRESETS.get(model_preset)
+    if preset is None or preset.model_id != manifest.get("base_model"):
+        raise ValueError("Manifest model must match a registered preset")
+    for name in ("train.jsonl", "validation.jsonl"):
+        if _sha256(project / name) != manifest.get("files", {}).get(name):
+            raise ValueError(f"{name} changed after preparation; prepare a new project")
+    train = load_finetuning_data(project / "train.jsonl")
+    validation = load_finetuning_data(project / "validation.jsonl")
+    check_finetuning_overlap(train, validation)
+    if (
+        type(manifest.get("train_rows")) is not int
+        or type(manifest.get("validation_rows")) is not int
+        or len(train) != manifest["train_rows"]
+        or len(validation) != manifest["validation_rows"]
+    ):
+        raise ValueError("Manifest row counts do not match the datasets")
+    return manifest, train, validation
 
 
 def train_industry_project(
@@ -372,40 +432,13 @@ def train_industry_project(
     ):
         raise ValueError("max_length must be an integer of at least 2")
     project = Path(project)
-    manifest = json.loads((project / "manifest.json").read_text(encoding="utf-8"))
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != 1:
-        raise ValueError("Unsupported industry manifest schema")
-    if not isinstance(manifest.get("files"), dict):
-        raise ValueError("Manifest files must contain dataset hashes")
-    model_preset = manifest.get("model_preset")
-    if not isinstance(model_preset, str):
-        raise ValueError("Manifest model_preset must be a registered preset name")
-    if type(manifest.get("seed")) is not int:
-        raise ValueError("Manifest seed must be an integer")
-    industry = manifest.get("industry")
-    if not isinstance(industry, str):
-        raise ValueError("Manifest industry must be a recipe name")
-    get_industry_recipe(industry)
-    from stateset_agents.core.model_presets import PRESETS
-
-    preset = PRESETS.get(model_preset)
-    if preset is None or preset.model_id != manifest.get("base_model"):
-        raise ValueError("Manifest model must match a registered preset")
-    for name in ("train.jsonl", "validation.jsonl"):
-        if _sha256(project / name) != manifest.get("files", {}).get(name):
-            raise ValueError(f"{name} changed after preparation; prepare a new project")
-    train = load_finetuning_data(project / "train.jsonl")
-    validation = load_finetuning_data(project / "validation.jsonl")
-    check_finetuning_overlap(train, validation)
-    if len(train) != manifest.get("train_rows") or len(validation) != manifest.get(
-        "validation_rows"
-    ):
-        raise ValueError("Manifest row counts do not match the datasets")
+    manifest, train, validation = load_industry_project(project)
     output = project / "adapter"
     plan = {
         "status": "planned",
         "industry": manifest["industry"],
-        "base_model": preset.model_id,
+        "base_model": manifest["base_model"],
+        "model_revision": manifest.get("model_revision"),
         "train_rows": len(train),
         "validation_rows": len(validation),
         "validation_status": "held_out_not_evaluated",
@@ -434,7 +467,7 @@ def train_industry_project(
     try:
         run_sft(
             rows=train,
-            base_model=preset.model_id,
+            base_model=manifest["base_model"],
             output_dir=output,
             num_epochs=num_epochs,
             lora_r=16,
@@ -444,6 +477,11 @@ def train_industry_project(
             per_device_batch_size=1,
             gradient_accumulation_steps=8,
             dataset_path=project / "train.jsonl",
+            **(
+                {"model_revision": manifest["model_revision"]}
+                if manifest.get("model_revision")
+                else {}
+            ),
         )
     except Exception:
         _write_json(
