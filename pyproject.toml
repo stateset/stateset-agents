@@ -111,7 +111,7 @@ dev = [
     "httpx>=0.25.0,<0.28.0",
     "requests>=2.31.0",
     "redis>=4.5.0",
-    "PyJWT>=2.8.0,<3.0.0",
+    "PyJWT>=2.15.0,<3.0.0",
 ]
 training = [
     "torch>=2.0.0",
@@ -166,7 +166,7 @@ api = [
     # back to the in-memory limiter/cache if redis is not installed or
     # unreachable.
     "redis>=4.5.0",
-    "PyJWT>=2.8.0,<3.0.0",
+    "PyJWT>=2.15.0,<3.0.0",
 ]
 examples = [
     "openai>=1.0.0",

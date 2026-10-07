@@ -30,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Refresh the development lock for fsspec, multidict, PyJWT, urllib3, and
+  virtualenv security advisories; require PyJWT 2.15 or newer for the API.
 - Made `SecureConfig` fail closed when encrypted secrets lack a configured key
   or the `cryptography` dependency; explicit plaintext storage remains available
   through `encrypt=False`.
