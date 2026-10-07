@@ -177,12 +177,27 @@ def parse_qwen_response(text: str, tools: list[dict[str, Any]]) -> dict[str, Any
     return {"role": "assistant", "content": content or None, "tool_calls": calls}
 
 
+def verify_model_revision(
+    requested: str, source_config: Any, loaded_config: Any
+) -> None:
+    """Check the source pin, allowing a text subconfig to omit parent metadata.
+
+    Transformers can extract a composite checkpoint's text config when loading
+    AutoModelForCausalLM. That subconfig does not inherit the parent commit hash.
+    The loader must still receive the immutable revision explicitly.
+    """
+    if getattr(source_config, "_commit_hash", None) != requested:
+        raise ValueError("Source configuration differs from the requested pin")
+    if getattr(loaded_config, "_commit_hash", None) not in (None, requested):
+        raise ValueError("Loaded model revision differs from the requested pin")
+
+
 def run_model(spec: dict[str, Any], output: Path) -> dict[str, Any]:
     """Train one full checkpoint and verify its saved adapter on CUDA."""
     import torch
     from peft import PeftModel
     from safetensors.torch import load_file
-    from transformers import AutoTokenizer, set_seed
+    from transformers import AutoConfig, AutoTokenizer, set_seed
 
     from stateset_agents.core.transformers_compat import generation_compat_kwargs
     from stateset_agents.evaluation.industry import (
@@ -222,6 +237,7 @@ def run_model(spec: dict[str, Any], output: Path) -> dict[str, Any]:
     }
     identity = {"base_model": model_id, "revision": spec["revision"]}
     native_outputs: list[str | None] = []
+    source_config = AutoConfig.from_pretrained(model_id, revision=spec["revision"])
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=spec["revision"])
     lengths = [
         len(
@@ -236,8 +252,7 @@ def run_model(spec: dict[str, Any], output: Path) -> dict[str, Any]:
 
     def load_base() -> Any:
         loaded = load_base_model_for_sft(model_id, revision=spec["revision"])
-        if loaded.config._commit_hash != spec["revision"]:
-            raise ValueError("Loaded model revision differs from the requested pin")
+        verify_model_revision(spec["revision"], source_config, loaded.config)
         return loaded.to("cuda").eval()
 
     def callback(active_model: Any) -> Any:
@@ -361,6 +376,8 @@ def run_model(spec: dict[str, Any], output: Path) -> dict[str, Any]:
     result = {
         "model": model_id,
         "revision": spec["revision"],
+        "source_config_revision": source_config._commit_hash,
+        "loaded_model_config_revision": getattr(model.config, "_commit_hash", None),
         "industry": spec["industry"],
         "status": "training_and_reload_verified",
         "quality_certified": False,

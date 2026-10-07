@@ -1,11 +1,14 @@
 """Check pilot inputs and native tool decoding before renting a GPU."""
 
+from types import SimpleNamespace
+
 import pytest
 
 from benchmarks.industry_pilot import (
     parse_qwen_response,
     synthetic_lookup_rows,
     validate_manifest,
+    verify_model_revision,
 )
 from stateset_agents.data.finetuning import (
     group_finetuning_data,
@@ -81,3 +84,24 @@ def test_pilot_accepts_pinned_models_and_refuses_duplicate_output_paths():
     validate_manifest({"schema_version": 1, "models": [spec]})
     with pytest.raises(ValueError, match="Duplicate"):
         validate_manifest({"schema_version": 1, "models": [spec, spec]})
+
+
+@pytest.mark.parametrize("loaded", [None, "a" * 40])
+def test_revision_check_supports_composite_text_config(loaded):
+    verify_model_revision(
+        "a" * 40,
+        SimpleNamespace(_commit_hash="a" * 40),
+        SimpleNamespace(_commit_hash=loaded),
+    )
+
+
+@pytest.mark.parametrize(
+    "source,loaded", [(None, None), ("b" * 40, None), ("a" * 40, "b" * 40)]
+)
+def test_revision_check_rejects_missing_source_or_conflicting_hash(source, loaded):
+    with pytest.raises(ValueError, match="requested pin"):
+        verify_model_revision(
+            "a" * 40,
+            SimpleNamespace(_commit_hash=source),
+            SimpleNamespace(_commit_hash=loaded),
+        )
