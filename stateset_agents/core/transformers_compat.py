@@ -6,6 +6,25 @@ import importlib
 from typing import Any
 
 
+def generation_compat_kwargs(model: Any) -> dict[str, Any]:
+    """Disable the broken hybrid cache for attention-only Granite checkpoints.
+
+    Transformers 5.14 builds a recurrent mask for dense Granite Micro, then
+    asks an attention-only cache for Mamba state and raises ValueError. An
+    uncached forward avoids that path; hybrid Granite models keep their cache.
+    """
+    config = getattr(model, "config", None)
+    layers = getattr(config, "layer_types", None)
+    if (
+        getattr(config, "model_type", None) == "granitemoehybrid"
+        and isinstance(layers, (list, tuple))
+        and layers
+        and all(layer in {"attention", "full_attention"} for layer in layers)
+    ):
+        return {"use_cache": False}
+    return {}
+
+
 def load_generation_model(
     causal_model_cls: Any,
     model_name: str,
@@ -42,4 +61,4 @@ def load_generation_model(
         raise causal_exc from None
 
 
-__all__ = ["load_generation_model"]
+__all__ = ["generation_compat_kwargs", "load_generation_model"]

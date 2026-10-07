@@ -284,7 +284,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.56.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.57.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -1194,6 +1194,365 @@ stateset-agents init-config
 - `--preset TEXT`: Starter preset: default, qwen3-5-0-8b, kimi-k2-6, kimi-k3, gemma-4-31b, muse-glimmer, or nemotron-3-5
 - `--task TEXT`: Task preset for model-specific starter presets.
 - `--starter-profile TEXT`: Starter profile for model-specific starter presets.
+
+### `stateset-agents qwen3-5-2b`
+
+Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-2B`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/qwen3_5_2b_gspo`.
+
+```bash
+stateset-agents qwen3-5-2b --starter-profile memory --json
+stateset-agents qwen3-5-2b --starter-profile memory --write-config qwen3-5-2b.json
+stateset-agents qwen3-5-2b --config qwen3-5-2b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents qwen3-5-4b`
+
+Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-4B`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/qwen3_5_4b_gspo`.
+
+```bash
+stateset-agents qwen3-5-4b --starter-profile memory --json
+stateset-agents qwen3-5-4b --starter-profile memory --write-config qwen3-5-4b.json
+stateset-agents qwen3-5-4b --config qwen3-5-4b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents qwen3-5-9b`
+
+Preview or run text-only LoRA/QLoRA training of `Qwen/Qwen3.5-9B`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/qwen3_5_9b_gspo`.
+
+```bash
+stateset-agents qwen3-5-9b --starter-profile memory --json
+stateset-agents qwen3-5-9b --starter-profile memory --write-config qwen3-5-9b.json
+stateset-agents qwen3-5-9b --config qwen3-5-9b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; hybrid attention and MLP adapters.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents granite-4-micro`
+
+Preview or run LoRA/QLoRA training of `ibm-granite/granite-4.0-micro`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/granite_4_micro_gspo`.
+
+```bash
+stateset-agents granite-4-micro --starter-profile memory --json
+stateset-agents granite-4-micro --starter-profile memory --write-config granite-4-micro.json
+stateset-agents granite-4-micro --config granite-4-micro.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; dense attention variant, not the hybrid H-Micro.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents llama-3-2-1b`
+
+Preview or run LoRA/QLoRA training of `meta-llama/Llama-3.2-1B-Instruct`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/llama_3_2_1b_gspo`.
+
+```bash
+stateset-agents llama-3-2-1b --starter-profile memory --json
+stateset-agents llama-3-2-1b --starter-profile memory --write-config llama-3-2-1b.json
+stateset-agents llama-3-2-1b --config llama-3-2-1b.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Llama 3.2 community license; gated checkpoint.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents llama-3-2-3b`
+
+Preview or run LoRA/QLoRA training of `meta-llama/Llama-3.2-3B-Instruct`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/llama_3_2_3b_gspo`.
+
+```bash
+stateset-agents llama-3-2-3b --starter-profile memory --json
+stateset-agents llama-3-2-3b --starter-profile memory --write-config llama-3-2-3b.json
+stateset-agents llama-3-2-3b --config llama-3-2-3b.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Llama 3.2 community license; gated checkpoint.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents qwen3-4b-instruct`
+
+Preview or run LoRA/QLoRA training of `Qwen/Qwen3-4B-Instruct-2507`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/qwen3_4b_instruct_gspo`.
+
+```bash
+stateset-agents qwen3-4b-instruct --starter-profile memory --json
+stateset-agents qwen3-4b-instruct --starter-profile memory --write-config qwen3-4b-instruct.json
+stateset-agents qwen3-4b-instruct --config qwen3-4b-instruct.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; non-thinking text model.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents olmo-3-7b`
+
+Preview or run LoRA/QLoRA training of `allenai/Olmo-3-7B-Instruct`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/olmo_3_7b_gspo`.
+
+```bash
+stateset-agents olmo-3-7b --starter-profile memory --json
+stateset-agents olmo-3-7b --starter-profile memory --write-config olmo-3-7b.json
+stateset-agents olmo-3-7b --config olmo-3-7b.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; native Olmo3 implementation.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents deepseek-r1-1-5b`
+
+Preview or run LoRA/QLoRA training of `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/deepseek_r1_1_5b_gspo`.
+
+```bash
+stateset-agents deepseek-r1-1-5b --starter-profile memory --json
+stateset-agents deepseek-r1-1-5b --starter-profile memory --write-config deepseek-r1-1-5b.json
+stateset-agents deepseek-r1-1-5b --config deepseek-r1-1-5b.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. MIT; Qwen2-based reasoning model. Budget for reasoning before final answers.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents deepseek-r1-7b`
+
+Preview or run LoRA/QLoRA training of `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`.
+Install `stateset-agents[small-models]`. Profiles: `balanced`, `memory`, `quality`.
+Default output: `./outputs/deepseek_r1_7b_gspo`.
+
+```bash
+stateset-agents deepseek-r1-7b --starter-profile memory --json
+stateset-agents deepseek-r1-7b --starter-profile memory --write-config deepseek-r1-7b.json
+stateset-agents deepseek-r1-7b --config deepseek-r1-7b.json --no-dry-run
+```
+
+Supports the shared starter options: `--task`, `--model`, `--list-profiles`,
+`--starter-profile`, `--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`, `--objective`,
+`--wandb`, `--wandb-project`, `--write-config`, `--config`,
+`--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. MIT; Qwen2-based reasoning model. Budget for reasoning before final answers.
+See the [additional small-model guide](../examples/README.md#additional-small-models-and-functiongemma).
+
+### `stateset-agents smollm3-3b`
+
+Preview or run text-only LoRA/QLoRA training of `HuggingFaceTB/SmolLM3-3B`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/smollm3_3b_gspo`.
+
+```bash
+stateset-agents smollm3-3b --starter-profile memory --json
+stateset-agents smollm3-3b --starter-profile memory --write-config smollm3-3b.json
+stateset-agents smollm3-3b --config smollm3-3b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; text-only multilingual reasoning model.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents phi-4-mini`
+
+Preview or run text-only LoRA/QLoRA training of `microsoft/Phi-4-mini-instruct`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/phi_4_mini_gspo`.
+
+```bash
+stateset-agents phi-4-mini --starter-profile memory --json
+stateset-agents phi-4-mini --starter-profile memory --write-config phi-4-mini.json
+stateset-agents phi-4-mini --config phi-4-mini.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. MIT; fused Phi projections; use native Transformers implementation.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents ministral-3-3b`
+
+Preview or run text-only LoRA/QLoRA training of `mistralai/Ministral-3-3B-Instruct-2512-BF16`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/ministral_3_3b_gspo`.
+
+```bash
+stateset-agents ministral-3-3b --starter-profile memory --json
+stateset-agents ministral-3-3b --starter-profile memory --write-config ministral-3-3b.json
+stateset-agents ministral-3-3b --config ministral-3-3b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; official BF16 checkpoint for LoRA/QLoRA; text training only.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents ministral-3-8b`
+
+Preview or run text-only LoRA/QLoRA training of `mistralai/Ministral-3-8B-Instruct-2512-BF16`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/ministral_3_8b_gspo`.
+
+```bash
+stateset-agents ministral-3-8b --starter-profile memory --json
+stateset-agents ministral-3-8b --starter-profile memory --write-config ministral-3-8b.json
+stateset-agents ministral-3-8b --config ministral-3-8b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Apache-2.0; official BF16 checkpoint for LoRA/QLoRA; text training only.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents lfm2-5-2-6b`
+
+Preview or run text-only LoRA/QLoRA training of `LiquidAI/LFM2.5-2.6B`.
+Install `stateset-agents[small-models]`. Default output:
+`./outputs/lfm2_5_2_6b_gspo`.
+
+```bash
+stateset-agents lfm2-5-2-6b --starter-profile memory --json
+stateset-agents lfm2-5-2-6b --starter-profile memory --write-config lfm2-5-2-6b.json
+stateset-agents lfm2-5-2-6b --config lfm2-5-2-6b.json --no-dry-run
+```
+
+Options follow the [small Gemma commands](#stateset-agents-gemma-4-e2b):
+`--task`, `--starter-profile`, `--list-profiles`, `--model`,
+`--use-lora/--no-lora`, `--use-4bit/--no-use-4bit`,
+`--use-8bit/--no-use-8bit`, `--output-dir`, `--iterations`,
+`--objective`, `--wandb`, `--wandb-project`, `--write-config`,
+`--config`, `--dry-run/--no-dry-run`, and `--json/--json-output`.
+Preview is the default. Experimental; custom LFM license; always thinks; hybrid convolution/attention adapters.
+See the [small-model guide](../examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid).
+
+### `stateset-agents gemma-4-e2b`
+
+Preview or run text-only Gemma 4 E2B GSPO training. Install
+`pip install 'stateset-agents[gemma4]'` for the model dependencies. Defaults
+to a preview; training requires `--no-dry-run` and a suitable CUDA GPU.
+
+```bash
+stateset-agents gemma-4-e2b --starter-profile memory --json
+stateset-agents gemma-4-e2b --starter-profile memory --write-config gemma-e2b.json
+stateset-agents gemma-4-e2b --config gemma-e2b.json --no-dry-run
+```
+
+`balanced` uses BF16 LoRA; `memory` uses 4-bit NF4 QLoRA with shorter
+rollouts; `quality` increases LoRA rank and context. The default model is
+`google/gemma-4-E2B-it` and output directory is `./outputs/gemma4_e2b_gspo`.
+The starter uses built-in task scenarios and rewards. For your own labeled
+conversations, use `python -m stateset_agents.training.sft --dataset ...
+--base-model google/gemma-4-E2B-it --output-dir ...` instead.
+
+Options shared by both small Gemma commands:
+
+- `--config, -c TEXT`: Load a JSON/YAML starter config; do not combine with config overrides.
+- `--task TEXT`: customer_service, technical_support, sales, or conversational.
+- `--starter-profile TEXT`: balanced, memory, or quality.
+- `--list-profiles`: List profiles without loading weights.
+- `--model TEXT`: Override the Hugging Face checkpoint ID.
+- `--use-lora / --no-lora`: Override adapter training; quantization requires LoRA.
+- `--use-4bit / --no-use-4bit`: Override 4-bit weight loading.
+- `--use-8bit / --no-use-8bit`: Override 8-bit weight loading.
+- `--output-dir TEXT`: Override the checkpoint/adapter directory.
+- `--iterations INTEGER`: Override outer GSPO iterations.
+- `--objective TEXT`: Override the policy objective preset.
+- `--wandb`, `--wandb-project TEXT`: Enable and configure W&B logging.
+- `--write-config TEXT`: Save a reusable config and exit.
+- `--dry-run / --no-dry-run`: Preview (default) or train.
+- `--json, --json-output`: Emit machine-readable output.
+
+### `stateset-agents gemma-4-e4b`
+
+Same options and profiles as `gemma-4-e2b`, defaulting to
+`google/gemma-4-E4B-it` and `./outputs/gemma4_e4b_gspo`.
+
+```bash
+stateset-agents gemma-4-e4b --starter-profile memory --json
+stateset-agents gemma-4-e4b --starter-profile memory --no-dry-run
+```
+
+These are effective parameter sizes; embeddings substantially increase the
+weight memory. Full-checkpoint GPU memory and training quality remain
+unbenchmarked. See the [small Gemma guide](../examples/README.md#small-gemma-models-e2b-and-e4b).
 
 ### `stateset-agents gemma-4-31b`
 

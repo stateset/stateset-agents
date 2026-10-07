@@ -19,7 +19,7 @@ from stateset_agents.core.generation_mode import inference_mode
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
-from .transformers_compat import load_generation_model
+from .transformers_compat import generation_compat_kwargs, load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
@@ -541,6 +541,7 @@ class Agent:
             repetition_penalty=self.config.repetition_penalty,
             pad_token_id=_safe_token_id(getattr(self.tokenizer, "pad_token_id", None)),
             eos_token_id=_safe_token_id(getattr(self.tokenizer, "eos_token_id", None)),
+            **generation_compat_kwargs(self.model),
         )
 
 

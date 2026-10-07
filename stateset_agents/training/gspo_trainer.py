@@ -124,7 +124,11 @@ def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
     global TrainingArguments, get_cosine_schedule_with_warmup
-    if _transformers_loaded:
+    if (
+        _transformers_loaded
+        and AutoModelForCausalLM is not None
+        and AutoTokenizer is not None
+    ):
         return True
     # Allow tests/consumers to pre-inject mocks without importing transformers.
     if AutoModelForCausalLM is not None and AutoTokenizer is not None:
@@ -258,12 +262,18 @@ class GSPOModelManager(SharedModelManager):
             _require_peft()
 
         # Add quantization if specified
-        if self.config.use_8bit:
+        if self.config.use_8bit or self.config.use_4bit:
             _require_bitsandbytes()
-            model_kwargs["load_in_8bit"] = True
-        elif self.config.use_4bit:
-            _require_bitsandbytes()
-            model_kwargs["load_in_4bit"] = True
+            from transformers import BitsAndBytesConfig
+
+            # Transformers 5 removed the legacy load_in_* model kwargs.
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_8bit=self.config.use_8bit,
+                load_in_4bit=self.config.use_4bit and not self.config.use_8bit,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=model_kwargs.get("torch_dtype", torch.bfloat16),
+            )
 
     def _prepare_base_model(self, base_model: Any) -> Any:
         # Enable gradient checkpointing if specified
@@ -304,6 +314,7 @@ class GSPOModelManager(SharedModelManager):
                 self.config.model_name,
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
+                trust_remote_code=self.config.trust_remote_code,
             )
             if self.ref_model is not None:
                 self.ref_model.eval()

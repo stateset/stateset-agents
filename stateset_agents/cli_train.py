@@ -387,7 +387,9 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
     ) -> None:
         try:
             starter = importlib.import_module(module)
-            base_model: str = getattr(starter, f"{preset.cli_symbol_prefix}_BASE_MODEL")
+            # A family starter can serve several variants. Its module default
+            # must not make the E4B command's default look like an override.
+            base_model = preset.model_id
             profile_choices: t.Sequence[str] = getattr(
                 starter, f"{preset.cli_symbol_prefix}_STARTER_PROFILE_CHOICES"
             )
@@ -500,7 +502,11 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
                 use_lora=use_lora,
                 use_4bit=use_4bit,
                 use_8bit=use_8bit,
-                output_dir=output_dir,
+                output_dir=(
+                    output_dir
+                    if output_dir is not None
+                    else preset.cli_default_output_dir
+                ),
                 use_wandb=wandb,
                 wandb_project=wandb_project,
                 **config_overrides,

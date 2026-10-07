@@ -34,6 +34,22 @@ FORWARDER_SCRIPTS = [
 
 def test_presets_registry_has_expected_models():
     expected = {
+        "granite4-micro",
+        "llama3.2-1b",
+        "llama3.2-3b",
+        "qwen3-4b-instruct",
+        "olmo3-7b",
+        "deepseek-r1-1.5b",
+        "deepseek-r1-7b",
+        "functiongemma-270m",
+        "qwen3.5-2b",
+        "qwen3.5-4b",
+        "qwen3.5-9b",
+        "smollm3-3b",
+        "phi4-mini",
+        "ministral3-3b",
+        "ministral3-8b",
+        "lfm2.5-2.6b",
         "muse-glimmer",
         "nemotron-3-5",
         "qwen3.8-27b",
@@ -52,6 +68,8 @@ def test_presets_registry_has_expected_models():
         "qwen3.5-27b",
         "gemma3",
         "gemma4-31b",
+        "gemma4-e2b",
+        "gemma4-e4b",
         "llama3",
         "mistral",
     }
@@ -85,6 +103,10 @@ def test_dry_run_in_process_exits_zero(preset_name, capsys):
     """Every preset round-trips through the driver's --dry-run path,
     in-process, using the stub backend (fast path for the full matrix)."""
     exit_code = finetune_gspo.main(["--model", preset_name, "--dry-run"])
+    if not get_preset(preset_name).supports_gspo:
+        assert exit_code == 2
+        assert "SFT only" in capsys.readouterr().err
+        return
     assert exit_code == 0
 
     captured = capsys.readouterr()
@@ -98,6 +120,31 @@ def test_list_models_in_process_prints_all_names(capsys):
     captured = capsys.readouterr()
     printed = set(captured.out.splitlines())
     assert printed == set(list_preset_names())
+
+
+@pytest.mark.parametrize(
+    "arguments",
+    [
+        ["--model", "muse-glimmer", "--dry-run"],
+        ["--model", "kimi-k3", "--starter-profile", "balanced", "--dry-run"],
+    ],
+)
+def test_preview_does_not_import_training_runtime(arguments):
+    """Configuration previews must work without importing the model runtime."""
+    code = (
+        "import sys; from examples.finetune_gspo import main; "
+        "assert main(sys.argv[1:]) == 0; "
+        "assert not any(name in sys.modules for name in "
+        "('stateset_agents.training.gspo_trainer', 'transformers', 'peft'))"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code, *arguments],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.mark.parametrize(

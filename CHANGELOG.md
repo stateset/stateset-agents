@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-10-07 — Small-model fine-tuning and tool-aware SFT
+
+### Small-model training
+
+- Add 18 small-model checkpoints across Gemma 4, Qwen, SmolLM3, Phi,
+  Ministral, Liquid, Granite, Llama, Olmo, and DeepSeek. Provide 17 GSPO
+  commands with LoRA/QLoRA profiles and isolate each variant's output directory.
+- Add FunctionGemma tool-calling SFT, preserving tool schemas and typed arguments,
+  with a commerce JSONL example. Conversational GSPO explicitly rejects it.
+- Fix Transformers 5 quantization loading, keep adapters out of vision/audio
+  encoders, avoid duplicate model loads, and preserve SFT EOS labels and chat
+  special tokens. Work around dense Granite's recurrent-cache generation error.
+- Validate tiny native architecture training and adapter reload locally.
+  Full pretrained checkpoint quality and GPU quantization remain unverified.
+
 ### Added
 
 - Added a v0.5 private product-use transfer set with seed-varying support

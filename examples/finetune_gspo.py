@@ -61,6 +61,16 @@ logger = logging.getLogger(__name__)
 # starter exposes ``get_qwen3_5_config``/``run_qwen3_5_0_8b_config``), so it
 # is recorded explicitly rather than derived by string munging.
 STARTER_FN_SUFFIX: dict[str, str] = {
+    "granite4_micro_starter": "granite4_micro",
+    "llama3_2_small_starter": "llama3_2_small",
+    "qwen3_small_starter": "qwen3_small",
+    "olmo3_starter": "olmo3",
+    "deepseek_r1_small_starter": "deepseek_r1_small",
+    "qwen3_5_small_starter": "qwen3_5_small",
+    "smollm3_starter": "smollm3",
+    "phi4_mini_starter": "phi4_mini",
+    "ministral3_starter": "ministral3",
+    "lfm2_5_starter": "lfm2_5",
     "muse_glimmer_starter": "muse_glimmer",
     "nemotron_3_5_starter": "nemotron_3_5",
     "qwen3_8_starter": "qwen3_8",
@@ -72,6 +82,7 @@ STARTER_FN_SUFFIX: dict[str, str] = {
     "glm5_1_starter": "glm5_1",
     "glm5_2_starter": "glm5_2",
     "gemma4_starter": "gemma4_31b",
+    "gemma4_small_starter": "gemma4_small",
     "qwen3_5_starter": "qwen3_5",
 }
 # Presets whose starter's ``run_*_config``/``get_*_config`` suffix diverges
@@ -144,11 +155,17 @@ def build_gspo_config(
 ) -> Any:
     """Build a ``GSPOConfig`` reproducing the preset's hyperparameters,
     with optional CLI overrides layered on top."""
-    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    if not preset.supports_gspo:
+        raise ValueError(
+            "This model supports SFT only; use stateset_agents.training.sft."
+        )
 
     kwargs: dict[str, Any] = {
         "model_name": preset.model_id,
         "run_name": f"{preset.model_id}-{task}",
+        "trust_remote_code": preset.trust_remote_code,
         "learning_rate": (
             learning_rate if learning_rate is not None else preset.learning_rate
         ),
@@ -290,6 +307,13 @@ async def _run_starter_backed(args: argparse.Namespace, preset: ModelPreset) -> 
 
 async def run(args: argparse.Namespace) -> int:
     preset = get_preset(args.model)
+    if not preset.supports_gspo:
+        print(
+            "This model supports SFT only. Use python -m stateset_agents.training.sft "
+            "--base-model " + preset.model_id + " --dataset <tool-chat.jsonl>.",
+            file=sys.stderr,
+        )
+        return 2
 
     if args.export_merged and preset.starter_module is not None:
         # None of the packaged starters currently expose a merge-export

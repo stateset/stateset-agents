@@ -58,6 +58,200 @@ python examples/quick_start.py
 
 ## 🎓 Training Examples
 
+### Small Gemma models: E2B and E4B
+
+The `gemma4-e2b` and `gemma4-e4b` presets target
+[`google/gemma-4-E2B-it`](https://huggingface.co/google/gemma-4-E2B-it) and
+[`google/gemma-4-E4B-it`](https://huggingface.co/google/gemma-4-E4B-it).
+They use the packaged `stateset_agents.training.gemma4_small_starter` helpers
+for **text-only** GSPO training with LoRA. Install the Gemma 4 dependencies
+(Transformers 5.5+ is required for this architecture):
+
+```bash
+pip install -e '.[gemma4]'
+
+# Preview without downloading weights or requiring a GPU.
+python examples/finetune_gspo.py --model gemma4-e2b --starter-profile memory --dry-run
+
+# Save an editable training configuration.
+python examples/finetune_gspo.py --model gemma4-e4b --starter-profile memory \
+  --write-config gemma4-e4b.json
+
+# Run on a CUDA GPU. The memory profile uses 4-bit QLoRA.
+python examples/finetune_gspo.py --model gemma4-e4b --config gemma4-e4b.json --no-dry-run
+```
+
+The same starters also ship as installed commands, without an examples checkout:
+
+```bash
+stateset-agents gemma-4-e2b --starter-profile memory --json
+stateset-agents gemma-4-e4b --starter-profile memory --write-config gemma4-e4b.json
+stateset-agents gemma-4-e4b --config gemma4-e4b.json --no-dry-run
+```
+
+Their default output directories are `outputs/gemma4_e2b_gspo` and
+`outputs/gemma4_e4b_gspo`, respectively. Pass `--output-dir` to name a run.
+
+The balanced profile uses BF16 LoRA, batch size 1, rank 16, and 1024/512
+prompt/completion token limits. The memory profile uses 4-bit NF4 QLoRA,
+two generations per prompt, and 512/256 token limits. These are conservative
+starting points, not benchmark-tuned settings. The example trains against
+built-in task scenarios and rewards; use your own environment, reward function,
+and held-out evaluation for a useful domain-specific model.
+
+For supervised fine-tuning on your own conversations, use the existing SFT path:
+
+```bash
+python -m stateset_agents.training.sft \
+  --dataset sft_train.jsonl --base-model google/gemma-4-E2B-it \
+  --output-dir outputs/gemma4_e2b_sft --num-epochs 3 \
+  --lora-r 16 --max-length 1024 --per-device-batch-size 1
+```
+
+Each JSONL row has the shape
+`{"messages":[{"role":"user","content":"Where is my order?"},{"role":"assistant","content":"Please share your order number."}]}`.
+The SFT command uses unquantized LoRA and saves an adapter; on a host without
+CUDA it prints a plan instead of training. Gemma 2 2B
+(`google/gemma-2-2b-it`), Gemma 3 1B (`google/gemma-3-1b-it`), and Gemma 3 4B
+(`google/gemma-3-4b-it`) can also be selected through `--base-model`; obtain
+Hugging Face access for gated checkpoints first. Older Gemma chat templates
+may require putting instructions in the first user message instead of a
+separate system message. The legacy `gemma3` preset still points to Gemma 2
+9B for compatibility; it does not select a Gemma 3 checkpoint.
+
+Google's E2B/E4B labels mean **effective** parameters: their model cards list
+about 5.1B/8B parameters including embeddings. Budget memory for embeddings,
+activations, rollouts, and any reference model as well as quantized weights;
+these presets do not guarantee a particular GPU capacity. Images/audio are
+outside this text-training workflow. Local tests cover configuration, model
+loading, and a tiny random Gemma 4 LoRA update; full E2B/E4B training quality
+and GPU memory have not been benchmarked here.
+
+### More small models: Qwen, SmolLM, Phi, Ministral, and Liquid
+
+Install the training dependencies with `pip install -e '.[small-models]'`
+(or `pip install 'stateset-agents[small-models]'` for an installed release
+containing these starters).
+
+| Preset | Installed command | Checkpoint |
+|---|---|---|
+| `qwen3.5-2b` | `stateset-agents qwen3-5-2b` | [`Qwen/Qwen3.5-2B`](https://huggingface.co/Qwen/Qwen3.5-2B) |
+| `qwen3.5-4b` | `stateset-agents qwen3-5-4b` | [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) |
+| `qwen3.5-9b` | `stateset-agents qwen3-5-9b` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) |
+| `smollm3-3b` | `stateset-agents smollm3-3b` | [`HuggingFaceTB/SmolLM3-3B`](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
+| `phi4-mini` | `stateset-agents phi-4-mini` | [`microsoft/Phi-4-mini-instruct`](https://huggingface.co/microsoft/Phi-4-mini-instruct) |
+| `ministral3-3b` | `stateset-agents ministral-3-3b` | [`mistralai/Ministral-3-3B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16) |
+| `ministral3-8b` | `stateset-agents ministral-3-8b` | [`mistralai/Ministral-3-8B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-BF16) |
+| `lfm2.5-2.6b` | `stateset-agents lfm2-5-2-6b` | [`LiquidAI/LFM2.5-2.6B`](https://huggingface.co/LiquidAI/LFM2.5-2.6B) |
+
+All commands default to previews. They accept `--starter-profile balanced|memory|quality`,
+`--write-config`, `--config`, `--output-dir`, and `--no-dry-run`.
+The example driver accepts the preset names above through `--model`.
+
+```bash
+stateset-agents qwen3-5-4b --starter-profile memory --json
+stateset-agents phi-4-mini --starter-profile memory --write-config phi-mini.json
+stateset-agents phi-4-mini --config phi-mini.json --no-dry-run
+python examples/finetune_gspo.py --model smollm3-3b --starter-profile memory --dry-run
+```
+
+Each installed command has its own default output directory. Balanced uses
+BF16 LoRA with rank 16 and batch size 1; memory uses NF4 QLoRA and two
+generations. These are starting configurations, not measured GPU capacity or
+quality guarantees. The starters use the framework's built-in task scenarios
+and rewards; replace those with your own environment and held-out evaluation.
+
+Qwen adapters include linear-attention projections; Phi adapters include fused
+QKV and gate/up projections; Liquid adapters include convolution projections
+and its MLP layers. Text-only training excludes vision/audio encoders even
+when projection names overlap. The Ministral presets deliberately load the
+official **BF16** instruction checkpoints, which can then be quantized for
+QLoRA, rather than starting from the FP8 inference checkpoints.
+
+LFM2.5 support is experimental. It uses the **custom LFM license**, whereas the
+Qwen, SmolLM, and Ministral entries use Apache 2.0 and Phi uses MIT. LFM2.5
+always generates reasoning: even the memory profile reserves 1024 completion
+tokens, and longer tasks may need more. Qwen and SmolLM also support reasoning
+modes; evaluate final-answer quality and truncation, not just aggregate reward.
+
+For SFT on your own chat-format JSONL, pass any checkpoint above directly:
+
+```bash
+python -m stateset_agents.training.sft \
+  --dataset sft_train.jsonl --base-model microsoft/Phi-4-mini-instruct \
+  --output-dir outputs/phi_mini_sft --num-epochs 3 \
+  --lora-r 16 --max-length 1024 --per-device-batch-size 1
+```
+
+This SFT command uses unquantized LoRA and prints a plan on hosts without CUDA.
+The presets select native Transformers implementations and explicit adapter
+targets. SFT preserves the chat template's special tokens and trains on real
+end-of-sequence tokens, including when EOS is also used for padding. Tests use
+tiny random models to exercise real GSPO and SFT updates, adapter save/reload,
+and agent generation for each architecture. Full pretrained-model training, quantized
+GPU runs, and downstream task quality still need validation on suitable hardware.
+
+### Additional small models and FunctionGemma
+
+Install `pip install -e ".[small-models]"` from the repository, then use these
+presets with the same balanced, memory (NF4 QLoRA), and quality profiles:
+
+| Preset | Model card | CLI command |
+|---|---|---|
+| `granite4-micro` | [`ibm-granite/granite-4.0-micro`](https://huggingface.co/ibm-granite/granite-4.0-micro) | `stateset-agents granite-4-micro` |
+| `llama3.2-1b` | [`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | `stateset-agents llama-3-2-1b` |
+| `llama3.2-3b` | [`meta-llama/Llama-3.2-3B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | `stateset-agents llama-3-2-3b` |
+| `qwen3-4b-instruct` | [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) | `stateset-agents qwen3-4b-instruct` |
+| `olmo3-7b` | [`allenai/Olmo-3-7B-Instruct`](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | `stateset-agents olmo-3-7b` |
+| `deepseek-r1-1.5b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) | `stateset-agents deepseek-r1-1-5b` |
+| `deepseek-r1-7b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) | `stateset-agents deepseek-r1-7b` |
+
+```bash
+stateset-agents granite-4-micro --starter-profile memory --json
+stateset-agents granite-4-micro --starter-profile memory --write-config granite.json
+stateset-agents granite-4-micro --config granite.json --no-dry-run
+```
+
+Granite Micro targets both attention and its fused `input_linear` /
+`output_linear` MLP modules. The framework disables generation caching for the
+attention-only Granite architecture to avoid a Transformers 5.14 recurrent-cache
+error; this costs decoding speed. Hybrid Granite variants are unaffected.
+DeepSeek R1 distills reserve 2048 completion tokens even in the memory profile
+(4096 in quality); increase this if reasoning truncates before the final answer.
+Llama 3.2 requires access to the gated checkpoint and its community license.
+Granite, Qwen3 Instruct, and Olmo use Apache 2.0; the listed DeepSeek distills use MIT.
+
+All seven checkpoints can also use the SFT command above with their model ID.
+Tiny random architecture tests cover real SFT/GSPO updates, adapter reload, and
+agent generation. Full checkpoint quality and GPU quantization remain unverified.
+
+[FunctionGemma 270M](https://huggingface.co/google/functiongemma-270m-it) is
+registered as `functiongemma-270m` for **SFT only**. It uses the Gemma license
+and requires Hugging Face access. Its tool-call format needs developer messages
+and per-row `tools` schemas. Use structured assistant `tool_calls` with
+argument objects; the model's own chat template renders them. SFT preserves
+those objects before constructing the tokenized dataset, including different
+schemas and argument types across rows.
+
+The [commerce JSONL example](data/functiongemma_commerce.jsonl) contains two
+illustrative tool-selection demonstrations; expand it with task-specific
+training examples and separate evaluation data before a real run.
+
+```bash
+python -m stateset_agents.training.sft \
+  --dataset examples/data/functiongemma_commerce.jsonl \
+  --base-model google/functiongemma-270m-it \
+  --output-dir outputs/functiongemma_commerce \
+  --num-epochs 3 --lora-r 16 --max-length 1024 --per-device-batch-size 1
+```
+
+On CPU this command prints a plan. The generic conversational GSPO driver
+rejects FunctionGemma with an SFT command hint: it does not yet have a dedicated
+tool-execution environment/reward integration. FunctionGemma's architecture and
+schema preservation are tested locally; the gated vendor tokenizer and full
+checkpoint have not been validated. The SFT `--eval-prompts` helper takes plain
+text prompts and is not a tool-calling evaluation harness.
+
 ### Basic Training
 
 #### 1. Complete GRPO Training

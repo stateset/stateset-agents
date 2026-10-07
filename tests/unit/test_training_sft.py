@@ -466,8 +466,10 @@ class FakeChatTokenizer:
         self.templated.append(messages)
         return f"<user>{messages[0]['content']}<assistant>"
 
-    def __call__(self, text, return_tensors):
+    def __call__(self, text, return_tensors, add_special_tokens=True):
         import torch
+
+        assert add_special_tokens is False
 
         class Batch(dict):
             def to(self, device):
@@ -795,7 +797,7 @@ class TestVisionTowerExclusion:
         model = self._model(["model.decoder.layers.0.fc1"])
         assert sft.infer_lora_target_modules(model) == ["fc1"]
 
-    def test_names_shared_between_stacks_are_kept_with_warning(self, caplog):
+    def test_names_shared_between_stacks_resolve_to_text_paths(self, caplog):
         model = self._model(
             [
                 "language_model.layers.0.mlp.fc1",
@@ -804,7 +806,7 @@ class TestVisionTowerExclusion:
         )
         with caplog.at_level("WARNING", logger="sft_from_curated"):
             targets = sft.infer_lora_target_modules(model)
-        assert targets == ["fc1"]
+        assert targets == ["language_model.layers.0.mlp.fc1"]
         assert "both text and non-text" in caplog.text
 
     def test_vision_adapter_and_projection_are_excluded(self):
@@ -864,7 +866,7 @@ class TestVisionTowerExclusion:
         """On Qwen/Qwen3.8-27B ``out_proj`` exists in BOTH the text stack
         (linear_attn) and the ``model.visual.*`` tower, while ``proj`` is
         vision-only. Shared names must be KEPT (peft matches by leaf name and
-        the text copies need adapting); vision-only names must be dropped."""
+        the text copies need adapting); resolve text paths to avoid the tower."""
         model = self._model(
             [
                 "model.language_model.layers.0.linear_attn.in_proj_qkv",
@@ -875,7 +877,10 @@ class TestVisionTowerExclusion:
             ]
         )
         targets = sft.infer_lora_target_modules(model)
-        assert targets == ["in_proj_qkv", "out_proj"]
+        assert targets == [
+            "model.language_model.layers.0.linear_attn.in_proj_qkv",
+            "model.language_model.layers.0.linear_attn.out_proj",
+        ]
         assert "fc1" not in targets
 
     def test_base_eval_moves_model_to_gpu_first(self, monkeypatch):

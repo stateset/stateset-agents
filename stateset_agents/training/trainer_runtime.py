@@ -33,6 +33,7 @@ from typing import Any
 
 import torch
 
+from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
 
 logger = logging.getLogger(__name__)
@@ -105,7 +106,7 @@ class SharedModelManager:
         # Load tokenizer
         self.tokenizer = tokenizer_cls.from_pretrained(
             self.config.model_name,
-            trust_remote_code=True,
+            trust_remote_code=getattr(self.config, "trust_remote_code", True),
             padding_side="left",
             revision=getattr(self.config, "model_revision", None),
         )
@@ -120,7 +121,7 @@ class SharedModelManager:
                 else (torch.bfloat16 if self.config.bf16 else torch.float32)
             ),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
+            "trust_remote_code": getattr(self.config, "trust_remote_code", True),
             "revision": getattr(self.config, "model_revision", None),
         }
         self._prepare_model_kwargs(model_kwargs)
@@ -150,7 +151,7 @@ class SharedModelManager:
         lora_config = lora_config_cls(
             r=self.config.lora_r,
             lora_alpha=self.config.lora_alpha,
-            target_modules=self._lora_target_modules(),
+            target_modules=text_lora_targets(base_model, self._lora_target_modules()),
             lora_dropout=self.config.lora_dropout,
             bias="none",
             task_type=task_type.CAUSAL_LM,
