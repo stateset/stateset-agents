@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "status": "both_model_training_and_reload_checks_verified",
+  "quality_certified": false,
+  "results": [
+    {
+      "model": "Qwen/Qwen3.5-2B",
+      "attempt": "attempt2",
+      "rescored_report_matches": true,
+      "downloaded_adapter_sha256_matches": true,
+      "adapter_sha256": "89684fef6d982c39d9df3b309c2f06187913816538a157d4d1d44fd211239505",
+      "optimizer_steps": 6,
+      "quality_certified": false
+    },
+    {
+      "model": "Qwen/Qwen3.5-4B",
+      "attempt": "attempt5",
+      "rescored_report_matches": true,
+      "downloaded_adapter_sha256_matches": true,
+      "adapter_sha256": "ab5912bb72671cc874af26b56482f9feceb3dcc932bf842500c638f2e81f3f4a",
+      "optimizer_steps": 6,
+      "quality_certified": false
+    }
+  ],
+  "attempts": 5,
+  "allocated_pods": 4,
+  "all_allocated_pods_termination_confirmed": true,
+  "provider_derived_compute_cost_estimate_usd": 0.424591969419188,
+  "cost_scope": "Sum of provider rate times observed lifetime for allocated pods; excludes storage/network and is not an invoice. Attempt 4 returned no pod and the account listing was empty.",
+  "authorized_budget_usd": 25
+}

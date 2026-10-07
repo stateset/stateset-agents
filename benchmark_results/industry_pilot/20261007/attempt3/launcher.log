@@ -1,0 +1,13 @@
+{"plan": {"gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "b4fad2556e3a078cd45882b95d1455309ebc585fa880264f24c981982f69304f", "launcher_sha256": "2d7ca54c77f03b31cf0d2e5310fa658ef0cec08e161688e488531343ea5dfe4c"}}
+{"pod_created": "db5bjdva9augmw", "actual_hourly_rate_usd": 0.49}
+{"status": "failed", "pod_id": "db5bjdva9augmw", "termination_confirmed": true, "authoritative_hourly_rate_usd": 0.49, "observed_lifetime_seconds": 601.9116065502167, "provider_derived_compute_cost_estimate_usd": 0.08192685755822394, "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice", "gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "b4fad2556e3a078cd45882b95d1455309ebc585fa880264f24c981982f69304f", "launcher_sha256": "2d7ca54c77f03b31cf0d2e5310fa658ef0cec08e161688e488531343ea5dfe4c"}
+Traceback (most recent call last):
+  File "/tmp/stateset-industry-pilot-launch.py", line 172, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/tmp/stateset-industry-pilot-launch.py", line 98, in main
+    host, port, _ = _wait_for_ssh(api, pod_id, timeout_s=600)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/stateset-industry-evaluation/benchmarks/runpod_backend_conformance.py", line 311, in _wait_for_ssh
+    raise RunPodConformanceError(
+benchmarks.runpod_backend_conformance.RunPodConformanceError: pod db5bjdva9augmw did not publish SSH within 600s (last status 'RUNNING')

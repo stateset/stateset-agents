@@ -237,6 +237,14 @@ scores, usage, policy, and hashes of the suite and both prediction bundles.
 They do not modify the prepared manifest or claim a statistical significance
 test. Reserve a fresh final test set if you repeatedly tune against this holdout.
 
+## Live pilot evidence
+
+The [2026-10-07 Qwen3.5 2B/4B pilot](../benchmark_results/industry_pilot/20261007/README.md)
+verified six optimizer updates per model, saved-adapter reload effects, artifact
+hashes, and reproducible paired evaluation on real GPUs. Both synthetic-data
+quality gates failed, and neither model improved its reference score. Raw
+predictions, failed attempts, provider cleanup, and compute estimates are retained.
+
 ## Python API
 
 ```python

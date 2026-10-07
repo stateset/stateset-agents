@@ -1,0 +1,57 @@
+{"plan": {"gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "aeaf374223c8d54c056123b1760bcefb124310eccea9ad5d36836a32a0489006", "manifest_sha256": "4bf8066664dddf432b152d15deca57357ede15be0cf0157cffa03754ac223564"}}
+{"pod_created": "zvef9539kid2jt", "actual_hourly_rate_usd": 0.49}
+{"ssh_ready": true, "watchdog_seconds": 3234}
+ansformers==5.14.1)
+  Downloading safetensors-0.8.0-cp310-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.2 kB)
+Requirement already satisfied: psutil in /usr/local/lib/python3.12/dist-packages (from peft==0.20.0) (7.2.2)
+Requirement already satisfied: torch>=1.13.0 in /usr/local/lib/python3.12/dist-packages (from peft==0.20.0) (2.8.0+cu129)
+Requirement already satisfied: filelock in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (3.32.3)
+Collecting pyarrow>=21.0.0 (from datasets==5.0.1)
+  Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (3.0 kB)
+Collecting dill<0.4.2,>=0.3.0 (from datasets==5.0.1)
+  Downloading dill-0.4.1-py3-none-any.whl.metadata (10 kB)
+Collecting pandas (from datasets==5.0.1)
+  Downloading pandas-3.0.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+Requirement already satisfied: requests>=2.32.2 in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (2.34.2)
+Requirement already satisfied: httpx<1.0.0 in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (0.28.1)
+Collecting xxhash (from datasets==5.0.1)
+  Downloading xxhash-4.0.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (17 kB)
+Collecting multiprocess<0.70.20 (from datasets==5.0.1)
+  Downloading multiprocess-0.70.19-py312-none-any.whl.metadata (7.5 kB)
+
+otated-types, annotated-doc, aiohappyeyeballs, yarl, pydantic, pandas, multiprocess, markdown-it-py, aiosignal, rich, huggingface-hub, aiohttp, typer, tokenizers, accelerate, transformers, stateset-agents, datasets, peft
+  Attempting uninstall: fsspec
+    Found existing installation: fsspec 2026.7.0
+    Uninstalling fsspec-2026.7.0:
+      Successfully uninstalled fsspec-2026.7.0
+
+Successfully installed accelerate-1.14.0 aiohappyeyeballs-2.7.1 aiohttp-3.14.4 aiosignal-1.4.0 annotated-doc-0.0.5 annotated-types-0.8.0 cachetools-7.2.1 click-8.5.0 datasets-5.0.1 dill-0.4.1 frozenlist-1.8.0 fsspec-2026.6.0 hf-xet-1.7.0 huggingface-hub-1.33.0 markdown-it-py-4.2.0 mdurl-0.1.2 multidict-6.9.1 multiprocess-0.70.19 pandas-3.0.6 peft-0.20.0 propcache-0.5.4 pyarrow-25.0.1 pydantic-2.13.5 pydantic-core-2.46.5 regex-2026.9.29 rich-15.0.0 safetensors-0.8.0 shellingham-1.5.4 stateset-agents-0.58.0 tokenizers-0.22.2 tqdm-4.70.1 transformers-5.14.1 typer-0.27.3 typing-inspection-0.4.4 xxhash-4.0.1 yarl-1.25.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Starting qwen3.5-2b on retail
+
+hts:  13%|█▎        | 43/320 [00:00<00:00, 428.02it/s]
+Loading weights:  27%|██▋       | 86/320 [00:00<00:00, 394.91it/s]
+Loading weights:  39%|███▉      | 126/320 [00:00<00:00, 383.94it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 936.12it/s]
+Traceback (most recent call last):
+  File "/workspace/industry_pilot.py", line 423, in main
+    result = run_model(spec, args.output / spec["preset"])
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspace/industry_pilot.py", line 288, in run_model
+    model = load_base()
+            ^^^^^^^^^^^
+  File "/workspace/industry_pilot.py", line 240, in load_base
+    raise ValueError("Loaded model revision differs from the requested pin")
+ValueError: Loaded model revision differs from the requested pin
+{"error": "ValueError: Loaded model revision differs from the requested pin", "model": "qwen3.5-2b", "status": "failed"}
+Starting qwen3.5-4b on technology
+
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]
+Fetching 2 files:  50%|█████     | 1/2 [00:05<00:05,  5.11s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:08<00:00,  3.85s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:08<00:00,  4.04s/it]
+
+Loading weights:   0%|          | 0/426 [00:00<?, ?it/s]
+Loading weights:   7%|▋         | 31/426 [00:00<00:01, 261.49it/s]
+{"remote_exit_code": 1}
+{"status": "failed", "pod_id": "zvef9539kid2jt", "termination_confirmed": true, "authoritative_hourly_rate_usd": 0.49, "observed_lifetime_seconds": 456.5813112258911, "provider_derived_compute_cost_estimate_usd": 0.06214578958352406, "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice", "gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "aeaf374223c8d54c056123b1760bcefb124310eccea9ad5d36836a32a0489006", "manifest_sha256": "4bf8066664dddf432b152d15deca57357ede15be0cf0157cffa03754ac223564"}

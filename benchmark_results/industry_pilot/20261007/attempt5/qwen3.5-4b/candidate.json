@@ -1,0 +1,598 @@
+{
+  "kind": "stateset-industry-predictions",
+  "model": {
+    "adapter": {
+      "id": "/workspace/industry-pilot-output/qwen3.5-4b/prepared/adapter",
+      "sha256": "ab5912bb72671cc874af26b56482f9feceb3dcc932bf842500c638f2e81f3f4a"
+    },
+    "base_model": "Qwen/Qwen3.5-4B",
+    "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a"
+  },
+  "predictions": [
+    {
+      "case_id": "05e1b76b27a77e5cf0d6f681c6289e1bc5b4df97e3084c97cf8f8f4f9f35ca2f",
+      "cost_usd": null,
+      "elapsed_seconds": 1.093611678000343,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0035: resolved\n",
+      "response": {
+        "content": "PILOT-0035: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "108831bcabc0c224a1cfa8146bc704b6ae496dd094a19d554dcb6d05135b0814",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1419629639995037,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0009: review complete\n",
+      "response": {
+        "content": "PILOT-0009: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "13dfff1f946cae5e4841e7f32c6701b79fd716eebf86d8de2f1a34e3108d2faa",
+      "cost_usd": null,
+      "elapsed_seconds": 1.06620167499932,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0055: resolved\n",
+      "response": {
+        "content": "PILOT-0055: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "1becfb0ad5bb0c11671dc54bfd91a8ca6859d2ace79eba39f03d8c6031243762",
+      "cost_usd": null,
+      "elapsed_seconds": 1.0721661739999035,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0015: resolved\n",
+      "response": {
+        "content": "PILOT-0015: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "298208810845b1e41ee11b7b4413075070bb8f09d00cf7d8d939118e5b0e2935",
+      "cost_usd": null,
+      "elapsed_seconds": 1.0715619249995143,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0059: resolved\n",
+      "response": {
+        "content": "PILOT-0059: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "399d386f917d01e6ad3ff2e97755e0e601285765e0c0e91126885f69dcabba87",
+      "cost_usd": null,
+      "elapsed_seconds": 2.98266591599986,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0043\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0043"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "3adc4777a85718846bdc9e407249b7242d344e8de30d8fce5c1c6f5c19a329e4",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9902455720002763,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0013\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0013"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "4965925390526036b65c7dbb9bf126d5e6559bbb61db38f35fa36e1323514f56",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9836227630003123,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0023\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0023"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "5ac7d6f4b6c4472e267f834f2b6fa3ed2c53e8eca51beddab21aacaa4cfdf8ca",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1484904930002813,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0033: review complete\n",
+      "response": {
+        "content": "PILOT-0033: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "5ae6f1142f21f6e42b749dca4bffca2100b552af2ee5ad4ed6220417cc356c43",
+      "cost_usd": null,
+      "elapsed_seconds": 1.0705869969997366,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0023: resolved\n",
+      "response": {
+        "content": "PILOT-0023: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "5d4afe472d0c94bae6d13e376b69a09af7ca9b73a56478a9d0bbef98a8804ec6",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1398934769995321,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0062: awaiting information\n",
+      "response": {
+        "content": "PILOT-0062: awaiting information",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "673baa29c6cfd78b120448cd038640b1aded852ab8d6b714a965ee387bd30716",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1402224369994656,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0029: review complete\n",
+      "response": {
+        "content": "PILOT-0029: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "6c2a65d8098b51474aeee7162824fd752d23cd860e778888424ee36a9dcdb473",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1435855710005853,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0049: review complete\n",
+      "response": {
+        "content": "PILOT-0049: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "6ec08e13347e242c9fa3d5e4d7f85b2cab4159fab8ceb69367b3b6fa061f0457",
+      "cost_usd": null,
+      "elapsed_seconds": 1.143125692000467,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0041: review complete\n",
+      "response": {
+        "content": "PILOT-0041: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "7540f07206bf26828a0405f88a8a0bc33f7dcfab715468c0afb96d404fb44ff6",
+      "cost_usd": null,
+      "elapsed_seconds": 2.986086270000669,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0059\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0059"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "7b5170033b5fce7c3ea6007d8fbcb7c725af2a88ef3ff21566b56c5b1c17d3dc",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9724079130000973,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0015\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0015"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "81ff8438e56f19e55ebb471eb2165015e27953d3d2335ad13d17d554db8bb3cb",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9583604469999045,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0056\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0056"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "8411a61b67cd49072eac44e61e8802e006502a07b3f5867bd2155a557ca875b7",
+      "cost_usd": null,
+      "elapsed_seconds": 2.944934660999934,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0009\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0009"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "8c37c127491869352a7c620b39a6670be661e0a2ffaa5b4c98cacefa3a1149bd",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9552755929998966,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0029\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0029"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "8e8f669be8d6f8db90359b5d11851d1f6cee71454ea337be15283e00e70f8e56",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1345259869995061,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0013: review complete\n",
+      "response": {
+        "content": "PILOT-0013: review complete",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "a47b000a3d3cae8f296c9eb38ac3e97cd4227dc71a775716f8eb5e7ac6fb9e82",
+      "cost_usd": null,
+      "elapsed_seconds": 1.1359421350007324,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0056: pending review\n",
+      "response": {
+        "content": "PILOT-0056: pending review",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "a779977b3dd1f85d848fea405f5217b1d12dc0d3804504440fb5560d7dc464e1",
+      "cost_usd": null,
+      "elapsed_seconds": 2.943757203000132,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0035\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0035"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "af49d674dd1005790b3b2f03fd91d409b36ab115742976b7d3ea15d1ca8f8bdc",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9521546480000325,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0027\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0027"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "ca97543dc56f02792c18cf32d3af2efca82b8b5c331f51a3ed7ecde88e573110",
+      "cost_usd": null,
+      "elapsed_seconds": 2.964421587000288,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0026\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0026"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "cb350e59d9df94903390c508df42997fb763e42ed289e544abb93a548f7beb45",
+      "cost_usd": null,
+      "elapsed_seconds": 1.135085775999869,
+      "error": null,
+      "generated_tokens": 13,
+      "raw_response": "PILOT-0026: awaiting information\n",
+      "response": {
+        "content": "PILOT-0026: awaiting information",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "d9b97f9852206572f8e6ea42dbe961d14cbd10b1d262c382ff6a1c217bfc59dc",
+      "cost_usd": null,
+      "elapsed_seconds": 1.0635580300004221,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0027: resolved\n",
+      "response": {
+        "content": "PILOT-0027: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "db7408da684f11b52af163e67acc36b6ee051f3ea0de8cfab9233b25a200b0f2",
+      "cost_usd": null,
+      "elapsed_seconds": 1.0683388509996803,
+      "error": null,
+      "generated_tokens": 12,
+      "raw_response": "PILOT-0043: resolved\n",
+      "response": {
+        "content": "PILOT-0043: resolved",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "dea90e250e29c0ccfd9484659b0b51899ac79dc619053374140da7065e7dff01",
+      "cost_usd": null,
+      "elapsed_seconds": 2.956583901000158,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0062\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0062"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "e1b8ae6f23879dbe046e2eaaaa7f792e023989df9e43ece997ae3e78b522f2b8",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9625482600004034,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0033\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0033"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "e72fe9b1330f9710b975a87fba639142f9bed30744d37f6d3a5256299de6a7b3",
+      "cost_usd": null,
+      "elapsed_seconds": 2.952538418000586,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0049\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0049"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "ec1a6fe7d530ae1a9c2b94f2608cef1c180269fd09f618cb07c15b6c580ef434",
+      "cost_usd": null,
+      "elapsed_seconds": 2.9823718560001,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0041\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0041"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "f388f0c4d41dd53b800337040c093f2d28da0fe0be90251ce529cf2d53153057",
+      "cost_usd": null,
+      "elapsed_seconds": 2.962105831000372,
+      "error": null,
+      "generated_tokens": 38,
+      "raw_response": "<tool_call>\n<function=get_technical_ticket>\n<parameter=record_id>\nPILOT-0055\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0055"
+              },
+              "name": "get_technical_ticket"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "settings": {
+    "do_sample": false,
+    "enable_thinking": false,
+    "max_new_tokens": 96,
+    "seed": 42
+  },
+  "suite_sha256": "02d149bcc700809de086b0588d32ce46e2c5648c45306e37499a4bbe6ea378d7",
+  "variant": "candidate"
+}

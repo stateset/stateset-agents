@@ -1,0 +1,10 @@
+{
+  "source_revision": "f6ac0f227be26ad0833ff801e05d72ea8f9ee4fb",
+  "test_command": "python -m pytest -q --cov=stateset_agents --cov-report=xml --cov-report=term --cov-fail-under=65 --tb=short",
+  "passed": 6094,
+  "skipped": 18,
+  "coverage_percent": 65.14,
+  "packaged_modules_typechecked": 346,
+  "quality_certified": false,
+  "scope": "Local unit/integration verification, not model quality. The subsequent harness-only provenance fix passed 17 focused tests."
+}

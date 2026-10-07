@@ -1,0 +1,18 @@
+{
+  "authoritative_hourly_rate_usd": null,
+  "authorized_total_ceiling_usd": 25,
+  "catalog_hourly_rate_usd": 0.53,
+  "catalog_maximum_compute_cost_usd": 0.53,
+  "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice",
+  "gpu": "NVIDIA RTX A6000",
+  "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456",
+  "launcher_sha256": "e8f10070af55493d886ade101f4b48eeb435c88d0c3c4acf679a33a0b78d7cfc",
+  "manifest_sha256": "f0eb18135e24a20abd05dbdaa8c9b6bbad01790aaa2d3dcef96670458fa934b8",
+  "maximum_lifetime_seconds": 3600,
+  "observed_lifetime_seconds": 33.9052631855011,
+  "pod_id": null,
+  "provider_derived_compute_cost_estimate_usd": null,
+  "status": "failed",
+  "termination_confirmed": false,
+  "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268"
+}

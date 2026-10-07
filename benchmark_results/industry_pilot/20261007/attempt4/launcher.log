@@ -1,0 +1,24 @@
+{"plan": {"gpu": "NVIDIA RTX A6000", "catalog_hourly_rate_usd": 0.53, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.53, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "f0eb18135e24a20abd05dbdaa8c9b6bbad01790aaa2d3dcef96670458fa934b8", "launcher_sha256": "e8f10070af55493d886ade101f4b48eeb435c88d0c3c4acf679a33a0b78d7cfc"}}
+{"status": "failed", "pod_id": null, "termination_confirmed": false, "authoritative_hourly_rate_usd": null, "observed_lifetime_seconds": 33.9052631855011, "provider_derived_compute_cost_estimate_usd": null, "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice", "gpu": "NVIDIA RTX A6000", "catalog_hourly_rate_usd": 0.53, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.53, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "f0eb18135e24a20abd05dbdaa8c9b6bbad01790aaa2d3dcef96670458fa934b8", "launcher_sha256": "e8f10070af55493d886ade101f4b48eeb435c88d0c3c4acf679a33a0b78d7cfc"}
+Traceback (most recent call last):
+  File "/tmp/stateset-industry-evaluation/stateset_agents/remote/runpod.py", line 188, in create_pod
+    response = self._send(
+               ^^^^^^^^^^^
+  File "/tmp/stateset-industry-evaluation/stateset_agents/remote/runpod.py", line 122, in _send
+    response.raise_for_status()
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/requests/models.py", line 1167, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 500 Server Error: Internal Server Error for url: https://rest.runpod.io/v1/pods
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "/tmp/stateset-industry-pilot-launch.py", line 172, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/tmp/stateset-industry-pilot-launch.py", line 74, in main
+    pod = api.create_pod(
+          ^^^^^^^^^^^^^^^
+  File "/tmp/stateset-industry-evaluation/stateset_agents/remote/runpod.py", line 202, in create_pod
+    raise RemoteExecutionError(
+stateset_agents.remote.executor.RemoteExecutionError: [NET_003] RunPod pod creation failed after retries (HTTP 500) | Context: {'provider': 'runpod', 'attempts': 5, 'request_id': 'req_c0a03e59-0c25-4050-a0f1-441eee2c0998'}

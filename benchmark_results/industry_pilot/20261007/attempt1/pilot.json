@@ -1,0 +1,29 @@
+{
+  "gpu": "NVIDIA A40",
+  "harness_sha256": "aeaf374223c8d54c056123b1760bcefb124310eccea9ad5d36836a32a0489006",
+  "kind": "stateset-industry-gpu-pilot",
+  "manifest_sha256": "4bf8066664dddf432b152d15deca57357ede15be0cf0157cffa03754ac223564",
+  "quality_certified": false,
+  "results": [
+    {
+      "error": "ValueError: Loaded model revision differs from the requested pin",
+      "model": "qwen3.5-2b",
+      "status": "failed"
+    },
+    {
+      "error": "ValueError: Loaded model revision differs from the requested pin",
+      "model": "qwen3.5-4b",
+      "status": "failed"
+    }
+  ],
+  "schema_version": 1,
+  "status": "failed",
+  "versions": {
+    "accelerate": "1.14.0",
+    "datasets": "5.0.1",
+    "peft": "0.20.0",
+    "stateset-agents": "0.58.0",
+    "torch": "2.8.0+cu129",
+    "transformers": "5.14.1"
+  }
+}

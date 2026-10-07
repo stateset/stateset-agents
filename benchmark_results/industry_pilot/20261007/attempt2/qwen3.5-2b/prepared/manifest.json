@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "industry": "retail",
+  "base_model": "Qwen/Qwen3.5-2B",
+  "model_revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+  "model_preset": "qwen3.5-2b",
+  "seed": 42,
+  "validation_fraction": 0.25,
+  "source_sha256": "64119f9ffea8c9cd12701fd53d7d2b0f396244ad39574eb3fa2ede51df7ba3d4",
+  "source_rows": 64,
+  "duplicates_removed": 0,
+  "train_rows": 48,
+  "validation_rows": 16,
+  "synthetic_rows": 64,
+  "files": {
+    "train.jsonl": "8da92b157e40687c43d27bffa73e8256ae9391b0ea92ac3450357b7326d24f2f",
+    "validation.jsonl": "79074dfd77f300a863711d89ae44334e51e81cc8d4fb9bc7025c9c324aa07262"
+  },
+  "evaluation_criteria": [
+    "correct order lookup",
+    "policy-grounded next step",
+    "no invented refund"
+  ],
+  "validation_status": "held_out_not_evaluated"
+}
