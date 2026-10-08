@@ -4,6 +4,23 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents reward-audit`
+
+Exercise a reward on reviewed candidate groups before RL training, retaining
+scores, errors, within-group signal, repeatability, and expected rankings.
+
+```bash
+stateset-agents reward-audit examples/data/reward_audit_gsm8k.json \
+  --reward stateset_agents.data.gsm8k:GSM8KReward --output reward-report.json
+```
+
+`--reward` selects a Python `module:factory`. `--repeats` defaults to 3,
+`--score-tolerance` to `1e-8`, `--min-informative-fraction` to 1.0, and
+`--timeout-seconds` to 30 per asynchronous call. Existing output files are
+refused. Exit codes: 0 for passing checks, 1 for failed checks with a report,
+2 for invalid inputs or execution setup errors. See [REWARD_AUDIT.md](REWARD_AUDIT.md)
+for the suite schema, custom factories, and limitations.
+
 ### `stateset-agents provider-canary`
 
 Run read-only live authentication, SDK compatibility, and cleanup checks for

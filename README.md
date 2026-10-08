@@ -2051,6 +2051,18 @@ async def politeness_reward(turns, context=None) -> float:
 
 Combine with built‑ins via `CompositeReward`.
 
+Before training, exercise the real reward on reviewed candidate groups:
+
+```bash
+stateset-agents reward-audit examples/data/reward_audit_gsm8k.json \
+  --reward stateset_agents.data.gsm8k:GSM8KReward \
+  --output reward-report.json
+```
+
+The [reward audit guide](docs/REWARD_AUDIT.md) covers constant rewards, unstable
+scores, failed calls, and expected rankings. This checks reward behavior on
+supplied examples; keep model quality evaluation independent.
+
 ---
 
 ## Custom environments

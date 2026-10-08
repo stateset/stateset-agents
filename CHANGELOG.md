@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Add `reward-audit` and an asynchronous Python API to check real reward
+  functions before RL training. Retain repeated scores and errors, identify
+  constant within-prompt rewards, test reviewed candidate rankings, and provide
+  a runnable synthetic GSM8K example without model downloads.
+
 ## [0.59.0] - 2026-10-08 — Paired industry evaluation and verified GPU pilots
 
 ### Added
