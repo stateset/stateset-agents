@@ -935,7 +935,7 @@ class TestEdgeCases:
 
 
 class TestPerformance:
-    """Basic performance tests."""
+    """Bound CPU cost without charging for unrelated host scheduling delays."""
 
     def test_cache_performance(self):
         """Test cache operations are fast."""
@@ -943,13 +943,13 @@ class TestPerformance:
 
         cache = SimpleCache()
 
-        start = time.time()
+        start = time.process_time()
         for i in range(1000):
             cache.set(f"key{i}", f"value{i}", ttl_seconds=60)
             cache.get(f"key{i}")
-        elapsed = time.time() - start
+        elapsed = time.process_time() - start
 
-        assert elapsed < 1.0  # Should complete in under 1 second
+        assert elapsed < 1.0  # CPU seconds for the same 1,000 cache operations.
 
     def test_validation_performance(self):
         """Test validation is fast."""
@@ -957,12 +957,12 @@ class TestPerformance:
 
         test_string = "This is a test string for validation" * 10
 
-        start = time.time()
+        start = time.process_time()
         for _ in range(1000):
             InputValidator.validate_string(test_string, check_injection=True)
-        elapsed = time.time() - start
+        elapsed = time.process_time() - start
 
-        assert elapsed < 2.0  # Should complete in under 2 seconds
+        assert elapsed < 2.0  # CPU seconds for the same 1,000 validations.
 
 
 if __name__ == "__main__":
