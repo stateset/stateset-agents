@@ -319,8 +319,10 @@ SMOKE_VENV="$(mktemp -d /tmp/stateset-wheel-smoke.XXXXXX)"
 # dependency), while resolving dependencies again here would make this smoke
 # network-dependent and test the package index rather than our distribution.
 "$PYTHON_BIN" -m venv --system-site-packages "$SMOKE_VENV"
+# Build metadata in the checkout (or an inherited site package) may report the
+# same version as installed. Always install the wheel into this fresh venv.
 PIP_DISABLE_PIP_VERSION_CHECK=1 "$SMOKE_VENV/bin/python" -m pip install \
-  --no-index --no-deps dist/*.whl
+  --ignore-installed --no-index --no-deps dist/*.whl
 SMOKE_SITE_PACKAGES="$("$SMOKE_VENV/bin/python" -c \
   'import site; print(site.getsitepackages()[0])')"
 DEPENDENCY_SITE_PACKAGES="$("$PYTHON_BIN" -c \
