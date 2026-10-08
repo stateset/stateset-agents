@@ -1,6 +1,7 @@
 import logging
 import os
 import time
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any
@@ -9,6 +10,8 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
 from starlette.middleware.cors import CORSMiddleware
+
+from stateset_agents.utils.async_calls import drain_owned_operation
 
 from .config import ConfigurationError, get_config
 from .errors import setup_exception_handlers
@@ -62,110 +65,126 @@ async def lifespan(app: FastAPI):
     health_checker = getattr(app.state, "health_checker", HealthChecker())
     app.state.health_checker = health_checker
     inference_service = getattr(app.state, "inference_service", None)
-    if inference_service is None:
-        inference_service = InferenceService(InferenceConfig.from_env())
-        app.state.inference_service = inference_service
-
-    logger.info("Starting StateSet Agents API v%s", config.api_version)
-
-    # Initialize distributed cache (optional)
-    close_cache_fn = None
-    try:
-        from .distributed_cache import CacheConfig
-        from .distributed_cache import close_cache as _close_cache
-        from .distributed_cache import init_cache
-
-        cache_config = CacheConfig.from_env()
-        await init_cache(cache_config)
-        close_cache_fn = _close_cache
-        logger.info("Cache initialized with backend: %s", cache_config.backend.value)
-    except API_LIFESPAN_EXCEPTIONS as e:
-        if strict_startup:
-            logger.error("Cache initialization failed during startup: %s", e)
-            raise
-        logger.warning("Cache initialization skipped: %s", e)
-
-    # Initialize database (optional)
-    close_database_fn = None
-    try:
-        from .persistence import DatabaseConfig
-        from .persistence import close_database as _close_database
-        from .persistence import init_database
-
-        db_config = DatabaseConfig.from_env()
-        await init_database(db_config)
-        close_database_fn = _close_database
-        logger.info("Database initialized with backend: %s", db_config.backend.value)
-    except API_LIFESPAN_EXCEPTIONS as e:
-        if strict_startup:
-            logger.error("Database initialization failed during startup: %s", e)
-            raise
-        logger.warning("Database initialization skipped: %s", e)
-
-    # Initialize agent service
-    from stateset_agents.utils.security import SecurityMonitor as _SecurityMonitor
-
-    from .services.agent_service import AgentService
-
-    agent_service = getattr(app.state, "agent_service", None)
-    if agent_service is None:
-        agent_service = AgentService(_SecurityMonitor())
-        app.state.agent_service = agent_service
-
-    # Honor STATESET_DEFAULT_CHECKPOINT — set by `stateset-agents serve --checkpoint`.
-    default_ckpt = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
-    if default_ckpt:
-        default_base = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
-        logger.info(
-            "Loading default checkpoint at startup",
-            extra={"checkpoint": default_ckpt, "base_model": default_base},
-        )
-        try:
-            await agent_service.register_default_checkpoint_agent(
-                checkpoint_path=default_ckpt,
-                base_model=default_base,
-            )
-        except Exception as exc:  # noqa: BLE001 — log and continue; don't kill the API
-            logger.error(
-                "Failed to load default checkpoint at startup",
-                extra={"checkpoint": default_ckpt, "error": str(exc)},
-            )
-
-    # Initialize training service
-    from .services.training_service import TrainingService
-
+    close_cache_fn: Callable[[], Awaitable[None]] | None = None
+    close_database_fn: Callable[[], Awaitable[None]] | None = None
     training_service = getattr(app.state, "training_service", None)
-    if training_service is None:
-        training_service = TrainingService()
-        app.state.training_service = training_service
 
-    # Register health checks
-    health_checker.add_check("api", lambda: True)
-    if inference_service is not None:
-        health_checker.add_check("inference_backend", inference_service.check_health)
+    async def shutdown() -> None:
+        # Training cleanup may still use these shared services. Keep them open
+        # until every owned worker has exited, even if the shutdown caller is
+        # cancelled repeatedly.
+        if training_service is not None:
+            await training_service.aclose()
+        if close_cache_fn is not None:
+            try:
+                await close_cache_fn()
+            except Exception as exc:
+                logger.warning("Cache cleanup failed (%s)", type(exc).__name__)
+        if close_database_fn is not None:
+            try:
+                await close_database_fn()
+            except Exception as exc:
+                logger.warning("Database cleanup failed (%s)", type(exc).__name__)
+        if inference_service is not None:
+            try:
+                await inference_service.aclose()
+            except Exception as exc:
+                logger.warning("Inference cleanup failed (%s)", type(exc).__name__)
 
-    yield
+    try:
+        if inference_service is None:
+            inference_service = InferenceService(InferenceConfig.from_env())
+            app.state.inference_service = inference_service
 
-    # Cleanup resources
-    logger.info("Shutting down StateSet Agents API")
+        logger.info("Starting StateSet Agents API v%s", config.api_version)
 
-    if close_cache_fn is not None:
+        # Initialize distributed cache (optional)
         try:
-            await close_cache_fn()
-        except API_LIFESPAN_EXCEPTIONS:
-            pass
+            from .distributed_cache import CacheConfig
+            from .distributed_cache import close_cache as _close_cache
+            from .distributed_cache import init_cache
 
-    if close_database_fn is not None:
-        try:
-            await close_database_fn()
-        except API_LIFESPAN_EXCEPTIONS:
-            pass
+            cache_config = CacheConfig.from_env()
+            await init_cache(cache_config)
+            close_cache_fn = _close_cache
+            logger.info(
+                "Cache initialized with backend: %s", cache_config.backend.value
+            )
+        except API_LIFESPAN_EXCEPTIONS as e:
+            if strict_startup:
+                logger.error("Cache initialization failed during startup: %s", e)
+                raise
+            logger.warning("Cache initialization skipped: %s", e)
 
-    if inference_service is not None:
+        # Initialize database (optional)
         try:
-            await inference_service.aclose()
-        except API_LIFESPAN_EXCEPTIONS:
-            pass
+            from .persistence import DatabaseConfig
+            from .persistence import close_database as _close_database
+            from .persistence import init_database
+
+            db_config = DatabaseConfig.from_env()
+            await init_database(db_config)
+            close_database_fn = _close_database
+            logger.info(
+                "Database initialized with backend: %s", db_config.backend.value
+            )
+        except API_LIFESPAN_EXCEPTIONS as e:
+            if strict_startup:
+                logger.error("Database initialization failed during startup: %s", e)
+                raise
+            logger.warning("Database initialization skipped: %s", e)
+
+        # Initialize agent service
+        from stateset_agents.utils.security import SecurityMonitor as _SecurityMonitor
+
+        from .services.agent_service import AgentService
+
+        agent_service = getattr(app.state, "agent_service", None)
+        if agent_service is None:
+            agent_service = AgentService(_SecurityMonitor())
+            app.state.agent_service = agent_service
+
+        # Honor STATESET_DEFAULT_CHECKPOINT — set by `stateset-agents serve --checkpoint`.
+        default_ckpt = os.environ.get("STATESET_DEFAULT_CHECKPOINT")
+        if default_ckpt:
+            default_base = os.environ.get("STATESET_DEFAULT_BASE_MODEL")
+            logger.info(
+                "Loading default checkpoint at startup",
+                extra={"checkpoint": default_ckpt, "base_model": default_base},
+            )
+            try:
+                await agent_service.register_default_checkpoint_agent(
+                    checkpoint_path=default_ckpt,
+                    base_model=default_base,
+                )
+            except (
+                Exception
+            ) as exc:  # noqa: BLE001 — log and continue; don't kill the API
+                logger.error(
+                    "Failed to load default checkpoint at startup",
+                    extra={"checkpoint": default_ckpt, "error": str(exc)},
+                )
+
+        # Initialize training service
+        from .services.training_service import TrainingService
+
+        if training_service is None:
+            training_service = TrainingService(
+                max_concurrent_jobs=getattr(config, "training_max_concurrent_jobs", 1)
+            )
+            app.state.training_service = training_service
+
+        # Register health checks
+        health_checker.add_check("api", lambda: True)
+        if inference_service is not None:
+            health_checker.add_check(
+                "inference_backend", inference_service.check_health
+            )
+
+        yield
+    finally:
+        logger.info("Shutting down StateSet Agents API")
+        await drain_owned_operation(shutdown())
 
 
 def create_app() -> FastAPI:

@@ -338,6 +338,7 @@ class APIConfig:
     validation: ValidationConfig = field(default_factory=ValidationConfig)
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     enable_training_lab: bool = False
+    training_max_concurrent_jobs: int = 1
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -364,6 +365,9 @@ class APIConfig:
             observability=ObservabilityConfig.from_env(),
             enable_training_lab=_get_bool(
                 "API_ENABLE_TRAINING_LAB", environment == Environment.DEVELOPMENT
+            ),
+            training_max_concurrent_jobs=_get_int(
+                "API_TRAINING_MAX_CONCURRENT_JOBS", 1, min_val=1
             ),
         )
 

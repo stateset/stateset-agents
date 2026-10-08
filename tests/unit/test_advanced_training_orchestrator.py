@@ -309,6 +309,19 @@ class TestJobScheduler:
         assert scheduler.job_queue[0].status == TrainingStatus.QUEUED
 
     @pytest.mark.asyncio
+    async def test_invalid_resources_never_enter_scheduler(
+        self, scheduler, training_config
+    ):
+        training_config.resource_requirements = [
+            ResourceRequirement(ResourceType.CPU, -1)
+        ]
+        job = TrainingJob(job_id="invalid", config=training_config)
+        with pytest.raises(ValueError, match="nonnegative"):
+            await scheduler.submit_job(job)
+        assert job.status == TrainingStatus.PENDING
+        assert not scheduler.job_queue
+
+    @pytest.mark.asyncio
     async def test_get_next_job(self, scheduler, training_config):
         """Test getting next job from queue."""
         job = TrainingJob(job_id="job_001", config=training_config)
@@ -316,7 +329,7 @@ class TestJobScheduler:
 
         # Create a mock resource manager that allows allocation
         resource_manager = MagicMock()
-        resource_manager.can_allocate = AsyncMock(return_value=True)
+        resource_manager.allocate_resources = AsyncMock(return_value=True)
 
         next_job = await scheduler.get_next_job(resource_manager)
 
@@ -425,16 +438,18 @@ class TestExperimentTracker:
         assert experiment["metrics"]["loss"][0]["step"] == 10
 
     @pytest.mark.asyncio
-    async def test_log_artifact(self, tracker, training_config):
+    async def test_log_artifact(self, tracker, training_config, tmp_path):
         """Test logging artifacts."""
         job = TrainingJob(job_id="job_001", config=training_config)
         experiment_id = await tracker.start_experiment(job)
 
-        await tracker.log_artifact(experiment_id, "/path/to/model.pt", "model")
+        path = tmp_path / "model.pt"
+        path.write_bytes(b"artifact")
+        await tracker.log_artifact(experiment_id, str(path), "model")
 
         experiment = tracker.experiments[experiment_id]
         assert len(experiment["artifacts"]) == 1
-        assert experiment["artifacts"][0]["path"] == "/path/to/model.pt"
+        assert experiment["artifacts"][0]["path"] == str(path)
         assert experiment["artifacts"][0]["type"] == "model"
 
     @pytest.mark.asyncio
@@ -482,20 +497,18 @@ class TestTrainingWorker:
         assert worker.worker_id == "worker_001"
         assert worker.current_job is None
 
-    def test_create_optimizer(self, worker, training_config):
-        """Test optimizer creation."""
-        model = MagicMock()
-        optimizer = worker._create_optimizer(model, training_config)
-
-        assert optimizer["type"] == "adamw"
-        assert optimizer["lr"] == 1e-4
-
-    def test_create_scheduler(self, worker, training_config):
-        """Test scheduler creation."""
-        optimizer = MagicMock()
-        scheduler = worker._create_scheduler(optimizer, training_config)
-
-        assert scheduler["type"] == "cosine"
+    @pytest.mark.asyncio
+    async def test_unconfigured_worker_fails_without_tracking(
+        self, worker, training_config
+    ):
+        tracker = AsyncMock()
+        job = TrainingJob(job_id="missing-runner", config=training_config)
+        assert not await worker.execute_job(job, tracker)
+        assert job.status is TrainingStatus.FAILED
+        assert "No training runner" in job.last_error
+        assert job.current_step == 0 and not job.metrics
+        tracker.start_experiment.assert_not_awaited()
+        assert worker.current_job is None
 
     def test_compute_final_metrics(self, worker, training_config):
         """Test computing final metrics."""
@@ -510,6 +523,7 @@ class TestTrainingWorker:
         assert metrics["final_epoch"] == 5
         assert metrics["total_steps"] == 500
         assert "training_time" in metrics
+        assert "avg_loss" not in metrics and "final_reward" not in metrics
 
 
 class TestAdvancedTrainingOrchestrator:
@@ -562,6 +576,7 @@ class TestAdvancedTrainingOrchestrator:
             scheduling_strategy=SchedulingStrategy.FIFO,
             enable_experiment_tracking=False,
             start_background_tasks=False,
+            training_runner=AsyncMock(),
         )
         return orch
 
@@ -570,6 +585,28 @@ class TestAdvancedTrainingOrchestrator:
         assert orchestrator.max_concurrent_jobs == 2
         assert orchestrator.scheduler is not None
         assert orchestrator.resource_manager is not None
+
+    @pytest.mark.asyncio
+    async def test_missing_runner_rejected_before_queue_or_state_write(
+        self, orchestrator, training_config
+    ):
+        orchestrator.training_runner = None
+        with pytest.raises(RuntimeError, match="No training runner"):
+            await orchestrator.submit_training_job(training_config)
+        assert not orchestrator.scheduler.job_queue
+        orchestrator.state_service.state_manager.set.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_invalid_resources_rejected_before_state_write(
+        self, orchestrator, training_config
+    ):
+        training_config.resource_requirements = [
+            ResourceRequirement(ResourceType.CPU, float("nan"))
+        ]
+        with pytest.raises(ValueError, match="finite"):
+            await orchestrator.submit_training_job(training_config)
+        assert not orchestrator.scheduler.job_queue
+        orchestrator.state_service.state_manager.set.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_submit_training_job(
@@ -593,6 +630,29 @@ class TestAdvancedTrainingOrchestrator:
 
         assert result is True
         assert len(orchestrator.scheduler.job_queue) == 0
+
+    @pytest.mark.asyncio
+    async def test_configured_runner_reaches_worker_and_persisted_completion(
+        self, orchestrator, training_config, tmp_path
+    ):
+        from stateset_agents.training.advanced_training_orchestrator import (
+            TrainingRunResult,
+        )
+
+        path = tmp_path / "runner-artifact.bin"
+        path.write_bytes(b"integration-test-artifact")
+        orchestrator.training_runner = AsyncMock(
+            return_value=TrainingRunResult(path, {"loss": 0.25}, 2, 1)
+        )
+        job = TrainingJob(job_id="configured", config=training_config)
+        await orchestrator._start_job(job)
+        await orchestrator.worker_tasks["worker_configured"]
+        await orchestrator._cleanup_completed_tasks()
+        orchestrator.training_runner.assert_awaited_once_with(job)
+        assert job.status is TrainingStatus.COMPLETED
+        saved = orchestrator.state_service.state_manager.set.call_args.args[1]
+        assert saved["status"] == "completed"
+        assert saved["metrics"] == {"loss": [0.25]}
 
     @pytest.mark.asyncio
     async def test_get_system_status(self, orchestrator, mock_dependencies):
@@ -641,6 +701,8 @@ class TestAdvancedTrainingOrchestrator:
         orchestrator.workers[worker_id] = MagicMock()
         task = MagicMock()
         task.done.return_value = True
+        task.cancelled.return_value = False
+        task.exception.return_value = None
         orchestrator.worker_tasks[worker_id] = task
         orchestrator.worker_jobs[worker_id] = job
         orchestrator.scheduler.running_jobs[job.job_id] = job

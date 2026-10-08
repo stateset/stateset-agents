@@ -36,7 +36,7 @@ jobs:
     - name: Install security tools
       run: |
         python -m pip install --upgrade pip
-        pip install bandit pip-audit semgrep
+        pip install bandit "pip-audit>=2.10.1,<3.0.0" "semgrep>=1.173.0"
 
     - name: Install Trivy
       run: |
@@ -45,187 +45,60 @@ jobs:
 
     - name: Run Bandit security linter
       run: |
-        bandit -r stateset_agents -f json -o bandit-report.json || true
-        bandit -r stateset_agents -f txt -o bandit-report.txt || true
+        scan_exit_code=0
+        bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json > bandit-report.txt 2>&1 || scan_exit_code=$?
+        printf '%s\n' "$scan_exit_code" > bandit-exit-code.txt
 
     - name: Run pip-audit dependency check
       run: |
         # cuda-toolkit is an extras meta-package; concrete CUDA components
         # remain pinned and audited below.
         grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
-        pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip --format json --output pip-audit-report.json || true
-        pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip > pip-audit-report.txt || true
+        scan_exit_code=0
+        pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip --format json > pip-audit-report.json 2> pip-audit-report.txt || scan_exit_code=$?
+        printf '%s\n' "$scan_exit_code" > pip-audit-exit-code.txt
 
     - name: Run Semgrep security analysis
       run: |
-        semgrep --config=auto --json > semgrep-report.json || true
-        semgrep --config=auto > semgrep-report.txt || true
+        scan_exit_code=0
+        semgrep scan --config=p/security-audit --metrics=off --disable-version-check --jobs=2 --timeout=30 --strict --error --json > semgrep-report.json 2> semgrep-report.txt || scan_exit_code=$?
+        printf '%s\n' "$scan_exit_code" > semgrep-exit-code.txt
 
     - name: Run Trivy vulnerability scan
       run: |
-        trivy fs --format json --output trivy-report.json . || true
-        trivy fs --format table --output trivy-report.txt . || true
+        scan_exit_code=0
+        trivy fs --format json . > trivy-report.json 2> trivy-report.txt || scan_exit_code=$?
+        printf '%s\n' "$scan_exit_code" > trivy-exit-code.txt
+
+    - name: Validate security reports and scanner exits
+      if: always()
+      run: |
+        if python -m scripts.security_workflow_gate --source-root stateset_agents --output security-gate.json; then
+          echo "Security gate passed: all scanner reports and exit codes validated." >> "$GITHUB_STEP_SUMMARY"
+        else
+          echo "Security gate failed: inspect security-gate.json and scanner diagnostics." >> "$GITHUB_STEP_SUMMARY"
+          exit 1
+        fi
 
     - name: Upload security reports
+      if: always()
       uses: actions/upload-artifact@v7
       with:
         name: security-reports
         path: |
           bandit-report.json
           bandit-report.txt
+          bandit-exit-code.txt
           pip-audit-report.json
           pip-audit-report.txt
+          pip-audit-exit-code.txt
           semgrep-report.json
           semgrep-report.txt
+          semgrep-exit-code.txt
           trivy-report.json
           trivy-report.txt
-
-    - name: Security check results
-      run: |
-        echo "## Security Scan Results" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-
-        if [ -f bandit-report.txt ]; then
-          echo "### Bandit Results" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          cat bandit-report.txt >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        fi
-
-        if [ -f pip-audit-report.txt ]; then
-          echo "### pip-audit Results" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          cat pip-audit-report.txt >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-        fi
-
-        echo "### Security Status" >> $GITHUB_STEP_SUMMARY
-        echo "✅ Security scanning completed" >> $GITHUB_STEP_SUMMARY
-
-    - name: Fail on critical security issues
-      run: |
-        python - <<'PY'
-        import json
-        import sys
-        from pathlib import Path
-        from scripts.security_exceptions import classify_pip_audit_findings
-
-        parse_errors = []
-
-        expected_reports = [
-            "bandit-report.json",
-            "pip-audit-report.json",
-            "semgrep-report.json",
-            "trivy-report.json",
-        ]
-        missing = [name for name in expected_reports if not Path(name).exists()]
-        if missing:
-            print("🚨 Security gate failed: expected reports were not produced.")
-            for item in missing:
-                print(f"  - {item} missing (scanner did not run or crashed)")
-            sys.exit(1)
-
-        bandit_issues = []
-        bandit_path = Path("bandit-report.json")
-        if bandit_path.exists():
-            try:
-                bandit_report = json.loads(bandit_path.read_text(encoding="utf-8"))
-                if isinstance(bandit_report, dict):
-                    bandit_results = bandit_report.get("results", [])
-                elif isinstance(bandit_report, list):
-                    bandit_results = bandit_report
-                else:
-                    bandit_results = []
-                bandit_issues = [
-                    item
-                    for item in bandit_results
-                    if isinstance(item, dict)
-                    and str(item.get("issue_severity", "")).upper()
-                    in {"HIGH", "CRITICAL"}
-                ]
-            except (json.JSONDecodeError, OSError):
-                parse_errors.append("bandit-report.json could not be parsed")
-                bandit_issues = []
-
-        audit_issues = []
-        approved_audit_issues = []
-        try:
-            audit_report = json.loads(Path("pip-audit-report.json").read_text(encoding="utf-8"))
-            approved_audit_issues, audit_issues = classify_pip_audit_findings(audit_report)
-        except (json.JSONDecodeError, OSError, ValueError):
-            parse_errors.append("pip-audit-report.json could not be parsed")
-        for item in approved_audit_issues:
-            print(f"⚠️ Approved, time-limited dependency exception: {item}")
-
-        semgrep_issues = []
-
-        semgrep_path = Path("semgrep-report.json")
-        if semgrep_path.exists():
-            try:
-                semgrep_report = json.loads(semgrep_path.read_text(encoding="utf-8"))
-                if isinstance(semgrep_report, dict):
-                    semgrep_results = semgrep_report.get("results", [])
-                elif isinstance(semgrep_report, list):
-                    semgrep_results = semgrep_report
-                else:
-                    semgrep_results = []
-                semgrep_issues = [
-                    item
-                    for item in semgrep_results
-                    if isinstance(item, dict)
-                    if str(
-                        item.get("extra", {}).get("severity", item.get("severity", ""))
-                    ).upper()
-                    in {"HIGH", "CRITICAL"}
-                ]
-            except (json.JSONDecodeError, OSError):
-                parse_errors.append("semgrep-report.json could not be parsed")
-                semgrep_issues = []
-
-        trivy_issues = []
-        trivy_path = Path("trivy-report.json")
-        if trivy_path.exists():
-            try:
-                trivy_report = json.loads(trivy_path.read_text(encoding="utf-8"))
-                trivy_results = []
-                if isinstance(trivy_report, dict):
-                    trivy_results = trivy_report.get("Results", [])
-                elif isinstance(trivy_report, list):
-                    trivy_results = trivy_report
-                for result in trivy_results:
-                    if not isinstance(result, dict):
-                        continue
-                    trivy_issues.extend(
-                        vuln
-                        for vuln in result.get("Vulnerabilities", [])
-                        if isinstance(vuln, dict)
-                        if str(vuln.get("Severity", "")).upper()
-                        in {"HIGH", "CRITICAL"}
-                    )
-            except (json.JSONDecodeError, OSError):
-                parse_errors.append("trivy-report.json could not be parsed")
-                trivy_issues = []
-
-        if parse_errors:
-            print("🚨 Security gate failed: security report parsing failed.")
-            for item in parse_errors:
-                print(f"  - {item}")
-            sys.exit(1)
-
-        if bandit_issues or audit_issues or semgrep_issues or trivy_issues:
-            print("🚨 Security gate failed: high-severity findings detected.")
-            if bandit_issues:
-                print(f"  - Bandit findings: {len(bandit_issues)}")
-            if audit_issues:
-                print(f"  - pip-audit findings: {len(audit_issues)}")
-            if semgrep_issues:
-                print(f"  - Semgrep findings: {len(semgrep_issues)}")
-            if trivy_issues:
-                print(f"  - Trivy findings: {len(trivy_issues)}")
-            sys.exit(1)
-
-        print("✅ No unapproved critical security findings detected")
-        PY
+          trivy-exit-code.txt
+          security-gate.json
 
   dependency-review:
     # The action diffs dependencies between two refs, which only exist on

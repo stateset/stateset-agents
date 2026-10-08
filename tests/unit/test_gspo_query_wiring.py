@@ -180,8 +180,15 @@ async def test_train_with_gspo_hands_the_reward_its_gold_answer(monkeypatch, tmp
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "signal_metrics",
+    [
+        {"average_reward": 0.0, "reward_std": 0.0},
+        {"average_reward": 0.5, "reward_std": 0.5, "nonzero_advantage_fraction": 0.0},
+    ],
+)
 async def test_train_with_gspo_warns_when_reward_is_identically_zero(
-    monkeypatch, tmp_path, caplog
+    monkeypatch, tmp_path, caplog, signal_metrics
 ):
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
     from stateset_agents.core.environment import ConversationEnvironment
@@ -195,7 +202,7 @@ async def test_train_with_gspo_warns_when_reward_is_identically_zero(
         async def train_step(self, queries, num_groups=1):
             self.training_metrics["average_reward"].append(0.0)
             self.training_metrics["reward_std"].append(0.0)
-            return {"average_reward": 0.0, "reward_std": 0.0}
+            return dict(signal_metrics)
 
         def save_model(self, path):
             return None
@@ -314,14 +321,23 @@ def test_zero_signal_guard_trips_after_consecutive_zero_reward_steps():
         guard.on_step_end(step, {"average_reward": 0.0, "reward_std": 0.0})
     assert guard.should_abort is True
     assert "3 consecutive steps" in (guard.abort_reason or "")
-    # all-equal non-zero rewards are not "zero signal" for this guard
+    # Legacy pooled statistics alone do not identify the configured estimator.
     fresh = ZeroSignalGuard(max_zero_steps=1)
     fresh.on_step_end(0, {"average_reward": 1.0, "reward_std": 0.0})
     assert fresh.should_abort is False
 
 
 @pytest.mark.asyncio
-async def test_train_with_gspo_aborts_on_zero_signal_guard(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "signal_metrics",
+    [
+        {"average_reward": 0.0, "reward_std": 0.0},
+        {"average_reward": 0.5, "reward_std": 0.5, "nonzero_advantage_fraction": 0.0},
+    ],
+)
+async def test_train_with_gspo_aborts_on_zero_signal_guard(
+    monkeypatch, tmp_path, signal_metrics
+):
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
     from stateset_agents.core.environment import ConversationEnvironment
     from stateset_agents.training.callbacks import ZeroSignalGuard
@@ -338,7 +354,7 @@ async def test_train_with_gspo_aborts_on_zero_signal_guard(monkeypatch, tmp_path
             steps.append(len(steps))
             self.training_metrics["average_reward"].append(0.0)
             self.training_metrics["reward_std"].append(0.0)
-            return {"average_reward": 0.0, "reward_std": 0.0}
+            return dict(signal_metrics)
 
         def save_model(self, path):
             return None

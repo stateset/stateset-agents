@@ -252,6 +252,26 @@ schema preservation are tested locally; the gated vendor tokenizer and full
 checkpoint have not been validated. The SFT `--eval-prompts` helper takes plain
 text prompts and is not a tool-calling evaluation harness.
 
+### River: executed commerce outcomes
+
+[`river_refund_rl.py`](river_refund_rl.py) trains a remote agent against an isolated
+refund ledger, selects checkpoints on validation, and records per-case held-out
+test evidence. Prepare cases offline with
+`python examples/river_refund_rl.py --dry-run --output outputs/refund-42`.
+Training and evaluation-only runs require the River extra and credentials.
+The same runner ships in wheels as `python -m stateset_agents.training.river_refund`.
+Use `benchmark plan-agent-study` to freeze a six-seed, four-arm campaign and
+`benchmark audit-agent-study --strict` to check its provenance and learning gates.
+Compare matched runs using `stateset-agents benchmark compare-agents`; see the
+[River provider reference](../docs/RIVER_PROVIDER.md) for the full workflow.
+Add `--benchmark refund-policy-v2` for policy reasoning over partial refunds,
+return-window boundaries, chargebacks, and misleading customer notes, with
+per-family evaluation and regression gates.
+Use `stateset-agents benchmark prepare-refund-data` for verified reference SFT
+demonstrations, or run the example with `--collect-only` and pass its candidates
+to `stateset-agents benchmark filter-refund-data` for rejection-sampling SFT.
+The exporter and filter run offline; collecting model candidates uses River.
+
 ### Basic Training
 
 #### 1. Complete GRPO Training

@@ -601,7 +601,8 @@ def train_remote(
         None,
         "--provider-options-json",
         help=(
-            "Provider/mode options as JSON. Prime RL accepts environment, "
+            "Provider/mode options as JSON. River SFT accepts seed and shuffle. "
+            "Prime RL accepts environment, "
             "harness, runtime, max_steps, rollouts_per_example, max_tokens, "
             "and temperature."
         ),
@@ -1046,6 +1047,54 @@ def model_support(
             f"{row['model']} @ {row['provider']}: {row['level']}/"
             f"{row['outcome']}{checked}\n  {row['evidence']}"
         )
+
+
+@app.command("river-preflight")
+def river_preflight(
+    base_model: list[str] = typer.Option(
+        [], "--base-model", help="Exact model ID to check (repeatable)."
+    ),
+    live: bool = typer.Option(
+        False, "--live", help="Also query account model access; creates no sessions."
+    ),
+    timeout_seconds: float = typer.Option(
+        15.0,
+        "--timeout-seconds",
+        help="Live SDK request timeout; retries are disabled.",
+    ),
+    output: Path | None = typer.Option(
+        None, "--output", help="Also save JSON to a new file; refuses overwrite."
+    ),
+) -> None:
+    """Check River prerequisites and optional live model access, emitting JSON.
+
+    Exit 0 means the requested checks passed, 1 means a check failed, and 2
+    means invalid options or a report-write error. No training or inference runs.
+    """
+    import json
+
+    from stateset_agents.remote.river_runtime import river_preflight as preflight
+
+    if output is not None and (output.exists() or output.is_symlink()):
+        _echo(f"Refusing to overwrite preflight report: {output}", err=True)
+        raise typer.Exit(code=2)
+    try:
+        payload = preflight(base_model, live=live, timeout_seconds=timeout_seconds)
+    except ValueError as exc:
+        _echo(str(exc), err=True)
+        raise typer.Exit(code=2) from exc
+    rendered = json.dumps(payload, indent=2, sort_keys=True, allow_nan=False) + "\n"
+    if output is not None:
+        try:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            with output.open("x", encoding="utf-8") as stream:
+                stream.write(rendered)
+        except OSError as exc:
+            _echo(f"Could not write preflight report: {exc}", err=True)
+            raise typer.Exit(code=2) from exc
+    _echo(rendered.rstrip())
+    if not payload["passed"]:
+        raise typer.Exit(code=1)
 
 
 @app.command("provider-canary")

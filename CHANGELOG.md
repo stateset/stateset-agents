@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-10-08 — River RL reliability and training integrity
+
+### Added
+
+- Add `river-preflight` and a Python API for local prerequisites and opt-in live
+  account access checks, with versioned JSON, finite request timeouts, and no
+  training sessions or sampling.
+- Add native River commerce environments, refund-policy demonstrations,
+  checkpoint selection, trace replay, held-out evaluation, and reproducible
+  agent studies with provenance and explicit learning gates.
+- Add durable training job records, capacity reservations, bounded admission,
+  fair scheduling, and lifecycle-aware shutdown and recovery.
+
+### Fixed
+
+- Check fresh River model access before sessions and model loading. Isolate SFT
+  tokenizer caches by model and keep dry runs and completed RL resumes offline.
+- Close executor-owned clients after completion, failure, or interruption;
+  preserve injected client ownership and completed checkpoints on cleanup failure.
+  Reject overlapping submissions on one executor.
+- Publish cancelled synchronous RL from validated committed state, preserve
+  token reservations, and resume only remaining rounds. Report or bookkeeping
+  failures preserve the original interruption.
+- Validate finite losses and gradients before optimizer updates. Correct GRPO
+  accumulation, partial-window scaling, scheduler budgets, and checkpoint state;
+  advance metrics only for committed training progress.
+- Harden API training admission, cancellation, persistence, startup/shutdown
+  cleanup, and security scan reporting.
+
+### Verification scope
+
+- Local tests and mocked SDK transport establish integration contracts. They do
+  not establish model quality, hosted chat/streaming support, or live training
+  success for every account-advertised model. Provider cost remains unknown
+  where the SDK supplies no billing evidence.
+
 ## [0.60.0] - 2026-10-08 — Reward audits before RL training
 
 ### Added

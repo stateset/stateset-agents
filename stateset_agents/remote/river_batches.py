@@ -7,34 +7,13 @@ that has to be right is not the RPC plumbing — it is the shape of the batch.
 This module is that part, deliberately isolated: no ``river_client`` import,
 no network, no state. Everything here is testable on a laptop.
 
-.. warning::
+The wire alignment is explicit: SFT targets are next-token IDs supplied by
+our caller-side shift; RL logprobs and advantages start at ``prompt_len - 1``
+and end with a zero slot. These contracts match River's 0.11 documentation.
+Historical live runs and their limits are recorded in ``docs/PROOFS.md``;
+offline batch tests do not substitute for a fresh provider learning check.
 
-   **UNVERIFIED AGAINST THE LIVE SERVICE.** Everything below was derived from
-   River's public documentation. We hold no River API key and ``river-client``
-   is not installable from PyPI here, so not one byte of this has been checked
-   against a real ``forward_backward`` call.
-
-   The single most consequential guess is the **target shift**. River's SFT
-   datum is documented as ``{"input_ids", "target_tokens", "weights"}`` without
-   stating who performs the causal shift. We assume **the caller does**, and
-   emit, for a tokenized conversation ``t[0..n-1]``::
-
-       input_ids     = t[0 : n-1]     # every token but the last
-       target_tokens = t[1 : n]       # each position's next-token target
-       weights       = w[1 : n]       # weight of the *target*, not the input
-
-   All three lists therefore have length ``n - 1`` and are index-aligned:
-   ``target_tokens[i]`` is what the model should predict after consuming
-   ``input_ids[0..i]``, and ``weights[i]`` scales that position's loss.
-
-   If River instead shifts internally, the symptom is unmistakable and cheap
-   to detect on the first real run: loss will be high and flat, and sampled
-   continuations will look off-by-one (the model predicting the token it was
-   just given). The fix is one line — pass ``t[0:n]`` as both ``input_ids``
-   and, shifted, as targets — so this assumption is isolated in
-   :func:`_shift_for_causal_lm` and nowhere else.
-
-The second assumption is **prefix-stable tokenization**: we locate the
+An assumption is **prefix-stable tokenization**: we locate the
 assistant spans by tokenizing successively longer chat-template renderings and
 diffing their lengths. That is exact for BPE/SentencePiece tokenizers in
 practice, but a tokenizer that re-segments across a boundary would shift a span
@@ -44,6 +23,7 @@ by a token or two. Weights, not correctness of the ids, are what would suffer.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from typing import Any
 
@@ -65,8 +45,9 @@ __all__ = [
 MIN_LORA_RANK = 1
 MAX_LORA_RANK = 32
 
-#: Base models named in River's docs. This is *not* an allowlist: River scopes
-#: model access per account via ``client.get_capabilities()``, so a name absent
+#: Example models from River's docs and dated account canaries. This is not an
+#: allowlist: River scopes access per account via ``client.get_capabilities()``,
+#: so a name absent
 #: here may still be perfectly valid for the caller — see
 #: :func:`validate_base_model`.
 DOCUMENTED_BASE_MODELS: tuple[str, ...] = (
@@ -79,6 +60,9 @@ DOCUMENTED_BASE_MODELS: tuple[str, ...] = (
     "Qwen/Qwen3.5-122B-A10B-FP8",
     "Qwen/Qwen3.5-397B-A17B-FP8",
     "Qwen/Qwen3.6-35B-A3B-FP8",
+    "Qwen/Qwen3.8-27B-FP8",
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+    "zai-org/GLM-5.3-Flash",
 )
 
 #: Weight given to tokens the model is being taught to produce.
@@ -131,7 +115,7 @@ def validate_base_model(name: str, allowed: Sequence[str] | None = None) -> str:
         source = (
             "your account's capabilities"
             if allowed is not None
-            else "River's documented base models"
+            else "the River model reference catalog"
         )
         logger.warning(
             "base model %r is not in %s (%s). Proceeding anyway — River "
@@ -440,6 +424,15 @@ def build_group_rl_datums(
         raise ValueError(f"got {len(samples)} samples but {len(rewards)} rewards")
     if not samples:
         return []
+    if not all(math.isfinite(r) for r in rewards):
+        raise ValueError("RL rewards must be finite")
+    for sample in samples:
+        if sample.get("token_data_is_exact") is False:
+            raise ValueError("RL training requires exact sampled token data")
+        if len(sample["tokens"]) != len(sample["logprobs"]):
+            raise ValueError("sample tokens and logprobs must align")
+        if any(not math.isfinite(p) or p > 1e-6 for p in sample["logprobs"]):
+            raise ValueError("RL logprobs must be finite and nonpositive")
     mean_reward = sum(rewards) / len(rewards)
     if all(r == rewards[0] for r in rewards):
         return []

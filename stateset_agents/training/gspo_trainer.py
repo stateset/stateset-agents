@@ -13,6 +13,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -47,6 +48,15 @@ from .gspo_generation import (
 from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
 
 logger = logging.getLogger(__name__)
+
+
+def _require_finite_vector(values: torch.Tensor, name: str) -> None:
+    """Reject invalid training inputs before numerical fallbacks can hide them."""
+    if values.ndim != 1 or values.numel() == 0:
+        raise ValueError(f"{name} must be a nonempty one-dimensional tensor")
+    if not bool(torch.isfinite(values).all()):
+        raise ValueError(f"{name} must contain only finite values")
+
 
 # Optional training dependencies
 try:
@@ -409,6 +419,9 @@ class GSPOTrainer:
             "clipping_fraction": [],
             "average_reward": [],
             "reward_std": [],
+            "nonzero_advantage_fraction": [],
+            "zero_advantage_group_fraction": [],
+            "advantage_group_count": [],
             "sequence_importance_ratio": [],
             "generation_log_prob_gap": [],
         }
@@ -458,30 +471,88 @@ class GSPOTrainer:
         Returns:
             advantages: Normalized advantages
             stats: Statistics about rewards
+
+        Raises:
+            ValueError: If rewards are empty, not a vector, or rewards,
+                float32 statistics, or computed advantages are non-finite.
         """
         rewards_tensor = (
             rewards
             if isinstance(rewards, torch.Tensor)
             else torch.as_tensor(rewards, dtype=torch.float32)
-        )
+        ).float()
+        _require_finite_vector(rewards_tensor, "GSPO rewards")
+        mean_reward = rewards_tensor.mean()
+        std_reward = rewards_tensor.std(unbiased=False)
+        if not bool(torch.isfinite(mean_reward) & torch.isfinite(std_reward)):
+            raise ValueError("GSPO reward statistics must be finite in float32")
 
         # The configured objective's estimator (group-normalised by default);
-        # this method only adds the logging stats on top.
+        # this boundary validates inputs/results and adds the logging stats.
         group_ids = torch.zeros(
             rewards_tensor.numel(), dtype=torch.long, device=rewards_tensor.device
         )
         objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["gspo"]
         advantages = objectives.compute_advantages(rewards_tensor, group_ids, objective)
+        _require_finite_vector(advantages, "GSPO advantages")
 
-        std_reward = rewards_tensor.float().std(unbiased=False)
         stats = {
-            "mean_reward": float(rewards_tensor.mean().item()),
-            "std_reward": 0.0 if torch.isnan(std_reward) else float(std_reward.item()),
+            "mean_reward": float(mean_reward.item()),
+            "std_reward": float(std_reward.item()),
             "max_reward": float(rewards_tensor.max().item()),
             "min_reward": float(rewards_tensor.min().item()),
         }
 
         return advantages, stats
+
+    def _prepare_old_log_probs(
+        self,
+        current_log_probs: torch.Tensor,
+        generation_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+    ) -> tuple[torch.Tensor, list[float]]:
+        """Select old-policy scores and measure their gap from generation scores.
+
+        Same-pass detached scores give a ratio of one for fresh rollouts, even
+        with dropout or generation/scoring numerical differences. Disabling
+        rescoring preserves the generator's scores for importance correction.
+        """
+        generation_log_probs = generation_log_probs.to(current_log_probs.device)
+        old_log_probs = (
+            current_log_probs.detach()
+            if bool(getattr(self.config, "rescore_old_log_probs", True))
+            else generation_log_probs
+        )
+        gaps = (
+            ((generation_log_probs - old_log_probs.detach()).abs() / sequence_lengths)
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        return old_log_probs, gaps
+
+    def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
+        """Update only after scalar loss and clipped gradient norm are finite.
+
+        Failed backward or clipping clears partial gradients. Optimizer and
+        scheduler state are untouched until these checks pass.
+        """
+        self.optimizer.zero_grad(set_to_none=True)
+        try:
+            if loss.ndim != 0 or not bool(torch.isfinite(loss)):
+                raise ValueError("GSPO loss must be a finite scalar")
+            max_norm = float(self.config.max_grad_norm)
+            if not math.isfinite(max_norm) or max_norm < 0:
+                raise ValueError("max_grad_norm must be finite and nonnegative")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), max_norm, error_if_nonfinite=True
+            )
+        except Exception:
+            self.optimizer.zero_grad(set_to_none=True)
+            raise
+        self.optimizer.step()
+        self.scheduler.step()
 
     def compute_gspo_loss(
         self,
@@ -621,6 +692,7 @@ class GSPOTrainer:
             Training metrics
         """
         self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
         total_loss = torch.tensor(0.0, device=model_device)
@@ -631,6 +703,9 @@ class GSPOTrainer:
         all_generation_gaps: list[float] = []
 
         processed_groups = 0
+        nonzero_advantages = 0
+        advantage_count = 0
+        zero_advantage_groups = 0
         for query in queries[:num_groups]:
             processed_groups += 1
             if isinstance(query, dict):
@@ -656,6 +731,7 @@ class GSPOTrainer:
                 dtype=torch.float32,
                 device=model_device,
             )
+            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
             # Compute rewards for each response in parallel
             async def _compute_reward_for_response(
@@ -688,32 +764,20 @@ class GSPOTrainer:
 
             # Compute group advantages
             advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
+            active = int(torch.count_nonzero(advantages).item())
+            nonzero_advantages += active
+            advantage_count += advantages.numel()
+            zero_advantage_groups += int(active == 0)
 
             # Compute current log probs (with gradients) for each response
             (
                 current_log_probs,
                 sequence_lengths,
             ) = self._compute_group_sequence_log_probs(prompt, responses)
-            generation_log_probs = old_log_probs.to(current_log_probs.device)
-            if bool(getattr(self.config, "rescore_old_log_probs", True)):
-                # A fresh rollout batch is exactly on-policy: the old policy's
-                # log-probs are this same forward pass, detached (the TRL
-                # convention), so the ratio is 1 and GSPO's narrow clip band
-                # gates only genuine drift. The generator's own log-probs (a
-                # separate unbatched forward, dropout, or an engine's numerics)
-                # differ by more than the band and used to gate ~90% of
-                # on-policy samples to zero gradient.
-                old_log_probs = current_log_probs.detach()
-            else:
-                old_log_probs = generation_log_probs
-            all_generation_gaps.extend(
-                (
-                    (generation_log_probs - old_log_probs.detach()).abs()
-                    / sequence_lengths
-                )
-                .cpu()
-                .tolist()
+            old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                current_log_probs, old_log_probs, sequence_lengths
             )
+            all_generation_gaps.extend(generation_gaps)
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
@@ -753,18 +817,7 @@ class GSPOTrainer:
         # so gradient magnitude does not scale with batch composition.
         total_loss = normalize_total_loss(total_loss, processed_groups)
 
-        # Backward pass
-        self.optimizer.zero_grad()
-        total_loss.backward()
-
-        # Gradient clipping (skip for stub models with no real parameters)
-        model_params = list(self.model.parameters())
-        if model_params:
-            torch.nn.utils.clip_grad_norm_(model_params, self.config.max_grad_norm)
-
-        # Update parameters
-        self.optimizer.step()
-        self.scheduler.step()
+        self._apply_optimizer_step(total_loss)
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -778,6 +831,10 @@ class GSPOTrainer:
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
+            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
+            "zero_advantage_group_fraction": zero_advantage_groups
+            / max(processed_groups, 1),
+            "advantage_group_count": float(processed_groups),
             "generation_log_prob_gap": (
                 float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
             ),

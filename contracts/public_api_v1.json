@@ -4590,6 +4590,11 @@
               "default": false,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "enable_training_lab"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_max_concurrent_jobs"
             }
           ]
         }

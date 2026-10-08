@@ -18,6 +18,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Generic, TypeVar, cast
 
+from stateset_agents.utils.async_calls import drain_owned_operation
+
 logger = logging.getLogger(__name__)
 
 _BaseEntityT = TypeVar("_BaseEntityT", bound="BaseEntity")
@@ -564,6 +566,7 @@ class UnitOfWork:
 
     async def close(self) -> None:
         """Close all connections."""
+        failure: Exception | None = None
         for repo in [
             self._agents,
             self._conversations,
@@ -571,7 +574,14 @@ class UnitOfWork:
             self._api_keys,
         ]:
             if repo is not None and hasattr(repo, "close"):
-                await cast(Any, repo).close()
+                try:
+                    await cast(Any, repo).close()
+                except Exception as exc:
+                    # A broken connection must not strand the other three.
+                    if failure is None:
+                        failure = exc
+        if failure is not None:
+            raise failure
 
     @property
     def agents(self) -> Repository[Agent]:
@@ -613,9 +623,20 @@ async def init_database(config: DatabaseConfig | None = None) -> UnitOfWork:
     """Initialize the global database instance."""
     global _database
     config = config or DatabaseConfig.from_env()
-    _database = UnitOfWork(config)
-    await _database.connect()
-    return _database
+    database = UnitOfWork(config)
+    try:
+        await database.connect()
+    except BaseException:
+        try:
+            await drain_owned_operation(database.close())
+        except Exception as cleanup_error:
+            logger.warning(
+                "Database cleanup failed after initialization error (%s)",
+                type(cleanup_error).__name__,
+            )
+        raise
+    _database = database
+    return database
 
 
 def get_database() -> UnitOfWork | None:

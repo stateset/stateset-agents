@@ -11,12 +11,12 @@ import asyncio
 import contextlib
 import inspect
 import logging
-import math
 from typing import Any, TypeAlias
 
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
+from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
     notify_checkpoint_saved,
@@ -25,6 +25,7 @@ from .callbacks import (
     notify_training_end,
     notify_training_start,
 )
+from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
 from .evaluation import EvaluationConfig, evaluate_agent
 from .loss_computation import (
@@ -51,11 +52,13 @@ from .multi_turn_scenarios import (
     split_scenarios,
 )
 from .trainer_utils import (
+    backward_training_loss,
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
     require_torch,
     require_transformers,
+    safe_optimizer_step,
 )
 
 Trajectory: TypeAlias = core_trajectory.Trajectory
@@ -287,30 +290,24 @@ class MultiTurnGRPOTrainer:
         if callable(sync):
             self.last_rollout_sync = bool(sync())
 
-    def _apply_optimizer_step(self, torch) -> None:
-        if self.optimizer is None:
-            return
-
-        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
-        if self.scaler is not None:
-            self.scaler.unscale_(self.optimizer)
-        torch.nn.utils.clip_grad_norm_(
-            self.agent.model.parameters(),
-            max_grad_norm,
+    def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
+        return safe_optimizer_step(
+            self,
+            torch,
+            max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
+            scaler=self.scaler,
+            gradient_scale=gradient_scale,
         )
-        if self.scaler is not None:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            self.optimizer.step()
 
-        if self.lr_scheduler is not None:
-            self.lr_scheduler.step()
-
-        self._sync_rollout_backend()
-
-        self.optimizer.zero_grad()
-        self.global_step += 1
+    def _flush_accumulation(self, torch: Any) -> bool:
+        """Close pending accumulated work before a different update regime."""
+        steps = self._get_grad_accum_steps()
+        pending = self._grad_accum_step % steps
+        applied = False
+        if pending:
+            applied = self._apply_optimizer_step(torch, gradient_scale=steps / pending)
+        self._grad_accum_step = 0
+        return applied
 
     async def _init_wandb(self):
         """Initialize Weights & Biases tracking"""
@@ -645,18 +642,12 @@ class MultiTurnGRPOTrainer:
         grad_accum_steps = self._get_grad_accum_steps()
         scaled_loss = loss / grad_accum_steps
 
-        # Backward pass with gradient scaling
-        if self.scaler is not None:
-            self.scaler.scale(scaled_loss).backward()
-
-        else:
-            scaled_loss.backward()
+        backward_training_loss(self, scaled_loss, torch, scaler=self.scaler)
 
         self._grad_accum_step += 1
         optimizer_step = False
         if self._grad_accum_step % grad_accum_steps == 0:
-            self._apply_optimizer_step(torch)
-            optimizer_step = True
+            optimizer_step = self._apply_optimizer_step(torch)
 
         # Prepare metrics
         optimizer = self.optimizer
@@ -667,6 +658,7 @@ class MultiTurnGRPOTrainer:
             ),
             "global_step": self.global_step,
             "optimizer_step": optimizer_step,
+            "optimizer_updates": int(optimizer_step),
             "grad_accum_step": self._grad_accum_step,
             "inner_updates": 1,
         }
@@ -697,6 +689,10 @@ class MultiTurnGRPOTrainer:
         """PPO/DAPO-style mini-epochs: ``inner`` full optimizer steps against
         the frozen old-policy log-probs of this rollout batch."""
         ratio_means: list[float] = []
+        # old_logprobs was frozen before this flush. The first inner loss must
+        # therefore account for any policy change caused by the pending update.
+        accumulation_flush_updates = int(self._flush_accumulation(torch))
+        optimizer_updates = accumulation_flush_updates
         loss_dict: dict[str, Any] = {}
         for _ in range(inner):
             with autocast_ctx_factory():
@@ -715,11 +711,8 @@ class MultiTurnGRPOTrainer:
                 if ewc_penalty is not None:
                     loss = loss + ewc_penalty
                     loss_dict["ewc_penalty"] = ewc_penalty
-            if self.scaler is not None:
-                self.scaler.scale(loss).backward()
-            else:
-                loss.backward()
-            self._apply_optimizer_step(torch)
+            backward_training_loss(self, loss, torch, scaler=self.scaler)
+            optimizer_updates += int(self._apply_optimizer_step(torch))
             ratio_means.append(float(loss_dict.get("ratio_mean", 1.0)))
 
         optimizer = self.optimizer
@@ -729,7 +722,9 @@ class MultiTurnGRPOTrainer:
                 optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
             ),
             "global_step": self.global_step,
-            "optimizer_step": True,
+            "optimizer_step": optimizer_updates > 0,
+            "optimizer_updates": optimizer_updates,
+            "accumulation_flush_updates": accumulation_flush_updates,
             "grad_accum_step": self._grad_accum_step,
             "inner_updates": inner,
             "ratio_mean_last": ratio_means[-1] if ratio_means else 1.0,
@@ -773,30 +768,44 @@ class MultiTurnGRPOTrainer:
         return typed_eval_metrics
 
     async def train(self) -> Any:
-        """Main training loop"""
+        """Train, finalizing checkpoints only after a successful loop exit."""
         logger.info("Starting GRPO training")
-
-        # Calculate total training steps
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
-        grad_accum_steps = self._get_grad_accum_steps()
-        total_steps = math.ceil(num_episodes / grad_accum_steps)
-
-        # Setup learning rate scheduler
-        self._setup_scheduler(total_steps)
-
-        resume_from = getattr(self.config, "resume_from_checkpoint", None)
-        resumed = False
-        if resume_from:
-            resumed = self.load_checkpoint(resume_from)
-
-        # Training scenarios (this would come from your dataset)
-        training_scenarios = self._get_training_scenarios()
-        eval_scenarios = self._get_eval_scenarios()
-
-        await notify_training_start(self.callbacks, trainer=self, config=self.config)
-
         errored = False
+        cancelled = False
+        grad_accum_steps = 1
         try:
+            # Calculate total training steps
+            num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+            grad_accum_steps = self._get_grad_accum_steps()
+            total_steps = estimate_grpo_optimizer_steps(
+                num_episodes,
+                gradient_accumulation_steps=grad_accum_steps,
+                num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            )
+
+            # Setup learning rate scheduler
+            self._setup_scheduler(total_steps)
+
+            resume_from = getattr(self.config, "resume_from_checkpoint", None)
+            resumed = False
+            if resume_from is not None:
+                if isinstance(resume_from, str) and not resume_from.strip():
+                    raise ValueError("resume_from_checkpoint cannot be empty")
+                resumed = self.load_checkpoint(resume_from)
+                if resumed is not True:
+                    raise ValueError(
+                        "Requested training checkpoint could not be restored; "
+                        "refusing to start a fresh run instead of resuming"
+                    )
+
+            # Training scenarios (this would come from your dataset)
+            training_scenarios = self._get_training_scenarios()
+            eval_scenarios = self._get_eval_scenarios()
+
+            await notify_training_start(
+                self.callbacks, trainer=self, config=self.config
+            )
+
             start_episode = 0
             if resumed:
                 start_episode = min(num_episodes, max(0, int(self.current_epoch) + 1))
@@ -880,18 +889,11 @@ class MultiTurnGRPOTrainer:
                     logger.info(f"Early stopping at step {self.global_step}")
                     break
 
-        except KeyboardInterrupt:
-            logger.info("Training interrupted by user")
-
-        except MULTI_TRAINER_EXCEPTIONS as e:
-            logger.error(f"Training failed: {e}")
-            errored = True
-            raise
-
-        finally:
-            if not errored and self._grad_accum_step % grad_accum_steps != 0:
-                torch = require_torch()
-                self._apply_optimizer_step(torch)
+            # Finalization closes the accumulation window. Saved state must not
+            # make a resumed, already-complete run flush an empty window again.
+            if self._grad_accum_step % grad_accum_steps:
+                self._flush_accumulation(require_torch())
+            self._grad_accum_step = 0
 
             if self.continual_manager is not None and self._current_task_id is not None:
                 self.continual_manager.on_task_end(
@@ -903,37 +905,53 @@ class MultiTurnGRPOTrainer:
                 if reference_model is not None:
                     self.reference_model = reference_model
 
-            final_metrics = {
-                "final_step": self.global_step,
-                "best_eval_metric": self.best_eval_metric,
-            }
-
-            if errored:
-                logger.info(
-                    "Skipping final checkpoint and success callbacks after training failure"
-                )
-            else:
+            # A failed final save is a failed run, not a successful completion
+            # with a silently missing output artifact.
+            await self.save_checkpoint()
+            await notify_training_end(
+                self.callbacks,
+                metrics={
+                    "final_step": self.global_step,
+                    "best_eval_metric": self.best_eval_metric,
+                },
+            )
+        except BaseException as error:
+            # Cancellation and interrupts must not flush pending gradients or
+            # enter success finalization. Already committed updates stay intact.
+            errored = True
+            cancelled = isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
+            logger.info(
+                "Training stopped without successful finalization: %s",
+                type(error).__name__,
+            )
+            if self.optimizer is not None:
                 try:
-                    await self.save_checkpoint()
-                except MULTI_TRAINER_EXCEPTIONS as checkpoint_error:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except Exception as cleanup_error:
                     logger.warning(
-                        "Final checkpoint skipped during trainer shutdown: %s",
-                        checkpoint_error,
+                        "Could not discard pending gradients: %s", cleanup_error
                     )
-
-                await notify_training_end(
-                    self.callbacks,
-                    metrics=final_metrics,
-                )
-
-            # Finish W&B run regardless so runs do not remain open after failure.
+            self._grad_accum_step = 0
+            raise
+        finally:
             if self.wandb_logger:
-                self.wandb_logger.finish_run(
-                    {
-                        **final_metrics,
-                        "errored": bool(errored),
-                    }
-                )
+                try:
+                    await run_sync_owned(
+                        self.wandb_logger.finish_run,
+                        {
+                            "final_step": self.global_step,
+                            "best_eval_metric": self.best_eval_metric,
+                            "errored": errored,
+                            "cancelled": cancelled,
+                        },
+                    )
+                except Exception as cleanup_error:
+                    if not errored:
+                        raise
+                    logger.warning(
+                        "Tracking cleanup failed after training stopped: %s",
+                        cleanup_error,
+                    )
 
         logger.info("Training completed")
         return self.agent

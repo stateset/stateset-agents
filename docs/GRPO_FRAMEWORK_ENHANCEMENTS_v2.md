@@ -137,42 +137,207 @@ async with managed_state_context() as state_service:
 
 ### **New Component: `training/advanced_training_orchestrator.py`**
 
-**Orchestration Excellence:**
-- **Dynamic Resource Allocation**: Automatic CPU, GPU, memory management
-- **Intelligent Job Scheduling**: Priority-based, fair-share, resource-aware strategies
-- **Fault-Tolerant Training**: Automatic retries, checkpointing, recovery
-- **Experiment Tracking**: W&B + MLflow integration with artifact management
-- **Resource Optimization**: Real-time resource utilization monitoring
-- **Auto-scaling**: Dynamic scaling based on queue depth and resource availability
+The orchestrator supplies job scheduling, state tracking, and experiment logging.
+Resource admission checks and reservations are atomic within one orchestrator
+process. Repeated resource requirements are summed; negative, nonfinite, or
+boolean amounts are rejected before queueing. Retrying the same job reservation
+is idempotent, and cancellation while awaiting admission leaves no partial
+reservation. These are scheduling reservations against a capacity snapshot,
+not operating-system quotas or coordination between separate processes.
 
-**Training Features:**
-- **Multi-GPU Support**: Distributed training across multiple GPUs
-- **Checkpoint Management**: Automatic model checkpointing and recovery
-- **Early Stopping**: Intelligent early stopping based on validation metrics
-- **Hyperparameter Optimization**: Automated hyperparameter tuning
-- **Resource Quotas**: User and project-based resource limits
+`SchedulingStrategy.FAIR_SHARE` selects from users holding the smallest share of
+reserved resources. It sums each user's current reservations and uses the largest
+fraction of any configured resource: for example, 2 of 8 CPUs plus 1 of 2 GPUs
+counts as a share of 0.5. Equal shares rotate between users, including jobs with
+zero resource demand; newly arriving users join the current rotation. Jobs from
+one user keep submission order unless an earlier job cannot currently fit.
+Cancelled workers still count while they retain reservations for cleanup. Missing
+`user_id` values share one pool; callers must supply consistent user identities.
+
+Admission remains atomic and considers jobs that fit when earlier candidates are
+blocked. This is an in-process, non-preemptive policy over current reservations,
+not historical compute usage, billing fairness, or a starvation guarantee for
+large jobs under continuous backfilling. FIFO and resource-aware modes use
+submission order among jobs that fit; priority mode prefers higher integer
+priorities, and shortest-job-first uses configured epoch count as a proxy rather
+than predicting duration. Strategies accept enum values or their serialized
+strings. Unknown strategies, nonpositive concurrency/epoch limits, noninteger
+priorities, and invalid user IDs are rejected before admission or recovery.
+
+`JobScheduler.get_next_job()` now reserves resources before dequeuing a job;
+direct callers own starting it or releasing that reservation. Failed or cancelled
+startup releases capacity without invoking the runner. Cancellation requests stop
+the worker task before state-store I/O, and reservations remain held until runner
+cleanup finishes. Shutdown awaits background tasks, cancels workers, and reaps
+their reservations. Completion writes can be retried after a state-store outage
+without retaining finished jobs' resources. Runners must cooperate with asyncio
+cancellation and terminate their own subprocesses or remote operations; cancelling
+the Python task alone cannot guarantee that external training has stopped.
+
+Admission rejects duplicate identities and jobs that are no longer pending.
+Shutdown closes the scheduler, drains in-flight submissions, and cancels queued
+jobs with completion timestamps. Submission interrupted during persistence retains
+a cancelled job record instead of leaving unowned pending work. State writes use
+the live job and are serialized per identity, so an older write cannot overwrite
+a later cancellation. Failed terminal writes remain in memory for retry during
+cleanup or a repeated shutdown call. Without a configured journal, these retries
+and the default state backend do not survive process crashes. State-store I/O and
+runner cleanup must eventually return for graceful shutdown to finish.
+
+For process-crash recovery, configure
+`AdvancedTrainingOrchestrator(training_runner=run_training, journal_dir="/persistent/training-jobs")`.
+The journal stores JSON-serializable job configurations and statuses using atomic
+replacement with file and directory fsync. An OS lock permits one owner of the
+directory; use a persistent local filesystem with reliable locking and rename,
+not a shared multi-host scheduler. Keep the directory private because records
+contain job configurations. `durable_journal_enabled` reports whether this mode
+is active.
+
+On restart, committed queued jobs with no start timestamp return to the queue.
+They require an explicitly configured runner. A durable running record must be
+written before the runner is invoked. Previously started work without a terminal
+outcome becomes `interrupted`; it is never automatically retried. Inspect external
+process/provider state and checkpoints before submitting a new job, since remote
+training can outlive the orchestrator. A queued commit can survive even if the
+process died before returning its submission response. Use the optional submission
+key below to recover its identity. This is not an exactly-once remote-execution
+guarantee.
+
+In journal mode, status reads use disk records and cache updates are retryable
+projections. Cache outages do not reject already committed transitions or prevent
+graceful shutdown; a future owner reconstructs the cache. Invalid or incomplete
+journal records fail startup before any job executes. Historical terminal outcomes
+are restored as recorded, without claiming that their artifacts still exist or
+that training improved evaluation metrics.
+
+Pass `idempotency_key="client-generated-request-id"` to `submit_training_job` to
+deduplicate client retries. The key is scoped to `user_id` and the orchestrator's
+journal; without a journal it lasts only for the current instance. Keys contain
+1–256 characters, and keyed requests must round-trip through JSON unchanged.
+The same key, configuration, and priority return the original job ID without
+queueing another attempt. A changed configuration or priority raises `ValueError`.
+Terminal and interrupted jobs also return their original identity; deliberately
+starting new work requires a new key. Unkeyed submissions continue to create new
+jobs. User IDs provide namespacing, not authentication or authorization.
+
+Configuration is copied before waiting for admission, so caller mutations cannot
+change queued work. Request fingerprints survive journal recovery; raw keys are
+not stored. Journal schema 2 records fingerprints, while existing schema 1 records
+remain readable. Keep keys stable across uncertain responses and use a persistent
+journal for retry deduplication across process crashes. This does not deduplicate
+remote provider calls inside a runner.
+
+`TrainingJobSpec(max_runtime=60.0)` sets a finite positive runner execution limit
+in seconds; `None` leaves it unlimited. Admission, recovery, and direct worker
+execution reject invalid limits before invoking training. The limit uses a
+monotonic clock and covers the runner, excluding queue wait and experiment-tracker
+I/O. On expiry the worker requests cancellation once, waits for runner cleanup,
+and records `timed_out` without publishing a successful result or final metrics.
+Returning an artifact after suppressing cancellation does not turn a timeout into
+success. Provider-raised timeouts remain failed operations with uncertain outcomes
+and are not automatically retried.
+
+Reservations stay held until cleanup finishes, even if cancellation is requested
+again. Timed-out outcomes survive journal recovery and idempotent retries return
+the existing job. Cleanup can exceed the configured limit, and code that blocks
+the event loop cannot be preempted; late results are still rejected when control
+returns. Runners must yield and stop/join any external work they own. This limit
+is not a hard process deadline or a remote billing cap.
+
+Experiment tracking binds every metric, artifact, and close operation to that
+job's run. W&B uses `create_new` and retains the returned run object, including
+when an unrelated global run is already active. This requires W&B 0.19.10 or
+later ([release notes](https://github.com/wandb/wandb/releases/tag/v0.19.10)); older
+SDKs produce a backend error instead of reusing or finishing another run.
+Explicit job-specific W&B IDs override ambient `WANDB_RUN_ID` values, and runs
+do not implicitly resume an existing remote experiment.
+MLflow uses explicit run IDs through
+[`MlflowClient`](https://mlflow.org/docs/latest/api_reference/python_api/mlflow.client.html),
+including distinct file and directory artifact operations. Both the tracker-level
+enable flag and the job's `enable_wandb` / `enable_mlflow` flag must be enabled.
+
+Tracking records retain a copied configuration, validated finite metrics, and the
+actual terminal outcome. Failed, cancelled, interrupted, and timed-out jobs close
+with a non-success backend status; precise outcomes also appear in the W&B
+summary or MLflow status tag. Duplicate starts, updates after closure, and
+conflicting terminal outcomes are rejected. Repeating the same close retries
+only backend closures that failed. Optional SDK errors appear under the local
+experiment's `backend_errors` without converting validated training into failure
+or falling back to a different run. These records and SDK handles are process-local;
+they do not provide durable reconciliation of external tracker runs after a crash.
+
+Completion is established after artifact validation and metric/artifact logging,
+before final tracker closure. Cancelling that final bookkeeping task cannot erase
+an already completed training result. SDK calls run in worker threads so a slow
+tracker does not block the event loop or another runner's runtime limit. Operations
+on one experiment are serialized; different experiments can progress concurrently
+within the asyncio executor's capacity. Configurations and metrics are copied
+before waiting for their experiment's lock, and local ownership updates stay on
+the event loop.
+
+Cancellation drains the current tracking operation before releasing its lock,
+preventing a late upload from racing closure. A cancelled start also closes any
+newly owned run, even though its caller never received the experiment ID. Repeated
+cancellation does not detach that cleanup. Threads cannot forcibly stop an SDK
+request: a hung call can still delay that job's cancellation, shutdown, and release
+of its resource reservation. Configure timeouts in the relevant SDK. Backend
+uploads remain best-effort, and runner deadlines exclude tracking I/O.
+
+Capacity detection uses process CPU affinity and the smallest visible Linux
+cgroup CPU quota, including fractional CPU allowances. Memory uses available
+host memory bounded by remaining memory allowance across visible cgroup
+ancestors. Both cgroup v1 and v2 layouts are supported through process membership
+and mount information; see the [kernel cgroup v2 documentation](https://www.kernel.org/doc/html/latest/admin-guide/cgroup-v2.html)
+and [v1 CPU bandwidth documentation](https://www.kernel.org/doc/html/v5.12/scheduler/sched-bwc.html).
+Storage is measured on `ResourceManager(storage_path=...)`'s filesystem. Failed
+probes leave the affected capacity at zero and appear in
+`resource_detection_issues`; they no longer fabricate fallback CPUs, memory,
+storage, or network bandwidth. Network requires explicit configuration.
+
+Use `ResourceManager(capacity_overrides={ResourceType.NETWORK: 100.0})` for an
+operator-defined allowance, then pass that manager as `resource_manager=` to
+`AdvancedTrainingOrchestrator`. Overrides must be finite nonnegative numbers;
+`resource_sources` distinguishes configured allowances from detected values.
+Memory and storage use GiB; network requests and its configured allowance must
+use matching units. These remain startup snapshots: hidden cgroup ancestors,
+other consumers, later quota changes, and filesystem/user quotas can reduce
+actual availability. Configured allowances are not hardware measurements.
+
+It requires an explicit `training_runner`; submission without one fails before
+queueing or resource allocation. The old simulated loop, invented loss/reward,
+and metadata-only "model" files have been removed.
+
+The runner owns model creation, optimization, early stopping, checkpointing,
+and recovery. The orchestrator never blindly retries an uncertain optimizer
+operation. A runner must return `TrainingRunResult` with finite measured metrics,
+positive step/epoch counts, and a nonempty saved file or directory. Only validated
+results are marked completed. This validates artifact completeness, not learning
+quality; held-out evaluation is still required.
 
 ```python
-# Example Usage
-config = TrainingConfig(
-    experiment_name="advanced_grpo",
-    agent_type="MultiTurnAgent",
-    num_epochs=100,
-    resource_requirements=[
-        ResourceRequirement(ResourceType.GPU, 4.0),
-        ResourceRequirement(ResourceType.MEMORY, 32.0)
-    ],
-    enable_early_stopping=True,
-    enable_wandb=True
+from pathlib import Path
+from stateset_agents.training.advanced_training_orchestrator import (
+    AdvancedTrainingOrchestrator, TrainingRunResult,
 )
 
-job_id = await orchestrator.submit_training_job(config, priority=1)
+async def run_training(job):
+    # Integrate your actual trainer here. It must perform updates and save weights.
+    result = await your_trainer.train_and_save(job.config)
+    return TrainingRunResult(
+        artifact_path=Path(result.checkpoint_path),
+        metrics=result.measured_metrics,
+        steps=result.optimizer_steps,
+        epochs=result.completed_epochs,
+    )
+
+orchestrator = AdvancedTrainingOrchestrator(training_runner=run_training)
 ```
 
-**Results:**
-- **5x Training Efficiency**: Optimal resource utilization and scheduling
-- **Zero Resource Waste**: Dynamic allocation prevents over-provisioning
-- **Automatic Recovery**: Fault tolerance with < 1% job failure rate
+`your_trainer` above is an integration supplied by the application, not a bundled
+trainer API. For a ready-to-use supported training path, use `train-remote` or the
+packaged trainer entrypoints. Multi-GPU execution, automatic checkpoint recovery,
+and hyperparameter optimization are capabilities of the chosen runner, not
+capabilities inferred from the scheduler configuration.
 
 ---
 

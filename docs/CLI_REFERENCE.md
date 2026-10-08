@@ -301,7 +301,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.60.0-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.61.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -999,6 +999,34 @@ stateset-agents remote-providers --json
 
 - `--json`, `--json-output`: Emit machine-readable JSON.
 
+### `stateset-agents river-preflight`
+
+Emit versioned JSON describing local River prerequisites and, optionally,
+current account model access. The default checks Python, the supported SDK,
+and configured credentials without constructing a provider client.
+
+```bash
+stateset-agents river-preflight
+stateset-agents river-preflight --live \
+  --base-model Qwen/Qwen3.6-35B-A3B-FP8 \
+  --base-model Qwen/Qwen3.8-27B-FP8 \
+  --output outputs/river-preflight.json
+```
+
+- `--live`: Query account capabilities once, then close the client. Local
+  prerequisite failures prevent the query. No training sessions or sampling.
+- `--base-model TEXT`: Exact model ID to check; repeat for multiple models.
+  Without `--live`, access remains `null`. With `--live`, unavailable models
+  fail the report. Omitting the option lists account models in live mode.
+- `--timeout-seconds FLOAT`: Finite positive SDK request timeout, default `15`.
+  Retries are disabled; this is not an end-to-end command deadline.
+- `--output PATH`: Also save JSON to a new file; existing paths are rejected.
+
+Exit codes: `0` requested checks passed, `1` a check failed, `2` invalid options
+or a report-write error. Local success does not verify authentication; live
+success does not verify training correctness, capacity, funding, model quality,
+or hosted chat modes. See [River provider](RIVER_PROVIDER.md).
+
 ### `stateset-agents runpod-orphans`
 
 Inspect locally recorded cleanup leases for RunPod training pods whose
@@ -1152,12 +1180,66 @@ stateset-agents auto-research
 
 ### `stateset-agents benchmark`
 
-Run and aggregate Phase 0 / whitepaper-v1 benchmarks.
+Run benchmarks and compare held-out agent outcomes.
 
 Subcommands:
 
 - `aggregate`: Aggregate all *.json results in a directory into summary.md + summary.csv.
+- `plan-agent-study`: Freeze an offline four-arm River campaign in a fresh
+  `--output` directory. Writes `study_plan.json` with argv arrays, dependencies,
+  paid-stage labels, split hashes and acceptance thresholds. Accepts `--base-model`,
+  comma-separated `--seeds` (42–47; at least six unique seeds), balanced split sizes
+  `--train-count`/`--validation-count`/`--test-count` (256/64/128), `--steps` (20),
+  `--concurrency` (8), `--sft-epochs` (3), `--sft-learning-rate` (2e-5), and
+  `--rl-learning-rate` (1e-5). `--zero-update-patience` (5; 0 disables) stops RL
+  after consecutive confirmed skipped optimizer updates, preserving the sealed
+  test split. Optional `--rollout-token-budget` (integer >=1024)
+  caps reserved trajectory output tokens per native run across all phases and
+  resume; infeasible caps below the planned minimum are rejected. This is not a
+  billing cap. Runs no commands and authorizes no spend.
+- `audit-agent-study`: Audit `--study-dir` against its frozen plan, including
+  replayed training data, seeds, source checkpoint identities, exact test cases,
+  replayed held-out action traces, validation selection, completed training steps, single-use test-attempt markers,
+  and configured admission-budget
+  evidence. Writes `study_audit.json`;
+  `--strict` exits 1 for incomplete evidence or failed gates, 2 for an invalid plan.
+  A passing audit is local learning evidence, not provider attestation or cost certification.
+- `audit-refund-traces`: Replay saved sandbox actions from a native `--report`
+  (`test_results.json`) against its saved `--cases` (`test.json`). Requires matching
+  implementation and case hashes. Writes `--output` (default `trace_audit.json`)
+  with per-case results, mismatches, and input hashes. Exits 1 for replay failures
+  and 2 for invalid inputs; refuses to overwrite input evidence. Makes no provider
+  requests. Does not verify model execution, token usage, latency, or external
+  truncation triggers, and does not establish a learning improvement by itself.
+- `compare-agent-study`: Compare the four arms together using repeated `--base`,
+  `--sft`, `--rejection-sft`, and `--rl` test-report paths. Requires matching
+  seeds/cases/protocols and distinct trained checkpoints; applies all improvement
+  gates plus statistical tests corrected for three comparisons. Defaults:
+  `--min-seeds 6`, `--min-gain 0.03`, `--alpha 0.05`, `--output agent_study.json`.
+  `--strict` exits 1 on failed gates; malformed evidence exits 2.
+- `compare-agents`: Compare paired held-out agent runs from repeated `--baseline`
+  and `--candidate` JSON paths. Requires matching seed sets, exact cases, model,
+  environment, and evaluation settings. Writes `--output` (default
+  `agent_comparison.json`) with paired wins/regressions and per-run uncertainty.
+  Defaults to `--min-seeds 3` and `--min-gain 0.03`, plus improvement in every seed
+  and no violation/truncation regressions. `--strict` exits 1 on failed gates;
+  invalid or incompatible evidence exits 2. See [River comparisons](RIVER_PROVIDER.md).
+  Reports with scenario-family labels additionally require matching labels and
+  no per-family success, violation, or truncation regression in any seed.
+  `--require-significance` additionally gates on an exact one-sided seed sign
+  test and distinct candidate checkpoints. `--alpha` defaults to 0.05;
+  `--comparisons` defaults to 1 and sets the planned comparison count for
+  Bonferroni correction. The test assumes independent training runs and a
+  protocol fixed before inspecting held-out results.
 - `phase0`: Run a single Phase 0 benchmark and emit a schema-compliant JSON result.
+- `prepare-refund-data`: Generate offline, replay-verified reference-policy SFT
+  chats and separate held-out case files. Requires a fresh `--output` directory;
+  accepts `--seed` (42), `--train-count` (256), `--validation-count` (64), and
+  `--test-count` (128). Only training cases enter `train.jsonl`.
+- `filter-refund-data`: Replay `--candidates` from a native collection run against
+  the canonical training split in `--data-dir`. Writes verified SFT chats, a
+  rejection audit, and provenance to fresh `--output`. Keeps at most one success
+  per case. Exits 1 with no training file when none pass, or 2 for invalid inputs.
 - `plot`: Generate publication figures from aggregated benchmark results.
 - `smoke`: Quick end-to-end smoke test of the GSM8K benchmark pipeline (no training).
 

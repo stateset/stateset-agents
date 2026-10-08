@@ -62,3 +62,19 @@ def test_security_gate_rejects_missing_or_malformed_audit(
     assert main() == 1
     (tmp_path / "pip-audit-report.json").write_text("{}", encoding="utf-8")
     assert main() == 1
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"errors": ["scanner failed"], "results": []},
+        {"errors": [], "results": [{}]},
+        {"errors": [], "results": [None]},
+    ],
+)
+def test_release_gate_rejects_incomplete_bandit_report(tmp_path, monkeypatch, payload):
+    monkeypatch.chdir(tmp_path)
+    _write_reports(tmp_path, [])
+    (tmp_path / "bandit-report.json").write_text(json.dumps(payload))
+    assert main() == 1

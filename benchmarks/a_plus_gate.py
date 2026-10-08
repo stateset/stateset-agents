@@ -116,6 +116,12 @@ def validate_security_report_payloads(bandit: Any, audit: Any) -> dict[str, int]
         raise APlusGateError("Bandit scan contains execution errors")
     if any(not isinstance(item, Mapping) for item in results):
         raise APlusGateError("Bandit findings must be JSON objects")
+    if any(
+        not isinstance(item.get("issue_severity"), str)
+        or item["issue_severity"].upper() not in {"LOW", "MEDIUM", "HIGH", "CRITICAL"}
+        for item in results
+    ):
+        raise APlusGateError("Bandit findings must have a recognized severity")
     blocked = [
         item
         for item in results

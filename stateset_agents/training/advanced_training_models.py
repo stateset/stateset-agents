@@ -4,6 +4,7 @@ Value objects and serialization helpers for the advanced training orchestrator.
 
 from __future__ import annotations
 
+import math
 import time
 import warnings
 from dataclasses import dataclass, field
@@ -20,6 +21,8 @@ class TrainingStatus(Enum):
     PAUSED = "paused"
     COMPLETED = "completed"
     FAILED = "failed"
+    INTERRUPTED = "interrupted"
+    TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
 
 
@@ -74,7 +77,7 @@ class TrainingJobSpec:
     grpo_entropy_coef: float = 0.01
 
     resource_requirements: list[ResourceRequirement] = field(default_factory=list)
-    max_runtime: int | None = None
+    max_runtime: float | None = None
 
     enable_checkpointing: bool = True
     checkpoint_frequency: int = 100
@@ -113,6 +116,7 @@ class TrainingJob:
 
     retry_count: int = 0
     last_error: str | None = None
+    submission_fingerprint: str | None = None
 
     @property
     def runtime(self) -> float | None:
@@ -154,6 +158,36 @@ def _serialize_resource_requirements(
             }
         )
     return serialized
+
+
+def validate_runtime_limit(value: float | None) -> float | None:
+    """Return a finite positive runner deadline in seconds, or no deadline."""
+    if value is None:
+        return None
+    try:
+        valid = (
+            not isinstance(value, bool)
+            and isinstance(value, (int, float))
+            and math.isfinite(value)
+            and value > 0
+        )
+    except OverflowError:
+        valid = False
+    if not valid:
+        raise ValueError("max_runtime must be finite positive seconds or None")
+    return float(value)
+
+
+def validate_scheduling_inputs(
+    config: TrainingJobSpec, priority: int, user_id: str | None
+) -> None:
+    """Reject values that cannot be ordered or attributed by the scheduler."""
+    if type(priority) is not int:
+        raise ValueError("Job priority must be an integer")
+    if type(config.num_epochs) is not int or config.num_epochs < 1:
+        raise ValueError("num_epochs must be a positive integer")
+    if user_id is not None and not isinstance(user_id, str):
+        raise ValueError("user_id must be text or None")
 
 
 def deserialize_training_config(
@@ -221,6 +255,8 @@ __all__ = [
     "deserialize_training_job",
     "serialize_training_config",
     "serialize_training_job",
+    "validate_runtime_limit",
+    "validate_scheduling_inputs",
 ]
 
 

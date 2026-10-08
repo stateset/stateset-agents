@@ -7,10 +7,10 @@ agents on single-turn interactions (one prompt, one response).
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import inspect
 import logging
-import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,7 @@ from stateset_agents.core.trajectory import (
     Trajectory,
     TrajectoryGroup,
 )
+from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
     notify_checkpoint_saved,
@@ -30,6 +31,7 @@ from .callbacks import (
     notify_training_end,
     notify_training_start,
 )
+from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
 from .loss_computation import (
     compute_enhanced_grpo_loss,
@@ -51,12 +53,14 @@ from .single_turn_state import (
     resolve_task_id,
 )
 from .trainer_utils import (
+    backward_training_loss,
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
     get_torch,
     require_torch,
     require_transformers,
+    safe_optimizer_step,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,6 +83,21 @@ def _usable_generate_turn(agent: Any):
     """
     fn = getattr(agent, "generate_turn", None)
     return fn if fn is not None and inspect.iscoroutinefunction(fn) else None
+
+
+async def _call_environment(method: Any, *argument_forms: tuple[Any, ...]) -> Any:
+    """Bind legacy call shapes before invocation; never retry a method error."""
+    try:
+        signature = inspect.signature(method)
+    except (TypeError, ValueError):
+        return await method(*argument_forms[0])
+    for arguments in argument_forms:
+        try:
+            signature.bind(*arguments)
+        except TypeError:
+            continue
+        return await method(*arguments)
+    raise TypeError("Environment method does not accept a supported argument form")
 
 
 class SingleTurnGRPOTrainer:
@@ -271,24 +290,16 @@ class SingleTurnGRPOTrainer:
         steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
         return max(1, steps)
 
-    def _apply_optimizer_step(self, torch, use_amp: bool, max_grad_norm: float) -> None:
-        if self.optimizer is None:
-            return
-        if self.scaler is not None and use_amp:
-            self.scaler.unscale_(self.optimizer)
-        torch.nn.utils.clip_grad_norm_(self.agent.model.parameters(), max_grad_norm)
-        if self.scaler is not None and use_amp:
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            self.optimizer.step()
-
-        if self.lr_scheduler is not None:
-            self.lr_scheduler.step()
-
-        self.optimizer.zero_grad(set_to_none=True)
-        self.global_step += 1
-        self._sync_rollout_backend()
+    def _apply_optimizer_step(
+        self, torch, use_amp: bool, max_grad_norm: float, *, gradient_scale: float = 1.0
+    ) -> bool:
+        return safe_optimizer_step(
+            self,
+            torch,
+            max_grad_norm=max_grad_norm,
+            scaler=self.scaler if use_amp else None,
+            gradient_scale=gradient_scale,
+        )
 
     def _sync_rollout_backend(self) -> None:
         """Keep an attached rollout engine on-policy after an optimizer step
@@ -299,6 +310,20 @@ class SingleTurnGRPOTrainer:
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
             self.last_rollout_sync = bool(sync())
+
+    def _flush_accumulation(
+        self, torch: Any, use_amp: bool, max_grad_norm: float
+    ) -> bool:
+        """Close pending accumulated work before a different update regime."""
+        steps = self._get_grad_accum_steps()
+        pending = self._grad_accum_step % steps
+        applied = False
+        if self.optimizer is not None and pending:
+            applied = self._apply_optimizer_step(
+                torch, use_amp, max_grad_norm, gradient_scale=steps / pending
+            )
+        self._grad_accum_step = 0
+        return applied
 
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""
@@ -442,7 +467,45 @@ class SingleTurnGRPOTrainer:
         return merge_scenario_into_state(state, scenario, self.config)
 
     async def train(self) -> Any:
-        """Run single-turn GRPO training loop with group-relative updates."""
+        """Train, discarding pending work and closing tracking on every exit."""
+        errored = False
+        cancelled = False
+        try:
+            return await self._train_loop()
+        except BaseException as error:
+            errored = True
+            cancelled = isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
+            if self.optimizer is not None:
+                try:
+                    self.optimizer.zero_grad(set_to_none=True)
+                except Exception as cleanup_error:
+                    logger.warning(
+                        "Could not discard pending gradients: %s", cleanup_error
+                    )
+            self._grad_accum_step = 0
+            raise
+        finally:
+            try:
+                finish = getattr(self.wandb_logger, "finish_run", None)
+                if callable(finish):
+                    await run_sync_owned(
+                        finish,
+                        {
+                            "final_step": self.global_step,
+                            "best_eval_metric": self.best_eval_metric,
+                            "errored": errored,
+                            "cancelled": cancelled,
+                        },
+                    )
+            except Exception as cleanup_error:
+                if not errored:
+                    raise
+                logger.warning(
+                    "Tracking cleanup failed after training stopped: %s", cleanup_error
+                )
+
+    async def _train_loop(self) -> Any:
+        """Run episodes and success-only finalization inside the owned lifecycle."""
         logger.info("Starting single-turn GRPO training...")
 
         torch = self._get_torch_module()
@@ -451,8 +514,6 @@ class SingleTurnGRPOTrainer:
             getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
         )
 
-        await notify_training_start(self.callbacks, trainer=self, config=self.config)
-
         num_episodes = getattr(self.config, "num_episodes", 10)
         max_steps = getattr(self.config, "max_steps_per_episode", 1) or 1
         num_generations = getattr(self.config, "num_generations", 8)
@@ -460,13 +521,26 @@ class SingleTurnGRPOTrainer:
 
         grad_accum_steps = self._get_grad_accum_steps()
         total_steps = num_episodes * max_steps
-        total_updates = math.ceil(total_steps / grad_accum_steps)
+        total_updates = estimate_grpo_optimizer_steps(
+            total_steps,
+            gradient_accumulation_steps=grad_accum_steps,
+            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+        )
         self._setup_scheduler(total_updates)
 
         resume_from = getattr(self.config, "resume_from_checkpoint", None)
         resumed = False
-        if resume_from:
+        if resume_from is not None:
+            if isinstance(resume_from, str) and not resume_from.strip():
+                raise ValueError("resume_from_checkpoint cannot be empty")
             resumed = self.load_checkpoint(resume_from)
+            if resumed is not True:
+                raise ValueError(
+                    "Requested training checkpoint could not be restored; "
+                    "refusing to start a fresh run instead of resuming"
+                )
+
+        await notify_training_start(self.callbacks, trainer=self, config=self.config)
 
         start_episode = 0
         if resumed:
@@ -476,10 +550,7 @@ class SingleTurnGRPOTrainer:
             self.current_epoch = episode
             scenario = self._get_episode_scenario(episode)
 
-            try:
-                state = await self.environment.reset(scenario)
-            except TypeError:
-                state = await self.environment.reset()
+            state = await _call_environment(self.environment.reset, (scenario,), ())
             state = self._merge_scenario_into_state(state, scenario)
             episode_rewards: list[float] = []
             replay_group_count = 0
@@ -532,54 +603,40 @@ class SingleTurnGRPOTrainer:
                     else contextlib.nullcontext()
                 )
 
-                try:
-                    with autocast_ctx:
-                        if use_enhanced:
-                            loss_dict = compute_enhanced_grpo_loss(
-                                trajectory_groups=training_groups,
-                                beta=base_beta,
-                                config=self.config,
-                                agent=self.agent,
-                                reference_model=self.reference_model,
-                            )
-                        else:
-                            loss_dict = compute_grpo_loss(
-                                trajectory_groups=training_groups,
-                                config=self.config,
-                                agent=self.agent,
-                                global_reward_mean=self._global_reward_mean,
-                                global_reward_count=self._global_reward_count,
-                                update_global_stats=self._update_global_stats,
-                            )
+                with autocast_ctx:
+                    if use_enhanced:
+                        loss_dict = compute_enhanced_grpo_loss(
+                            trajectory_groups=training_groups,
+                            beta=base_beta,
+                            config=self.config,
+                            agent=self.agent,
+                            reference_model=self.reference_model,
+                        )
+                    else:
+                        loss_dict = compute_grpo_loss(
+                            trajectory_groups=training_groups,
+                            config=self.config,
+                            agent=self.agent,
+                            global_reward_mean=self._global_reward_mean,
+                            global_reward_count=self._global_reward_count,
+                            update_global_stats=self._update_global_stats,
+                        )
 
-                        ewc_penalty = None
-                        if self.continual_manager is not None:
-                            ewc_penalty = self.continual_manager.compute_ewc_penalty(
-                                self.agent
+                    ewc_penalty = None
+                    if self.continual_manager is not None:
+                        ewc_penalty = self.continual_manager.compute_ewc_penalty(
+                            self.agent
+                        )
+                    if ewc_penalty is not None:
+                        loss_dict["ewc_penalty"] = ewc_penalty
+                        if loss_dict.get("total_loss") is not None:
+                            loss_dict["total_loss"] = (
+                                loss_dict["total_loss"] + ewc_penalty
                             )
-                        if ewc_penalty is not None:
-                            loss_dict["ewc_penalty"] = ewc_penalty
-                            if loss_dict.get("total_loss") is not None:
-                                loss_dict["total_loss"] = (
-                                    loss_dict["total_loss"] + ewc_penalty
-                                )
-                except SINGLE_TRAINER_EXCEPTIONS as loss_err:
-                    logger.warning(
-                        "Falling back to heuristic single-turn update: %s",
-                        loss_err,
-                    )
-                    loss_dict = {
-                        "policy_loss": None,
-                        "total_loss": None,
-                        "mean_advantage": (
-                            float(np.mean(group.rewards)) if group.rewards else 0.0
-                        ),
-                    }
 
                 policy_loss = loss_dict.get("total_loss")
                 if policy_loss is None:
                     policy_loss = loss_dict.get("policy_loss")
-                update_applied = False
 
                 # Backprop/update
                 inner = max(
@@ -591,13 +648,17 @@ class SingleTurnGRPOTrainer:
                     and policy_loss is not None
                     and loss_dict.get("path") == "token"
                 ):
-                    # PPO/DAPO-style mini-epochs against the frozen old policy:
-                    # the first (on-policy) update is the loss just computed.
+                    # PPO/DAPO-style mini-epochs against the frozen old policy,
+                    # kept separate from any pending accumulated update.
                     old_logprobs = compute_token_old_logprobs(
                         training_groups, self.config, self.agent
                     )
+                    had_pending = bool(self._grad_accum_step % grad_accum_steps)
+                    self._flush_accumulation(torch, use_amp, max_grad_norm)
                     for step_idx in range(inner):
-                        if step_idx > 0:
+                        # A flush may change weights after the initial forward;
+                        # rebuild that graph against the frozen pre-flush policy.
+                        if step_idx > 0 or had_pending:
                             with autocast_ctx:
                                 loss_dict = (
                                     compute_enhanced_grpo_loss(
@@ -619,24 +680,36 @@ class SingleTurnGRPOTrainer:
                                         old_logprobs=old_logprobs,
                                     )
                                 )
-                            policy_loss = loss_dict["total_loss"]
-                        if self.scaler is not None and use_amp:
-                            self.scaler.scale(policy_loss).backward()
-                        else:
-                            policy_loss.backward()
+                                policy_loss = loss_dict["total_loss"]
+                                if self.continual_manager is not None:
+                                    ewc_penalty = (
+                                        self.continual_manager.compute_ewc_penalty(
+                                            self.agent
+                                        )
+                                    )
+                                    if ewc_penalty is not None:
+                                        loss_dict["ewc_penalty"] = ewc_penalty
+                                        policy_loss = policy_loss + ewc_penalty
+                                        loss_dict["total_loss"] = policy_loss
+                        backward_training_loss(
+                            self,
+                            policy_loss,
+                            torch,
+                            scaler=self.scaler if use_amp else None,
+                        )
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
-                    update_applied = True
                 elif self.optimizer is not None and policy_loss is not None:
                     scaled_loss = policy_loss / grad_accum_steps
-                    if self.scaler is not None and use_amp:
-                        self.scaler.scale(scaled_loss).backward()
-                    else:
-                        scaled_loss.backward()
+                    backward_training_loss(
+                        self,
+                        scaled_loss,
+                        torch,
+                        scaler=self.scaler if use_amp else None,
+                    )
 
                     self._grad_accum_step += 1
                     if self._grad_accum_step % grad_accum_steps == 0:
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
-                        update_applied = True
 
                 # Progress environment once using best response
                 action_turn = ConversationTurn(
@@ -644,44 +717,32 @@ class SingleTurnGRPOTrainer:
                     content=str(best_response),
                 )
                 done = False
-                try:
-                    try:
-                        step_result = await self.environment.step(state, action_turn)
-                    except TypeError:
-                        step_result = await self.environment.step(best_response)
+                step_result = await _call_environment(
+                    self.environment.step, (state, action_turn), (best_response,)
+                )
 
-                    step_reward = (
-                        float(np.mean(group.rewards)) if group.rewards else 0.0
-                    )
+                step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
 
-                    if isinstance(step_result, tuple) and len(step_result) == 4:
-                        if isinstance(step_result[1], ConversationTurn):
-                            next_state, _, step_reward, done = step_result
-                        else:
-                            next_state, step_reward, done, _info = step_result
-                        state = self._merge_scenario_into_state(next_state, scenario)
-                    elif isinstance(step_result, dict):
-                        next_state = step_result.get("state", state)
-                        state = self._merge_scenario_into_state(next_state, scenario)
-                        step_reward = step_result.get(
-                            "reward",
-                            float(loss_dict.get("mean_advantage", 0.0)),
-                        )
-                        done = bool(step_result.get("done", False))
+                if isinstance(step_result, tuple) and len(step_result) == 4:
+                    if isinstance(step_result[1], ConversationTurn):
+                        next_state, _, step_reward, done = step_result
                     else:
-                        step_reward = (
-                            float(np.mean(group.rewards)) if group.rewards else 0.0
-                        )
-                except SINGLE_TRAINER_EXCEPTIONS:
+                        next_state, step_reward, done, _info = step_result
+                    state = self._merge_scenario_into_state(next_state, scenario)
+                elif isinstance(step_result, dict):
+                    next_state = step_result.get("state", state)
+                    state = self._merge_scenario_into_state(next_state, scenario)
+                    step_reward = step_result.get(
+                        "reward",
+                        float(loss_dict.get("mean_advantage", 0.0)),
+                    )
+                    done = bool(step_result.get("done", False))
+                else:
                     step_reward = (
                         float(np.mean(group.rewards)) if group.rewards else 0.0
                     )
 
                 episode_rewards.append(float(step_reward))
-
-                if self.optimizer is None or policy_loss is None:
-                    if not update_applied:
-                        self.global_step += 1
 
                 if done:
                     break
@@ -696,16 +757,17 @@ class SingleTurnGRPOTrainer:
             )
 
             if self.wandb_logger is not None:
-                self.wandb_logger.log(
-                    {
-                        "episode": episode,
-                        "episode_reward": avg_reward,
-                        "episode_steps": len(episode_rewards),
-                        "policy_loss": float(
-                            getattr(policy_loss, "item", lambda: 0.0)()
-                        ),
-                    }
-                )
+                metrics = {
+                    "episode": episode,
+                    "episode_reward": avg_reward,
+                    "episode_steps": len(episode_rewards),
+                    "policy_loss": float(getattr(policy_loss, "item", lambda: 0.0)()),
+                }
+                log_metrics = getattr(self.wandb_logger, "log_metrics", None)
+                if callable(log_metrics):
+                    log_metrics(metrics, step=int(self.global_step))
+                else:
+                    self.wandb_logger.log(metrics)
 
             await notify_episode_end(
                 self.callbacks,
@@ -725,9 +787,7 @@ class SingleTurnGRPOTrainer:
                 },
             )
 
-        logger.info("Single-turn GRPO training completed")
-        if self.optimizer is not None and self._grad_accum_step % grad_accum_steps != 0:
-            self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+        self._flush_accumulation(torch, use_amp, max_grad_norm)
 
         if self.continual_manager is not None and self._current_task_id is not None:
             self.continual_manager.on_task_end(
@@ -741,6 +801,7 @@ class SingleTurnGRPOTrainer:
             self.callbacks,
             metrics={"final_step": int(self.global_step)},
         )
+        logger.info("Single-turn GRPO training completed")
         return self.agent
 
     async def save_checkpoint(

@@ -2,6 +2,7 @@
 Comprehensive tests for training modules
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -104,6 +105,10 @@ class TestSingleTurnGRPOTrainer:
         param_weight = torch.nn.Parameter(torch.randn(4, 4))
         param_bias = torch.nn.Parameter(torch.randn(4))
         agent.model = MagicMock()
+        agent.model.device = torch.device("cpu")
+        agent.model.side_effect = lambda **kwargs: SimpleNamespace(
+            loss=param_weight.square().mean() + param_bias.square().mean()
+        )
         agent.tokenizer = MagicMock()
         agent.generate_response = AsyncMock(return_value="Test response")
         agent.model.named_parameters = MagicMock(
@@ -113,7 +118,7 @@ class TestSingleTurnGRPOTrainer:
             ]
         )
         agent.model.parameters = MagicMock(
-            return_value=iter([param_weight, param_bias])
+            side_effect=lambda: iter([param_weight, param_bias])
         )
         return agent
 
@@ -438,7 +443,7 @@ class TestSingleTurnGRPOTrainer:
             "current_epoch": 2,
             "best_eval_metric": 0.4,
             "steps_without_improvement": 1,
-            "grad_accum_step": 3,
+            "grad_accum_step": 0,  # Legacy state is safe only at a completed window.
             "optimizer_state_dict": {"opt": 1},
             "scheduler_state_dict": {"sched": 2},
         }

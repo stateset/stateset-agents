@@ -85,7 +85,9 @@ def test_release_readiness_is_bound_to_exact_commit(tmp_path: Path) -> None:
             audit,
             b'{"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]}',
         ),
-        (coverage, b'<coverage line-rate="0.64"/>'),
+        # Synthetic passing evidence; commit binding must not depend on the
+        # repository's current coverage floor.
+        (coverage, b'<coverage line-rate="1.0"/>'),
     ):
         artifact.write_bytes(content)
 
@@ -122,7 +124,7 @@ def test_release_readiness_is_bound_to_exact_commit(tmp_path: Path) -> None:
                 "distributions": [retained(wheel), retained(sdist)],
                 "security_reports": [retained(bandit), retained(audit)],
                 "coverage_reports": [retained(coverage)],
-                "coverage_percent": 64.0,
+                "coverage_percent": 100.0,
             }
         ),
         encoding="utf-8",
@@ -179,6 +181,15 @@ def test_release_security_reports_are_revalidated_fail_closed() -> None:
     with pytest.raises(gate.APlusGateError, match="execution errors"):
         gate.validate_security_report_payloads(
             {"errors": ["parse failed"], "results": []},
+            {"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]},
+        )
+
+
+@pytest.mark.parametrize("severity", [None, 4, "", "unknown"])
+def test_release_security_rejects_unclassified_bandit_findings(severity):
+    with pytest.raises(gate.APlusGateError, match="recognized severity"):
+        gate.validate_security_report_payloads(
+            {"errors": [], "results": [{"issue_severity": severity}]},
             {"dependencies": [{"name": "numpy", "version": "2.4.6", "vulns": []}]},
         )
 

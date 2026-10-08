@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import sys
+from types import SimpleNamespace
 
 import pytest
 from typer.testing import CliRunner
@@ -10,6 +12,125 @@ from typer.testing import CliRunner
 from stateset_agents.cli import app
 
 runner = CliRunner()
+
+
+@pytest.fixture
+def river_preflight_calls(monkeypatch):
+    from stateset_agents.remote import river_runtime
+
+    events = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            events.append(kwargs)
+
+        def get_capabilities(self):
+            events.append("capabilities")
+            return ["private/allowed"]
+
+        def close(self):
+            events.append("closed")
+
+    monkeypatch.setitem(sys.modules, "river_client", SimpleNamespace(Client=Client))
+    monkeypatch.setattr(
+        river_runtime,
+        "inspect_native_runtime",
+        lambda: {
+            "python": {"version": "3.12.12", "passed": True},
+            "river_sdk": {"version": "0.11.0", "passed": True},
+            "credentials": {"configured": True},
+        },
+    )
+    return events
+
+
+class TestRiverPreflight:
+    def test_help(self):
+        result = invoke_help("river-preflight")
+        assert result.exit_code == 0, result.output
+        for flag in ("--base-model", "--live", "--timeout-seconds", "--output"):
+            assert flag in result.output
+
+    def test_offline_json_has_unchecked_access(self, river_preflight_calls):
+        result = runner.invoke(
+            app, ["river-preflight", "--base-model", "private/allowed"]
+        )
+        assert result.exit_code == 0, result.output
+        report = json.loads(result.stdout)
+        assert report["model_access"] == {"private/allowed": None}
+        assert report["account"]["status"] == "not_checked"
+        assert river_preflight_calls == []
+
+    @pytest.mark.parametrize("denied", [False, True])
+    def test_live_report_persists_success_and_failure(
+        self, river_preflight_calls, tmp_path, denied
+    ):
+        report_path = tmp_path / "nested" / "preflight.json"
+        args = [
+            "river-preflight",
+            "--live",
+            "--base-model",
+            "private/allowed",
+            "--timeout-seconds",
+            "2",
+            "--output",
+            str(report_path),
+        ]
+        if denied:
+            args += ["--base-model", "private/denied"]
+        result = runner.invoke(app, args)
+        assert result.exit_code == (1 if denied else 0), result.output
+        report = json.loads(result.stdout)
+        assert json.loads(report_path.read_text()) == report
+        assert report["account"]["status"] == "checked"
+        assert report["model_access"]["private/allowed"] is True
+        if denied:
+            assert report["model_access"]["private/denied"] is False
+        assert river_preflight_calls[0]["timeout"] == 2.0
+        assert river_preflight_calls[0]["enable_retries"] is False
+        assert river_preflight_calls[1:] == ["capabilities", "closed"]
+
+    @pytest.mark.parametrize("kind", ["file", "directory", "dangling_symlink"])
+    def test_existing_output_is_rejected_before_query(
+        self, river_preflight_calls, tmp_path, kind
+    ):
+        path = tmp_path / "report"
+        if kind == "file":
+            path.write_text("existing evidence")
+        elif kind == "directory":
+            path.mkdir()
+        else:
+            path.symlink_to(tmp_path / "absent")
+        result = runner.invoke(
+            app, ["river-preflight", "--live", "--output", str(path)]
+        )
+        assert result.exit_code == 2
+        assert "Refusing to overwrite" in result.output
+        assert river_preflight_calls == []
+        if kind == "file":
+            assert path.read_text() == "existing evidence"
+        elif kind == "dangling_symlink":
+            assert not (tmp_path / "absent").exists()
+
+    @pytest.mark.parametrize("timeout", ["0", "-1", "nan", "inf"])
+    def test_invalid_timeout_exits_two(self, river_preflight_calls, timeout):
+        result = runner.invoke(
+            app, ["river-preflight", "--live", "--timeout-seconds", timeout]
+        )
+        assert result.exit_code == 2
+        assert "finite positive" in result.output
+        assert river_preflight_calls == []
+
+    def test_report_write_error_exits_two(self, river_preflight_calls, tmp_path):
+        parent = tmp_path / "file"
+        parent.write_text("keep")
+        result = runner.invoke(
+            app, ["river-preflight", "--output", str(parent / "report.json")]
+        )
+        assert result.exit_code == 2
+        assert "Could not write preflight report" in result.output
+        assert parent.read_text() == "keep"
+
 
 # Wide, plain terminal so typer/rich cannot wrap or truncate flag names.
 # A narrow CI pty (Windows runners default to one) renders "--provider" as

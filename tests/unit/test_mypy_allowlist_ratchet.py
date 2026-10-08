@@ -12,8 +12,8 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = all 348 packaged Python files at v0.60.0.
-ALLOWLIST_FLOOR = 348
+# Floor = all 372 packaged Python files at v0.61.0.
+ALLOWLIST_FLOOR = 372
 
 
 def _allowlisted_files() -> list[str]:

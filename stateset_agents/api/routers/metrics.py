@@ -4,11 +4,12 @@ Metrics and Health Router Module
 API endpoints for system health, metrics, and observability.
 """
 
+import asyncio
 import time
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
@@ -16,14 +17,16 @@ from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 from stateset_agents.utils.performance_monitor import get_global_monitor
 from stateset_agents.utils.security import SecurityMonitor
 
-from ..cache import HEALTH_CACHE_TTL_SECONDS, METRICS_CACHE_TTL_SECONDS, get_cache
+from ..cache import METRICS_CACHE_TTL_SECONDS, get_cache
 from ..constants import API_VERSION
 from ..dependencies import AuthenticatedUser, get_security_monitor, require_role
+from ..resilience import HealthStatus
 from ..schemas import ErrorResponse
 
 router = APIRouter(tags=["observability"])
 
 METRICS_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
+HEALTH_TIMEOUT_SECONDS = 5.0
 
 # Track service start time for uptime calculation
 _service_start_time = time.monotonic()
@@ -120,54 +123,37 @@ class DetailedMetricsResponse(BaseModel):
         503: {"description": "Service is unhealthy"},
     },
 )
-async def health_check() -> RouterHealthResponse:
+async def health_check(request: Request, response: Response) -> RouterHealthResponse:
+    """Report the current application's measured dependency checks.
+
+    Health is deliberately uncached: a previous success must not hide an outage
+    or leak between application instances. Liveness remains available at /healthz.
+    Missing checks, failed checks, and timed-out checks return HTTP 503.
     """
-    Get comprehensive service health status.
-
-    Returns health information including:
-    - Overall service status
-    - Uptime
-    - Individual component health
-    - Basic health checks
-
-    This endpoint is cached for {HEALTH_CACHE_TTL_SECONDS} seconds to reduce load.
-    """
-    cache = get_cache()
-    cache_key = "health:check"
-
-    # Try cache first
-    cached_response = cache.get(cache_key)
-    if cached_response is not None:
-        # Update timestamp for cached response
-        cached_response["timestamp"] = datetime.utcnow()
-        return RouterHealthResponse(**cached_response)
-
-    # Calculate uptime
-    uptime = round(time.monotonic() - _service_start_time, 2)
-
-    # Lightweight component checks (placeholders)
-    components = {
-        "agent_service": "healthy",
-        "training_service": "healthy",
-        "security_monitor": "healthy",
-    }
-
-    # Determine overall status
-    all_healthy = all(status == "healthy" for status in components.values())
-    overall_status = "healthy" if all_healthy else "degraded"
-
-    response = RouterHealthResponse(
+    checker = getattr(request.app.state, "health_checker", None)
+    components: dict[str, str] = {}
+    overall_status = "unhealthy"
+    if checker is not None:
+        try:
+            results = await asyncio.wait_for(
+                checker.check_all(), timeout=HEALTH_TIMEOUT_SECONDS
+            )
+            components = {name: result.status.value for name, result in results.items()}
+            if results:
+                overall_status = checker.overall_status.value
+        except Exception:  # Dependency probes must not turn outages into HTTP 500.
+            components = {"health_checks": "unhealthy"}
+    if not components:
+        components = {"health_checks": "unavailable"}
+    if overall_status != HealthStatus.HEALTHY.value:
+        response.status_code = 503
+    return RouterHealthResponse(
         status=overall_status,
         timestamp=datetime.utcnow(),
         version=API_VERSION,
-        uptime=uptime,
+        uptime=round(time.monotonic() - _service_start_time, 2),
         components=components,
     )
-
-    # Cache the response
-    cache.set(cache_key, response.model_dump(), HEALTH_CACHE_TTL_SECONDS)
-
-    return response
 
 
 @router.get(

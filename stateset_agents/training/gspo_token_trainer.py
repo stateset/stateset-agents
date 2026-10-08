@@ -26,7 +26,12 @@ from .gspo_generation import (
     build_scoring_text,
     render_prompt_for_scoring,
 )
-from .gspo_trainer import GSPOConfig, GSPOTrainer
+from .gspo_trainer import (
+    GSPOConfig,
+    GSPOTrainer,
+    _require_finite_vector,
+    normalize_total_loss,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -153,6 +158,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             Training metrics
         """
         self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
         total_loss = torch.tensor(0.0, device=model_device)
@@ -160,8 +166,14 @@ class GSPOTokenTrainer(GSPOTrainer):
         total_samples = 0
         all_rewards = []
         all_importance_ratios = []
+        all_generation_gaps: list[float] = []
+        processed_groups = 0
+        nonzero_advantages = 0
+        advantage_count = 0
+        zero_advantage_groups = 0
 
         for raw_query in queries[:num_groups]:
+            processed_groups += 1
             # A query is a prompt string or {"prompt": ..., "context": {...}};
             # the context (gold answers, expected tools, ...) reaches the reward.
             query_context: dict[str, Any] = {}
@@ -184,6 +196,7 @@ class GSPOTokenTrainer(GSPOTrainer):
                 dtype=torch.float32,
                 device=model_device,
             )
+            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
             # Compute rewards for each response (sequence-level)
             # In a real multi-turn scenario, you could compute rewards per token
@@ -206,6 +219,10 @@ class GSPOTokenTrainer(GSPOTrainer):
             # Compute group advantages (same as standard GSPO for this demo)
             # In practice, you could assign different advantages to different tokens
             advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
+            active = int(torch.count_nonzero(advantages).item())
+            nonzero_advantages += active
+            advantage_count += advantages.numel()
+            zero_advantage_groups += int(active == 0)
 
             # Compute current log probs for each response and get token-level details
             # (with gradients — only the sequence-level importance ratio used
@@ -271,6 +288,10 @@ class GSPOTokenTrainer(GSPOTrainer):
             sequence_lengths = torch.tensor(
                 sequence_lengths_list, dtype=torch.float32, device=model_device
             )
+            old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                current_log_probs, old_log_probs, sequence_lengths
+            )
+            all_generation_gaps.extend(generation_gaps)
 
             # Compute sequence importance ratios. Detach immediately: the
             # GSPO-token objective uses a stop-gradient sequence ratio for
@@ -317,18 +338,10 @@ class GSPOTokenTrainer(GSPOTrainer):
 
             total_loss += loss
 
-        # Backward pass
-        self.optimizer.zero_grad()
-        total_loss.backward()
-
-        # Gradient clipping
-        torch.nn.utils.clip_grad_norm_(
-            self.model.parameters(), self.config.max_grad_norm
-        )
-
-        # Update parameters
-        self.optimizer.step()
-        self.scheduler.step()
+        # Match GSPO: each processed prompt group has equal objective weight.
+        # Normalize the full loss, including KL, before backward and clipping.
+        total_loss = normalize_total_loss(total_loss, processed_groups)
+        self._apply_optimizer_step(total_loss)
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -341,7 +354,15 @@ class GSPOTokenTrainer(GSPOTrainer):
             "policy_loss": total_loss.item(),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
+            "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
+            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
+            "zero_advantage_group_fraction": zero_advantage_groups
+            / max(processed_groups, 1),
+            "advantage_group_count": float(processed_groups),
             "sequence_importance_ratio": avg_importance_ratio,
+            "generation_log_prob_gap": (
+                float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
+            ),
             "learning_rate": self.scheduler.get_last_lr()[0],
         }
 

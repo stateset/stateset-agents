@@ -7,6 +7,7 @@ timeout, and bulkhead implementations for fault-tolerant APIs.
 
 import asyncio
 import functools
+import inspect
 import logging
 import random
 import time
@@ -538,10 +539,13 @@ class HealthChecker:
         start = time.monotonic()
 
         try:
-            if asyncio.iscoroutinefunction(check_func):
-                result = await check_func()
-            else:
-                result = check_func()
+            result = (
+                check_func()
+                if asyncio.iscoroutinefunction(check_func)
+                else await asyncio.to_thread(check_func)
+            )
+            if inspect.isawaitable(result):
+                result = await result
 
             latency = (time.monotonic() - start) * 1000
 
@@ -580,7 +584,7 @@ class HealthChecker:
     def overall_status(self) -> HealthStatus:
         """Get overall health status."""
         if not self._results:
-            return HealthStatus.HEALTHY
+            return HealthStatus.UNHEALTHY
 
         statuses = [r.status for r in self._results.values()]
 

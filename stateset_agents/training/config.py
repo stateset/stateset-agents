@@ -6,11 +6,31 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
 import json
-import math
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+def estimate_grpo_optimizer_steps(
+    rollout_batches: int,
+    *,
+    gradient_accumulation_steps: int = 1,
+    num_gradient_updates: int = 1,
+) -> int:
+    """Estimate native GRPO's optimizer-step budget for a learning-rate schedule.
+
+    Token-path inner updates each commit a full step, bypassing accumulation.
+    Their budget is an upper bound when batches instead use sequence fallback,
+    emit no gradients, or skip updates. A single update per batch uses ordinary
+    accumulation, including one final partial window.
+    """
+    batches = max(0, int(rollout_batches))
+    inner = max(1, int(num_gradient_updates or 1))
+    accumulation = max(1, int(gradient_accumulation_steps or 1))
+    if inner > 1:
+        return batches * inner
+    return (batches + accumulation - 1) // accumulation
 
 
 class TrainingProfile(Enum):
@@ -411,10 +431,13 @@ class TrainingConfig:
         return self.per_device_train_batch_size * self.gradient_accumulation_steps
 
     def get_total_steps(self, num_episodes: int | None = None) -> int:
-        """Calculate total training steps"""
-        episodes = num_episodes or self.num_episodes
-        grad_steps = max(1, int(self.gradient_accumulation_steps or 1))
-        return math.ceil(episodes / grad_steps)
+        """Estimate native GRPO optimizer steps, assuming one batch per episode."""
+        episodes = self.num_episodes if num_episodes is None else num_episodes
+        return estimate_grpo_optimizer_steps(
+            episodes,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            num_gradient_updates=self.num_gradient_updates,
+        )
 
     def get_warmup_steps(self, total_steps: int | None = None) -> int:
         """Calculate warmup steps"""

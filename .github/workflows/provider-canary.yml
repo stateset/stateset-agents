@@ -27,7 +27,7 @@ jobs:
         with:
           python-version: "3.12"
       - name: Install River canary dependencies
-        run: pip install -e . river-client
+        run: pip install -e ".[river]"
       - name: Probe River health and account capabilities
         run: stateset-agents provider-canary --provider river --strict --output canary-river.json
       - if: always()

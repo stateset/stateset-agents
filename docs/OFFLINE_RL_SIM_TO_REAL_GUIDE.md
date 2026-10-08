@@ -341,6 +341,17 @@ turn_batch = buffer.sample(batch_size=64, mode="turn")
 
 ### EmbeddingCache
 
+`OfflineGRPOTrainer.pretrain_value_functions` requires a dataset implementing
+`to_offline_rl_format()` with real state/action features. Conversion errors
+propagate; missing embeddings never fall back to random features. State and next
+state matrices must be `(N, state_dim)`, actions `(N, action_dim)`, and rewards and
+terminal flags `(N,)`. All values must be finite, terminal flags must be 0 or 1,
+and N must be positive. Small datasets use smaller batches. Configure a positive
+step count or let it be derived from the number of transitions and epochs.
+The returned `final_loss` is the measured final value-network loss; individual
+offline learner metrics are retained with an `offline_` prefix. Nonfinite
+training metrics fail the run instead of marking the value function pretrained.
+
 Cache conversation embeddings for efficiency:
 
 ```python

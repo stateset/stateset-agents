@@ -77,6 +77,16 @@ class FakeRiverClient:
     def __init__(self) -> None:
         self.sessions: list[FakeSession] = []
 
+    def get_capabilities(self):
+        return [
+            "Qwen/Qwen3.5-9B",
+            "Qwen/Qwen3.6-35B-A3B-FP8",
+            "Qwen/Qwen3.8-27B-FP8",
+            "deepseek-ai/DeepSeek-V4.1-Flash",
+            "zai-org/GLM-5.3-Flash",
+            "acme/private-model",
+        ]
+
     def create_session(self) -> FakeSession:
         session = FakeSession()
         self.sessions.append(session)
@@ -253,6 +263,63 @@ class TestSpecValidation:
 
 
 class TestClientConstruction:
+    def test_denied_model_fails_before_tokenizer_or_session(
+        self, monkeypatch, spec, client
+    ):
+        client.get_capabilities = lambda: []
+        executor = RiverExecutor(client=client)
+        monkeypatch.setattr(
+            executor, "_get_tokenizer", lambda _: pytest.fail("must not tokenize")
+        )
+        with pytest.raises(RemoteExecutionError, match="does not advertise"):
+            executor.submit(spec)
+        assert client.sessions == []
+        assert (
+            executor.status(JobHandle(provider="river", job_id="river-1"))
+            is JobStatus.FAILED
+        )
+
+    def test_access_is_refreshed_for_each_job(self, executor, spec, client):
+        executor.submit(spec)
+        client.get_capabilities = lambda: []
+        with pytest.raises(RemoteExecutionError, match="does not advertise"):
+            executor.submit(spec)
+        assert len(client.sessions) == 1
+
+    def test_dry_run_needs_no_river_client_or_credentials(self, monkeypatch, spec):
+        spec.dry_run = True
+        executor = RiverExecutor(tokenizer=FakeTokenizer())
+        monkeypatch.setattr(
+            executor, "_get_client", lambda: pytest.fail("dry run contacted River")
+        )
+        assert executor.status(executor.submit(spec)) is JobStatus.SUCCEEDED
+
+    def test_tokenizer_cache_is_bound_to_model_and_retries_failures(self, monkeypatch):
+        import sys
+        from types import SimpleNamespace
+
+        calls = []
+        tokenizers = {"model-a": object(), "model-b": object()}
+
+        def load(name):
+            calls.append(name)
+            if name == "model-b" and calls.count(name) == 1:
+                raise ConnectionError("temporary tokenizer download failure")
+            return tokenizers[name]
+
+        monkeypatch.setitem(
+            sys.modules,
+            "transformers",
+            SimpleNamespace(AutoTokenizer=SimpleNamespace(from_pretrained=load)),
+        )
+        executor = RiverExecutor()
+        assert executor._get_tokenizer("model-a") is tokenizers["model-a"]
+        with pytest.raises(RemoteExecutionError, match="could not load"):
+            executor._get_tokenizer("model-b")
+        assert executor._get_tokenizer("model-b") is tokenizers["model-b"]
+        assert executor._get_tokenizer("model-a") is tokenizers["model-a"]
+        assert calls == ["model-a", "model-b", "model-b"]
+
     def test_missing_sdk_names_the_pip_install(self, monkeypatch, spec):
         import builtins
 
@@ -821,6 +888,8 @@ class RlModel(SamplingModel):
                 self.tokens = spec.get("tokens", [1, 2])
                 self.logprobs = spec.get("logprobs", [-0.5] * len(self.tokens))
                 self.prompt_token_ids = spec.get("prompt_token_ids", [7, 8, 9])
+                self.token_data_is_exact = True
+                self.stop_reason = "stop"
 
         groups = []
         for prompt in prompts:
@@ -833,6 +902,10 @@ class RlModel(SamplingModel):
     def train_step(self, data, lr, loss_fn="cross_entropy", **kw):
         type(self).train_steps.append({"n": len(data), "loss_fn": loss_fn, "lr": lr})
         return {"loss_mean": 0.1}, {"ok": True}
+
+    def forward_backward(self, batch, loss_fn="cross_entropy", **kw):
+        type(self).train_steps.append({"n": len(batch), "loss_fn": loss_fn})
+        return {"loss_mean": 0.1}
 
 
 class RlClient(FakeRiverClient):
@@ -863,6 +936,16 @@ class TestRiverRl:
         }
         defaults.update(overrides)
         return RemoteJobSpec(**defaults)
+
+    def test_denied_model_never_opens_session_or_initializes_usage(self, tmp_path):
+        client = RlClient()
+        client.get_capabilities = lambda: []
+        spec = self._spec(tmp_path)
+        executor = RiverExecutor(client=client, tokenizer=FakeTokenizer())
+        with pytest.raises(RemoteExecutionError, match="does not advertise"):
+            executor.submit(spec)
+        assert client.sessions == []
+        assert not (spec.output_dir / "rl_usage.json").exists()
 
     def test_rounds_of_grouped_training_with_graded_rewards(self, tmp_path):
         RlModel.train_steps = []
@@ -980,3 +1063,105 @@ class TestHarvestTransientRecovery:
         assert any("retrying harvest" in line for line in result.logs)
         summary = json.loads((tmp_path / "h" / "harvest_summary.json").read_text())
         assert summary["samples"] == 4  # counters reset across the retry
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"seed": -1}, {"seed": True}, {"seed": "3"}, {"shuffle": 1}, {"sead": 3}],
+)
+def test_sft_rejects_invalid_options_before_client_access(spec, monkeypatch, options):
+    spec.harvest = options
+    executor = RiverExecutor()
+    monkeypatch.setattr(executor, "_get_client", lambda: pytest.fail("accessed client"))
+    with pytest.raises(RemoteExecutionError, match="SFT"):
+        executor.submit(spec)
+
+
+def test_sft_seed_controls_initialization_order_and_provenance(
+    spec, executor, client, monkeypatch
+):
+    import stateset_agents.remote.river as river
+
+    data = [{"input_ids": [i]} for i in range(12)]
+    monkeypatch.setattr(river, "build_sft_batch", lambda *a, **kw: data)
+    observed = []
+    original = FakeModel.forward_backward
+
+    def record(self, batch, loss_fn="cross_entropy"):
+        observed.extend(d["input_ids"][0] for d in batch)
+        return original(self, batch, loss_fn)
+
+    monkeypatch.setattr(FakeModel, "forward_backward", record)
+    orders = []
+    for seed in (42, 42, 43):
+        spec.harvest = {"seed": seed}
+        observed.clear()
+        handle = executor.submit(spec)
+        executor.fetch(handle)
+        orders.append(list(observed))
+        assert client.sessions[-1].models[-1].lora.seed == seed
+        manifest = json.loads((spec.output_dir / MANIFEST_NAME).read_text())
+        pointer = json.loads((spec.output_dir / CHECKPOINT_POINTER_NAME).read_text())
+        assert manifest["hyperparameters"]["seed"] == seed
+        assert manifest["hyperparameters"]["shuffle"] is True
+        assert pointer["sft_options"] == {"seed": seed, "shuffle": True}
+    assert orders[0] == orders[1] != orders[2]
+    assert orders[0][:12] != orders[0][12:]
+    for order in orders:
+        assert sorted(order[:12]) == sorted(order[12:]) == list(range(12))
+    assert data == [{"input_ids": [i]} for i in range(12)]
+    observed.clear()
+    spec.harvest = {"seed": 42, "shuffle": False}
+    executor.submit(spec)
+    assert observed == list(range(12)) * 2
+
+
+@pytest.mark.parametrize("loss", [float("nan"), float("inf"), float("-inf")])
+@pytest.mark.parametrize("preferred_step", [False, True])
+def test_sft_nonfinite_loss_never_publishes_checkpoint(
+    spec, executor, client, monkeypatch, loss, preferred_step
+):
+    monkeypatch.setattr(FakeModel, "forward_backward", lambda *a, **kw: {"loss": loss})
+    if preferred_step:
+        monkeypatch.setattr(
+            FakeModel,
+            "train_step",
+            lambda *a, **kw: ({"loss_mean": loss}, {}),
+            raising=False,
+        )
+    with pytest.raises(RemoteExecutionError, match="nonfinite"):
+        executor.submit(spec)
+    assert not client.model.saved
+    assert not client.model.optim_steps
+    assert len(client.sessions) == 1
+
+
+def test_sft_transient_retry_restarts_the_same_seeded_order(
+    spec, executor, client, monkeypatch
+):
+    import stateset_agents.remote.river as river
+
+    spec.harvest = {"seed": 51}
+    data = [{"input_ids": [i]} for i in range(12)]
+    monkeypatch.setattr(river, "build_sft_batch", lambda *a, **kw: data)
+    monkeypatch.setattr(
+        executor, "_transient_exceptions", lambda client: (TimeoutError,)
+    )
+    monkeypatch.setattr(executor, "_sleep", lambda seconds: None)
+    seen = []
+    original = FakeModel.forward_backward
+
+    def fail_once(self, batch, loss_fn="cross_entropy"):
+        seen.append([d["input_ids"][0] for d in batch])
+        if len(seen) == 2:
+            raise TimeoutError("connection interrupted")
+        return original(self, batch, loss_fn)
+
+    monkeypatch.setattr(FakeModel, "forward_backward", fail_once)
+    handle = executor.submit(spec)
+    assert executor.status(handle) is JobStatus.SUCCEEDED
+    assert len(client.sessions) == 2
+    assert seen[:2] == seen[2:4]
+    assert all(session.models[0].lora.seed == 51 for session in client.sessions)
+    assert not client.sessions[0].models[0].saved
+    assert client.sessions[1].models[0].saved

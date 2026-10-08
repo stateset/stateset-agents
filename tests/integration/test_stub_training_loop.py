@@ -78,7 +78,12 @@ async def test_stub_training_loop_completes():
     result_agent = await trainer.train()
 
     # Verify the training loop actually ran
-    assert trainer.global_step >= 1
+    # The stub's loss is disconnected from its optimizer parameters. Running
+    # episodes must not fabricate optimizer or scheduler progress.
+    assert trainer.global_step == 0
+    assert trainer.optimizer.state_dict()["state"] == {}
+    assert trainer.lr_scheduler.last_epoch == 0
+    assert trainer.current_epoch == 1
     assert result_agent is agent
 
     # Verify the agent still works after training

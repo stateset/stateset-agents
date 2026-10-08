@@ -20,6 +20,8 @@ from enum import Enum
 from functools import wraps
 from typing import Any, Generic, TypeVar
 
+from stateset_agents.utils.async_calls import drain_owned_operation
+
 logger = logging.getLogger(__name__)
 
 CACHE_EXCEPTIONS = (
@@ -899,20 +901,28 @@ async def create_cache(config: CacheConfig | None = None) -> CacheInterface:
         Configured cache instance.
     """
     config = config or CacheConfig.from_env()
-    cache: CacheInterface[Any]
+    cache: RedisCache | HybridCache
 
     if config.backend == CacheBackend.REDIS:
         cache = RedisCache(config)
-        await cache.connect()
-        return cache
-
     elif config.backend == CacheBackend.HYBRID:
         cache = HybridCache(config)
-        await cache.connect()
-        return cache
-
     else:
         return MemoryCache(config)
+    try:
+        await cache.connect()
+    except BaseException:
+        # The factory owns the unpublished instance, including a client opened
+        # before connect failed or was cancelled.
+        try:
+            await drain_owned_operation(cache.close())
+        except Exception as cleanup_error:
+            logger.warning(
+                "Cache cleanup failed after initialization error (%s)",
+                type(cleanup_error).__name__,
+            )
+        raise
+    return cache
 
 
 # ============================================================================
