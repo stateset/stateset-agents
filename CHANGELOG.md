@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-10-08 — Reward audits before RL training
+
 ### Added
 
 - Add `reward-audit` and an asynchronous Python API to check real reward
