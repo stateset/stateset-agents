@@ -130,7 +130,9 @@ def test_provider_matrix_rejects_missing_adapter_observations() -> None:
     reports[0]["harness_commit"] = "a" * 40
     reports[0]["harness_clean"] = False
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="incomplete"):
-        provider_evidence.validate_matrix(reports, minimum_schema_version=2, now=FIXED_NOW)
+        provider_evidence.validate_matrix(
+            reports, minimum_schema_version=2, now=FIXED_NOW
+        )
 
 
 def test_skipped_provider_fails_closed() -> None:
@@ -141,7 +143,9 @@ def test_skipped_provider_fails_closed() -> None:
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="not 'passed'"):
         provider_evidence.validate_matrix(reports, now=FIXED_NOW)
 
-    diagnostic = provider_evidence.validate_matrix(reports, allow_skipped=True, now=FIXED_NOW)
+    diagnostic = provider_evidence.validate_matrix(
+        reports, allow_skipped=True, now=FIXED_NOW
+    )
     assert diagnostic["schema_version"] == 1
     assert diagnostic["passed"] is False
     assert diagnostic["providers"] == list(provider_evidence.REQUIRED_PROVIDERS)
