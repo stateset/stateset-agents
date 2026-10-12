@@ -437,7 +437,15 @@ class AutoResearchLoop:
             self._log_wandb(record)
             return
 
-        objective = eval_result.get(self.config.objective_metric, 0.0)
+        objective = self._objective_from(eval_result)
+        if objective is None:
+            self._cleanup_gpu()
+            self._record_crash(
+                "baseline",
+                self.baseline_params,
+                f"missing objective metric {self.config.objective_metric!r}",
+            )
+            return
 
         if not math.isfinite(objective):
             logger.warning("Baseline objective is non-finite; recording a crash")
@@ -529,7 +537,17 @@ class AutoResearchLoop:
             return
 
         training_time = time.time() - train_start
-        objective = eval_result.get(self.config.objective_metric, 0.0)
+        objective = self._objective_from(eval_result)
+        if objective is None:
+            self._cleanup_gpu()
+            self._record_crash(
+                experiment_id,
+                proposed_params,
+                f"missing objective metric {self.config.objective_metric!r}",
+            )
+            self._report_to_proposer(0.0, crashed=True)
+            self.checkpoint_mgr.restore_best(self.agent)
+            return
 
         if not math.isfinite(objective):
             self._cleanup_gpu()
@@ -845,6 +863,19 @@ class AutoResearchLoop:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    def _objective_from(self, eval_result: dict[str, Any]) -> float | None:
+        """The configured objective, or ``None`` when evaluation did not report
+        it (a misspelled or unsupported metric must not score as 0.0)."""
+        name = self.config.objective_metric
+        if name not in eval_result:
+            logger.warning(
+                "Evaluation reported no %r metric (got %s); recording a crash",
+                name,
+                sorted(eval_result),
+            )
+            return None
+        return float(eval_result[name])
 
     def _passes_threshold(self, objective: float) -> bool:
         """Check if objective passes the improvement threshold."""

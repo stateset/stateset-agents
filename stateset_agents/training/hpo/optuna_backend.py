@@ -11,6 +11,7 @@ Optuna is a state-of-the-art HPO framework with:
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 import time
 from collections.abc import Awaitable, Callable
@@ -69,6 +70,18 @@ def _resolve_async_value(value: Any) -> Any:
     # If we're already inside an event loop, run the coroutine in a worker thread.
     with ThreadPoolExecutor(max_workers=1) as executor:
         return executor.submit(asyncio.run, value).result()
+
+
+def _accepts_report(objective_fn: Callable[..., Any]) -> bool:
+    """Whether ``objective_fn`` takes a ``report`` keyword for intermediate
+    values (``report(value, step)``), which enables pruning."""
+    try:
+        parameters = inspect.signature(objective_fn).parameters
+    except (TypeError, ValueError):
+        return False
+    return "report" in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
 
 
 def _require_optuna():
@@ -212,7 +225,9 @@ class OptunaBackend(HPOBackend):
     def _suggest_param(self, trial: optuna.Trial, dim: SearchDimension) -> Any:
         """Suggest a parameter value for a search dimension."""
         if dim.type == SearchSpaceType.FLOAT or dim.type == SearchSpaceType.UNIFORM:
-            return trial.suggest_float(dim.name, dim.low, dim.high, log=False)
+            return trial.suggest_float(
+                dim.name, dim.low, dim.high, log=bool(dim.log_scale)
+            )
         elif dim.type == SearchSpaceType.LOGUNIFORM:
             return trial.suggest_float(dim.name, dim.low, dim.high, log=True)
         elif dim.type == SearchSpaceType.INT:
@@ -252,12 +267,24 @@ class OptunaBackend(HPOBackend):
     ) -> bool:
         """Determine if a trial should be pruned.
 
-        Optuna handles pruning internally, so this always returns False.
+        Optuna prunes inside the trial: objectives that accept a ``report``
+        keyword get ``report(value, step)``, which records the value with
+        ``trial.report`` and raises ``optuna.TrialPruned`` when the configured
+        pruner says so. This out-of-band query therefore always returns False.
         """
         return False
 
+    @staticmethod
+    def _trial_reporter(trial: Any) -> Callable[[float, int], None]:
+        def report(value: float, step: int) -> None:
+            trial.report(float(value), int(step))
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+        return report
+
     def _objective_wrapper(
-        self, trial: optuna.Trial, objective_fn: Callable[[dict[str, Any]], float]
+        self, trial: optuna.Trial, objective_fn: Callable[..., Any]
     ) -> float:
         """Wrapper that converts Optuna trial to params dict."""
         # Suggest parameters based on search space
@@ -273,8 +300,13 @@ class OptunaBackend(HPOBackend):
         start_time = time.time()
 
         try:
-            # Run objective function
-            metric_value = _resolve_async_value(objective_fn(params))
+            # Run objective function; objectives that accept ``report`` stream
+            # intermediate values to the pruner.
+            if _accepts_report(objective_fn):
+                call = objective_fn(params, report=self._trial_reporter(trial))
+            else:
+                call = objective_fn(params)
+            metric_value = _resolve_async_value(call)
             training_time = time.time() - start_time
 
             # Create result
@@ -292,11 +324,6 @@ class OptunaBackend(HPOBackend):
 
             # Notify callbacks
             self._notify_trial_end(result)
-
-            # Check for pruning (optional intermediate reporting)
-            if hasattr(objective_fn, "report_intermediate"):
-                # Allow objective function to report intermediate values
-                pass
 
             return float(metric_value)
 

@@ -117,7 +117,7 @@ class WandBSweepsBackend(HPOBackend):
             if low is None or high is None:
                 raise ValueError(f"Float dimension {dim.name} requires bounds")
             return {
-                "distribution": "uniform",
+                "distribution": "log_uniform_values" if dim.log_scale else "uniform",
                 "min": float(low),
                 "max": float(high),
             }
@@ -149,23 +149,11 @@ class WandBSweepsBackend(HPOBackend):
     ) -> bool:
         return False
 
-    async def optimize(
-        self,
-        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
-        n_trials: int = 100,
-        timeout: float | None = None,
-    ) -> HPOSummary:
-        _require_wandb()
-
-        sweep_config = self._build_sweep_config()
-        self.results: list[HPOResult] = []
-        self._notify_hpo_start(n_trials)
-        start_time = time.time()
-
-        if wandb is None:
-            raise ImportError("wandb is required for this HPO backend")
-
-        sweep_id = wandb.sweep(sweep_config, project=self.project, entity=self.entity)
+    def _build_run_trial(
+        self, objective_fn: Callable[[dict[str, Any]], Any]
+    ) -> Callable[[], None]:
+        """One sweep trial for ``objective_fn``. A failed trial logs the worst
+        value for the direction so the sweep never steers toward it."""
 
         def run_trial() -> None:
             run = wandb.init(
@@ -188,19 +176,41 @@ class WandBSweepsBackend(HPOBackend):
             except WANDB_BACKEND_EXCEPTIONS as e:
                 status = "failed"
                 logger.error(f"W&B trial {trial_id} failed: {e}")
-                wandb.log({self.objective_metric: float("-inf")})
+                wandb.log({self.objective_metric: self.worst_metric()})
             training_time = time.time() - trial_start
             result = HPOResult(
                 trial_id=str(trial_id),
                 params=params,
                 metrics=metrics,
-                best_metric=metrics.get(self.objective_metric, float("-inf")),
+                best_metric=metrics.get(self.objective_metric, self.worst_metric()),
                 training_time=training_time,
                 status=status,
             )
             self.results.append(result)
             self._notify_trial_end(result)
             wandb.finish()
+
+        return run_trial
+
+    async def optimize(
+        self,
+        objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
+        n_trials: int = 100,
+        timeout: float | None = None,
+    ) -> HPOSummary:
+        _require_wandb()
+
+        sweep_config = self._build_sweep_config()
+        self.results: list[HPOResult] = []
+        self._notify_hpo_start(n_trials)
+        start_time = time.time()
+
+        if wandb is None:
+            raise ImportError("wandb is required for this HPO backend")
+
+        sweep_id = wandb.sweep(sweep_config, project=self.project, entity=self.entity)
+
+        run_trial = self._build_run_trial(objective_fn)
 
         # wandb.agent is blocking; run in a worker thread if already in an event loop.
         def run_agent() -> None:

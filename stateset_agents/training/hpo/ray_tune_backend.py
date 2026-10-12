@@ -109,6 +109,8 @@ class RayTuneBackend(HPOBackend):
         """Convert SearchDimension to Ray Tune distribution."""
         _require_ray()
         if dim.type in (SearchSpaceType.FLOAT, SearchSpaceType.UNIFORM):
+            if dim.log_scale:
+                return tune.loguniform(dim.low, dim.high)
             return tune.uniform(dim.low, dim.high)
         if dim.type == SearchSpaceType.LOGUNIFORM:
             return tune.loguniform(dim.low, dim.high)
@@ -117,6 +119,8 @@ class RayTuneBackend(HPOBackend):
             high = dim.high
             if low is None or high is None:
                 raise ValueError(f"Integer dimension {dim.name} requires bounds")
+            if dim.log_scale:
+                return tune.lograndint(int(low), int(high) + 1)
             return tune.randint(int(low), int(high) + 1)
         if dim.type in (SearchSpaceType.CATEGORICAL, SearchSpaceType.CHOICE):
             return tune.choice(dim.choices)
@@ -169,6 +173,43 @@ class RayTuneBackend(HPOBackend):
     ) -> bool:
         return False
 
+    def _build_trainable(
+        self, objective_fn: Callable[[dict[str, Any]], Any]
+    ) -> Callable[[dict[str, Any]], None]:
+        """The Ray Tune trainable for ``objective_fn``. A failed trial reports
+        the worst value for the direction so it can never rank as best."""
+
+        def trainable(config: dict[str, Any]) -> None:
+            trial_id = tune.get_trial_id() if tune else "unknown"
+            self._notify_trial_start(trial_id, config)
+            trial_start = time.time()
+            status = "success"
+            metrics: dict[str, float] = {}
+            try:
+                metric_value = float(_resolve_async_value(objective_fn(config)))
+                metrics[self.objective_metric] = metric_value
+                if tune:
+                    tune.report(**metrics)
+            except RAY_EXCEPTIONS as e:
+                status = "failed"
+                logger.error(f"Ray Tune trial {trial_id} failed: {e}")
+                metrics = {}
+                if tune:
+                    tune.report(**{self.objective_metric: self.worst_metric()})
+            training_time = time.time() - trial_start
+            result = HPOResult(
+                trial_id=str(trial_id),
+                params=config,
+                metrics=metrics,
+                best_metric=metrics.get(self.objective_metric, self.worst_metric()),
+                training_time=training_time,
+                status=status,
+            )
+            self.results.append(result)
+            self._notify_trial_end(result)
+
+        return trainable
+
     async def optimize(
         self,
         objective_fn: Callable[[dict[str, Any]], float | Awaitable[float]],
@@ -193,34 +234,7 @@ class RayTuneBackend(HPOBackend):
         self._notify_hpo_start(n_trials)
         start_time = time.time()
 
-        def trainable(config: dict[str, Any]) -> None:
-            trial_id = tune.get_trial_id() if tune else "unknown"
-            self._notify_trial_start(trial_id, config)
-            trial_start = time.time()
-            status = "success"
-            metrics: dict[str, float] = {}
-            try:
-                metric_value = float(_resolve_async_value(objective_fn(config)))
-                metrics[self.objective_metric] = metric_value
-                if tune:
-                    tune.report(**metrics)
-            except RAY_EXCEPTIONS as e:
-                status = "failed"
-                logger.error(f"Ray Tune trial {trial_id} failed: {e}")
-                metrics = {}
-                if tune:
-                    tune.report(**{self.objective_metric: float("-inf")})
-            training_time = time.time() - trial_start
-            result = HPOResult(
-                trial_id=str(trial_id),
-                params=config,
-                metrics=metrics,
-                best_metric=metrics.get(self.objective_metric, float("-inf")),
-                training_time=training_time,
-                status=status,
-            )
-            self.results.append(result)
-            self._notify_trial_end(result)
+        trainable = self._build_trainable(objective_fn)
 
         resources: dict[str, int | float] = {"cpu": self.cpu_per_trial}
         if self.gpu_per_trial:
@@ -254,7 +268,9 @@ class RayTuneBackend(HPOBackend):
             metric=self.objective_metric, mode=self._mode()
         )
         best_params = best_result.config
-        best_metric = best_result.metrics.get(self.objective_metric, float("-inf"))
+        best_metric = best_result.metrics.get(
+            self.objective_metric, self.worst_metric()
+        )
 
         summary = HPOSummary(
             best_params=best_params,
