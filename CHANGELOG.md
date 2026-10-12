@@ -42,6 +42,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   log-probs (it could not backpropagate); `NeuralRewardModel` uses its
   `encoder`; Bayesian active-learning updates train the model;
   `ValueFunction.compute_gae` returns detached targets.
+- **GRPO advantages**: `baseline_type="group_median"`/`"global_mean"` survive
+  `advantage_normalization` (scaled by the group std, no longer re-centred
+  on the mean); `global_mean` uses the group mean until running statistics
+  exist, and `num_gradient_updates > 1` counts each batch once in them. The
+  KL/reference-model path (`compute_enhanced_grpo_loss`) now shares the
+  plain path's advantages (`reward_clip`, `baseline_type`, normalisation,
+  objective presets, population std) and entropy bonus, and its KL mask is
+  shifted to the scored tokens; the `grpo_enhanced` objective golden moved
+  accordingly (loss ×√1.5 from population std, KL from the mask shift).
+- **Optimizers and config**: single-turn and GSPO AdamW honour
+  `adam_beta1`/`adam_beta2` (GSPO also `weight_decay`); `GSPOConfig.validate`
+  warns about fields the GSPO trainer does not read. Balanced continual-
+  learning replay no longer always replays the first task.
+- **DAPO/VAPO**: DAPO's overlong shaping is anchored to the real generation
+  cap (`max_completion_length`), so it fires with default settings. VAPO
+  aggregates policy, value and LM losses as batch token-means, defaults to
+  undiscounted returns (`gamma=1.0`), keeps value-loss gradients out of the
+  policy backbone, uses the paper's length-adaptive λ = 1 − 1/(αL) (floored
+  at 0), and computes rollout values without value-head dropout.
+- **Rewards and environments**: the RULER judge actually runs (it always fell
+  back to its heuristic); symbolic-physics rewards sample deterministically
+  per task; `ConversationEnvironment` scores a reply against the history it
+  answered, not the following simulated user turn; reward calibration keeps
+  its pre-computed statistics and `RewardNormalizer` stays exact once its
+  buffer evicts; reward-model training tolerates mixed metadata and resets
+  early stopping per `train()`; `TaskCompletionReward` is capped at 1 and
+  counts only required actions; `SymbolicPhysicsEnvironment` shows the agent
+  its task; symmetry checks recompute derived variables.
 
 ## [0.62.1] - 2026-10-11 — Publishable release gate
 
