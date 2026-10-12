@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import random
 import threading
 import time
 import uuid
@@ -19,6 +20,8 @@ from stateset_agents.remote.river_batches import build_sft_batch
 TINKER_API_KEY_ENV = "TINKER_API_KEY"
 TINKER_POINTER = "tinker_checkpoint.json"
 INKLING_SMALL = "thinkingmachines/Inkling-Small"
+#: Seed for the per-epoch shuffle, so reruns of a job see the same order.
+SHUFFLE_SEED = 0
 
 
 @dataclass
@@ -125,15 +128,21 @@ class TinkerExecutor(RemoteExecutor):
             if not datums:
                 raise ValueError("dataset contains no trainable assistant tokens")
             batch_size = record.spec.per_device_batch_size
+            # Curated and harvested files are grouped by prompt; a seeded
+            # per-epoch shuffle keeps each step from seeing correlated rows in
+            # the same order every epoch (River and the HF Trainer shuffle too).
+            rng = random.Random(SHUFFLE_SEED)
             step = 0
             for epoch in range(record.spec.num_epochs):
-                for offset in range(0, len(datums), batch_size):
+                epoch_datums = list(datums)
+                rng.shuffle(epoch_datums)
+                for offset in range(0, len(epoch_datums), batch_size):
                     if record.cancelled:
                         record.status = JobStatus.CANCELLED
                         return
                     batch = [
                         self._datum(module, item)
-                        for item in datums[offset : offset + batch_size]
+                        for item in epoch_datums[offset : offset + batch_size]
                     ]
                     _result(training.forward_backward(batch, loss_fn=loss_fn))
                     step += 1

@@ -1407,8 +1407,8 @@
         "River account advertises model access: Qwen/Qwen3.5-9B",
         "built 4 River SFT data from 4 rows",
         "created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)",
-        "epoch 1/2 complete (2 steps, loss 0.1000)",
-        "epoch 2/2 complete (4 steps, loss 0.1000)",
+        "epoch 1/2 complete (1 steps, loss 0.1000)",
+        "epoch 2/2 complete (2 steps, loss 0.1000)",
         "saved River checkpoint: river://checkpoints/out",
         "eval: 1/1 prompt(s) passed (greedy, in-session)"
       ],
@@ -1554,14 +1554,7 @@
               1.0,
               1.0
             ]
-          }
-        ],
-        "loss_fn": "cross_entropy",
-        "lr": 2e-05
-      },
-      {
-        "call": "train_step",
-        "datums": [
+          },
           {
             "input_ids": [
               14,
@@ -1816,14 +1809,7 @@
               1.0,
               1.0
             ]
-          }
-        ],
-        "loss_fn": "cross_entropy",
-        "lr": 2e-05
-      },
-      {
-        "call": "train_step",
-        "datums": [
+          },
           {
             "input_ids": [
               14,
@@ -2038,6 +2024,7 @@
         "River account advertises model access: Qwen/Qwen3.5-9B",
         "built 1 River SFT data from 1 rows",
         "created River model on Qwen/Qwen3.5-9B (LoRA rank 8, attn+mlp)",
+        "River LoRA exposes no alpha; lora_alpha=32 is not applied (River uses its own scaling)",
         "epoch 1/1 complete (1 steps, loss 0.1000)",
         "saved River checkpoint: river://checkpoints/out",
         "eval: 1/1 episode(s) passed (greedy, in-session)"
@@ -2190,7 +2177,7 @@
         "River account advertises model access: Qwen/Qwen3.5-9B",
         "built 2 River SFT data from 2 rows",
         "created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)",
-        "epoch 1/1 complete (2 steps, loss 0.5000)",
+        "epoch 1/1 complete (1 steps, loss 0.5000)",
         "saved River checkpoint: river://checkpoints/out"
       ],
       "status": "succeeded"
@@ -2213,10 +2200,6 @@
         "batch_size": 1,
         "call": "forward_backward",
         "loss_fn": "cross_entropy"
-      },
-      {
-        "call": "optim_step",
-        "lr": 2e-05
       },
       {
         "batch_size": 1,

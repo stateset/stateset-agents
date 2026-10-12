@@ -180,9 +180,12 @@ class TestSubmit:
             "cross_entropy"
         }
 
-    def test_one_optim_step_per_forward_backward(self, executor, spec, client):
+    def test_one_optim_step_per_accumulation_window(self, executor, spec, client):
+        # 4 rows in micro-batches of 2 under 4-step accumulation: each epoch's
+        # two micro-batches share one (flushed) optimizer step, as on a pod.
         executor.submit(spec)
-        assert len(client.model.optim_steps) == len(client.model.forward_backward_calls)
+        assert len(client.model.forward_backward_calls) == 4
+        assert len(client.model.optim_steps) == spec.num_epochs
 
     def test_optim_step_gets_the_specs_learning_rate(self, executor, spec, client):
         executor.submit(spec)
@@ -362,7 +365,7 @@ class TestFetch:
         pointer = json.loads((out / CHECKPOINT_POINTER_NAME).read_text())
         assert pointer["base_model"] == "Qwen/Qwen3.5-9B"
         assert pointer["lora"]["rank"] == 16
-        assert pointer["steps"] == 4
+        assert pointer["steps"] == 2  # optimizer steps: one per epoch here
         assert pointer["final_loss"] == 0.5
 
     def test_pointer_says_it_is_not_an_adapter(self, executor, spec):
