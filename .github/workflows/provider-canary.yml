@@ -45,13 +45,32 @@ jobs:
       FIREWORKS_API_KEY: ${{ secrets.FIREWORKS_API_KEY }}
       FIREWORKS_ACCOUNT_ID: ${{ secrets.FIREWORKS_ACCOUNT_ID }}
     steps:
+      - name: Credential gate
+        id: gate
+        run: |
+          event="${{ github.event_name }}"
+          # For scheduled runs, skip cleanly if credentials are absent.
+          # For release tags (push on v*), and manual dispatch, fail closed.
+          if [ -n "${FIREWORKS_API_KEY:-}" ] && [ -n "${FIREWORKS_ACCOUNT_ID:-}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$event" = "schedule" ]; then
+              echo "::notice::FIREWORKS credentials not configured — skipping fireworks canary on schedule."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::FIREWORKS credentials not configured — fireworks canary is required for this event (${event})."
+              exit 1
+            fi
+          fi
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install Fireworks canary dependencies
+        if: steps.gate.outputs.skip != 'true'
         run: pip install -e ".[fireworks]"
       - name: Probe Fireworks models, jobs, deployments, and cleanup
+        if: steps.gate.outputs.skip != 'true'
         run: stateset-agents provider-canary --provider fireworks --strict --output canary-fireworks.json
       - if: always()
         uses: actions/upload-artifact@v7
@@ -67,13 +86,30 @@ jobs:
     env:
       RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
     steps:
+      - name: Credential gate
+        id: gate
+        run: |
+          event="${{ github.event_name }}"
+          if [ -n "${RUNPOD_API_KEY:-}" ]; then
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          else
+            if [ "$event" = "schedule" ]; then
+              echo "::notice::RUNPOD_API_KEY not set — skipping runpod canary on schedule."
+              echo "skip=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "::error::RUNPOD_API_KEY not set — runpod canary is required for this event (${event})."
+              exit 1
+            fi
+          fi
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
           python-version: "3.11"
       - name: Install RunPod canary dependencies
+        if: steps.gate.outputs.skip != 'true'
         run: pip install -e ".[remote]"
       - name: Probe RunPod account and cleanup leases
+        if: steps.gate.outputs.skip != 'true'
         run: stateset-agents provider-canary --provider runpod --strict --output canary-runpod.json
       - if: always()
         uses: actions/upload-artifact@v7

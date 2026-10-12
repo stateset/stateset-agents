@@ -7,9 +7,9 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 10
     reviewers:
-      - "your-github-username"
+      - "domsteil"
     assignees:
-      - "your-github-username"
+      - "domsteil"
     commit-message:
       prefix: "deps"
       include: "scope"

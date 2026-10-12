@@ -44,12 +44,18 @@ jobs:
     - name: Check for RunPod credentials
       id: creds
       run: |
-        if [ -n "$RUNPOD_API_KEY" ]; then
+        event="${{ github.event_name }}"
+        if [ -n "${RUNPOD_API_KEY:-}" ]; then
           echo "present=true" >> "$GITHUB_OUTPUT"
         else
-          echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "::error::RUNPOD_API_KEY secret not set — live GPU verification cannot run."
-          exit 1
+          if [ "$event" = "schedule" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RUNPOD_API_KEY secret not set — skipping live GPU verification on schedule."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::error::RUNPOD_API_KEY secret not set — live GPU verification cannot run for this event (${event})."
+            exit 1
+          fi
         fi
 
     - name: Set up Python
@@ -230,12 +236,18 @@ jobs:
     - name: Check for RunPod credentials
       id: creds
       run: |
-        if [ -n "$RUNPOD_API_KEY" ]; then
+        event="${{ github.event_name }}"
+        if [ -n "${RUNPOD_API_KEY:-}" ]; then
           echo "present=true" >> "$GITHUB_OUTPUT"
         else
-          echo "present=false" >> "$GITHUB_OUTPUT"
-          echo "::error::RUNPOD_API_KEY secret not set — live RL GPU verification cannot run."
-          exit 1
+          if [ "$event" = "schedule" ]; then
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::RUNPOD_API_KEY secret not set — skipping RL GPU verification on schedule."
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "::error::RUNPOD_API_KEY secret not set — live RL GPU verification cannot run for this event (${event})."
+            exit 1
+          fi
         fi
 
     - name: Set up Python
