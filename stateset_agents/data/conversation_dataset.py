@@ -287,7 +287,9 @@ class ConversationDataset(TorchDataset):
 
             for turn_data in data.get("turns", []):
                 turn = ConversationTurnData(
-                    role=turn_data.get("role", "user"),
+                    role=_canonical_role(
+                        turn_data.get("role", turn_data.get("from", "user"))
+                    ),
                     content=turn_data.get("content", ""),
                     reward=float(turn_data.get("reward", 0.0)),
                     timestamp=turn_data.get("timestamp"),
@@ -335,7 +337,9 @@ class ConversationDataset(TorchDataset):
                     if isinstance(conv, dict):
                         turns.append(
                             ConversationTurnData(
-                                role=str(conv.get("role", conv.get("from", "user"))),
+                                role=_canonical_role(
+                                    conv.get("role", conv.get("from", "user"))
+                                ),
                                 content=str(
                                     conv.get(
                                         "content",
@@ -626,37 +630,33 @@ class ConversationDataset(TorchDataset):
         dones = []
 
         for traj in self.trajectories:
-            history = ""
+            # One transition per assistant turn (a decision). s is the
+            # conversation before the reply; s' is the state at the next
+            # decision (so V is bootstrapped on states it is trained on); the
+            # reward covers every turn from the reply up to that decision; the
+            # last decision is terminal.
+            turn_rewards = list(traj.turn_rewards or [])
+            decisions = [i for i, t in enumerate(traj.turns) if t.role == "assistant"]
+            prefixes = [""]
+            for turn in traj.turns:
+                prefixes.append(prefixes[-1] + f"{turn.role}: {turn.content}\n")
 
-            for i, turn in enumerate(traj.turns):
-                if turn.role in ("user", "system"):
-                    history += f"{turn.role}: {turn.content}\n"
-                    state_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_s_{i}", history
-                    )
+            def state_at(index: int, traj: Any = traj, prefixes: Any = prefixes) -> Any:
+                return self.embedding_cache.get_or_compute(
+                    f"{traj.trajectory_id}_s_{index}", prefixes[index]
+                )
 
-                elif turn.role == "assistant":
-                    action_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_a_{i}", turn.content
-                    )
-
-                    # Get next state (or same state if last turn)
-                    next_history = history + f"assistant: {turn.content}\n"
-                    next_state_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_ns_{i}", next_history
-                    )
-
-                    is_done = i == len(traj.turns) - 1
-
-                    states.append(state_emb.numpy())
-                    actions.append(action_emb.numpy())
-                    rewards.append(
-                        traj.turn_rewards[i] if i < len(traj.turn_rewards) else 0.0
-                    )
-                    next_states.append(next_state_emb.numpy())
-                    dones.append(float(is_done))
-
-                    history = next_history
+            for k, i in enumerate(decisions):
+                is_last = k == len(decisions) - 1
+                stop = len(traj.turns) if is_last else decisions[k + 1]
+                action_emb = self.embedding_cache.get_or_compute(
+                    f"{traj.trajectory_id}_a_{i}", traj.turns[i].content
+                )
+                states.append(state_at(i).numpy())
+                actions.append(action_emb.numpy())
+                rewards.append(float(sum(turn_rewards[i:stop])))
+                next_states.append(state_at(stop).numpy())
+                dones.append(float(is_last))
 
         return {
             "states": np.array(states),
@@ -665,6 +665,21 @@ class ConversationDataset(TorchDataset):
             "next_states": np.array(next_states),
             "dones": np.array(dones),
         }
+
+
+_ROLE_ALIASES = {
+    "human": "user",
+    "gpt": "assistant",
+    "bot": "assistant",
+    "model": "assistant",
+    "chatgpt": "assistant",
+}
+
+
+def _canonical_role(role: Any) -> str:
+    """Map ShareGPT-style speaker names onto user/assistant/system roles."""
+    name = str(role)
+    return _ROLE_ALIASES.get(name.lower(), name)
 
 
 class ConversationReplayBuffer:
