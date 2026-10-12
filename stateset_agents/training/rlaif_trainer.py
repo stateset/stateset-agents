@@ -29,6 +29,8 @@ from typing import Any
 
 import torch
 
+from stateset_agents.core.generation_mode import inference_mode
+
 from .config import TrainingConfig
 
 logger = logging.getLogger(__name__)
@@ -205,7 +207,7 @@ class ConstitutionalAI:
             max_length=512,
         ).to(self.device)
 
-        with torch.no_grad():
+        with inference_mode(self.model), torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
@@ -429,7 +431,7 @@ class RLAIFTrainer:
             max_length=self.config.max_prompt_length,
         ).to(self.device)
 
-        with torch.no_grad():
+        with inference_mode(self.model), torch.no_grad():
             outputs = self.model.generate(
                 **inputs,
                 max_new_tokens=max_new_tokens,
@@ -511,6 +513,59 @@ class RLAIFTrainer:
 
         return trajectories
 
+    def _training_batch(self, trajectories: list[dict[str, Any]]) -> dict[str, Any]:
+        """Token rows, completion mask and sequence advantages for a step.
+
+        Prompt and completion are tokenized separately (prompt left-truncated,
+        completion right-truncated), so the mask covers exactly the completion
+        tokens. ``completion_mask`` is in the shifted frame of
+        ``input_ids[:, 1:]``: position ``t`` scores token ``t + 1``.
+
+        Advantages are computed from sequence rewards before being broadcast
+        to tokens: group-relative per prompt (GRPO) when any prompt has several
+        samples, otherwise whitened over the batch. Identical rewards give zero
+        advantage, so they produce no update.
+        """
+        from .ppo_trainer import encode_prompt_completion_rows
+
+        prompts = [str(t["prompt"]) for t in trajectories]
+        completions = [str(t["completion"]) for t in trajectories]
+        input_ids, attention_mask, completion_mask, kept = (
+            encode_prompt_completion_rows(
+                self.tokenizer,
+                prompts,
+                completions,
+                int(self.config.max_prompt_length),
+                int(self.config.max_completion_length),
+            )
+        )
+        rewards = [float(trajectories[i]["reward"]) for i in kept]
+        reward_tensor = torch.tensor(rewards, dtype=torch.float)
+        advantages = torch.zeros_like(reward_tensor)
+
+        groups: dict[str, list[int]] = {}
+        for row, i in enumerate(kept):
+            groups.setdefault(prompts[i], []).append(row)
+        if any(len(rows) > 1 for rows in groups.values()):
+            index_groups = list(groups.values())
+        else:
+            index_groups = [list(range(len(kept)))]
+        for rows in index_groups:
+            group = reward_tensor[rows]
+            centred = group - group.mean()
+            std = group.std(correction=0) if len(rows) > 1 else torch.tensor(0.0)
+            if float(std) > 0:
+                centred = centred / (std + 1e-8)
+            advantages[rows] = centred
+
+        return {
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "completion_mask": completion_mask[:, 1:],
+            "advantages": advantages,
+            "rewards": rewards,
+        }
+
     async def train_step(
         self,
         trajectories: list[dict[str, Any]],
@@ -524,24 +579,20 @@ class RLAIFTrainer:
         Returns:
             Training metrics
         """
-        # Extract data
-        prompts = [t["prompt"] for t in trajectories]
-        completions = [t["completion"] for t in trajectories]
-        rewards = [t["reward"] for t in trajectories]
-
-        # Tokenize
-        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
-        encodings = self.tokenizer(
-            full_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
-        )
-
-        input_ids = encodings["input_ids"].to(self.device)
-        attention_mask = encodings["attention_mask"].to(self.device)
+        batch = self._training_batch(trajectories)
+        rewards = batch["rewards"]
+        if batch["input_ids"].shape[0] == 0:
+            logger.warning("RLAIF step skipped: no completion has any tokens")
+            return {
+                "policy_loss": 0.0,
+                "average_reward": 0.0,
+                "max_reward": 0.0,
+                "min_reward": 0.0,
+            }
+        input_ids = batch["input_ids"].to(self.device)
+        attention_mask = batch["attention_mask"].to(self.device)
+        completion_mask = batch["completion_mask"].to(self.device)
+        advantages = batch["advantages"].to(self.device).unsqueeze(1)
 
         # Compute log probs
         self.model.train()
@@ -557,28 +608,10 @@ class RLAIFTrainer:
             -1
         )
 
-        # Create completion mask
-        prompt_encodings = self.tokenizer(prompts, padding=True, return_tensors="pt")
-        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
-
-        completion_mask = torch.zeros_like(labels, dtype=torch.float)
-        for i, prompt_len in enumerate(prompt_lengths):
-            completion_mask[i, prompt_len:] = 1.0
-
-        completion_mask = completion_mask.to(self.device)
-
-        # Compute advantages (simplified - reward broadcast to tokens)
-        rewards_tensor = torch.tensor(rewards, device=self.device).unsqueeze(1)
-        advantages = completion_mask * rewards_tensor
-
-        # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
-
-        # Policy gradient loss
-        policy_loss = (
-            -(token_log_probs * advantages * completion_mask).sum()
-            / completion_mask.sum()
-        )
+        # Policy gradient loss: sequence advantage on every completion token
+        policy_loss = -(
+            token_log_probs * advantages * completion_mask
+        ).sum() / completion_mask.sum().clamp(min=1)
 
         # Backward pass
         self.model.zero_grad()

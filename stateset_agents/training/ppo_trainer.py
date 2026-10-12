@@ -249,6 +249,66 @@ def compute_gae(
     return advantages, returns
 
 
+def encode_prompt_completion_rows(
+    tokenizer: Any,
+    prompts: list[str],
+    completions: list[str],
+    max_prompt_length: int,
+    max_completion_length: int,
+    completion_ids: list[list[int]] | None = None,
+) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor, list[int]]:
+    """Right-padded ``prompt + completion`` rows with a completion mask.
+
+    Prompt and completion are tokenized separately so their boundary is exact:
+    the prompt keeps its last ``max_prompt_length`` tokens and the completion
+    its first ``max_completion_length``. Tokenizing ``prompt + completion`` as
+    one string and measuring a separately truncated prompt instead puts an
+    over-long prompt's tail inside the "completion". ``completion_ids`` (the
+    sampled token ids) are used verbatim when given. Rows whose completion is
+    empty after truncation are dropped.
+
+    Returns ``(input_ids, attention_mask, completion_mask, kept_indices)``;
+    ``completion_mask`` is in the unshifted token frame.
+    """
+    if len(prompts) != len(completions):
+        raise ValueError("prompts and completions must have the same length")
+    if completion_ids is not None and len(completion_ids) != len(prompts):
+        raise ValueError("completion_ids must have one entry per prompt")
+    pad_id = getattr(tokenizer, "pad_token_id", None)
+    if pad_id is None:
+        pad_id = getattr(tokenizer, "eos_token_id", None) or 0
+
+    rows: list[tuple[list[int], list[int]]] = []
+    kept: list[int] = []
+    for i, (prompt, completion) in enumerate(zip(prompts, completions, strict=True)):
+        prompt_ids = [int(t) for t in tokenizer(prompt)["input_ids"]]
+        if max_prompt_length > 0:
+            prompt_ids = prompt_ids[-max_prompt_length:]
+        if completion_ids is not None:
+            response_ids = [int(t) for t in completion_ids[i]]
+        else:
+            response_ids = [
+                int(t)
+                for t in tokenizer(completion, add_special_tokens=False)["input_ids"]
+            ]
+        response_ids = response_ids[:max_completion_length]
+        if not response_ids:
+            continue
+        rows.append((prompt_ids, response_ids))
+        kept.append(i)
+
+    width = max((len(p) + len(c) for p, c in rows), default=0)
+    input_ids = torch.full((len(rows), width), int(pad_id), dtype=torch.long)
+    attention_mask = torch.zeros((len(rows), width), dtype=torch.long)
+    completion_mask = torch.zeros((len(rows), width), dtype=torch.float)
+    for row, (prompt_ids, response_ids) in enumerate(rows):
+        ids = prompt_ids + response_ids
+        input_ids[row, : len(ids)] = torch.tensor(ids, dtype=torch.long)
+        attention_mask[row, : len(ids)] = 1
+        completion_mask[row, len(prompt_ids) : len(ids)] = 1.0
+    return input_ids, attention_mask, completion_mask, kept
+
+
 class PPOTrainer:
     """
     Proximal Policy Optimization (PPO) Trainer
@@ -559,6 +619,8 @@ class PPOTrainer:
         prompts: list[str],
         completions: list[str],
         rewards: list[float],
+        *,
+        completion_ids: list[list[int]] | None = None,
     ) -> dict[str, float]:
         """
         Execute one PPO training step.
@@ -567,42 +629,39 @@ class PPOTrainer:
             prompts: List of prompt strings
             completions: List of completion strings
             rewards: List of reward scores
+            completion_ids: Sampled completion token ids; when given the
+                policy is scored on exactly these tokens
 
         Returns:
             Dictionary of metrics
         """
+        if len(rewards) != len(prompts):
+            raise ValueError("rewards must have one entry per prompt")
+        input_ids, attention_mask, response_mask, kept = encode_prompt_completion_rows(
+            self.tokenizer,
+            prompts,
+            completions,
+            int(self.config.max_prompt_length),
+            int(self.config.max_completion_length),
+            completion_ids,
+        )
+        if not kept:
+            logger.warning("PPO step skipped: no completion has any tokens")
+            return {
+                "policy_loss": 0.0,
+                "value_loss": 0.0,
+                "entropy": 0.0,
+                "clip_fraction": 0.0,
+                "average_reward": sum(rewards) / len(rewards) if rewards else 0.0,
+                "skipped_rows": float(len(prompts)),
+            }
+        input_ids = input_ids.to(self.device)
+        attention_mask = attention_mask.to(self.device)
+        response_mask = response_mask.to(self.device)
+        kept_rewards = [float(rewards[i]) for i in kept]
+
         self.model.train()
         self.value_head.train()
-
-        # Tokenize inputs
-        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
-        encodings = self.tokenizer(
-            full_texts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
-        )
-
-        input_ids = encodings["input_ids"].to(self.device)
-        attention_mask = encodings["attention_mask"].to(self.device)
-
-        # Create response mask (1 for completion tokens)
-        prompt_encodings = self.tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-        )
-        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
-
-        response_mask = self.build_response_mask(
-            attention_mask,
-            prompt_lengths,
-            getattr(self.tokenizer, "padding_side", "right"),
-        )
 
         # Get initial values and log probs (for old policy)
         with torch.no_grad():
@@ -610,97 +669,108 @@ class PPOTrainer:
             hidden_states = self.get_hidden_states(input_ids, attention_mask)
             old_values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
 
-        rewards_tensor = torch.tensor(rewards, device=self.device, dtype=torch.float)
+        rewards_tensor = torch.tensor(
+            kept_rewards, device=self.device, dtype=torch.float
+        )
+        response_mask_shift = response_mask[:, 1:]
         advantages, returns = self.compute_episode_advantages(
-            rewards_tensor, response_mask[:, 1:], old_values
+            rewards_tensor, response_mask_shift, old_values
         )
 
-        # PPO epochs
+        # PPO epochs, each a shuffled pass over mini-batches of rows
         total_policy_loss = 0.0
         total_value_loss = 0.0
         total_entropy = 0.0
         total_clip_fraction = 0.0
+        num_updates = 0
 
-        response_mask_shift = response_mask[:, 1:]
+        batch_size = input_ids.shape[0]
+        mini_batch_size = int(getattr(self.config, "mini_batch_size", 0) or 0)
+        if mini_batch_size <= 0:
+            mini_batch_size = batch_size
 
         for _ in range(self.config.num_ppo_epochs):
-            # Forward pass
-            log_probs, entropy = self.compute_log_probs(input_ids, attention_mask)
-            hidden_states = self.get_hidden_states(input_ids, attention_mask)
-            values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
+            order = torch.randperm(batch_size, device=self.device)
+            for idx in order.split(mini_batch_size):
+                mb_ids = input_ids[idx]
+                mb_attention = attention_mask[idx]
+                mb_mask = response_mask_shift[idx]
 
-            # Policy loss
-            policy_loss, clip_fraction = self.ppo_loss(
-                log_probs, old_log_probs, advantages, response_mask_shift
-            )
+                # Forward pass
+                log_probs, entropy = self.compute_log_probs(mb_ids, mb_attention)
+                hidden_states = self.get_hidden_states(mb_ids, mb_attention)
+                values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
 
-            # Value loss
-            vf_loss = self.value_loss(values, old_values, returns, response_mask_shift)
-
-            # Entropy bonus
-            if response_mask_shift is not None:
-                entropy_bonus = (
-                    entropy * response_mask_shift
-                ).sum() / response_mask_shift.sum().clamp(min=1)
-            else:
-                entropy_bonus = entropy.mean()
-
-            # Total loss
-            total_loss = (
-                policy_loss
-                + self.config.value_coef * vf_loss
-                - self.config.entropy_coef * entropy_bonus
-            )
-
-            # KL penalty
-            if self.config.beta > 0 and self.ref_model is not None:
-                with torch.no_grad():
-                    ref_outputs = self.ref_model(
-                        input_ids=input_ids, attention_mask=attention_mask
-                    )
-                    ref_logits = ref_outputs.logits[:, :-1, :]
-                    ref_log_probs = F.log_softmax(ref_logits, dim=-1)
-                    ref_token_log_probs = ref_log_probs.gather(
-                        dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
-                    ).squeeze(-1)
-
-                kl = self.compute_kl_divergence(
-                    log_probs, ref_token_log_probs, response_mask_shift
+                # Policy loss
+                policy_loss, clip_fraction = self.ppo_loss(
+                    log_probs, old_log_probs[idx], advantages[idx], mb_mask
                 )
 
-                kl_coef = self.config.beta
-                if self.kl_controller:
-                    kl_coef = self.kl_controller.update(kl.item(), 1)
+                # Value loss
+                vf_loss = self.value_loss(
+                    values, old_values[idx], returns[idx], mb_mask
+                )
 
-                total_loss = total_loss + kl_coef * kl
+                # Entropy bonus
+                entropy_bonus = (entropy * mb_mask).sum() / mb_mask.sum().clamp(min=1)
 
-            # Backward pass
-            self.policy_optimizer.zero_grad()
-            self.value_optimizer.zero_grad()
-            total_loss.backward()
+                # Total loss
+                total_loss = (
+                    policy_loss
+                    + self.config.value_coef * vf_loss
+                    - self.config.entropy_coef * entropy_bonus
+                )
 
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
-            )
+                # KL penalty
+                if self.config.beta > 0 and self.ref_model is not None:
+                    with torch.no_grad():
+                        ref_outputs = self.ref_model(
+                            input_ids=mb_ids, attention_mask=mb_attention
+                        )
+                        ref_logits = ref_outputs.logits[:, :-1, :]
+                        ref_log_probs = F.log_softmax(ref_logits, dim=-1)
+                        ref_token_log_probs = ref_log_probs.gather(
+                            dim=-1, index=mb_ids[:, 1:].unsqueeze(-1)
+                        ).squeeze(-1)
 
-            self.policy_optimizer.step()
-            self.value_optimizer.step()
+                    kl = self.compute_kl_divergence(
+                        log_probs, ref_token_log_probs, mb_mask
+                    )
 
-            total_policy_loss += policy_loss.item()
-            total_value_loss += vf_loss.item()
-            total_entropy += entropy_bonus.item()
-            total_clip_fraction += clip_fraction.item()
+                    kl_coef = self.config.beta
+                    if self.kl_controller:
+                        kl_coef = self.kl_controller.update(kl.item(), 1)
 
-        # Average over epochs
-        num_epochs = self.config.num_ppo_epochs
-        avg_policy_loss = total_policy_loss / num_epochs
-        avg_value_loss = total_value_loss / num_epochs
-        avg_entropy = total_entropy / num_epochs
-        avg_clip_fraction = total_clip_fraction / num_epochs
+                    total_loss = total_loss + kl_coef * kl
+
+                # Backward pass
+                self.policy_optimizer.zero_grad()
+                self.value_optimizer.zero_grad()
+                total_loss.backward()
+
+                # Gradient clipping
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(), self.config.max_grad_norm
+                )
+                torch.nn.utils.clip_grad_norm_(
+                    self.value_head.parameters(), self.config.max_grad_norm
+                )
+
+                self.policy_optimizer.step()
+                self.value_optimizer.step()
+
+                total_policy_loss += policy_loss.item()
+                total_value_loss += vf_loss.item()
+                total_entropy += entropy_bonus.item()
+                total_clip_fraction += clip_fraction.item()
+                num_updates += 1
+
+        # Average over updates
+        num_updates = max(1, num_updates)
+        avg_policy_loss = total_policy_loss / num_updates
+        avg_value_loss = total_value_loss / num_updates
+        avg_entropy = total_entropy / num_updates
+        avg_clip_fraction = total_clip_fraction / num_updates
 
         # Update schedulers
         self.policy_scheduler.step()
@@ -713,7 +783,8 @@ class PPOTrainer:
             "value_loss": avg_value_loss,
             "entropy": avg_entropy,
             "clip_fraction": avg_clip_fraction,
-            "average_reward": sum(rewards) / len(rewards),
+            "average_reward": sum(kept_rewards) / len(kept_rewards),
+            "skipped_rows": float(len(prompts) - len(kept)),
         }
 
         # Update history
@@ -722,6 +793,47 @@ class PPOTrainer:
                 self.metrics_history[key].append(value)
 
         return metrics
+
+    def generate_completion_ids(self, prompts: list[str]) -> list[list[int]]:
+        """Sample one completion per prompt from the policy, as token ids.
+
+        Sampling runs in inference mode (eval, KV cache on; the previous mode
+        is restored). Each completion is cut after its first EOS token, which
+        is kept as the final action.
+        """
+        from stateset_agents.core.generation_mode import inference_mode
+
+        eos_id = getattr(self.tokenizer, "eos_token_id", None)
+        pad_id = getattr(self.tokenizer, "pad_token_id", None)
+        if pad_id is None:
+            pad_id = eos_id
+        temperature = float(getattr(self.config, "temperature", 0.0) or 0.0)
+        sample_kwargs: dict[str, Any] = {"do_sample": temperature > 0}
+        if temperature > 0:
+            sample_kwargs["temperature"] = temperature
+            sample_kwargs["top_p"] = float(getattr(self.config, "top_p", 1.0))
+
+        results: list[list[int]] = []
+        with inference_mode(self.model), torch.no_grad():
+            for prompt in prompts:
+                prompt_ids = [int(t) for t in self.tokenizer(prompt)["input_ids"]]
+                if self.config.max_prompt_length > 0:
+                    prompt_ids = prompt_ids[-int(self.config.max_prompt_length) :]
+                if not prompt_ids:
+                    prompt_ids = [int(eos_id if eos_id is not None else 0)]
+                input_ids = torch.tensor([prompt_ids], device=self.device)
+                output = self.model.generate(
+                    input_ids=input_ids,
+                    attention_mask=torch.ones_like(input_ids),
+                    max_new_tokens=int(self.config.max_completion_length),
+                    pad_token_id=pad_id,
+                    **sample_kwargs,
+                )
+                ids = [int(t) for t in output[0][len(prompt_ids) :].tolist()]
+                if eos_id is not None and eos_id in ids:
+                    ids = ids[: ids.index(eos_id) + 1]
+                results.append(ids)
+        return results
 
     async def train(
         self,
@@ -742,12 +854,28 @@ class PPOTrainer:
 
         logger.info(f"Starting PPO training for {num_episodes} episodes")
 
-        for episode in range(num_episodes):
-            # Sample prompts for this episode
-            episode_prompts = prompts[: self.config.num_generations]
+        if not prompts:
+            raise ValueError("PPO training needs at least one prompt")
+        prompts_per_episode = min(
+            len(prompts), max(1, int(self.config.per_device_train_batch_size))
+        )
+        samples_per_prompt = max(1, int(self.config.num_generations))
 
-            # Generate completions (simplified - would use model generation in practice)
-            completions = ["This is a sample completion."] * len(episode_prompts)
+        for episode in range(num_episodes):
+            # Cycle through the prompts; sample each one several times.
+            start = episode * prompts_per_episode
+            episode_prompts = [
+                prompts[(start + k) % len(prompts)]
+                for k in range(prompts_per_episode)
+                for _ in range(samples_per_prompt)
+            ]
+
+            # Sample completions from the current policy
+            completion_ids = self.generate_completion_ids(episode_prompts)
+            completions = [
+                self.tokenizer.decode(ids, skip_special_tokens=True)
+                for ids in completion_ids
+            ]
 
             # Compute rewards
             rewards = []
@@ -763,7 +891,9 @@ class PPOTrainer:
                     rewards.append(0.0)
 
             # Training step
-            metrics = await self.train_step(episode_prompts, completions, rewards)
+            metrics = await self.train_step(
+                episode_prompts, completions, rewards, completion_ids=completion_ids
+            )
 
             if episode % self.config.logging_steps == 0:
                 logger.info(
