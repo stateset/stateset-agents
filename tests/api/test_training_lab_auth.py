@@ -23,8 +23,10 @@ class _FakeWebSocket:
     """Small protocol double; avoids TestClient's AnyIO thread portal."""
 
     def __init__(self, *, api_key: str | None = None) -> None:
-        self.query_params = {"api_key": api_key} if api_key else {}
-        self.headers = {}
+        # Header credentials: query-string tokens are opt-in
+        # (API_LAB_WS_QUERY_TOKEN) because they leak into access logs.
+        self.query_params = {}
+        self.headers = {"x-api-key": api_key} if api_key else {}
         self.accepted = False
         self.close_code: int | None = None
         self.sent: list[str] = []

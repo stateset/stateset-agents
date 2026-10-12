@@ -15,9 +15,9 @@ from stateset_agents.api.services import training_service as module
 
 
 @pytest.fixture
-def service(monkeypatch):
+def service(monkeypatch, tmp_path):
     monkeypatch.setattr(module, "MultiTurnAgent", lambda config: object())
-    return module.TrainingService(max_concurrent_jobs=2)
+    return module.TrainingService(max_concurrent_jobs=2, output_root=str(tmp_path))
 
 
 @pytest.fixture
@@ -482,13 +482,19 @@ async def test_accepted_configuration_isolated_from_caller_status_and_trainer_mu
     finally:
         release.set()
         await task
+    # The trainer sees server-confined paths: the resume target resolved under
+    # the training root and a job-specific output directory.
+    root = service.output_root()
     assert observed == {
         "episodes": accepted["num_episodes"],
         "profile": accepted["profile"],
-        "checkpoint": accepted["resume_from_checkpoint"],
+        "checkpoint": str((root / accepted["resume_from_checkpoint"]).resolve()),
         "model": accepted["agent_config"]["model_name"],
         "scenarios": accepted["environment_scenarios"],
-        "overrides": accepted["training_config_overrides"],
+        "overrides": {
+            **accepted["training_config_overrides"],
+            "output_dir": str(root / job_id),
+        },
     }
     assert service.get_training_status(job_id, user_id="owner")["config"] == accepted
     assert request_data.environment_scenarios[0]["context"]["values"] == [

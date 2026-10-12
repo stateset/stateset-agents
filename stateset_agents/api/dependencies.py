@@ -55,17 +55,13 @@ def _get_lockout_key(request: Request) -> str:
 
 
 def _clear_client_lockouts(api_security, request: Request) -> None:
-    """Clear tracked failures for the authenticated client after a success."""
-    client_ip = _get_client_ip(request)
-    key_prefixes = (f"cred:{client_ip}:", f"ip:{client_ip}")
+    """Clear tracked failures for the credential that just authenticated.
 
-    for key in list(api_security.auth_tracker.failures):
-        if key.startswith(key_prefixes):
-            api_security.auth_tracker.clear_failures(key)
-
-    for key in list(api_security.auth_tracker.lockouts):
-        if key.startswith(key_prefixes):
-            api_security.auth_tracker.clear_failures(key)
+    Only that credential's own key is cleared: wiping every failure record
+    from the client IP would let an attacker holding any valid key reset the
+    brute-force lockout for the credentials they are guessing.
+    """
+    api_security.auth_tracker.clear_failures(_get_lockout_key(request))
 
 
 def _lockout_retry_after(api_security, lockout_key: str) -> int:

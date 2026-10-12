@@ -106,7 +106,10 @@ class TrainingCancelResponse(BaseModel):
         },
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
-        403: {"description": "Insufficient permissions", "model": ErrorResponse},
+        403: {
+            "description": "Insufficient permissions or model not permitted",
+            "model": ErrorResponse,
+        },
         429: {
             "description": "Training concurrency limit reached",
             "model": ErrorResponse,
@@ -150,7 +153,9 @@ async def start_training(
                 detail="environment_scenarios must contain at least one scenario",
             )
 
-        training_id = await svc.start_training(request, user_id=user.user_id)
+        training_id = await svc.start_training(
+            request, user_id=user.user_id, roles=list(user.roles)
+        )
 
         return TrainingResponse(
             training_id=training_id,

@@ -3,7 +3,9 @@ import copy
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
@@ -101,10 +103,14 @@ class JobProgressCallback:
 class TrainingService:
     """Service for managing training jobs."""
 
-    def __init__(self, *, max_concurrent_jobs: int = 1) -> None:
+    def __init__(
+        self, *, max_concurrent_jobs: int = 1, output_root: str | None = None
+    ) -> None:
         if type(max_concurrent_jobs) is not int or max_concurrent_jobs < 1:
             raise ValueError("max_concurrent_jobs must be a positive integer")
         self._max_concurrent_jobs = max_concurrent_jobs
+        # None: read API_TRAINING_OUTPUT_ROOT from the API config per job.
+        self._output_root = output_root
         self.training_jobs: dict[str, dict[str, Any]] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -149,10 +155,51 @@ class TrainingService:
         owner = job.get("user_id")
         return owner is None or owner == user_id
 
+    def output_root(self) -> Path:
+        """Resolved directory that holds every API job's outputs."""
+        root = self._output_root
+        if root is None:
+            from ..config import get_config
+
+            root = get_config().training_output_root
+        return Path(root).expanduser().resolve()
+
+    def _resolve_resume(self, value: str, user_id: str | None, root: Path) -> str:
+        """Map ``resume_from_checkpoint`` to a path inside ``root``.
+
+        Accepts the id of a job this caller can access (its output directory)
+        or a path that resolves under the training root; anything else is a
+        ``ValueError`` (400), so clients cannot load server files.
+        """
+        job = self.training_jobs.get(value)
+        if job is not None:
+            if not self._can_access_job(job, user_id) or not job.get("output_dir"):
+                raise ValueError(f"Training job {value!r} is not resumable")
+            return str(job["output_dir"])
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(
+                "resume_from_checkpoint must be a training job id or a path "
+                "under the server's training output root"
+            )
+        return str(resolved)
+
     async def start_training(
-        self, request: TrainingRequest, user_id: str | None = None
+        self,
+        request: TrainingRequest,
+        user_id: str | None = None,
+        *,
+        roles: list[str] | None = None,
     ) -> str:
-        """Start a training job."""
+        """Start a training job.
+
+        Outputs always go to ``<training output root>/<training_id>``; the
+        client cannot choose output paths or resume from outside that root.
+        ``roles`` feed the model-loading policy (``None``: already checked).
+        """
         if self._closing:
             raise ServiceUnavailableError("Training service is shutting down")
         # Submission contains no await between this check and task registration,
@@ -167,8 +214,33 @@ class TrainingService:
         training_id = str(uuid.uuid4())
         now = datetime.utcnow()
 
-        # Create training configuration
+        # Server-controlled paths: a job-specific output directory under the
+        # training root, and a resume target confined to that root.
+        root = self.output_root()
+        output_dir = root / training_id
+        overrides = dict(request.training_config_overrides or {})
+        overrides["output_dir"] = str(output_dir)
+        resume = (
+            self._resolve_resume(request.resume_from_checkpoint, user_id, root)
+            if request.resume_from_checkpoint
+            else None
+        )
+        request = request.model_copy(
+            update={
+                "training_config_overrides": overrides,
+                "resume_from_checkpoint": resume,
+            }
+        )
+
+        # Create training configuration; client-named models follow the
+        # server's model policy (403 when refused).
+        from ..model_policy import client_model_uses_stub
+
         agent_config = AgentConfig(**request.agent_config.model_dump())
+        agent_config = replace(
+            agent_config,
+            use_stub_model=client_model_uses_stub(agent_config.model_name, roles=roles),
+        )
         agent = MultiTurnAgent(agent_config)
 
         # Create environment
@@ -198,6 +270,7 @@ class TrainingService:
             "metrics": {},
             "error": None,
             "config": accepted_config,
+            "output_dir": str(output_dir),
         }
 
         # Create cancellation event and launch background task
