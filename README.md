@@ -68,11 +68,11 @@ measurable.
 
 ### Current verification status
 
-The current development head (the unreleased training-correctness work
-described under [What's new](#whats-new)) completed its local Linux Python 3.12
-suite on **2026-10-12** with **8,214 passed and 21 skipped**, plus lint, strict
-typing, and the stable-API contract check. This is local evidence only; it is
-not yet a tagged release.
+The `v0.63.0` release tree (the training-correctness audit described under
+[What's new](#whats-new)) completed its local Linux Python 3.12 suite on
+**2026-10-12** with **8,315 passed and 21 skipped**, including the new
+per-trainer learning tests, plus pre-commit, strict typing, and the stable-API
+contract check before tagging.
 
 The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
 **2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
@@ -130,7 +130,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.62.1`, published from the
+- **Current Python release:** `stateset-agents==0.63.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -385,10 +385,14 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**Current development head (unreleased): training-correctness audit.**
-A line-by-line audit of every trainer, reward, and evaluation path against the
-published algorithms fixed more than fifty silent correctness bugs, each pinned
-by a test that fails without the fix. The ones most likely to have affected
+**v0.63.0 (latest release; publication triggered by tag):**
+
+Training-correctness audit. A line-by-line audit of every trainer, reward,
+evaluation, rollout, checkpoint, HPO, CLI, and SFT path against the published
+algorithms fixed more than sixty silent correctness bugs, each pinned by a test
+that fails without the fix. New `tests/learning` require every RL, preference,
+and offline trainer to improve a toy task through its real entry point (with a
+sign-flipped control), and `disable_dropout` brings TRL parity for scoring. The ones most likely to have affected
 past runs:
 
 - **GRPO advantages.** `baseline_type="group_median"`/`"global_mean"` had no
@@ -430,10 +434,14 @@ past runs:
   timed `next_batch` could lose a batch, and LoRA weight sync could hand the
   engine unmerged weights.
 
+- **Offline GRPO, HPO, CLI.** `OfflineGRPOTrainer` never updated its policy;
+  every GRPO HPO trial scored -inf; `train --config` dropped most `training:`
+  values.
+
 Re-run experiments that depended on these paths before comparing them with new
 results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
-**v0.62.1 (latest release; publication triggered by tag):**
+**v0.62.1:**
 
 - **Publishable release gate.** v0.62.0's training-math fixes, plus a
   deterministic orchestrator shutdown test so the publish-readiness gate passes
@@ -1362,8 +1370,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.62.1" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.62.1"
+pip install "stateset-agents==0.63.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.63.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2185,7 +2193,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.62.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.63.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

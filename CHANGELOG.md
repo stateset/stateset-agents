@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-10-12 — Training correctness audit
+
 ### Added
 
 - `TrainingConfig.disable_dropout` (keyword-only, default off as in TRL's
