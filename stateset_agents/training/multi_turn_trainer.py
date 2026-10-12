@@ -835,6 +835,7 @@ class MultiTurnGRPOTrainer:
                 )
 
                 # Training step
+                step_before = self.global_step
                 metrics = await self.training_step(training_groups)
                 if replay_groups:
                     metrics["replay_group_count"] = len(replay_groups)
@@ -862,15 +863,21 @@ class MultiTurnGRPOTrainer:
                     },
                 )
 
-                # Log training metrics (only after first optimizer step to avoid
-                # triggering every episode at global_step=0 during gradient accumulation)
+                # Periodic work fires once per interval boundary crossed by this
+                # episode's optimizer steps: not again on accumulation-only
+                # episodes (global_step unchanged), and not skipped when one
+                # episode takes several steps past a multiple.
+                def crossed(every: int, before: int = step_before) -> bool:
+                    every = max(1, int(every))
+                    return self.global_step // every > before // every
+
                 logging_steps = getattr(self.config, "logging_steps", 10)
-                if self.global_step > 0 and self.global_step % logging_steps == 0:
+                if crossed(logging_steps):
                     await self._log_training_metrics(metrics, training_groups)
 
                 # Evaluation (only after first optimizer step)
                 eval_steps = getattr(self.config, "eval_steps", 50)
-                if self.global_step > 0 and self.global_step % eval_steps == 0:
+                if crossed(eval_steps):
                     eval_metrics = await self.evaluate(eval_scenarios)
                     await self._log_eval_metrics(eval_metrics)
                     await notify_evaluation_end(
@@ -885,7 +892,7 @@ class MultiTurnGRPOTrainer:
 
                 # Save checkpoint (only after first optimizer step)
                 save_steps = getattr(self.config, "save_steps", 100)
-                if self.global_step > 0 and self.global_step % save_steps == 0:
+                if crossed(save_steps):
                     await self.save_checkpoint()
 
                 # Early stopping check
