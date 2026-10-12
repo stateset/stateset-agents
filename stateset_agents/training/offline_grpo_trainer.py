@@ -461,10 +461,9 @@ class OfflineGRPOTrainer:
         )
         self.value_optimizer.step()
 
-        # Q-function loss
-        with torch.no_grad():
-            next_q = self.q_net(next_states, actions)  # Simplified
-            q_targets = rewards + (1 - dones) * 0.99 * next_q
+        # Q-function loss. Bootstrap from V(s'): the logged action belongs to
+        # s, so Q(s', a) would score an action never taken in s'.
+        q_targets = targets
 
         current_q = self.q_net(states, actions)
         q_loss = F.mse_loss(current_q, q_targets)
@@ -657,22 +656,31 @@ class OfflineGRPOTrainer:
         if not self.value_pretrained and dataset is not None:
             await self.pretrain_value_functions(dataset)
 
+        offline_data = None
+        if dataset is not None:
+            converter = getattr(dataset, "to_offline_rl_format", None)
+            if not callable(converter):
+                raise ValueError(
+                    "Dataset must implement to_offline_rl_format with real "
+                    "state/action features"
+                )
+            offline_data = self._validate_offline_data(converter())
+
         logger.info(f"Starting Offline GRPO training for {num_epochs} epochs")
 
         for epoch in range(num_epochs):
             epoch_metrics = []
 
-            if dataset is not None:
-                # Train on dataset batches
+            if offline_data is not None:
+                # One pass over the logged transitions per epoch.
                 batch_size = self.config.batch_size
-                num_batches = len(dataset) // batch_size
-
-                for _batch_idx in range(num_batches):
-                    # Simplified batch preparation
+                order = np.random.permutation(len(offline_data["states"]))
+                for start in range(0, len(order), batch_size):
+                    rows = order[start : start + batch_size]
                     batch = {
-                        "states": np.random.randn(batch_size, self.config.state_dim),
-                        "actions": np.random.randn(batch_size, self.config.action_dim),
-                        "rewards": np.random.randn(batch_size),
+                        "states": offline_data["states"][rows],
+                        "actions": offline_data["actions"][rows],
+                        "rewards": offline_data["rewards"][rows],
                     }
 
                     metrics = await self.train_step(batch)

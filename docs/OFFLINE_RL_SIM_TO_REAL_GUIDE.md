@@ -737,73 +737,56 @@ divergence = compute_distribution_divergence(
 
 ## Complete Examples
 
-### Example 1: Train from Customer Service Logs
+### Example 1: Learn Value Baselines from Customer Service Logs
+
+`OfflineGRPOTrainer` fits state-value and Q functions to logged
+conversations (through the selected offline algorithm plus its own TD
+networks) and reports hybrid advantages. It does not update a language-model
+policy itself; use `get_value_estimate` / `get_q_estimate` as baselines in an
+online trainer.
 
 ```python
 import asyncio
-from stateset_agents.data import ConversationDataset, ConversationDatasetConfig
-from stateset_agents.training import (
-    OfflineGRPOTrainer,
-    OfflineGRPOConfig,
-    OfflineRLAlgorithm,
-)
-from stateset_agents import MultiTurnAgent, ConversationEnvironment, HelpfulnessReward
-from stateset_agents.core.agent import AgentConfig
 
-async def train_from_logs():
-    # 1. Load historical data
-    dataset_config = ConversationDatasetConfig(
-        quality_threshold=0.6,
-        min_turns=2,
-        normalize_rewards=True,
-    )
+import torch
+
+from stateset_agents.data import (
+    ConversationDataset,
+    ConversationDatasetConfig,
+    EmbeddingCache,
+)
+from stateset_agents.training import OfflineGRPOConfig, OfflineGRPOTrainer
+
+
+async def learn_from_logs():
+    # 1. Load historical data with real embeddings for states and actions
     dataset = ConversationDataset.from_jsonl(
         "customer_service_logs.jsonl",
-        config=dataset_config,
+        config=ConversationDatasetConfig(quality_threshold=0.6, min_turns=2),
+        embedding_cache=EmbeddingCache("all-MiniLM-L6-v2"),
     )
 
-    print(f"Loaded {len(dataset)} conversations")
-    print(f"Statistics: {dataset.get_statistics()}")
-
-    # 2. Set up agent and environment
-    agent = MultiTurnAgent(
-        AgentConfig(model_name="stub://quickstart", use_stub_model=True)
-    )
-    await agent.initialize()
-
-    env = ConversationEnvironment(
-        scenarios=[{"id": "cs", "topic": "support", "user_responses": ["Hi"]}],
-        max_turns=10,
-    )
-
-    # 3. Configure hybrid offline + online training
+    # 2. Fit value functions offline
     config = OfflineGRPOConfig(
-        # Offline phase
-        offline_algorithm=OfflineRLAlgorithm.CQL,
-        offline_pretrain_steps=500,
-        cql_alpha=1.0,
-
-        # Online phase
-        online_ratio=0.3,
-        num_episodes=1000,
-
-        # GRPO settings
-        group_size=4,
-        learning_rate=5e-6,
+        offline_algorithm="iql",
+        state_dim=384,
+        action_dim=384,
+        pretrain_value_epochs=10,
     )
+    trainer = OfflineGRPOTrainer(config, dataset=dataset)
+    pretrain = await trainer.pretrain_value_functions()
+    print("final value loss:", pretrain["final_loss"])
 
-    # 4. Train
-    trainer = OfflineGRPOTrainer(config)
-    trained_agent = await trainer.train(
-        agent=agent,
-        environment=env,
-        reward_fn=HelpfulnessReward(),
-        offline_dataset=dataset,
-    )
+    # 3. Score logged transitions with hybrid advantages
+    results = await trainer.train(num_epochs=1)
+    print(results["final_metrics"])
 
-    return trained_agent
+    # 4. Use the learned baseline elsewhere
+    offline = dataset.to_offline_rl_format()
+    print(trainer.get_value_estimate(torch.as_tensor(offline["states"][0])))
 
-asyncio.run(train_from_logs())
+
+asyncio.run(learn_from_logs())
 ```
 
 ### Example 2: Sim-to-Real Pipeline

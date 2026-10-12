@@ -44,6 +44,19 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _state_text(turns: Any) -> str:
+    """The conversation text a state embedding is computed from.
+
+    Shared by training and generation so both embed identical strings.
+    """
+    parts = []
+    for turn in turns:
+        role = turn["role"] if isinstance(turn, dict) else turn.role
+        content = turn["content"] if isinstance(turn, dict) else turn.content
+        parts.append(f"{role}: {content}\n")
+    return "".join(parts)
+
+
 def _require_torch():
     """Ensure torch is available"""
     if torch is None:
@@ -647,9 +660,10 @@ class DecisionTransformerTrainer:
         for epoch in range(num_epochs):
             epoch_metrics = []
 
-            # Shuffle data
+            # Shuffle data; the last batch may be partial so datasets smaller
+            # than ``batch_size`` still train.
             indices = np.random.permutation(len(training_data))
-            num_batches = len(training_data) // self.config.batch_size
+            num_batches = math.ceil(len(training_data) / self.config.batch_size)
 
             for batch_idx in range(num_batches):
                 batch_indices = indices[
@@ -701,16 +715,16 @@ class DecisionTransformerTrainer:
                 actions = []
                 action_turns = []
 
-                state_history = ""
                 for i, turn in enumerate(traj.turns):
                     if turn.role == "assistant":
                         with torch.no_grad():
-                            state_emb = self.embedder.forward([state_history])
+                            state_emb = self.embedder.forward(
+                                [_state_text(traj.turns[:i])]
+                            )
                             action_emb = self.embedder.forward([turn.content])
                         states.append(state_emb.squeeze(0).cpu().numpy())
                         actions.append(action_emb.squeeze(0).cpu().numpy())
                         action_turns.append(i)
-                    state_history += f"{turn.role}: {turn.content}\n"
             else:
                 # Assume pre-embedded
                 states = traj.metadata.get("state_embeddings", [])
@@ -738,16 +752,25 @@ class DecisionTransformerTrainer:
             else:
                 rtg = [0.0] * min_len
 
-            training_data.append(
-                {
-                    "states": np.array(states),
-                    "actions": np.array(actions),
-                    "returns_to_go": np.array(rtg),
-                    "timesteps": np.arange(min_len),
-                }
-            )
+            # Split long trajectories into context-sized windows so every
+            # turn is trained on, not just the first ``max_context_length``.
+            window = self.config.max_context_length
+            for start in range(0, min_len, window):
+                stop = min(start + window, min_len)
+                training_data.append(
+                    {
+                        "states": np.array(states[start:stop]),
+                        "actions": np.array(actions[start:stop]),
+                        "returns_to_go": np.array(rtg[start:stop]),
+                        "timesteps": self._timesteps(start, stop),
+                    }
+                )
 
         return training_data
+
+    def _timesteps(self, start: int, stop: int) -> Any:
+        """Absolute turn indices, clipped to the timestep embedding's range."""
+        return np.minimum(np.arange(start, stop), self.config.max_episode_length - 1)
 
     def generate_response(
         self,
@@ -759,56 +782,80 @@ class DecisionTransformerTrainer:
         """
         Generate a response embedding conditioned on target return.
 
+        The context mirrors training: one timestep per assistant turn already
+        in ``history`` (state = the conversation before it, action = its
+        reply), followed by the current state. Only the last
+        ``max_context_length`` timesteps are fed to the model.
+
         Args:
             history: Conversation history [{"role": ..., "content": ...}, ...]
             target_return: Desired return (e.g., 0.9 for high quality)
-            past_actions: Previous action embeddings
-            past_returns: Previous returns
+            past_actions: Action embeddings for the assistant turns in
+                ``history`` (defaults to embedding their contents)
+            past_returns: Return-to-go at each of those turns (defaults to
+                ``target_return``)
 
         Returns:
             action_embedding: [action_dim] - embedding for response
         """
+        if self.embedder is None:
+            raise ValueError("Embedder required for response generation")
         self.model.eval()
 
+        turn_indices = [
+            i for i, turn in enumerate(history) if turn.get("role") == "assistant"
+        ]
+        if past_actions is not None and len(past_actions) != len(turn_indices):
+            raise ValueError(
+                f"past_actions has {len(past_actions)} entries but history has "
+                f"{len(turn_indices)} assistant turns"
+            )
+        if past_returns is not None and len(past_returns) != len(turn_indices):
+            raise ValueError(
+                f"past_returns has {len(past_returns)} entries but history has "
+                f"{len(turn_indices)} assistant turns"
+            )
+
+        num_steps = len(turn_indices) + 1
+        first = max(0, num_steps - self.config.max_context_length)
+        context_len = num_steps - first
+
         with torch.no_grad():
-            # Embed current state
-            if self.embedder is not None:
-                state_text = "\n".join(
-                    [f"{t['role']}: {t['content']}" for t in history]
-                )
-                state = self.embedder.forward([state_text]).unsqueeze(0)
-            else:
-                raise ValueError("Embedder required for response generation")
-
-            # Build context
-            context_len = len(past_actions) + 1 if past_actions else 1
-
             states = torch.zeros(
                 1, context_len, self.config.state_dim, device=self.device
             )
             actions = torch.zeros(
                 1, context_len, self.config.action_dim, device=self.device
             )
-            returns_to_go = torch.zeros(1, context_len, 1, device=self.device)
-            timesteps = torch.arange(context_len, device=self.device).unsqueeze(0)
+            returns_to_go = torch.full(
+                (1, context_len, 1), float(target_return), device=self.device
+            )
+            timesteps = torch.as_tensor(
+                self._timesteps(first, num_steps), device=self.device
+            ).unsqueeze(0)
 
-            # Fill in past context
-            if past_actions:
-                for i, (act, ret) in enumerate(
-                    zip(past_actions, past_returns or [], strict=False)
-                ):
-                    actions[0, i] = act
-                    if past_returns:
-                        returns_to_go[0, i, 0] = ret
+            for slot, step in enumerate(range(first, num_steps - 1)):
+                turn = turn_indices[step]
+                states[0, slot] = self._embed(_state_text(history[:turn]))
+                if past_actions is not None:
+                    actions[0, slot] = torch.as_tensor(
+                        past_actions[step], device=self.device
+                    )
+                else:
+                    actions[0, slot] = self._embed(history[turn]["content"])
+                if past_returns is not None:
+                    returns_to_go[0, slot, 0] = float(past_returns[step])
 
-            # Current state and target return
-            states[0, -1] = state.squeeze(0)
-            returns_to_go[0, -1, 0] = target_return
+            # Current state; its action slot stays zero and is never attended
+            # to by the state token that predicts it.
+            states[0, -1] = self._embed(_state_text(history))
 
-            # Get action prediction
             action = self.model.get_action(states, actions, returns_to_go, timesteps)
 
             return action.squeeze(0)
+
+    def _embed(self, text: str) -> torch.Tensor:
+        return self.embedder.forward([text]).reshape(-1)
 
     def save(self, path: str) -> None:
         """Save model checkpoint"""
@@ -826,10 +873,17 @@ class DecisionTransformerTrainer:
                 ),
                 "training_step": self.training_step,
                 "training_metrics": self.training_metrics,
+                # The embedding projection is randomly initialised; without it
+                # a reloaded model sees different state/action embeddings.
+                "embedder_projection_state_dict": self._projection_state(),
             },
             path,
         )
         logger.info(f"Saved Decision Transformer to {path}")
+
+    def _projection_state(self) -> dict[str, Any] | None:
+        projection = getattr(self.embedder, "projection", None)
+        return projection.state_dict() if projection is not None else None
 
     def load(self, path: str, *, trusted: bool = False) -> None:
         """Load model checkpoint
@@ -849,6 +903,15 @@ class DecisionTransformerTrainer:
         self.scheduler.load_state_dict(checkpoint["scheduler_state_dict"])
         self.training_step = checkpoint.get("training_step", 0)
         self.training_metrics = checkpoint.get("training_metrics", [])
+        projection_state = checkpoint.get("embedder_projection_state_dict")
+        projection = getattr(self.embedder, "projection", None)
+        if projection_state and projection is not None:
+            projection.load_state_dict(projection_state)
+        elif projection is not None:
+            logger.warning(
+                "Checkpoint has no embedder projection; state and action "
+                "embeddings will not match the ones the model was trained on"
+            )
 
         # Checkpoints store the config as a plain dict (see save()); rebuild it.
         config_payload = checkpoint.get("config")

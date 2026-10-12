@@ -1958,20 +1958,18 @@ trainer = BCQTrainer(bcq_config)
 await trainer.train(dataset)
 ```
 
-### Hybrid Offline + Online Training
+### Offline Value Baselines
 
-Combine offline pretraining with online GRPO fine‑tuning:
+Fit value and Q functions to logged conversations, for use as baselines in
+online training:
 
 ```python
 from stateset_agents.training import OfflineGRPOTrainer, OfflineGRPOConfig
 
-config = OfflineGRPOConfig(
-    offline_algorithm="cql",
-    offline_pretrain_steps=1000,
-    online_ratio=0.3,  # 30% online, 70% offline
-)
-trainer = OfflineGRPOTrainer(config)
-trained = await trainer.train(agent, env, reward_fn, offline_dataset=dataset)
+config = OfflineGRPOConfig(offline_algorithm="cql", pretrain_value_epochs=10)
+trainer = OfflineGRPOTrainer(config, dataset=dataset)  # dataset with an EmbeddingCache
+await trainer.pretrain_value_functions()
+value = trainer.get_value_estimate(state_embedding)  # one state -> float
 ```
 
 See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
