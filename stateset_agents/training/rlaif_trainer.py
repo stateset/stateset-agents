@@ -659,15 +659,22 @@ class RLAIFTrainer:
             Training summary
         """
         num_episodes = num_episodes or self.config.num_episodes
+        if not prompts:
+            raise ValueError("RLAIF training needs at least one prompt")
 
         logger.info(f"Starting RLAIF training for {num_episodes} episodes")
         logger.info(f"Using judge: {self.config.judge_model}")
         logger.info(f"Criteria: {self.config.criteria}")
 
         for episode in range(num_episodes):
-            # Sample prompts for this episode
-            batch_size = min(self.config.per_device_train_batch_size, len(prompts))
-            episode_prompts = prompts[:batch_size]
+            # Cycle through the prompts so every one is trained on.
+            batch_size = min(
+                max(1, int(self.config.per_device_train_batch_size)), len(prompts)
+            )
+            start = episode * batch_size
+            episode_prompts = [
+                prompts[(start + k) % len(prompts)] for k in range(batch_size)
+            ]
 
             # Collect trajectories with AI rewards
             trajectories = await self.collect_trajectories(

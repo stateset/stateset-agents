@@ -10,6 +10,7 @@ the log must raise the policy's probability of emitting a digit.
 from __future__ import annotations
 
 import asyncio
+from typing import Any
 
 import numpy as np
 import pytest
@@ -25,6 +26,7 @@ from tests.learning._offline_toy import (  # noqa: E402
     mean_gap,
 )
 from tests.learning._toy import (  # noqa: E402
+    TRAIN_PROMPTS,
     digit_fraction,
     make_model,
     make_tokenizer,
@@ -51,8 +53,18 @@ class _LoggedDataset:
     def __len__(self) -> int:
         return len(self.responses)
 
-    def to_offline_rl_format(self) -> dict[str, np.ndarray]:
-        return {k: v.copy() for k, v in self._data.items()}
+    def to_offline_rl_format(self) -> dict[str, Any]:
+        # Like ConversationDataset: the logged context before each reply and
+        # the reply itself, aligned with the transition rows.
+        contexts = [
+            [{"role": "user", "content": TRAIN_PROMPTS[i % len(TRAIN_PROMPTS)]}]
+            for i in range(len(self.responses))
+        ]
+        return {
+            **{k: v.copy() for k, v in self._data.items()},
+            "contexts": contexts,
+            "responses": list(self.responses),
+        }
 
 
 def _trainer(seed: int, model=None, tokenizer=None):
@@ -95,19 +107,6 @@ def test_offline_grpo_value_pretraining_negated_reward(seed: int) -> None:
     assert mean_gap(trainer.get_q_estimate, heldout_states(seed)) < -0.5
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "OfflineGRPOTrainer never updates the policy: train() "
-        "(stateset_agents/training/offline_grpo_trainer.py:637) only calls "
-        "train_step() (:521), which computes hybrid advantages under no_grad "
-        "and records metrics. self.model (:218) is stored but no policy "
-        "optimizer, log-prob, or loss/backward exists anywhere in the module "
-        "(the only optimizers are value_optimizer/q_optimizer, :251-254), and "
-        "config.learning_rate is unused. Training on the log leaves the "
-        "policy bit-for-bit unchanged."
-    ),
-)
 @pytest.mark.parametrize("seed", seeds())
 def test_offline_grpo_policy_learns_from_logged_rewards(seed: int) -> None:
     tokenizer = make_tokenizer()
@@ -123,3 +122,13 @@ def test_offline_grpo_policy_learns_from_logged_rewards(seed: int) -> None:
     )
     assert changed, "policy parameters were never updated"
     assert after > before + 0.04, (before, after)
+
+
+@pytest.mark.parametrize("seed", seeds())
+def test_offline_grpo_policy_negated_reward(seed: int) -> None:
+    tokenizer = make_tokenizer()
+    model = make_model(seed)
+    before = target_mass(model, tokenizer)
+    trainer = _trainer(seed, model=model, tokenizer=tokenizer)
+    asyncio.run(trainer.train(num_epochs=3, dataset=_LoggedDataset(seed, sign=-1.0)))
+    assert target_mass(model, tokenizer) < before - 0.01

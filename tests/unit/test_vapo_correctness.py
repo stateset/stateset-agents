@@ -169,3 +169,17 @@ def test_from_training_config_keeps_vapo_gamma_unless_base_chose_one():
     assert VAPOConfig.from_training_config(TrainingConfig()).gamma == 1.0
     assert VAPOConfig.from_training_config(TrainingConfig(gamma=0.9)).gamma == 0.9
     assert VAPOConfig.from_training_config(TrainingConfig(), gamma=0.95).gamma == 0.95
+
+
+def test_zero_length_adaptive_lambda_warns_once(caplog):
+    import logging
+
+    from stateset_agents.training.vapo_trainer import LengthAdaptiveGAE
+
+    gae = LengthAdaptiveGAE(lambda_policy_alpha=0.05)
+    with caplog.at_level(logging.WARNING):
+        assert gae.compute_lambda_policy(10) == 0.0
+        assert gae.compute_lambda_policy(5) == 0.0
+        assert gae.compute_lambda_policy(100) > 0.0
+    warnings = [r for r in caplog.records if "lambda_policy_alpha" in r.getMessage()]
+    assert len(warnings) == 1

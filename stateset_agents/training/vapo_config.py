@@ -42,6 +42,11 @@ class VAPOConfig(TrainingConfig):
     # positional arguments are unchanged).
     gamma: float = 1.0
     lambda_critic: float = 1.0
+    # Length-adaptive policy lambda = 1 - 1/(alpha * L) (VAPO eq. 7). The
+    # paper's 0.05 targets long reasoning outputs: completions with
+    # alpha * L <= 1 (under 20 tokens at 0.05) get lambda = 0, i.e. one-step
+    # TD advantages that rely entirely on the critic (a warning is logged).
+    # Raise alpha above 1 / typical_length for short completions.
     lambda_policy_alpha: float = 0.05
 
     clip_eps_low: float = 0.2

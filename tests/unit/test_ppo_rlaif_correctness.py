@@ -12,6 +12,8 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -264,3 +266,23 @@ def test_rlaif_generation_runs_in_eval_mode_and_restores_training():
     cai._generate("Hi", max_new_tokens=2)
     assert modes == [False, False]
     assert model.training
+
+
+def test_rlaif_train_cycles_through_every_prompt():
+    trainer = _rlaif()
+    trainer.config.per_device_train_batch_size = 2
+    trainer.config.logging_steps = 1000
+    trainer.config.use_self_play = False
+    seen = []
+
+    async def collect(prompts, num_generations):
+        seen.append(list(prompts))
+        return []
+
+    async def step(trajectories):
+        return {"policy_loss": 0.0, "average_reward": 0.0}
+
+    trainer.collect_trajectories = collect
+    trainer.train_step = step
+    asyncio.run(trainer.train(["a", "b", "c"], num_episodes=3))
+    assert seen == [["a", "b"], ["c", "a"], ["b", "c"]]

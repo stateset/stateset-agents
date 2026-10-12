@@ -607,13 +607,15 @@ class ConversationDataset(TorchDataset):
             self._derive(val_trajectories),
         )
 
-    def to_offline_rl_format(self) -> dict[str, np.ndarray]:
+    def to_offline_rl_format(self) -> dict[str, Any]:
         """
         Convert to format expected by offline RL algorithms.
 
         Returns:
             Dictionary with numpy arrays for states, actions, rewards,
-            next_states, and dones.
+            next_states, and dones, plus the logged text of each decision:
+            ``contexts`` (the role/content messages before the reply) and
+            ``responses`` (the reply), as lists aligned with the rows.
         """
         _require_torch()
 
@@ -628,6 +630,8 @@ class ConversationDataset(TorchDataset):
         rewards = []
         next_states = []
         dones = []
+        contexts: list[list[dict[str, str]]] = []
+        responses: list[str] = []
 
         cache = self.embedding_cache
         for traj in self.trajectories:
@@ -658,6 +662,10 @@ class ConversationDataset(TorchDataset):
                 rewards.append(float(sum(turn_rewards[i:stop])))
                 next_states.append(state_at(stop).numpy())
                 dones.append(float(is_last))
+                contexts.append(
+                    [{"role": t.role, "content": t.content} for t in traj.turns[:i]]
+                )
+                responses.append(traj.turns[i].content)
 
         return {
             "states": np.array(states),
@@ -665,6 +673,8 @@ class ConversationDataset(TorchDataset):
             "rewards": np.array(rewards),
             "next_states": np.array(next_states),
             "dones": np.array(dones),
+            "contexts": contexts,
+            "responses": responses,
         }
 
 

@@ -208,6 +208,7 @@ class LengthAdaptiveGAE:
         self.gamma = gamma
         self.lambda_critic = lambda_critic
         self.lambda_policy_alpha = lambda_policy_alpha
+        self._warned_zero_lambda = False
 
     def compute_lambda_policy(self, sequence_length: int) -> float:
         """
@@ -219,6 +220,17 @@ class LengthAdaptiveGAE:
         """
         scaled = self.lambda_policy_alpha * sequence_length
         if scaled <= 1.0:
+            if not self._warned_zero_lambda:
+                self._warned_zero_lambda = True
+                logger.warning(
+                    "VAPO length-adaptive lambda is 0 for a %d-token completion "
+                    "(lambda_policy_alpha * length = %.3g <= 1): policy advantages "
+                    "fall back to one-step TD and rely entirely on the critic. "
+                    "For short completions raise lambda_policy_alpha (e.g. above "
+                    "1 / typical_length).",
+                    sequence_length,
+                    scaled,
+                )
             return 0.0
         return 1.0 - 1.0 / scaled
 

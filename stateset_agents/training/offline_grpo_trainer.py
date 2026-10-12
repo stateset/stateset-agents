@@ -4,6 +4,13 @@ Offline GRPO Trainer
 Combines offline RL value estimation with online GRPO policy optimization.
 This hybrid approach uses offline data to learn value functions and then
 uses those value estimates as baselines for GRPO training.
+
+When the trainer has a policy ``model`` and ``tokenizer`` and the offline data
+carries the logged text (``contexts`` before each reply and the ``responses``
+themselves, as :meth:`ConversationDataset.to_offline_rl_format` provides), each
+step also updates the policy: the length-normalised log-likelihood of every
+logged response is weighted by its detached hybrid advantage, so replies the
+value functions rate above baseline become more likely and the rest less.
 """
 
 import logging
@@ -264,6 +271,9 @@ class OfflineGRPOTrainer:
         # Offline RL algorithm instance
         self._offline_learner: Any | None = None
 
+        # Policy optimizer, created on the first policy update.
+        self.policy_optimizer: Any | None = None
+
     def _init_offline_learner(self) -> None:
         """Initialize the offline RL algorithm"""
         algorithm = OfflineRLAlgorithm(self.config.offline_algorithm.lower())
@@ -484,7 +494,7 @@ class OfflineGRPOTrainer:
 
         return float(value_loss.item())
 
-    def _validate_offline_data(self, data: Any) -> dict[str, np.ndarray]:
+    def _validate_offline_data(self, data: Any) -> dict[str, Any]:
         """Validate real transition features before any optimizer mutation."""
         keys = {"states", "actions", "rewards", "next_states", "dones"}
         if not isinstance(data, dict) or not keys.issubset(data):
@@ -516,7 +526,17 @@ class OfflineGRPOTrainer:
                 raise ValueError(f"Offline {key} must have shape {shape}")
         if not np.isin(arrays["dones"], [0, 1]).all():
             raise ValueError("Offline dones must be zero or one")
-        return arrays
+        text: dict[str, Any] = {}
+        if "contexts" in data or "responses" in data:
+            contexts = list(data.get("contexts") or [])
+            responses = list(data.get("responses") or [])
+            if len(contexts) != count or len(responses) != count:
+                raise ValueError(
+                    "Offline contexts and responses must have one entry per "
+                    "transition"
+                )
+            text = {"contexts": contexts, "responses": responses}
+        return {**arrays, **text}
 
     async def train_step(
         self,
@@ -563,6 +583,20 @@ class OfflineGRPOTrainer:
                 else advantages
             )
 
+            contexts = batch.get("contexts")
+            responses = batch.get("responses")
+            if (
+                self.model is not None
+                and self.tokenizer is not None
+                and contexts is not None
+                and responses is not None
+            ):
+                metrics.update(
+                    self._policy_step(
+                        list(contexts), list(responses), advantages.reshape(-1)
+                    )
+                )
+
         # Blend weights based on training progress
         blend_ratio = self._get_blend_ratio()
         metrics["blend_ratio"] = blend_ratio
@@ -572,6 +606,99 @@ class OfflineGRPOTrainer:
         self.training_metrics.append(metrics)
 
         return metrics
+
+    def _render_prompt(self, context: Any) -> str:
+        """Render a logged context the way the agent prompts the policy.
+
+        A string is used as-is; a message list goes through the tokenizer's
+        chat template, or the agent's plain ``User:``/``Assistant:`` format
+        when the tokenizer has none.
+        """
+        if isinstance(context, str):
+            return context
+        messages = [
+            {"role": str(m.get("role", "user")), "content": str(m.get("content", ""))}
+            for m in context
+        ]
+        if getattr(self.tokenizer, "chat_template", None):
+            rendered = self.tokenizer.apply_chat_template(
+                messages, tokenize=False, add_generation_prompt=True
+            )
+            if isinstance(rendered, str):
+                return rendered
+        labels = {"system": "System", "user": "User", "assistant": "Assistant"}
+        text = "".join(
+            f"{labels[m['role']]}: {m['content']}\n"
+            for m in messages
+            if m["role"] in labels
+        )
+        return text + "Assistant: "
+
+    def _encode(self, text: str) -> list[int]:
+        encoded = self.tokenizer(text, add_special_tokens=False)
+        return [int(t) for t in encoded["input_ids"]]
+
+    def _policy_step(
+        self,
+        contexts: list[Any],
+        responses: list[str],
+        advantages: torch.Tensor,
+    ) -> dict[str, float]:
+        """One advantage-weighted likelihood update on logged responses."""
+        advantages = advantages.detach().float()
+        if not bool(torch.any(advantages != 0)):
+            # No preference among these responses: nothing to learn, and an
+            # optimizer step would still apply weight decay.
+            return {"policy_loss": 0.0, "policy_updated": 0.0}
+
+        model = self.model
+        device = next(model.parameters()).device
+        eos = getattr(self.tokenizer, "eos_token_id", None)
+        pad = getattr(self.tokenizer, "pad_token_id", None)
+        pad = int(pad if pad is not None else (eos if eos is not None else 0))
+        rows: list[tuple[list[int], int]] = []
+        for context, response in zip(contexts, responses, strict=True):
+            prompt_ids = self._encode(self._render_prompt(context))
+            response_ids = self._encode(str(response))
+            if eos is not None:
+                response_ids = response_ids + [int(eos)]
+            rows.append((prompt_ids + response_ids, len(prompt_ids)))
+        width = max(len(ids) for ids, _ in rows)
+        input_ids = torch.full((len(rows), width), pad, dtype=torch.long)
+        attention = torch.zeros((len(rows), width), dtype=torch.long)
+        # Response mask in the shifted frame: logits at t predict token t+1.
+        mask = torch.zeros((len(rows), width - 1), dtype=torch.float32)
+        for row, (ids, prompt_len) in enumerate(rows):
+            input_ids[row, : len(ids)] = torch.tensor(ids)
+            attention[row, : len(ids)] = 1
+            mask[row, max(prompt_len - 1, 0) : len(ids) - 1] = 1.0
+        input_ids, attention, mask = (
+            input_ids.to(device),
+            attention.to(device),
+            mask.to(device),
+        )
+
+        if self.policy_optimizer is None:
+            self.policy_optimizer = AdamW(
+                [p for p in model.parameters() if p.requires_grad],
+                lr=self.config.learning_rate,
+                weight_decay=float(getattr(self.config, "weight_decay", 0.0)),
+            )
+        model.train()
+        logits = model(input_ids=input_ids, attention_mask=attention).logits
+        log_probs = torch.log_softmax(logits[:, :-1].float(), dim=-1)
+        token_lp = log_probs.gather(-1, input_ids[:, 1:].unsqueeze(-1)).squeeze(-1)
+        seq_lp = (token_lp * mask).sum(-1) / mask.sum(-1).clamp(min=1.0)
+        loss = -(advantages.to(device) * seq_lp).mean()
+
+        self.policy_optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(
+            [p for p in model.parameters() if p.requires_grad],
+            self.config.max_grad_norm,
+        )
+        self.policy_optimizer.step()
+        return {"policy_loss": float(loss.detach().item()), "policy_updated": 1.0}
 
     def _compute_hybrid_advantage(
         self,
@@ -682,6 +809,11 @@ class OfflineGRPOTrainer:
                         "actions": offline_data["actions"][rows],
                         "rewards": offline_data["rewards"][rows],
                     }
+                    if "responses" in offline_data:
+                        batch["contexts"] = [offline_data["contexts"][i] for i in rows]
+                        batch["responses"] = [
+                            offline_data["responses"][i] for i in rows
+                        ]
 
                     metrics = await self.train_step(batch)
                     epoch_metrics.append(metrics)
@@ -740,6 +872,11 @@ class OfflineGRPOTrainer:
                 "value_target_state_dict": self.value_target.state_dict(),
                 "value_optimizer_state_dict": self.value_optimizer.state_dict(),
                 "q_optimizer_state_dict": self.q_optimizer.state_dict(),
+                "policy_optimizer_state_dict": (
+                    self.policy_optimizer.state_dict()
+                    if self.policy_optimizer is not None
+                    else None
+                ),
                 # Persist the config as plain data so checkpoints stay
                 # loadable under torch.load(weights_only=True).
                 "config": (
@@ -773,6 +910,14 @@ class OfflineGRPOTrainer:
         self.value_target.load_state_dict(checkpoint["value_target_state_dict"])
         self.value_optimizer.load_state_dict(checkpoint["value_optimizer_state_dict"])
         self.q_optimizer.load_state_dict(checkpoint["q_optimizer_state_dict"])
+        policy_state = checkpoint.get("policy_optimizer_state_dict")
+        if policy_state is not None and self.model is not None:
+            self.policy_optimizer = AdamW(
+                [p for p in self.model.parameters() if p.requires_grad],
+                lr=self.config.learning_rate,
+                weight_decay=float(getattr(self.config, "weight_decay", 0.0)),
+            )
+            self.policy_optimizer.load_state_dict(policy_state)
         self.training_step = checkpoint.get("training_step", 0)
         self.value_pretrained = checkpoint.get("value_pretrained", False)
         self.training_metrics = checkpoint.get("training_metrics", [])

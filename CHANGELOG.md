@@ -113,6 +113,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **SFT**: River SFT steps once per accumulation window and records it;
   Tinker SFT shuffles each epoch; `merge_adapter` keeps sharded models in place
   and accepts `revision`.
+- **Offline GRPO trains its policy**: `OfflineGRPOTrainer` now applies an
+  advantage-weighted likelihood update to the attached policy on the logged
+  responses (it only trained value/Q networks; `learning_rate` was unused).
+  `ConversationDataset.to_offline_rl_format()` also returns `contexts` and
+  `responses`. RLAIF `train()` cycles through every prompt; VAPO warns once
+  when the length-adaptive λ is 0 (α·L ≤ 1).
+- **Learning tests** (`tests/learning`): every RL, preference and offline
+  trainer must improve a toy task through its real entry point, with a
+  sign-flipped control that must regress.
 
 ## [0.62.1] - 2026-10-11 — Publishable release gate
 
