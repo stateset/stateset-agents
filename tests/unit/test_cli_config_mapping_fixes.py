@@ -12,6 +12,7 @@ import dataclasses
 import importlib
 import json
 import os
+import re
 from types import SimpleNamespace
 from unittest import mock
 
@@ -369,6 +370,15 @@ def flywheel_args(tmp_path, monkeypatch):
     return build
 
 
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+_PLAIN_TERMINAL = {
+    "COLUMNS": "200",
+    "NO_COLOR": "1",
+    "TERM": "dumb",
+    "FORCE_COLOR": "0",
+}
+
+
 @pytest.mark.parametrize(
     "algorithm,flag",
     [
@@ -381,9 +391,12 @@ def flywheel_args(tmp_path, monkeypatch):
 def test_flywheel_rejects_loss_knobs_for_other_algorithms(
     flywheel_args, algorithm, flag
 ):
-    result = CliRunner().invoke(app, flywheel_args(algorithm) + [flag, "0.1"])
+    # CI sets FORCE_COLOR=1, which colours and wraps Rich's error panel.
+    result = CliRunner().invoke(
+        app, flywheel_args(algorithm) + [flag, "0.1"], env=_PLAIN_TERMINAL
+    )
     assert result.exit_code != 0
-    assert flag in result.output
+    assert flag in " ".join(_ANSI.sub("", result.output).split())
 
 
 @pytest.mark.parametrize(
