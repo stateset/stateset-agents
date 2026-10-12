@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- Training Lab playground sessions are owner-scoped: another user's session
+  returns 404 on read, chat, and clear (admins see all).
+
 ## [0.64.1] - 2026-10-12 — Security hardening
 
 ### Security
