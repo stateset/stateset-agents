@@ -70,6 +70,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   early stopping per `train()`; `TaskCompletionReward` is capped at 1 and
   counts only required actions; `SymbolicPhysicsEnvironment` shows the agent
   its task; symmetry checks recompute derived variables.
+- **PPO/RLAIF**: PPO tokenizes prompt and completion separately, so a long
+  prompt's tail is no longer trained as the response; `PPOTrainer.train()`
+  samples completions from the policy (it trained on a constant string) and
+  honours `mini_batch_size` with shuffled mini-batches. RLAIF trains the first
+  completion token and never padding, derives advantages from per-sequence
+  (group-relative) rewards, and generates in inference mode.
+- **Async rollouts**: checkpointing the control plane no longer deadlocks with
+  a full queue; a cancelled timed `next_batch`/`submit` never loses records;
+  a heartbeat no longer rejects in-flight rollouts within `max_policy_lag`;
+  LoRA weight sync hands loaders merged copies and maps `modules_to_save`
+  parameters to engine names.
+- **Checkpoints and data parallelism**: DDP/Accelerate checkpoints save and
+  restore the unwrapped model plus full training state (resume silently
+  restored nothing before; non-parallel saves crashed), and a load that
+  matches no weights fails instead of reporting success. Ranks seed and pick
+  scenarios distinctly so data parallelism adds samples. Training checkpoints
+  carry running reward statistics and RNG state. The TRL wrapper honours
+  `resume_from_checkpoint`, rounds the generation batch to a multiple of
+  `num_generations` (the customer-service profile failed TRL validation),
+  and uses `warmup_ratio`.
 
 ## [0.62.1] - 2026-10-11 — Publishable release gate
 
