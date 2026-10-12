@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.64.0] - 2026-10-12 — Smaller stable surface
+
 ### Changed
 
 - **Smaller stable surface: the least-proven training modules moved to
