@@ -352,6 +352,8 @@ class EnsembleRewardModel:
 
             # Forward pass
             mean, log_var = model(inputs)
+            # [B] targets against [B, 1] predictions would broadcast to [B, B].
+            targets = targets.reshape(mean.shape)
 
             # Negative log likelihood loss
             precision = torch.exp(-log_var)
@@ -699,25 +701,43 @@ class ActiveLearningSelector:
                 _, ep, _ = reward_model._predict_with_uncertainty(X)
                 uncertainty_before = float(ep.mean().item())
 
-        # Fine-tune the reward model
+        # Fine-tune the reward model with the same Gaussian NLL it is
+        # trained with: an ensemble trains every member through its own
+        # train_step; a single model predicts (mean, log_var).
         total_loss = 0.0
         trainable = getattr(reward_model, "model", None)
-        if trainable is None or not hasattr(trainable, "parameters"):
+        if hasattr(trainable, "train_step") and hasattr(trainable, "models"):
+            members = list(trainable.models)
+            for member in members:
+                member.train()
+            for _ in range(num_update_steps):
+                total_loss += trainable.train_step(X, y)["ensemble_loss"]
+            for member in members:
+                member.eval()
+        elif trainable is not None and hasattr(trainable, "parameters"):
+            optimizer = torch.optim.Adam(trainable.parameters(), lr=learning_rate)
+            trainable.train()
+            for _ in range(num_update_steps):
+                optimizer.zero_grad()
+                output = trainable(X)
+                if isinstance(output, tuple):
+                    mean, log_var = output
+                    target = y.reshape(mean.shape)
+                    loss = (
+                        0.5
+                        * (torch.exp(-log_var) * (target - mean) ** 2 + log_var).mean()
+                    )
+                else:
+                    loss = torch.nn.functional.mse_loss(
+                        output.reshape(-1), y.reshape(-1)
+                    )
+                loss.backward()
+                optimizer.step()
+                total_loss += loss.item()
+            trainable.eval()
+        else:
             logger.warning("Reward model has no trainable parameters")
             return {"update_loss": 0.0, "num_labels": len(labels)}
-
-        optimizer = torch.optim.Adam(trainable.parameters(), lr=learning_rate)
-        trainable.train()
-
-        for _ in range(num_update_steps):
-            optimizer.zero_grad()
-            predictions = trainable(X).squeeze()
-            loss = torch.nn.functional.mse_loss(predictions, y)
-            loss.backward()
-            optimizer.step()
-            total_loss += loss.item()
-
-        trainable.eval()
 
         # Measure uncertainty after update
         uncertainty_after = 0.0
