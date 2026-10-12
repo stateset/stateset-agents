@@ -143,18 +143,21 @@ class ConversationEnvironment(Environment):
         new_state = state.copy()
         new_state.turn_count += 1
 
-        history = list(new_state.context.get("history", []))
-        history.append({"role": "assistant", "content": agent_turn.content})
-
-        user_response = await self._generate_user_response(agent_turn, state)
-        history.append({"role": "user", "content": user_response.content})
+        prior_history = list(new_state.context.get("history", []))
+        history = prior_history + [{"role": "assistant", "content": agent_turn.content}]
         new_state.context["history"] = history
 
+        # Score the reply against the conversation it answers, before the
+        # simulated user's next message exists.
         step_reward = 0.0
         if self.reward_fn is not None and self._should_compute_step_reward():
+            reward_turns = [
+                ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+                for m in prior_history
+            ] + [agent_turn]
             try:
                 reward_result = await self.reward_fn.compute_reward(
-                    [agent_turn, user_response],
+                    reward_turns,
                     new_state.context,
                 )
                 if hasattr(reward_result, "score"):
@@ -168,6 +171,9 @@ class ConversationEnvironment(Environment):
                 step_reward = 0.0
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))
+
+        user_response = await self._generate_user_response(agent_turn, state)
+        history.append({"role": "user", "content": user_response.content})
 
         done = (
             new_state.turn_count >= self.max_turns

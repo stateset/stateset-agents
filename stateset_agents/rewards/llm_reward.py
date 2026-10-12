@@ -236,17 +236,14 @@ class RulerRewardFunction(RewardFunction):
             except LLM_REWARD_EXCEPTIONS as cache_err:
                 logger.debug(f"Cache lookup failed: {cache_err}")
 
-        # Convert turns to messages
+        # The judge takes a list of trajectories (each a message list); a lone
+        # trajectory is judged on its own rather than against a copy of itself,
+        # whose shared prefix would leave nothing to compare.
         messages = self._turns_to_messages(turns)
-
-        # For single trajectory, create a comparison batch
-        if len(messages) == 1:
-            # Duplicate for comparison (RULER works better with multiple trajectories)
-            messages = messages * 2
 
         try:
             # Compute scores
-            scores = await self._compute_scores(messages, context)
+            scores = await self._compute_scores([messages], context)
 
             # Return first score (primary trajectory)
             score = scores[0] if scores else 0.0
@@ -312,16 +309,13 @@ class RulerRewardFunction(RewardFunction):
         if not batch_turns:
             return []
 
-        # Convert all turns to messages
+        # One message list per trajectory; the judge scores whole trajectories.
         all_messages = [self._turns_to_messages(turns) for turns in batch_turns]
-
-        # Flatten for batch processing
-        flat_messages = [msg for msgs in all_messages for msg in msgs]
 
         # Process in batches
         all_scores = []
-        for i in range(0, len(flat_messages), self.batch_size):
-            batch = flat_messages[i : i + self.batch_size]
+        for i in range(0, len(all_messages), self.batch_size):
+            batch = all_messages[i : i + self.batch_size]
             scores = await self._compute_scores(batch, context)
             all_scores.extend(scores)
 

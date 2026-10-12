@@ -118,8 +118,9 @@ class TrajectoryDataset(Dataset):
         return {
             "prompt_embedding": prompt_emb,
             "response_embedding": response_emb,
+            # Metadata stays off the batch: default_collate fails on dicts
+            # whose keys differ between examples, and training never reads it.
             "reward": torch.tensor(traj.raw_reward, dtype=torch.float32),
-            "metadata": traj.metadata,
         }
 
     def _embed_text(self, text: str, max_length: int = 128) -> torch.Tensor:
@@ -380,6 +381,10 @@ class NeuralRewardTrainer:
             val_loader = DataLoader(
                 val_dataset, batch_size=self.batch_size, shuffle=False
             )
+
+        # Early stopping is per call; retrains use a fresh validation split.
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
 
         # Training loop
         self.model.train()

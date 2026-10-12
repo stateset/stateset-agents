@@ -84,11 +84,21 @@ class RewardNormalizer:
         Uses online Welford's algorithm for the first 100 observations to
         avoid the bootstrap discontinuity when periodic stats kick in.
         """
+        evicting = (
+            self.reward_buffer.maxlen is not None
+            and len(self.reward_buffer) == self.reward_buffer.maxlen
+        )
         self.reward_buffer.append(reward)
+        self._added = getattr(self, "_added", 0) + 1
 
         # Online Welford update for smooth bootstrap
         n = len(self.reward_buffer)
-        if n == 1:
+        if evicting:
+            # Welford cannot remove the evicted value; a small full buffer is
+            # recomputed exactly, a large one on the periodic refresh below.
+            if n <= 100:
+                self._update_statistics()
+        elif n == 1:
             self.stats.mean = reward
             self.stats.std = 0.0
             self.stats.min = reward
@@ -106,7 +116,7 @@ class RewardNormalizer:
             self.stats.count = n
 
         # Full buffer refresh every 100 samples (for percentile accuracy)
-        if n % 100 == 0:
+        if self._added % 100 == 0:
             self._update_statistics()
 
     def _update_statistics(self):
@@ -210,8 +220,13 @@ class CalibratedRewardFunction(RewardFunction):
         # ``calibration_interval`` calls. Normalizing against statistics that
         # change on every call made scores depend on call order (ties split,
         # rankings inverted within a GRPO group); a frozen snapshot is one fixed
-        # monotone transform. Empty until the first refresh, i.e. identity.
-        self._frozen_stats = RewardStatistics()
+        # monotone transform. Seeded from a pre-calibrated normalizer;
+        # otherwise empty until the first refresh, i.e. identity.
+        self._frozen_stats = (
+            copy.deepcopy(self.normalizer.stats)
+            if self.normalizer.stats.count > 0
+            else RewardStatistics()
+        )
 
     async def compute_reward(
         self,

@@ -4,7 +4,9 @@ Reward function for symbolic physics relation discovery.
 
 from __future__ import annotations
 
+import json
 import logging
+import zlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
@@ -73,6 +75,34 @@ def _extract_last_assistant(turns: list[Any]) -> ConversationTurn | None:
     return None
 
 
+def _sample_seed(context: Mapping[str, Any]) -> int:
+    """Stable per-task seed, so identical answers always get identical scores."""
+    key = json.dumps(
+        {
+            "task_id": context.get("task_id"),
+            "target": context.get("target_expression"),
+            "variables": list(context.get("variables") or []),
+            "derived": dict(context.get("derived_variables") or {}),
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return zlib.crc32(key.encode("utf-8"))
+
+
+def _rederive(
+    values: dict[str, float],
+    derived_variables: Mapping[str, str],
+    keep: set[str],
+    allowed_functions: Mapping[str, Callable[..., float]],
+) -> dict[str, float]:
+    """Recompute derived variables after base values change (``keep`` stays)."""
+    for name, expr in derived_variables.items():
+        if name not in keep:
+            values[name] = safe_eval_expression(expr, values, allowed_functions)
+    return values
+
+
 def _symmetry_score(
     expression: str,
     samples: list[dict[str, float]],
@@ -81,7 +111,9 @@ def _symmetry_score(
     rel_tol: float,
     abs_tol: float,
     allowed_functions: Mapping[str, Callable[..., float]],
+    derived_variables: Mapping[str, str] | None = None,
 ) -> float:
+    derived_variables = derived_variables or {}
     matches = 0
     total = 0
     for values in samples:
@@ -99,6 +131,7 @@ def _symmetry_score(
             swapped_b = swapped[b]
             swapped[a], swapped[b] = swapped_b, swapped_a
             try:
+                _rederive(swapped, derived_variables, {a, b}, allowed_functions)
                 swapped_val = safe_eval_expression(
                     expression, swapped, allowed_functions
                 )
@@ -193,7 +226,9 @@ def _sign_flip_score(
     rel_tol: float,
     abs_tol: float,
     allowed_functions: Mapping[str, Callable[..., float]],
+    derived_variables: Mapping[str, str] | None = None,
 ) -> float:
+    derived_variables = derived_variables or {}
     if not variables:
         return 0.0
     matches = 0
@@ -210,6 +245,7 @@ def _sign_flip_score(
             flipped = dict(values)
             flipped[var] = -flipped[var]
             try:
+                _rederive(flipped, derived_variables, {var}, allowed_functions)
                 flipped_val = safe_eval_expression(
                     expression, flipped, allowed_functions
                 )
@@ -355,6 +391,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
             derived_variables=derived_variables,
             num_samples=self.config.num_samples,
             sample_range=self.config.sample_range,
+            seed=_sample_seed(context),
             allowed_functions=self.allowed_functions,
         )
 
@@ -417,6 +454,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                         self.config.rel_tol,
                         self.config.abs_tol,
                         self.allowed_functions,
+                        derived_variables,
                     )
                 elif ctype == "zeros":
                     points = constraint.get("points", [])
@@ -470,6 +508,7 @@ class SymbolicPhysicsRewardFunction(RewardFunction):
                         self.config.rel_tol,
                         self.config.abs_tol,
                         self.allowed_functions,
+                        derived_variables,
                     )
                 elif ctype == "sum":
                     terms = list(constraint.get("terms") or [])

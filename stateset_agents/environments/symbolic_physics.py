@@ -117,6 +117,7 @@ class SymbolicPhysicsEnvironment(Environment):
         self.task_sampling = task_sampling
         self._rng = random.Random(seed)
         self._task_index = 0
+        self._current_task: SymbolicPhysicsTask | None = None
         self.success_threshold = success_threshold
         self.scenarios = [task.to_scenario() for task in self.tasks]
         reward_fn = reward_fn or SymbolicPhysicsRewardFunction(config=reward_config)
@@ -158,6 +159,7 @@ class SymbolicPhysicsEnvironment(Environment):
         )
         self.active_episodes[episode_id] = state
         self._last_state = state
+        self._current_task = task
         return state
 
     async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
@@ -167,6 +169,10 @@ class SymbolicPhysicsEnvironment(Environment):
         )
         if scenario and "context" in scenario:
             return f"{base}\n\nTask:\n{scenario['context']}"
+        # No scenario: show the task reset() sampled, or the agent never sees it.
+        task = self._current_task
+        if scenario is None and task is not None and task.prompt:
+            return f"{base}\n\nTask:\n{task.prompt}"
         return base
 
     async def step(
