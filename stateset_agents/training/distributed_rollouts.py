@@ -168,8 +168,9 @@ class DistributedRolloutControlPlane:
 
     A repeated registration for the same ``worker_id`` creates a new
     generation and immediately fences the old lease.  Heartbeats renew the
-    lease and assign the coordinator's current policy version.  A rollout must
-    match that exact assignment before it reaches the existing staleness and
+    lease and assign the coordinator's current policy version.  A rollout may
+    not claim a version newer than that assignment, and must carry the policy
+    artifact of the version it claims, before it reaches the staleness and
     deduplication checks in :class:`AsyncRolloutCoordinator`.
     """
 
@@ -192,7 +193,6 @@ class DistributedRolloutControlPlane:
         self._generations: dict[str, int] = {}
         self._policy_artifacts: dict[int, PolicyArtifact] = {}
         self._counters = dict.fromkeys(_COUNTER_NAMES, 0)
-        self._inflight_submissions = 0
         self._checkpointing = False
 
     def _now(self) -> float:
@@ -377,12 +377,16 @@ class DistributedRolloutControlPlane:
             # immediately before appending while running on the same event
             # loop as register, heartbeat, and artifact publication.
             current = self._require_locked(worker_id, lease_id, self._now())
-            if record.policy_version != current.policy_version:
+            # A heartbeat during a long generation moves the assignment forward
+            # while an older sample is still in flight. That sample stays
+            # admissible; the coordinator's lag bound decides whether it is
+            # too stale to train on. Versions ahead of the assignment are not.
+            if record.policy_version > current.policy_version:
                 self._counters["rejected_policy_assignment"] += 1
                 raise WorkerLeaseError(
                     "rollout policy version does not match the worker assignment"
                 )
-            artifact = self._policy_artifacts.get(current.policy_version)
+            artifact = self._policy_artifacts.get(record.policy_version)
             if artifact is None:
                 if self.config.require_policy_artifact or (
                     record.policy_artifact_sha256 is not None
@@ -403,27 +407,22 @@ class DistributedRolloutControlPlane:
         async with self._condition:
             await self._condition.wait_for(lambda: not self._checkpointing)
             check_admission()
-            self._inflight_submissions += 1
 
         def count_admission() -> None:
-            # Run in the same event-loop turn as the queue append. A caller may
-            # be cancelled after admission but before submit returns.
+            # Run in the same event-loop turn as the queue append, so a
+            # checkpoint sees the record and its counter together or neither.
+            # A caller may be cancelled after admission but before returning.
             self._counters["accepted_submissions"] += 1
 
-        try:
-            admitted = await self.coordinator.submit(
-                record,
-                timeout_seconds=timeout_seconds,
-                admission_check=check_admission,
-                on_admitted=count_admission,
-            )
-            if not isinstance(admitted, bool):
-                raise TypeError("rollout coordinator must return an admission boolean")
-            return admitted
-        finally:
-            async with self._condition:
-                self._inflight_submissions -= 1
-                self._condition.notify_all()
+        admitted = await self.coordinator.submit(
+            record,
+            timeout_seconds=timeout_seconds,
+            admission_check=check_admission,
+            on_admitted=count_admission,
+        )
+        if not isinstance(admitted, bool):
+            raise TypeError("rollout coordinator must return an admission boolean")
+        return admitted
 
     async def unregister(self, worker_id: str, lease_id: str) -> None:
         """Release a live worker lease; stale owners cannot release replacements."""
@@ -470,7 +469,10 @@ class DistributedRolloutControlPlane:
             await self._condition.wait_for(lambda: not self._checkpointing)
             self._checkpointing = True
             try:
-                await self._condition.wait_for(lambda: self._inflight_submissions == 0)
+                # No wait for producers blocked on queue capacity: only the
+                # learner frees capacity, and it may be the caller. Their
+                # append and accepted counter commit together in one event-loop
+                # turn, so the snapshot holds both or neither.
                 now = self._now()
                 self._expire_locked(now)
                 coordinator_state = await self.coordinator.state_dict()

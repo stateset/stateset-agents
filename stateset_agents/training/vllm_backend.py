@@ -37,6 +37,7 @@ import asyncio
 import logging
 import math
 import os
+import re
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
 from typing import Any, Optional, cast
@@ -264,12 +265,21 @@ def _engine_weight_name(name: str) -> str:
     return name.replace(".base_layer.", ".")
 
 
+# PEFT ``modules_to_save`` keeps a trainable copy at
+# ``<module>.modules_to_save.<adapter>.<param>``.
+_MODULES_TO_SAVE = re.compile(r"\.modules_to_save\.[^.]+\.")
+
+
 def _iter_policy_weights(model: Any) -> Iterator[tuple[str, Any]]:
     """Yield ``(engine_name, detached tensor)`` for every parameter of ``model``.
 
     PEFT models (``peft_config`` + ``merge_adapter``) are merged while their
     base model's parameters are read and unmerged afterwards; LoRA-specific
     parameters are skipped since the merged base weights already carry them.
+    Merged tensors are yielded as copies: unmerging rewrites the parameters in
+    place, so a loader that collects the iterable before copying would
+    otherwise receive the base weights. ``modules_to_save`` copies are sent
+    under the wrapped module's own name and their frozen originals skipped.
     """
     is_peft = hasattr(model, "peft_config") and callable(
         getattr(model, "merge_adapter", None)
@@ -283,9 +293,10 @@ def _iter_policy_weights(model: Any) -> Iterator[tuple[str, Any]]:
                 else model
             )
             for name, param in base.named_parameters():
-                if "lora_" in name:
+                if "lora_" in name or ".original_module." in name:
                     continue
-                yield _engine_weight_name(name), param.detach()
+                name = _MODULES_TO_SAVE.sub(".", name)
+                yield _engine_weight_name(name), param.detach().clone()
         finally:
             model.unmerge_adapter()
         return
