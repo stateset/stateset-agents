@@ -629,6 +629,7 @@ class ConversationDataset(TorchDataset):
         next_states = []
         dones = []
 
+        cache = self.embedding_cache
         for traj in self.trajectories:
             # One transition per assistant turn (a decision). s is the
             # conversation before the reply; s' is the state at the next
@@ -642,14 +643,14 @@ class ConversationDataset(TorchDataset):
                 prefixes.append(prefixes[-1] + f"{turn.role}: {turn.content}\n")
 
             def state_at(index: int, traj: Any = traj, prefixes: Any = prefixes) -> Any:
-                return self.embedding_cache.get_or_compute(
+                return cache.get_or_compute(
                     f"{traj.trajectory_id}_s_{index}", prefixes[index]
                 )
 
             for k, i in enumerate(decisions):
                 is_last = k == len(decisions) - 1
                 stop = len(traj.turns) if is_last else decisions[k + 1]
-                action_emb = self.embedding_cache.get_or_compute(
+                action_emb = cache.get_or_compute(
                     f"{traj.trajectory_id}_a_{i}", traj.turns[i].content
                 )
                 states.append(state_at(i).numpy())

@@ -705,7 +705,7 @@ class ActiveLearningSelector:
         # trained with: an ensemble trains every member through its own
         # train_step; a single model predicts (mean, log_var).
         total_loss = 0.0
-        trainable = getattr(reward_model, "model", None)
+        trainable: Any = getattr(reward_model, "model", None)
         if hasattr(trainable, "train_step") and hasattr(trainable, "models"):
             members = list(trainable.models)
             for member in members:
