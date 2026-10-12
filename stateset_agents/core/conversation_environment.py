@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 class ConversationEnvironment(Environment):
     """Environment for open-ended conversations with a convenience step API."""
 
+    scores_steps = True
+
     def __init__(
         self,
         scenarios: list[dict[str, Any]],
