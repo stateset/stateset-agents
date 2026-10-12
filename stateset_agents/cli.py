@@ -222,6 +222,14 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
                 if value <= 0:
                     errors.append("`training.max_turns` must be a positive integer.")
 
+        unknown = _unknown_training_keys(training_cfg)
+        if unknown:
+            errors.append(
+                "`training` has unknown key(s): "
+                + ", ".join(f"`{name}`" for name in unknown)
+                + ". Use TrainingConfig field names (plus num_episodes, max_turns)."
+            )
+
     if "profile" in cfg and _normalize_training_profile(cfg["profile"]) is None:
         errors.append(
             "`profile` must be one of: conservative, balanced, aggressive, "
@@ -229,6 +237,16 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
         )
 
     return errors, warnings
+
+
+def _unknown_training_keys(training_cfg: dict[str, t.Any]) -> list[str]:
+    """Keys in a config file's ``training:`` section that nothing would read."""
+    try:
+        from stateset_agents.training.config import TrainingConfig
+    except CLI_IMPORT_EXCEPTIONS:  # pragma: no cover - config has no heavy deps
+        return []
+    known = set(TrainingConfig.__dataclass_fields__) | {"num_episodes", "max_turns"}
+    return sorted(str(key) for key in training_cfg if key not in known)
 
 
 def _collect_dependency_status() -> tuple[dict[str, bool], dict[str, bool]]:

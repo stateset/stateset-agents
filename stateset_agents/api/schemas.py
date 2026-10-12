@@ -105,6 +105,15 @@ class ConversationRequest(BaseModel):
         return v
 
 
+# Canonical training profiles and the CLI's aliases (kept in sync with
+# ``stateset_agents.cli.TRAIN_PROFILE_*`` by a unit test; importing the CLI
+# here would pull Typer and every subcommand into the API process).
+_TRAINING_PROFILES = frozenset(
+    {"conservative", "balanced", "aggressive", "experimental"}
+)
+_TRAINING_PROFILE_ALIASES = {"speed": "aggressive", "quality": "conservative"}
+
+
 class TrainingRequest(BaseModel):
     """Request for training an agent."""
 
@@ -154,6 +163,19 @@ class TrainingRequest(BaseModel):
     training_config_overrides: dict[str, Any] | None = Field(
         None, description="Optional training configuration overrides"
     )
+
+    @field_validator("profile")
+    @classmethod
+    def validate_profile(cls, v: str) -> str:
+        """Reject unknown profiles up front (a 422, not a failed job) and
+        normalise the CLI aliases to canonical names."""
+        normalized = str(v).strip().lower()
+        normalized = _TRAINING_PROFILE_ALIASES.get(normalized, normalized)
+        if normalized not in _TRAINING_PROFILES:
+            choices = ", ".join(sorted(_TRAINING_PROFILES))
+            aliases = ", ".join(sorted(_TRAINING_PROFILE_ALIASES))
+            raise ValueError(f"profile must be one of: {choices} (aliases: {aliases})")
+        return normalized
 
     @field_validator("resume_from_checkpoint")
     @classmethod

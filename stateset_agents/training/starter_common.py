@@ -329,6 +329,12 @@ def resolve_starter_config(
 ) -> ConfigT:
     """Resolve a tuned first-run starter configuration."""
     resolved_overrides = profile_overrides_fn(starter_profile)
+    if use_8bit and use_4bit:
+        raise ValueError("use_4bit and use_8bit are mutually exclusive; pick one")
+    if use_8bit and use_4bit is None:
+        # An explicit 8-bit request replaces a profile's (or the class's)
+        # default 4-bit quantization instead of being cleared by it.
+        use_4bit = False
     if use_lora is not None:
         resolved_overrides["use_lora"] = use_lora
     if use_4bit is not None:

@@ -5,6 +5,7 @@ High-level training interface for GRPO Agent Framework
 import asyncio
 import difflib
 import logging
+import os
 from enum import Enum
 from typing import Any, cast
 
@@ -103,6 +104,18 @@ async def train(
         extra_config=kwargs,
     )
 
+    # Fields the caller set explicitly (not filled in by the profile).
+    explicit_fields = set(config_overrides or {}) | set(kwargs)
+    explicit_fields |= {
+        name
+        for name, value in (
+            ("objective", objective),
+            ("objective_overrides", objective_overrides),
+            ("resume_from_checkpoint", resume_from_checkpoint),
+        )
+        if value is not None
+    }
+
     logger.info(f"Starting training with profile: {profile}")
 
     # Determine training mode
@@ -135,6 +148,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "hybrid":
         return await _train_hybrid(
@@ -145,6 +159,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "multi_turn":
         trainer: Any = MultiTurnGRPOTrainer(
@@ -333,6 +348,78 @@ def _load_dataset(dataset_path: str) -> Any:
         raise
 
 
+# TrainingConfig fields the offline trainer honours, copied onto
+# OfflineGRPOConfig. ``seed`` is applied to the global RNGs instead.
+_OFFLINE_MAPPED_FIELDS = (
+    "model_name",
+    "model_revision",
+    "learning_rate",
+    "num_episodes",
+    "num_epochs",
+    "max_grad_norm",
+    "advantage_normalization",
+)
+_OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {"seed"}
+
+
+def _offline_config(
+    config: Any, explicit_fields: set[str] | frozenset[str], *, strict: bool
+) -> Any:
+    """Build the offline trainer's config from a ``TrainingConfig``.
+
+    With ``strict`` (pure offline mode) an explicitly set field the offline
+    trainer would ignore raises instead of being silently dropped; in hybrid
+    mode such fields still apply to the online phase.
+    """
+    from .offline_grpo_trainer import OfflineGRPOConfig
+
+    ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
+    if ignored and strict:
+        raise ValueError(
+            "offline training does not use "
+            + ", ".join(repr(name) for name in ignored)
+            + "; it honours only "
+            + ", ".join(sorted(_OFFLINE_HONOURED_FIELDS))
+        )
+    if ignored:
+        logger.info(
+            "Offline pre-training phase ignores %s (applied to the online phase)",
+            ", ".join(ignored),
+        )
+    return OfflineGRPOConfig(
+        **{name: getattr(config, name) for name in _OFFLINE_MAPPED_FIELDS},
+        offline_algorithm="iql",
+    )
+
+
+def _seed_offline(config: Any, explicit_fields: set[str] | frozenset[str]) -> None:
+    if "seed" not in explicit_fields:
+        return
+    import random
+
+    import numpy as np
+
+    seed = int(config.seed)
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - offline training needs torch
+        return
+    torch.manual_seed(seed)
+
+
+def _save_offline(agent: Agent, trainer: Any, save_path: str) -> None:
+    """Persist the offline trainer state plus the agent's model/tokenizer."""
+    os.makedirs(save_path, exist_ok=True)
+    trainer.save(os.path.join(save_path, "offline_grpo_trainer.pt"))
+    for part in ("model", "tokenizer"):
+        saver = getattr(getattr(agent, part, None), "save_pretrained", None)
+        if callable(saver):
+            saver(save_path)
+    logger.info("Offline-trained agent saved to %s", save_path)
+
+
 async def _train_offline(
     agent: Agent,
     config: Any,
@@ -340,9 +427,12 @@ async def _train_offline(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
+    strict: bool = True,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
-    from .offline_grpo_trainer import OfflineGRPOConfig, OfflineGRPOTrainer
+    from .offline_grpo_trainer import OfflineGRPOTrainer
 
     if dataset is None:
         raise ValueError(
@@ -350,12 +440,8 @@ async def _train_offline(
             "Pass dataset= or dataset_path= to train()."
         )
 
-    offline_config = OfflineGRPOConfig(
-        model_name=config.model_name,
-        learning_rate=config.learning_rate,
-        num_episodes=config.num_episodes,
-        offline_algorithm="iql",
-    )
+    offline_config = _offline_config(config, explicit_fields, strict=strict)
+    _seed_offline(config, explicit_fields)
 
     trainer = OfflineGRPOTrainer(
         config=offline_config,
@@ -378,7 +464,7 @@ async def _train_offline(
     )
 
     if save_path:
-        logger.info("Saving offline-trained model to %s", save_path)
+        _save_offline(agent, trainer, save_path)
 
     return agent
 
@@ -391,13 +477,24 @@ async def _train_hybrid(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
 ) -> Agent:
     """Hybrid training: offline pre-training then online fine-tuning."""
 
     # Phase 1: Offline pre-training (if dataset available)
     if dataset is not None:
         logger.info("Phase 1: Offline pre-training from dataset")
-        await _train_offline(agent, config, reward_fn, dataset, None, callbacks)
+        await _train_offline(
+            agent,
+            config,
+            reward_fn,
+            dataset,
+            None,
+            callbacks,
+            explicit_fields=explicit_fields,
+            strict=False,
+        )
 
     # Phase 2: Online fine-tuning
     logger.info("Phase 2: Online fine-tuning with environment")

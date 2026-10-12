@@ -114,10 +114,14 @@ class TestKimiK26Config:
         assert config.lora_alpha is None
 
     def test_quantization_flags(self):
-        config = get_kimi_k2_6_config(use_4bit=True, use_8bit=True)
+        # Both quantizations requested explicitly is a conflict, not a
+        # silent 4-bit choice.
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            get_kimi_k2_6_config(use_4bit=True, use_8bit=True)
 
-        assert config.use_4bit is True
-        assert config.use_8bit is False
+        config = get_kimi_k2_6_config(use_8bit=True)
+        assert config.use_8bit is True
+        assert config.use_4bit is False
 
     def test_agent_config_creation(self):
         config = get_kimi_k2_6_config()

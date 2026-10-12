@@ -234,6 +234,24 @@ def flywheel(
         raise typer.Exit(code=2)
 
     if algorithm != "sft":
+        # Each loss reads only its own knobs (RiverRLConfig.loss_kwargs); an
+        # explicit knob for a different loss would be silently dropped.
+        loss_knobs = {
+            "cispo": {"eps_max"},
+            "ppo": {"clip_low", "clip_high"},
+            "importance_sampling": set(),
+        }[algorithm]
+        for name in ("eps_max", "clip_low", "clip_high"):
+            source = ctx.get_parameter_source(name)
+            if (
+                name not in loss_knobs
+                and source is not None
+                and source.name == "COMMANDLINE"
+            ):
+                raise typer.BadParameter(
+                    f"--{name.replace('_', '-')} does not apply to "
+                    f"--algorithm {algorithm}"
+                )
         if provider_name != "river":
             _echo("--algorithm requires --provider river (zero-infra RL).")
             raise typer.Exit(code=2)

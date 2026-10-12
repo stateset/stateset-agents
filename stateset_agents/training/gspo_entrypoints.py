@@ -286,8 +286,13 @@ async def train_customer_service_with_gspo(
     output_dir: str = "./outputs/gspo",
     **kwargs,
 ) -> Agent:
-    """Train a customer service agent using GSPO."""
+    """Train a customer service agent using GSPO.
+
+    GSPO runs ``num_outer_iterations`` rounds; ``num_episodes`` sets it unless
+    the caller passes ``num_outer_iterations`` explicitly.
+    """
     base_config = get_config_for_task("customer_service", model_name=model_name)
+    kwargs.setdefault("num_outer_iterations", num_episodes)
 
     config = GSPOConfig.from_training_config(
         base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs

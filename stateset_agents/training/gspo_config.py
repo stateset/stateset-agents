@@ -82,6 +82,17 @@ class GSPOConfig(TrainingConfig):
                 "per outer iteration on a cosine schedule, without reward clipping."
             )
 
+        if (
+            self.num_episodes != _NUM_EPISODES_DEFAULT
+            and self.num_outer_iterations == _OUTER_ITERATIONS_DEFAULT
+            and self.num_episodes != self.num_outer_iterations
+        ):
+            warnings.append(
+                f"num_episodes={self.num_episodes} is not read by the GSPO trainer; "
+                f"it runs num_outer_iterations={self.num_outer_iterations} "
+                "outer iteration(s). Set num_outer_iterations instead."
+            )
+
         if self.gradient_checkpointing and self.use_lora:
             warnings.append(
                 "gradient_checkpointing with LoRA can require input gradients; "
@@ -130,6 +141,9 @@ _GSPO_IGNORED_FIELDS = (
     "lr_scheduler_type",
     "reward_clip",
 )
+_GSPO_DEFAULTS = {f.name: f.default for f in dataclasses.fields(GSPOConfig)}
+_NUM_EPISODES_DEFAULT = _GSPO_DEFAULTS["num_episodes"]
+_OUTER_ITERATIONS_DEFAULT = _GSPO_DEFAULTS["num_outer_iterations"]
 _FIELD_DEFAULTS = {
     f.name: f.default
     for f in dataclasses.fields(GSPOConfig)
