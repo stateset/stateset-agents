@@ -35,6 +35,12 @@ class VAPOConfig(TrainingConfig):
     value_num_layers: int = 2
     value_warmup_steps: int = 50
 
+    # VAPO/VC-PPO use an undiscounted return: with one reward on the final
+    # token, gamma < 1 shrinks critic targets geometrically toward the start
+    # of the response, and the length-adaptive lambda assumes gamma = 1.
+    # Redeclared here only to change the inherited default (field order and
+    # positional arguments are unchanged).
+    gamma: float = 1.0
     lambda_critic: float = 1.0
     lambda_policy_alpha: float = 0.05
 
@@ -73,6 +79,10 @@ class VAPOConfig(TrainingConfig):
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> VAPOConfig:
         """Create VAPO config from standard training config."""
         config_dict = config.to_dict()
+        # A base config still on TrainingConfig's discount default did not
+        # choose it; VAPO's own default (undiscounted) applies instead.
+        if config_dict.get("gamma") == TrainingConfig().gamma:
+            config_dict.pop("gamma")
         config_dict.update(kwargs)
         if "group_size" in kwargs:
             config_dict["num_generations"] = kwargs["group_size"]
