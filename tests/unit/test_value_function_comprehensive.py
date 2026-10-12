@@ -429,3 +429,17 @@ class TestValueFunctionEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_gae_targets_carry_no_value_head_graph():
+    import torch
+
+    mock_model = Mock()
+    mock_model.config = Mock()
+    mock_model.config.hidden_size = 8
+    mock_model.device = torch.device("cpu")
+    value_fn = ValueFunction(mock_model)
+    values = torch.tensor([0.5, 0.2, 0.1], requires_grad=True)
+    advantages, returns = value_fn.compute_gae([0.0, 0.0, 1.0], values * 2)
+    assert not advantages.requires_grad
+    assert not returns.requires_grad

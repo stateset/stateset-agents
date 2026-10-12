@@ -269,6 +269,9 @@ class ValueFunction:
             Tuple of (advantages, returns)
         """
         _require_torch()
+        # Advantages and returns are regression targets; carrying the value
+        # head's graph would backprop through the target (and fail on reuse).
+        values = values.detach()
 
         if dones is None:
             dones = [False] * (len(rewards) - 1) + [True]
