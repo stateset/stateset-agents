@@ -2,7 +2,7 @@
 
 import pytest
 
-from stateset_agents.evaluation.sim_to_real_metrics import _normalized_wasserstein
+from stateset_agents.experimental.sim_to_real.metrics import _normalized_wasserstein
 
 
 def test_identical_reward_distributions_have_zero_gap():

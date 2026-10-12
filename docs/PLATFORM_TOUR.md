@@ -227,7 +227,7 @@ Once you've shipped a v1.0 fine-tune:
 - **Run 3 seeds** (42, 1337, 2026) and confirm σ < 0.10 on your eval set before publishing numbers.
 - **Wire W&B** (`report_to: wandb` in config.yaml + `WANDB_PROJECT=<slug>`).
 - **Continual learning** (`stateset_agents/training/continual_learning.py`) — when the model needs to learn new intents without forgetting old ones (EWC, LwF, replay).
-- **Sim-to-real** (`stateset_agents/training/sim_to_real.py`) — when you've been training against a simulator and want to bridge to real users (DANN, MMD, CORAL).
+- **Sim-to-real** (`stateset_agents/experimental/sim_to_real/transfer.py`) — when you've been training against a simulator and want to bridge to real users (DANN, MMD, CORAL).
 
 ---
 

@@ -6,8 +6,8 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("transformers")
 from transformers import GPT2Config, GPT2LMHeadModel  # noqa: E402
 
+from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer  # noqa: E402
 from stateset_agents.training import rl_losses  # noqa: E402
-from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer  # noqa: E402
 
 
 def _trainer(**config_kwargs):

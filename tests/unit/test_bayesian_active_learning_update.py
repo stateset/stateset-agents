@@ -5,7 +5,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from stateset_agents.rewards.bayesian_reward_model import (  # noqa: E402
+from stateset_agents.experimental.bayesian_reward_model import (  # noqa: E402
     ActiveLearningSelector,
     BayesianRewardConfig,
     BayesianRewardFunction,

@@ -31,7 +31,7 @@ import torch
 
 from stateset_agents.core.generation_mode import inference_mode
 
-from .config import TrainingConfig
+from ..training.config import TrainingConfig
 
 logger = logging.getLogger(__name__)
 
@@ -526,7 +526,7 @@ class RLAIFTrainer:
         samples, otherwise whitened over the batch. Identical rewards give zero
         advantage, so they produce no update.
         """
-        from .ppo_trainer import encode_prompt_completion_rows
+        from .ppo import encode_prompt_completion_rows
 
         prompts = [str(t["prompt"]) for t in trajectories]
         completions = [str(t["completion"]) for t in trajectories]

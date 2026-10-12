@@ -33,8 +33,8 @@ except ImportError:
     F = cast(Any, None)
     AdamW = cast(Any, None)
 
-from .base_trainer import BaseTrainerConfig
-from .checkpoint_io import load_checkpoint_file
+from ...training.base_trainer import BaseTrainerConfig
+from ...training.checkpoint_io import load_checkpoint_file
 
 logger = logging.getLogger(__name__)
 
@@ -279,7 +279,7 @@ class OfflineGRPOTrainer:
         algorithm = OfflineRLAlgorithm(self.config.offline_algorithm.lower())
 
         if algorithm == OfflineRLAlgorithm.CQL:
-            from .offline_rl_algorithms import ConservativeQLearning
+            from .algorithms import ConservativeQLearning
 
             self._offline_learner = ConservativeQLearning(
                 state_dim=self.config.state_dim,
@@ -288,7 +288,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.IQL:
-            from .offline_rl_algorithms import ImplicitQLearning
+            from .algorithms import ImplicitQLearning
 
             self._offline_learner = ImplicitQLearning(
                 state_dim=self.config.state_dim,
@@ -297,7 +297,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.BCQ:
-            from .offline_rl_bcq import BatchConstrainedQLearning
+            from .bcq import BatchConstrainedQLearning
 
             self._offline_learner = BatchConstrainedQLearning(
                 state_dim=self.config.state_dim,
@@ -306,7 +306,7 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.BEAR:
-            from .offline_rl_bear import ConversationalBEAR
+            from .bear import ConversationalBEAR
 
             self._offline_learner = ConversationalBEAR(
                 state_dim=self.config.state_dim,

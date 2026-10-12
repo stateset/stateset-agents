@@ -7,6 +7,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Smaller stable surface: the least-proven training modules moved to
+  `stateset_agents.experimental`** (no API stability guarantee). Old path →
+  new path:
+  - `stateset_agents.training.ppo_trainer` → `stateset_agents.experimental.ppo`
+  - `stateset_agents.training.rlaif_trainer` → `stateset_agents.experimental.rlaif`
+  - `stateset_agents.training.offline_rl_algorithms` (CQL/IQL) →
+    `stateset_agents.experimental.offline_rl.algorithms`
+  - `stateset_agents.training.offline_rl_bcq` → `stateset_agents.experimental.offline_rl.bcq`
+  - `stateset_agents.training.offline_rl_bear` → `stateset_agents.experimental.offline_rl.bear`
+  - `stateset_agents.training.decision_transformer` →
+    `stateset_agents.experimental.offline_rl.decision_transformer`
+  - `stateset_agents.training.offline_grpo_trainer` →
+    `stateset_agents.experimental.offline_rl.offline_grpo`
+  - `stateset_agents.training.sim_to_real` → `stateset_agents.experimental.sim_to_real.transfer`
+  - `stateset_agents.training.domain_randomization` →
+    `stateset_agents.experimental.sim_to_real.domain_randomization`
+  - `stateset_agents.environments.conversation_simulator` →
+    `stateset_agents.experimental.sim_to_real.conversation_simulator`
+  - `stateset_agents.evaluation.sim_to_real_metrics` →
+    `stateset_agents.experimental.sim_to_real.metrics`
+  - `stateset_agents.rewards.bayesian_reward_model` →
+    `stateset_agents.experimental.bayesian_reward_model`
+- `contracts/component_maturity_v1.json`: `sim-to-real` is now experimental
+  (was beta); new experimental components `ppo-rlaif-trainers` and
+  `bayesian-reward-model`; `offline-rl` now covers Decision Transformer and
+  offline GRPO. Each lists its limitations and graduation criteria (a learning
+  test on a realistic task and retained GPU evidence).
+- `train(training_mode="offline"|"hybrid")` and the uncertainty-weighted
+  reward wrapper now import their implementations from the experimental
+  namespace; behavior is unchanged.
+
+### Deprecated
+
+- Every old module path above is a shim that emits a `DeprecationWarning`
+  naming the new path and is removed in **v0.65.0**. The package-level
+  re-exports are deprecated on the same schedule and warn on every access:
+  the PPO/RLAIF/offline-RL/sim-to-real names served lazily from
+  `stateset_agents.training` (e.g. `from stateset_agents.training import
+  PPOTrainer`), `stateset_agents.evaluation.SimToRealMetrics`/
+  `SimToRealEvaluator`, `stateset_agents.environments.ConversationSimulator`/
+  `ConversationSimulatorConfig`/`UserSimulator`, and the root exports
+  `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator`, and `ConversationSimulatorConfig` (still in the v1
+  public API contract with unchanged signatures for this release).
+  `pytest.ini` turns these warnings into errors so nothing in-repo relies on
+  the shims.
+
 ## [0.63.0] - 2026-10-12 — Training correctness audit
 
 ### Added

@@ -2,6 +2,15 @@
 
 This guide covers StateSet Agents' offline reinforcement learning and sim-to-real transfer capabilities for training conversational AI agents from logged data and simulation.
 
+> **Experimental.** Since v0.64.0 these modules live in the
+> `stateset_agents.experimental` namespace (`stateset_agents.experimental.offline_rl`
+> and `stateset_agents.experimental.sim_to_real`) and carry no API stability
+> guarantee. The previous import paths (`stateset_agents.training`,
+> `stateset_agents.evaluation`, `stateset_agents.environments`) still work for one
+> release with a `DeprecationWarning` and are removed in v0.65.0. See
+> [component maturity](COMPONENT_MATURITY.md) for the limitations and the
+> evidence required for graduation.
+
 ## Table of Contents
 
 1. [Overview](#overview)
@@ -96,7 +105,7 @@ StateSet Agents provides five offline RL algorithms optimized for conversational
 BCQ constrains the policy to stay close to the behavior policy using a VAE:
 
 ```python
-from stateset_agents.training import BCQConfig, BCQTrainer, ConversationalVAE
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer, ConversationalVAE
 
 config = BCQConfig(
     # Network architecture
@@ -135,7 +144,7 @@ metrics = await trainer.train(dataset, epochs=100)
 BEAR uses Maximum Mean Discrepancy (MMD) to match the learned policy to the data distribution:
 
 ```python
-from stateset_agents.training import BEARConfig, BEARTrainer, MMDKernel
+from stateset_agents.experimental.offline_rl.bear import BEARConfig, BEARTrainer, MMDKernel
 
 config = BEARConfig(
     # Network architecture
@@ -168,7 +177,7 @@ metrics = await trainer.train(dataset, epochs=100)
 CQL adds a penalty to prevent overestimation of out-of-distribution actions:
 
 ```python
-from stateset_agents.training import CQLConfig, ConservativeQLearning
+from stateset_agents.experimental.offline_rl.algorithms import CQLConfig, ConservativeQLearning
 
 config = CQLConfig(
     hidden_dim=256,
@@ -193,7 +202,7 @@ metrics = await cql.train(dataset)
 IQL avoids querying out-of-distribution actions entirely via expectile regression:
 
 ```python
-from stateset_agents.training import IQLConfig, ImplicitQLearning
+from stateset_agents.experimental.offline_rl.algorithms import IQLConfig, ImplicitQLearning
 
 config = IQLConfig(
     hidden_dim=256,
@@ -219,7 +228,7 @@ metrics = await iql.train(dataset)
 A sequence modeling approach that conditions on desired returns:
 
 ```python
-from stateset_agents.training import (
+from stateset_agents.experimental.offline_rl.decision_transformer import (
     DecisionTransformerConfig,
     DecisionTransformer,
     DecisionTransformerTrainer,
@@ -381,7 +390,7 @@ embeddings = await cache.batch_get_or_compute(texts, compute_fn)
 Orchestrate the transition from simulation to real interactions:
 
 ```python
-from stateset_agents.training import SimToRealTransfer, SimToRealConfig
+from stateset_agents.experimental.sim_to_real.transfer import SimToRealTransfer, SimToRealConfig
 
 config = SimToRealConfig(
     # Transfer schedule
@@ -438,7 +447,7 @@ Four built-in schedules for sim-to-real ratio:
 #### DANN (Domain-Adversarial Neural Network)
 
 ```python
-from stateset_agents.training import DomainAdaptationModule
+from stateset_agents.experimental.sim_to_real.transfer import DomainAdaptationModule
 
 adapter = DomainAdaptationModule(
     method="dann",
@@ -488,7 +497,7 @@ Generate diverse training scenarios to improve generalization:
 ### DomainRandomizer
 
 ```python
-from stateset_agents.training import (
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
     DomainRandomizer,
     DomainRandomizationConfig,
     UserPersona,
@@ -515,7 +524,7 @@ randomizer = DomainRandomizer(config)
 Pre-defined persona templates:
 
 ```python
-from stateset_agents.training import PersonaGenerator
+from stateset_agents.experimental.sim_to_real.domain_randomization import PersonaGenerator
 
 generator = PersonaGenerator()
 
@@ -551,7 +560,7 @@ custom = UserPersona(
 ### Scenario Generation
 
 ```python
-from stateset_agents.training import ScenarioGenerator
+from stateset_agents.experimental.sim_to_real.domain_randomization import ScenarioGenerator
 
 generator = ScenarioGenerator()
 
@@ -596,7 +605,7 @@ for step in range(1000):
 Simulate user behavior for training:
 
 ```python
-from stateset_agents.environments import (
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
     ConversationSimulator,
     ConversationSimulatorConfig,
     UserSimulator,
@@ -684,7 +693,7 @@ user_response = await user_sim.respond(
 Comprehensive evaluation of sim-to-real transfer:
 
 ```python
-from stateset_agents.evaluation import SimToRealEvaluator, SimToRealMetrics
+from stateset_agents.experimental.sim_to_real.metrics import SimToRealEvaluator, SimToRealMetrics
 
 evaluator = SimToRealEvaluator()
 
@@ -706,7 +715,7 @@ print(f"Policy Performance (real): {metrics.real_performance:.3f}")
 ### Individual Metrics
 
 ```python
-from stateset_agents.evaluation import (
+from stateset_agents.experimental.sim_to_real.metrics import (
     compute_kl_divergence,
     compute_js_divergence,
     compute_mmd,
@@ -755,7 +764,7 @@ from stateset_agents.data import (
     ConversationDatasetConfig,
     EmbeddingCache,
 )
-from stateset_agents.training import OfflineGRPOConfig, OfflineGRPOTrainer
+from stateset_agents.experimental.offline_rl.offline_grpo import OfflineGRPOConfig, OfflineGRPOTrainer
 
 
 async def learn_from_logs():
@@ -793,14 +802,16 @@ asyncio.run(learn_from_logs())
 
 ```python
 import asyncio
-from stateset_agents.environments import ConversationSimulator, ConversationSimulatorConfig
-from stateset_agents.training import (
-    SimToRealTransfer,
-    SimToRealConfig,
-    DomainRandomizer,
-    DomainRandomizationConfig,
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
+    ConversationSimulator,
+    ConversationSimulatorConfig,
 )
-from stateset_agents.evaluation import SimToRealEvaluator
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
+    DomainRandomizationConfig,
+    DomainRandomizer,
+)
+from stateset_agents.experimental.sim_to_real.metrics import SimToRealEvaluator
+from stateset_agents.experimental.sim_to_real.transfer import SimToRealConfig, SimToRealTransfer
 from stateset_agents import MultiTurnAgent, HelpfulnessReward
 from stateset_agents.core.agent import AgentConfig
 
@@ -902,7 +913,7 @@ asyncio.run(sim_to_real_training())
 ```python
 import asyncio
 from stateset_agents.data import ConversationDataset
-from stateset_agents.training import (
+from stateset_agents.experimental.offline_rl.decision_transformer import (
     DecisionTransformerConfig,
     DecisionTransformerTrainer,
     DecisionTransformer,
@@ -1019,39 +1030,42 @@ from stateset_agents.data import (
 )
 ```
 
-### Training Module
+### Offline RL and Sim-to-Real Modules
 
 ```python
-from stateset_agents.training import (
-    # Offline RL
-    BCQConfig, BCQTrainer, ConversationalVAE,
-    BEARConfig, BEARTrainer, MMDKernel,
-    CQLConfig, ConservativeQLearning,
-    IQLConfig, ImplicitQLearning,
+# Offline RL
+from stateset_agents.experimental.offline_rl.algorithms import (
+    CQLConfig, ConservativeQLearning, IQLConfig, ImplicitQLearning,
+)
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer, ConversationalVAE
+from stateset_agents.experimental.offline_rl.bear import BEARConfig, BEARTrainer, MMDKernel
+from stateset_agents.experimental.offline_rl.decision_transformer import (
     DecisionTransformerConfig, DecisionTransformer, DecisionTransformerTrainer,
-    OfflineGRPOConfig, OfflineGRPOTrainer,
+)
+from stateset_agents.experimental.offline_rl.offline_grpo import OfflineGRPOConfig, OfflineGRPOTrainer
 
-    # Sim-to-Real
-    SimToRealConfig, SimToRealTransfer,
+# Sim-to-Real
+from stateset_agents.experimental.sim_to_real.transfer import SimToRealConfig, SimToRealTransfer
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
     DomainRandomizationConfig, DomainRandomizer,
     PersonaGenerator, ScenarioGenerator, UserPersona,
 )
 ```
 
-### Environments Module
+### Conversation Simulator Module
 
 ```python
-from stateset_agents.environments import (
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
     ConversationSimulator,
     ConversationSimulatorConfig,
     UserSimulator,
 )
 ```
 
-### Evaluation Module
+### Sim-to-Real Metrics Module
 
 ```python
-from stateset_agents.evaluation import (
+from stateset_agents.experimental.sim_to_real.metrics import (
     SimToRealMetrics,
     SimToRealEvaluator,
     compute_kl_divergence,

@@ -410,7 +410,7 @@ if __name__ == "__main__":
 
 ## Offline RL Algorithms
 
-StateSet Agents also includes offline RL algorithms for learning from logged conversations without online interaction. These are covered in detail in [OFFLINE_RL_SIM_TO_REAL_GUIDE.md](./OFFLINE_RL_SIM_TO_REAL_GUIDE.md).
+StateSet Agents also includes experimental offline RL algorithms (`stateset_agents.experimental.offline_rl`, moved from `stateset_agents.training` in v0.64.0) for learning from logged conversations without online interaction. These are covered in detail in [OFFLINE_RL_SIM_TO_REAL_GUIDE.md](./OFFLINE_RL_SIM_TO_REAL_GUIDE.md).
 
 ### Quick Overview
 
@@ -433,7 +433,7 @@ StateSet Agents also includes offline RL algorithms for learning from logged con
 
 ```python
 from stateset_agents.data import ConversationDataset
-from stateset_agents.training import BCQTrainer, BCQConfig
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer
 
 # Load historical data
 dataset = ConversationDataset.from_jsonl("conversations.jsonl")

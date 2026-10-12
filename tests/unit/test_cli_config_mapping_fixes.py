@@ -134,7 +134,7 @@ class _FakeOfflineTrainer:
 
 
 def _run_offline(tmp_path, **kwargs):
-    og = importlib.import_module("stateset_agents.training.offline_grpo_trainer")
+    og = importlib.import_module("stateset_agents.experimental.offline_rl.offline_grpo")
     _FakeOfflineTrainer.instances.clear()
     agent = SimpleNamespace(model=mock.MagicMock(), tokenizer=mock.MagicMock())
     with mock.patch.object(og, "OfflineGRPOTrainer", _FakeOfflineTrainer):

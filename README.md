@@ -28,9 +28,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
-- **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
-- **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus experimental PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
+- **Offline RL algorithms** (experimental, `stateset_agents.experimental.offline_rl`) for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
+- **Sim‑to‑Real transfer** (experimental, `stateset_agents.experimental.sim_to_real`) for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
@@ -1782,14 +1782,18 @@ followup = await trained_agent.generate_response(
 
 ## Other training algorithms
 
-All algorithms are available under `stateset_agents.training` when training deps are installed:
+These algorithms are available when training deps are installed. GSPO, GEPO,
+DAPO, and VAPO live under `stateset_agents.training`; PPO and RLAIF are
+**experimental** and live under `stateset_agents.experimental` (since v0.64.0;
+the old `stateset_agents.training` import paths still work with a
+`DeprecationWarning` until v0.65.0):
 
 - **GSPO**: stable sequence‑level GRPO variant (`GSPOTrainer`, `GSPOConfig`, `train_with_gspo`)
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
 - **DAPO**: decoupled clip + dynamic sampling for reasoning‑heavy tasks
 - **VAPO**: value‑augmented group optimization (strong for math/reasoning)
-- **PPO baseline**: standard PPO trainer for comparison
-- **RLAIF**: RL from AI feedback via judge/reward models
+- **PPO baseline** (experimental): standard PPO trainer for comparison (`stateset_agents.experimental.ppo`)
+- **RLAIF** (experimental): RL from AI feedback via judge/reward models (`stateset_agents.experimental.rlaif`)
 
 Every trainer above evaluates a named [`PolicyObjective`](docs/OBJECTIVES.md)
 and accepts `objective="<preset>"` on its config to swap the advantage
@@ -1934,6 +1938,12 @@ See `benchmark_results/README.md` for the full pipeline reference.
 
 ## Offline RL: Learn from logged conversations
 
+> **Experimental.** The offline RL algorithms live in
+> `stateset_agents.experimental.offline_rl` (moved from `stateset_agents.training`
+> in v0.64.0; the old paths warn and are removed in v0.65.0). They carry no API
+> stability guarantee until they pass a learning test on a realistic dialogue
+> task — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train agents from historical conversation logs without online interaction. Useful when:
 - You have existing customer service transcripts
 - Online training is expensive or risky
@@ -1953,7 +1963,7 @@ Train agents from historical conversation logs without online interaction. Usefu
 
 ```python
 from stateset_agents.data import ConversationDataset, ConversationDatasetConfig
-from stateset_agents.training import BCQTrainer, BCQConfig
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer
 
 # Load historical conversations
 config = ConversationDatasetConfig(quality_threshold=0.7)
@@ -1975,7 +1985,10 @@ Fit value and Q functions to logged conversations, for use as baselines in
 online training:
 
 ```python
-from stateset_agents.training import OfflineGRPOTrainer, OfflineGRPOConfig
+from stateset_agents.experimental.offline_rl.offline_grpo import (
+    OfflineGRPOConfig,
+    OfflineGRPOTrainer,
+)
 
 config = OfflineGRPOConfig(offline_algorithm="cql", pretrain_value_epochs=10)
 trainer = OfflineGRPOTrainer(config, dataset=dataset)  # dataset with an EmbeddingCache
@@ -1989,6 +2002,11 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 
 ## Sim‑to‑Real Transfer
 
+> **Experimental.** Sim-to-real lives in `stateset_agents.experimental.sim_to_real`
+> (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
+> v0.64.0; the old paths warn and are removed in v0.65.0). Public benchmark
+> evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train in simulation, deploy to real users. The framework provides:
 
 ### Domain Randomization
@@ -1996,7 +2014,10 @@ Train in simulation, deploy to real users. The framework provides:
 Generate diverse training scenarios with randomized user personas:
 
 ```python
-from stateset_agents.training import DomainRandomizer, DomainRandomizationConfig
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
+    DomainRandomizationConfig,
+    DomainRandomizer,
+)
 
 config = DomainRandomizationConfig(
     persona_variation=0.3,
@@ -2015,7 +2036,10 @@ scenario = randomizer.sample_scenario(topic="returns")
 Calibratable simulator with adjustable realism:
 
 ```python
-from stateset_agents.environments import ConversationSimulator, ConversationSimulatorConfig
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
+    ConversationSimulator,
+    ConversationSimulatorConfig,
+)
 
 simulator = ConversationSimulator(ConversationSimulatorConfig(
     base_model="gpt2",
@@ -2034,7 +2058,10 @@ gap = simulator.compute_sim_real_gap(real_data, sim_data)
 Gradually transition from simulation to real interactions:
 
 ```python
-from stateset_agents.training import SimToRealTransfer, SimToRealConfig
+from stateset_agents.experimental.sim_to_real.transfer import (
+    SimToRealConfig,
+    SimToRealTransfer,
+)
 
 transfer = SimToRealTransfer(SimToRealConfig(
     transfer_schedule="cosine",  # linear, exponential, step

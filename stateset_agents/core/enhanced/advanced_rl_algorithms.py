@@ -11,9 +11,9 @@ This module implements multiple RL algorithms including:
 
 Not the supported training path. ``PPOTrainer`` here is a second, older PPO
 implementation kept for the ``AdvancedRLOrchestrator`` experiments; the
-maintained one is ``stateset_agents.training.ppo_trainer``, which is what the
-CLI, the trainer registry and the shared loss primitives in
-``training/rl_losses.py`` use. Prefer the ``training/`` trainers for anything
+maintained one is ``stateset_agents.experimental.ppo`` (formerly
+``stateset_agents.training.ppo_trainer``), which is built on the shared loss
+primitives in ``training/rl_losses.py``. Prefer the ``training/`` trainers for anything
 you intend to run; treat the classes below as research scaffolding whose
 numerics are not kept in step with the ``training/`` spine.
 """

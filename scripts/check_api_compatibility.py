@@ -8,6 +8,7 @@ import inspect
 import json
 import os
 import sys
+import warnings
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -136,7 +137,12 @@ def _python_contract() -> dict[str, dict[str, dict[str, Any]]]:
     root_exports: dict[str, dict[str, Any]] = {}
     for name, (module_name, attr_name, _hint) in sorted(lazy_exports.items()):
         entry = {"module": module_name, "name": attr_name}
-        value = getattr(stateset_agents, name)
+        with warnings.catch_warnings():
+            # Contracted names that are deprecated (e.g. the sim-to-real
+            # exports moved to stateset_agents.experimental) must still be
+            # recorded; their DeprecationWarning is expected here.
+            warnings.simplefilter("ignore", DeprecationWarning)
+            value = getattr(stateset_agents, name)
         if callable(value):
             signature = _call_signature(value)
             if signature is not None:

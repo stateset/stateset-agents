@@ -15,9 +15,9 @@ import numpy as np
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
-from ..core.environment import Environment, EnvironmentState, EpisodeStatus
-from ..core.trajectory import ConversationTurn
-from ..training.domain_randomization import (
+from ...core.environment import Environment, EnvironmentState, EpisodeStatus
+from ...core.trajectory import ConversationTurn
+from .domain_randomization import (
     DomainRandomizationConfig,
     DomainRandomizer,
     PersonaGenerator,

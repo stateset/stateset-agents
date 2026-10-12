@@ -11,7 +11,7 @@ from stateset_agents.data.conversation_dataset import (  # noqa: E402
     ConversationTurnData,
     TrajectoryData,
 )
-from stateset_agents.training.decision_transformer import (  # noqa: E402
+from stateset_agents.experimental.offline_rl.decision_transformer import (  # noqa: E402
     DecisionTransformerConfig,
     DecisionTransformerTrainer,
 )

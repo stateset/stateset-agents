@@ -470,7 +470,7 @@ class SimToRealEvaluator:
                 for _ in range(20):  # Max turns
                     # Generate dummy response
                     response = "This is a simulated response for evaluation."
-                    from ..core.trajectory import ConversationTurn
+                    from ...core.trajectory import ConversationTurn
 
                     action = ConversationTurn(role="assistant", content=response)
                     trajectory.turns.append(action)

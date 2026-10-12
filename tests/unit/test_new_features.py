@@ -15,7 +15,7 @@ FEATURES_AVAILABLE = True
 try:
     import torch
 
-    from stateset_agents.training.offline_rl_algorithms import (
+    from stateset_agents.experimental.offline_rl.algorithms import (
         ConservativeQLearning,
         CQLConfig,
         ImplicitQLearning,
@@ -32,7 +32,7 @@ except (ImportError, RuntimeError):
 try:
     from stateset_agents.core.reward import RewardResult
     from stateset_agents.core.trajectory import ConversationTurn
-    from stateset_agents.rewards.bayesian_reward_model import (
+    from stateset_agents.experimental.bayesian_reward_model import (
         ActiveLearningSelector,
         BayesianRewardConfig,
         BayesianRewardFunction,

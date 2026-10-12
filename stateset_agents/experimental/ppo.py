@@ -26,9 +26,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from . import objectives, rl_losses
-from .config import TrainingConfig
-from .trainer_utils import apply_dropout_setting
+from ..training import objectives, rl_losses
+from ..training.config import TrainingConfig
+from ..training.trainer_utils import apply_dropout_setting
 
 # Configure logging
 logging.basicConfig(

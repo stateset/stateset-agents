@@ -76,7 +76,7 @@ async def test_multi_turn_trainer_applies_the_setting(enabled):
 
 
 def test_ppo_trainer_applies_the_setting():
-    from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer
+    from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer
 
     model = _dropout_model()
     PPOTrainer(

@@ -39,7 +39,7 @@ class _DigitJudge:
 def _train(seed: int, *, sign: float) -> tuple[float, float]:
     import torch
 
-    from stateset_agents.training.rlaif_trainer import RLAIFConfig, RLAIFTrainer
+    from stateset_agents.experimental.rlaif import RLAIFConfig, RLAIFTrainer
 
     tokenizer = make_tokenizer()
     model = make_model(seed)

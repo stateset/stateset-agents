@@ -9,7 +9,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from stateset_agents.training.offline_grpo_trainer import (  # noqa: E402
+from stateset_agents.experimental.offline_rl.offline_grpo import (  # noqa: E402
     OfflineGRPOConfig,
     OfflineGRPOTrainer,
 )

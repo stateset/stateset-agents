@@ -20,7 +20,7 @@ pytestmark = pytest.mark.learning
 
 
 def _train(seed: int, sign: float):
-    from stateset_agents.training.offline_rl_bcq import BCQConfig, BCQTrainer
+    from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer
 
     torch.manual_seed(seed)
     config = BCQConfig(

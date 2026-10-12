@@ -58,7 +58,7 @@ def _dataset(seed: int, num_states: int = 64) -> list:
 def _train(seed: int):
     import asyncio
 
-    from stateset_agents.training.decision_transformer import (
+    from stateset_agents.experimental.offline_rl.decision_transformer import (
         DecisionTransformerConfig,
         DecisionTransformerTrainer,
     )

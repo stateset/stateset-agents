@@ -19,8 +19,8 @@ import pytest
 torch = pytest.importorskip("torch")
 transformers = pytest.importorskip("transformers")
 
-from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer  # noqa: E402
-from stateset_agents.training.rlaif_trainer import (  # noqa: E402
+from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer  # noqa: E402
+from stateset_agents.experimental.rlaif import (  # noqa: E402
     ConstitutionalAI,
     RLAIFConfig,
     RLAIFTrainer,

@@ -18,7 +18,7 @@ pytestmark = pytest.mark.learning
 
 
 def _trainer(algorithm: str, seed: int):
-    from stateset_agents.training.offline_rl_algorithms import (
+    from stateset_agents.experimental.offline_rl.algorithms import (
         CQLConfig,
         IQLConfig,
         OfflineRLTrainer,

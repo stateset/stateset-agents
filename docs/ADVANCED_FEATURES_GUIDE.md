@@ -246,7 +246,7 @@ Learn from fixed datasets without online interaction.
 ### Conservative Q-Learning (CQL)
 
 ```python
-from stateset_agents.training.offline_rl_algorithms import (
+from stateset_agents.experimental.offline_rl.algorithms import (
     OfflineRLTrainer,
     CQLConfig,
 )
@@ -291,7 +291,7 @@ trainer.save("cql_model.pt")
 ### Implicit Q-Learning (IQL)
 
 ```python
-from stateset_agents.training.offline_rl_algorithms import IQLConfig
+from stateset_agents.experimental.offline_rl.algorithms import IQLConfig
 
 # Configure IQL
 config = IQLConfig(
@@ -354,7 +354,7 @@ Get confidence intervals and uncertainty estimates with reward predictions.
 ### Quick Start
 
 ```python
-from stateset_agents.rewards.bayesian_reward_model import (
+from stateset_agents.experimental.bayesian_reward_model import (
     BayesianRewardFunction,
     BayesianRewardConfig,
 )
@@ -395,7 +395,7 @@ if result.metadata['high_uncertainty']:
 ### Active Learning
 
 ```python
-from stateset_agents.rewards.bayesian_reward_model import ActiveLearningSelector
+from stateset_agents.experimental.bayesian_reward_model import ActiveLearningSelector
 
 selector = ActiveLearningSelector(
     uncertainty_threshold=0.3,
@@ -582,7 +582,7 @@ print(f"Test accuracy: {metrics['accuracy']:.2%}")
 ```python
 from stateset_agents.core.curriculum_learning import CurriculumLearning
 from stateset_agents.core.multi_agent_coordination import MultiAgentCoordinator
-from stateset_agents.rewards.bayesian_reward_model import BayesianRewardFunction
+from stateset_agents.experimental.bayesian_reward_model import BayesianRewardFunction
 from stateset_agents.core.few_shot_adaptation import FewShotAdaptationManager
 
 # 1. Curriculum learning for progressive difficulty

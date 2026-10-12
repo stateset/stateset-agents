@@ -26,7 +26,7 @@ EPISODES = 10
 def _train(seed: int, *, sign: float) -> tuple[float, float]:
     import torch
 
-    from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer
+    from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer
 
     tokenizer = make_tokenizer()
     model = make_model(seed)

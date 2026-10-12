@@ -68,7 +68,7 @@ class _LoggedDataset:
 
 
 def _trainer(seed: int, model=None, tokenizer=None):
-    from stateset_agents.training.offline_grpo_trainer import (
+    from stateset_agents.experimental.offline_rl.offline_grpo import (
         OfflineGRPOConfig,
         OfflineGRPOTrainer,
     )

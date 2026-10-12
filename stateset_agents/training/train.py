@@ -262,7 +262,7 @@ def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
     try:
         import importlib
 
-        importlib.import_module("stateset_agents.rewards.bayesian_reward_model")
+        importlib.import_module("stateset_agents.experimental.bayesian_reward_model")
 
         logger.info("Wrapping reward function with Bayesian uncertainty weighting")
         return UncertaintyWeightedReward(reward_fn)
@@ -371,7 +371,7 @@ def _offline_config(
     trainer would ignore raises instead of being silently dropped; in hybrid
     mode such fields still apply to the online phase.
     """
-    from .offline_grpo_trainer import OfflineGRPOConfig
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOConfig
 
     ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
     if ignored and strict:
@@ -432,7 +432,7 @@ async def _train_offline(
     strict: bool = True,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
-    from .offline_grpo_trainer import OfflineGRPOTrainer
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
 
     if dataset is None:
         raise ValueError(

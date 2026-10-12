@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from .checkpoint_io import load_checkpoint_file
+from ...training.checkpoint_io import load_checkpoint_file
 
 try:
     import torch as _torch
