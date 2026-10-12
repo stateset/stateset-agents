@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-10-11 — Correct RL, SFT and rollout training math
+
 ### Added
 
 - `train()` accepts `objective` and `objective_overrides`, and applies any

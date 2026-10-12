@@ -124,7 +124,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.61.0`, published from the
+- **Current Python release:** `stateset-agents==0.62.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -431,7 +431,19 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.61.0 (latest release; publication triggered by tag):**
+**v0.62.0 (latest release; publication triggered by tag):**
+
+- **Assistant-only supervision everywhere.** Sequence-path GRPO, local and
+  industry SFT, and River/Tinker SFT now train only on assistant tokens using
+  one faithful chat render (shared `core/chat_masking`), fixing corrupted
+  multi-turn rows on Qwen3/Qwen3.5 and keeping tool calls.
+- **Trainer math corrections.** DAPO dynamic sampling no longer discards every
+  group by default; VAPO GAE, PPO terminal rewards, GSPO long-prompt scoring
+  and LR schedule, CQL bootstrapping and Decision Transformer alignment fixed.
+- **Rollout correctness.** Batched groups stop per row, resumes resync the
+  rollout engine, and the TRL backend honours `TrainingConfig.objective`.
+
+**v0.61.0:**
 
 - Add River preflight checks with optional live model-access queries and JSON reports.
 - Make River clients close reliably and resume interrupted RL from committed optimizer state while preserving token accounting.
@@ -1341,8 +1353,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.61.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.61.0"
+pip install "stateset-agents==0.62.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.62.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2166,7 +2178,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.61.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.62.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
