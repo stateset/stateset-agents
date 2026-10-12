@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Security &mdash; StateSet Agents 0.60.0 documentation</title>
+  <title>Security &mdash; StateSet Agents 0.62.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=fe349105"></script>
+      <script src="_static/documentation_options.js?v=b9e681ae"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -187,6 +187,7 @@
 <li class="toctree-l2"><a class="reference internal" href="#secret-configuration">Secret configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#gateway-authentication">Gateway authentication</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#security-event-retention">Security event retention</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#scanner-evidence-and-ci">Scanner evidence and CI</a></li>
 </ul>
 </li>
 </ul>
@@ -270,6 +271,54 @@ queries and anomaly detection operate on the retained events.</p>
 by default. When full, it prunes expired records before admitting a new key;
 if all records are still active, a new invalid credential is rejected without
 adding state. Existing lockouts remain in force.</p>
+</section>
+<section id="scanner-evidence-and-ci">
+<h2>Scanner evidence and CI<a class="headerlink" href="#scanner-evidence-and-ci" title="Link to this heading"></a></h2>
+<p>The security workflow retains one JSON report, a diagnostic log, and the actual
+process exit code for each of Bandit, pip-audit, Semgrep, and Trivy. It evaluates
+the reports even after an earlier workflow failure and uploads the evidence
+even when the gate rejects it. A successful upload does not imply a clean scan.</p>
+<p><code class="docutils literal notranslate"><span class="pre">python</span> <span class="pre">-m</span> <span class="pre">scripts.security_workflow_gate</span> <span class="pre">--reports-dir</span> <span class="pre">PATH</span></code> checks a retained
+bundle. Missing or malformed reports, scanner failures, incomplete Semgrep
+scans, and unrecognized severities fail the gate. Exit code 1 is accepted only
+for scanners that use it for findings, and only when the report contains
+findings. Trivy is run without a findings exit-code override and must exit 0.
+CI also passes <code class="docutils literal notranslate"><span class="pre">--source-root</span> <span class="pre">stateset_agents</span></code> to require every nonempty
+packaged Python file in Semgrep’s scanned-file list. Ignored or unreadable
+package sources cannot silently disappear from that coverage check.</p>
+<p>Bandit findings of medium severity or higher block release. Semgrep and Trivy
+findings of high severity or higher block the workflow. Semgrep’s older
+<code class="docutils literal notranslate"><span class="pre">ERROR</span></code>, <code class="docutils literal notranslate"><span class="pre">WARNING</span></code>, and <code class="docutils literal notranslate"><span class="pre">INFO</span></code> levels map to <code class="docutils literal notranslate"><span class="pre">HIGH</span></code>, <code class="docutils literal notranslate"><span class="pre">MEDIUM</span></code>, and
+<code class="docutils literal notranslate"><span class="pre">LOW</span></code> respectively. Trivy secrets and failed misconfigurations are checked
+alongside vulnerabilities. Dependency exceptions remain restricted to the
+reviewed package, version, advisory aliases, and expiry in
+<code class="docutils literal notranslate"><span class="pre">scripts/security_exceptions.py</span></code>. Findings and counts are summarized in
+<code class="docutils literal notranslate"><span class="pre">security-gate.json</span></code> without copying matched source or secret values.</p>
+<p>The Semgrep scan uses the explicit <code class="docutils literal notranslate"><span class="pre">p/security-audit</span></code> ruleset with metrics and
+version checks disabled. <code class="docutils literal notranslate"><span class="pre">--config=auto</span></code> requires metrics and cannot be used
+with this configuration. These rules are retrieved from the Semgrep registry;
+pin an exported ruleset as well when an identical future rule set is required.</p>
+<p>On hosts where the native Semgrep wheel is incompatible, the official container
+provides a supported execution path without downgrading the development tool’s
+security version floor. This tested image pins Semgrep 1.175.0; it mounts source
+read-only and does not forward provider environment variables:</p>
+<div class="highlight-default notranslate"><div class="highlight"><pre><span></span>scan_exit_code=0
+docker run --rm --user "$(id -u):$(id -g)" \
+  --cap-drop=ALL --security-opt no-new-privileges \
+  -e SEMGREP_SETTINGS_FILE=/tmp/semgrep-settings.yml \
+  -e SEMGREP_LOG_FILE=/tmp/semgrep.log -e XDG_CACHE_HOME=/tmp/semgrep-cache \
+  --mount "type=bind,src=$PWD,dst=/src,readonly" --workdir /src \
+  --entrypoint semgrep \
+  semgrep/semgrep@sha256:b94b53d02fd4a022f9eac4e2af1380f5c3c4c21400e79d3336bdff1d1db5e796 \
+  scan --config=p/security-audit --metrics=off --disable-version-check \
+  --jobs=2 --timeout=30 --strict --error --json stateset_agents \
+  &gt; /tmp/semgrep-report.json 2&gt; /tmp/semgrep-report.txt || scan_exit_code=$?
+printf '%s\n' "$scan_exit_code" &gt; /tmp/semgrep-exit-code.txt
+</pre></div>
+</div>
+<p>This command scans packaged Python sources. The CI workflow scans the checkout
+subject to its ignore rules. Neither a clean static scan nor passing unit tests
+establishes production security or live training effectiveness.</p>
 </section>
 </section>
 
