@@ -19,6 +19,16 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 
+def _normalized_wasserstein(a: Any, b: Any) -> float:
+    """W1 distance between two empirical distributions over their pooled range."""
+    x = np.sort(np.asarray(a, dtype=float))
+    y = np.sort(np.asarray(b, dtype=float))
+    grid = np.linspace(0.0, 1.0, max(len(x), len(y), 2))
+    distance = float(np.mean(np.abs(np.quantile(x, grid) - np.quantile(y, grid))))
+    spread = float(max(x.max(), y.max()) - min(x.min(), y.min()))
+    return distance / spread if spread > 0 else 0.0
+
+
 @dataclass
 class SimToRealMetrics:
     """
@@ -28,7 +38,10 @@ class SimToRealMetrics:
         response_length_kl: KL divergence of response length distributions
         vocabulary_js_divergence: Jensen-Shannon divergence of vocabularies
         turn_count_mmd: MMD between turn count distributions
-        reward_correlation: Correlation between sim and real rewards
+        reward_correlation: Deprecated; sim and real episodes are unpaired, so
+            no correlation exists. Always 0.0 (see reward_distribution_gap).
+        reward_distribution_gap: 1-D Wasserstein distance between sim and real
+            reward distributions, divided by their pooled range (0 = identical)
         policy_performance_gap: Difference in agent performance
         user_model_likelihood: Likelihood of real responses under user model
         scenario_coverage: Coverage of real scenarios by simulation
@@ -42,6 +55,7 @@ class SimToRealMetrics:
 
     # Performance metrics
     reward_correlation: float = 0.0
+    reward_distribution_gap: float = 0.0
     policy_performance_gap: float = 0.0
     success_rate_gap: float = 0.0
 
@@ -61,6 +75,7 @@ class SimToRealMetrics:
             "turn_count_mmd": self.turn_count_mmd,
             "response_time_gap": self.response_time_gap,
             "reward_correlation": self.reward_correlation,
+            "reward_distribution_gap": self.reward_distribution_gap,
             "policy_performance_gap": self.policy_performance_gap,
             "success_rate_gap": self.success_rate_gap,
             "user_model_likelihood": self.user_model_likelihood,
@@ -346,21 +361,12 @@ class SimToRealEvaluator:
                 intersection / union if union > 0 else 0
             )
 
-        # Reward correlation
+        # Reward distribution gap. Sim and real episodes are not paired, so a
+        # correlation between them is meaningless; compare the distributions.
         if sim_stats["rewards"] and real_stats["rewards"]:
-            if len(sim_stats["rewards"]) > 1 and len(real_stats["rewards"]) > 1:
-                # Sample to same size
-                min_len = min(len(sim_stats["rewards"]), len(real_stats["rewards"]))
-                sim_rewards = np.random.choice(
-                    sim_stats["rewards"], min_len, replace=False
-                )
-                real_rewards = np.random.choice(
-                    real_stats["rewards"], min_len, replace=False
-                )
-                correlation = np.corrcoef(sim_rewards, real_rewards)[0, 1]
-                metrics["reward_correlation"] = (
-                    float(correlation) if not np.isnan(correlation) else 0
-                )
+            metrics["reward_distribution_gap"] = _normalized_wasserstein(
+                sim_stats["rewards"], real_stats["rewards"]
+            )
 
         return metrics
 
@@ -484,6 +490,7 @@ class SimToRealEvaluator:
             real_trajectories = list(self.real_dataset)[:num_episodes]
 
         # Compute distribution metrics
+        gap_components: list[float] = []
         if sim_trajectories and real_trajectories:
             dist_metrics = self.compute_distribution_metrics(
                 sim_trajectories, real_trajectories
@@ -493,7 +500,19 @@ class SimToRealEvaluator:
             metrics.vocabulary_js_divergence = dist_metrics.get(
                 "vocabulary_js_divergence", 0
             )
-            metrics.reward_correlation = dist_metrics.get("reward_correlation", 0)
+            metrics.reward_distribution_gap = dist_metrics.get(
+                "reward_distribution_gap", 0
+            )
+            gap_components = [
+                dist_metrics[key]
+                for key in (
+                    "response_length_kl",
+                    "turn_count_mmd",
+                    "vocabulary_js_divergence",
+                    "reward_distribution_gap",
+                )
+                if key in dist_metrics
+            ]
 
         # Evaluate user model
         if self.user_model is not None and self.real_dataset is not None:
@@ -502,14 +521,9 @@ class SimToRealEvaluator:
             )
             metrics.user_model_likelihood = user_metrics.get("user_model_likelihood", 0)
 
-        # Compute overall gap (weighted average of normalized metrics)
-        gap_components = [
-            metrics.response_length_kl,
-            metrics.turn_count_mmd,
-            metrics.vocabulary_js_divergence,
-            1 - abs(metrics.reward_correlation),  # Convert correlation to gap
-        ]
-        metrics.overall_gap = float(np.mean([g for g in gap_components if g > 0]))
+        # Overall gap: mean of the measured components. A perfectly matched
+        # component (0) counts toward the mean rather than being dropped.
+        metrics.overall_gap = float(np.mean(gap_components)) if gap_components else 0.0
 
         logger.info(f"Evaluation complete. Overall gap: {metrics.overall_gap:.4f}")
         return metrics
