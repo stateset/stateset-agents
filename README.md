@@ -1330,6 +1330,17 @@ pip install "stateset-agents[rust]"          # Rust-accelerated GAE/advantage ke
 pip install "stateset-agents[full]"          # Most extras in one go
 ```
 
+### Docker images (GHCR)
+
+Prebuilt images are published for each release tag to GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/stateset/stateset-agents-api:latest
+docker pull ghcr.io/stateset/stateset-agents-trainer:latest
+```
+
+Replace `latest` with a specific version (for example, `:0.56.0`) to pin a release.
+
 ### Node.js API client
 
 The dependency-free, typed Node.js client lives in [`npm/`](npm/) and targets
