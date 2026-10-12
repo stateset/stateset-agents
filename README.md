@@ -70,7 +70,7 @@ measurable.
 
 The current development head (the unreleased training-correctness work
 described under [What's new](#whats-new)) completed its local Linux Python 3.12
-suite on **2026-10-12** with **8,182 passed and 21 skipped**, plus lint, strict
+suite on **2026-10-12** with **8,214 passed and 21 skipped**, plus lint, strict
 typing, and the stable-API contract check. This is local evidence only; it is
 not yet a tagged release.
 
@@ -387,7 +387,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 **Current development head (unreleased): training-correctness audit.**
 A line-by-line audit of every trainer, reward, and evaluation path against the
-published algorithms fixed roughly forty silent correctness bugs, each pinned
+published algorithms fixed more than fifty silent correctness bugs, each pinned
 by a test that fails without the fix. The ones most likely to have affected
 past runs:
 
@@ -419,6 +419,16 @@ past runs:
   bootstrapped Q incorrectly; Decision Transformer generation now matches its
   training inputs; offline transitions keep terminal rewards; the enhanced
   `DPOTrainer` can take a training step.
+- **PPO/RLAIF.** `PPOTrainer.train()` trained on a constant string instead of
+  sampled completions, and long prompts leaked into the action span; RLAIF
+  trained on padding, skipped the first completion token, and reinforced every
+  sample when rewards were equal.
+- **Distributed training and resume.** DDP/Accelerate checkpoints resumed with
+  no weights or optimizer state while reporting success; every rank generated
+  identical rollouts; the TRL wrapper ignored `resume_from_checkpoint`.
+- **Async rollouts.** Checkpointing with a full queue deadlocked, a cancelled
+  timed `next_batch` could lose a batch, and LoRA weight sync could hand the
+  engine unmerged weights.
 
 Re-run experiments that depended on these paths before comparing them with new
 results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
