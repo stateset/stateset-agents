@@ -55,7 +55,6 @@ class SimToRealMetrics:
 
     # Performance metrics
     reward_correlation: float = 0.0
-    reward_distribution_gap: float = 0.0
     policy_performance_gap: float = 0.0
     success_rate_gap: float = 0.0
 
@@ -66,6 +65,9 @@ class SimToRealMetrics:
 
     # Overall score
     overall_gap: float = 0.0
+
+    # Appended last to keep positional construction compatible.
+    reward_distribution_gap: float = 0.0
 
     def to_dict(self) -> dict[str, float]:
         """Convert metrics to dictionary"""

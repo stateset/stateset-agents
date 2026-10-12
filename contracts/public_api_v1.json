@@ -3395,6 +3395,11 @@
               "default": 0.0,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "overall_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_distribution_gap"
             }
           ]
         }
