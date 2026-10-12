@@ -11,6 +11,8 @@ import asyncio
 import importlib.util
 import inspect
 import logging
+import math
+import os
 import random
 from collections.abc import Callable
 from typing import Any
@@ -265,6 +267,53 @@ def _supported_config_kwargs(config_cls: Any, kwargs: dict[str, Any]) -> dict[st
             ", ".join(dropped),
         )
     return kept
+
+
+def _trl_warmup_kwargs(config_cls: Any, config: Any) -> dict[str, Any]:
+    """Warmup as a ratio of TRL's own step count.
+
+    TRL decides how many optimizer steps a run takes, so a step count
+    estimated from the native trainer's episode budget does not match it.
+    transformers >= 5 reads a fractional ``warmup_steps`` as that ratio and
+    deprecates ``warmup_ratio``; older versions take ``warmup_ratio``.
+    """
+    ratio = float(getattr(config, "warmup_ratio", 0.0) or 0.0)
+    if not 0.0 < ratio < 1.0:
+        return {"warmup_steps": 0}
+    fields = getattr(config_cls, "__dataclass_fields__", {})
+    warmup_field = fields.get("warmup_steps")
+    if warmup_field is not None and "float" in str(warmup_field.type):
+        return {"warmup_steps": ratio}
+    return {"warmup_steps": 0, "warmup_ratio": ratio}
+
+
+def _trl_generation_batch_kwargs(config: Any) -> dict[str, Any]:
+    """Size TRL's generation batch to whole groups when its default is not.
+
+    TRL generates ``per_device_train_batch_size * num_processes *
+    gradient_accumulation_steps`` completions per generation step by default
+    and requires a multiple of ``num_generations``. When the default falls
+    short, round up to the smallest batch that is a multiple of both the
+    group size and the per-step global batch.
+    """
+    per_device = max(1, int(getattr(config, "per_device_train_batch_size", 1) or 1))
+    accumulation = max(1, int(getattr(config, "gradient_accumulation_steps", 1) or 1))
+    group = max(1, int(getattr(config, "num_generations", 1) or 1))
+    world = max(1, int(os.environ.get("WORLD_SIZE", "1") or 1))
+    step_batch = per_device * world
+    default = step_batch * accumulation
+    if default % group == 0:
+        return {}
+    unit = math.lcm(step_batch, group)
+    generation_batch = unit * math.ceil(default / unit)
+    logger.info(
+        "TRL generation batch %d is not a multiple of num_generations=%d; "
+        "generating %d completions per generation step instead",
+        default,
+        group,
+        generation_batch,
+    )
+    return {"generation_batch_size": generation_batch}
 
 
 def _enable_input_require_grads(model: Any) -> None:
@@ -824,9 +873,6 @@ class TRLGRPOTrainerWrapper:
             "lr_scheduler_type": self.config.lr_scheduler_type,
             "num_train_epochs": self.config.num_epochs,
             "max_grad_norm": self.config.max_grad_norm,
-            "warmup_steps": self.config.get_warmup_steps(
-                self.config.max_steps if self.config.max_steps > 0 else None
-            ),
             "fp16": self.config.fp16,
             "bf16": self.config.bf16,
             "logging_steps": self.config.logging_steps,
@@ -854,15 +900,19 @@ class TRLGRPOTrainerWrapper:
             "gradient_checkpointing": self.config.gradient_checkpointing,
             "seed": self.config.seed,
         }
+        config_kwargs.update(_trl_warmup_kwargs(grpo_config_cls, self.config))
+        config_kwargs.update(_trl_generation_batch_kwargs(self.config))
         config_kwargs.update(trl_objective_kwargs(self.config))
         return grpo_config_cls(
             **_supported_config_kwargs(grpo_config_cls, config_kwargs)
         )
 
     def train(self) -> None:
-        """Run training"""
+        """Run training, resuming from ``config.resume_from_checkpoint`` if set."""
         logger.info("Starting TRL GRPO training...")
-        self.trainer.train()
+        self.trainer.train(
+            resume_from_checkpoint=getattr(self.config, "resume_from_checkpoint", None)
+        )
 
     def save_model(self, output_dir: str) -> None:
         """Save the trained model"""

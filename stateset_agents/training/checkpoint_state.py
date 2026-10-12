@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import math
+import random
 from pathlib import Path
 from typing import Any
+
+import numpy as np
 
 from .checkpoint_io import load_checkpoint_file
 from .checkpoint_publication import (
@@ -22,10 +25,104 @@ def _accumulation_steps(trainer: Any) -> int:
     return max(1, int(getattr(trainer.config, "gradient_accumulation_steps", 1) or 1))
 
 
+def unwrap_model(model: Any) -> Any:
+    """The underlying model of a DDP/Accelerate-style ``.module`` wrapper.
+
+    Checkpoints hold the bare model's weight names so a resumed run can load
+    them whether or not it wraps the model again.
+    """
+    # Wrappers (DDP, Accelerate, DeepSpeed) register the model as the
+    # ``module`` submodule; anything else is returned unchanged.
+    for _ in range(8):
+        submodules = getattr(model, "_modules", None)
+        if not isinstance(submodules, dict) or submodules.get("module") is None:
+            break
+        model = submodules["module"]
+    return model
+
+
 def _parameters(trainer: Any) -> dict[str, Any]:
-    model = trainer.agent.model
+    model = unwrap_model(trainer.agent.model)
     named = getattr(model, "named_parameters", None)
     return dict(named()) if callable(named) else {}
+
+
+_REWARD_STAT_FIELDS = (
+    "_global_reward_mean",
+    "_global_reward_sum",
+    "_global_reward_count",
+)
+
+
+def _capture_reward_stats(trainer: Any) -> dict[str, Any]:
+    return {
+        name: getattr(trainer, name)
+        for name in _REWARD_STAT_FIELDS
+        if isinstance(getattr(trainer, name, None), (int, float))
+    }
+
+
+def _restore_reward_stats(trainer: Any, saved: Any) -> None:
+    if not isinstance(saved, dict):
+        return
+    for name in _REWARD_STAT_FIELDS:
+        value = saved.get(name)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            setattr(
+                trainer,
+                name,
+                int(value) if name == "_global_reward_count" else float(value),
+            )
+
+
+def _capture_rng_state(torch: Any) -> dict[str, Any]:
+    """Python, NumPy and torch generator states in ``weights_only``-safe types."""
+    _, keys, position, has_gauss, cached_gaussian = np.random.get_state()
+    state: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": {
+            "keys": torch.from_numpy(np.asarray(keys, dtype=np.int64)),
+            "position": int(position),
+            "has_gauss": int(has_gauss),
+            "cached_gaussian": float(cached_gaussian),
+        },
+        "torch": torch.get_rng_state(),
+    }
+    cuda = getattr(torch, "cuda", None)
+    if cuda is not None and cuda.is_available():
+        state["cuda"] = cuda.get_rng_state_all()
+    return state
+
+
+def _restore_rng_state(torch: Any, saved: Any, logger: Any) -> None:
+    if not isinstance(saved, dict):
+        return
+    try:
+        python_state = saved.get("python")
+        if python_state is not None:
+            version, internal, gauss = python_state
+            random.setstate((version, tuple(internal), gauss))
+        numpy_state = saved.get("numpy")
+        if isinstance(numpy_state, dict):
+            keys = numpy_state["keys"]
+            keys = keys.cpu().numpy() if torch.is_tensor(keys) else np.asarray(keys)
+            np.random.set_state(
+                (
+                    "MT19937",
+                    keys.astype(np.uint32),
+                    int(numpy_state["position"]),
+                    int(numpy_state["has_gauss"]),
+                    float(numpy_state["cached_gaussian"]),
+                )
+            )
+        if saved.get("torch") is not None:
+            torch.set_rng_state(saved["torch"].cpu())
+        cuda = getattr(torch, "cuda", None)
+        if saved.get("cuda") is not None and cuda is not None and cuda.is_available():
+            if len(saved["cuda"]) == cuda.device_count():
+                cuda.set_rng_state_all(saved["cuda"])
+    except (TypeError, ValueError, KeyError, RuntimeError) as exc:
+        logger.warning("Could not restore checkpoint RNG state: %s", exc)
 
 
 def _validate_scaler(state: Any) -> None:
@@ -179,7 +276,7 @@ def save_training_checkpoint(
 def _write_training_checkpoint(
     trainer: Any, checkpoint_path: Path, torch: Any, accumulation: dict[str, Any]
 ) -> None:
-    trainer.agent.model.save_pretrained(checkpoint_path)
+    unwrap_model(trainer.agent.model).save_pretrained(checkpoint_path)
     if getattr(trainer.agent, "tokenizer", None) is not None:
         trainer.agent.tokenizer.save_pretrained(checkpoint_path)
 
@@ -191,6 +288,8 @@ def _write_training_checkpoint(
         "grad_accum_step": trainer._grad_accum_step,
         "gradient_accumulation": accumulation,
         "checkpoint_publication": 1,
+        "reward_stats": _capture_reward_stats(trainer),
+        "rng_state": _capture_rng_state(torch),
     }
     if trainer.optimizer is not None:
         training_state["optimizer_state_dict"] = trainer.optimizer.state_dict()
@@ -297,12 +396,13 @@ def _load_training_checkpoint(
                 raise ValueError(f"Checkpoint is missing or incomplete: {key}")
 
     weights_loaded = False
+    weights_failed = False
     if getattr(trainer.agent, "model", None) is not None and hasattr(
         trainer.agent.model, "load_state_dict"
     ):
         try:
             weights_loaded = load_model_checkpoint(
-                trainer.agent.model,
+                unwrap_model(trainer.agent.model),
                 model_dir,
                 torch_module=torch,
                 trusted=trusted,
@@ -311,6 +411,7 @@ def _load_training_checkpoint(
         except trainer_exceptions as exc:
             if complete_state:
                 raise
+            weights_failed = True
             logger.warning("Failed to load model weights: %s", exc)
 
     if complete_state and not weights_loaded:
@@ -327,6 +428,12 @@ def _load_training_checkpoint(
     if state is None:
         if not weights_loaded:
             logger.warning("No training_state.pt found in %s", path)
+        return False
+    if weights_failed:
+        # Restoring counters and optimizer state onto weights that failed to
+        # load (e.g. names that match no parameter) would silently continue
+        # the run from the base model.
+        logger.warning("Checkpoint %s has model weights this model cannot load", path)
         return False
 
     trainer.global_step = int(state.get("global_step", trainer.global_step))
@@ -355,6 +462,10 @@ def _load_training_checkpoint(
     if trainer.continual_manager is not None and state.get("continual_state"):
         trainer.continual_manager.load_state_dict(state["continual_state"])
     trainer._current_task_id = state.get("current_task_id", trainer._current_task_id)
+    _restore_reward_stats(trainer, state.get("reward_stats"))
+    restore_rng = getattr(trainer, "_restore_rng_on_resume", None)
+    if restore_rng is None or (callable(restore_rng) and restore_rng()):
+        _restore_rng_state(torch, state.get("rng_state"), logger)
     if scaler_state is not None:
         trainer.scaler.load_state_dict(scaler_state)
         pending_gradient = next(

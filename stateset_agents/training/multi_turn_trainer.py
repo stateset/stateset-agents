@@ -141,15 +141,7 @@ class MultiTurnGRPOTrainer:
 
         # Set seeds for reproducibility if provided
         try:
-            import random
-
-            seed_value = getattr(self.config, "seed", None)
-            if seed_value is not None:
-                random.seed(seed_value)
-                np.random.seed(seed_value)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(seed_value)
-                torch.manual_seed(seed_value)
+            if self._seed_everything(torch):
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
         except MULTI_TRAINER_EXCEPTIONS as seed_err:
@@ -850,7 +842,7 @@ class MultiTurnGRPOTrainer:
                 start_episode = min(num_episodes, max(0, int(self.current_epoch) + 1))
             for episode in range(start_episode, num_episodes):
                 self.current_epoch = episode
-                scenario = training_scenarios[episode]
+                scenario = self._episode_scenario(training_scenarios, episode)
                 task_id = self._resolve_task_id(scenario)
                 self._maybe_handle_task_switch(task_id)
 
@@ -1019,6 +1011,57 @@ class MultiTurnGRPOTrainer:
         )
         return evaluation
 
+    def _data_parallel_rank_world(self) -> tuple[int, int]:
+        """This process's data-parallel ``(rank, world_size)``; ``(0, 1)``
+        outside an initialized ``torch.distributed`` process group."""
+        try:
+            import torch.distributed as dist
+        except ImportError:  # pragma: no cover - torch is required to train
+            return 0, 1
+        if dist.is_available() and dist.is_initialized():
+            return int(dist.get_rank()), int(dist.get_world_size())
+        return 0, 1
+
+    def _seed_everything(self, torch: Any, step: int = 0) -> bool:
+        """Seed Python, NumPy and torch from ``config.seed``.
+
+        Each data-parallel rank gets its own stream (``seed + rank``) so ranks
+        sample different rollouts; a single process keeps ``config.seed``.
+        ``step`` moves to a fresh stream per optimizer step when a resumed
+        distributed run cannot restore every rank's saved generator state.
+        """
+        import random
+
+        seed_value = getattr(self.config, "seed", None)
+        if seed_value is None:
+            return False
+        rank, world = self._data_parallel_rank_world()
+        value = int(seed_value) + rank + world * int(step)
+        random.seed(value)
+        np.random.seed(value % (2**32))
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(value)
+        torch.manual_seed(value)
+        return True
+
+    def _restore_rng_on_resume(self) -> bool:
+        """Checkpoints carry the main process's generator state, which only
+        continues the right stream when there is a single process."""
+        return self._data_parallel_rank_world()[1] == 1
+
+    def _episode_scenario(
+        self, training_scenarios: list[dict[str, Any]], episode: int
+    ) -> dict[str, Any]:
+        """The scenario this rank trains on in ``episode``.
+
+        Ranks stride through the scenario list so data parallelism adds
+        distinct samples instead of repeating rank 0's.
+        """
+        rank, world = self._data_parallel_rank_world()
+        if world == 1:
+            return training_scenarios[episode]
+        return training_scenarios[(episode * world + rank) % len(training_scenarios)]
+
     def _get_training_scenarios(self) -> list[dict[str, Any]]:
         """Get training scenarios."""
         scenarios: list[dict[str, Any]] = build_training_scenarios(
@@ -1084,6 +1127,10 @@ class MultiTurnGRPOTrainer:
             trusted=trusted,
         )
         if loaded:
+            if not self._restore_rng_on_resume():
+                # Per-rank streams were not saved; continue on fresh,
+                # rank-distinct streams instead of replaying step 0's.
+                self._seed_everything(require_torch(), step=self.global_step)
             # An attached rollout engine still holds the pre-resume weights.
             self._sync_rollout_backend()
         return loaded

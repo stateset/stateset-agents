@@ -30,6 +30,8 @@ from stateset_agents.core.agent import MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
 
+from .callbacks import notify_checkpoint_saved
+from .checkpoint_state import save_training_checkpoint
 from .config import TrainingConfig
 from .trainer import MultiTurnGRPOTrainer
 
@@ -163,6 +165,12 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                     f"Initialized distributed training: "
                     f"rank {self.distributed_config.rank}/{self.distributed_config.world_size}"
                 )
+
+    def _data_parallel_rank_world(self) -> tuple[int, int]:
+        return (
+            int(self.distributed_config.rank),
+            max(1, int(self.distributed_config.world_size)),
+        )
 
     async def initialize(self):
         """Initialize distributed trainer"""
@@ -379,48 +387,61 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
     async def _save_distributed_checkpoint(
         self, is_best: bool = False, checkpoint_name: str | None = None
     ):
-        """Save checkpoint in distributed manner"""
+        """Save a resumable checkpoint under ``checkpoint_dir``.
 
-        checkpoint_name = checkpoint_name or f"checkpoint-{self.global_step}"
+        DDP and Accelerate replicas hold identical weights, so the main
+        process writes the same complete training state as the single-process
+        trainer (bare-model weights, optimizer, scheduler, scaler, gradient
+        accumulation, running statistics). FSDP shards are written by every
+        rank through ``torch.distributed.checkpoint``.
+        """
+
+        if checkpoint_name is None:
+            checkpoint_name = (
+                "best-checkpoint" if is_best else f"checkpoint-{self.global_step}"
+            )
         checkpoint_path = Path(self.distributed_config.checkpoint_dir) / checkpoint_name
+        distributed = self.distributed_config.world_size > 1
 
-        # Create checkpoint directory
-        if self.is_main_process:
-            checkpoint_path.mkdir(parents=True, exist_ok=True)
-
-        # Wait for directory creation
-        if self.distributed_config.world_size > 1:
-            dist.barrier()
-
-        # Save model state
         if self.distributed_config.strategy == "fsdp":
-            # FSDP checkpoint saving
+            if self.is_main_process:
+                checkpoint_path.mkdir(parents=True, exist_ok=True)
+            if distributed:
+                dist.barrier()
             dist_checkpoint.save_state_dict(
                 state_dict=self.agent.model.state_dict(),
                 storage_writer=dist_checkpoint.FileSystemWriter(str(checkpoint_path)),
             )
-        else:
-            # Regular checkpoint saving
             if self.is_main_process:
-                model_to_save = (
-                    self.agent.model.module
-                    if hasattr(self.agent.model, "module")
-                    else self.agent.model
+                torch.save(
+                    {
+                        "global_step": self.global_step,
+                        "current_epoch": self.current_epoch,
+                        "best_eval_metric": self.best_eval_metric,
+                        "distributed_config": self.distributed_config.__dict__,
+                    },
+                    checkpoint_path / "training_state.pt",
                 )
-                model_to_save.save_pretrained(checkpoint_path)
-                self.agent.tokenizer.save_pretrained(checkpoint_path)
-
-        # Save training state (main process only)
-        if self.is_main_process:
-            training_state = {
-                "global_step": self.global_step,
-                "current_epoch": self.current_epoch,
-                "best_eval_metric": self.best_eval_metric,
-                "distributed_config": self.distributed_config.__dict__,
-            }
-            torch.save(training_state, checkpoint_path / "training_state.pt")
+        elif self.is_main_process:
+            save_training_checkpoint(
+                self, checkpoint_path, require_torch_fn=lambda: torch
+            )
+        if distributed:
+            dist.barrier()
 
         logger.info(f"Distributed checkpoint saved: {checkpoint_path}")
+        if self.is_main_process:
+            wandb_logger = getattr(self, "wandb_logger", None)
+            if wandb_logger:
+                wandb_logger.log_model_checkpoint(
+                    str(checkpoint_path), self.global_step, is_best=is_best
+                )
+            await notify_checkpoint_saved(
+                getattr(self, "callbacks", []),
+                path=str(checkpoint_path),
+                step=int(self.global_step),
+                is_best=bool(is_best),
+            )
 
     def cleanup(self):
         """Cleanup distributed resources"""
