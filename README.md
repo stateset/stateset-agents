@@ -68,6 +68,12 @@ measurable.
 
 ### Current verification status
 
+The current development head (the unreleased training-correctness work
+described under [What's new](#whats-new)) completed its local Linux Python 3.12
+suite on **2026-10-12** with **8,182 passed and 21 skipped**, plus lint, strict
+typing, and the stable-API contract check. This is local evidence only; it is
+not yet a tagged release.
+
 The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
 **2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
 checks passed lint, typing, API compatibility, governance, security scanning,
@@ -379,57 +385,43 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**Current development head (unreleased):**
+**Current development head (unreleased): training-correctness audit.**
+A line-by-line audit of every trainer, reward, and evaluation path against the
+published algorithms fixed roughly forty silent correctness bugs, each pinned
+by a test that fails without the fix. The ones most likely to have affected
+past runs:
 
-- **Evidence-first README refresh.** Release, installation, provider, and
-  benchmark status now match `v0.54.0`; the incomplete corrected v3 comparison
-  and the remaining A+ gates are stated explicitly.
-- **Release-version drift prevention.** README install commands and the
-  current-release declaration are guarded against package-version drift and
-  updated automatically by the release script.
-- **Optional-runtime isolation.** `stateset-agents version --json` reads
-  dependency metadata without importing CUDA runtimes, and an incompatible
-  installed vLLM now preserves the Hugging Face fallback instead of breaking
-  CLI output or package import.
-- **Exact benchmark resume identity.** Measured shootout files now carry the
-  complete manifest digest, and both local and RunPod resume paths require the
-  same manifest, implementation version, seed, and harness commit. Corrected
-  experiments cannot silently reuse stale evidence. New evidence also carries
-  a portable raw-artifact path that is re-hashed before reporting or resume.
-- **Corrected v4 comparison contract.** The pinned 1.5B native-GSPO versus
-  direct-TRL manifest validates and enumerates all six rotated pairs without
-  provisioning hardware; measured execution still requires an explicitly
-  confirmed RunPod spend ceiling.
-- **Fail-closed flagship evidence.** A measured flagship run now rejects
-  template placeholders and stale StateSet versions before execution, while
-  judge-derived scores are bound to the declared judge model, immutable
-  revision, and rubric digest.
-- **Exact scale/recovery provenance.** Local scaling and fault-injection
-  matrices now require a clean checkout and refuse a claimed harness revision
-  that differs from the code actually executing.
-- **Source-bound scaling images.** A dedicated BuildKit path refuses mutable
-  base images, labels the exact commit and package version, requests maximal
-  provenance plus an SBOM, then reads SLSA/SPDX/label/manifest evidence back
-  from the registry. The A+ gate verifies it and requires every provider
-  lifecycle record to use that exact digest.
-- **Provider-exported scaling cost.** Kubernetes lifecycle evidence now carries
-  exact Job start/finish timestamps. The A+ gate requires a raw-export-bound
-  CoreWeave/Nebius billing allocation for every Job, prevents line-item reuse,
-  and reports total cost plus cost per measured optimizer step.
-- **Artifact-backed release readiness.** Readiness now installs the newly built
-  wheel offline into a clean virtual environment outside the checkout, reusing
-  the dependency set that passed the preceding gates, and emits portable schema-v2
-  evidence for both distributions, coverage XML, and Bandit/pip-audit reports.
-  The A+ gate re-hashes and parses those files instead of trusting a bare
-  `status: passed` marker.
-- **Cross-format backend identity.** A NeMo RL/OpenRLHF/verl conformance roster
-  must bind the same canonical dataset-content digest even when the physical
-  JSONL and Parquet artifacts necessarily have different byte hashes.
-- **Official-suite execution safety.** Measured τ³-bench, BFCL, and
-  SWE-bench collection now rejects template commands, zero revisions, stale
-  package versions, unbound evaluator model revisions, and dirty harness
-  checkouts before invoking an evaluator. Every model-consuming stage is bound,
-  and standalone execution verifies the checkout's exact suite revision.
+- **GRPO advantages.** `baseline_type="group_median"`/`"global_mean"` had no
+  effect under the default normalisation; the KL/reference-model loss path
+  ignored `reward_clip`, `baseline_type`, and the entropy bonus and masked KL
+  one token off; inner updates counted each batch several times in the running
+  reward mean.
+- **KL control.** PPO silently skipped its KL penalty without an explicit
+  reference model; the adaptive, cosine, and hybrid KL controllers did not
+  follow their documented schedules.
+- **DAPO/VAPO.** DAPO's overlong-length penalty could never fire with default
+  settings; VAPO now uses batch token-mean losses, an undiscounted critic
+  (`gamma=1.0`), the paper's length-adaptive λ, and keeps value-loss gradients
+  out of the policy.
+- **GEPO/GSPO.** GSPO-style ratios in the GEPO trainer use per-token averaged
+  log-ratios (almost every sample was clipped); the GSPO and single-turn
+  optimizers honour the configured Adam betas.
+- **Rewards.** The RULER judge always fell back to its heuristic; failed
+  composite components scored 0; the multi-objective geometric mean capped at
+  0.25; LLM-judge timeouts were cached as 0; untyped rewards were counted twice
+  per episode; `ConversationEnvironment` scored each reply against the
+  following user turn; trajectory totals were rounded to 0.1.
+- **Evaluation.** Post-training evaluation could report 0 reward, dropped
+  crashed episodes from averages, and reset the training RNG; the sim-to-real
+  "reward correlation" (unpaired, i.e. noise) is replaced by
+  `reward_distribution_gap`.
+- **Offline RL.** `OfflineGRPOTrainer.train()` trained on random noise and
+  bootstrapped Q incorrectly; Decision Transformer generation now matches its
+  training inputs; offline transitions keep terminal rewards; the enhanced
+  `DPOTrainer` can take a training step.
+
+Re-run experiments that depended on these paths before comparing them with new
+results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
 **v0.62.1 (latest release; publication triggered by tag):**
 
@@ -1315,9 +1307,10 @@ Reward functions can be evaluated per-step or only at episode end. Set
 - `RewardType.IMMEDIATE` or `RewardType.DENSE`: compute per-step rewards only.
 - `RewardType.CUMULATIVE` or `RewardType.SPARSE`: compute a final reward only.
 
-If you pass a custom reward without `reward_type`, the environment assumes legacy
-behavior and may compute both step and final rewards. For new rewards, always
-set `reward_type` explicitly to avoid double counting.
+A reward without `reward_type` is applied exactly once per decision: per step
+in environments that score steps (such as `ConversationEnvironment`, where each
+reply is scored against the conversation it answers), otherwise once at episode
+end. Set `reward_type` explicitly when you need a specific phase.
 
 ---
 
