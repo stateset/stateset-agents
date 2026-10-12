@@ -19,6 +19,8 @@ provider_evidence = importlib.util.module_from_spec(SPEC)
 sys.modules[SPEC.name] = provider_evidence
 SPEC.loader.exec_module(provider_evidence)
 
+FIXED_NOW = datetime(2026, 9, 10, tzinfo=timezone.utc)
+
 
 def _report(provider: str, status: str = "passed") -> dict[str, Any]:
     passed = status == "passed"
@@ -86,6 +88,7 @@ def test_complete_provider_matrix_passes() -> None:
         minimum_schema_version=2,
         expected_commit="a" * 40,
         expected_version="0.54.0",
+        now=FIXED_NOW,
     )
     assert report["passed"] is True
     assert report["skipped"] == []
@@ -104,12 +107,12 @@ def test_provider_matrix_rejects_missing_adapter_observations() -> None:
     reports = [_report(provider) for provider in provider_evidence.REQUIRED_PROVIDERS]
     reports[1]["results"][0]["checks"].pop("ephemeral_training_leftovers")
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="runpod"):
-        provider_evidence.validate_matrix(reports)
+        provider_evidence.validate_matrix(reports, now=FIXED_NOW)
 
     reports = [_report(provider) for provider in provider_evidence.REQUIRED_PROVIDERS]
     reports[3]["results"][0]["checks"]["can_create_jobs"] = False
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="coreweave"):
-        provider_evidence.validate_matrix(reports)
+        provider_evidence.validate_matrix(reports, now=FIXED_NOW)
 
     reports[0]["schema_version"] = 2
     reports[0]["harness_commit"] = "b" * 40
@@ -121,12 +124,15 @@ def test_provider_matrix_rejects_missing_adapter_observations() -> None:
             minimum_schema_version=2,
             expected_commit="a" * 40,
             expected_version="0.54.0",
+            now=FIXED_NOW,
         )
 
     reports[0]["harness_commit"] = "a" * 40
     reports[0]["harness_clean"] = False
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="incomplete"):
-        provider_evidence.validate_matrix(reports, minimum_schema_version=2)
+        provider_evidence.validate_matrix(
+            reports, minimum_schema_version=2, now=FIXED_NOW
+        )
 
 
 def test_skipped_provider_fails_closed() -> None:
@@ -135,9 +141,11 @@ def test_skipped_provider_fails_closed() -> None:
         for provider in provider_evidence.REQUIRED_PROVIDERS
     ]
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="not 'passed'"):
-        provider_evidence.validate_matrix(reports)
+        provider_evidence.validate_matrix(reports, now=FIXED_NOW)
 
-    diagnostic = provider_evidence.validate_matrix(reports, allow_skipped=True)
+    diagnostic = provider_evidence.validate_matrix(
+        reports, allow_skipped=True, now=FIXED_NOW
+    )
     assert diagnostic["schema_version"] == 1
     assert diagnostic["passed"] is False
     assert diagnostic["providers"] == list(provider_evidence.REQUIRED_PROVIDERS)
@@ -195,11 +203,11 @@ def test_retained_provider_matrix_is_explicitly_incomplete() -> None:
     )
     historical = ("river", "runpod", "fireworks")
     diagnostic = provider_evidence.validate_matrix(
-        reports, required=historical, allow_skipped=True
+        reports, required=historical, allow_skipped=True, now=FIXED_NOW
     )
     assert diagnostic["passed"] is False
     assert diagnostic["skipped"] == ["fireworks"]
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="fireworks"):
-        provider_evidence.validate_matrix(reports, required=historical)
+        provider_evidence.validate_matrix(reports, required=historical, now=FIXED_NOW)
     with pytest.raises(provider_evidence.ProviderEvidenceError, match="coreweave"):
-        provider_evidence.validate_matrix(reports, allow_skipped=True)
+        provider_evidence.validate_matrix(reports, allow_skipped=True, now=FIXED_NOW)
