@@ -291,20 +291,14 @@ CURRENT_STEP="tests_with_coverage"
 printf "\n[7/11] Running security scans...\n"
 CURRENT_STEP="security_scans"
 bandit -c pyproject.toml -r stateset_agents -f json -o "$BANDIT_REPORT_PATH" || true
-# --save-json writes the JSON straight to a file; piping `--json` stdout to
-# a file (the previous form here) captures safety's banner/deprecation
-# notice ahead of the payload too, corrupting a naive json.loads() the same
-# way `make security-scan-strict` hit before it was fixed. Match the
-# Makefile's invocation exactly so both paths behave identically. Safety's
-# parser does not recognize the environment-marker form of cuda-toolkit even
-# though pip does, so omit that entry from Safety's normalized scan input.
+# Safety's parser does not recognize the environment-marker form of cuda-toolkit
+# even though pip does, so omit that entry from Safety's normalized scan input.
 grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > "$SAFETY_INPUT_PATH"
-safety check -r "$SAFETY_INPUT_PATH" --save-json "$SAFETY_REPORT_PATH" \
-  --no-prompt > /dev/null 2>&1 || true
-# Route both reports through check_security_findings.py's lenient parser
-# (raw_decode from the first '{', ignoring any surrounding banner text)
-# instead of a second, stricter inline copy of this same parsing logic --
-# one implementation for both `make security-scan-strict` and this script.
+SAFETY_REPORT_PATH="$REPORT_DIR/safety-report.json"
+# Prefer --save-json; fall back to capturing --json if the CLI ignores it.
+if ! safety check -r "$SAFETY_INPUT_PATH" --save-json "$SAFETY_REPORT_PATH" --no-prompt > /dev/null 2>&1; then
+  safety check -r "$SAFETY_INPUT_PATH" --json --no-prompt > "$SAFETY_REPORT_PATH" 2>/dev/null || true
+fi
 "$PYTHON_BIN" scripts/check_security_findings.py
 
 printf "\n[8/11] Building package...\n"
