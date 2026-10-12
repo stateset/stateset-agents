@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Training loop cadence**: with gradient accumulation, multi-turn evaluation,
+  checkpointing and logging repeated for the same optimizer step (and early
+  stopping fired N times too soon); with several steps per episode, multiples
+  were skipped. They now fire once per crossed interval.
+- **KL controllers**: `HybridKLController` decayed geometrically instead of on
+  its cosine schedule and crashed on negative KL estimates; the default
+  `CosineKLScheduler` never reached `min_kl_coef`; `AdaptiveKLController`
+  scaled its update by the global step. PPO applies its KL penalty when
+  `beta > 0` (it was skipped without an explicit `ref_model`).
+- **GEPO**: the `gspo`/`gspo_token` presets used exp(sum) instead of
+  exp(mean) token log-ratios, clipping almost every sample; `beta > 0` is now
+  rejected instead of ignored.
+- **Rewards**: a failed `CompositeReward` component no longer counts as 0;
+  multi-objective `geometric_mean` is the weighted geometric mean;
+  `LengthRewardComponent` presets no longer score their optimal range as too
+  long; LLM-judge errors score neutral and are not cached; trajectory reward
+  totals are no longer rounded to 0.1; untyped reward functions are applied
+  once per episode, not per step and again at the end.
+- **Evaluation**: post-training evaluation keeps environment rewards when the
+  trainer has no `reward_fn`; `evaluate_agent` counts failed episodes
+  (`eval_failed_episodes`) and restores the global RNG state; sim-to-real
+  reports `reward_distribution_gap` instead of correlating unpaired samples.
+- **Offline RL**: Decision Transformer generation now uses the training state
+  format and real past states, keeps the last context window, trains on every
+  window and partial batch, and checkpoints its embedding projection.
+  `OfflineGRPOTrainer` bootstraps Q from V(s') and trains on logged
+  transitions rather than random features. `to_offline_rl_format` builds one
+  transition per assistant decision with correct terminal flags and rewards,
+  and ShareGPT speaker names map to user/assistant.
+- **Reward models**: the enhanced `DPOTrainer` trains on response-token
+  log-probs (it could not backpropagate); `NeuralRewardModel` uses its
+  `encoder`; Bayesian active-learning updates train the model;
+  `ValueFunction.compute_gae` returns detached targets.
+
 ## [0.62.1] - 2026-10-11 — Publishable release gate
 
 ### Fixed
