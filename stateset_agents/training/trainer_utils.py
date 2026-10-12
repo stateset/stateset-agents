@@ -294,3 +294,25 @@ __all__ = [
 # pattern, updating globals later won't affect already-imported bindings, so we
 # attempt to populate these helpers on import when possible.
 _load_transformers_utils()
+
+
+def disable_dropout_in_model(model: Any) -> int:
+    """Set ``p = 0`` on every ``torch.nn.Dropout`` in ``model``; return how
+    many modules were changed (TRL's ``disable_dropout_in_model``)."""
+    torch = require_torch()
+    modules = getattr(model, "modules", None)
+    if not callable(modules):
+        return 0
+    count = 0
+    for module in modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = 0.0
+            count += 1
+    return count
+
+
+def apply_dropout_setting(config: Any, model: Any) -> None:
+    """Disable dropout in ``model`` when ``config.disable_dropout`` is set."""
+    if bool(getattr(config, "disable_dropout", False)) and model is not None:
+        count = disable_dropout_in_model(model)
+        logger.info("disable_dropout: zeroed %d dropout modules", count)

@@ -36,6 +36,8 @@ import torch
 from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
 
+from .trainer_utils import apply_dropout_setting
+
 logger = logging.getLogger(__name__)
 
 
@@ -139,6 +141,8 @@ class SharedModelManager:
             self.model = self._apply_lora(base_model)
         else:
             self.model = base_model
+
+        apply_dropout_setting(self.config, self.model)
 
         # Optionally load a frozen reference model
         self._load_reference_model(resolved_model_cls, model_kwargs)

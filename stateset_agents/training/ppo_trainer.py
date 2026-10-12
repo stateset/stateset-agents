@@ -28,6 +28,7 @@ import torch.nn.functional as F
 
 from . import objectives, rl_losses
 from .config import TrainingConfig
+from .trainer_utils import apply_dropout_setting
 
 # Configure logging
 logging.basicConfig(
@@ -350,6 +351,7 @@ class PPOTrainer:
             kl="none",
         )
         self.model = model
+        apply_dropout_setting(config, model)
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
         if config.beta > 0 and ref_model is None:

@@ -4008,6 +4008,11 @@
               "default": "recompute",
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "old_logprobs_source"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "disable_dropout"
             }
           ]
         }

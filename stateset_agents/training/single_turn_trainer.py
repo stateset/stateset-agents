@@ -53,6 +53,7 @@ from .single_turn_state import (
     resolve_task_id,
 )
 from .trainer_utils import (
+    apply_dropout_setting,
     backward_training_loss,
     get_amp,
     get_cosine_schedule_with_warmup,
@@ -157,6 +158,8 @@ class SingleTurnGRPOTrainer:
         # Initialize agent if not already done
         if not hasattr(self.agent, "model") or self.agent.model is None:
             await self.agent.initialize()
+
+        apply_dropout_setting(self.config, getattr(self.agent, "model", None))
 
         # Set seeds for reproducibility
         try:
