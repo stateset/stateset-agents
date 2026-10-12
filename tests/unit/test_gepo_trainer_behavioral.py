@@ -204,3 +204,80 @@ async def test_gepo_multi_update_cadence_matches_dapo(monkeypatch):
 
     assert len(scheduler_steps) == 3
     assert trainer.global_step == before + 1
+
+
+def _trainer_with_objective(name):
+    from types import SimpleNamespace
+
+    from stateset_agents.training import objectives
+
+    trainer = object.__new__(GEPOTrainer)
+    trainer._objective = objectives.resolve_objective(
+        SimpleNamespace(objective=name, objective_overrides=None),
+        "gepo",
+        max_completion_length=128,
+        supported_ratios=("group_expectation", "sequence", "sequence_token"),
+        clip_low=0.2,
+        clip_high=0.2,
+    )
+    return trainer
+
+
+@pytest.mark.parametrize("name", ["gspo", "gspo_token"])
+def test_gspo_objectives_use_length_normalised_ratio(name):
+    """GSPO's ratio is exp(mean token log-ratio); a 0.05 per-token drift over
+    100 tokens is ~1.05, inside the clip band, so the gradient is not zero."""
+    trainer = _trainer_with_objective(name)
+    tokens = torch.full((2, 100), -1.0, requires_grad=True)
+    mask = torch.ones(2, 100)
+    sampler = torch.full((2,), -105.0)  # learner sum is -100: +0.05 per token
+    loss = trainer.compute_gepo_loss(
+        (tokens * mask).sum(-1),
+        sampler,
+        torch.tensor([1.0, -1.0]),
+        token_log_probs=tokens,
+        response_mask=mask,
+    )
+    loss.backward()
+    assert tokens.grad is not None and tokens.grad.abs().sum() > 0
+
+
+def test_gepo_loss_unchanged_by_token_inputs():
+    trainer = _trainer_with_objective("gepo")
+    tokens = torch.randn(3, 5)
+    mask = torch.ones(3, 5)
+    mask[0, 3:] = 0
+    seq = (tokens * mask).sum(-1)
+    sampler = seq + torch.tensor([0.1, -0.2, 0.05])
+    adv = torch.tensor([1.0, 0.0, -1.0])
+    collapsed = trainer.compute_gepo_loss(seq, sampler, adv)
+    per_token = trainer.compute_gepo_loss(
+        seq, sampler, adv, token_log_probs=tokens, response_mask=mask
+    )
+    assert torch.allclose(collapsed, per_token, atol=1e-6)
+
+
+def test_sampler_pass_runs_forward_without_autograd():
+    trainer = object.__new__(GEPOTrainer)
+    trainer.model = torch.nn.Linear(1, 1)
+    trainer.model.train()
+    emb = torch.nn.Embedding(10, 10)
+    grad_modes = []
+
+    def forward(input_ids, attention_mask):
+        grad_modes.append(torch.is_grad_enabled())
+        return type("O", (), {"logits": emb(input_ids)})()
+
+    trainer.model.forward = forward
+    with torch.no_grad():
+        trainer.compute_sequence_log_probs(
+            torch.tensor([[1, 2, 3]]), torch.ones(1, 3, dtype=torch.long), 1
+        )
+    assert grad_modes == [False]
+
+
+def test_gepo_rejects_a_kl_penalty_it_cannot_apply():
+    from stateset_agents.training.gepo_trainer import GEPOConfig
+
+    with pytest.raises(ValueError, match="beta must be 0"):
+        GEPOTrainer(GEPOConfig(beta=0.1), torch.nn.Linear(1, 1), None, None)
