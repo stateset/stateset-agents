@@ -191,7 +191,8 @@ class AdaptiveKLController:
 
     def update(self, current_kl: float, n_steps: int) -> float:
         """Update KL coefficient based on current KL divergence."""
-        proportional_error = (current_kl - self.target_kl) / self.target_kl
+        proportional_error = (current_kl - self.target_kl) / max(self.target_kl, 1e-8)
+        proportional_error = max(-0.2, min(0.2, proportional_error))
         mult = 1.0 + proportional_error * n_steps / self.horizon
 
         self.kl_coef = self.kl_coef * mult
