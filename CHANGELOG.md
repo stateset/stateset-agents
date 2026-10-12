@@ -56,6 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pytest.ini` turns these warnings into errors so nothing in-repo relies on
   the shims.
 
+## [0.63.1] - 2026-10-12 — Publishable release gate
+
+### Fixed
+
+- **Publishable release gate**: the flywheel loss-knob CLI tests strip ANSI
+  styling and pin a wide terminal, so they pass under CI's `FORCE_COLOR=1`
+  (v0.63.0's tag-triggered publish failed on them; v0.63.0 never reached PyPI).
+
 ## [0.63.0] - 2026-10-12 — Training correctness audit
 
 ### Added
