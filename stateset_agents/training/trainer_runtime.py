@@ -108,7 +108,7 @@ class SharedModelManager:
         # Load tokenizer
         self.tokenizer = tokenizer_cls.from_pretrained(
             self.config.model_name,
-            trust_remote_code=getattr(self.config, "trust_remote_code", True),
+            trust_remote_code=getattr(self.config, "trust_remote_code", False),
             padding_side="left",
             revision=getattr(self.config, "model_revision", None),
         )
@@ -123,7 +123,7 @@ class SharedModelManager:
                 else (torch.bfloat16 if self.config.bf16 else torch.float32)
             ),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": getattr(self.config, "trust_remote_code", True),
+            "trust_remote_code": getattr(self.config, "trust_remote_code", False),
             "revision": getattr(self.config, "model_revision", None),
         }
         self._prepare_model_kwargs(model_kwargs)

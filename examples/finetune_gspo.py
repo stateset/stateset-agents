@@ -410,6 +410,7 @@ async def run(args: argparse.Namespace) -> int:
                 base_model_name=preset.model_id,
                 adapter_dir=gspo_config.output_dir,
                 output_dir=f"{gspo_config.output_dir}/merged",
+                trust_remote_code=gspo_config.trust_remote_code,
             )
             logger.info("Exported merged checkpoint to %s", merged_dir)
         else:

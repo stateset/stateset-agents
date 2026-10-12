@@ -182,7 +182,12 @@ class TestStartHappyPath:
         launch = next(c for c in ssh.commands if "vllm serve" in c)
         assert "nohup" in launch
         assert "Qwen/Qwen3.5-0.8B" in launch
-        assert "--api-key tok-abc" in launch
+        # The token reaches vLLM through VLLM_API_KEY read from a 0600
+        # secret file, never on a command line visible in `ps`.
+        assert "tok-abc" not in launch
+        assert "--api-key" not in launch
+        assert "VLLM_API_KEY" in launch
+        assert any(secret == "tok-abc" for secret, _ in ssh.secret_uploads)
         assert "--enable-lora" not in launch
 
     def test_multi_gpu_ssh_serve_sets_tensor_parallel_size(self):
@@ -238,6 +243,8 @@ class TestDirectVllmImage:
         assert "RUNPOD_POD_ID" in command
         assert "RUNPOD_API_KEY" in command
         assert "rp-test-key" not in command
+        assert "tok-direct" not in command and "--api-key" not in command
+        assert created["env"]["VLLM_API_KEY"] == "tok-direct"
         assert command.count("python3 -c") == 2
         assert "stateset-vllm.log" in command
         assert "Authorization" in command
@@ -462,7 +469,7 @@ class TestSelfDestruct:
         session.start("m", max_hours=2.0)
 
         remotes = [r for _, r in ssh.uploads]
-        assert ssh.secret_uploads == [("rp-test-key", "/workspace/.runpod_key")]
+        assert ssh.secret_uploads[0] == ("rp-test-key", "/workspace/.runpod_key")
         assert "/workspace/self_destruct.sh" in remotes
         arm = next(i for i, c in enumerate(ssh.commands) if "self_destruct.sh" in c)
         install = next(i for i, c in enumerate(ssh.commands) if "pip install" in c)

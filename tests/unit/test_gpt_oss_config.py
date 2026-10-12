@@ -43,7 +43,7 @@ class TestGptOssConfig:
         assert config.use_lora is True
         assert config.use_wandb is False
         assert config.report_to == "none"
-        assert config.trust_remote_code is True
+        assert config.trust_remote_code is False  # native transformers architecture
         assert config.attn_implementation == "sdpa"
 
     def test_balanced_profile_defaults(self):
@@ -128,7 +128,9 @@ class TestGptOssConfig:
         agent_config = create_gpt_oss_agent_config(config)
 
         assert agent_config.model_name == GPT_OSS_BASE_MODEL
-        assert agent_config.trust_remote_code is True
+        assert (
+            agent_config.trust_remote_code is False
+        )  # native transformers architecture
         assert agent_config.attn_implementation == "sdpa"
         assert agent_config.max_new_tokens == 1024
 

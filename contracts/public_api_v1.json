@@ -4013,6 +4013,11 @@
               "default": false,
               "kind": "KEYWORD_ONLY",
               "name": "disable_dropout"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "trust_remote_code"
             }
           ]
         }
@@ -4615,6 +4620,33 @@
               "default": 1,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "training_max_concurrent_jobs"
+            },
+            {
+              "default": "outputs/api-training",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_output_root"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_external_models"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_allowlist"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "public_metrics"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lab_ws_query_token"
             }
           ]
         }

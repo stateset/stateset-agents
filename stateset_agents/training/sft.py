@@ -212,10 +212,11 @@ _LORA_TARGET_CANDIDATES = (
 
 
 def _trust_remote_code(model_name: str) -> bool:
-    """Use native implementations for presets that explicitly request them."""
+    """Run repo-shipped model code only for curated presets that require it;
+    any other model loads with the native transformers implementation."""
     return next(
         (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
-        True,
+        False,
     )
 
 
@@ -339,7 +340,7 @@ def model_load_kwargs() -> dict[str, Any]:
     loads exactly as before and the Trainer places it itself.
     """
     kwargs: dict[str, Any] = {
-        "trust_remote_code": True,
+        "trust_remote_code": False,
         "torch_dtype": "bfloat16",
     }
     n_gpus = cuda_device_count()

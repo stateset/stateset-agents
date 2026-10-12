@@ -225,6 +225,10 @@ class TrainingConfig:
     # learner's forward pass agree (TRL's ``disable_dropout``). Keyword-only
     # so subclasses keep their positional arguments.
     disable_dropout: bool = field(default=False, kw_only=True)
+    # Run Python shipped inside the model's Hugging Face repo when loading it.
+    # Off by default: only enable for a repo you trust whose architecture is
+    # not native to transformers (curated presets opt in explicitly).
+    trust_remote_code: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         # Map compatibility aliases

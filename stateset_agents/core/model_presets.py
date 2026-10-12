@@ -34,7 +34,7 @@ class ModelPreset:
     learning_rate: float
     num_generations: int
     bf16: bool = True
-    trust_remote_code: bool = True
+    trust_remote_code: bool = False
     supports_gspo: bool = True
     """False for specialized SFT models without a matching GSPO environment."""
     use_4bit: bool = False
@@ -571,6 +571,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "muse-glimmer": ModelPreset(
         model_id="meta-models/Muse-Glimmer-30B",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="meta-models/Muse-Glimmer-30B",
         lora_target_modules=(
             "q_proj",
@@ -805,6 +807,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "kimi-k3": ModelPreset(
         model_id="moonshotai/Kimi-K3",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="moonshotai/Kimi-K3",
         lora_target_modules=(
             "q_proj",
@@ -838,6 +842,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "kimi-k2.5": ModelPreset(
         model_id="moonshotai/Kimi-K2.5",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="moonshotai/Kimi-K2.5",
         lora_target_modules=(
             "q_proj",
@@ -872,6 +878,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "kimi-k2.6": ModelPreset(
         model_id="moonshotai/Kimi-K2.6",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="moonshotai/Kimi-K2.6",
         lora_target_modules=(
             "q_proj",
@@ -905,6 +913,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "glm5.1": ModelPreset(
         model_id="zai-org/GLM-5.1",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="zai-org/GLM-5.1",
         lora_target_modules=(
             "q_a_proj",
@@ -933,6 +943,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "glm5.2": ModelPreset(
         model_id="zai-org/GLM-5.2",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="zai-org/GLM-5.2",
         lora_target_modules=(
             "q_a_proj",
@@ -960,6 +972,8 @@ PRESETS: dict[str, ModelPreset] = {
     ),
     "glm5.3-flash": ModelPreset(
         model_id="zai-org/GLM-5.3-Flash",
+        # Non-native architecture: ships its own modelling code.
+        trust_remote_code=True,
         tokenizer_id="zai-org/GLM-5.3-Flash",
         lora_target_modules=(
             # Linear-attention layers.

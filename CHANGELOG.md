@@ -7,6 +7,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **API training jobs can no longer write or read outside the server's
+  training root.** `training_config_overrides` accepts tuning keys only
+  (`output_dir`, `report_to`, `wandb_*`, `overwrite_output_dir`, and arbitrary
+  `resume_from_checkpoint` paths are rejected with 422); outputs go to
+  `API_TRAINING_OUTPUT_ROOT/<training_id>`, and resume takes a job id or a path
+  under that root.
+- **Agents are owned.** `/agents` list/get/delete are scoped to the creator
+  (admins see all); another user's agent returns 404. Training Lab experiments
+  are owned the same way, and clone/patch re-validate merged configs.
+- **Model loading is opt-in in every environment.** Real weights load only with
+  `API_ALLOW_EXTERNAL_MODELS=true` (previously implicit in production),
+  optionally restricted by `API_MODEL_ALLOWLIST`, and require the trainer or
+  admin role.
+- **`trust_remote_code` defaults to False** (`TrainingConfig`, GSPO, vLLM,
+  presets, starters, serving export); only model families transformers does
+  not implement natively (Kimi, GLM, Muse-Glimmer) enable it explicitly.
+- A successful login clears only its own credential's lockout; Training Lab
+  WebSockets take credentials from headers (`API_LAB_WS_QUERY_TOKEN=true`
+  re-enables query tokens); `/metrics` requires auth when auth is on unless
+  `API_PUBLIC_METRICS=true` (`deployment/scripts/health_check.sh` sends
+  `HEALTH_CHECK_API_KEY`); `serve-remote` passes the vLLM API key via a 0600
+  file or environment, never argv.
+
+**Upgrade notes:** production deployments that let clients name models must set
+`API_ALLOW_EXTERNAL_MODELS=true` (and ideally `API_MODEL_ALLOWLIST`);
+Prometheus scrapers need credentials or `API_PUBLIC_METRICS=true`; custom
+models that need remote code must set `trust_remote_code=True` explicitly.
+
 ## [0.64.0] - 2026-10-12 — Smaller stable surface
 
 ### Changed

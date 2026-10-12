@@ -413,7 +413,9 @@ class TrajectoryGenerator:
             self.vllm_engine = LLM(
                 model=self.config.model_name,
                 revision=self.config.model_revision,
-                trust_remote_code=True,
+                trust_remote_code=bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 dtype="float16" if self.config.fp16 else "bfloat16",
                 gpu_memory_utilization=0.6,  # Reserve memory for training
             )
@@ -555,7 +557,9 @@ class ModelManager:
 
             self.tokenizer = tokenizer_cls.from_pretrained(
                 self.config.model_name,
-                trust_remote_code=True,
+                trust_remote_code=bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 padding_side="left",  # Important for generation
                 revision=self.config.model_revision,
             )
@@ -571,7 +575,9 @@ class ModelManager:
                     else (torch.bfloat16 if self.config.bf16 else torch.float32)
                 ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
-                "trust_remote_code": True,
+                "trust_remote_code": bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 "revision": self.config.model_revision,
             }
 

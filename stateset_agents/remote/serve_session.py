@@ -64,6 +64,8 @@ _POD_PREFIX = "stateset-serve-"
 _REMOTE_ADAPTER_DIR = f"{_REMOTE_WORKDIR}/adapter"
 _REMOTE_ADAPTER_TAR = f"{_REMOTE_WORKDIR}/adapter.tar.gz"
 _REMOTE_KEY_FILE = f"{_REMOTE_WORKDIR}/.runpod_key"
+# vLLM reads its bearer token from VLLM_API_KEY; keep it off the command line.
+_REMOTE_VLLM_KEY_FILE = f"{_REMOTE_WORKDIR}/.vllm_api_key"
 _REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
 _REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
 _VLLM_PORT = 8000
@@ -568,19 +570,20 @@ class RemoteServeSession:
         """The launch line: vLLM's built-in OpenAI-compatible server.
 
         ``vllm serve`` binds 0.0.0.0:8000 with ``/v1`` chat/completions
-        endpoints, requiring ``Authorization: Bearer <token>`` because of
-        ``--api-key``. With adapters, ``--enable-lora`` registers each as a
+        endpoints, requiring ``Authorization: Bearer <token>``. The token is
+        exported as ``VLLM_API_KEY`` from a 0600 secret file, so it never
+        appears on a command line visible in ``ps``. With adapters, ``--enable-lora`` registers each as a
         served model under its own name — request any of them (or the base)
         via the ``model`` field, which is how A/B comparison works.
         """
         parts = [
+            f'VLLM_API_KEY="$(cat {shlex.quote(_REMOTE_VLLM_KEY_FILE)})"',
             "nohup",
             "vllm",
             "serve",
             shlex.quote(model_path or base_model),
             "--host 0.0.0.0",
             f"--port {_VLLM_PORT}",
-            f"--api-key {shlex.quote(self.token)}",
         ]
         if model_path is not None:
             # A merged checkpoint serves under the API name "adapter" so
@@ -832,6 +835,7 @@ class RemoteServeSession:
                 )
             else:
                 launch = self._vllm_command(base_model, list(all_adapters))
+            ssh.upload_secret(str(self.token), _REMOTE_VLLM_KEY_FILE)
             self._run_checked(ssh, launch)
             self._await_server_ready(ssh)
             if all_adapters and not merge:
@@ -876,7 +880,6 @@ class RemoteServeSession:
             shlex.quote(base_model),
             "--host 0.0.0.0",
             f"--port {_VLLM_PORT}",
-            f"--api-key {shlex.quote(self.token)}",
         ]
         engine_args = list(self.vllm_args)
         if gpu_count > 1 and not any(
@@ -893,12 +896,16 @@ class RemoteServeSession:
             f"exec {' '.join(launch_parts)} >{_DIRECT_LOG_FILE} 2>&1"
         )
         volume_args = self._network_volume_args(api, network_volume_id)
-        env = {}
+        # vLLM reads its bearer token from VLLM_API_KEY, so it stays out of
+        # the container's command line.
+        env = {"VLLM_API_KEY": str(self.token)}
         if network_volume_id:
-            env = {
-                "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
-                "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
-            }
+            env.update(
+                {
+                    "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
+                    "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
+                }
+            )
         self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
         pod = api.create_pod(
             name=self.pod_name,
@@ -955,8 +962,8 @@ class RemoteServeSession:
 
     def _direct_log_server_source(self) -> str:
         """A tiny Bearer-protected endpoint serving only the last 64 KiB."""
-        return f"""import http.server
-TOKEN = {self.token!r}
+        return f"""import http.server, os
+TOKEN = os.environ["VLLM_API_KEY"]
 LOG = {_DIRECT_LOG_FILE!r}
 
 class Handler(http.server.BaseHTTPRequestHandler):

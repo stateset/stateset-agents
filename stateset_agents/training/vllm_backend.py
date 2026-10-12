@@ -115,8 +115,8 @@ class VLLMConfig:
     # Seed for reproducibility
     seed: int | None = None
 
-    # Trust remote code (for custom models)
-    trust_remote_code: bool = True
+    # Run repo-shipped model code; only for trusted, non-native architectures
+    trust_remote_code: bool = False
 
     # Keep the vLLM V1 engine core in this process (VLLM_ENABLE_V1_MULTIPROCESSING=0)
     # so ``sync_weights`` can hand tensors straight to the engine's model after
