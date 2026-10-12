@@ -281,6 +281,41 @@ class ConservativeQLearning:
 
         self.training_step = 0
 
+    def _bellman_target(
+        self,
+        rewards: torch.Tensor,
+        next_states: torch.Tensor,
+        dones: torch.Tensor,
+        next_actions: torch.Tensor | None = None,
+    ) -> torch.Tensor:
+        """Clipped double-Q Bellman target from next-state actions.
+
+        Uses the dataset's next actions when given (SARSA-style backup);
+        otherwise a soft maximum over the uniform action proposals the CQL
+        penalty uses, ``tau * (logsumexp(Q(s', a_j) / tau) - log N)``. The
+        current action is never reused: ``Q(s', a_t)`` values repeating a_t.
+        """
+        with torch.no_grad():
+            if next_actions is not None:
+                next_q = torch.min(
+                    self.q1_target(next_states, next_actions),
+                    self.q2_target(next_states, next_actions),
+                )
+            else:
+                batch_size = next_states.shape[0]
+                n = int(self.config.num_random_actions)
+                proposals = torch.empty(
+                    batch_size * n, self.action_dim, device=next_states.device
+                ).uniform_(-1, 1)
+                repeated = next_states.repeat_interleave(n, dim=0)
+                q = torch.min(
+                    self.q1_target(repeated, proposals),
+                    self.q2_target(repeated, proposals),
+                ).view(batch_size, n, 1)
+                tau = self.config.temperature
+                next_q = tau * (torch.logsumexp(q / tau, dim=1) - math.log(n))
+            return rewards + (1 - dones) * self.config.discount_factor * next_q
+
     def _compute_cql_loss(
         self,
         states: torch.Tensor,
@@ -323,8 +358,10 @@ class ConservativeQLearning:
         q2_random = q2_random.view(batch_size, self.config.num_random_actions, 1)
 
         # Logsumexp for soft maximum
-        q1_logsumexp = torch.logsumexp(q1_random / self.config.temperature, dim=1)
-        q2_logsumexp = torch.logsumexp(q2_random / self.config.temperature, dim=1)
+        # CQL(H) soft maximum: tau * logsumexp(Q / tau).
+        tau = self.config.temperature
+        q1_logsumexp = tau * torch.logsumexp(q1_random / tau, dim=1)
+        q2_logsumexp = tau * torch.logsumexp(q2_random / tau, dim=1)
 
         # CQL loss: penalize high Q-values for random actions
         # and encourage correct Q-values for dataset actions
@@ -340,6 +377,7 @@ class ConservativeQLearning:
         rewards: torch.Tensor,
         next_states: torch.Tensor,
         dones: torch.Tensor,
+        next_actions: torch.Tensor | None = None,
     ) -> dict[str, float]:
         """
         Perform one training step.
@@ -350,19 +388,12 @@ class ConservativeQLearning:
             rewards: [batch_size, 1]
             next_states: [batch_size, state_dim]
             dones: [batch_size, 1]
+            next_actions: Optional dataset actions taken in ``next_states``
 
         Returns:
             Dictionary of training metrics
         """
-        # Compute target Q-values
-        with torch.no_grad():
-            # For next states, we need next actions
-            # In offline RL, we typically use dataset actions or policy actions
-            # Here we'll use a simplified approach with current actions
-            next_q1 = self.q1_target(next_states, actions)
-            next_q2 = self.q2_target(next_states, actions)
-            next_q = torch.min(next_q1, next_q2)
-            target_q = rewards + (1 - dones) * self.config.discount_factor * next_q
+        target_q = self._bellman_target(rewards, next_states, dones, next_actions)
 
         # Current Q-values
         current_q1 = self.q1(states, actions)

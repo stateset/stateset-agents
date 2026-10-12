@@ -35,6 +35,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.chat_masking import assistant_token_mask
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -218,19 +219,68 @@ def _trust_remote_code(model_name: str) -> bool:
     )
 
 
+def _row_tools(row: dict[str, Any]) -> list[dict[str, Any]] | None:
+    tools = row.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list) or not all(isinstance(t, dict) for t in tools)
+    ):
+        raise ValueError("SFT row 'tools' must be a list of tool schema objects.")
+    return tools
+
+
 def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     """Render before Arrow conversion so heterogeneous tool schemas stay intact."""
     kwargs: dict[str, Any] = {}
-    if row.get("tools") is not None:
-        if not isinstance(row["tools"], list) or not all(
-            isinstance(tool, dict) for tool in row["tools"]
-        ):
-            raise ValueError("SFT row 'tools' must be a list of tool schema objects.")
-        kwargs["tools"] = row["tools"]
+    tools = _row_tools(row)
+    if tools is not None:
+        kwargs["tools"] = tools
     return {
         "text": tokenizer.apply_chat_template(
             row["messages"], tokenize=False, add_generation_prompt=False, **kwargs
         )
+    }
+
+
+_warned_unmasked_sft = False
+
+
+def tokenize_sft_row(
+    tokenizer: Any, row: dict[str, Any], max_length: int
+) -> dict[str, list[int]] | None:
+    """Tokenize one chat row with labels on assistant tokens only.
+
+    System prompts, user turns and tool results are context, not targets
+    (training on them teaches the model to write its own tool outputs).
+    Truncation keeps the first ``max_length`` tokens; a row with no supervised
+    token left is dropped (``None``). Templates whose renders rewrite earlier
+    turns fall back to full-sequence labels with a one-time warning.
+    """
+    global _warned_unmasked_sft
+    tools = _row_tools(row)
+    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
+    if masked is None:
+        if not _warned_unmasked_sft:
+            logger.warning(
+                "Chat template rewrites earlier turns; SFT labels fall back to "
+                "every token for affected rows."
+            )
+            _warned_unmasked_sft = True
+        text = _render_sft_row(tokenizer, row)["text"]
+        ids = list(
+            tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+        )
+        assistant = [True] * len(ids)
+    else:
+        ids, assistant = masked
+    ids, assistant = ids[:max_length], assistant[:max_length]
+    if not any(assistant):
+        return None
+    # Real EOS labels survive even when EOS doubles as padding: the collator
+    # pads labels with -100 by position, not token id.
+    return {
+        "input_ids": ids,
+        "attention_mask": [1] * len(ids),
+        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
     }
 
 
@@ -810,21 +860,21 @@ def run_sft(
 
     # Render Python records directly: Arrow otherwise unifies different tool
     # schemas/argument objects and inserts null fields into the conversations.
-    dataset = Dataset.from_list([_render_sft_row(tokenizer, row) for row in rows])
-
-    def tokenize(row: dict[str, Any]) -> dict[str, Any]:
-        encoded = tokenizer(
-            row["text"],
-            truncation=True,
-            max_length=max_length,
-            padding=False,
-            add_special_tokens=False,
+    tokenized = [tokenize_sft_row(tokenizer, row, max_length) for row in rows]
+    records = [record for record in tokenized if record is not None]
+    if len(records) < len(tokenized):
+        logger.warning(
+            "Dropped %d of %d SFT rows whose assistant tokens were truncated "
+            "away at max_length=%d.",
+            len(tokenized) - len(records),
+            len(tokenized),
+            max_length,
         )
-        # Keep real EOS labels even when EOS doubles as the padding token.
-        # The collator pads these labels with -100 by position, not token ID.
-        return {**encoded, "labels": list(encoded["input_ids"])}
-
-    dataset = dataset.map(tokenize, remove_columns=["text"])
+    if not records:
+        raise ValueError(
+            f"No SFT row keeps an assistant token within max_length={max_length}."
+        )
+    dataset = Dataset.from_list(records)
 
     args = build_training_arguments(
         TrainingArguments,

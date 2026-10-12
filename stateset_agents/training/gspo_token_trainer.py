@@ -25,6 +25,7 @@ from .gspo_generation import (
     _get_model_device,
     build_scoring_text,
     render_prompt_for_scoring,
+    scoring_prompt_length,
 )
 from .gspo_trainer import (
     GSPOConfig,
@@ -232,14 +233,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             rendered_prompt = render_prompt_for_scoring(
                 self.tokenizer, query, system_prompt
             )
-            prompt_tokens = self.tokenizer(
-                rendered_prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self.config.max_prompt_length,
-                add_special_tokens=False,
-            )
-            prompt_length = int(prompt_tokens["input_ids"].shape[1])
+            prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
 
             sequence_lengths_list = []
             token_log_probs_list = []
@@ -250,8 +244,7 @@ class GSPOTokenTrainer(GSPOTrainer):
                     full_text,
                     return_tensors="pt",
                     truncation=True,
-                    max_length=self.config.max_prompt_length
-                    + self.config.max_completion_length,
+                    max_length=prompt_length + self.config.max_completion_length,
                     add_special_tokens=False,
                 )
                 if model_device is not None and hasattr(inputs, "to"):

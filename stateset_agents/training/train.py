@@ -3,6 +3,7 @@ High-level training interface for GRPO Agent Framework
 """
 
 import asyncio
+import difflib
 import logging
 from enum import Enum
 from typing import Any, cast
@@ -53,7 +54,9 @@ async def train(
     dataset: Any | None = None,
     dataset_path: str | None = None,
     uncertainty_weighted: bool = False,
-    **kwargs,
+    objective: str | None = None,
+    objective_overrides: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> Agent:
     """
     High-level training function for agents
@@ -73,11 +76,32 @@ async def train(
         dataset_path: Path to JSONL dataset (loaded automatically if dataset is None)
         uncertainty_weighted: Wrap reward_fn with Bayesian uncertainty estimates
             to down-weight low-confidence rewards during training
-        **kwargs: Additional arguments
+        objective: Policy objective preset name (e.g. "dapo", "gspo", "cispo");
+            see ``stateset_agents.training.objectives.OBJECTIVES``
+        objective_overrides: Field overrides for the selected objective
+        **kwargs: ``TrainingConfig`` fields (e.g. ``learning_rate=1e-5``),
+            merged with ``config_overrides``. Unknown names raise ``TypeError``.
 
     Returns:
         Trained agent
     """
+
+    valid_modes = {mode.value for mode in TrainingMode}
+    if training_mode not in valid_modes:
+        raise ValueError(
+            f"training_mode must be one of {sorted(valid_modes)}, "
+            f"got {training_mode!r}"
+        )
+
+    config = _build_training_config(
+        profile=profile,
+        num_episodes=num_episodes,
+        config_overrides=config_overrides,
+        resume_from_checkpoint=resume_from_checkpoint,
+        objective=objective,
+        objective_overrides=objective_overrides,
+        extra_config=kwargs,
+    )
 
     logger.info(f"Starting training with profile: {profile}")
 
@@ -89,17 +113,6 @@ async def train(
             training_mode = (
                 "multi_turn" if isinstance(agent, MultiTurnAgent) else "single_turn"
             )
-
-    # Create training configuration
-    merged_overrides = dict(config_overrides or {})
-    if resume_from_checkpoint is not None:
-        merged_overrides["resume_from_checkpoint"] = resume_from_checkpoint
-
-    config = TrainingConfig.from_profile(
-        profile=TrainingProfile(profile),
-        num_episodes=num_episodes,
-        **merged_overrides,
-    )
 
     # Set up reward function
     if reward_fn is None:
@@ -162,6 +175,66 @@ async def train(
         logger.info(f"Trained agent saved to {save_path}")
 
     return trained_agent
+
+
+def _build_training_config(
+    *,
+    profile: str,
+    num_episodes: int,
+    config_overrides: dict[str, Any] | None,
+    resume_from_checkpoint: str | None,
+    objective: str | None,
+    objective_overrides: dict[str, Any] | None,
+    extra_config: dict[str, Any],
+) -> TrainingConfig:
+    """Merge every ``train()`` config source, rejecting unknown or conflicting keys."""
+    field_names = set(TrainingConfig.__dataclass_fields__)
+    unknown = sorted(set(extra_config) - field_names)
+    if unknown:
+        hints = []
+        for name in unknown:
+            close = difflib.get_close_matches(name, field_names, n=1)
+            hints.append(
+                f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else "")
+            )
+        raise TypeError(
+            "train() got unexpected keyword argument(s): " + ", ".join(hints)
+        )
+
+    merged = dict(config_overrides or {})
+    named = {
+        "resume_from_checkpoint": resume_from_checkpoint,
+        "objective": objective,
+        "objective_overrides": objective_overrides,
+    }
+    sources = [
+        (name, value) for name, value in named.items() if value is not None
+    ] + list(extra_config.items())
+    for name, value in sources:
+        if name in merged and merged[name] != value:
+            raise TypeError(
+                f"train() got conflicting values for {name!r}: "
+                f"{merged[name]!r} and {value!r}"
+            )
+        merged[name] = value
+    if "num_episodes" in merged:
+        raise TypeError(
+            "pass num_episodes as train()'s own argument, not as a config override"
+        )
+    if merged.get("objective") is not None:
+        from .objectives import OBJECTIVES
+
+        if merged["objective"] not in OBJECTIVES:
+            raise ValueError(
+                f"objective {merged['objective']!r} is not a known preset; "
+                f"expected one of: {', '.join(sorted(OBJECTIVES))}"
+            )
+
+    return TrainingConfig.from_profile(
+        profile=TrainingProfile(profile),
+        num_episodes=num_episodes,
+        **merged,
+    )
 
 
 def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:

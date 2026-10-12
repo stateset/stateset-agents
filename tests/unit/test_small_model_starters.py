@@ -362,9 +362,17 @@ async def test_native_architecture_sft_chat_data_and_agent_reload(
         visible = batch["attention_mask"].bool()
         assert (~visible).any(), "Unequal-length conversations must exercise padding"
         assert (batch["labels"][~visible] == -100).all()
+        # Only the assistant reply and its EOS are supervised; the prompt and
+        # user turn are context.
+        supervised = batch["labels"] != -100
         torch.testing.assert_close(
-            batch["labels"][visible], batch["input_ids"][visible]
+            batch["labels"][supervised], batch["input_ids"][supervised]
         )
+        for row, row_mask, answer in zip(
+            batch["input_ids"], supervised, ["hello", "hello there"], strict=True
+        ):
+            decoded = tokenizer.decode(row[row_mask]).replace(" ", "")
+            assert decoded == (answer + tokenizer.eos_token).replace(" ", "")
         self.before = {
             n: p.detach().clone()
             for n, p in self.model.named_parameters()

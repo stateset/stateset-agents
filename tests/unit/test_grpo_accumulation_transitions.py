@@ -241,3 +241,60 @@ async def test_invalid_pending_window_cannot_contaminate_inner_updates(
         assert trainer.global_step == trainer.agent.sync_rollout_backend.call_count == 2
     assert trainer._grad_accum_step == 0
     assert model.weight.grad is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["single", "multi"])
+async def test_old_policy_snapshot_uses_the_loss_precision(monkeypatch, tmp_path, kind):
+    """Under AMP the inner-update losses run in autocast; the frozen old-policy
+    log-probs must too, or the first inner ratio is not 1 by precision alone."""
+    model, optimizer, scheduler, scaler = components(True)
+    module = single if kind == "single" else multi
+    trainer_type = (
+        single.SingleTurnGRPOTrainer if kind == "single" else multi.MultiTurnGRPOTrainer
+    )
+    trainer = trainer_type(
+        SimpleNamespace(model=model, sync_rollout_backend=MagicMock(return_value=True)),
+        SimpleNamespace(
+            reset=AsyncMock(return_value={"prompt": "hello"}),
+            step=AsyncMock(return_value={"done": True, "reward": 1.0}),
+        ),
+        config=SimpleNamespace(
+            output_dir=str(tmp_path),
+            num_episodes=1,
+            max_steps_per_episode=1,
+            num_gradient_updates=2,
+            gradient_accumulation_steps=1,
+            max_grad_norm=10.0,
+            fp16=True,
+        ),
+    )
+    trainer.optimizer, trainer.lr_scheduler, trainer.scaler = (
+        optimizer,
+        scheduler,
+        scaler,
+    )
+    trainer._setup_scheduler = MagicMock()
+    trainer._resolve_task_id = lambda _: None
+    trainer._maybe_handle_task_switch = MagicMock()
+    group = SimpleNamespace(path="token", target=0.5, rewards=[0, 1])
+    seen = {"snapshot": [], "loss": []}
+
+    def old_policy(batch, *args):
+        seen["snapshot"].append(torch.is_autocast_enabled("cpu"))
+        return [model.weight.detach().clone()]
+
+    def loss(trajectory_groups, **kwargs):
+        seen["loss"].append(torch.is_autocast_enabled("cpu"))
+        return {"total_loss": objective(model, 0.5, False), "path": "token"}
+
+    monkeypatch.setattr(module, "compute_token_old_logprobs", old_policy)
+    if kind == "single":
+        monkeypatch.setattr(module, "compute_grpo_loss", loss)
+        trainer._generate_trajectory_group = AsyncMock(return_value=(group, "a"))
+        await trainer.train()
+    else:
+        trainer.compute_grpo_loss = loss
+        await trainer.training_step([group])
+    assert seen["loss"] and set(seen["loss"]) == {True}
+    assert seen["snapshot"] == [True]

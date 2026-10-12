@@ -678,29 +678,37 @@ class DAPOTrainer:
             # Generate group
             group_responses = await self.generate_group_responses(prompt)
 
-            # Compute accuracy
-            accuracy = self.compute_group_accuracy(prompt, group_responses)
-
-            # Check if should include (dynamic sampling filter)
-            if self.config.use_dynamic_sampling:
-                if not self.sampling_buffer.should_include(accuracy):
-                    prompts_filtered += 1
-                    continue
-
-            # Compute rewards and advantages
-            rewards = []
+            # Score the group first: without a verifier, accuracy and the
+            # dynamic-sampling filter are both derived from these rewards.
+            base_rewards = []
             for resp in group_responses:
                 base_reward = await self._compute_reward(prompt, resp["response"])
                 resp["reward"] = base_reward
+                base_rewards.append(base_reward)
 
-                # Apply overlong reward shaping
+            accuracy = self.compute_group_accuracy(prompt, group_responses)
+
+            # Dynamic sampling (DAPO §3.2): drop groups that carry no
+            # group-relative signal. A verifier gives binary correctness; with
+            # only rewards, a group is uninformative when every reward is equal.
+            if self.config.use_dynamic_sampling:
+                if self.verifier_fn is not None:
+                    informative = self.sampling_buffer.should_include(accuracy)
+                else:
+                    informative = max(base_rewards) - min(base_rewards) > 1e-8
+                if not informative:
+                    prompts_filtered += 1
+                    continue
+
+            # Apply overlong reward shaping
+            rewards = []
+            for resp, base_reward in zip(group_responses, base_rewards, strict=True):
                 if self.config.use_overlong_shaping:
                     shaped_reward = self.reward_shaper.shape_reward(
                         base_reward, resp["sequence_length"]
                     )
                 else:
                     shaped_reward = base_reward
-
                 rewards.append(shaped_reward)
 
             rewards_tensor = torch.tensor(rewards, device=self.device)
@@ -747,12 +755,12 @@ class DAPOTrainer:
         Execute one DAPO training step.
 
         1. Collect samples with dynamic sampling
-        2. For each mini-batch:
-           a. Compute current policy log probs
-           b. Compute importance ratios
+        2. For each of ``num_gradient_updates`` inner updates:
+           a. Compute current policy log probs for every group
+           b. Compute importance ratios against the rollout-time policy
            c. Apply Clip-Higher
-           d. Compute token-level loss
-           e. Update model
+           d. Accumulate the token-level loss over the whole batch
+           e. Take one optimizer step
         """
         self.model.train()
 
@@ -771,16 +779,15 @@ class DAPOTrainer:
         all_seq_lengths: list[int] = []
         num_updates = 0
 
-        # Process samples
+        # Freeze each group's batch tensors and old log-probs once.
+        prepared = []
         for sample in samples:
             responses = sample["responses"]
-            advantages = sample["advantages"]
 
             all_rewards.extend(sample["rewards"])
             all_accuracies.append(sample["accuracy"])
             all_seq_lengths.extend([r["sequence_length"] for r in responses])
 
-            # Prepare batch
             (
                 batch_input_ids,
                 batch_attention_mask,
@@ -797,38 +804,62 @@ class DAPOTrainer:
                     old_token_log_probs, _ = self.compute_token_log_probs(
                         batch_input_ids, batch_attention_mask, batch_response_mask
                     )
-            old_token_log_probs = old_token_log_probs.detach()
-
-            # Multiple gradient updates per rollout (mu updates)
-            for _ in range(max(1, self.config.num_gradient_updates)):
-                # Compute current log probs
-                current_token_log_probs, token_counts = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask, batch_response_mask
+            prepared.append(
+                (
+                    batch_input_ids,
+                    batch_attention_mask,
+                    batch_response_mask,
+                    old_token_log_probs.detach(),
+                    sample["advantages"],
                 )
+            )
 
+        # The objective aggregates over the whole batch (DAPO: token-mean over
+        # every response token of every group). Each group's loss is the
+        # aggregate over its own rows, so weighting it by its share of the
+        # batch's tokens (or rows) makes the accumulated gradient exactly the
+        # batch-level loss, with one optimizer step per inner update.
+        by_tokens = self._objective.aggregate == "token_mean"
+        sizes = [
+            float(p[2][:, 1:].sum()) if by_tokens else float(p[2].shape[0])
+            for p in prepared
+        ]
+        total_size = sum(sizes)
+
+        # Multiple gradient updates per rollout batch (mu updates)
+        for _ in range(max(1, self.config.num_gradient_updates)):
+            self.optimizer.zero_grad()
+            batch_loss = 0.0
+            for (ids, attn, resp_mask, old_lp, advantages), size in zip(
+                prepared, sizes, strict=True
+            ):
+                if size <= 0:
+                    continue
+                current_token_log_probs, _ = self.compute_token_log_probs(
+                    ids, attn, resp_mask
+                )
                 # Clip-Higher surrogate + aggregation through the objective.
                 loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
                     current_token_log_probs,
-                    old_token_log_probs,
+                    old_lp,
                     advantages,
-                    batch_response_mask[:, 1:],  # Shift for next-token prediction
+                    resp_mask[:, 1:],  # Shift for next-token prediction
                 )
+                weighted = loss * (size / total_size)
+                weighted.backward()
+                batch_loss += weighted.item()
 
-                # Backward
-                self.optimizer.zero_grad()
-                loss.backward()
+            # Gradient clipping
+            _params = list(self.model.parameters())
+            if _params:
+                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
 
-                # Gradient clipping
-                _params = list(self.model.parameters())
-                if _params:
-                    torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
+            # Update
+            self.optimizer.step()
+            self.scheduler.step()
 
-                # Update
-                self.optimizer.step()
-                self.scheduler.step()
-
-                total_loss += loss.item()
-                num_updates += 1
+            total_loss += batch_loss
+            num_updates += 1
 
         self.global_step += 1
 

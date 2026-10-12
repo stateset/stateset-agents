@@ -11,6 +11,7 @@ Reference: https://arxiv.org/abs/2507.18071v2
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib.util
 import logging
 import math
@@ -44,6 +45,7 @@ from .gspo_generation import (
     _get_model_device,
     build_scoring_text,
     render_prompt_for_scoring,
+    scoring_prompt_length,
 )
 from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
 
@@ -344,6 +346,14 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
+def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
+    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
+    if step < warmup_steps:
+        return float(step) / float(max(1, warmup_steps))
+    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+
+
 class GSPOTrainer:
     #: Preset evaluated when ``config.objective`` is unset; the token variant
     #: overrides this instead of reassigning ``_objective`` after ``__init__``.
@@ -393,22 +403,18 @@ class GSPOTrainer:
             )
         self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
 
-        # Scheduler — fallback to constant LR when transformers unavailable.
-        total_steps = max(
-            1, int(config.num_outer_iterations) * int(config.num_iterations)
-        )
+        # Cosine schedule over the optimizer steps actually taken: train_step
+        # makes exactly one per outer iteration. Progress is clamped so steps
+        # past the end hold the final LR (HF's cosine is periodic there and
+        # flipped the LR between full and zero on alternate steps).
+        total_steps = max(1, int(config.num_outer_iterations))
         warmup_steps = int(total_steps * float(config.warmup_ratio))
-        _load_transformers()
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer, lr_lambda=lambda step: 1.0
-            )
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.optimizer,
+            lr_lambda=functools.partial(
+                _clamped_cosine_lr, warmup_steps=warmup_steps, total_steps=total_steps
+            ),
+        )
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -612,6 +618,7 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_texts = [
             build_scoring_text(rendered_prompt, response) for response in responses
         ]
@@ -627,22 +634,13 @@ class GSPOTrainer:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=self.config.max_prompt_length
-                + self.config.max_completion_length,
+                max_length=prompt_length + self.config.max_completion_length,
                 add_special_tokens=False,
             )
         finally:
             if hasattr(self.tokenizer, "padding_side"):
                 self.tokenizer.padding_side = original_padding_side
 
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = int(prompt_tokens["input_ids"].shape[1])
         response_start_idx = max(prompt_length - 1, 0)
 
         model_device = _get_model_device(self.model)
@@ -861,24 +859,15 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_text = build_scoring_text(rendered_prompt, response)
         inputs = self.tokenizer(
             full_text,
             return_tensors="pt",
             truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
+            max_length=prompt_length + self.config.max_completion_length,
             add_special_tokens=False,
         )
-
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
 
         model_device = _get_model_device(self.ref_model)
         if model_device and hasattr(inputs, "to"):
@@ -922,6 +911,7 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_texts = [
             build_scoring_text(rendered_prompt, response) for response in responses
         ]
@@ -937,22 +927,13 @@ class GSPOTrainer:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=self.config.max_prompt_length
-                + self.config.max_completion_length,
+                max_length=prompt_length + self.config.max_completion_length,
                 add_special_tokens=False,
             )
         finally:
             if hasattr(self.tokenizer, "padding_side"):
                 self.tokenizer.padding_side = original_padding_side
 
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = int(prompt_tokens["input_ids"].shape[1])
         response_start_idx = max(prompt_length - 1, 0)
 
         model_device = _get_model_device(self.ref_model)

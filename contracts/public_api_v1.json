@@ -4510,6 +4510,16 @@
               "name": "uncertainty_weighted"
             },
             {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective_overrides"
+            },
+            {
               "kind": "VAR_KEYWORD",
               "name": "kwargs"
             }

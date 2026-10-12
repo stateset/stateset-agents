@@ -603,9 +603,15 @@ class MultiTurnGRPOTrainer:
 
         inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
         if inner > 1:
-            old_logprobs = compute_token_old_logprobs(
-                trajectory_groups, self.config, self.agent
-            )
+            # Same precision as the inner-update losses, so the first ratio is 1.
+            with (
+                amp.autocast(device_type=device_type, enabled=use_amp)
+                if amp is not None
+                else contextlib.nullcontext()
+            ):
+                old_logprobs = compute_token_old_logprobs(
+                    trajectory_groups, self.config, self.agent
+                )
             if old_logprobs is None:
                 self._warn_inner_updates_unavailable()
             else:
@@ -1037,6 +1043,9 @@ class MultiTurnGRPOTrainer:
             trainer_exceptions=MULTI_TRAINER_EXCEPTIONS,
             trusted=trusted,
         )
+        if loaded:
+            # An attached rollout engine still holds the pre-resume weights.
+            self._sync_rollout_backend()
         return loaded
 
 

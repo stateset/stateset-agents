@@ -605,19 +605,18 @@ class VAPOTrainer:
                 rewards.append(reward)
 
             # Prepare batch
-            batch_size = len(responses)
             (
                 batch_input_ids,
                 batch_attention_mask,
                 batch_response_mask,
             ) = build_group_batch(responses, self.device)
             assert batch_response_mask is not None
-            max_len = batch_input_ids.shape[1]
 
-            # Monte-Carlo return targets (same reward for all tokens in response)
+            # Monte-Carlo return targets in the action frame (see train_step)
             rewards_tensor = torch.tensor(rewards, device=self.device)
-            mc_returns = rewards_tensor.unsqueeze(1).expand(batch_size, max_len)
-            mc_returns = mc_returns * batch_response_mask
+            mc_returns, action_mask = self.monte_carlo_value_targets(
+                rewards_tensor, batch_response_mask
+            )
 
             # Compute values
             with torch.no_grad():
@@ -627,11 +626,12 @@ class VAPOTrainer:
 
             value_dtype = next(self.value_head.parameters()).dtype
             values = self.value_head(hidden_states.to(dtype=value_dtype)).squeeze(-1)
+            values = values[:, :-1]
 
             # Value loss (MSE)
             value_loss = F.mse_loss(
-                values * batch_response_mask, mc_returns, reduction="sum"
-            ) / batch_response_mask.sum().clamp(min=1)
+                values * action_mask, mc_returns, reduction="sum"
+            ) / action_mask.sum().clamp(min=1)
 
             # Update value network
             self.critic_optimizer.zero_grad()
@@ -645,8 +645,8 @@ class VAPOTrainer:
 
             # Compute explained variance
             with torch.no_grad():
-                var_returns = mc_returns[batch_response_mask > 0].var()
-                var_residual = (mc_returns - values)[batch_response_mask > 0].var()
+                var_returns = mc_returns[action_mask > 0].var()
+                var_residual = (mc_returns - values)[action_mask > 0].var()
                 if var_returns > 1e-8:
                     explained_var = 1 - var_residual / var_returns
                     explained_variances.append(explained_var.item())
@@ -702,6 +702,26 @@ class VAPOTrainer:
             value_loss = (value_pred - value_target) ** 2
 
         return value_loss.sum() / response_mask.sum().clamp(min=1)
+
+    def monte_carlo_value_targets(
+        self,
+        rewards: torch.Tensor,
+        response_mask: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """Discounted Monte-Carlo returns for value warmup, in the action frame.
+
+        Column ``t`` is the state that emits token ``t+1``; each response's
+        reward lands on its last action, and earlier actions see it discounted
+        by the same ``gamma`` the GAE uses. Returns ``(targets, action_mask)``,
+        both ``[batch, seq_len - 1]`` with targets zeroed outside the mask.
+        """
+        action_mask = response_mask[:, 1:]
+        token_rewards = self.build_token_rewards(rewards, action_mask)
+        dones = self.build_token_rewards(1.0, action_mask)
+        returns, _ = self.gae_computer.compute_gae(
+            token_rewards, torch.zeros_like(token_rewards), dones, 1.0
+        )
+        return returns * action_mask, action_mask
 
     def build_token_rewards(
         self,
@@ -876,20 +896,15 @@ class VAPOTrainer:
                 )
                 old_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
-            # Create reward tensor: place each episode reward on the terminal
-            # response token only (broadcasting it across every response
-            # token would inflate GAE returns).
+            # GAE runs in the shifted *action* frame shared by the log-probs,
+            # values and loss masks: column t is the action at state t that
+            # emits token t+1. The episode reward and terminal flag sit on the
+            # last action column, so the value of the post-terminal state
+            # (never trained) cannot leak into any advantage.
+            action_mask = batch_response_mask[:, 1:]
             rewards_tensor = torch.tensor(rewards, device=self.device)
-            reward_sequence = self.build_token_rewards(
-                rewards_tensor, batch_response_mask
-            )
-
-            # Terminal mask (1 at last token of each response)
-            dones = torch.zeros(batch_size, max_len, device=self.device)
-            for i, resp in enumerate(responses):
-                last_idx = resp["prompt_length"] + resp["sequence_length"] - 1
-                if last_idx < max_len:
-                    dones[i, last_idx] = 1.0
+            reward_sequence = self.build_token_rewards(rewards_tensor, action_mask)
+            dones = self.build_token_rewards(1.0, action_mask)
 
             # Compute decoupled GAE
             (
@@ -897,11 +912,11 @@ class VAPOTrainer:
                 policy_advantages,
                 returns,
             ) = self.gae_computer.compute_decoupled_gae(
-                reward_sequence, old_values, dones, sequence_lengths
+                reward_sequence, old_values[:, :-1], dones, sequence_lengths
             )
 
-            # Normalize advantages
-            policy_adv_masked = policy_advantages[batch_response_mask > 0]
+            # Normalize advantages over the actions that are actually trained
+            policy_adv_masked = policy_advantages[action_mask > 0]
             if len(policy_adv_masked) > 1:
                 policy_advantages = (policy_advantages - policy_adv_masked.mean()) / (
                     policy_adv_masked.std() + 1e-8
@@ -954,8 +969,8 @@ class VAPOTrainer:
 
                 # Shift masks for loss computation
                 shifted_response_mask = batch_response_mask[:, 1:]
-                shifted_policy_adv = rollout["policy_advantages"][:, :-1]
-                shifted_critic_adv = rollout["critic_advantages"][:, :-1]
+                shifted_policy_adv = rollout["policy_advantages"]
+                shifted_critic_adv = rollout["critic_advantages"]
                 shifted_old_values = rollout["old_values"][:, :-1]
                 shifted_values = current_values[:, :-1]
 
@@ -988,8 +1003,8 @@ class VAPOTrainer:
 
                 # Compute explained variance
                 with torch.no_grad():
-                    returns_masked = rollout["returns"][batch_response_mask > 0]
-                    values_masked = current_values[batch_response_mask > 0]
+                    returns_masked = rollout["returns"][shifted_response_mask > 0]
+                    values_masked = shifted_values[shifted_response_mask > 0]
                     if len(returns_masked) > 1:
                         var_returns = returns_masked.var()
                         var_residual = (returns_masked - values_masked).var()

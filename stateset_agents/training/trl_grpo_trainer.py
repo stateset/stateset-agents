@@ -192,6 +192,81 @@ def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, An
     return {name: value for name, value in kwargs.items() if name in parameters}
 
 
+# Presets TRL's GRPOTrainer can express, as (loss_type, importance level). The
+# pairs are verified numerically against TRL in tests/unit/test_objectives_trl_pin.py.
+_TRL_LOSS_TYPES: dict[str, tuple[str, str]] = {
+    "grpo": ("grpo", "token"),
+    "bnpo": ("bnpo", "token"),
+    "dapo": ("dapo", "token"),
+    "dr_grpo": ("dr_grpo", "token"),
+    "cispo": ("cispo", "token"),
+    "gspo": ("grpo", "sequence"),
+}
+_TRL_SCALE_REWARDS = {
+    "group_norm": "group",
+    "group_mean": "none",
+    "batch_norm": "batch",
+}
+
+
+def trl_objective_kwargs(config: Any) -> dict[str, Any]:
+    """TRL ``GRPOConfig`` fields implementing ``config.objective``.
+
+    Returns ``{}`` when no objective is selected (TRL's defaults apply). Raises
+    ``ValueError`` for presets, or overrides, that TRL cannot express rather
+    than silently training a different objective.
+    """
+    from . import objectives
+
+    name = getattr(config, "objective", None)
+    if name is None:
+        return {}
+    if name not in _TRL_LOSS_TYPES:
+        raise ValueError(
+            f"objective {name!r} has no TRL GRPOTrainer equivalent; TRL-backed "
+            f"training supports: {', '.join(sorted(_TRL_LOSS_TYPES))}"
+        )
+    obj = objectives.resolve_objective(
+        config,
+        name,
+        max_completion_length=getattr(config, "max_completion_length", None),
+    )
+    preset = objectives.OBJECTIVES[name]
+    structural = ("ratio", "clip", "aggregate", "advantage", "kl")
+    changed = [f for f in structural if getattr(obj, f) != getattr(preset, f)]
+    if changed or obj.advantage not in _TRL_SCALE_REWARDS:
+        raise ValueError(
+            f"objective_overrides change {', '.join(changed)} of {name!r}, which "
+            "TRL GRPOTrainer cannot express; use a native trainer instead"
+        )
+    loss_type, level = _TRL_LOSS_TYPES[name]
+    kwargs: dict[str, Any] = {
+        "loss_type": loss_type,
+        "importance_sampling_level": level,
+        "scale_rewards": _TRL_SCALE_REWARDS[obj.advantage],
+        "epsilon": obj.clip_low,
+        # TRL's CISPO caps the importance weight with ``epsilon_high``.
+        "epsilon_high": obj.is_cap if obj.clip == "cispo" else obj.clip_high,
+    }
+    if obj.delta is not None:
+        kwargs["delta"] = obj.delta
+    if obj.kl_bias_correction:
+        kwargs["use_bias_correction_kl"] = True
+    return kwargs
+
+
+def _supported_config_kwargs(config_cls: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Like :func:`_supported_kwargs`, but log settings the installed TRL lacks."""
+    kept = _supported_kwargs(config_cls, kwargs)
+    dropped = sorted(set(kwargs) - set(kept))
+    if dropped:
+        logger.warning(
+            "Installed TRL does not support %s; these settings are ignored.",
+            ", ".join(dropped),
+        )
+    return kept
+
+
 def _enable_input_require_grads(model: Any) -> None:
     """
     Ensure at least one checkpoint input requires gradients.
@@ -779,7 +854,10 @@ class TRLGRPOTrainerWrapper:
             "gradient_checkpointing": self.config.gradient_checkpointing,
             "seed": self.config.seed,
         }
-        return grpo_config_cls(**_supported_kwargs(grpo_config_cls, config_kwargs))
+        config_kwargs.update(trl_objective_kwargs(self.config))
+        return grpo_config_cls(
+            **_supported_config_kwargs(grpo_config_cls, config_kwargs)
+        )
 
     def train(self) -> None:
         """Run training"""

@@ -52,3 +52,37 @@ def test_ratio_is_clamped_not_inf():
     loss, frac = tr.ppo_loss(cur, old, torch.ones(1, 4), torch.ones(1, 4))
     assert torch.isfinite(loss)
     assert frac.item() == pytest.approx(1.0)
+
+
+def test_episode_reward_is_terminal_not_broadcast():
+    """A scalar episode reward lands on the last response action. Broadcasting
+    it onto every token made returns scale with response length, and padding
+    after a short response must neither earn reward nor bootstrap values."""
+    tr = _trainer()
+    tr.config.gamma = 1.0
+    tr.config.gae_lambda = 1.0
+    action_mask = torch.tensor(
+        [
+            [0.0, 1.0, 1.0, 0.0, 0.0],  # short response, then right padding
+            [0.0, 1.0, 1.0, 1.0, 1.0],
+        ]
+    )
+    old_values = torch.linspace(-0.5, 0.5, 10).reshape(2, 5)
+    advantages, returns = tr.compute_episode_advantages(
+        torch.tensor([1.0, 1.0]), action_mask, old_values
+    )
+    # gamma=1: every action's Monte-Carlo return is the episode reward itself.
+    torch.testing.assert_close(returns * action_mask, action_mask)
+    valid = advantages[action_mask > 0]
+    assert valid.mean().abs().item() < 1e-5
+    assert valid.std().item() == pytest.approx(1.0, abs=1e-4)
+
+
+def test_response_mask_excludes_padding_both_sides():
+    tr = _trainer()
+    attention = torch.tensor([[1, 1, 1, 1, 0, 0], [1, 1, 1, 1, 1, 1]])
+    mask = tr.build_response_mask(attention, torch.tensor([2, 3]), "right")
+    assert mask.tolist() == [[0, 0, 1, 1, 0, 0], [0, 0, 0, 1, 1, 1]]
+    attention = torch.tensor([[0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]])
+    mask = tr.build_response_mask(attention, torch.tensor([2, 3]), "left")
+    assert mask.tolist() == [[0, 0, 0, 0, 1, 1], [0, 0, 0, 1, 1, 1]]

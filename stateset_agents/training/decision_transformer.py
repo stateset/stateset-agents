@@ -691,23 +691,26 @@ class DecisionTransformerTrainer:
         training_data = []
 
         for traj in dataset:
-            # Embed turns if using conversation embeddings
+            # Embed turns if using conversation embeddings. One timestep per
+            # assistant turn: the state is the whole conversation before it
+            # (earlier replies included) and its return-to-go is read at that
+            # turn's index.
+            action_turns: list[int] | None = None
             if self.embedder is not None:
                 states = []
                 actions = []
+                action_turns = []
 
                 state_history = ""
-                for _i, turn in enumerate(traj.turns):
-                    if turn.role in ("user", "system"):
-                        state_history += f"{turn.role}: {turn.content}\n"
+                for i, turn in enumerate(traj.turns):
+                    if turn.role == "assistant":
                         with torch.no_grad():
                             state_emb = self.embedder.forward([state_history])
-                        states.append(state_emb.squeeze(0).cpu().numpy())
-                    elif turn.role == "assistant":
-                        with torch.no_grad():
                             action_emb = self.embedder.forward([turn.content])
+                        states.append(state_emb.squeeze(0).cpu().numpy())
                         actions.append(action_emb.squeeze(0).cpu().numpy())
-                        state_history += f"assistant: {turn.content}\n"
+                        action_turns.append(i)
+                    state_history += f"{turn.role}: {turn.content}\n"
             else:
                 # Assume pre-embedded
                 states = traj.metadata.get("state_embeddings", [])
@@ -723,13 +726,17 @@ class DecisionTransformerTrainer:
 
             # Compute returns-to-go if not present
             if traj.returns_to_go:
-                rtg = traj.returns_to_go[:min_len]
+                returns = list(traj.returns_to_go)
+            elif hasattr(traj, "compute_returns_to_go"):
+                returns = list(traj.compute_returns_to_go())
             else:
-                rtg = (
-                    traj.compute_returns_to_go()[:min_len]
-                    if hasattr(traj, "compute_returns_to_go")
-                    else [0.0] * min_len
-                )
+                returns = []
+            if action_turns is not None and len(returns) == len(traj.turns):
+                rtg = [returns[i] for i in action_turns[:min_len]]
+            elif returns:
+                rtg = returns[:min_len]
+            else:
+                rtg = [0.0] * min_len
 
             training_data.append(
                 {

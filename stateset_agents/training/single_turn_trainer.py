@@ -650,9 +650,15 @@ class SingleTurnGRPOTrainer:
                 ):
                     # PPO/DAPO-style mini-epochs against the frozen old policy,
                     # kept separate from any pending accumulated update.
-                    old_logprobs = compute_token_old_logprobs(
-                        training_groups, self.config, self.agent
-                    )
+                    # Same precision as the inner-update losses (first ratio 1).
+                    with (
+                        amp.autocast(device_type=device_type, enabled=use_amp)
+                        if amp is not None
+                        else contextlib.nullcontext()
+                    ):
+                        old_logprobs = compute_token_old_logprobs(
+                            training_groups, self.config, self.agent
+                        )
                     had_pending = bool(self._grad_accum_step % grad_accum_steps)
                     self._flush_accumulation(torch, use_amp, max_grad_norm)
                     for step_idx in range(inner):
@@ -856,4 +862,7 @@ class SingleTurnGRPOTrainer:
             logger,
             trusted=trusted,
         )
+        if loaded:
+            # An attached rollout engine still holds the pre-resume weights.
+            self._sync_rollout_backend()
         return loaded

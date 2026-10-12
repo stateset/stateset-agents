@@ -7,6 +7,94 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `train()` accepts `objective` and `objective_overrides`, and applies any
+  other `TrainingConfig` field passed as a keyword (e.g. `learning_rate=1e-5`).
+  Unknown keywords, conflicting duplicate settings, unknown objectives and
+  unknown `training_mode` values now raise instead of being silently ignored.
+
+### Fixed
+
+- Sequence-path GRPO now trains on assistant tokens only. Real tokenizers
+  return a `BatchEncoding` with an `assistant_masks` key, which the old check
+  (`dict` with `assistant_tokens_mask`) never matched, so prompts were silently
+  supervised. Templates without `{% generation %}` markers (Qwen3, Qwen3.5,
+  ChatML) now get assistant spans from prefix renders. Tokenizers without a
+  chat template fall back to role-tagged spans instead of crashing.
+- DAPO dynamic sampling no longer discards every group when no verifier is
+  set (the default): groups are scored before filtering, and without a
+  verifier only zero-signal groups (all rewards equal) are dropped. DAPO now
+  accumulates every group into one optimizer step per inner update, so its
+  token-level mean spans the whole batch as in the paper.
+- VAPO computes GAE in the shifted action frame used by its log-probs, values
+  and loss masks. The episode reward previously landed one token past the last
+  action, so policy advantages depended on a never-trained value. Value warmup
+  targets now use the same frame and discount.
+- PPO places the scalar episode reward on the last response action instead of
+  every response token, which inflated returns with length. Padding is now
+  excluded from the response mask (with left padding handled), no longer
+  bootstraps values, and is left out of advantage normalization.
+- Native GRPO inner updates snapshot old-policy log-probs under the same
+  autocast precision as the losses, so the first importance ratio is exactly 1.
+- Sequence-path GRPO skips trajectories whose replies were truncated away
+  instead of falling back to supervising the whole conversation, and its
+  entropy bonus now reads the logits that predict the supervised tokens.
+- GSPO and GSPO-token score responses against the untruncated rendered prompt.
+  Prompts longer than `max_prompt_length` previously leaked their tail into the
+  response mask (or, when very long, displaced the response entirely).
+- GSPO's cosine LR schedule is sized by optimizer steps (one per outer
+  iteration, not multiplied by `num_iterations`) and holds its final value past
+  the end instead of oscillating between full and zero learning rate.
+- With `rescore_old_log_probs=False`, GSPO's rollout-time old log-probs now
+  cover exactly the tokens it scores: a trailing EOS is dropped, and HF or vLLM
+  sampler log-probs are used only when the sampled ids round-trip to the scored
+  text (otherwise the rollout is rescored). The EOS term previously biased the
+  sequence ratio by about log p(EOS) / |y|, far outside GSPO's clip band.
+- Batched group generation stops each row independently. The stop-string
+  criterion read only row 0 and returned one flag for the whole batch, so one
+  sample emitting `\n\n` or `User:` truncated all of its siblings while stop
+  strings in other rows were ignored. Padding after a stop string is no longer
+  recorded as a sampled EOS when `pad_token_id == eos_token_id`.
+- Restoring a trainer checkpoint now syncs an attached rollout engine, which
+  otherwise kept serving pre-resume weights until the next optimizer step.
+- `CalibratedRewardFunction` normalizes against statistics frozen between
+  `calibration_interval` refreshes (identity before the first one) instead of
+  updating them on every call, which split ties and inverted rankings within
+  a group.
+- Over-long generation prompts are truncated from the left, keeping the latest
+  user turn and the assistant cue, and a warning is logged.
+- The per-token GRPO path honours `baseline_type="group_median"` and
+  `"global_mean"` (with the trainer's running reward mean) through the same
+  helper as the sequence path; it previously fell back to group normalization.
+- CQL bootstraps from next-state actions: dataset `next_actions` when passed to
+  `train_step`, otherwise a soft maximum over sampled actions. It previously
+  evaluated `Q(s', a_t)` with the current action. The CQL penalty now scales
+  `logsumexp(Q / tau)` by `tau`, as in CQL(H).
+- River/Tinker SFT datums are the single full render of each conversation,
+  weighted on assistant spans located in that render. Splicing separately
+  tokenized prefix renders corrupted every multi-turn row for Qwen3/Qwen3.5
+  (which add a `<think>` stub to the final assistant turn only). Tool-calling
+  fields and row `tools` are now kept instead of being stripped or dropping
+  the row. Assistant-span logic is shared in `stateset_agents.core.chat_masking`.
+- Local and industry SFT label assistant tokens only (system prompts, user
+  turns and tool results are context) and drop rows whose answer is truncated
+  away at `max_length`, instead of training on every token.
+- `ConversationDataset.split`, `filter_by_quality` and `filter_by_length` no
+  longer re-normalize the shared trajectories in place (which changed the
+  parent and rescaled each subset by its own statistics). `filter_by_quality`
+  compares raw total rewards, and `split` no longer reseeds the global RNG.
+- The Decision Transformer pairs each assistant action with the full
+  conversation before it and the return-to-go at its own turn; states and
+  returns were previously offset from their actions.
+- `build_rl_batch` uses the same pre-shifted label layout as the live
+  `build_group_rl_datums` path; its values were one position late.
+- TRL-backed GRPO now honours `TrainingConfig.objective`: `grpo`, `bnpo`,
+  `dapo`, `dr_grpo`, `cispo` and `gspo` map to TRL's `loss_type`, importance
+  level, clip range and reward scaling; presets or overrides TRL cannot express
+  raise. Settings the installed TRL no longer accepts (e.g. `max_prompt_length`
+  on TRL 1.12) are logged instead of dropped silently.
+
 ## [0.61.0] - 2026-10-08 — River RL reliability and training integrity
 
 ### Added

@@ -5,6 +5,7 @@ Ensures reward functions produce consistent, well-scaled scores across different
 domains and training stages.
 """
 
+import copy
 import logging
 from collections import deque
 from dataclasses import dataclass, field
@@ -116,8 +117,17 @@ class RewardNormalizer:
         values = list(self.reward_buffer)
         self.stats.update(values)
 
-    def normalize(self, reward: float) -> float:
-        """Normalize a reward value"""
+    def normalize(self, reward: float, stats: RewardStatistics | None = None) -> float:
+        """Normalize a reward value (with ``stats``, or the running statistics)."""
+        live = self.stats
+        if stats is not None:
+            self.stats = stats
+        try:
+            return self._normalize(reward)
+        finally:
+            self.stats = live
+
+    def _normalize(self, reward: float) -> float:
         if self.stats.count == 0:
             return reward
 
@@ -196,6 +206,12 @@ class CalibratedRewardFunction(RewardFunction):
         self.calibration_interval = calibration_interval
 
         self.call_count = 0
+        # Statistics used for normalization, refreshed every
+        # ``calibration_interval`` calls. Normalizing against statistics that
+        # change on every call made scores depend on call order (ties split,
+        # rankings inverted within a GRPO group); a frozen snapshot is one fixed
+        # monotone transform. Empty until the first refresh, i.e. identity.
+        self._frozen_stats = RewardStatistics()
 
     async def compute_reward(
         self,
@@ -206,14 +222,21 @@ class CalibratedRewardFunction(RewardFunction):
         # Get base reward
         base_result = await self.base_reward_fn.compute_reward(turns, context)
 
-        # Add to calibration buffer
         if self.auto_calibrate:
+            calibrated_score = self.normalizer.normalize(
+                base_result.score, stats=self._frozen_stats
+            )
             self.normalizer.add_reward(base_result.score)
-
-        # Normalize reward
-        calibrated_score = self.normalizer.normalize(base_result.score)
+        else:
+            calibrated_score = self.normalizer.normalize(base_result.score)
 
         self.call_count += 1
+        if (
+            self.auto_calibrate
+            and self.call_count % max(1, int(self.calibration_interval)) == 0
+        ):
+            self.normalizer._update_statistics()
+            self._frozen_stats = copy.deepcopy(self.normalizer.stats)
 
         # Update breakdown
         calibrated_breakdown: dict[str, Any] = base_result.breakdown.copy()
