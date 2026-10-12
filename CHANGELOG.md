@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `TrainingConfig.disable_dropout` (keyword-only, default off as in TRL's
+  GRPO): zeroes every dropout module, including LoRA dropout, in the policy
+  for every RL trainer, so separately scored old/reference log-probs match the
+  learner's forward pass.
+
 ### Fixed
 
 - **Training loop cadence**: with gradient accumulation, multi-turn evaluation,
@@ -90,6 +97,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `resume_from_checkpoint`, rounds the generation batch to a multiple of
   `num_generations` (the customer-service profile failed TRL validation),
   and uses `warmup_ratio`.
+- **HPO**: GRPO trials initialize the trainer and score a real post-training
+  evaluation (every trial scored -inf before, making "best" arbitrary); trials
+  start from the same restored weights with per-trial seeds; failed trials get
+  the direction-aware worst value in Ray/W&B; Optuna pruning is wired; log-scale
+  dimensions are honoured. auto_research treats a missing metric as a crash.
+- **CLI and config mapping**: `train --config` forwards every `training:` key
+  (unknown keys are rejected) and an explicit `--profile` beats the file;
+  offline/hybrid `train()` maps the fields the offline trainer reads, rejects
+  the rest, and saves to `save_path`; `train_customer_service_with_gspo` honours
+  `num_episodes`; an explicit `--use-8bit` disables a profile's 4-bit default;
+  the `batch_size` alias no longer overrides later changes; the API rejects
+  unknown training profiles with 422; `flywheel` rejects loss knobs that do not
+  apply to the chosen algorithm.
+- **SFT**: River SFT steps once per accumulation window and records it;
+  Tinker SFT shuffles each epoch; `merge_adapter` keeps sharded models in place
+  and accepts `revision`.
 
 ## [0.62.1] - 2026-10-11 — Publishable release gate
 
