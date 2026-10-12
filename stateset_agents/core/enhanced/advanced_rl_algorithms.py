@@ -467,6 +467,35 @@ class DPOTrainer:
 
         return reference_model.to(self.device)
 
+    def _encode_pair(self, prompt: str, response: str) -> tuple[Any, int]:
+        """Token ids of ``prompt`` + ``response`` and where the response starts.
+
+        Prompt and response are tokenized separately so the boundary is exact;
+        the response is truncated to fit ``max_length``.
+        """
+        prompt_ids = list(self.tokenizer(prompt)["input_ids"])
+        response_ids = list(
+            self.tokenizer(" " + response, add_special_tokens=False)["input_ids"]
+        )
+        room = max(self.config.max_length - len(prompt_ids), 0)
+        ids = prompt_ids + response_ids[:room]
+        tensor = torch.tensor([ids], dtype=torch.long, device=self.device)
+        return tensor, len(prompt_ids)
+
+    @staticmethod
+    def _response_log_prob(model: Any, input_ids: Any, start: int) -> Any:
+        """Sum of log pi(token) over the response tokens (shifted labels)."""
+        logits = model(input_ids=input_ids).logits[:, :-1, :]
+        labels = input_ids[:, 1:]
+        token_log_probs = (
+            F.log_softmax(logits.float(), dim=-1)
+            .gather(-1, labels.unsqueeze(-1))
+            .squeeze(-1)
+        )
+        # Label position j predicts token j + 1; response tokens start at
+        # ``start``, so their labels start at ``start - 1``.
+        return token_log_probs[:, max(start - 1, 0) :].sum()
+
     async def train_step(self, preference_pairs: list[dict[str, Any]]):
         """
         Train on preference pairs
@@ -477,60 +506,45 @@ class DPOTrainer:
         - rejected: the non-preferred response
         """
 
-        total_loss = 0
+        total_loss = 0.0
         num_pairs = 0
+        model = _require_model(self.agent)
+        model.train()
+        self.reference_model.eval()
+        self.optimizer.zero_grad()
 
         for pair in preference_pairs:
             prompt = pair["prompt"]
             chosen = pair["chosen"]
             rejected = pair["rejected"]
 
-            # Tokenize inputs
-            chosen_tokens = self.tokenizer(
-                prompt + " " + chosen,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self.config.max_length,
-            ).to(self.device)
+            # DPO: -log sigmoid(beta * [(log pi - log pi_ref)(y_w) -
+            #                           (log pi - log pi_ref)(y_l)]),
+            # with log pi(y|x) the summed log-prob of the response tokens.
+            chosen_ids, chosen_start = self._encode_pair(prompt, chosen)
+            rejected_ids, rejected_start = self._encode_pair(prompt, rejected)
 
-            rejected_tokens = self.tokenizer(
-                prompt + " " + rejected,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self.config.max_length,
-            ).to(self.device)
-
-            # Get log probabilities from current model
-            model = _require_model(self.agent)
+            policy_chosen = self._response_log_prob(model, chosen_ids, chosen_start)
+            policy_rejected = self._response_log_prob(
+                model, rejected_ids, rejected_start
+            )
             with torch.no_grad():
-                chosen_logits = model(**chosen_tokens).logits
-                rejected_logits = model(**rejected_tokens).logits
+                ref_chosen = self._response_log_prob(
+                    self.reference_model, chosen_ids, chosen_start
+                )
+                ref_rejected = self._response_log_prob(
+                    self.reference_model, rejected_ids, rejected_start
+                )
 
-                chosen_log_probs = F.log_softmax(chosen_logits, dim=-1)
-                rejected_log_probs = F.log_softmax(rejected_logits, dim=-1)
-
-            # Get log probabilities from reference model
-            with torch.no_grad():
-                ref_chosen_logits = self.reference_model(**chosen_tokens).logits
-                ref_rejected_logits = self.reference_model(**rejected_tokens).logits
-
-                ref_chosen_log_probs = F.log_softmax(ref_chosen_logits, dim=-1)
-                ref_rejected_log_probs = F.log_softmax(ref_rejected_logits, dim=-1)
-
-            # Compute DPO loss
-            # DPO objective: maximize E[log σ(β log(π/π_ref)(x,y_w) - β log(π/π_ref)(x,y_l))]
-
-            # Simplified implementation (would need proper sequence masking in practice)
-            chosen_ratio = chosen_log_probs.mean() - ref_chosen_log_probs.mean()
-            rejected_ratio = rejected_log_probs.mean() - ref_rejected_log_probs.mean()
-
+            chosen_ratio = policy_chosen - ref_chosen
+            rejected_ratio = policy_rejected - ref_rejected
             loss = -F.logsigmoid(self.config.beta * (chosen_ratio - rejected_ratio))
 
             total_loss += loss.item()
             num_pairs += 1
 
-            # Backward pass
-            loss.backward()
+            # Mean over pairs in the batch.
+            (loss / max(len(preference_pairs), 1)).backward()
 
         # Update parameters
         model = _require_model(self.agent)
