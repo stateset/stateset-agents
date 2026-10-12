@@ -92,9 +92,17 @@ class TrajectoryData:
 class TrajectoryDataset(Dataset):
     """PyTorch Dataset for trajectory data"""
 
-    def __init__(self, trajectories: list[TrajectoryData], tokenizer=None):
+    def __init__(
+        self,
+        trajectories: list[TrajectoryData],
+        tokenizer=None,
+        embed: Any | None = None,
+    ):
         self.trajectories = trajectories
         self.tokenizer = tokenizer
+        # Featuriser shared with the model (encoder or hash fallback) so
+        # training and prediction embed text identically.
+        self.embed = embed
 
     def __len__(self):
         return len(self.trajectories)
@@ -103,8 +111,9 @@ class TrajectoryDataset(Dataset):
         traj = self.trajectories[idx]
 
         # Simple text embedding (in practice, use proper tokenization)
-        prompt_emb = self._embed_text(traj.prompt)
-        response_emb = self._embed_text(traj.response)
+        embed = self.embed or self._embed_text
+        prompt_emb = embed(traj.prompt)
+        response_emb = embed(traj.response)
 
         return {
             "prompt_embedding": prompt_emb,
@@ -249,22 +258,33 @@ class NeuralRewardModel(nn.Module):
             reward = self.forward(prompt_emb, response_emb)
             return float(reward.item())
 
-    def _embed_text(self, text: str, max_length: int = 128) -> torch.Tensor:
-        """Simple text embedding"""
-        hash_obj = hashlib.sha256(text.encode())
-        hash_bytes = hash_obj.digest()
+    def _embed_text(self, text: str) -> torch.Tensor:
+        """Embed ``text`` with ``encoder``, or the hash smoke-test fallback.
 
+        The fallback is sized to ``embedding_dim`` so any configured width
+        matches the input layer.
+        """
+        if self.encoder is not None:
+            with torch.no_grad():
+                embedding = self.encoder(text)
+            embedding = torch.as_tensor(embedding, dtype=torch.float32).reshape(-1)
+            if embedding.numel() != self.embedding_dim:
+                raise ValueError(
+                    f"encoder returned {embedding.numel()} dims, expected "
+                    f"embedding_dim={self.embedding_dim}"
+                )
+            return embedding
+
+        hash_bytes = hashlib.sha256(text.encode()).digest()
         embedding = (
             torch.from_numpy(
-                np.frombuffer(hash_bytes, dtype=np.uint8)[:max_length]
+                np.frombuffer(hash_bytes, dtype=np.uint8)[: self.embedding_dim]
             ).float()
             / 255.0
         )
-
-        if len(embedding) < max_length:
-            padding = torch.zeros(max_length - len(embedding))
+        if len(embedding) < self.embedding_dim:
+            padding = torch.zeros(self.embedding_dim - len(embedding))
             embedding = torch.cat([embedding, padding])
-
         return embedding
 
 
@@ -345,14 +365,18 @@ class NeuralRewardTrainer:
             raise ValueError("No training trajectories provided")
 
         # Create datasets
-        train_dataset = TrajectoryDataset(train_trajectories)
+        train_dataset = TrajectoryDataset(
+            train_trajectories, embed=self.model._embed_text
+        )
         train_loader = DataLoader(
             train_dataset, batch_size=self.batch_size, shuffle=True
         )
 
         val_loader = None
         if val_trajectories:
-            val_dataset = TrajectoryDataset(val_trajectories)
+            val_dataset = TrajectoryDataset(
+                val_trajectories, embed=self.model._embed_text
+            )
             val_loader = DataLoader(
                 val_dataset, batch_size=self.batch_size, shuffle=False
             )
