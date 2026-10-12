@@ -260,10 +260,26 @@ async def test_failed_completion_write_can_be_retried_without_resource_leak(
 @pytest.mark.asyncio
 async def test_shutdown_releases_every_worker_when_completion_writes_fail(orchestrator):
     orchestrator.resource_manager.available_resources[module.ResourceType.CPU] = 2
+    # Block in the runner until shutdown cancels it. The default AsyncMock runner
+    # returns immediately, so whether a worker failed before shutdown depended
+    # on event-loop scheduling (it did on CI's Python 3.11).
+    running: list[str] = []
+
+    async def blocking_runner(job):
+        running.append(job.job_id)
+        await asyncio.Event().wait()
+
+    orchestrator.training_runner = blocking_runner
     jobs = [make_job("first"), make_job("second")]
     for job in jobs:
         await claim(orchestrator, job)
         await orchestrator._start_job(job)
+
+    async def both_running():
+        while len(running) < len(jobs):
+            await asyncio.sleep(0)
+
+    await asyncio.wait_for(both_running(), 2)
     state = orchestrator.state_service.state_manager
     state.set.side_effect = OSError("offline")
     with pytest.raises(OSError, match="offline"):

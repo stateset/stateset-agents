@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Made the orchestrator shutdown test deterministic: its runner now blocks
+  until cancelled and the test waits for both workers to start. The immediate
+  mock runner let jobs fail before shutdown under Python 3.11 scheduling, which
+  failed the publish-readiness gate for every release since v0.57.0.
+
 ## [0.62.0] - 2026-10-11 — Correct RL, SFT and rollout training math
 
 ### Added
