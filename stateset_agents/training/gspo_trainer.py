@@ -401,7 +401,12 @@ class GSPOTrainer:
                 "GSPOTrainer requires a model with at least one trainable "
                 "parameter; got a parameterless model."
             )
-        self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
+        self.optimizer = torch.optim.AdamW(
+            params,
+            lr=config.learning_rate,
+            betas=(float(config.adam_beta1), float(config.adam_beta2)),
+            weight_decay=float(config.weight_decay),
+        )
 
         # Cosine schedule over the optimizer steps actually taken: train_step
         # makes exactly one per outer iteration. Progress is clamped so steps

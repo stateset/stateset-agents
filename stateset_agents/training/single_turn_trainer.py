@@ -234,8 +234,12 @@ class SingleTurnGRPOTrainer:
             },
         ]
 
+        betas = (
+            float(getattr(self.config, "adam_beta1", 0.9)),
+            float(getattr(self.config, "adam_beta2", 0.999)),
+        )
         self.optimizer = torch.optim.AdamW(
-            optimizer_grouped_parameters, lr=learning_rate
+            optimizer_grouped_parameters, lr=learning_rate, betas=betas
         )
         logger.info(f"Optimizer initialized with lr={learning_rate}")
 
@@ -603,6 +607,9 @@ class SingleTurnGRPOTrainer:
                     else contextlib.nullcontext()
                 )
 
+                # Inner updates below reuse this baseline and do not re-count
+                # the batch in the running reward statistics.
+                reward_stats = (self._global_reward_mean, self._global_reward_count)
                 with autocast_ctx:
                     if use_enhanced:
                         loss_dict = compute_enhanced_grpo_loss(
@@ -611,6 +618,9 @@ class SingleTurnGRPOTrainer:
                             config=self.config,
                             agent=self.agent,
                             reference_model=self.reference_model,
+                            global_reward_mean=self._global_reward_mean,
+                            global_reward_count=self._global_reward_count,
+                            update_global_stats=self._update_global_stats,
                         )
                     else:
                         loss_dict = compute_grpo_loss(
@@ -674,15 +684,18 @@ class SingleTurnGRPOTrainer:
                                         agent=self.agent,
                                         reference_model=self.reference_model,
                                         old_logprobs=old_logprobs,
+                                        global_reward_mean=reward_stats[0],
+                                        global_reward_count=reward_stats[1],
+                                        update_global_stats=None,
                                     )
                                     if use_enhanced
                                     else compute_grpo_loss(
                                         trajectory_groups=training_groups,
                                         config=self.config,
                                         agent=self.agent,
-                                        global_reward_mean=self._global_reward_mean,
-                                        global_reward_count=self._global_reward_count,
-                                        update_global_stats=self._update_global_stats,
+                                        global_reward_mean=reward_stats[0],
+                                        global_reward_count=reward_stats[1],
+                                        update_global_stats=None,
                                         old_logprobs=old_logprobs,
                                     )
                                 )

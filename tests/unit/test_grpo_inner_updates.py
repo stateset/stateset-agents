@@ -207,3 +207,16 @@ async def test_later_inner_updates_see_non_unit_ratios():
     trainer = _multi_turn_trainer(model, num_gradient_updates=3)
     metrics = await trainer.training_step([_group()])
     assert metrics["ratio_mean_last"] != pytest.approx(1.0, abs=1e-4)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("beta", [0.0, 0.1])
+async def test_inner_updates_count_each_batch_once_in_global_reward_stats(beta):
+    model = _tiny_model()
+    trainer = _multi_turn_trainer(model, num_gradient_updates=3)
+    trainer.config.baseline_type = "global_mean"
+    trainer.config.beta = beta
+    trainer.reference_model = _tiny_model(seed=1) if beta else None
+    await trainer.training_step([_group(rewards=(1.0, 0.0, 0.5))])
+    assert trainer._global_reward_count == 3
+    assert trainer._global_reward_mean == pytest.approx(0.5)

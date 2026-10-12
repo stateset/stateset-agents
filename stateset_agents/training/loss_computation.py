@@ -164,11 +164,11 @@ def _legacy_group_advantages(
     """
     torch = require_torch()
     baseline_type = getattr(config, "baseline_type", "group_mean")
+    if baseline_type == "global_mean" and update_global_stats is not None:
+        update_global_stats(float(rewards.mean().item()), len(rewards))
     if baseline_type == "group_median":
         baseline = rewards.median()
     elif baseline_type == "global_mean" and global_reward_mean is not None:
-        if update_global_stats is not None:
-            update_global_stats(float(rewards.mean().item()), len(rewards))
         baseline = torch.tensor(
             global_reward_mean, dtype=rewards.dtype, device=rewards.device
         )
@@ -177,11 +177,62 @@ def _legacy_group_advantages(
     advantages = rewards - baseline
     if normalize is None:
         normalize = bool(getattr(config, "advantage_normalization", True))
-    if normalize and advantages.numel() > 1:
-        std = advantages.std(correction=0)
-        if torch.isfinite(std) and std > 0:
-            advantages = (advantages - advantages.mean()) / (std + 1e-8)
+    return _scale_by_group_std(advantages) if normalize else advantages
+
+
+def _scale_by_group_std(advantages: Any) -> Any:
+    """Divide by the group's population std without re-centring, so a
+    median or running-mean baseline survives normalisation (the std of
+    ``rewards - baseline`` equals the std of the rewards)."""
+    torch = require_torch()
+    if advantages.numel() <= 1:
+        return advantages
+    std = advantages.std(correction=0)
+    if torch.isfinite(std) and std > 0:
+        return advantages / (std + 1e-8)
     return advantages
+
+
+def _sequence_group_advantages(
+    rewards: Any,
+    config: Any,
+    *,
+    global_reward_mean: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
+) -> Any:
+    """Group advantages for both sequence-level GRPO losses.
+
+    Applies ``reward_clip``, then the ``objective`` preset's estimator when one
+    is configured, else ``baseline_type`` with optional std scaling.
+    """
+    torch = require_torch()
+    reward_clip = getattr(config, "reward_clip", None)
+    if reward_clip is not None:
+        rewards = torch.clamp(rewards, min=-float(reward_clip), max=float(reward_clip))
+    zeros = torch.zeros_like(rewards, dtype=torch.long)
+    if getattr(config, "objective", None) is not None:
+        # The preset owns the estimator, including whether it normalises.
+        return objectives.compute_advantages(
+            rewards, zeros, _grpo_objective(config).with_(advantage_eps=1e-8)
+        )
+    baseline_type = getattr(config, "baseline_type", "group_mean")
+    normalize = bool(getattr(config, "advantage_normalization", True))
+    if baseline_type in ("group_median", "global_mean"):
+        return _legacy_group_advantages(
+            rewards,
+            config,
+            global_reward_mean=global_reward_mean,
+            update_global_stats=update_global_stats,
+            normalize=normalize,
+        )
+    if baseline_type == "leave_one_out":
+        # RLOO: r_i minus the mean of the other rewards (0 for one sample).
+        advantages = objectives.compute_advantages(
+            rewards, zeros, objectives.OBJECTIVES["rloo"]
+        )
+    else:  # group_mean (default)
+        advantages = rewards - rewards.mean()
+    return _scale_by_group_std(advantages) if normalize else advantages
 
 
 def _token_advantages(
@@ -477,7 +528,7 @@ def compute_grpo_loss(
     agent: Any,
     global_reward_mean: float,
     global_reward_count: int,
-    update_global_stats: Callable[[float, int], None],
+    update_global_stats: Callable[[float, int], None] | None,
     old_logprobs: list[Any] | None = None,
 ) -> dict[str, Any]:
     """
@@ -497,12 +548,14 @@ def compute_grpo_loss(
     Returns:
         Dictionary containing loss tensors and metrics
     """
+    # No running statistics yet: ``global_mean`` uses the group mean.
+    effective_global_mean = global_reward_mean if global_reward_count > 0 else None
     token_result = _try_token_path(
         trajectory_groups,
         config,
         agent,
         old_logprobs=old_logprobs,
-        global_reward_mean=global_reward_mean,
+        global_reward_mean=effective_global_mean,
         update_global_stats=update_global_stats,
     )
     if token_result is not None:
@@ -516,64 +569,21 @@ def compute_grpo_loss(
     entropy_values_for_logging: list[float] = []
     entropy_coef = float(getattr(config, "entropy_coef", 0.0))
 
-    # Configuration controls
-    baseline_type = getattr(config, "baseline_type", "group_mean")
-    normalize_adv = getattr(config, "advantage_normalization", True)
-    reward_clip = getattr(config, "reward_clip", None)
-
     for group in trajectory_groups:
         if not group.trajectories:
             continue
 
-        # Extract rewards and optionally clip
         rewards = torch.tensor(
             [t.total_reward for t in group.trajectories],
             dtype=torch.float32,
             device=device,
         )
-        if reward_clip is not None:
-            rewards = torch.clamp(
-                rewards, min=-float(reward_clip), max=float(reward_clip)
-            )
-
-        # Select baseline. A configured objective preset owns the estimator.
-        if getattr(config, "objective", None) is not None:
-            baseline = rewards - objectives.compute_advantages(
-                rewards,
-                torch.zeros_like(rewards, dtype=torch.long),
-                _grpo_objective(config).with_(advantage_eps=1e-8),
-            )
-            normalize_adv = False  # the preset already normalised (or not)
-        elif baseline_type in ("group_median", "global_mean"):
-            baseline = rewards - _legacy_group_advantages(
-                rewards,
-                config,
-                global_reward_mean=global_reward_mean,
-                update_global_stats=update_global_stats,
-                normalize=False,  # normalized below with every other baseline
-            )
-        elif baseline_type == "leave_one_out":
-            # RLOO baseline: r_i minus the mean of the other rewards. For a
-            # single sample the library returns advantage 0, i.e. baseline r.
-            baseline = rewards - objectives.compute_advantages(
-                rewards,
-                torch.zeros_like(rewards, dtype=torch.long),
-                objectives.OBJECTIVES["rloo"],
-            )
-        else:  # group_mean (default)
-            baseline = rewards.mean()
-
-        advantages = rewards - baseline
-
-        # Normalize advantages if configured and variance > 0
-        if normalize_adv and advantages.numel() > 1:
-            # Avoid torch warnings for small tensors by using correction=0.
-            try:
-                std = advantages.std(correction=0)
-            except TypeError:  # Older PyTorch.
-                std = advantages.std(unbiased=False)
-            if torch.isfinite(std) and std > 0:
-                advantages = (advantages - advantages.mean()) / (std + 1e-8)
+        advantages = _sequence_group_advantages(
+            rewards,
+            config,
+            global_reward_mean=effective_global_mean,
+            update_global_stats=update_global_stats,
+        )
 
         all_advantages_for_logging.extend(advantages.detach().cpu().tolist())
 
@@ -801,9 +811,16 @@ def compute_enhanced_grpo_loss(
     agent: Any,
     reference_model: Any | None = None,
     old_logprobs: list[Any] | None = None,
+    *,
+    global_reward_mean: float | None = None,
+    global_reward_count: int = 0,
+    update_global_stats: Callable[[float, int], None] | None = None,
 ) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
+
+    Advantages, reward clipping and the entropy bonus match
+    :func:`compute_grpo_loss`; only the reference-model KL term is added.
 
     Args:
         trajectory_groups: List of TrajectoryGroup objects
@@ -811,10 +828,18 @@ def compute_enhanced_grpo_loss(
         config: Training configuration
         agent: The agent being trained
         reference_model: Optional reference model for KL computation
+        global_reward_mean: Running reward mean for ``baseline_type="global_mean"``
+        global_reward_count: Count behind ``global_reward_mean`` (0 = none yet)
+        update_global_stats: Callback to update global reward statistics
 
     Returns:
         Dictionary containing loss tensors and metrics
     """
+    effective_global_mean = (
+        global_reward_mean
+        if global_reward_mean is not None and global_reward_count > 0
+        else None
+    )
     token_result = _try_token_path(
         trajectory_groups,
         config,
@@ -822,6 +847,8 @@ def compute_enhanced_grpo_loss(
         beta=beta,
         reference_model=reference_model,
         old_logprobs=old_logprobs,
+        global_reward_mean=effective_global_mean,
+        update_global_stats=update_global_stats,
     )
     if token_result is not None:
         return token_result
@@ -839,6 +866,8 @@ def compute_enhanced_grpo_loss(
     all_losses = []
     all_advantages = []
     all_kl_divs = []
+    entropy_values: list[float] = []
+    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
     objective = _grpo_objective(config)
 
     for group in trajectory_groups:
@@ -852,14 +881,12 @@ def compute_enhanced_grpo_loss(
             device=device,
         )
 
-        # GRPO: Use group mean as baseline
-        baseline = rewards.mean()
-        advantages = rewards - baseline
-
-        # Historical unbiased-std normalisation; the `grpo` preset in
-        # objectives.py uses correction=0 (see docs/OBJECTIVES.md).
-        if len(advantages) > 1 and advantages.std() > 0:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = _sequence_group_advantages(
+            rewards,
+            config,
+            global_reward_mean=effective_global_mean,
+            update_global_stats=update_global_stats,
+        )
 
         all_advantages.extend(advantages.tolist())
 
@@ -917,6 +944,15 @@ def compute_enhanced_grpo_loss(
                         nll, token_count, advantage, old_log_prob, objective
                     )
 
+                if entropy_coef > 0 and torch.is_tensor(labels):
+                    # Logits at position t predict token t+1: shift like the NLL.
+                    entropy_bonus = compute_entropy_bonus(
+                        outputs.logits[:, :-1],
+                        labels[:, 1:].ne(-100).to(dtype=outputs.logits.dtype),
+                    )
+                    policy_loss = policy_loss - entropy_coef * entropy_bonus
+                    entropy_values.append(float(entropy_bonus.detach().item()))
+
                 all_losses.append(policy_loss)
 
                 # Skip the full-vocab log_softmax entirely when there's no KL
@@ -933,9 +969,11 @@ def compute_enhanced_grpo_loss(
                         dim=-1
                     )
 
-                    # Prefer masking to the same tokens contributing to the LM loss.
+                    # Mask to the tokens the LM loss scores. Logits at t
+                    # predict token t+1, so shift like the NLL.
                     if torch.is_tensor(labels):
-                        loss_mask = labels.ne(-100)
+                        kl_per_token = kl_per_token[:, :-1]
+                        loss_mask = labels[:, 1:].ne(-100)
                         if loss_mask.any():
                             kl_div = (kl_per_token * loss_mask).sum() / loss_mask.sum()
                         else:
@@ -967,6 +1005,7 @@ def compute_enhanced_grpo_loss(
         "kl_penalty": kl_penalty,
         "mean_advantage": np.mean(all_advantages) if all_advantages else 0.0,
         "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
+        "entropy": float(np.mean(entropy_values)) if entropy_values else 0.0,
         "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
     }
 

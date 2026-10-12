@@ -432,15 +432,27 @@ class MultiTurnGRPOTrainer:
         self,
         trajectory_groups: list[TrajectoryGroup],
         old_logprobs: list[Any] | None = None,
+        *,
+        reward_stats: tuple[float, int] | None = None,
+        update_stats: bool = True,
     ) -> dict[str, Any]:
-        """Compute GRPO loss from trajectory groups"""
+        """Compute GRPO loss from trajectory groups.
+
+        ``reward_stats`` pins the ``(mean, count)`` running-reward baseline and
+        ``update_stats=False`` keeps this batch out of it, so repeated inner
+        updates on one batch count it once and share one baseline.
+        """
+        mean, count = reward_stats or (
+            self._global_reward_mean,
+            self._global_reward_count,
+        )
         loss_dict: dict[str, Any] = compute_grpo_loss(
             trajectory_groups=trajectory_groups,
             config=self.config,
             agent=self.agent,
-            global_reward_mean=self._global_reward_mean,
-            global_reward_count=self._global_reward_count,
-            update_global_stats=self._update_global_stats,
+            global_reward_mean=mean,
+            global_reward_count=count,
+            update_global_stats=self._update_global_stats if update_stats else None,
             old_logprobs=old_logprobs,
         )
         return loss_dict
@@ -462,8 +474,16 @@ class MultiTurnGRPOTrainer:
         trajectory_groups: list[TrajectoryGroup],
         beta: float = 0.0,
         old_logprobs: list[Any] | None = None,
+        *,
+        reward_stats: tuple[float, int] | None = None,
+        update_stats: bool = True,
     ) -> dict[str, Any]:
-        """Enhanced GRPO loss computation with KL penalty"""
+        """Enhanced GRPO loss computation with KL penalty (see
+        :meth:`compute_grpo_loss` for ``reward_stats``/``update_stats``)."""
+        mean, count = reward_stats or (
+            self._global_reward_mean,
+            self._global_reward_count,
+        )
         loss_dict: dict[str, Any] = compute_enhanced_grpo_loss(
             trajectory_groups=trajectory_groups,
             beta=beta,
@@ -471,6 +491,9 @@ class MultiTurnGRPOTrainer:
             agent=self.agent,
             reference_model=self.reference_model,
             old_logprobs=old_logprobs,
+            global_reward_mean=mean,
+            global_reward_count=count,
+            update_global_stats=self._update_global_stats if update_stats else None,
         )
         return loss_dict
 
@@ -700,15 +723,25 @@ class MultiTurnGRPOTrainer:
         accumulation_flush_updates = int(self._flush_accumulation(torch))
         optimizer_updates = accumulation_flush_updates
         loss_dict: dict[str, Any] = {}
-        for _ in range(inner):
+        # Every inner update scores the batch against the same baseline, and
+        # the batch enters the running reward statistics once.
+        reward_stats = (self._global_reward_mean, self._global_reward_count)
+        for step_idx in range(inner):
             with autocast_ctx_factory():
                 if use_enhanced:
                     loss_dict = self.compute_enhanced_grpo_loss(
-                        trajectory_groups, beta=beta, old_logprobs=old_logprobs
+                        trajectory_groups,
+                        beta=beta,
+                        old_logprobs=old_logprobs,
+                        reward_stats=reward_stats,
+                        update_stats=step_idx == 0,
                     )
                 else:
                     loss_dict = self.compute_grpo_loss(
-                        trajectory_groups, old_logprobs=old_logprobs
+                        trajectory_groups,
+                        old_logprobs=old_logprobs,
+                        reward_stats=reward_stats,
+                        update_stats=step_idx == 0,
                     )
                 loss = loss_dict["total_loss"]
                 ewc_penalty = None
