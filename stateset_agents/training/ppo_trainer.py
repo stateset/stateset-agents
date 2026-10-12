@@ -292,6 +292,20 @@ class PPOTrainer:
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
+        if config.beta > 0 and ref_model is None:
+            if not getattr(config, "use_reference_model", True):
+                raise ValueError(
+                    "beta > 0 needs a reference model; pass ref_model or set "
+                    "use_reference_model=True"
+                )
+            # Snapshot the initial policy so the KL penalty is not skipped.
+            import copy
+
+            ref_model = copy.deepcopy(model)
+        if ref_model is not None:
+            ref_model.eval()
+            for param in ref_model.parameters():
+                param.requires_grad_(False)
         self.ref_model = ref_model
         self.device = next(model.parameters()).device
 

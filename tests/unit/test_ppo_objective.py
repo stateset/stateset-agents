@@ -10,7 +10,7 @@ from stateset_agents.training import rl_losses  # noqa: E402
 from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer  # noqa: E402
 
 
-def _trainer():
+def _trainer(**config_kwargs):
     torch.manual_seed(0)
     model = GPT2LMHeadModel(
         GPT2Config(
@@ -25,7 +25,7 @@ def _trainer():
         )
     )
     return PPOTrainer(
-        config=PPOConfig(model_name="gpt2"),
+        config=PPOConfig(model_name="gpt2", **config_kwargs),
         model=model,
         tokenizer=None,
         reward_fn=lambda p, r: 0.0,
@@ -86,3 +86,19 @@ def test_response_mask_excludes_padding_both_sides():
     attention = torch.tensor([[0, 0, 1, 1, 1, 1], [1, 1, 1, 1, 1, 1]])
     mask = tr.build_response_mask(attention, torch.tensor([2, 3]), "left")
     assert mask.tolist() == [[0, 0, 0, 0, 1, 1], [0, 0, 0, 1, 1, 1]]
+
+
+def test_kl_penalty_gets_a_frozen_reference_model_by_default():
+    tr = _trainer(beta=0.1)
+    assert tr.ref_model is not None and tr.ref_model is not tr.model
+    assert not tr.ref_model.training
+    assert not any(p.requires_grad for p in tr.ref_model.parameters())
+
+
+def test_kl_penalty_without_reference_model_is_rejected():
+    with pytest.raises(ValueError, match="reference model"):
+        _trainer(beta=0.1, use_reference_model=False)
+
+
+def test_no_reference_model_without_kl_penalty():
+    assert _trainer().ref_model is None
