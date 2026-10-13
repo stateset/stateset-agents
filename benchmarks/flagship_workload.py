@@ -617,8 +617,8 @@ def agent_config_kwargs(
     The model is the pinned local snapshot (its directory name is the pinned
     revision). ``system_prompt`` stays unset: the environment supplies the
     per-scenario system turn. Sampling is plain ancestral sampling at
-    ``temperature`` (``repetition_penalty=1``; top-k is disabled after load by
-    :func:`disable_top_k`), greedy when ``temperature == 0``.
+    ``temperature`` (``top_k=0``, ``repetition_penalty=1``), greedy when
+    ``temperature == 0``.
     """
     sampling = temperature > 0
     kwargs: dict[str, Any] = {
@@ -628,6 +628,8 @@ def agent_config_kwargs(
         "max_new_tokens": int(max_new_tokens),
         "temperature": float(temperature),
         "top_p": float(top_p) if sampling else 1.0,
+        # Disabled in the config itself, so a rebuilt generation config keeps it.
+        "top_k": 0,
         "do_sample": sampling,
         "repetition_penalty": 1.0,
         "torch_dtype": "bfloat16" if payload.get("bf16", True) else "float32",
@@ -678,6 +680,10 @@ def training_config_kwargs(
         # Rows per chunked forward on the token path.
         "generation_batch_size": int(config.get("train_forward_rows", 8)),
         "gradient_checkpointing": True,
+        # A rare non-finite update is discarded and logged with the offending
+        # parameters and loss terms (counted in the evidence); repeated ones abort.
+        "nonfinite_grad_policy": "skip",
+        "max_consecutive_nonfinite_skips": 3,
         "bf16": bool(config["bf16"]),
         "fp16": False,
         "seed": int(payload["seed"]),
@@ -808,6 +814,7 @@ async def run_training_loop(
         "train_log": log,
         "steps": len(log["step"]),
         "optimizer_steps": optimizer_steps,
+        "nonfinite_skips": int(getattr(trainer, "nonfinite_skips", 0)),
         "episodes": (
             len(log["step"]) * len(schedule[0]) * num_generations if schedule else 0
         ),
@@ -1130,6 +1137,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "training": "on-policy multi-turn GSPO (MultiTurnGRPOTrainer, objective=gspo)",
         "train_steps": train_out.get("steps"),
         "train_optimizer_steps": train_out.get("optimizer_steps"),
+        "train_nonfinite_skips": train_out.get("nonfinite_skips", 0),
         "train_episodes": train_out.get("episodes"),
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),

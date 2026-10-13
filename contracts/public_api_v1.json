@@ -3605,6 +3605,16 @@
               "name": "batched_rollouts"
             },
             {
+              "default": "raise",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "nonfinite_grad_policy"
+            },
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_consecutive_nonfinite_skips"
+            },
+            {
               "default": 4,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "generation_batch_size"

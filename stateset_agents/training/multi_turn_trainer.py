@@ -71,6 +71,20 @@ TrajectoryGroup: TypeAlias = core_trajectory.TrajectoryGroup
 logger = logging.getLogger(__name__)
 
 
+def _loss_scalars(loss_dict: Any) -> dict[str, float]:
+    """Scalar loss terms (finite or not), for diagnosing a bad update."""
+    scalars: dict[str, float] = {}
+    for key, value in dict(loss_dict).items():
+        try:
+            if hasattr(value, "detach") and value.numel() == 1:
+                scalars[key] = float(value.detach().float().item())
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                scalars[key] = float(value)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+    return scalars
+
+
 def rollout_sampling_transforms(agent: Any) -> list[str]:
     """Sampling settings that make rollouts differ from the policy's distribution.
 
@@ -506,13 +520,69 @@ class MultiTurnGRPOTrainer:
             self.last_rollout_sync = bool(sync())
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
-        return safe_optimizer_step(
-            self,
-            torch,
-            max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
-            scaler=self.scaler,
-            gradient_scale=gradient_scale,
+        skip_policy = getattr(self.config, "nonfinite_grad_policy", "raise") == "skip"
+        # safe_optimizer_step discards gradients before raising, so record which
+        # parameters were non-finite first (only when we will report and skip).
+        self._nonfinite_params = (
+            self._nonfinite_parameter_names() if skip_policy else []
         )
+        try:
+            applied = safe_optimizer_step(
+                self,
+                torch,
+                max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
+                scaler=self.scaler,
+                gradient_scale=gradient_scale,
+            )
+        except ValueError as error:
+            if "gradients must be finite" not in str(error) or not skip_policy:
+                raise
+            return self._skip_nonfinite_update(error)
+        if applied:
+            self._consecutive_nonfinite = 0
+        return applied
+
+    @property
+    def nonfinite_skips(self) -> int:
+        """Updates discarded because their gradients were non-finite."""
+        return int(getattr(self, "_nonfinite_skips", 0))
+
+    def _nonfinite_parameter_names(self) -> list[str]:
+        model = getattr(self.agent, "model", None)
+        bad: list[str] = []
+        if model is not None and hasattr(model, "named_parameters"):
+            for name, parameter in model.named_parameters():
+                grad = parameter.grad
+                if grad is not None and not bool(grad.isfinite().all()):
+                    bad.append(name)
+        return bad
+
+    def _skip_nonfinite_update(self, error: Exception) -> bool:
+        """Discard a non-finite update, logging where it came from."""
+        bad = list(getattr(self, "_nonfinite_params", []))
+        self._nonfinite_skips = self.nonfinite_skips + 1
+        self._consecutive_nonfinite = (
+            int(getattr(self, "_consecutive_nonfinite", 0)) + 1
+        )
+        logger.warning(
+            "Non-finite gradients at step %s (skip %d, %d consecutive): %d "
+            "parameter(s), first %s; loss terms %s",
+            getattr(self, "global_step", "?"),
+            self._nonfinite_skips,
+            self._consecutive_nonfinite,
+            len(bad),
+            bad[:8],
+            getattr(self, "_last_loss_scalars", {}),
+        )
+        if self.optimizer is not None:
+            self.optimizer.zero_grad(set_to_none=True)
+        limit = int(getattr(self.config, "max_consecutive_nonfinite_skips", 3))
+        if self._consecutive_nonfinite > limit:
+            raise ValueError(
+                f"{self._consecutive_nonfinite} consecutive non-finite updates "
+                f"(limit {limit})"
+            ) from error
+        return False
 
     def _flush_accumulation(self, torch: Any) -> bool:
         """Close pending accumulated work before a different update regime."""
@@ -926,6 +996,7 @@ class MultiTurnGRPOTrainer:
             else:
                 loss_dict = self.compute_grpo_loss(trajectory_groups)
             loss = loss_dict["total_loss"]
+            self._last_loss_scalars = _loss_scalars(loss_dict)
 
             ewc_penalty = None
             if self.continual_manager is not None:
@@ -1067,6 +1138,7 @@ class MultiTurnGRPOTrainer:
                         update_stats=step_idx == 0,
                     )
                 loss = loss_dict["total_loss"]
+                self._last_loss_scalars = _loss_scalars(loss_dict)
                 ewc_penalty = None
                 if self.continual_manager is not None:
                     ewc_penalty = self.continual_manager.compute_ewc_penalty(self.agent)
