@@ -65,7 +65,7 @@ __all__ = [
 ]
 
 #: Pinned rubric shipped with the package; its git blob SHA is the revision.
-RUBRIC_PATH: Path = Path(__file__).resolve().parent / "rubrics" / "support_rubric_v3.md"
+RUBRIC_PATH: Path = Path(__file__).resolve().parent / "rubrics" / "support_rubric_v4.md"
 
 #: Fixed system message sent with every judge prompt. Chat templates such as
 #: Mistral-Small-24B-Instruct-2501's inject a default system prompt containing
@@ -126,7 +126,6 @@ CHECKS: dict[str, tuple[str, ...]] = {
         "conciseness_no_repetition",
         "conciseness_reply_length",
         "conciseness_key_point_early",
-        "conciseness_no_filler",
     ),
 }
 
@@ -134,19 +133,19 @@ CHECKS: dict[str, tuple[str, ...]] = {
 ALL_CHECKS: tuple[str, ...] = tuple(c for name in CRITERIA for c in CHECKS[name])
 
 #: Checks a detector decides exactly: the value is always the detector's
-#: verdict (``False`` iff the named finding list is non-empty).
+#: verdict (``False`` iff the named finding list is non-empty). Objective
+#: properties are measured, not judged: on a real H100 rejudge the LLM flipped
+#: repetition (47%) and placeholder (25%) checks between orderings.
 EXACT_CHECKS: dict[str, str] = {
     "policy_no_must_avoid_phrase": "must_avoid_hits",
+    "accuracy_no_placeholder": "placeholders",
+    "conciseness_no_repetition": "repeated_turns",
     "conciseness_reply_length": "long_turns",
 }
 
-#: Checks a heuristic detector can only veto: a non-empty finding list forces
-#: ``False``; otherwise the judge's answer stands (it may catch what the
-#: detector misses, e.g. a paraphrased repetition).
-VETO_CHECKS: dict[str, str] = {
-    "accuracy_no_placeholder": "placeholders",
-    "conciseness_no_repetition": "repeated_turns",
-}
+#: Checks a heuristic detector can only veto (none in rubric v4; kept for API
+#: compatibility and for rubrics that add judgment-backed detector checks).
+VETO_CHECKS: dict[str, str] = {}
 
 #: Batch of prompts -> batch of completions; must be deterministic (greedy).
 GenerateFn = Callable[[Sequence[str]], Sequence[str]]
@@ -414,6 +413,14 @@ def detect_findings(item: JudgeItem) -> dict[str, Any]:
     }
 
 
+_FINDING_LABELS: dict[str, str] = {
+    "must_avoid_hits": "must_avoid phrase occurs verbatim",
+    "placeholders": "unfilled template placeholder",
+    "repeated_turns": "near-verbatim repetition of an earlier assistant turn",
+    "long_turns": f"assistant reply over {MAX_REPLY_WORDS} words",
+}
+
+
 def _render_findings(findings: Mapping[str, Any]) -> str:
     lines: list[str] = []
     for hit in findings.get("must_avoid_hits", ()):
@@ -444,24 +451,10 @@ def _render_findings(findings: Mapping[str, Any]) -> str:
             f"- Assistant turn {turn['turn']} is {turn['words']} words long "
             f"(limit {MAX_REPLY_WORDS}), so `conciseness_reply_length` is false."
         )
-    if not lines:
-        return (
-            "- None detected: no must_avoid phrase, placeholder or near-verbatim "
-            f"repetition, and every assistant reply is at most {MAX_REPLY_WORDS} "
-            "words, so `policy_no_must_avoid_phrase` and "
-            "`conciseness_reply_length` are true. Answer every other check from "
-            "the transcript."
-        )
-    if not long_turns:
-        lines.append(
-            f"- Every assistant reply is at most {MAX_REPLY_WORDS} words, so "
-            "`conciseness_reply_length` is true."
-        )
-    if not findings.get("must_avoid_hits"):
-        lines.append(
-            "- No must_avoid phrase occurs verbatim, so "
-            "`policy_no_must_avoid_phrase` is true."
-        )
+    for check, kind in EXACT_CHECKS.items():
+        if not findings.get(kind):
+            lines.append(f"- No {_FINDING_LABELS[kind]}, so `{check}` is true.")
+    lines.append("- Answer every other check from the transcript.")
     return "\n".join(lines)
 
 

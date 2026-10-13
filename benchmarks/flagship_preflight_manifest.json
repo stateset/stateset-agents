@@ -57,7 +57,7 @@
   "judge": {
     "model": "mistralai/Mistral-Small-24B-Instruct-2501",
     "revision": "9527884be6e5616bdd54de542f9ae13384489724",
-    "rubric_revision": "5eeef395704ac0e7f91eccdcbfb76e9f6cb15576"
+    "rubric_revision": "25fa6b2a9551e8901a566245965c3b2beb7f044b"
   },
   "hardware": {
     "gpu": "NVIDIA H100 80GB HBM3",

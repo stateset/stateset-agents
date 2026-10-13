@@ -90,9 +90,9 @@ def test_rubric_ships_and_names_every_criterion() -> None:
     assert "policy_facts" in text and "expected_resolution" in text
 
 
-def test_judge_uses_checklist_rubric_v3_and_keeps_history() -> None:
-    assert RUBRIC_PATH.name == "support_rubric_v3.md"
-    for old in ("support_rubric_v1.md", "support_rubric_v2.md"):
+def test_judge_uses_checklist_rubric_v4_and_keeps_history() -> None:
+    assert RUBRIC_PATH.name == "support_rubric_v4.md"
+    for old in ("support_rubric_v1.md", "support_rubric_v2.md", "support_rubric_v3.md"):
         assert (RUBRIC_PATH.parent / old).is_file()
     text = RUBRIC_PATH.read_text(encoding="utf-8")
     assert "<1-5>" not in text and "## Hard caps" not in text
@@ -104,7 +104,7 @@ def test_judge_uses_checklist_rubric_v3_and_keeps_history() -> None:
         assert 3 <= len(items) <= 5
         assert all(check.startswith(name.split("_")[0]) for check, _ in items)
         assert all(text for _check, text in items)
-    assert len(ALL_CHECKS) == len(set(ALL_CHECKS)) == 21
+    assert len(ALL_CHECKS) == len(set(ALL_CHECKS)) == 20
     for check in (*sj.EXACT_CHECKS, *sj.VETO_CHECKS):
         assert check in ALL_CHECKS
         assert f"`{check}`" in text and "Verified" in text
@@ -293,20 +293,19 @@ def test_score_endpoints() -> None:
     high = SupportJudge(RecordingGenerate(lambda _p: _checks_json(True))).score(
         [_item()]
     )
-    # _item() has no findings, so the two exact checks are forced true even
-    # when the judge answers false: policy 1/4, conciseness 1/4.
-    assert low[0].criteria[0] == {
-        "resolution": 0.0,
-        "policy_compliance": 0.25,
-        "accuracy": 0.0,
-        "empathy_tone": 0.0,
-        "conciseness": 0.25,
-    }
-    assert low[0].score == pytest.approx(0.1)
-    assert (
-        low[0].overrides
-        == (("policy_no_must_avoid_phrase", "conciseness_reply_length"),) * 2
+    # _item() has no findings, so the four exact checks are forced true even
+    # when the judge answers false: policy 1/4, accuracy 1/4, conciseness 2/3.
+    assert low[0].criteria[0] == pytest.approx(
+        {
+            "resolution": 0.0,
+            "policy_compliance": 0.25,
+            "accuracy": 0.25,
+            "empathy_tone": 0.0,
+            "conciseness": 2 / 3,
+        }
     )
+    assert low[0].score == pytest.approx((0.25 + 0.25 + 2 / 3) / 5)
+    assert low[0].overrides == (tuple(sj.EXACT_CHECKS),) * 2
     assert high[0].score == 1.0 and high[0].pass_scores == (1.0, 1.0)
     assert high[0].parse_failures == 0 and high[0].disagreement == 0.0
     assert high[0].overrides == ((), ())
@@ -396,7 +395,7 @@ def test_findings_force_check_values_and_record_overrides() -> None:
         for check, value in forced.items():
             assert checks[check] is value
     assert set(result.overrides[0]) == set(forced) == set(result.overrides[1])
-    assert result.criteria[0]["conciseness"] == 0.5
+    assert result.criteria[0]["conciseness"] == pytest.approx(1 / 3)
     assert result.criteria[0]["accuracy"] == 0.75
     assert result.criteria[0]["policy_compliance"] == 0.75
     summary = summarize([result])
@@ -406,19 +405,17 @@ def test_findings_force_check_values_and_record_overrides() -> None:
     assert summary["check_flip_rate"] == 0.0
 
 
-def test_veto_checks_keep_the_judges_false_without_a_finding() -> None:
-    checks, forced, overrides = sj.apply_findings(
-        dict.fromkeys(ALL_CHECKS, True)
-        | {"accuracy_no_placeholder": False, "conciseness_no_repetition": False},
-        detect_findings(_item()),
-    )
-    assert forced == {
-        "policy_no_must_avoid_phrase": True,
-        "conciseness_reply_length": True,
+def test_exact_checks_override_the_judge_in_both_directions() -> None:
+    judged = dict.fromkeys(ALL_CHECKS, True) | {
+        "accuracy_no_placeholder": False,
+        "conciseness_no_repetition": False,
     }
-    assert overrides == ()
-    assert checks["accuracy_no_placeholder"] is False
-    assert checks["conciseness_no_repetition"] is False
+    checks, forced, overrides = sj.apply_findings(judged, detect_findings(_item()))
+    assert forced == dict.fromkeys(sj.EXACT_CHECKS, True)
+    assert set(overrides) == {"accuracy_no_placeholder", "conciseness_no_repetition"}
+    assert checks["accuracy_no_placeholder"] is True
+    assert checks["conciseness_no_repetition"] is True
+    assert sj.VETO_CHECKS == {}
 
 
 def test_retry_recovers_with_json_reminder() -> None:
@@ -663,10 +660,11 @@ def test_findings_flag_long_replies() -> None:
     assert f"Assistant turn 4 is {limit + 1} words long" in section
 
 
-def test_prompt_without_findings_says_none_detected() -> None:
+def test_prompt_without_findings_states_exact_checks_true() -> None:
     prompt = build_judge_prompt(_item(), CRITERIA)
     assert "## Automated findings (verified, treat as fact)" in prompt
-    assert "None detected" in prompt
+    for check in sj.EXACT_CHECKS:
+        assert f"so `{check}` is true" in prompt
 
 
 def test_backends_send_fixed_system_message(monkeypatch: pytest.MonkeyPatch) -> None:

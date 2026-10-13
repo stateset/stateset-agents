@@ -148,7 +148,7 @@ time before the measured matrix.
   (560 train / 240 eval; generator export sha256 `59ccd505...`; loading it at
   that revision reproduces `build_support_dataset()` exactly).
 - `judge.rubric_revision` is pinned to `rubric_revision()` (the git blob SHA
-  of `stateset_agents/evaluation/rubrics/support_rubric_v3.md`); editing the
+  of `stateset_agents/evaluation/rubrics/support_rubric_v4.md`); editing the
   rubric changes it, and the workload refuses a mismatch.
 
 **Judge.** `mistralai/Mistral-Small-24B-Instruct-2501` (Apache-2.0, ungated,

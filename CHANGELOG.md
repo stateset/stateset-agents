@@ -31,6 +31,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Support judge rubric v4.** Placeholder and repetition checks are decided
+  exactly by the deterministic detectors (no longer LLM-judged), and the
+  subjective `conciseness_no_filler` check is dropped. On an H100 rejudge the
+  LLM flipped those two checks on 47% and 25% of items between criterion
+  orderings, driving v3 self-disagreement to 0.064-0.082. v3 is kept.
 - **Support judge rubric v3 (checklist).** `support_rubric_v3.md` replaces the
   1-5 Likert scores with 21 yes/no checks (3-5 per criterion); a criterion's
   score is the fraction of its checks that hold. Pass 2 reverses both the
