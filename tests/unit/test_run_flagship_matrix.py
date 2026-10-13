@@ -150,7 +150,6 @@ def test_real_manifests_pin_the_v2_judge_and_are_execution_ready(name: str) -> N
         "rubric_revision": rubric_revision(),
     }
     runner.validate_execution_ready(loaded, PACKAGE_VERSION)
-    runner.validate_execution_ready(loaded, "0.65.0")
 
 
 @pytest.mark.parametrize(

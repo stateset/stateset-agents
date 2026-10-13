@@ -46,7 +46,7 @@
     "max_prompt_length": 1536,
     "rollout_temperature": 1.0,
     "top_p": 1.0,
-    "beta": 0.02,
+    "beta": 0.05,
     "clip_range_left": 0.0003,
     "clip_range_right": 0.0004,
     "warmup_ratio": 0.05,
@@ -57,7 +57,7 @@
   "judge": {
     "model": "mistralai/Mistral-Small-24B-Instruct-2501",
     "revision": "9527884be6e5616bdd54de542f9ae13384489724",
-    "rubric_revision": "3b78a6c72688457ea8453acbed59e0e2832d4ab8"
+    "rubric_revision": "5eeef395704ac0e7f91eccdcbfb76e9f6cb15576"
   },
   "hardware": {
     "gpu": "NVIDIA H100 80GB HBM3",
