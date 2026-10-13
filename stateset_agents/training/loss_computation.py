@@ -147,6 +147,19 @@ def _token_objective(config: Any) -> Any:
     )
 
 
+def _token_kl_objective(objective: Any, config: Any, *, beta: float) -> Any:
+    """Enable the KL penalty with coefficient ``beta`` on the token path.
+
+    An objective chosen through ``config.objective`` keeps its own estimator
+    (``gspo`` regularizes the length-normalized sequence log-ratio); the native
+    objective, which has none, uses per-token k3.
+    """
+    kind = objective.kl
+    if getattr(config, "objective", None) is None or kind == "none":
+        kind = "k3_token"
+    return objective.with_(kl=kind, kl_coef=float(beta))
+
+
 def _legacy_group_advantages(
     rewards: Any,
     config: Any,
@@ -418,7 +431,7 @@ def _compute_token_path_loss(
     entropy_coef = float(getattr(config, "entropy_coef", 0.0))
     use_kl = beta > 0 and reference_model is not None
     if use_kl:
-        objective = objective.with_(kl="k3_token", kl_coef=float(beta))
+        objective = _token_kl_objective(objective, config, beta=beta)
     chunk = int(getattr(config, "generation_batch_size", 0) or 0) or len(
         max(rows_per_group, key=len)
     )

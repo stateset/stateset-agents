@@ -68,6 +68,45 @@ TrajectoryGroup: TypeAlias = core_trajectory.TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 
+
+class AdapterDisabledReference:
+    """Frozen-base reference for a PEFT policy, without a second weight copy.
+
+    Calls run the policy with its adapters disabled, which is exactly the
+    pre-training model when adapters start as a no-op (LoRA's zero-initialized
+    ``B``). It owns no parameters, so optimizers and freezing loops skip it.
+    """
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        with self._model.disable_adapter():
+            return self._model(*args, **kwargs)
+
+    def eval(self) -> AdapterDisabledReference:
+        return self
+
+    def parameters(self) -> Any:
+        return iter(())
+
+
+def build_reference_model(model: Any) -> Any:
+    """Return the frozen KL reference for ``model``.
+
+    PEFT policies reuse their base weights through ``disable_adapter``; any
+    other model is deep-copied, put in eval mode, and frozen.
+    """
+    if callable(getattr(model, "disable_adapter", None)):
+        return AdapterDisabledReference(model)
+    from copy import deepcopy
+
+    reference = deepcopy(model).eval()
+    for param in reference.parameters():
+        param.requires_grad = False
+    return reference
+
+
 MULTI_TRAINER_EXCEPTIONS = (
     RuntimeError,
     ValueError,
@@ -171,11 +210,7 @@ class MultiTurnGRPOTrainer:
                 getattr(self.config, "use_reference_model", False)
                 and self.reference_model is None
             ):
-                from copy import deepcopy
-
-                self.reference_model = deepcopy(self.agent.model).eval()
-                for param in self.reference_model.parameters():
-                    param.requires_grad = False
+                self.reference_model = build_reference_model(self.agent.model)
                 logger.info("Reference model initialized for KL regularization")
         except MULTI_TRAINER_EXCEPTIONS as ref_err:
             logger.warning(f"Could not initialize reference model: {ref_err}")
