@@ -45,8 +45,8 @@ def _load(name: str) -> ModuleType:
 shootout = _load("shootout")
 gate = _load("a_plus_gate")
 
-V5_MANIFEST = BENCHMARKS / "shootout_manifest_v6_five_frameworks.json"
-MANIFEST = json.loads(V5_MANIFEST.read_text(encoding="utf-8"))
+V6_MANIFEST = BENCHMARKS / "shootout_manifest_v6_five_frameworks.json"
+MANIFEST = json.loads(V6_MANIFEST.read_text(encoding="utf-8"))
 CONFIG: dict[str, Any] = MANIFEST["config"]
 VERSIONS = {item["name"]: item["version"] for item in MANIFEST["implementations"]}
 SHA = "a" * 40
@@ -658,13 +658,13 @@ def test_ambiguous_adapter_outputs_fail_closed(tmp_path: Path) -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_v5_manifest_loads_and_covers_required_frameworks() -> None:
-    manifest = shootout.load_manifest(V5_MANIFEST)
+def test_v6_manifest_loads_and_covers_required_frameworks() -> None:
+    manifest = shootout.load_manifest(V6_MANIFEST)
     shootout.validate_required_frameworks(manifest, gate.REQUIRED_FRAMEWORKS)
     assert {item["name"] for item in manifest["implementations"]} == set(
         gate.REQUIRED_FRAMEWORKS
     )
-    v4 = json.loads((BENCHMARKS / "shootout_manifest_v4.json").read_text())
+    v5 = json.loads((BENCHMARKS / "shootout_manifest_v5.json").read_text())
     for field in (
         "algorithm",
         "algorithm_revision",
@@ -677,10 +677,14 @@ def test_v5_manifest_loads_and_covers_required_frameworks() -> None:
         "seeds",
         "hardware",
     ):
-        assert manifest[field] == v4[field], field
+        assert manifest[field] == v5[field], field
+    native = {item["name"]: item for item in v5["implementations"]}
+    for item in manifest["implementations"]:
+        if item["name"] in native:
+            assert item == native[item["name"]], item["name"]
 
 
-def test_v5_manifest_pins_match_adapters_and_envs() -> None:
+def test_v6_manifest_pins_match_adapters_and_envs() -> None:
     assert VERSIONS["verl"] == verl.VERL_VERSION == framework_envs.VERL.version
     assert (
         VERSIONS["openrlhf"]

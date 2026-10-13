@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "protocol": "stateset-five-framework-gspo-shootout-v5",
+  "protocol": "stateset-five-framework-gspo-shootout-v6",
   "algorithm": "gspo",
-  "algorithm_revision": "matched-gspo-sequence-trl-1.12-v1",
+  "algorithm_revision": "matched-gspo-sequence-trl-1.12-v2-prompt-batch",
   "model": "Qwen/Qwen2.5-1.5B-Instruct",
   "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
   "task": "gsm8k",
