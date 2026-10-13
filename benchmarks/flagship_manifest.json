@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "stateset-flagship-manifest",
   "protocol": "stateset-flagship-multiturn-v1",
-  "framework_version": "0.64.2",
+  "framework_version": "0.65.0",
   "provider": "runpod",
   "cost_source": "runpod-api",
   "model": "Qwen/Qwen2.5-7B-Instruct",

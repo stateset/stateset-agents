@@ -123,6 +123,18 @@ def fixture_repo(tmp_path: Path) -> Path:
         "trainer:0.25.0 build\n", encoding="utf-8"
     )
 
+    benchmarks = tmp_path / "benchmarks"
+    benchmarks.mkdir()
+    for name in (
+        "flagship_manifest.json",
+        "flagship_preflight_manifest.json",
+        "distributed_async_manifest.json",
+        "distributed_async_local_manifest.json",
+    ):
+        (benchmarks / name).write_text(
+            '{"framework_version": "0.25.0"}\n', encoding="utf-8"
+        )
+
     (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_FIXTURE, encoding="utf-8")
     (tmp_path / "README.md").write_text(README_FIXTURE, encoding="utf-8")
     return tmp_path
@@ -305,3 +317,15 @@ def test_preflight_passes_clean_master(monkeypatch):
 
     monkeypatch.setattr(release, "git_output", fake_git_output)
     release.preflight_git()  # no raise
+
+
+def test_build_plan_bumps_current_evidence_manifests(fixture_repo: Path) -> None:
+    plan = release.build_plan(fixture_repo, "0.26.0", "t", None, "2026-08-12")
+
+    for name in (
+        "flagship_manifest.json",
+        "flagship_preflight_manifest.json",
+        "distributed_async_manifest.json",
+        "distributed_async_local_manifest.json",
+    ):
+        assert '"framework_version": "0.26.0"' in plan.changes[f"benchmarks/{name}"]

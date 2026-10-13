@@ -131,7 +131,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.64.2`, published from the
+- **Current Python release:** `stateset-agents==0.65.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -386,7 +386,20 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.64.2 (latest release; publication triggered by tag):**
+**v0.65.0 (latest release; publication triggered by tag):**
+
+- **Multi-turn RL that matches the conversation.** `ConversationEnvironment` now opens each episode with the scenario's first user message and replays scripted `user_turns`. Previously the agent spoke first and follow-ups were random filler.
+- **Rollout text is exactly what the policy sampled.** There are no default stop strings and no canned persona text, and truncation cuts the text and the token ids at the same boundary. `top_k=0` disables top-k, and a warning names any sampling setting that biases on-policy gradients.
+- **Faster, leaner training.**
+  - Lockstep batched multi-turn rollouts: one `generate` per conversation turn.
+  - Batched GSPO generation: 4.4x faster per run in the matched shootout.
+  - Chunked token-path backward bounds activation memory to one chunk; gradients are identical.
+  - The LoRA KL reference reuses the frozen base.
+- **Correct KL and references.** Reference models load at the policy's pinned revision, and selected objectives keep their own KL estimator (`gspo` uses sequence k3).
+- **Matched evidence.** GSPO on Qwen2.5-1.5B / GSM8K under protocol v5.1 (identical prompts x completions per step and identical sampling) runs at parity with TRL 1.12 so far: about 98% of TRL's throughput, with the same accuracy gains within noise.
+- **Breaking:** the v0.64.0 deprecation shims are removed (import from `stateset_agents.experimental`). See the CHANGELOG for the changed agent and environment defaults.
+
+**v0.64.2:**
 
 - **Security and correctness fixes from CodeQL and review.** Script-tag
   injection detection catches unclosed and `</script >` tags; Training Lab
@@ -1404,8 +1417,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.64.2" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.64.2"
+pip install "stateset-agents==0.65.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.65.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2255,7 +2268,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.64.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.65.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

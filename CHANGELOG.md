@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
+
 ### Performance
 
 - **GSPO samples a whole step in one `generate` call.** GSPO and GSPO-token
