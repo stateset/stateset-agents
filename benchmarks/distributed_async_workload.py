@@ -2449,6 +2449,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    if sys.platform == "win32" and args.role in {"node", "controller", "worker"}:
+        print(
+            "distributed async workload roles need POSIX signals and sockets; "
+            "run them on Linux",
+            file=sys.stderr,
+        )
+        return 2
     try:
         if args.role == "node":
             return run_node(args)

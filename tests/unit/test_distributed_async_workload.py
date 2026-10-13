@@ -31,6 +31,13 @@ from .distributed_async_fakes import (
 pytest.importorskip("torch")
 
 
+# The workload targets Linux pods: fault injection uses SIGKILL and the
+# partition proxy relies on POSIX socket semantics.
+POSIX_ONLY = pytest.mark.skipif(
+    sys.platform == "win32", reason="distributed async workload is POSIX-only"
+)
+
+
 def _record(core: Any, rollout_id: str, version: int | None = None) -> RolloutRecord:
     version = core.policy_version if version is None else version
     artifact = core.store.artifact_path(version)
@@ -163,6 +170,8 @@ async def lease_submit(core: Any, lease: Any, record: RolloutRecord) -> bool:
     return await core.control.submit(lease.worker_id, lease.lease_id, record)
 
 
+@POSIX_ONLY
+@pytest.mark.timeout(120)
 def test_controller_crash_recovery_is_exactly_once(tmp_path: Path) -> None:
     config = small_config()
     state = tmp_path / "node-0" / "controller"
@@ -255,6 +264,8 @@ def test_stale_rollouts_are_rejected_or_evicted_and_logged(tmp_path: Path) -> No
 # --------------------------------------------------------------------------- #
 
 
+@POSIX_ONLY
+@pytest.mark.timeout(120)
 def test_worker_survives_partition_and_controller_restart(tmp_path: Path) -> None:
     config = small_config()
     node0 = tmp_path / "node-0"
@@ -455,6 +466,8 @@ def _roundtrip(port: int, timeout: float = 1.0) -> bytes:
         return conn.recv(4)
 
 
+@POSIX_ONLY
+@pytest.mark.timeout(120)
 def test_partition_proxy_blackholes_and_heals() -> None:
     server, port = _echo_server()
     with socket.socket() as probe:
@@ -486,6 +499,8 @@ def _sleeper(seconds: float) -> Any:
     return lambda _inc: [sys.executable, "-c", f"import time; time.sleep({seconds})"]
 
 
+@POSIX_ONLY
+@pytest.mark.timeout(120)
 def test_supervisor_kills_and_restarts_fault_target(tmp_path: Path) -> None:
     config = small_config(
         controller_restart_delay_seconds=0.1, shutdown_grace_seconds=1
@@ -547,6 +562,8 @@ class _FakeProxy:
         self.calls.append("stop")
 
 
+@POSIX_ONLY
+@pytest.mark.timeout(120)
 def test_supervisor_partitions_and_heals_on_schedule(tmp_path: Path) -> None:
     config = small_config()
     plan = workload.ScenarioPlan("network_interruption", "measured", 2.0, 0.2, 0.3)
