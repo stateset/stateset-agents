@@ -28,7 +28,12 @@ def _adapter():
 
 
 @pytest.mark.parametrize(
-    "manifest", ["shootout_manifest_v4.json", "shootout_manifest_v5.json"]
+    "manifest",
+    [
+        "shootout_manifest_v4.json",
+        "shootout_manifest_v5.json",
+        "shootout_manifest_v5_1.json",
+    ],
 )
 def test_trl_prompts_per_step_match_the_manifest(manifest):
     config = json.loads((ROOT / "benchmarks" / manifest).read_text())["config"]
