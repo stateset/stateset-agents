@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1791903836676,
+  "lastUpdate": 1791906573926,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark (nightly)": [
@@ -64,6 +64,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 4.7249060470327446e-8",
             "extra": "mean: 432.3467534479876 nsec\nrounds: 111272"
+          }
+        ]
+      }
+    ],
+    "Python Benchmark": [
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "adbc7138d3654f4f0a0a111c901936041c7471c4",
+          "message": "bench: verl, OpenRLHF, NeMo-RL adapters + v6 five-framework manifest",
+          "timestamp": "2026-10-13T15:44:22Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/100/commits/adbc7138d3654f4f0a0a111c901936041c7471c4"
+        },
+        "date": 1791906572850,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 10862.646833894805,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000012662414720500891",
+            "extra": "mean: 92.05859449279819 usec\nrounds: 2397"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 11796.57680605415,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001253814153846672",
+            "extra": "mean: 84.77035469194652 usec\nrounds: 2419"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 8699.902842930524,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000011823007723953284",
+            "extra": "mean: 114.94381236827174 usec\nrounds: 4269"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1069.6131577631681,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000567020543942358",
+            "extra": "mean: 934.9174444443569 usec\nrounds: 855"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 212.56813729250118,
+            "unit": "iter/sec",
+            "range": "stddev: 0.004946864751789969",
+            "extra": "mean: 4.7043739138757426 msec\nrounds: 209"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2973192.572974304,
+            "unit": "iter/sec",
+            "range": "stddev: 4.16547376394317e-8",
+            "extra": "mean: 336.3387925456931 nsec\nrounds: 59155"
           }
         ]
       }
