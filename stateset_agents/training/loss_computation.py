@@ -33,7 +33,7 @@ __all__ = [
 ]
 
 _warned_missing_log_probs = False
-_warned_missing_assistant_mask = False
+_WARNED_ONCE: set[str] = set()
 
 
 def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
@@ -1398,13 +1398,12 @@ def _prepare_inputs_and_labels(
             inputs = {k: v.to(device) for k, v in inputs.items()}
             return inputs, labels.to(device)
 
-        global _warned_missing_assistant_mask
-        if not _warned_missing_assistant_mask:
+        if "missing_assistant_mask" not in _WARNED_ONCE:
             logger.warning(
                 "Could not derive assistant token masks from the chat template; "
                 "loss will include non-assistant tokens."
             )
-            _warned_missing_assistant_mask = True
+            _WARNED_ONCE.add("missing_assistant_mask")
 
     if not use_chat_template:
         # Try assistant-only masking with offsets for non-chat-template tokenizers.

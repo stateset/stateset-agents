@@ -608,7 +608,9 @@ class SimToRealTransfer:
         Returns:
             Calibration metrics
         """
-        user_model = user_model or self.user_model
+        # Calibration fits the simulator to real-data statistics; the user
+        # model is accepted for API compatibility but not needed here.
+        del user_model
 
         if self.simulator is None:
             raise ValueError("Simulator required for calibration")
