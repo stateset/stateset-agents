@@ -383,6 +383,11 @@ class TestTrainWithTrainer:
         assert isinstance(seconds, float)
 
 
+# Each test runs the real script in a fresh interpreter. Its seeding step
+# (``set_all_seeds``) imports torch and ``transformers.set_seed``, which pulls in
+# ``transformers.trainer_utils`` -> peft/sklearn: ~6s idle and 25s+ under
+# ``-n 8`` load. That cost is inherent to the CLI path under test.
+@pytest.mark.timeout(180)
 class TestEndToEndRunner:
     """Verify the runner's smoke-test path produces the expected output."""
 

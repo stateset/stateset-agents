@@ -19,6 +19,12 @@ def run_contract(script, tmp_path):
         WANDB_RUN_ID="ambient-environment-id",
         WANDB_API_KEY="0" * 40,
         WANDB_DIR=str(tmp_path),
+        # Keep W&B's per-user cache/config/data/artifact dirs private to this test
+        # so concurrent xdist workers never share staging or settings state.
+        WANDB_CACHE_DIR=str(tmp_path / "wandb-cache"),
+        WANDB_CONFIG_DIR=str(tmp_path / "wandb-config"),
+        WANDB_DATA_DIR=str(tmp_path / "wandb-data"),
+        WANDB_ARTIFACT_DIR=str(tmp_path / "wandb-artifacts"),
         WANDB_SILENT="true",
         MLFLOW_TRACKING_URI=f"sqlite:///{tmp_path / 'tracking.db'}",
     )
@@ -30,13 +36,16 @@ def run_contract(script, tmp_path):
         env=environment,
         capture_output=True,
         text=True,
-        timeout=50,
+        timeout=150,
         check=False,
     )
     assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.parametrize("with_ambient", [False, True])
+# Real SDK subprocess: imports torch + wandb and starts wandb-core (~2s idle, 4x+
+# under load). The subprocess timeout above only bounds a hang.
+@pytest.mark.timeout(180)
 def test_real_wandb_offline_runs_do_not_share_active_run(tmp_path, with_ambient):
     if importlib.util.find_spec("wandb") is None:
         pytest.skip("W&B is optional")
@@ -83,6 +92,7 @@ asyncio.run(main())
     )
 
 
+@pytest.mark.timeout(180)  # real SDK subprocess; see run_contract
 def test_real_mlflow_local_runs_keep_metrics_and_statuses_separate(tmp_path):
     if importlib.util.find_spec("mlflow") is None:
         pytest.skip("MLflow is optional")

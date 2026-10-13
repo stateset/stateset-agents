@@ -486,6 +486,10 @@ async def test_new_journal_cannot_lose_idempotency_fingerprint(build, damage):
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(sys.platform == "win32", reason="select on child pipes is POSIX")
+# The child must import the real orchestrator, which eagerly imports torch and
+# wandb (~2.5-6s idle, several times that under ``-n 8`` load). The readiness
+# wait returns as soon as the child commits; the limits only bound a hang.
+@pytest.mark.timeout(180)
 async def test_retry_after_process_dies_before_submission_response(build, tmp_path):
     script = """
 import asyncio, sys
@@ -515,7 +519,7 @@ asyncio.run(main())
         text=True,
     ) as child:
         try:
-            assert select.select([child.stdout], [], [], 30)[0], "child did not commit"
+            assert select.select([child.stdout], [], [], 150)[0], "child did not commit"
             assert child.stdout.readline().strip() == "committed-before-response"
         finally:
             child.kill()
