@@ -138,6 +138,34 @@ def train_reward_stats(log_history: list[dict[str, Any]]) -> dict[str, float]:
     }
 
 
+def trl_batch_arguments(config: dict[str, Any]) -> dict[str, int]:
+    """TRL batch settings that match the native leg's work per optimizer step.
+
+    The shootout manifest counts ``per_device_train_batch_size`` in prompts,
+    as the native trainers do (each prompt sampled ``num_generations`` times).
+    TRL's GRPO counts its batch in completions, so the same work needs
+    ``prompts * num_generations`` completions per device step; passing the
+    prompt count through unchanged trains TRL on ``1/num_generations`` of the
+    prompts.
+    """
+    prompts = int(config["per_device_train_batch_size"])
+    generations = int(config["num_generations"])
+    return {
+        "per_device_train_batch_size": prompts * generations,
+        "gradient_accumulation_steps": int(config["gradient_accumulation_steps"]),
+    }
+
+
+def completions_per_run(config: dict[str, Any]) -> int:
+    """Completions trained on over the run (identical for both legs)."""
+    return (
+        int(config["max_steps"])
+        * int(config["per_device_train_batch_size"])
+        * int(config["gradient_accumulation_steps"])
+        * int(config["num_generations"])
+    )
+
+
 def main() -> int:
     """Train upstream TRL directly and emit a neutral measured result."""
     parser = argparse.ArgumentParser(description=__doc__)
@@ -239,12 +267,7 @@ def main() -> int:
             {
                 "output_dir": str(args.artifact_dir),
                 "max_steps": int(config["max_steps"]),
-                "per_device_train_batch_size": int(
-                    config["per_device_train_batch_size"]
-                ),
-                "gradient_accumulation_steps": int(
-                    config["gradient_accumulation_steps"]
-                ),
+                **trl_batch_arguments(config),
                 "learning_rate": float(config["learning_rate"]),
                 "adam_beta1": float(config["adam_beta1"]),
                 "adam_beta2": float(config["adam_beta2"]),
@@ -327,10 +350,7 @@ def main() -> int:
             "cuda": str(torch.version.cuda),
         },
         "metrics": {
-            "samples_processed": int(config["max_steps"])
-            * int(config["per_device_train_batch_size"])
-            * int(config["gradient_accumulation_steps"])
-            * int(config["num_generations"]),
+            "samples_processed": completions_per_run(config),
             "peak_vram_mb": torch.cuda.max_memory_allocated(0) / (1024 * 1024),
             "eval_score_baseline": baseline,
             "eval_score_final": final_score,
