@@ -327,9 +327,12 @@ class GSPOModelManager(SharedModelManager):
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
                 trust_remote_code=self.config.trust_remote_code,
+                revision=getattr(self.config, "model_revision", None),
             )
             if self.ref_model is not None:
                 self.ref_model.eval()
+                for param in self.ref_model.parameters():
+                    param.requires_grad = False
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
