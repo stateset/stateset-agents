@@ -25,6 +25,7 @@ from benchmarks.agent_quality_evidence import (
 
 def _run(suite: str, seed: int, improvement: float = 0.08) -> dict[str, Any]:
     config = {"temperature": 0.0, "max_turns": 20}
+    trained_successes = round((0.50 + improvement) * 100)
     return {
         "schema_version": 3,
         "kind": "stateset-agent-quality-evidence",
@@ -51,13 +52,15 @@ def _run(suite: str, seed: int, improvement: float = 0.08) -> dict[str, Any]:
         "paired_task_ids_sha256": "9" * 64,
         "tasks": 100,
         "baseline_successful_episodes": 50,
-        "trained_successful_episodes": 58,
-        "baseline_score": 0.50,
-        "trained_score": 0.50 + improvement,
+        "trained_successful_episodes": trained_successes,
+        "baseline_score": 50 / 100,
+        "trained_score": trained_successes / 100,
         "evaluation_seconds": 120.0,
         "evaluation_cost_usd": 5.80,
         "cost_source": "provider-api",
-        "cost_per_successful_episode_usd": 0.10,
+        "cost_per_successful_episode_usd": (
+            5.80 / trained_successes if trained_successes else 0.0
+        ),
         "artifact_sha256": "d" * 64,
         "artifact_path": "../runs/artifact",
     }
@@ -187,20 +190,104 @@ def test_run_rejects_synthetic_bad_digest_and_bad_cost() -> None:
         validate_run(run, Path("pairing.json"))
 
 
-def test_load_runs_verifies_retained_artifact_bytes(tmp_path: Path) -> None:
+def _write_task_records(
+    artifact: Path, baseline: list[bool], trained: list[bool]
+) -> list[str]:
+    """Write the paired harness's retained per-policy task records."""
+    task_ids = [f"task-{index}" for index in range(len(baseline))]
+    for policy, outcomes in (("baseline", baseline), ("trained", trained)):
+        directory = artifact / policy
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / "tasks.jsonl").write_text(
+            "".join(
+                json.dumps({"task_id": task_id, "success": success, "cost_usd": 0.5})
+                + "\n"
+                for task_id, success in zip(task_ids, outcomes, strict=True)
+            ),
+            encoding="utf-8",
+        )
+    return task_ids
+
+
+def _bind_records(run: dict[str, Any], artifact: Path, task_ids: list[str]) -> None:
+    run["tasks"] = len(task_ids)
+    run["baseline_successful_episodes"] = 1
+    run["trained_successful_episodes"] = 3
+    run["baseline_score"] = 1 / 4
+    run["trained_score"] = 3 / 4
+    run["cost_per_successful_episode_usd"] = run["evaluation_cost_usd"] / 3
+    run["paired_task_ids_sha256"] = hashlib.sha256(
+        json.dumps(task_ids, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    run["artifact_sha256"] = hash_artifact(artifact)
+
+
+def test_validate_run_rejects_score_inconsistent_with_counts() -> None:
+    run = _run("tau3-bench", 42)
+    validate_run(run, Path("consistent.json"))
+    run["trained_score"] = 0.90
+    with pytest.raises(AgentQualityEvidenceError, match="trained_score"):
+        validate_run(run, Path("tampered.json"))
+    run = _run("tau3-bench", 42)
+    run["baseline_score"] = 0.49
+    with pytest.raises(AgentQualityEvidenceError, match="baseline_score"):
+        validate_run(run, Path("tampered.json"))
+
+
+def test_load_runs_recomputes_scores_from_retained_task_records(
+    tmp_path: Path,
+) -> None:
+    evidence_dir = tmp_path / "evidence"
+    artifact = tmp_path / "runs" / "artifact"
+    evidence_dir.mkdir()
+    task_ids = _write_task_records(
+        artifact, [True, False, False, False], [True, True, True, False]
+    )
+    run = _run("tau3-bench", 42)
+    _bind_records(run, artifact, task_ids)
+    source = evidence_dir / "run.json"
+    source.write_text(json.dumps(run), encoding="utf-8")
+    loaded = load_runs([source])[0]
+    assert (loaded["baseline_score"], loaded["trained_score"]) == (0.25, 0.75)
+
+    # Internally consistent counts and score, but not what the records say.
+    run["trained_successful_episodes"] = 4
+    run["trained_score"] = 1.0
+    run["cost_per_successful_episode_usd"] = run["evaluation_cost_usd"] / 4
+    source.write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(AgentQualityEvidenceError, match="per-task records"):
+        load_runs([source])
+
+
+def test_load_runs_requires_retained_task_records(tmp_path: Path) -> None:
     evidence_dir = tmp_path / "evidence"
     artifact = tmp_path / "runs" / "artifact"
     evidence_dir.mkdir()
     artifact.mkdir(parents=True)
-    (artifact / "tasks.jsonl").write_text('{"task_id":"one"}\n', encoding="utf-8")
+    (artifact / "paired-summary.json").write_text("{}", encoding="utf-8")
     run = _run("tau3-bench", 42)
     run["artifact_sha256"] = hash_artifact(artifact)
+    source = evidence_dir / "run.json"
+    source.write_text(json.dumps(run), encoding="utf-8")
+    with pytest.raises(AgentQualityEvidenceError, match="tasks.jsonl"):
+        load_runs([source])
+
+
+def test_load_runs_verifies_retained_artifact_bytes(tmp_path: Path) -> None:
+    evidence_dir = tmp_path / "evidence"
+    artifact = tmp_path / "runs" / "artifact"
+    evidence_dir.mkdir()
+    task_ids = _write_task_records(
+        artifact, [True, False, False, False], [True, True, True, False]
+    )
+    run = _run("tau3-bench", 42)
+    _bind_records(run, artifact, task_ids)
     source = evidence_dir / "run.json"
     source.write_text(json.dumps(run), encoding="utf-8")
 
     assert load_runs([source])[0]["run_id"] == "tau3-bench-42"
 
-    (artifact / "tasks.jsonl").write_text('{"task_id":"tampered"}\n', encoding="utf-8")
+    (artifact / "extra.jsonl").write_text('{"task_id":"tampered"}\n', encoding="utf-8")
     with pytest.raises(AgentQualityEvidenceError, match="digest does not match"):
         load_runs([source])
 

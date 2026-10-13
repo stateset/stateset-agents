@@ -358,6 +358,11 @@ benchmark-agent-quality-contract: ## Validate the standard-agent execution manif
 	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py \
 		benchmarks/agent_quality_manifest.example.json \
 		--output-dir /tmp/stateset-agent-quality-contract --dry-run
+	$(PYTHON_BIN) benchmarks/adapters/paired_agent_harness.py validate \
+		--harness-config benchmarks/agent_quality_harnesses.json
+	$(PYTHON_BIN) benchmarks/run_agent_quality_matrix.py \
+		benchmarks/agent_quality_manifest.json \
+		--output-dir /tmp/stateset-agent-quality-contract --dry-run
 
 benchmark-agent-quality-run: ## Execute paired Tau3/BFCL V4/SWE matrix (MANIFEST and OUTPUT_DIR required)
 	@test -n "$(MANIFEST)" || { echo "Usage: make $@ MANIFEST=path OUTPUT_DIR=path [EXTRA_ARGS='...']" >&2; exit 2; }

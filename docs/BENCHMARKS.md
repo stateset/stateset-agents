@@ -90,6 +90,11 @@ without a shell, reject stale/out-of-tree artifacts and checkout mutation, and
 retain execution manifests, per-command streams, normalized task records, raw
 artifacts, and failures before invoking the publication gate automatically:
 
+The concrete planned run (pinned upstreams, served base vs. trained adapter,
+endpoint binding shim, cost meter and spend ceiling) is
+`benchmarks/agent_quality_manifest.json`; `benchmarks/README.md` lists the
+exact operator commands.
+
 ```bash
 make benchmark-agent-quality-contract
 make benchmark-agent-quality-run \

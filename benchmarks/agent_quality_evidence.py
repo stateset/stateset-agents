@@ -10,6 +10,7 @@ import math
 import statistics
 import sys
 from collections.abc import Mapping, Sequence
+from fractions import Fraction
 from pathlib import Path
 from typing import Any
 
@@ -136,6 +137,89 @@ def _digest(data: Mapping[str, Any], key: str, source: Path, length: int) -> str
     return value
 
 
+#: Scores are serialized floats; ``successes / tasks`` is the exact rational
+#: they must encode. Any deviation beyond float rounding is a tampered score.
+SCORE_TOLERANCE = 1e-12
+
+
+def _require_score_matches(
+    score: float, successes: int, tasks: int, *, key: str, source: Path
+) -> None:
+    expected = Fraction(successes, tasks)
+    if abs(Fraction(score) - expected) > SCORE_TOLERANCE:
+        raise AgentQualityEvidenceError(
+            f"{source}: {key} {score!r} does not equal {successes}/{tasks}"
+        )
+
+
+def _load_task_records(path: Path, source: Path) -> list[tuple[str, bool]]:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as exc:
+        raise AgentQualityEvidenceError(
+            f"{source}: retained artifact lacks per-task records {path.name} "
+            f"under {path.parent.name}/"
+        ) from exc
+    records: list[tuple[str, bool]] = []
+    for line in lines:
+        try:
+            raw = json.loads(line)
+        except json.JSONDecodeError as exc:
+            raise AgentQualityEvidenceError(
+                f"{source}: invalid record in {path}"
+            ) from exc
+        task_id = raw.get("task_id") if isinstance(raw, Mapping) else None
+        success = raw.get("success") if isinstance(raw, Mapping) else None
+        if not isinstance(task_id, str) or not isinstance(success, bool):
+            raise AgentQualityEvidenceError(f"{source}: invalid record in {path}")
+        records.append((task_id, success))
+    return records
+
+
+def verify_task_records(data: Mapping[str, Any], artifact: Path, source: Path) -> None:
+    """Recompute counts, scores and the task digest from retained records.
+
+    The paired harness retains ``baseline/tasks.jsonl`` and
+    ``trained/tasks.jsonl`` inside the hashed artifact. A row whose reported
+    successes, scores or paired task digest disagree with those per-task
+    records is rejected even when it is internally consistent.
+    """
+    tasks = int(data["tasks"])
+    task_ids: list[str] | None = None
+    for policy in ("baseline", "trained"):
+        records = _load_task_records(artifact / policy / "tasks.jsonl", source)
+        ids = [task_id for task_id, _ in records]
+        if len(ids) != tasks or len(set(ids)) != tasks:
+            raise AgentQualityEvidenceError(
+                f"{source}: {policy} per-task records do not cover {tasks} tasks"
+            )
+        if task_ids is not None and ids != task_ids:
+            raise AgentQualityEvidenceError(
+                f"{source}: per-task records are not identically ordered"
+            )
+        task_ids = ids
+        successes = sum(success for _, success in records)
+        if successes != data[f"{policy}_successful_episodes"]:
+            raise AgentQualityEvidenceError(
+                f"{source}: {policy}_successful_episodes disagrees with the "
+                f"retained per-task records ({successes}/{tasks})"
+            )
+        _require_score_matches(
+            data[f"{policy}_score"],
+            successes,
+            tasks,
+            key=f"{policy}_score (per-task records)",
+            source=source,
+        )
+    digest = hashlib.sha256(
+        json.dumps(task_ids, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    if digest != data["paired_task_ids_sha256"]:
+        raise AgentQualityEvidenceError(
+            f"{source}: paired_task_ids_sha256 disagrees with the per-task records"
+        )
+
+
 def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     """Validate one paired base-versus-trained held-out evaluation."""
     if (
@@ -199,6 +283,11 @@ def validate_run(data: Mapping[str, Any], source: Path) -> dict[str, Any]:
     trained = _number(data, "trained_score", source)
     if not 0.0 <= baseline <= 1.0 or not 0.0 <= trained <= 1.0:
         raise AgentQualityEvidenceError(f"{source}: scores must be within [0, 1]")
+    for key, successes in (
+        ("baseline_score", baseline_successful),
+        ("trained_score", trained_successful),
+    ):
+        _require_score_matches(data[key], successes, tasks, key=key, source=source)
     duration = _number(data, "evaluation_seconds", source)
     cost = _number(data, "evaluation_cost_usd", source)
     if duration <= 0 or cost < 0:
@@ -235,7 +324,8 @@ def load_runs(inputs: Sequence[Path]) -> list[dict[str, Any]]:
         if not isinstance(raw, Mapping):
             raise AgentQualityEvidenceError(f"{path}: evidence must be an object")
         run = validate_run(raw, path)
-        verify_retained_artifact(run, path)
+        artifact = verify_retained_artifact(run, path)
+        verify_task_records(run, artifact, path)
         runs.append(run)
     return runs
 

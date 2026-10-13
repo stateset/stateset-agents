@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "harness_revision": "c8680bf10b5acc916636a5da0e71c7a2892d7a23",
+  "harness_revision_note": "Pins the commit that adds the v6 five-framework manifest and the verl/OpenRLHF/NeMo-RL adapters on top of shootout protocol v5.1.",
+  "shootout_manifest": "benchmarks/shootout_manifest_v6_five_frameworks.json",
+  "execution": {
+    "provider": "runpod",
+    "provider_tier": "SECURE",
+    "container_image": "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204",
+    "gpu_name": "NVIDIA L40S",
+    "gpu_count": 1,
+    "container_disk_gb": 250,
+    "timeout_seconds": 165600,
+    "max_lifetime_seconds": 172800,
+    "max_cost_usd": 45.0
+  },
+  "extra_pip": [
+    "trl==1.12.0"
+  ],
+  "prewarm_command": "python benchmarks/adapters/framework_envs.py --execute && python -c \"from transformers import AutoModelForCausalLM, AutoTokenizer; from datasets import load_dataset; AutoTokenizer.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); AutoModelForCausalLM.from_pretrained('Qwen/Qwen2.5-1.5B-Instruct', revision='989aa7980e4cf806f80c7fef2b1adb7bc71aa306'); load_dataset('openai/gsm8k', 'main', revision='740312add88f781978c0658806c59bc2815b9866')\"",
+  "shootout_manifest_hardware_note": "L40S 48GB; 5 frameworks x 3 seeds = 15 runs at 1.5B/200 steps. Per-run time is unmeasured for v4/v5; see benchmarks/README.md for the planning estimate."
+}

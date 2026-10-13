@@ -12,6 +12,11 @@ import pytest
 from stateset_agents.training.river_refund import BENCHMARKS, campaign, prepare_run
 from tests.unit.river_fakes import traced_refund_trajectory
 
+# Liveness guards only: they bound a hang, they do not measure timing. Slow
+# CI runners (Windows) exceeded the former 2-3 s limits before the awaited
+# event fired, which skipped the cancellation path and failed spuriously.
+HANG_GUARD_S = 30
+
 
 @dataclass
 class Checkpoint:
@@ -142,7 +147,7 @@ async def test_rollout_consumer_failure_closes_iterator_before_provider(
     monkeypatch.setattr(module, "trajectory_case_identity", invalid_identity)
     task = asyncio.create_task(run(model))
     try:
-        await asyncio.wait_for(entered.wait(), 2)
+        await asyncio.wait_for(entered.wait(), HANG_GUARD_S)
         assert not task.done() and not model.closed
         if cancel_cleanup:
             for _ in range(3):
@@ -152,7 +157,7 @@ async def test_rollout_consumer_failure_closes_iterator_before_provider(
     finally:
         release.set()
         with pytest.raises(asyncio.CancelledError if cancel_cleanup else ValueError):
-            await asyncio.wait_for(task, 3)
+            await asyncio.wait_for(task, HANG_GUARD_S)
     assert closed.is_set() and model.closed
     assert not (path / "test_results.json").exists()
     if mode == "collect":
@@ -170,16 +175,16 @@ async def test_slow_checkpoint_save_does_not_stall_other_async_work(native_save)
     model = BlockedSave()
     task = asyncio.create_task(run(model))
     try:
-        await asyncio.wait_for(model.entered.wait(), 2)
+        await asyncio.wait_for(model.entered.wait(), HANG_GUARD_S)
         assert model.thread_id != threading.get_ident()
         assert (
-            await asyncio.wait_for(asyncio.sleep(0, result="responsive"), 1)
+            await asyncio.wait_for(asyncio.sleep(0, result="responsive"), 5)
             == "responsive"
         )
         assert not task.done() and not engines and not model.closed
     finally:
         model.release.set()
-        await asyncio.wait_for(task, 5)
+        await asyncio.wait_for(task, HANG_GUARD_S)
     assert model.finished.is_set() and model.closed
     assert model.calls == [
         (
@@ -211,7 +216,7 @@ async def test_cancelled_save_drains_before_session_close_and_never_samples(
     before = {p: p.read_bytes() for p in path.iterdir()}
     task = asyncio.create_task(run(model))
     try:
-        await asyncio.wait_for(model.entered.wait(), 2)
+        await asyncio.wait_for(model.entered.wait(), HANG_GUARD_S)
         for _ in range(3):
             task.cancel()
             await asyncio.sleep(0)
@@ -219,7 +224,7 @@ async def test_cancelled_save_drains_before_session_close_and_never_samples(
     finally:
         model.release.set()
         with pytest.raises(asyncio.CancelledError):
-            await asyncio.wait_for(task, 5)
+            await asyncio.wait_for(task, HANG_GUARD_S)
     assert model.finished.is_set() and model.closed
     assert len(model.calls) == 1 and not engines
     assert {p: p.read_bytes() for p in path.iterdir()} == before
