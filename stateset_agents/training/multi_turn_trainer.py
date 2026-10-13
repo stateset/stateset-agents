@@ -806,7 +806,6 @@ class MultiTurnGRPOTrainer:
         logger.info("Starting GRPO training")
         errored = False
         cancelled = False
-        grad_accum_steps = 1
         try:
             # Calculate total training steps
             num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
