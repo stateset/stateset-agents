@@ -10,7 +10,7 @@ This module provides distributed training capabilities including:
 
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
 
@@ -30,6 +30,8 @@ from stateset_agents.core.agent import MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
 
+from .callbacks import notify_checkpoint_saved
+from .checkpoint_state import save_training_checkpoint
 from .config import TrainingConfig
 from .trainer import MultiTurnGRPOTrainer
 
@@ -38,7 +40,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DistributedConfig:
-    """Configuration for distributed training"""
+    """Configuration for distributed training.
+
+    An unset accumulation count inherits ``TrainingConfig``. An explicit value
+    overrides it for both the base trainer and Accelerate.
+    """
 
     # Basic distributed settings
     backend: str = "nccl"  # nccl, gloo, mpi
@@ -50,7 +56,7 @@ class DistributedConfig:
 
     # Training strategy
     strategy: str = "ddp"  # ddp, fsdp, deepspeed
-    gradient_accumulation_steps: int = 1
+    gradient_accumulation_steps: int | None = None  # Inherit TrainingConfig
 
     # FSDP specific
     fsdp_sharding_strategy: str = "full_shard"  # full_shard, shard_grad_op, no_shard
@@ -93,6 +99,28 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         self.accelerator: Accelerator | None = None
         self.is_main_process = True
         self.config = config or TrainingConfig()
+        accumulation_steps = self.distributed_config.gradient_accumulation_steps
+        if accumulation_steps is None:
+            accumulation_steps = self.config.gradient_accumulation_steps
+        if (
+            isinstance(accumulation_steps, bool)
+            or not isinstance(accumulation_steps, int)
+            or accumulation_steps < 1
+        ):
+            raise ValueError("gradient_accumulation_steps must be a positive integer")
+        self.config = replace(
+            self.config, gradient_accumulation_steps=accumulation_steps
+        )
+        self.distributed_config.gradient_accumulation_steps = accumulation_steps
+        if (
+            self.distributed_config.strategy == "accelerate"
+            and accumulation_steps > 1
+            and self.config.num_gradient_updates > 1
+        ):
+            raise ValueError(
+                "Accelerate cannot combine gradient accumulation with "
+                "multiple inner optimizer updates"
+            )
 
         # Initialize distributed environment
         self._init_distributed()
@@ -113,6 +141,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 log_with=["wandb"] if self.config.report_to == "wandb" else None,
             )
             self.is_main_process = self.accelerator.is_main_process
+            self.distributed_config.world_size = self.accelerator.num_processes
+            self.distributed_config.rank = self.accelerator.process_index
+            self.distributed_config.local_rank = self.accelerator.local_process_index
 
         else:
             # Manual distributed setup
@@ -135,20 +166,27 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                     f"rank {self.distributed_config.rank}/{self.distributed_config.world_size}"
                 )
 
+    def _data_parallel_rank_world(self) -> tuple[int, int]:
+        return (
+            int(self.distributed_config.rank),
+            max(1, int(self.distributed_config.world_size)),
+        )
+
     async def initialize(self):
         """Initialize distributed trainer"""
         await super().initialize()
 
         # Wrap model for distributed training
-        if self.distributed_config.world_size > 1:
+        if self.distributed_config.strategy == "accelerate":
+            # Accelerate also places and wraps single-process models.
+            self._wrap_model_accelerate()
+        elif self.distributed_config.world_size > 1:
             if self.distributed_config.strategy == "fsdp":
                 self._wrap_model_fsdp()
             elif self.distributed_config.strategy == "ddp":
                 self._wrap_model_ddp()
             elif self.distributed_config.strategy == "deepspeed":
                 self._wrap_model_deepspeed()
-            elif self.distributed_config.strategy == "accelerate":
-                self._wrap_model_accelerate()
 
     def _wrap_model_ddp(self):
         """Wrap model with DistributedDataParallel"""
@@ -275,9 +313,18 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
     def _wrap_model_accelerate(self):
         """Wrap model with Accelerate"""
-        self.agent.model, self.optimizer, self.lr_scheduler = self.accelerator.prepare(
-            self.agent.model, self.optimizer, self.lr_scheduler
-        )
+        if self.accelerator is None or self.optimizer is None:
+            raise RuntimeError("Accelerate requires an initialized optimizer")
+        if self.lr_scheduler is None:
+            self.agent.model, self.optimizer = self.accelerator.prepare(
+                self.agent.model, self.optimizer
+            )
+        else:
+            self.agent.model, self.optimizer, self.lr_scheduler = (
+                self.accelerator.prepare(
+                    self.agent.model, self.optimizer, self.lr_scheduler
+                )
+            )
         logger.info("Model wrapped with Accelerate")
 
     async def training_step(self, trajectory_groups: list[Any]) -> dict[str, Any]:
@@ -301,11 +348,22 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         """Synchronize metrics across all processes"""
 
         synced_metrics: dict[str, Any] = {}
+        accelerator = self.accelerator
+        if accelerator is not None:
+            device = accelerator.device
+        else:
+            device = next(self.agent.model.parameters()).device
         for key, value in metrics.items():
-            if isinstance(value, (int, float)):
-                tensor = torch.tensor(value, device=self.agent.model.device)
-                dist.all_reduce(tensor, op=dist.ReduceOp.AVG)
-                synced_metrics[key] = tensor.item()
+            if isinstance(value, (int, float, bool)):
+                tensor = torch.tensor(float(value), device=device)
+                if accelerator is not None:
+                    tensor = accelerator.reduce(tensor, reduction="mean")
+                else:
+                    dist.all_reduce(tensor, op=dist.ReduceOp.SUM)
+                    tensor /= self.distributed_config.world_size
+                synced_metrics[key] = (
+                    tensor.item() == 1.0 if isinstance(value, bool) else tensor.item()
+                )
             else:
                 synced_metrics[key] = value
 
@@ -329,48 +387,61 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
     async def _save_distributed_checkpoint(
         self, is_best: bool = False, checkpoint_name: str | None = None
     ):
-        """Save checkpoint in distributed manner"""
+        """Save a resumable checkpoint under ``checkpoint_dir``.
 
-        checkpoint_name = checkpoint_name or f"checkpoint-{self.global_step}"
+        DDP and Accelerate replicas hold identical weights, so the main
+        process writes the same complete training state as the single-process
+        trainer (bare-model weights, optimizer, scheduler, scaler, gradient
+        accumulation, running statistics). FSDP shards are written by every
+        rank through ``torch.distributed.checkpoint``.
+        """
+
+        if checkpoint_name is None:
+            checkpoint_name = (
+                "best-checkpoint" if is_best else f"checkpoint-{self.global_step}"
+            )
         checkpoint_path = Path(self.distributed_config.checkpoint_dir) / checkpoint_name
+        distributed = self.distributed_config.world_size > 1
 
-        # Create checkpoint directory
-        if self.is_main_process:
-            checkpoint_path.mkdir(parents=True, exist_ok=True)
-
-        # Wait for directory creation
-        if self.distributed_config.world_size > 1:
-            dist.barrier()
-
-        # Save model state
         if self.distributed_config.strategy == "fsdp":
-            # FSDP checkpoint saving
+            if self.is_main_process:
+                checkpoint_path.mkdir(parents=True, exist_ok=True)
+            if distributed:
+                dist.barrier()
             dist_checkpoint.save_state_dict(
                 state_dict=self.agent.model.state_dict(),
                 storage_writer=dist_checkpoint.FileSystemWriter(str(checkpoint_path)),
             )
-        else:
-            # Regular checkpoint saving
             if self.is_main_process:
-                model_to_save = (
-                    self.agent.model.module
-                    if hasattr(self.agent.model, "module")
-                    else self.agent.model
+                torch.save(
+                    {
+                        "global_step": self.global_step,
+                        "current_epoch": self.current_epoch,
+                        "best_eval_metric": self.best_eval_metric,
+                        "distributed_config": self.distributed_config.__dict__,
+                    },
+                    checkpoint_path / "training_state.pt",
                 )
-                model_to_save.save_pretrained(checkpoint_path)
-                self.agent.tokenizer.save_pretrained(checkpoint_path)
-
-        # Save training state (main process only)
-        if self.is_main_process:
-            training_state = {
-                "global_step": self.global_step,
-                "current_epoch": self.current_epoch,
-                "best_eval_metric": self.best_eval_metric,
-                "distributed_config": self.distributed_config.__dict__,
-            }
-            torch.save(training_state, checkpoint_path / "training_state.pt")
+        elif self.is_main_process:
+            save_training_checkpoint(
+                self, checkpoint_path, require_torch_fn=lambda: torch
+            )
+        if distributed:
+            dist.barrier()
 
         logger.info(f"Distributed checkpoint saved: {checkpoint_path}")
+        if self.is_main_process:
+            wandb_logger = getattr(self, "wandb_logger", None)
+            if wandb_logger:
+                wandb_logger.log_model_checkpoint(
+                    str(checkpoint_path), self.global_step, is_best=is_best
+                )
+            await notify_checkpoint_saved(
+                getattr(self, "callbacks", []),
+                path=str(checkpoint_path),
+                step=int(self.global_step),
+                is_best=bool(is_best),
+            )
 
     def cleanup(self):
         """Cleanup distributed resources"""

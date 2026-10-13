@@ -32,8 +32,22 @@ class AgentService:
 
     def __init__(self, security_monitor: SecurityMonitor):
         self.agents: dict[str, MultiTurnAgent] = {}
+        # agent_id -> creating user's id; operator-registered agents have None
+        # and stay visible to every caller.
+        self.agent_owners: dict[str, str | None] = {}
         self.conversations: dict[str, list[dict[str, Any]]] = {}
         self.security_monitor = security_monitor
+
+    def can_access_agent(
+        self, agent_id: str, user_id: str | None, *, is_admin: bool = False
+    ) -> bool:
+        """Whether ``user_id`` may see or modify ``agent_id`` (admins may)."""
+        if agent_id not in self.agents:
+            return False
+        if is_admin or user_id is None:
+            return True
+        owner = self.agent_owners.get(agent_id)
+        return owner is None or owner == user_id
 
     def _get_or_create_conversation(
         self,
@@ -118,8 +132,26 @@ class AgentService:
         # Default to stub backend in non-production unless explicitly enabled.
         return environment != "production" and not allow_external
 
-    async def create_agent(self, config: AgentConfigRequest) -> str:
-        """Create a new agent."""
+    async def create_agent(
+        self,
+        config: AgentConfigRequest,
+        *,
+        owner: str | None = None,
+        roles: list[str] | None = None,
+        client_model: bool = True,
+    ) -> str:
+        """Create a new agent owned by ``owner``.
+
+        ``client_model`` applies :mod:`..model_policy` to the requested model
+        (403 when it may not be loaded); the server's own demo agent passes
+        False and keeps the operator rules of ``_should_use_stub_model``.
+        """
+        if client_model:
+            from ..model_policy import client_model_uses_stub
+
+            use_stub = client_model_uses_stub(config.model_name, roles=roles or [])
+        else:
+            use_stub = self._should_use_stub_model(config.model_name)
         agent_id = str(uuid.uuid4())
 
         agent_config = AgentConfig(
@@ -132,7 +164,7 @@ class AgentService:
             use_chat_template=config.use_chat_template,
             enable_planning=config.enable_planning,
             planning_config=config.planning_config,
-            use_stub_model=self._should_use_stub_model(config.model_name),
+            use_stub_model=use_stub,
         )
 
         agent = MultiTurnAgent(agent_config)
@@ -153,6 +185,7 @@ class AgentService:
                 raise exc
 
         self.agents[agent_id] = agent
+        self.agent_owners[agent_id] = owner
         logger.info(f"Created agent {agent_id}")
 
         return agent_id
@@ -257,6 +290,7 @@ class AgentService:
                     planning_manager.clear_conversation(conv_id)
 
         self.conversations.pop(agent_id, None)
+        self.agent_owners.pop(agent_id, None)
         del self.agents[agent_id]
         return True
 

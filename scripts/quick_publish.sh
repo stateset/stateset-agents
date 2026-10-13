@@ -77,7 +77,7 @@ check_prerequisites() {
     command -v mypy >/dev/null 2>&1 || { log_error "mypy is required but not installed. Run: pip install mypy"; exit 1; }
     command -v pytest >/dev/null 2>&1 || { log_error "pytest is required but not installed. Run: pip install pytest"; exit 1; }
     command -v bandit >/dev/null 2>&1 || { log_error "bandit is required but not installed. Run: pip install bandit"; exit 1; }
-    command -v safety >/dev/null 2>&1 || { log_error "safety is required but not installed. Run: pip install safety"; exit 1; }
+    command -v pip-audit >/dev/null 2>&1 || { log_error "pip-audit is required but not installed. Run: pip install pip-audit"; exit 1; }
 
     # Check if build tools are installed
     "$PYTHON_BIN" -c "import build" 2>/dev/null || { log_error "build package not installed. Run: pip install build"; exit 1; }

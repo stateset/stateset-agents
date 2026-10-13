@@ -6,8 +6,11 @@ that adds automatic hyperparameter optimization capabilities.
 """
 
 import asyncio
+import copy
 import json
 import logging
+import math
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, cast
 
@@ -121,6 +124,11 @@ class GRPOHPOTrainer:
         self.hpo_summary: HPOSummary | None = None
         self.best_agent: MultiTurnAgent | None = None
 
+        # Every trial (and the final run) starts from the agent's weights as
+        # they were before the first trial, not from the previous trial's.
+        self._initial_state: dict[str, Any] | None = None
+        self._trial_index = 0
+
     def _create_backend(self) -> HPOBackend:
         """Create the HPO backend based on configuration."""
         backend_config = self.hpo_config.get_backend_config()
@@ -199,45 +207,108 @@ class GRPOHPOTrainer:
         # Create new config
         return TrainingConfig(**config_dict)
 
-    async def _objective_function(self, params: dict[str, Any]) -> float:
+    async def _restore_initial_weights(self) -> None:
+        """Snapshot the agent's weights before the first trial and restore them
+        before every later trial, so trials are independent samples."""
+        if getattr(self.agent, "model", None) is None:
+            await self.agent.initialize()
+        model = getattr(self.agent, "model", None)
+        state_dict = getattr(model, "state_dict", None)
+        if model is None or not callable(state_dict):
+            return
+        if self._initial_state is None:
+            self._initial_state = copy.deepcopy(state_dict())
+        else:
+            model.load_state_dict(self._initial_state)
+
+    def _objective_value(self, metrics: dict[str, Any]) -> float:
+        """The objective from evaluation metrics (``reward`` → ``eval_reward``).
+
+        Raises when no evaluation episode completed or the metric is missing or
+        non-finite, so the trial scores worst instead of a fabricated 0.0.
+        """
+        if float(metrics.get("eval_num_episodes", 1.0)) <= 0:
+            raise ValueError("evaluation completed no episodes")
+        name = self.hpo_config.objective_metric
+        for key in (name, f"eval_{name}"):
+            if key in metrics:
+                value = float(metrics[key])
+                if not math.isfinite(value):
+                    raise ValueError(f"objective metric {key!r} is {value}")
+                return value
+        raise KeyError(
+            f"objective metric {name!r} not in evaluation metrics {sorted(metrics)}"
+        )
+
+    def _pruning_callback(
+        self, trainer: Any, report: Callable[[float, int], None]
+    ) -> Any:
+        """A trainer callback forwarding each periodic evaluation's objective to
+        the backend's pruning reporter (which may raise to stop the trial)."""
+        hpo = self
+
+        class _ReportToPruner:
+            async def on_evaluation_end(self, metrics: dict[str, Any]) -> None:
+                try:
+                    value = hpo._objective_value(metrics)
+                except (KeyError, ValueError):
+                    return
+                report(value, int(getattr(trainer, "global_step", 0)))
+
+        return _ReportToPruner()
+
+    def _trial_seed(self, offset: int) -> int | None:
+        base_seed = getattr(self.base_config, "seed", None)
+        return None if base_seed is None else int(base_seed) + offset
+
+    async def _objective_function(
+        self,
+        params: dict[str, Any],
+        report: Callable[[float, int], None] | None = None,
+    ) -> float:
         """Objective function for HPO.
 
-        This trains the agent with given parameters and returns the metric.
+        Restores the pre-study weights, trains a fresh trainer with ``params``
+        on a deterministic per-trial seed, then scores a post-training
+        evaluation. ``report(value, step)``, when the backend supplies it,
+        receives each periodic evaluation for pruning.
 
         Args:
             params: Hyperparameters to evaluate
+            report: Optional intermediate-value reporter from the backend
 
         Returns:
-            Metric value (reward, loss, etc.)
+            Metric value (reward, loss, etc.); the worst value for the
+            optimization direction when the trial fails.
         """
-        # Create training config with HPO params
+        trial_index = self._trial_index
+        self._trial_index += 1
+
         training_config = self._create_training_config(params)
-
-        # Create trainer
-        trainer = MultiTurnGRPOTrainer(
-            agent=self.agent,
-            environment=self.environment,
-            reward_fn=self.reward_function,
-            config=training_config,
-        )
-
-        # Train (use a subset of episodes for faster HPO)
+        seed = self._trial_seed(trial_index)
+        if seed is not None:
+            training_config.seed = seed
         # For HPO, we typically use fewer episodes to speed up search
         hpo_episodes = min(training_config.num_episodes, 50)
+        training_config.num_episodes = hpo_episodes
 
         logger.info(f"Training with params: {params}")
         logger.info(f"Running {hpo_episodes} episodes for HPO trial")
 
         try:
-            original_num_episodes = getattr(
-                training_config, "num_episodes", hpo_episodes
+            await self._restore_initial_weights()
+            trainer = MultiTurnGRPOTrainer(
+                agent=self.agent,
+                environment=self.environment,
+                reward_fn=self.reward_function,
+                config=training_config,
             )
-            training_config.num_episodes = hpo_episodes
-            metrics = await trainer.train()
-            training_config.num_episodes = original_num_episodes
-
-            # Extract objective metric
-            metric_value = float(metrics.get(self.hpo_config.objective_metric, 0.0))
+            if report is not None:
+                trainer.callbacks.append(self._pruning_callback(trainer, report))
+            await trainer.initialize()
+            await trainer.train()
+            metrics = await trainer.evaluate(trainer._get_eval_scenarios())
+            metric_value = self._objective_value(metrics)
 
             logger.info(
                 f"Trial completed: {self.hpo_config.objective_metric} = {metric_value:.4f}"
@@ -302,10 +373,16 @@ class GRPOHPOTrainer:
 
         # Create config with best params
         training_config = self._create_training_config(self.hpo_summary.best_params)
+        seed = self._trial_seed(0)
+        if seed is not None:
+            training_config.seed = seed
 
         # Override num_episodes if specified
         if full_episodes is not None:
             training_config.num_episodes = full_episodes
+
+        # Start from the pre-study weights, not the last trial's.
+        await self._restore_initial_weights()
 
         # Create trainer
         trainer = MultiTurnGRPOTrainer(
@@ -317,6 +394,7 @@ class GRPOHPOTrainer:
 
         # Train
         logger.info(f"Running full training: {training_config.num_episodes} episodes")
+        await trainer.initialize()
         await trainer.train()
 
         self.best_agent = trainer.agent

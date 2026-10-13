@@ -81,6 +81,28 @@ class AuthFailureTracker:
 
     failures: dict[str, list[float]] = field(default_factory=dict)
     lockouts: dict[str, float] = field(default_factory=dict)
+    max_keys: int = 10000
+    _next_cleanup_at: float = field(default=0.0, init=False, repr=False)
+
+    def __post_init__(self) -> None:
+        if (
+            isinstance(self.max_keys, bool)
+            or not isinstance(self.max_keys, int)
+            or self.max_keys < 1
+        ):
+            raise ValueError("max_keys must be a positive integer")
+
+    def _prune_expired(self, now: float) -> None:
+        """Discard inactive failure windows and expired lockouts."""
+        for key, until in list(self.lockouts.items()):
+            if until <= now:
+                del self.lockouts[key]
+                self.failures.pop(key, None)
+        for key, failures in list(self.failures.items()):
+            if key not in self.lockouts and (
+                not failures or now - failures[-1] >= AUTH_LOCKOUT_DURATION_SECONDS
+            ):
+                del self.failures[key]
 
     def record_failure(self, key: str) -> tuple[bool, int]:
         """
@@ -100,6 +122,14 @@ class AuthFailureTracker:
                 # Lockout expired, clear it
                 del self.lockouts[key]
                 self.failures.pop(key, None)
+
+        if key not in self.failures and len(self.failures) >= self.max_keys:
+            if now >= self._next_cleanup_at:
+                self._prune_expired(now)
+                self._next_cleanup_at = now + min(30, AUTH_LOCKOUT_DURATION_SECONDS)
+            if len(self.failures) >= self.max_keys:
+                # Unknown invalid credentials fail closed without adding state.
+                return True, 0
 
         # Clean old failures (older than lockout duration)
         if key in self.failures:
@@ -458,6 +488,12 @@ class APISecurityMonitor:
     """
 
     def __init__(self, max_events: int = 10000):
+        if (
+            isinstance(max_events, bool)
+            or not isinstance(max_events, int)
+            or max_events < 1
+        ):
+            raise ValueError("max_events must be a positive integer")
         self.events: list[SecurityEvent] = []
         self.max_events = max_events
         self.auth_tracker = AuthFailureTracker()

@@ -86,7 +86,12 @@ async def test_pipeline_with_composite_reward_completes():
     result = await trainer.train()
 
     assert result is agent
-    assert trainer.global_step >= 1
+    # The stub's loss is disconnected from its optimizer parameters. Running
+    # episodes must not fabricate optimizer or scheduler progress.
+    assert trainer.global_step == 0
+    assert trainer.optimizer.state_dict()["state"] == {}
+    assert trainer.lr_scheduler.last_epoch == 0
+    assert trainer.current_epoch == 1
 
 
 @pytest.mark.asyncio

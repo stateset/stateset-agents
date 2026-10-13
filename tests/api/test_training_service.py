@@ -10,8 +10,10 @@ Covers:
 """
 
 import asyncio
+import copy
 from typing import Any
 
+import pytest
 from fastapi import Depends, FastAPI
 
 from stateset_agents.api.dependencies import get_training_service
@@ -105,6 +107,65 @@ class TestJobProgressCallback:
         assert job["progress"] == 100.0
         assert job["current_episode"] == 1
 
+    @pytest.mark.parametrize("total", [0, -1, True, 1.5, "10"])
+    def test_invalid_total_is_rejected(self, total):
+        job, event = self._make_job()
+        with pytest.raises(ValueError, match="positive integer"):
+            JobProgressCallback(job, total, event)
+
+    @pytest.mark.parametrize("episode", [-1, True, 1.5, "1", 10])
+    def test_invalid_episode_preserves_last_valid_snapshot(self, episode):
+        job, event = self._make_job()
+        cb = JobProgressCallback(job, 10, event)
+        cb.on_episode_end(0, {"loss": 0.5})
+        before = copy.deepcopy(job)
+        with pytest.raises(ValueError, match="Invalid training progress"):
+            cb.on_episode_end(episode, {"loss": 0.1})
+        assert job == before
+        with pytest.raises(ValueError):
+            cb.on_episode_end(2, {"loss": 0.1})
+        assert job == before
+
+    @pytest.mark.parametrize("episode", [0, 2])
+    def test_repeated_or_decreasing_episode_does_not_rewind_progress(self, episode):
+        job, event = self._make_job()
+        cb = JobProgressCallback(job, 10, event)
+        cb.on_episode_end(2, {"loss": 0.5})
+        before = copy.deepcopy(job)
+        with pytest.raises(ValueError, match="monotonically"):
+            cb.on_episode_end(episode, {})
+        assert job == before
+
+    @pytest.mark.parametrize(
+        "metrics",
+        [
+            {"loss": float("nan")},
+            {"loss": float("inf")},
+            {"loss": -float("inf")},
+            {1: 0.5},
+            {"": 0.5},
+            {"name": "\ud800"},
+            None,
+        ],
+    )
+    def test_invalid_metrics_never_enter_public_job(self, metrics):
+        job, event = self._make_job()
+        cb = JobProgressCallback(job, 10, event)
+        cb.on_episode_end(0, {"loss": 0.5})
+        before = copy.deepcopy(job)
+        with pytest.raises(ValueError, match="Invalid training progress"):
+            cb.on_episode_end(1, metrics)
+        assert job == before
+
+    def test_late_callbacks_cannot_modify_terminal_jobs(self):
+        job, event = self._make_job()
+        cb = JobProgressCallback(job, 10, event)
+        cb.on_episode_end(0, {"loss": 0.5})
+        job["status"] = "completed"
+        before = copy.deepcopy(job)
+        cb.on_episode_end(1, {"loss": float("nan")})
+        assert job == before
+
 
 # ============================================================================
 # get_training_service DI tests
@@ -165,8 +226,8 @@ class TestTrainingServiceLifecycle:
 
         svc.cancel_training("job-1")
 
-        assert svc.training_jobs["job-1"]["status"] == "cancelled"
-        assert svc.training_jobs["job-1"]["completed_at"] is not None
+        assert svc.training_jobs["job-1"]["status"] == "cancelling"
+        assert svc.training_jobs["job-1"]["completed_at"] is None
         assert event.is_set()
 
     def test_get_training_status_returns_none_for_missing(self):

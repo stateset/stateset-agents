@@ -18,11 +18,13 @@ true over time. The categories are strict:
 |---|---|---|
 | The loop raises a ceiling: base 0/12 → gen‑1 2/12 → gen‑2 10/12 | Live-verified (2026‑08‑17, reproduced twice) | [`FLYWHEEL_HEADROOM.md`](FLYWHEEL_HEADROOM.md) — pods, costs, and both trainings' identical 10/12 |
 | Fine-tuning works end to end on rented GPUs | Live-verified, many runs | [`RUNPOD_GUIDE.md`](RUNPOD_GUIDE.md); adapters + `stateset_manifest.json` under `outputs/` |
+| Qwen3.5 2B/4B industry LoRA training and saved-adapter reload work | Live-verified (2026-10-07), mechanics only | [Retained pilot](../benchmark_results/industry_pilot/20261007/README.md): six optimizer updates per model, nonzero reloaded-adapter logit effects, matched artifact hashes, and reproducible paired reports. No reference-score improvement; both quality gates fail on synthetic data. All four allocated pods terminated; estimated compute spend $0.4246. |
 | `serve-remote` answers authenticated HTTPS requests | Live-verified (2026‑08‑17, twice: hand-driven + shipped CLI with adapter) | CHANGELOG v0.31.0; flashinfer patch + arm-precedence fix pinned by tests |
 | The RL core learns on real hardware (GSPO 2.8e‑05 → 0.125) | Re-proved weekly* | [`gpu-verify.yml`](../.github/workflows/gpu-verify.yml) `rl-live-smoke` |
 | Multi-GPU sharding (`--gpu-count`) | Live-verified (63GB across 2×48GB) | CHANGELOG v0.28.0 — device-map log `0=24 module(s), 1=36 module(s)` |
 | Single-host DDP strong scaling | Live-verified (2026-08-27, three seeds) | [`BENCHMARKS.md`](BENCHMARKS.md#single-node-ddp-weak-and-strong-scaling); fixed 196,608-sample work, 6.642× at 8× RTX 5080, 83.0% efficiency; 12 raw evidence rows retained |
 | Curation precision/recall 1.000/1.000 | Re-proved on every CI run | `make benchmark-loop`, floors ratcheted at 0.95 |
+| Industry base/adapter comparisons reject missing cases, stale data, changed decoding settings, and per-case regressions | Unit-pinned | `tests/unit/test_industry_evaluation.py`; source-group counts, typed tool arguments, unknown costs, and synthetic-data rejection are checked. This proves the reference evaluator's behavior, not live model quality or business outcomes. See [`INDUSTRY_FINETUNING.md`](INDUSTRY_FINETUNING.md#compare-the-base-model-and-adapter). |
 | A failed eval gate preserves its adapter | Unit-pinned (from a live incident) | `test_failed_job_still_attempts_fetch` — docstring cites the lost 10/12 adapter |
 | Unknown cost is refused, never treated as $0 | Unit-pinned | `tests/unit/test_remote_ledger.py` budget tests |
 | Pods terminate on every exit path, incl. client death | Live-verified + unit-pinned | self-destruct fired with the client force-killed (v0.26.0); armed-first ordering tested |
@@ -49,7 +51,10 @@ and 2026-08-24. The 2026-08-31 run failed before allocation when RunPod's pod
 creation endpoint returned HTTP 500 after bounded retries; that red run remains
 visible and created no training claim. "Weekly" therefore means an automated,
 fail-closed schedule with retained successes and failures, not an assertion
-that the most recent provider attempt was green.
+that the most recent provider attempt was green. In the
+[2026-10-05 run](https://github.com/stateset/stateset-agents/actions/runs/37317451465),
+SFT passed, but RL failed before training when pod creation returned HTTP 500
+after five attempts. That run supplies no new RL convergence evidence.
 
 PyPI rejected the repository's OIDC identity as `invalid-publisher` for
 v0.43.0, so that release was uploaded with a scoped project token and its live

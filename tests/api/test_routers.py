@@ -48,6 +48,11 @@ def mock_auth(mock_user):
 def app(mock_auth):
     """Create test FastAPI app with routers."""
     app = FastAPI()
+    from stateset_agents.api.resilience import HealthChecker
+
+    app.state.health_checker = HealthChecker()
+    app.state.health_checker.add_check("agent_service", lambda: True)
+    app.state.health_checker.add_check("training_service", lambda: True)
 
     # Add routers
     app.include_router(agents_router)

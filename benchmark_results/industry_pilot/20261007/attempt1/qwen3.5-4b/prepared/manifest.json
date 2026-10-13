@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "industry": "technology",
+  "base_model": "Qwen/Qwen3.5-4B",
+  "model_revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+  "model_preset": "qwen3.5-4b",
+  "seed": 42,
+  "validation_fraction": 0.25,
+  "source_sha256": "f49016d07b7eb987c0513f8f0005aef69844db530835a62983687e0fbeb7e91b",
+  "source_rows": 64,
+  "duplicates_removed": 0,
+  "train_rows": 48,
+  "validation_rows": 16,
+  "synthetic_rows": 64,
+  "files": {
+    "train.jsonl": "5d640cc64648d0e54acb794916ee51f5bd56174a85bc6950d9925eb111cf8abd",
+    "validation.jsonl": "901de42327c0216e2046a2e7c5da2769c4b66dcd787e82bee513a9d03d3d899e"
+  },
+  "evaluation_criteria": [
+    "reproducible next steps",
+    "correct ticket status",
+    "permission-aware actions"
+  ],
+  "validation_status": "held_out_not_evaluated"
+}

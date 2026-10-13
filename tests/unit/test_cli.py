@@ -1065,7 +1065,7 @@ def test_cli_init_qwen_preset_json(tmp_path):
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert loaded["model_name"] == "Qwen/Qwen3.5-0.8B-Base"
     assert loaded["task"] == "customer_service"
-    assert loaded["trust_remote_code"] is True
+    assert loaded["trust_remote_code"] is False  # native architecture
     assert loaded["attn_implementation"] == "sdpa"
 
 
@@ -1277,7 +1277,7 @@ def test_cli_init_gemma_preset_json(tmp_path):
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert loaded["model_name"] == "google/gemma-4-31B-it"
     assert loaded["task"] == "customer_service"
-    assert loaded["trust_remote_code"] is True
+    assert loaded["trust_remote_code"] is False  # native architecture
     assert loaded["use_4bit"] is True
     assert loaded["attn_implementation"] == "sdpa"
 

@@ -911,7 +911,7 @@ GitHub Actions (`.github/workflows/`) runs:
 - **Test matrix** — Python 3.10/3.11/3.12/3.13 on Ubuntu; 3.10/3.13 on Windows.
 - **Lint and type checks** — `ruff`, `black`, `isort`, `mypy` (strict mode gated per-module).
 - **Tests** — `pytest` with Codecov upload. Coverage reporting reflects only paths exercised by the in-process unit and integration tests (~49% of total LOC). End-to-end serving, Helm-rendering, and GPU-only training paths are tested but don't contribute to per-line coverage; the headline number understates the tested surface. The CI gate requires the core-abstractions modules to stay above a stricter threshold via Codecov component scoping.
-- **Security scans** — `bandit` and `safety` SBOM generation.
+- **Security scans** — `bandit` static analysis and `pip-audit` dependency auditing.
 - **Helm validation** — `helm lint` and template rendering across all values overlays.
 - **Docs** — Sphinx build with RTD theme.
 
@@ -1368,11 +1368,11 @@ The five design principles that anchor the framework are stated in **§1.0 (Desi
 | Multi-objective reward | `stateset_agents/rewards/multi_objective_reward.py` |
 | Memory | `stateset_agents/core/memory.py` |
 | Neural reward trainer | `stateset_agents/training/neural_reward_trainer.py` |
-| RLAIF trainer | `stateset_agents/training/rlaif_trainer.py` |
-| Offline GRPO trainer | `stateset_agents/training/offline_grpo_trainer.py` |
+| RLAIF trainer | `stateset_agents/experimental/rlaif.py` |
+| Offline GRPO trainer | `stateset_agents/experimental/offline_rl/offline_grpo.py` |
 | Continual learning | `stateset_agents/training/continual_learning.py` |
-| Sim-to-real | `stateset_agents/training/sim_to_real.py` |
-| Domain randomization | `stateset_agents/training/domain_randomization.py` |
+| Sim-to-real | `stateset_agents/experimental/sim_to_real/transfer.py` |
+| Domain randomization | `stateset_agents/experimental/sim_to_real/domain_randomization.py` |
 | Auto-research | `stateset_agents/training/auto_research/` |
 | Rust acceleration | `rust_core/` (crate `stateset-rl-core`) |
 | FastAPI app | `stateset_agents/api/main.py` |

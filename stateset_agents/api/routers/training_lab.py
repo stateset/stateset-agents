@@ -28,8 +28,9 @@ from fastapi import (
     WebSocket,
     WebSocketDisconnect,
 )
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 
+from ..auth import AuthenticatedUser
 from ..dependencies import require_auth_if_enabled
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,32 @@ _experiments: dict[str, dict[str, Any]] = {}
 _episodes: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> episodes
 _logs: dict[str, deque[dict[str, Any]]] = {}  # experiment_id -> log entries
 _metrics_subscribers: dict[str, list[WebSocket]] = {}
+# experiment_id -> creating user's id (None when auth is disabled).
+_experiment_owners: dict[str, str | None] = {}
+
+# The caller, or None when authentication is disabled (no isolation then).
+LabUser = AuthenticatedUser | None
+
+
+def _can_access(experiment_id: str, user: LabUser) -> bool:
+    """Owners and admins see an experiment; without auth everyone does."""
+    if experiment_id not in _experiments:
+        return False
+    if user is None or "admin" in user.roles:
+        return True
+    owner = _experiment_owners.get(experiment_id)
+    return owner is None or owner == user.user_id
+
+
+def _owned_experiment(experiment_id: str, user: LabUser) -> dict[str, Any]:
+    """The experiment, or 404 when it is missing or belongs to someone else."""
+    if not _can_access(experiment_id, user):
+        raise HTTPException(status_code=404, detail="Experiment not found")
+    return _experiments[experiment_id]
+
+
+def _validation_detail(exc: ValidationError) -> Any:
+    return json.loads(exc.json(include_url=False))
 
 
 class ExperimentStatus(str, Enum):
@@ -687,7 +714,10 @@ async def list_algorithms() -> list[dict[str, Any]]:
 
 
 @router.post("/experiments", response_model=ExperimentResponse, status_code=201)
-async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
+async def create_experiment(
+    req: CreateExperimentRequest,
+    user: LabUser = Depends(require_auth_if_enabled),
+) -> ExperimentResponse:
     """Create a new training experiment."""
     if len(_experiments) >= MAX_EXPERIMENTS:
         _evict_oldest_finished_experiment()
@@ -707,6 +737,7 @@ async def create_experiment(req: CreateExperimentRequest) -> ExperimentResponse:
         "updated_at": now,
     }
     _experiments[exp_id] = experiment
+    _experiment_owners[exp_id] = user.user_id if user is not None else None
     _episodes[exp_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(exp_id, "info", f"Experiment '{req.name}' created")
     return ExperimentResponse(**experiment)
@@ -737,26 +768,31 @@ def _evict_oldest_finished_experiment() -> None:
 
 
 @router.get("/experiments")
-async def list_experiments() -> list[ExperimentResponse]:
-    """List all experiments."""
-    return [ExperimentResponse(**exp) for exp in _experiments.values()]
+async def list_experiments(
+    user: LabUser = Depends(require_auth_if_enabled),
+) -> list[ExperimentResponse]:
+    """List the caller's experiments (admins see all)."""
+    return [
+        ExperimentResponse(**exp)
+        for exp_id, exp in _experiments.items()
+        if _can_access(exp_id, user)
+    ]
 
 
 @router.get("/experiments/{experiment_id}", response_model=ExperimentResponse)
-async def get_experiment(experiment_id: str) -> ExperimentResponse:
+async def get_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> ExperimentResponse:
     """Get experiment details."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
-    return ExperimentResponse(**exp)
+    return ExperimentResponse(**_owned_experiment(experiment_id, user))
 
 
 @router.post("/experiments/{experiment_id}/start")
-async def start_experiment(experiment_id: str) -> dict[str, Any]:
+async def start_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Start running an experiment (launches background training loop)."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    exp = _owned_experiment(experiment_id, user)
 
     if experiment_id in _running_tasks and not _running_tasks[experiment_id].done():
         raise HTTPException(status_code=409, detail="Experiment already running")
@@ -872,11 +908,11 @@ async def start_experiment(experiment_id: str) -> dict[str, Any]:
 
 
 @router.post("/experiments/{experiment_id}/pause")
-async def pause_experiment(experiment_id: str) -> dict[str, str]:
+async def pause_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, str]:
     """Pause a running experiment."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    exp = _owned_experiment(experiment_id, user)
     exp["status"] = ExperimentStatus.PAUSED.value
     exp["updated_at"] = time.time()
     _add_log(experiment_id, "warn", "Training paused by user")
@@ -884,25 +920,25 @@ async def pause_experiment(experiment_id: str) -> dict[str, str]:
 
 
 @router.post("/experiments/{experiment_id}/resume")
-async def resume_experiment(experiment_id: str) -> dict[str, Any]:
+async def resume_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Resume a paused experiment."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    exp = _owned_experiment(experiment_id, user)
     if exp["status"] != ExperimentStatus.PAUSED.value:
         raise HTTPException(status_code=409, detail="Experiment is not paused")
     exp["status"] = ExperimentStatus.RUNNING.value
     _add_log(experiment_id, "info", "Training resumed")
-    resumed = await start_experiment(experiment_id)
+    resumed = await start_experiment(experiment_id, user)
     return dict(resumed)
 
 
 @router.post("/experiments/{experiment_id}/stop")
-async def stop_experiment(experiment_id: str) -> dict[str, str]:
+async def stop_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, str]:
     """Hard-stop an experiment (marks as completed)."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    exp = _owned_experiment(experiment_id, user)
     exp["status"] = ExperimentStatus.COMPLETED.value
     exp["updated_at"] = time.time()
     _add_log(experiment_id, "warn", "Training stopped by user")
@@ -918,11 +954,13 @@ async def stop_experiment(experiment_id: str) -> dict[str, str]:
 async def patch_experiment_config(
     experiment_id: str,
     patch: dict[str, Any],
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> dict[str, Any]:
-    """Update training config on a live experiment."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    """Update training config on a live experiment.
+
+    The merged config must still satisfy ``TrainingLabConfig`` (422 if not).
+    """
+    exp = _owned_experiment(experiment_id, user)
 
     allowed = {
         "learning_rate",
@@ -932,11 +970,13 @@ async def patch_experiment_config(
         "clip_ratio",
         "batch_size",
     }
-    applied = {}
-    for key, value in patch.items():
-        if key in allowed:
-            exp["training"][key] = value
-            applied[key] = value
+    applied = {key: value for key, value in patch.items() if key in allowed}
+    try:
+        validated = TrainingLabConfig.model_validate({**exp["training"], **applied})
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    exp["training"] = validated.model_dump()
+    applied = {key: exp["training"][key] for key in applied}
 
     if applied:
         exp["updated_at"] = time.time()
@@ -948,11 +988,13 @@ async def patch_experiment_config(
 async def clone_experiment(
     experiment_id: str,
     overrides: dict[str, Any] | None = None,
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> ExperimentResponse:
-    """Clone an experiment with optional config overrides."""
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    """Clone an experiment with optional config overrides.
+
+    The clone must satisfy the same validation as a new experiment (422).
+    """
+    exp = _owned_experiment(experiment_id, user)
 
     if len(_experiments) >= MAX_EXPERIMENTS:
         _evict_oldest_finished_experiment()
@@ -978,7 +1020,19 @@ async def clone_experiment(
             if section in overrides and isinstance(overrides[section], dict):
                 cloned[section].update(overrides[section])
 
+    try:
+        validated = CreateExperimentRequest.model_validate(
+            {
+                key: cloned[key]
+                for key in ("name", "description", "environment", "agent", "training")
+            }
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    cloned.update(validated.model_dump())
+
     _experiments[new_id] = cloned
+    _experiment_owners[new_id] = user.user_id if user is not None else None
     _episodes[new_id] = deque(maxlen=MAX_EPISODES_PER_EXPERIMENT)
     _add_log(new_id, "info", f"Cloned from '{exp['name']}' ({experiment_id[:8]}...)")
     return ExperimentResponse(**cloned)
@@ -992,6 +1046,7 @@ def _delete_experiment_state(experiment_id: str) -> None:
     if task is not None and not task.done():
         task.cancel()
     _experiments.pop(experiment_id, None)
+    _experiment_owners.pop(experiment_id, None)
     _episodes.pop(experiment_id, None)
     _simulators.pop(experiment_id, None)
     _logs.pop(experiment_id, None)
@@ -999,8 +1054,11 @@ def _delete_experiment_state(experiment_id: str) -> None:
 
 
 @router.delete("/experiments/{experiment_id}")
-async def delete_experiment(experiment_id: str) -> dict[str, str]:
+async def delete_experiment(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, str]:
     """Delete an experiment and stop if running."""
+    _owned_experiment(experiment_id, user)
     _delete_experiment_state(experiment_id)
     return {"status": "deleted"}
 
@@ -1011,8 +1069,10 @@ async def get_episodes(
     offset: int = 0,
     limit: int = Query(50, ge=1, le=200),
     sort: str = Query("desc", pattern="^(asc|desc)$"),
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> dict[str, Any]:
     """Get paginated episodes for an experiment."""
+    _owned_experiment(experiment_id, user)
     eps = _episodes.get(experiment_id, deque())
     sorted_eps = list(eps) if sort == "asc" else list(reversed(eps))
     return {
@@ -1024,8 +1084,13 @@ async def get_episodes(
 
 
 @router.get("/experiments/{experiment_id}/episodes/{episode_num}")
-async def get_episode(experiment_id: str, episode_num: int) -> dict[str, Any]:
+async def get_episode(
+    experiment_id: str,
+    episode_num: int,
+    user: LabUser = Depends(require_auth_if_enabled),
+) -> dict[str, Any]:
     """Get a specific episode by number."""
+    _owned_experiment(experiment_id, user)
     eps = _episodes.get(experiment_id, deque())
     for ep in eps:
         if ep.get("episode_num") == episode_num:
@@ -1034,8 +1099,11 @@ async def get_episode(experiment_id: str, episode_num: int) -> dict[str, Any]:
 
 
 @router.get("/experiments/{experiment_id}/metrics")
-async def get_metrics(experiment_id: str) -> dict[str, Any]:
+async def get_metrics(
+    experiment_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Get current training metrics."""
+    _owned_experiment(experiment_id, user)
     sim = _simulators.get(experiment_id)
     if sim:
         return dict(sim._metrics)
@@ -1050,8 +1118,10 @@ async def get_metrics(experiment_id: str) -> dict[str, Any]:
 async def get_logs(
     experiment_id: str,
     limit: int = Query(100, ge=1, le=1000),
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> list[dict[str, Any]]:
     """Get training logs for an experiment."""
+    _owned_experiment(experiment_id, user)
     logs = _logs.get(experiment_id, deque())
     return list(logs)[-limit:]
 
@@ -1064,13 +1134,14 @@ async def get_logs(
 @router.post("/compare")
 async def compare_experiments(
     experiment_ids: list[str],
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> dict[str, Any]:
-    """Compare metrics across multiple experiments."""
+    """Compare metrics across the caller's experiments."""
     results: list[dict[str, Any]] = []
     for eid in experiment_ids:
-        exp = _experiments.get(eid)
-        if not exp:
+        if not _can_access(eid, user):
             continue
+        exp = _experiments[eid]
         m = exp.get("metrics", {})
         results.append(
             {
@@ -1126,10 +1197,13 @@ async def get_leaderboard(
         pattern="^(avg_reward|best_reward|convergence_rate|total_episodes|final_loss)$",
     ),
     limit: int = Query(20, ge=1, le=100),
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> list[dict[str, Any]]:
-    """Rank experiments by a chosen metric."""
+    """Rank the caller's experiments by a chosen metric."""
     entries = []
-    for exp in _experiments.values():
+    for exp_id, exp in _experiments.items():
+        if not _can_access(exp_id, user):
+            continue
         m = exp.get("metrics", {})
         loss_hist = m.get("loss_history", [])
         entries.append(
@@ -1163,6 +1237,8 @@ async def get_leaderboard(
 # ---------------------------------------------------------------------------
 
 _playground_sessions: dict[str, dict[str, Any]] = {}
+# session_id -> creating user's id (None when auth is disabled).
+_playground_owners: dict[str, str | None] = {}
 
 MAX_PLAYGROUND_SESSIONS = 200
 MAX_PLAYGROUND_HISTORY = 200  # messages per session (user + assistant)
@@ -1175,6 +1251,17 @@ def _evict_oldest_playground_session() -> None:
         _playground_sessions, key=lambda sid: _playground_sessions[sid]["created_at"]
     )
     _playground_sessions.pop(oldest_id, None)
+    _playground_owners.pop(oldest_id, None)
+
+
+def _can_access_playground(session_id: str, user: LabUser) -> bool:
+    """Owners and admins see a playground session; without auth everyone does."""
+    if session_id not in _playground_sessions:
+        return False
+    if user is None or "admin" in user.roles:
+        return True
+    owner = _playground_owners.get(session_id)
+    return owner is None or owner == user.user_id
 
 
 class PlaygroundMessage(BaseModel):
@@ -1184,9 +1271,15 @@ class PlaygroundMessage(BaseModel):
 
 
 @router.post("/playground/chat")
-async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
+async def playground_chat(
+    req: PlaygroundMessage, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Send a message and get an agent response with reward scoring."""
     session_id = req.session_id or str(uuid.uuid4())
+    if session_id in _playground_sessions and not _can_access_playground(
+        session_id, user
+    ):
+        raise HTTPException(status_code=404, detail="Session not found")
     session = _playground_sessions.get(
         session_id,
         {
@@ -1236,6 +1329,8 @@ async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
         and len(_playground_sessions) >= MAX_PLAYGROUND_SESSIONS
     ):
         _evict_oldest_playground_session()
+    if session_id not in _playground_sessions:
+        _playground_owners[session_id] = user.user_id if user is not None else None
     _playground_sessions[session_id] = session
 
     return {
@@ -1249,19 +1344,27 @@ async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
 
 
 @router.delete("/playground/{session_id}")
-async def clear_playground(session_id: str) -> dict[str, str]:
-    """Clear a playground session."""
+async def clear_playground(
+    session_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, str]:
+    """Clear a playground session (404 when it belongs to someone else)."""
+    if session_id in _playground_sessions and not _can_access_playground(
+        session_id, user
+    ):
+        raise HTTPException(status_code=404, detail="Session not found")
     _playground_sessions.pop(session_id, None)
+    _playground_owners.pop(session_id, None)
     return {"status": "cleared"}
 
 
 @router.get("/playground/{session_id}")
-async def get_playground(session_id: str) -> dict[str, Any]:
+async def get_playground(
+    session_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Get playground session history."""
-    session = _playground_sessions.get(session_id)
-    if not session:
+    if not _can_access_playground(session_id, user):
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    return _playground_sessions[session_id]
 
 
 def _generate_playground_response(
@@ -1558,13 +1661,12 @@ def _score_turn(
 async def export_experiment(
     experiment_id: str,
     format: str = Query("json", pattern="^(json|csv)$"),
+    user: LabUser = Depends(require_auth_if_enabled),
 ) -> Any:
     """Export experiment data as JSON or CSV."""
     from fastapi.responses import Response
 
-    exp = _experiments.get(experiment_id)
-    if not exp:
-        raise HTTPException(status_code=404, detail="Experiment not found")
+    exp = _owned_experiment(experiment_id, user)
 
     eps = _episodes.get(experiment_id, deque())
 
@@ -1616,39 +1718,47 @@ async def export_experiment(
     }
 
 
-async def _authorize_websocket(websocket: WebSocket) -> bool:
+async def _authorize_websocket(
+    websocket: WebSocket,
+) -> tuple[bool, LabUser]:
     """Validate API key / JWT credentials for the metrics WebSocket.
 
     WebSocket connections can't use the standard HTTP ``Depends`` auth
-    dependency, so credentials are read from the ``api_key`` (or ``token``)
-    query parameter or the ``X-API-Key`` header and validated using the same
-    mechanisms as ``auth.authenticate_request``.
+    dependency, so credentials are read from the ``X-API-Key`` header or an
+    ``Authorization: Bearer`` header and validated like
+    ``auth.authenticate_request``. Query-string credentials (``api_key`` /
+    ``token``) leak into access logs and are accepted only when the operator
+    sets ``API_LAB_WS_QUERY_TOKEN=true``.
+
+    Returns ``(authorized, user)``; ``user`` is None when auth is disabled.
     """
-    from ..auth import get_jwt_handler
+    from ..auth import _derive_api_user_id, get_jwt_handler
     from ..config import get_config
 
     config = get_config()
     if not config.security.require_auth:
-        return True
+        return True, None
 
-    credential = (
-        websocket.query_params.get("api_key")
-        or websocket.query_params.get("token")
-        or websocket.headers.get("x-api-key")
-    )
+    credential = websocket.headers.get("x-api-key")
     if not credential:
         auth_header = websocket.headers.get("authorization", "")
         if auth_header.lower().startswith("bearer "):
             credential = auth_header.split(" ", 1)[1].strip()
+    if not credential and config.lab_ws_query_token:
+        credential = websocket.query_params.get(
+            "api_key"
+        ) or websocket.query_params.get("token")
 
     if not credential:
-        return False
+        return False, None
 
-    if any(
-        hmac.compare_digest(stored_key, credential)
-        for stored_key in config.security.api_keys
-    ):
-        return True
+    for stored_key, roles in config.security.api_keys.items():
+        if hmac.compare_digest(stored_key, credential):
+            return True, AuthenticatedUser(
+                user_id=_derive_api_user_id(credential),
+                roles=list(roles),
+                auth_method="api_key",
+            )
 
     try:
         jwt = get_jwt_handler()
@@ -1656,18 +1766,30 @@ async def _authorize_websocket(websocket: WebSocket) -> bool:
     except Exception:
         payload = None
 
-    return payload is not None
+    if payload is None:
+        return False, None
+    return True, AuthenticatedUser(
+        user_id=payload.get("sub", "unknown"),
+        roles=payload.get("roles", []),
+        auth_method="jwt",
+    )
 
 
 @ws_router.websocket("/experiments/{experiment_id}/ws")
 async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
     """Stream real-time training metrics via WebSocket."""
-    if not await _authorize_websocket(websocket):
+    authorized, user = await _authorize_websocket(websocket)
+    if not authorized:
         # Accept before closing so clients consistently receive the WebSocket
         # close code. Closing pre-accept relies on the optional ASGI denial
         # response extension and deadlocks some Starlette/AnyIO combinations.
         await websocket.accept()
         await websocket.close(code=4401)
+        return
+    if experiment_id in _experiments and not _can_access(experiment_id, user):
+        # Someone else's experiment looks the same as a missing one over HTTP.
+        await websocket.accept()
+        await websocket.close(code=4404)
         return
     await websocket.accept()
     _metrics_subscribers.setdefault(experiment_id, []).append(websocket)

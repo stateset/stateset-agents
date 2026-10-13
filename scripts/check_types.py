@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
 """Type checking utility for the StateSet Agents repo.
 
-We intentionally gate a small, stable mypy surface in `mypy.ini` so type
-checking is meaningful and CI stays fast while the rest of the codebase is
-incrementally typed.
+The default mypy configuration gates the whole packaged source tree. Selected
+modules also check bodies of untyped functions.
 """
 
 from __future__ import annotations
@@ -39,7 +38,7 @@ def main() -> int:
     parser.add_argument(
         "--all",
         action="store_true",
-        help="Run mypy on the full `stateset_agents/` package (may fail).",
+        help="Explicitly run mypy on the full `stateset_agents/` package.",
     )
     args = parser.parse_args()
 

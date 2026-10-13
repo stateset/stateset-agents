@@ -90,7 +90,7 @@ _COMMON_DEFAULTS: dict[str, Any] = {
     "report_to": "none",
     "wandb_project": None,
     "wandb_entity": None,
-    "trust_remote_code": True,
+    "trust_remote_code": False,
     "attn_implementation": "sdpa",
     "device_map": "auto",
 }

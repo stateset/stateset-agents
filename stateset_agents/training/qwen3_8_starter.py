@@ -6,9 +6,9 @@ Qwen3.8 27B (``Qwen/Qwen3.8-27B``) is Alibaba's open model released
 pairing a vision tower with a 64-layer text stack (hidden 5120, 24 heads /
 4 KV heads, 248320-token vocabulary, 262144 max positions = 256K context).
 BF16 weights are roughly 56GB, so budget ~160GB of disk and either an 80GB
-card or ``--gpu-count 2``. The custom architecture requires
-``trust_remote_code=True``; the presets below target QLoRA post-training of
-the text stack.
+card or ``--gpu-count 2``. transformers implements ``qwen3_5`` natively,
+so the starter keeps ``trust_remote_code=False``; the presets below target
+QLoRA post-training of the text stack.
 
 **Why these LoRA targets.** The text stack uses *hybrid* attention,
 confirmed against the published weight map:

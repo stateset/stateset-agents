@@ -79,6 +79,8 @@ repos:
       - id: check-case-conflict
       - id: check-executables-have-shebangs
       - id: check-shebang-scripts-are-executable
+        # Archived source is evidence, not an executable entry point.
+        exclude: ^benchmark_results/industry_pilot/.*\.source\.txt$
       - id: check-symlinks
       - id: check-toml
       - id: check-yaml
@@ -95,8 +97,10 @@ repos:
         exclude: ^deployment/helm/.*/templates/
       - id: debug-statements
       - id: end-of-file-fixer
+        # Preserve the exact bytes covered by checksums.json.
+        exclude: ^benchmark_results/industry_pilot/
       - id: trailing-whitespace
-        exclude: \.(md|rst)$
+        exclude: (^benchmark_results/industry_pilot/|\.(md|rst)$)
 
   # Dependency vulnerability scanning intentionally lives in the dedicated
   # `security` and `publish-readiness` CI jobs. The legacy third-party Safety

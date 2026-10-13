@@ -794,6 +794,7 @@ print(response.json())
   "created_at": "2024-01-15T11:00:00.000Z",
   "started_at": "2024-01-15T11:00:05.000Z",
   "completed_at": "2024-01-15T11:52:30.000Z",
+  "completion_scope": "final_episode_reported",
   "progress": 100.0,
   "current_episode": 100,
   "total_episodes": 100,
@@ -918,16 +919,148 @@ print(response.json())
 ```json
 {
   "training_id": "train_994g1600d62f75h8",
-  "status": "cancelled",
-  "message": "Training job cancelled successfully"
+  "status": "cancelling",
+  "message": "Cancellation requested; training is still stopping"
 }
 ```
+
+Cancellation is cooperative. Poll the job until it reaches a terminal state;
+`cancelling` means training may still be using resources. `completed_at` remains
+unset until the background task exits. A late trainer return cannot turn a
+cancelled request into a completed job. Repeated requests preserve jobs already
+marked `completed`, `failed`, or `cancelled` and return that existing status.
+An unresponsive trainer can remain `cancelling` until it reaches a callback or
+returns; this endpoint does not forcibly terminate provider work.
+
+API shutdown stops accepting new training jobs (HTTP 503), requests cooperative
+cancellation of active jobs, and waits for their cleanup before closing cache,
+database, and inference services. Repeated cancellation of the shutdown task
+does not detach that cleanup. An unresponsive trainer can delay shutdown; this
+is not a guarantee against an external process kill. Job records remain local
+to the API process and are not persisted by this service.
+
+Startup failures and cancellation also trigger cleanup, even before the API
+begins serving. Cache and database factories close partially initialized
+instances before propagating failure; a new database becomes globally visible
+only after connection succeeds. A repository-close failure does not prevent
+attempts to close the remaining repositories. Cleanup failures are logged and
+do not replace the original initialization error. This does not guarantee that
+a backend whose close operation fails has released all external resources.
+
+Training progress updates require increasing integer episode indices within the
+requested run. Metrics exposed by the status endpoint must serialize as strict
+JSON and UTF-8; NaN, Infinity, invalid metric names, and invalid text are rejected.
+An invalid update preserves the last valid progress snapshot and fails the job
+after trainer cleanup, even if the trainer catches the callback error and returns.
+Structured/tensor metric values continue to be omitted. Late callbacks cannot
+rewrite terminal job state. These checks validate reported progress, not learning
+quality or independent evidence of optimizer updates.
+
+`status: completed` means the trainer call returned normally. Completion keeps
+the last reported `progress` and `current_episode`; it does not manufacture 100%
+progress when training stops early or emits no episode callbacks. Status and
+list responses include `completion_scope`: `final_episode_reported`,
+`partial_episode_progress`, or `no_episode_progress`. A resumed run can return
+without fresh callbacks, so `no_episode_progress` does not mean no prior work
+occurred. Likewise, `final_episode_reported` describes the final reported index,
+not complete callback coverage. The field is null for running, failed, cancelled,
+and legacy jobs without this evidence. None of these values proves optimizer
+updates, a saved checkpoint, or improved model quality.
+
+The multi-turn GRPO trainer discards pending accumulated gradients on cancellation,
+interrupts, or errors, while preserving optimizer updates already committed.
+These exits skip continual-learning finalization, the final checkpoint, and
+successful-completion callbacks. Normal completion and configured early stopping
+still flush their partial gradient window once; the final checkpoint records no
+pending window so a completed resume cannot flush it again. A final checkpoint
+failure now propagates as a training failure. Tracking cleanup runs off the event
+loop and remains owned through repeated cancellation; cleanup errors do not mask
+an existing training error. This does not roll back updates or other side effects
+that occurred before the failure, and a hung tracking backend can delay shutdown.
+
+New single-turn and multi-turn GRPO checkpoints preserve pending dense gradients by parameter
+name, the accumulation schedule, and AMP scaler state. Restoring validates names,
+shapes, dtypes, finite values, and scaler compatibility before loading model
+weights; unused parameters retain `grad: None`. A committed checkpoint clears
+any stale gradients in the target trainer. New checkpoints require loadable,
+strictly matching model weights and compatible optimizer/scheduler state, and
+state-loading errors propagate rather than silently continuing with a fresh
+optimizer. Legacy checkpoints may resume only at a completed accumulation
+boundary without AMP; missing partial gradients or scaler state cannot be
+reconstructed. These checks preserve accumulation under the same continuation
+inputs; they do not restore rollout RNG or make the entire checkpoint load a
+transaction that rolls back every component after a later failure. Both trainers
+propagate model, tokenizer, and training-state write failures without issuing a
+checkpoint-saved callback. Saves write a fresh staging directory, sync its files,
+and record a SHA-256 inventory before replacing the destination. The previous
+checkpoint is retained during replacement; caught write failures restore it, and
+subsequent trainer access recovers an interrupted replacement to the complete old
+or new directory. New checkpoints reject missing, changed, or extra artifacts
+before loading model weights. The inventory detects accidental corruption; it is
+not a signature or permission to trust pickle payloads.
+
+Publication uses same-filesystem directory renames and advisory locking of the
+checkpoint parent (a persistent sibling lock file on Windows). Cooperating
+trainer reads and writes fail promptly if that parent is busy; retry after the
+active operation finishes. External Hugging Face readers do not take this lock
+and must not read during replacement. Directory replacement uses two renames,
+not a single atomic swap; recovery requires the sibling journal and backup, so
+retain those files after a process crash. Abrupt exits before journaling may leave
+an unused hidden staging directory. Local filesystem rename, locking, and sync
+semantics are required; distributed/object-store publication is not covered.
+Single-turn completion clears
+the accumulation counter after flushing, so a checkpoint explicitly saved after
+completion cannot repeat that update when resumed.
+
+Both GRPO trainers accept single-file or indexed sharded PyTorch and
+safetensors weights. Shard paths must be regular files in the checkpoint
+directory, index coverage must match the model, and each shard must contain the
+names assigned to it. Only one shard is read at a time. Omitted tied weights are
+restored only when the target model actually shares the same parameter or buffer
+object; conflicting tied values are rejected. Multiple competing weight layouts
+in one directory are rejected as ambiguous. A corrupt later shard can still leave
+earlier weights loaded, so treat a failed load as unusable and reinitialize before
+retrying. PyTorch shards retain the default `weights_only=True` trust boundary.
+
+An explicit `resume_from_checkpoint` must load successfully before either GRPO
+trainer starts episode callbacks or generates new trajectories. Missing or
+unusable checkpoints fail the job instead of falling back to episode zero;
+blank resume paths are rejected. Omit the option to start a fresh run. Existing
+loader errors retain their original exception, while an unconfirmed loader
+result produces an explicit resume failure. This does not undo mutations that
+an unsuccessful loader may already have made to its in-memory model.
+
+Programmatic training submissions copy the request, including nested scenarios
+and training overrides, before launching a background job. The recorded
+configuration is a separate snapshot of the accepted input. Mutating the caller's
+request or a result from `get_training_status()` cannot change the running job,
+its owner, or its recorded settings. The legacy `jobs`/`training_jobs` mappings
+remain live internal state; use the status method for detached reads.
+
+`POST /training` admits one active training job per API process by default.
+Set `API_TRAINING_MAX_CONCURRENT_JOBS` to a positive integer to allow more, or pass
+`max_concurrent_jobs` to `TrainingService` when constructing it programmatically.
+Submissions above the limit receive HTTP 429 before an agent or job record is
+created; they are not queued. Cancelling jobs keep their slots until cleanup
+finishes. Normal completion, failure, and cancellation release the slot.
+This is an admission limit, not a measurement of GPU memory or provider quotas;
+multiple API worker processes each have their own limit. Size it for the actual
+training workload and available resources.
 
 ---
 
 ## Health & Monitoring
 
 ### Health Check
+
+`/health` runs the application's registered dependency probes and returns their
+measured statuses. It returns HTTP 503 when checks are missing, failing, degraded,
+or exceed the five-second response deadline. Results are not cached across
+requests or applications. Component names reflect the configured probes (normally
+`api` and `inference_backend`), rather than invented training/security health.
+Use `/healthz` or `/live` for process liveness. Applications must complete lifespan
+startup before dependency health can be reported. `/api/v1/health` is the legacy
+API/configuration summary, not a dependency readiness probe.
 
 Check the overall health of the API service.
 

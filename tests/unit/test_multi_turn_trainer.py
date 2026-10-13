@@ -5,6 +5,7 @@ Tests cover multi-turn conversation training, trajectory handling,
 and GRPO-specific training components.
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import numpy as np
@@ -52,6 +53,7 @@ class TestMultiTurnGRPOTrainer:
         config.fp16 = False
         config.use_reference_model = False
         config.report_to = None
+        config.resume_from_checkpoint = None
         config.learning_rate = 1e-4
         config.weight_decay = 0.01
         config.max_grad_norm = 1.0
@@ -153,8 +155,9 @@ class TestMultiTurnGRPOTrainer:
         agent.model = MagicMock()
         agent.tokenizer = MagicMock()
 
-        config = MagicMock()
-        config.output_dir = str(tmp_path)
+        config = SimpleNamespace(
+            output_dir=str(tmp_path), gradient_accumulation_steps=1
+        )
 
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
@@ -171,7 +174,9 @@ class TestMultiTurnGRPOTrainer:
                 new=AsyncMock(),
             ),
         ):
-            torch_module = MagicMock()
+            import torch
+
+            torch_module = MagicMock(wraps=torch)
             mock_torch.return_value = torch_module
 
             await trainer.save_checkpoint(checkpoint_name="checkpoint")

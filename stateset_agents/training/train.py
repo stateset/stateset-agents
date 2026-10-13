@@ -3,7 +3,9 @@ High-level training interface for GRPO Agent Framework
 """
 
 import asyncio
+import difflib
 import logging
+import os
 from enum import Enum
 from typing import Any, cast
 
@@ -53,7 +55,9 @@ async def train(
     dataset: Any | None = None,
     dataset_path: str | None = None,
     uncertainty_weighted: bool = False,
-    **kwargs,
+    objective: str | None = None,
+    objective_overrides: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> Agent:
     """
     High-level training function for agents
@@ -73,11 +77,44 @@ async def train(
         dataset_path: Path to JSONL dataset (loaded automatically if dataset is None)
         uncertainty_weighted: Wrap reward_fn with Bayesian uncertainty estimates
             to down-weight low-confidence rewards during training
-        **kwargs: Additional arguments
+        objective: Policy objective preset name (e.g. "dapo", "gspo", "cispo");
+            see ``stateset_agents.training.objectives.OBJECTIVES``
+        objective_overrides: Field overrides for the selected objective
+        **kwargs: ``TrainingConfig`` fields (e.g. ``learning_rate=1e-5``),
+            merged with ``config_overrides``. Unknown names raise ``TypeError``.
 
     Returns:
         Trained agent
     """
+
+    valid_modes = {mode.value for mode in TrainingMode}
+    if training_mode not in valid_modes:
+        raise ValueError(
+            f"training_mode must be one of {sorted(valid_modes)}, "
+            f"got {training_mode!r}"
+        )
+
+    config = _build_training_config(
+        profile=profile,
+        num_episodes=num_episodes,
+        config_overrides=config_overrides,
+        resume_from_checkpoint=resume_from_checkpoint,
+        objective=objective,
+        objective_overrides=objective_overrides,
+        extra_config=kwargs,
+    )
+
+    # Fields the caller set explicitly (not filled in by the profile).
+    explicit_fields = set(config_overrides or {}) | set(kwargs)
+    explicit_fields |= {
+        name
+        for name, value in (
+            ("objective", objective),
+            ("objective_overrides", objective_overrides),
+            ("resume_from_checkpoint", resume_from_checkpoint),
+        )
+        if value is not None
+    }
 
     logger.info(f"Starting training with profile: {profile}")
 
@@ -89,17 +126,6 @@ async def train(
             training_mode = (
                 "multi_turn" if isinstance(agent, MultiTurnAgent) else "single_turn"
             )
-
-    # Create training configuration
-    merged_overrides = dict(config_overrides or {})
-    if resume_from_checkpoint is not None:
-        merged_overrides["resume_from_checkpoint"] = resume_from_checkpoint
-
-    config = TrainingConfig.from_profile(
-        profile=TrainingProfile(profile),
-        num_episodes=num_episodes,
-        **merged_overrides,
-    )
 
     # Set up reward function
     if reward_fn is None:
@@ -122,6 +148,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "hybrid":
         return await _train_hybrid(
@@ -132,6 +159,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "multi_turn":
         trainer: Any = MultiTurnGRPOTrainer(
@@ -164,6 +192,66 @@ async def train(
     return trained_agent
 
 
+def _build_training_config(
+    *,
+    profile: str,
+    num_episodes: int,
+    config_overrides: dict[str, Any] | None,
+    resume_from_checkpoint: str | None,
+    objective: str | None,
+    objective_overrides: dict[str, Any] | None,
+    extra_config: dict[str, Any],
+) -> TrainingConfig:
+    """Merge every ``train()`` config source, rejecting unknown or conflicting keys."""
+    field_names = set(TrainingConfig.__dataclass_fields__)
+    unknown = sorted(set(extra_config) - field_names)
+    if unknown:
+        hints = []
+        for name in unknown:
+            close = difflib.get_close_matches(name, field_names, n=1)
+            hints.append(
+                f"{name!r}" + (f" (did you mean {close[0]!r}?)" if close else "")
+            )
+        raise TypeError(
+            "train() got unexpected keyword argument(s): " + ", ".join(hints)
+        )
+
+    merged = dict(config_overrides or {})
+    named = {
+        "resume_from_checkpoint": resume_from_checkpoint,
+        "objective": objective,
+        "objective_overrides": objective_overrides,
+    }
+    sources = [
+        (name, value) for name, value in named.items() if value is not None
+    ] + list(extra_config.items())
+    for name, value in sources:
+        if name in merged and merged[name] != value:
+            raise TypeError(
+                f"train() got conflicting values for {name!r}: "
+                f"{merged[name]!r} and {value!r}"
+            )
+        merged[name] = value
+    if "num_episodes" in merged:
+        raise TypeError(
+            "pass num_episodes as train()'s own argument, not as a config override"
+        )
+    if merged.get("objective") is not None:
+        from .objectives import OBJECTIVES
+
+        if merged["objective"] not in OBJECTIVES:
+            raise ValueError(
+                f"objective {merged['objective']!r} is not a known preset; "
+                f"expected one of: {', '.join(sorted(OBJECTIVES))}"
+            )
+
+    return TrainingConfig.from_profile(
+        profile=TrainingProfile(profile),
+        num_episodes=num_episodes,
+        **merged,
+    )
+
+
 def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
     """Wrap a reward function with Bayesian uncertainty weighting.
 
@@ -174,7 +262,7 @@ def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
     try:
         import importlib
 
-        importlib.import_module("stateset_agents.rewards.bayesian_reward_model")
+        importlib.import_module("stateset_agents.experimental.bayesian_reward_model")
 
         logger.info("Wrapping reward function with Bayesian uncertainty weighting")
         return UncertaintyWeightedReward(reward_fn)
@@ -260,6 +348,78 @@ def _load_dataset(dataset_path: str) -> Any:
         raise
 
 
+# TrainingConfig fields the offline trainer honours, copied onto
+# OfflineGRPOConfig. ``seed`` is applied to the global RNGs instead.
+_OFFLINE_MAPPED_FIELDS = (
+    "model_name",
+    "model_revision",
+    "learning_rate",
+    "num_episodes",
+    "num_epochs",
+    "max_grad_norm",
+    "advantage_normalization",
+)
+_OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {"seed"}
+
+
+def _offline_config(
+    config: Any, explicit_fields: set[str] | frozenset[str], *, strict: bool
+) -> Any:
+    """Build the offline trainer's config from a ``TrainingConfig``.
+
+    With ``strict`` (pure offline mode) an explicitly set field the offline
+    trainer would ignore raises instead of being silently dropped; in hybrid
+    mode such fields still apply to the online phase.
+    """
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOConfig
+
+    ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
+    if ignored and strict:
+        raise ValueError(
+            "offline training does not use "
+            + ", ".join(repr(name) for name in ignored)
+            + "; it honours only "
+            + ", ".join(sorted(_OFFLINE_HONOURED_FIELDS))
+        )
+    if ignored:
+        logger.info(
+            "Offline pre-training phase ignores %s (applied to the online phase)",
+            ", ".join(ignored),
+        )
+    return OfflineGRPOConfig(
+        **{name: getattr(config, name) for name in _OFFLINE_MAPPED_FIELDS},
+        offline_algorithm="iql",
+    )
+
+
+def _seed_offline(config: Any, explicit_fields: set[str] | frozenset[str]) -> None:
+    if "seed" not in explicit_fields:
+        return
+    import random
+
+    import numpy as np
+
+    seed = int(config.seed)
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - offline training needs torch
+        return
+    torch.manual_seed(seed)
+
+
+def _save_offline(agent: Agent, trainer: Any, save_path: str) -> None:
+    """Persist the offline trainer state plus the agent's model/tokenizer."""
+    os.makedirs(save_path, exist_ok=True)
+    trainer.save(os.path.join(save_path, "offline_grpo_trainer.pt"))
+    for part in ("model", "tokenizer"):
+        saver = getattr(getattr(agent, part, None), "save_pretrained", None)
+        if callable(saver):
+            saver(save_path)
+    logger.info("Offline-trained agent saved to %s", save_path)
+
+
 async def _train_offline(
     agent: Agent,
     config: Any,
@@ -267,9 +427,12 @@ async def _train_offline(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
+    strict: bool = True,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
-    from .offline_grpo_trainer import OfflineGRPOConfig, OfflineGRPOTrainer
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
 
     if dataset is None:
         raise ValueError(
@@ -277,12 +440,8 @@ async def _train_offline(
             "Pass dataset= or dataset_path= to train()."
         )
 
-    offline_config = OfflineGRPOConfig(
-        model_name=config.model_name,
-        learning_rate=config.learning_rate,
-        num_episodes=config.num_episodes,
-        offline_algorithm="iql",
-    )
+    offline_config = _offline_config(config, explicit_fields, strict=strict)
+    _seed_offline(config, explicit_fields)
 
     trainer = OfflineGRPOTrainer(
         config=offline_config,
@@ -305,7 +464,7 @@ async def _train_offline(
     )
 
     if save_path:
-        logger.info("Saving offline-trained model to %s", save_path)
+        _save_offline(agent, trainer, save_path)
 
     return agent
 
@@ -318,13 +477,24 @@ async def _train_hybrid(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
 ) -> Agent:
     """Hybrid training: offline pre-training then online fine-tuning."""
 
     # Phase 1: Offline pre-training (if dataset available)
     if dataset is not None:
         logger.info("Phase 1: Offline pre-training from dataset")
-        await _train_offline(agent, config, reward_fn, dataset, None, callbacks)
+        await _train_offline(
+            agent,
+            config,
+            reward_fn,
+            dataset,
+            None,
+            callbacks,
+            explicit_fields=explicit_fields,
+            strict=False,
+        )
 
     # Phase 2: Online fine-tuning
     logger.info("Phase 2: Online fine-tuning with environment")

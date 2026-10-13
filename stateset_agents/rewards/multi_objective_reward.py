@@ -145,6 +145,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         # Compute scores for each component
         component_scores: dict[str, float] = {}
         weighted_scores: list[float] = []
+        raw_scores: list[float] = []
 
         for component, component_weight in zip(
             components, component_weights, strict=True
@@ -154,6 +155,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 if not math.isfinite(score):
                     raise ValueError("component score must be finite")
                 component_scores[component.name] = score
+                raw_scores.append(score)
                 weighted_scores.append(score * component_weight)
 
                 # Track component performance
@@ -164,6 +166,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
             except MULTI_REWARD_EXCEPTIONS as e:
                 logger.error(f"Component {component.name} failed: {e}")
                 component_scores[component.name] = 0.0
+                raw_scores.append(0.0)
                 weighted_scores.append(0.0)
 
         # Combine scores
@@ -175,10 +178,18 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
             )
         elif self.normalization_method == "geometric_mean":
-            # Geometric mean of weighted scores
-            if all(s > 0 for s in weighted_scores):
+            # Weighted geometric mean: prod(score_i ** w_i) with weights
+            # summing to 1, so all-perfect components score 1.0.
+            total_weight = sum(component_weights)
+            if total_weight > 0 and all(s > 0 for s in raw_scores):
                 final_score = float(
-                    np.prod(weighted_scores) ** (1.0 / len(weighted_scores))
+                    math.exp(
+                        sum(
+                            w * math.log(s)
+                            for s, w in zip(raw_scores, component_weights, strict=True)
+                        )
+                        / total_weight
+                    )
                 )
             else:
                 final_score = 0.0

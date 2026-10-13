@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from collections.abc import AsyncIterator, Callable
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
@@ -18,7 +19,7 @@ from stateset_agents.core.generation_mode import inference_mode
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
-from .transformers_compat import load_generation_model
+from .transformers_compat import generation_compat_kwargs, load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
@@ -195,6 +196,32 @@ TOOL_EXEC_EXCEPTIONS: tuple[type[BaseException], ...] = (
     OSError,
 )
 
+STREAM_STOP_PHRASES = ("User:", "System:", "Human:", "AI:")
+
+
+def _stream_visible_text(pending: str) -> tuple[str, str, bool]:
+    """Hold back possible stop prefixes until later chunks resolve them."""
+    stop_positions = [
+        position
+        for phrase in STREAM_STOP_PHRASES
+        if (position := pending.find(phrase)) >= 0
+    ]
+    if stop_positions:
+        return pending[: min(stop_positions)], "", True
+
+    held = max(
+        (
+            length
+            for phrase in STREAM_STOP_PHRASES
+            for length in range(1, min(len(phrase), len(pending) + 1))
+            if pending.endswith(phrase[:length])
+        ),
+        default=0,
+    )
+    if held:
+        return pending[:-held], pending[-held:], False
+    return pending, "", False
+
 
 class StopOnSpecialTokens(StoppingCriteria):
     """Custom stopping criteria for conversation agents"""
@@ -211,17 +238,21 @@ class StopOnSpecialTokens(StoppingCriteria):
             if token_ids:
                 self.stop_token_ids.append(token_ids)
 
-    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
-        # Check if any stop token was generated
+    def ends_with_stop(self, sequence: list[int]) -> bool:
+        """Whether ``sequence`` ends with one of the stop strings' token ids."""
+        return any(
+            len(stop_ids) <= len(sequence) and sequence[-len(stop_ids) :] == stop_ids
+            for stop_ids in self.stop_token_ids
+        )
+
+    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> Any:
+        # One flag per row: HF ORs criteria into a per-sequence done mask, so a
+        # scalar would stop (or keep running) every row of a batched group.
         if torch is not None and hasattr(input_ids, "tolist"):
-            sequence = input_ids[0].tolist()
-        else:
-            sequence = list(input_ids[0]) if input_ids else []
-        for stop_ids in self.stop_token_ids:
-            stop_len = len(stop_ids)
-            if stop_len <= len(sequence) and sequence[-stop_len:] == stop_ids:
-                return True
-        return False
+            done = [self.ends_with_stop(row) for row in input_ids.tolist()]
+            return torch.tensor(done, dtype=torch.bool, device=input_ids.device)
+        rows = [list(row) for row in input_ids] if input_ids else []
+        return [self.ends_with_stop(row) for row in rows]
 
 
 def _apply_persona_keyword_hints(response: str, messages: list[dict[str, Any]]) -> str:
@@ -514,6 +545,7 @@ class Agent:
             repetition_penalty=self.config.repetition_penalty,
             pad_token_id=_safe_token_id(getattr(self.tokenizer, "pad_token_id", None)),
             eos_token_id=_safe_token_id(getattr(self.tokenizer, "eos_token_id", None)),
+            **generation_compat_kwargs(self.model),
         )
 
 
@@ -527,6 +559,25 @@ _TURN_METADATA_KEYS: tuple[str, ...] = (
     "rollout_backend_stale",
     "rollout_backend_error",
 )
+
+
+def _validated_backend_result(result: Any, prompt: str) -> dict[str, Any]:
+    """Reject backend output that cannot represent one exact sampled rollout."""
+    if getattr(result, "prompt", prompt) != prompt:
+        raise ValueError("rollout backend returned a result for a different prompt")
+    prompt_ids = [int(token) for token in result.prompt_token_ids]
+    token_ids = [int(token) for token in result.response_token_ids]
+    log_probs = [float(value) for value in result.token_logprobs]
+    if len(token_ids) != len(log_probs):
+        raise ValueError("rollout backend token IDs and log-probs differ in length")
+    if any(not math.isfinite(value) or value > 1e-6 for value in log_probs):
+        raise ValueError("rollout backend returned invalid token log-probs")
+    return {
+        "response": str(result.response),
+        "prompt_token_ids": prompt_ids,
+        "token_ids": token_ids,
+        "sampler_log_probs": log_probs,
+    }
 
 
 class MultiTurnAgent(Agent):
@@ -605,6 +656,9 @@ class MultiTurnAgent(Agent):
             adapter_path = Path(self.config.peft_path).expanduser().resolve()
             if not adapter_path.exists():
                 raise FileNotFoundError(f"peft_path does not exist: {adapter_path}")
+            from .checkpoint_io import validate_local_shard_indexes
+
+            validate_local_shard_indexes(adapter_path)
             self.model = PeftModel.from_pretrained(self.model, str(adapter_path))
             logger.info("Loaded LoRA adapter from %s", adapter_path)
         # Otherwise apply a fresh PEFT config if requested (training-time path).
@@ -778,6 +832,7 @@ class MultiTurnAgent(Agent):
         """``n`` samples of :meth:`_generate_with_model_details` in one batch
         where the backend allows it (HF ``num_return_sequences``, engine batch
         of ``n`` prompts); sequential otherwise."""
+        backend_error: str | None = None
         backend = getattr(self, "_rollout_backend", None)
         if backend is not None:
             try:
@@ -787,19 +842,25 @@ class MultiTurnAgent(Agent):
                     top_p=float(self.config.top_p),
                     max_tokens=int(self.config.max_new_tokens),
                 )
-                return [
-                    {
-                        "response": self._clean_response(str(r.response)),
-                        "prompt_token_ids": [int(t) for t in r.prompt_token_ids],
-                        "token_ids": [int(t) for t in r.response_token_ids],
-                        "sampler_log_probs": [float(x) for x in r.token_logprobs],
-                        "rollout_backend": type(backend).__name__,
-                        "rollout_backend_version": self.rollout_backend_version,
-                        "rollout_backend_stale": self.rollout_backend_stale,
-                    }
-                    for r in results
+                if len(results) != n:
+                    raise ValueError(
+                        f"rollout backend returned {len(results)} results for {n} prompts"
+                    )
+                backend_batch = [
+                    _validated_backend_result(result, prompt) for result in results
                 ]
+                for backend_item in backend_batch:
+                    backend_item["response"] = self._clean_response(
+                        backend_item["response"]
+                    )
+                    backend_item["rollout_backend"] = type(backend).__name__
+                    backend_item["rollout_backend_version"] = (
+                        self.rollout_backend_version
+                    )
+                    backend_item["rollout_backend_stale"] = self.rollout_backend_stale
+                return backend_batch
             except Exception as e:  # noqa: BLE001 - engine failure falls back
+                backend_error = f"{type(e).__name__}: {e}"
                 logger.warning(
                     "rollout backend %s failed for a batch of %d, falling back to "
                     "native generation: %s",
@@ -807,6 +868,19 @@ class MultiTurnAgent(Agent):
                     n,
                     e,
                 )
+
+        async def sequential_fallback() -> list[dict[str, Any]]:
+            details = [
+                await self._generate_with_model_details(
+                    prompt, context, use_rollout_backend=False
+                )
+                for _ in range(n)
+            ]
+            if backend_error:
+                for item in details:
+                    item["rollout_backend_error"] = backend_error
+            return details
+
         if (
             (self._is_stub_backend and isinstance(self.model, StubModel))
             or self.model is None
@@ -814,17 +888,9 @@ class MultiTurnAgent(Agent):
             or self.generation_config is None
             or not callable(getattr(self.model, "generate", None))
         ):
-            return [
-                await self._generate_with_model_details(prompt, context)
-                for _ in range(n)
-            ]
+            return await sequential_fallback()
 
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._effective_max_input_length(),
-        )
+        inputs = self._tokenize_prompt(prompt)
         model_device = None
         if hasattr(self.model, "parameters"):
             try:
@@ -833,12 +899,14 @@ class MultiTurnAgent(Agent):
                 model_device = None
         if model_device and hasattr(inputs, "to"):
             inputs = inputs.to(model_device)
+        stopping_criteria = self._build_stopping_criteria()
+        stopper = stopping_criteria[0]
         try:
             with inference_mode(self.model), torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     generation_config=self.generation_config,
-                    stopping_criteria=self._build_stopping_criteria(),
+                    stopping_criteria=stopping_criteria,
                     return_dict_in_generate=True,
                     output_scores=True,
                     output_logits=True,
@@ -851,10 +919,7 @@ class MultiTurnAgent(Agent):
             logger.debug(
                 "batched generation unavailable (%s); sampling sequentially", e
             )
-            return [
-                await self._generate_with_model_details(prompt, context)
-                for _ in range(n)
-            ]
+            return await sequential_fallback()
 
         prompt_len = int(inputs["input_ids"].shape[1])
         prompt_ids = [int(t) for t in inputs["input_ids"][0]]
@@ -876,12 +941,19 @@ class MultiTurnAgent(Agent):
                 hits = (response_tokens == int(eos_id)).nonzero()
                 if hits.numel():
                     length = int(hits[0].item()) + 1
+                    # A row stopped by a stop string is padded afterwards; with
+                    # pad == eos that first pad is not a sampled EOS.
+                    head = [int(t) for t in response_tokens[: length - 1]]
+                    if pad_id == eos_id and stopper.ends_with_stop(head):
+                        length -= 1
             if pad_id is not None and pad_id != eos_id:
                 while length and int(response_tokens[length - 1]) == int(pad_id):
                     length -= 1
             response_tokens = response_tokens[:length]
             text = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
             details: dict[str, Any] = {"response": self._clean_response(text)}
+            if backend_error:
+                details["rollout_backend_error"] = backend_error
             try:
                 if steps and length:
                     with torch.no_grad():
@@ -1051,14 +1123,20 @@ class MultiTurnAgent(Agent):
         return str(details["response"])
 
     async def _generate_with_model_details(
-        self, prompt: str, context: dict[str, Any] | None = None
+        self,
+        prompt: str,
+        context: dict[str, Any] | None = None,
+        *,
+        use_rollout_backend: bool = True,
     ) -> dict[str, Any]:
         """Generate with the language model and return the response text plus,
         for real HF models, the exact prompt ids, the sampled response ids, and
         the model's log-probs of those ids (temperature 1, no truncation)."""
 
         backend_error: str | None = None
-        backend = getattr(self, "_rollout_backend", None)
+        backend = (
+            getattr(self, "_rollout_backend", None) if use_rollout_backend else None
+        )
         if backend is not None:
             try:
                 results = await backend.generate_with_logprobs(
@@ -1067,12 +1145,15 @@ class MultiTurnAgent(Agent):
                     top_p=float(self.config.top_p),
                     max_tokens=int(self.config.max_new_tokens),
                 )
+                if len(results) != 1:
+                    raise ValueError(
+                        f"rollout backend returned {len(results)} results for one prompt"
+                    )
                 result = results[0]
+                backend_details = _validated_backend_result(result, prompt)
                 return {
-                    "response": self._clean_response(str(result.response)),
-                    "prompt_token_ids": [int(t) for t in result.prompt_token_ids],
-                    "token_ids": [int(t) for t in result.response_token_ids],
-                    "sampler_log_probs": [float(x) for x in result.token_logprobs],
+                    **backend_details,
+                    "response": self._clean_response(backend_details["response"]),
                     "rollout_backend": type(backend).__name__,
                     "rollout_backend_version": self.rollout_backend_version,
                     "rollout_backend_stale": self.rollout_backend_stale,
@@ -1105,12 +1186,7 @@ class MultiTurnAgent(Agent):
             )
 
         # Tokenize input
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._effective_max_input_length(),
-        )
+        inputs = self._tokenize_prompt(prompt)
 
         # Move inputs to model device when available
         model_device = None
@@ -1189,12 +1265,45 @@ class MultiTurnAgent(Agent):
         response = response.strip()
 
         # Remove stopping tokens that might have leaked through
-        stop_phrases = ["User:", "System:", "Human:", "AI:"]
-        for phrase in stop_phrases:
+        for phrase in STREAM_STOP_PHRASES:
             if phrase in response:
                 response = response.split(phrase)[0].strip()
 
         return response
+
+    def _tokenize_prompt(self, prompt: str) -> Any:
+        """Tokenize a generation prompt, keeping its end when it is too long.
+
+        The end holds the latest user turn and the assistant cue; right
+        truncation (the tokenizer default) dropped them, so the model continued
+        mid-history.
+        """
+        max_length = self._effective_max_input_length()
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Tokenizer must be available to tokenize prompts")
+        original_side = getattr(tokenizer, "truncation_side", None)
+        if original_side is not None:
+            tokenizer.truncation_side = "left"
+        try:
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=max_length
+            )
+        finally:
+            if original_side is not None:
+                tokenizer.truncation_side = original_side
+        ids: Any = inputs.get("input_ids") if hasattr(inputs, "get") else None
+        if (
+            torch is not None
+            and torch.is_tensor(ids)
+            and ids.dim() > 0
+            and int(ids.shape[-1]) >= max_length
+        ):
+            logger.warning(
+                "Prompt reached the %d-token input limit; earliest context dropped.",
+                max_length,
+            )
+        return inputs
 
     def _effective_max_input_length(self) -> int:
         """Compute a safe max_length for tokenization to avoid negative lengths."""
@@ -1285,12 +1394,7 @@ class MultiTurnAgent(Agent):
                 )
 
             # Tokenize input
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self._effective_max_input_length(),
-            )
+            inputs = self._tokenize_prompt(prompt)
 
             model_device = None
             if hasattr(self.model, "parameters"):
@@ -1312,11 +1416,22 @@ class MultiTurnAgent(Agent):
                     self.tokenizer, skip_prompt=True, skip_special_tokens=True
                 )
 
+                stop_requested = threading.Event()
+
+                class StopOnRequest:
+                    def __call__(
+                        self, _input_ids: Any, _scores: Any, **_kwargs: Any
+                    ) -> bool:
+                        return stop_requested.is_set()
+
+                stopping_criteria = self._build_stopping_criteria()
+                stopping_criteria.append(StopOnRequest())
+
                 generation_kwargs = {
                     **inputs,
                     "generation_config": self.generation_config,
                     "streamer": streamer,
-                    "stopping_criteria": self._build_stopping_criteria(),
+                    "stopping_criteria": stopping_criteria,
                 }
                 model = self.model
                 if model is None:
@@ -1324,37 +1439,51 @@ class MultiTurnAgent(Agent):
                         "Agent model must be initialized before streaming"
                     )
 
-                # Run generation in separate thread
-                thread = threading.Thread(
-                    target=lambda: model.generate(**generation_kwargs)
-                )
+                generation_error: list[Exception] = []
+
+                def run_generation() -> None:
+                    try:
+                        with inference_mode(model), torch.no_grad():
+                            model.generate(**generation_kwargs)
+                    except Exception as exc:  # noqa: BLE001 - relay worker failure
+                        generation_error.append(exc)
+                        streamer.end()  # Unblock a reader waiting for the next chunk.
+
+                # The producer and blocking iterator both run off the event loop.
+                thread = threading.Thread(target=run_generation, daemon=True)
                 thread.start()
 
-                # Yield tokens as they arrive
-                accumulated = ""
-                response_chunks = []
-                for text in streamer:
-                    # Check for stop phrases
-                    accumulated += text
-                    should_stop = False
-                    for phrase in ["User:", "System:", "Human:", "AI:"]:
-                        if phrase in accumulated:
-                            # Yield up to the stop phrase
-                            idx = accumulated.index(phrase)
-                            if idx > len(accumulated) - len(text):
-                                remaining = accumulated[:idx]
-                                if remaining:
-                                    chunk = remaining[len(accumulated) - len(text) :]
-                                    response_chunks.append(chunk)
-                                    yield chunk
-                            should_stop = True
-                            break
-                    if should_stop:
-                        break
-                    response_chunks.append(text)
-                    yield text
+                iterator = iter(streamer)
 
-                thread.join()
+                def next_chunk() -> str | None:
+                    try:
+                        return cast(str, next(iterator))
+                    except StopIteration:
+                        return None
+
+                response_chunks: list[str] = []
+                pending = ""
+                stopped = False
+                try:
+                    while (text := await asyncio.to_thread(next_chunk)) is not None:
+                        visible, pending, stopped = _stream_visible_text(pending + text)
+                        if visible:
+                            response_chunks.append(visible)
+                            yield visible
+                        if stopped:
+                            stop_requested.set()
+                            break
+                    if not stopped and pending:
+                        response_chunks.append(pending)
+                        yield pending
+                finally:
+                    stop_requested.set()
+                    await asyncio.to_thread(thread.join)
+
+                if generation_error:
+                    raise RuntimeError(
+                        "Model generation failed during streaming"
+                    ) from (generation_error[0])
                 response_text = "".join(response_chunks)
 
             except ImportError:

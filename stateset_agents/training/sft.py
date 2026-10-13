@@ -35,6 +35,15 @@ import logging
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.lora_targets import (
+    NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
+)
+from stateset_agents.core.lora_targets import (
+    text_lora_targets,
+)
+from stateset_agents.core.model_presets import PRESETS
+from stateset_agents.core.transformers_compat import generation_compat_kwargs
 from stateset_agents.training.lineage import (
     AdapterManifest,
     hash_dataset,
@@ -96,7 +105,8 @@ def load_chat_dataset(path: Path) -> list[dict[str, Any]]:
     """Load a chat-format JSONL.
 
     Each row must have a ``messages`` key with a list of ``{role, content}``
-    dicts. Returns the list of rows after validation.
+    dicts. Tool-calling rows may also contain ``tools`` (JSON schemas) and
+    assistant ``tool_calls`` with typed arguments. Returns validated rows.
     """
     if not path.exists():
         raise FileNotFoundError(f"Dataset not found: {path}")
@@ -176,6 +186,14 @@ _LORA_TARGET_CANDIDATES = (
     "c_proj",
     "c_fc",
     "query_key_value",
+    "qkv_proj",
+    "gate_up_proj",
+    "input_linear",
+    "output_linear",
+    "in_proj",
+    "w1",
+    "w2",
+    "w3",
     "dense",
     "fc1",
     "fc2",
@@ -192,24 +210,78 @@ _LORA_TARGET_CANDIDATES = (
     "out_proj",
 )
 
-#: Module-path components that mark the non-text stack of a multimodal
-#: composite model. Anything under these gets no gradient from text-only SFT.
-_NON_TEXT_STACK_MARKERS = frozenset(
-    {
-        "vision_tower",
-        "vision_model",
-        "visual",
-        "vision_encoder",
-        "image_processor",
-        "vision_adapter",
-        "vision_projection",
-        "vision_projector",
-        "perception_encoder",
-        "multi_modal_projector",
-        "mm_projector",
-        "audio_tower",
+
+def _trust_remote_code(model_name: str) -> bool:
+    """Run repo-shipped model code only for curated presets that require it;
+    any other model loads with the native transformers implementation."""
+    return next(
+        (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
+        False,
+    )
+
+
+def _row_tools(row: dict[str, Any]) -> list[dict[str, Any]] | None:
+    tools = row.get("tools")
+    if tools is not None and (
+        not isinstance(tools, list) or not all(isinstance(t, dict) for t in tools)
+    ):
+        raise ValueError("SFT row 'tools' must be a list of tool schema objects.")
+    return tools
+
+
+def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
+    """Render before Arrow conversion so heterogeneous tool schemas stay intact."""
+    kwargs: dict[str, Any] = {}
+    tools = _row_tools(row)
+    if tools is not None:
+        kwargs["tools"] = tools
+    return {
+        "text": tokenizer.apply_chat_template(
+            row["messages"], tokenize=False, add_generation_prompt=False, **kwargs
+        )
     }
-)
+
+
+_WARNED_ONCE: set[str] = set()
+
+
+def tokenize_sft_row(
+    tokenizer: Any, row: dict[str, Any], max_length: int
+) -> dict[str, list[int]] | None:
+    """Tokenize one chat row with labels on assistant tokens only.
+
+    System prompts, user turns and tool results are context, not targets
+    (training on them teaches the model to write its own tool outputs).
+    Truncation keeps the first ``max_length`` tokens; a row with no supervised
+    token left is dropped (``None``). Templates whose renders rewrite earlier
+    turns fall back to full-sequence labels with a one-time warning.
+    """
+    tools = _row_tools(row)
+    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
+    if masked is None:
+        if "unmasked_sft" not in _WARNED_ONCE:
+            logger.warning(
+                "Chat template rewrites earlier turns; SFT labels fall back to "
+                "every token for affected rows."
+            )
+            _WARNED_ONCE.add("unmasked_sft")
+        text = _render_sft_row(tokenizer, row)["text"]
+        ids = list(
+            tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+        )
+        assistant = [True] * len(ids)
+    else:
+        ids, assistant = masked
+    ids, assistant = ids[:max_length], assistant[:max_length]
+    if not any(assistant):
+        return None
+    # Real EOS labels survive even when EOS doubles as padding: the collator
+    # pads labels with -100 by position, not token id.
+    return {
+        "input_ids": ids,
+        "attention_mask": [1] * len(ids),
+        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
+    }
 
 
 def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
@@ -267,7 +339,7 @@ def model_load_kwargs() -> dict[str, Any]:
     loads exactly as before and the Trainer places it itself.
     """
     kwargs: dict[str, Any] = {
-        "trust_remote_code": True,
+        "trust_remote_code": False,
         "torch_dtype": "bfloat16",
     }
     n_gpus = cuda_device_count()
@@ -334,7 +406,7 @@ def log_cuda_memory_per_device() -> None:
         return
 
 
-def load_base_model_for_sft(base_model: str):
+def load_base_model_for_sft(base_model: str, *, revision: str | None = None):
     """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
 
     Composite multimodal checkpoints (e.g. ``zai-org/GLM-5.3-Flash`` and
@@ -352,6 +424,9 @@ def load_base_model_for_sft(base_model: str):
     from stateset_agents.core.transformers_compat import load_generation_model
 
     kwargs = model_load_kwargs()
+    kwargs["trust_remote_code"] = _trust_remote_code(base_model)
+    if revision is not None:
+        kwargs["revision"] = revision
     model, resolved_model_cls = load_generation_model(
         AutoModelForCausalLM,
         base_model,
@@ -405,13 +480,13 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     if shared:
         logger.warning(
             "LoRA candidates %s exist in both text and non-text stacks; "
-            "peft's leaf-name matching will adapt both.",
+            "using full text paths to exclude encoders.",
             ", ".join(sorted(shared)),
         )
     # The output head is deliberately excluded: adapting it inflates the
     # adapter with a vocab-sized matrix for no benefit on SFT.
     text_found.discard("lm_head")
-    return sorted(text_found)
+    return text_lora_targets(model, sorted(text_found))
 
 
 def generate_completions(
@@ -452,13 +527,17 @@ def generate_completions(
                 tokenize=False,
                 add_generation_prompt=True,
             )
-        inputs = tokenizer(text, return_tensors="pt").to(model.device)
+        # The chat template already supplies the model's special tokens.
+        inputs = tokenizer(text, return_tensors="pt", add_special_tokens=False).to(
+            model.device
+        )
         with torch.no_grad():
             output = model.generate(
                 **inputs,
                 do_sample=False,
                 max_new_tokens=max_new_tokens,
                 pad_token_id=tokenizer.eos_token_id,
+                **generation_compat_kwargs(model),
             )
         prompt_length = inputs["input_ids"].shape[1]
         completions.append(
@@ -691,6 +770,7 @@ def run_sft(
     resume: bool = False,
     dataset_path: Path | None = None,
     parent_adapter: str | None = None,
+    model_revision: str | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
 
@@ -717,7 +797,7 @@ def run_sft(
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
         AutoTokenizer,
-        DataCollatorForLanguageModeling,
+        DataCollatorForSeq2Seq,
         Trainer,
         TrainingArguments,
     )
@@ -726,12 +806,13 @@ def run_sft(
     # base_model is a caller-supplied CLI argument (public HF model repo id),
     # not attacker-controlled input; pinning a fixed revision would break
     # support for arbitrary user-chosen base models.
+    revision_kwargs = {"revision": model_revision} if model_revision is not None else {}
     tokenizer = AutoTokenizer.from_pretrained(
-        base_model, trust_remote_code=True
+        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
     )  # nosec: B615
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = load_base_model_for_sft(base_model)
+    model = load_base_model_for_sft(base_model, **revision_kwargs)
     log_device_map_summary(model)
     log_cuda_memory_per_device()
 
@@ -777,25 +858,23 @@ def run_sft(
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
-    def render(row: dict[str, Any]) -> dict[str, Any]:
-        """Apply the model's chat template to each row."""
-        text = tokenizer.apply_chat_template(
-            row["messages"],
-            tokenize=False,
-            add_generation_prompt=False,
+    # Render Python records directly: Arrow otherwise unifies different tool
+    # schemas/argument objects and inserts null fields into the conversations.
+    tokenized = [tokenize_sft_row(tokenizer, row, max_length) for row in rows]
+    records = [record for record in tokenized if record is not None]
+    if len(records) < len(tokenized):
+        logger.warning(
+            "Dropped %d of %d SFT rows whose assistant tokens were truncated "
+            "away at max_length=%d.",
+            len(tokenized) - len(records),
+            len(tokenized),
+            max_length,
         )
-        return {"text": text}
-
-    dataset = Dataset.from_list(rows).map(render, remove_columns=["messages"])
-    dataset = dataset.map(
-        lambda x: tokenizer(
-            x["text"],
-            truncation=True,
-            max_length=max_length,
-            padding=False,
-        ),
-        remove_columns=["text"],
-    )
+    if not records:
+        raise ValueError(
+            f"No SFT row keeps an assistant token within max_length={max_length}."
+        )
+    dataset = Dataset.from_list(records)
 
     args = build_training_arguments(
         TrainingArguments,
@@ -815,7 +894,7 @@ def run_sft(
         model=model,
         args=args,
         train_dataset=dataset,
-        data_collator=DataCollatorForLanguageModeling(tokenizer, mlm=False),
+        data_collator=DataCollatorForSeq2Seq(tokenizer, label_pad_token_id=-100),
     )
 
     logger.info("Starting SFT…")
@@ -847,6 +926,7 @@ def run_sft(
             "per_device_batch_size": per_device_batch_size,
             "gradient_accumulation_steps": gradient_accumulation_steps,
             "resumed": bool(resume),
+            "model_revision": model_revision,
         },
         parent_adapter=parent_adapter,
         package_version=_package_version(),

@@ -222,6 +222,14 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
                 if value <= 0:
                     errors.append("`training.max_turns` must be a positive integer.")
 
+        unknown = _unknown_training_keys(training_cfg)
+        if unknown:
+            errors.append(
+                "`training` has unknown key(s): "
+                + ", ".join(f"`{name}`" for name in unknown)
+                + ". Use TrainingConfig field names (plus num_episodes, max_turns)."
+            )
+
     if "profile" in cfg and _normalize_training_profile(cfg["profile"]) is None:
         errors.append(
             "`profile` must be one of: conservative, balanced, aggressive, "
@@ -229,6 +237,16 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
         )
 
     return errors, warnings
+
+
+def _unknown_training_keys(training_cfg: dict[str, t.Any]) -> list[str]:
+    """Keys in a config file's ``training:`` section that nothing would read."""
+    try:
+        from stateset_agents.training.config import TrainingConfig
+    except CLI_IMPORT_EXCEPTIONS:  # pragma: no cover - config has no heavy deps
+        return []
+    known = set(TrainingConfig.__dataclass_fields__) | {"num_episodes", "max_turns"}
+    return sorted(str(key) for key in training_cfg if key not in known)
 
 
 def _collect_dependency_status() -> tuple[dict[str, bool], dict[str, bool]]:
@@ -799,6 +817,12 @@ from stateset_agents import (  # noqa: E402, F401 — grade -> curate -> retrain
     cli_meta,
     cli_train,
 )
+from stateset_agents.cli_industry import industry_app  # noqa: E402 — industry
+from stateset_agents.cli_reward import reward_audit  # noqa: E402 — reward audit
+
+# Sub-apps that do not import this module (no import cycle) register here.
+app.add_typer(industry_app, name="industry")
+app.command("reward-audit")(reward_audit)
 
 
 def _register_advanced_cli() -> None:

@@ -13,6 +13,18 @@
       "tests": ["tests/api/test_openai_compat_endpoint.py", "tests/api/test_messages_endpoint.py"]
     },
     {
+      "docs": ["docs/ADVANCED_FEATURES_GUIDE.md"],
+      "evidence": ["tests/unit/test_bayesian_active_learning_update.py"],
+      "graduation_criteria": ["Pass a learning test showing uncertainty-weighted rewards improve a trained policy on a realistic task", "Retain calibration evidence (uncertainty vs. error) on held-out human or judge labels"],
+      "id": "bayesian-reward-model",
+      "limitations": ["Lives in stateset_agents.experimental.bayesian_reward_model since v0.64.0; the stateset_agents.rewards import path is a deprecated shim removed in v0.65.0", "Only unit-tested; no calibration or downstream training evidence is retained"],
+      "maturity": "experimental",
+      "name": "Bayesian reward model and active learning",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_bayesian_active_learning_update.py", "tests/unit/test_experimental_shims.py"]
+    },
+    {
       "docs": ["docs/ARCHITECTURE.md"],
       "evidence": ["benchmark_results/whitepaper_v1/customer_support_3seed_judge_qwen25_05b_instruct.json"],
       "graduation_criteria": [],
@@ -109,16 +121,28 @@
       "tests": ["tests/unit/test_memory_evaluation.py", "tests/api/test_persistence.py"]
     },
     {
-      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md"],
-      "evidence": ["docs/WHITEPAPER.md"],
-      "graduation_criteria": ["Publish dialogue-specific held-out comparisons for every advertised offline objective"],
+      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md", "docs/ADVANCED_RL_ALGORITHMS.md"],
+      "evidence": ["tests/learning/test_offline_q_learning_learns.py", "tests/learning/test_bcq_learns.py", "tests/learning/test_decision_transformer_learns.py", "tests/learning/test_offline_grpo_learns.py"],
+      "graduation_criteria": ["Pass a learning test on a realistic logged-dialogue task for every advertised offline objective (CQL, IQL, BCQ, BEAR, Decision Transformer, offline GRPO), not only toy fixtures", "Retain GPU evidence of a held-out quality improvement over the logging policy on a real model", "Publish dialogue-specific held-out comparisons for every advertised offline objective"],
       "id": "offline-rl",
-      "limitations": ["Individual algorithms are tested, but the blending schedule lacks published agent-quality evidence"],
+      "limitations": ["Lives in stateset_agents.experimental.offline_rl since v0.64.0; the stateset_agents.training import paths are deprecated shims removed in v0.65.0", "Learning is only demonstrated on synthetic toy fixtures (tests/learning); no realistic-task or GPU evidence is retained", "Individual algorithms are tested, but the blending schedule lacks published agent-quality evidence"],
       "maturity": "experimental",
-      "name": "Offline RL algorithms",
+      "name": "Offline RL (CQL, IQL, BCQ, BEAR, Decision Transformer, offline GRPO)",
       "owner": "research",
       "public_contract_refs": [],
-      "tests": ["tests/unit/test_offline_rl_sim_to_real.py"]
+      "tests": ["tests/unit/test_offline_rl_sim_to_real.py", "tests/unit/test_cql_bellman_target.py", "tests/unit/test_decision_transformer_alignment.py", "tests/unit/test_offline_grpo_targets.py", "tests/learning/test_offline_q_learning_learns.py", "tests/learning/test_bcq_learns.py", "tests/learning/test_decision_transformer_learns.py", "tests/learning/test_offline_grpo_learns.py", "tests/unit/test_experimental_shims.py"]
+    },
+    {
+      "docs": ["README.md", "docs/OBJECTIVES.md"],
+      "evidence": ["tests/learning/test_ppo_learns.py", "tests/learning/test_rlaif_learns.py"],
+      "graduation_criteria": ["Pass a learning test on a realistic multi-turn task, not only the synthetic toy fixture", "Retain GPU evidence of a PPO and an RLAIF run on a real model with matched GRPO baselines"],
+      "id": "ppo-rlaif-trainers",
+      "limitations": ["Lives in stateset_agents.experimental (ppo, rlaif) since v0.64.0; the stateset_agents.training import paths are deprecated shims removed in v0.65.0", "Learning is only demonstrated on a synthetic toy task; no retained GPU evidence", "RLAIF quality depends on an external judge model"],
+      "maturity": "experimental",
+      "name": "PPO and RLAIF trainers",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_ppo_objective.py", "tests/unit/test_ppo_rlaif_correctness.py", "tests/learning/test_ppo_learns.py", "tests/learning/test_rlaif_learns.py", "tests/unit/test_experimental_shims.py"]
     },
     {
       "docs": ["docs/MANAGED_TRAINING_PROVIDERS.md", "docs/MODEL_PROVIDER_CERTIFICATION.md"],
@@ -151,7 +175,7 @@
       "id": "reward-learning-rlaif",
       "limitations": ["Judge quality and bias remain external trust dependencies"],
       "maturity": "beta",
-      "name": "Neural rewards and RLAIF",
+      "name": "Neural rewards and LLM-judge (RLAIF) rewards",
       "owner": "training",
       "public_contract_refs": [],
       "tests": ["tests/unit/test_reward_models.py"]
@@ -171,14 +195,14 @@
     {
       "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md"],
       "evidence": ["docs/WHITEPAPER.md"],
-      "graduation_criteria": ["Publish a public sim-to-real benchmark with retained domain-shift metrics"],
+      "graduation_criteria": ["Pass a learning test showing simulator-trained policies transfer to a held-out realistic dialogue set", "Publish a public sim-to-real benchmark with retained domain-shift metrics", "Retain GPU evidence of a progressive-transfer run on a real model"],
       "id": "sim-to-real",
-      "limitations": ["Public benchmark evidence remains pending"],
-      "maturity": "beta",
-      "name": "Sim-to-real evaluation and domain randomization",
+      "limitations": ["Lives in stateset_agents.experimental.sim_to_real since v0.64.0; the stateset_agents.training, .evaluation, and .environments import paths (including the four root exports in the v1 contract) are deprecated shims removed in v0.65.0", "No learning test or retained benchmark demonstrates sim-to-real transfer; public benchmark evidence remains pending"],
+      "maturity": "experimental",
+      "name": "Sim-to-real transfer, domain randomization, conversation simulator, and metrics",
       "owner": "research",
-      "public_contract_refs": [],
-      "tests": ["tests/unit/test_offline_rl_sim_to_real.py"]
+      "public_contract_refs": ["python:stateset_agents.ConversationSimulator", "python:stateset_agents.ConversationSimulatorConfig", "python:stateset_agents.SimToRealEvaluator", "python:stateset_agents.SimToRealMetrics"],
+      "tests": ["tests/unit/test_offline_rl_sim_to_real.py", "tests/unit/test_sim_to_real_reward_gap.py", "tests/unit/test_experimental_shims.py"]
     },
     {
       "docs": ["docs/WHITEPAPER.md"],

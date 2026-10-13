@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-industry-gpu-pilot-manifest",
+  "harness_revision": "71d4bd4d5dc07d98e7d5aa9a28c8e4d6dcfcb334",
+  "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268",
+  "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456",
+  "data_scope": "synthetic format and training smoke only; no industry-quality certification",
+  "models": [
+    {
+      "preset": "qwen3.5-2b",
+      "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+      "industry": "retail"
+    },
+    {
+      "preset": "qwen3.5-4b",
+      "revision": "851bf6e806efd8d0a36b00ddf55e13ccb7b8cd0a",
+      "industry": "technology"
+    }
+  ],
+  "execution": {
+    "gpu_name": "NVIDIA A40",
+    "container_image": "runpod/pytorch:1.1.0-rc.154-cu1290-torch280-ubuntu2204",
+    "max_lifetime_seconds": 3600,
+    "max_cost_usd": 5.0,
+    "authorized_total_budget_usd": 25.0
+  },
+  "retry_of": "stateset-industry-gpu-pilot-20261007",
+  "prior_compute_cost_estimate_usd": 0.06214578958352406
+}

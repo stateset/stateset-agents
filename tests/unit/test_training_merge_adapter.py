@@ -62,14 +62,16 @@ class TestMergeFunction:
         class FakeTransformers:
             class AutoTokenizer:
                 @staticmethod
-                def from_pretrained(name):
+                def from_pretrained(name, **kwargs):
                     calls.append(("tokenizer", name))
                     return FakeTok()
 
         monkeypatch.setitem(sys.modules, "peft", FakePeft)
         monkeypatch.setitem(sys.modules, "transformers", FakeTransformers)
         monkeypatch.setattr(
-            ma, "_load_full_checkpoint", lambda name: calls.append(("base", name))
+            ma,
+            "_load_full_checkpoint",
+            lambda name, **kwargs: calls.append(("base", name)),
         )
         monkeypatch.setattr(ma, "_adapter_for_model", lambda m, d: d)
         monkeypatch.setattr(ma, "gpu_available", lambda: False)
@@ -118,12 +120,14 @@ class TestMergeProbe:
         class FakeTransformers:
             class AutoTokenizer:
                 @staticmethod
-                def from_pretrained(name):
+                def from_pretrained(name, **kwargs):
                     return FakeTok()
 
         monkeypatch.setitem(sys.modules, "peft", FakePeft)
         monkeypatch.setitem(sys.modules, "transformers", FakeTransformers)
-        monkeypatch.setattr(ma, "_load_full_checkpoint", lambda name: object())
+        monkeypatch.setattr(
+            ma, "_load_full_checkpoint", lambda name, **kwargs: object()
+        )
         monkeypatch.setattr(ma, "_adapter_for_model", lambda m, d: d)
         monkeypatch.setattr(ma, "gpu_available", lambda: False)
         monkeypatch.setattr(

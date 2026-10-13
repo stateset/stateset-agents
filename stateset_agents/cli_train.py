@@ -56,11 +56,12 @@ def train(
         "--stub",
         help="Run a lightweight stub demonstration without downloading models.",
     ),
-    profile: str = typer.Option(
-        "balanced",
+    profile: str | None = typer.Option(
+        None,
         help=(
             "Training profile "
-            "(conservative, balanced, aggressive, experimental; aliases: speed, quality)."
+            "(conservative, balanced, aggressive, experimental; aliases: speed, "
+            "quality). Overrides the config file's `profile`; default balanced."
         ),
     ),
     objective: str | None = typer.Option(
@@ -103,7 +104,10 @@ def train(
     if episodes is not None:
         _ = _coerce_positive_int(episodes, "episodes", 1)
 
-    resolved_profile = _normalize_training_profile(cfg.get("profile", profile))
+    # An explicit --profile wins over the file; the file wins over the default.
+    resolved_profile = _normalize_training_profile(
+        profile if profile is not None else cfg.get("profile", "balanced")
+    )
     if resolved_profile is None:
         _echo(
             "Unsupported profile. Use one of: conservative, balanced, aggressive, "
@@ -233,7 +237,7 @@ def train(
             reward_fn=reward_fn,
             num_episodes=num_episodes,
             profile=resolved_profile,
-            config_overrides={"objective": objective} if objective else None,
+            config_overrides=_training_overrides(train_cfg, objective) or None,
             save_path=save or None,
         )
 
@@ -245,6 +249,24 @@ def train(
 
     _echo("Training complete.")
     raise typer.Exit(code=0)
+
+
+# ``training:`` keys the CLI consumes itself rather than forwarding.
+_CLI_TRAINING_KEYS = frozenset({"num_episodes", "max_turns"})
+
+
+def _training_overrides(
+    train_cfg: dict[str, t.Any], objective: str | None
+) -> dict[str, t.Any]:
+    """``TrainingConfig`` overrides from the file's ``training:`` section.
+
+    ``_validate_config`` has already rejected unknown keys; ``--objective``
+    beats a file ``objective``.
+    """
+    overrides = {k: v for k, v in train_cfg.items() if k not in _CLI_TRAINING_KEYS}
+    if objective:
+        overrides["objective"] = objective
+    return overrides
 
 
 def _require_known_objective(name: str) -> None:
@@ -387,7 +409,9 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
     ) -> None:
         try:
             starter = importlib.import_module(module)
-            base_model: str = getattr(starter, f"{preset.cli_symbol_prefix}_BASE_MODEL")
+            # A family starter can serve several variants. Its module default
+            # must not make the E4B command's default look like an override.
+            base_model = preset.model_id
             profile_choices: t.Sequence[str] = getattr(
                 starter, f"{preset.cli_symbol_prefix}_STARTER_PROFILE_CHOICES"
             )
@@ -500,7 +524,11 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
                 use_lora=use_lora,
                 use_4bit=use_4bit,
                 use_8bit=use_8bit,
-                output_dir=output_dir,
+                output_dir=(
+                    output_dir
+                    if output_dir is not None
+                    else preset.cli_default_output_dir
+                ),
                 use_wandb=wandb,
                 wandb_project=wandb_project,
                 **config_overrides,

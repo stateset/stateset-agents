@@ -16,13 +16,47 @@ the training call sites.
 
 from __future__ import annotations
 
+import json
 import pickle
 from pathlib import Path
 from typing import Any
 
 from .errors import ErrorCode, ModelError
 
-__all__ = ["load_checkpoint_file"]
+__all__ = ["load_checkpoint_file", "validate_local_shard_indexes"]
+
+
+def validate_local_shard_indexes(checkpoint_dir: str | Path) -> None:
+    """Reject unsafe shard paths before loading a local checkpoint directory.
+
+    This validates framework-owned local loads; it cannot constrain other
+    callers of Transformers or prevent a concurrent filesystem mutation.
+    """
+    root = Path(checkpoint_dir)
+    for index_path in root.glob("*.index.json"):
+        if index_path.is_symlink() or not index_path.is_file():
+            raise ValueError(f"unsafe checkpoint index: {index_path}")
+        try:
+            payload = json.loads(index_path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"invalid checkpoint index: {index_path}") from exc
+        weight_map = payload.get("weight_map") if isinstance(payload, dict) else None
+        if not isinstance(weight_map, dict) or not weight_map:
+            raise ValueError(f"checkpoint index has no weight map: {index_path}")
+        for shard in weight_map.values():
+            if (
+                not isinstance(shard, str)
+                or shard in {"", ".", ".."}
+                or Path(shard).name != shard
+                or "/" in shard
+                or "\\" in shard
+                or ":" in shard
+                or any(ord(character) < 32 for character in shard)
+            ):
+                raise ValueError(f"unsafe checkpoint shard path: {shard!r}")
+            shard_path = root / shard
+            if shard_path.is_symlink() or not shard_path.is_file():
+                raise ValueError(f"checkpoint shard is not a regular file: {shard}")
 
 
 def load_checkpoint_file(

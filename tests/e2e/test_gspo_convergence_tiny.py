@@ -98,17 +98,27 @@ def _run_convergence_training() -> tuple[float, float, list[float]]:
     tokenizer = tiny_tokenizer()
     model = _tiny_gpt2()
 
-    prompt_ids = tokenizer(PROMPT, return_tensors="pt")["input_ids"][0]
-    target_token_id = tokenizer(TARGET_RESPONSE, add_special_tokens=False)["input_ids"][
-        0
+    # Measure the first token where the two candidates differ. Tokenizers may
+    # split " A" into a shared space token plus "A"; the shared prefix carries
+    # no preference signal, so condition on it.
+    target_ids = tokenizer(PROMPT + TARGET_RESPONSE, add_special_tokens=False)[
+        "input_ids"
     ]
+    other_ids = tokenizer(PROMPT + OFF_TARGET_RESPONSE, add_special_tokens=False)[
+        "input_ids"
+    ]
+    split = next(
+        i for i, (a, b) in enumerate(zip(target_ids, other_ids, strict=True)) if a != b
+    )
+    prompt_ids = torch.tensor(target_ids[:split])
+    target_token_id = target_ids[split]
 
     initial_prob = _target_token_probability(model, prompt_ids, target_token_id)
 
     config = GSPOConfig(
         model_name="gpt2",
         num_generations=2,
-        num_outer_iterations=1,
+        num_outer_iterations=NUM_STEPS,  # one optimizer step per train_step
         num_iterations=1,
         max_prompt_length=32,
         max_completion_length=32,

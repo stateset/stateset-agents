@@ -9,6 +9,8 @@ device-lookup helper.
 
 from __future__ import annotations
 
+import copy
+
 import pytest
 import torch
 
@@ -100,6 +102,101 @@ async def test_train_step_produces_gradients(gspo_token_trainer_tiny):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("rescore", [True, False])
+@pytest.mark.parametrize(
+    "available,requested", [(2, 2), (3, 3), (3, 99), (1, 99), (3, 2)]
+)
+async def test_duplicate_prompt_groups_preserve_loss_and_gradient_scale(
+    gspo_token_trainer_tiny, available, requested, rescore
+):
+    trainer = gspo_token_trainer_tiny
+    trainer.config.rescore_old_log_probs = rescore
+    # Keep clipping from hiding the gradient scaling error.
+    trainer.config.max_grad_norm = 1e6
+    initial_model = copy.deepcopy(trainer.model.state_dict())
+    initial_optimizer = copy.deepcopy(trainer.optimizer.state_dict())
+    initial_scheduler = copy.deepcopy(trainer.scheduler.state_dict())
+
+    single = await trainer.train_step_token_level(["hello"], num_groups=1)
+    single_gradients = [p.grad.clone() for p in trainer.model.parameters()]
+    assert any(torch.count_nonzero(g) for g in single_gradients)
+
+    trainer.model.load_state_dict(initial_model)
+    trainer.optimizer.load_state_dict(initial_optimizer)
+    trainer.scheduler.load_state_dict(initial_scheduler)
+    repeated = await trainer.train_step_token_level(
+        ["hello"] * available, num_groups=requested
+    )
+
+    assert repeated["advantage_group_count"] == min(available, requested)
+    assert repeated["policy_loss"] == pytest.approx(single["policy_loss"], abs=1e-6)
+    for parameter, expected in zip(
+        trainer.model.parameters(), single_gradients, strict=True
+    ):
+        # FP32 accumulation over three graphs rounds differently from one;
+        # the tolerance remains far below a doubled/tripled gradient.
+        torch.testing.assert_close(parameter.grad, expected, rtol=2e-5, atol=1e-6)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rescore", [True, False])
+@pytest.mark.parametrize("with_kl", [False, True])
+async def test_distinct_prompt_groups_average_their_individual_gradients(
+    gspo_token_trainer_tiny, monkeypatch, with_kl, rescore
+):
+    trainer = gspo_token_trainer_tiny
+    trainer.config.rescore_old_log_probs = rescore
+    trainer.config.max_grad_norm = 1e6
+    if with_kl:
+        config = copy.deepcopy(trainer.config)
+        config.beta = 0.1
+        ref_model = copy.deepcopy(trainer.model)
+        with torch.no_grad():
+            next(ref_model.parameters()).add_(
+                0.01 * torch.randn_like(next(ref_model.parameters()))
+            )
+        trainer = GSPOTokenTrainer(
+            config=config,
+            model=trainer.model,
+            tokenizer=trainer.tokenizer,
+            agent=None,
+            environment=None,
+            reward_model=trainer.reward_model,
+            ref_model=ref_model,
+        )
+
+    async def generate(prompt, count):
+        # Unequal group sizes still give each prompt equal objective weight.
+        return [("ok", -5.0), ("nope", -5.0)] + (
+            [("bad", -5.0)] if prompt == "different" else []
+        )
+
+    monkeypatch.setattr(trainer.generator, "generate_group_responses", generate)
+    initial_model = copy.deepcopy(trainer.model.state_dict())
+    initial_optimizer = copy.deepcopy(trainer.optimizer.state_dict())
+    initial_scheduler = copy.deepcopy(trainer.scheduler.state_dict())
+
+    async def run(prompts):
+        trainer.model.load_state_dict(initial_model)
+        trainer.optimizer.load_state_dict(initial_optimizer)
+        trainer.scheduler.load_state_dict(initial_scheduler)
+        metrics = await trainer.train_step_token_level(prompts, num_groups=10)
+        return metrics["policy_loss"], [
+            p.grad.clone() for p in trainer.model.parameters()
+        ]
+
+    first_loss, first_grads = await run(["hello"])
+    second_loss, second_grads = await run(["different"])
+    combined_loss, combined_grads = await run(["hello", "different"])
+    assert combined_loss == pytest.approx((first_loss + second_loss) / 2, abs=1e-6)
+    assert any(torch.count_nonzero(g) for g in combined_grads)
+    for first, second, combined in zip(
+        first_grads, second_grads, combined_grads, strict=True
+    ):
+        torch.testing.assert_close(combined, (first + second) / 2, rtol=2e-5, atol=1e-7)
+
+
+@pytest.mark.asyncio
 async def test_reward_computed_via_compute_turn_reward(gspo_token_trainer_tiny):
     """The reward call must use the documented compute_turn_reward signature."""
     trainer = gspo_token_trainer_tiny
@@ -128,6 +225,8 @@ async def test_reward_computed_via_compute_turn_reward(gspo_token_trainer_tiny):
 def _set_old_log_probs(trainer, monkeypatch, log_ratios):
     """Point the fake generator at old log probs producing the given
     length-normalised log importance ratios for ("ok", "nope")."""
+    # These tests deliberately exercise drift from the generator's old policy.
+    trainer.config.rescore_old_log_probs = False
     responses = ["ok", "nope"]
     with torch.no_grad():
         cur, lengths = trainer._compute_group_sequence_log_probs("hello", responses)
@@ -141,6 +240,59 @@ def _set_old_log_probs(trainer, monkeypatch, log_ratios):
     monkeypatch.setattr(
         trainer.generator, "generate_group_responses", fake_generate_group_responses
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("rescore", [True, False], ids=["rescore", "generator_scores"])
+@pytest.mark.parametrize("dropout", [False, True], ids=["deterministic", "dropout"])
+async def test_token_trainer_honors_old_log_prob_mode(
+    gspo_token_trainer_tiny, monkeypatch, rescore, dropout
+):
+    trainer = gspo_token_trainer_tiny
+    # Both samples lie beyond clipping on their advantage's side when using
+    # generator scores. Same-pass rescoring should restore their policy signal.
+    _set_old_log_probs(trainer, monkeypatch, [3.0, -3.0])
+    generated = await trainer.generator.generate_group_responses("hello", 2)
+    generated_log_probs = torch.tensor([score for _, score in generated])
+    trainer.config.rescore_old_log_probs = rescore
+    if dropout:
+        for module in trainer.model.modules():
+            if isinstance(module, torch.nn.Dropout):
+                module.p = 0.4
+
+    observed = []
+    original_ratio = trainer.compute_sequence_importance_ratio
+
+    def capture(current, old, lengths):
+        observed.append(
+            (current.detach().clone(), old.detach().clone(), lengths.clone())
+        )
+        assert current.requires_grad
+        assert not old.requires_grad
+        return original_ratio(current, old, lengths)
+
+    monkeypatch.setattr(trainer, "compute_sequence_importance_ratio", capture)
+    metrics = await trainer.train_step_token_level(["hello"], num_groups=1)
+    assert len(observed) == 1
+    current, old, lengths = observed[0]
+    torch.testing.assert_close(old, current if rescore else generated_log_probs)
+    gap = ((generated_log_probs - old).abs() / lengths).mean().item()
+    assert metrics["generation_log_prob_gap"] == pytest.approx(gap)
+    assert trainer.training_metrics["generation_log_prob_gap"] == [
+        metrics["generation_log_prob_gap"]
+    ]
+    gradients = [p.grad for p in trainer.model.parameters() if p.grad is not None]
+    assert gradients
+    assert all(torch.isfinite(g).all() for g in gradients)
+    if rescore:
+        assert metrics["sequence_importance_ratio"] == pytest.approx(1.0, abs=1e-6)
+        assert metrics["clipping_fraction"] == 0.0
+        assert metrics["generation_log_prob_gap"] > 0.0
+        assert any(torch.count_nonzero(g) for g in gradients)
+    else:
+        assert metrics["clipping_fraction"] == 1.0
+        assert metrics["generation_log_prob_gap"] == 0.0
+        assert all(torch.count_nonzero(g) == 0 for g in gradients)
 
 
 @pytest.mark.asyncio

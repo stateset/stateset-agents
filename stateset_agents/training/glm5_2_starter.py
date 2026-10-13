@@ -173,6 +173,8 @@ SPEC = StarterSpec(
     },
     system_prompt_intro="You are GLM, a helpful AI assistant built from the GLM 5.2 reasoning checkpoint by Zhipu AI.",
     config_defaults={
+        # Non-native architecture: the HF repo ships its modelling code.
+        "trust_remote_code": True,
         "lora_r": 64,
         "lora_alpha": 128,
         "use_4bit": True,

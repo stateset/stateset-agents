@@ -5,9 +5,12 @@ Comprehensive tests for prompt injection detection, authentication,
 rate limiting, and other security features.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
 from stateset_agents.api.constants import (
+    AUTH_LOCKOUT_DURATION_SECONDS,
     MAX_AUTH_FAILURES_BEFORE_LOCKOUT,
     MAX_MESSAGE_LENGTH,
 )
@@ -210,6 +213,52 @@ class TestJSONDepthCheck:
 class TestAuthFailureTracker:
     """Tests for authentication failure tracking."""
 
+    @pytest.mark.parametrize("max_keys", [0, -1, True, 1.5, "10"])
+    def test_rejects_invalid_capacity(self, max_keys):
+        """The auth tracker cannot be configured with an unbounded capacity."""
+        with pytest.raises(ValueError, match="max_keys"):
+            AuthFailureTracker(max_keys=max_keys)
+
+    def test_distinct_invalid_credentials_cannot_grow_tracker_without_bound(
+        self, monkeypatch
+    ):
+        """At capacity, new invalid keys fail closed and expired keys are pruned."""
+        from stateset_agents.api import security as security_module
+
+        now = [1000.0]
+        monkeypatch.setattr(
+            security_module, "time", SimpleNamespace(time=lambda: now[0])
+        )
+        tracker = AuthFailureTracker(max_keys=2)
+        assert tracker.record_failure("first")[0] is False
+        assert tracker.record_failure("second")[0] is False
+        for index in range(100):
+            assert tracker.record_failure(f"unique-{index}") == (True, 0)
+        assert set(tracker.failures) == {"first", "second"}
+        assert not tracker.lockouts
+
+        now[0] += AUTH_LOCKOUT_DURATION_SECONDS + 1
+        assert tracker.record_failure("new") == (
+            False,
+            MAX_AUTH_FAILURES_BEFORE_LOCKOUT - 1,
+        )
+        assert set(tracker.failures) == {"new"}
+
+    def test_active_lockout_survives_capacity_pressure(self, monkeypatch):
+        """A stream of new credentials cannot evict an active lockout."""
+        from stateset_agents.api import security as security_module
+
+        monkeypatch.setattr(
+            security_module, "time", SimpleNamespace(time=lambda: 1000.0)
+        )
+        tracker = AuthFailureTracker(max_keys=1)
+        for _ in range(MAX_AUTH_FAILURES_BEFORE_LOCKOUT):
+            tracker.record_failure("locked")
+        assert tracker.is_locked_out("locked")
+        assert tracker.record_failure("new") == (True, 0)
+        assert tracker.is_locked_out("locked")
+        assert list(tracker.failures) == ["locked"]
+
     def test_record_failure_basic(self):
         """Test recording auth failures."""
         tracker = AuthFailureTracker()
@@ -292,6 +341,12 @@ class TestCSRFProtection:
 
 class TestAPISecurityMonitor:
     """Tests for API security monitor."""
+
+    @pytest.mark.parametrize("max_events", [0, -1, True, 1.5, "10"])
+    def test_rejects_invalid_capacity(self, max_events):
+        """Invalid capacity cannot disable the API event history limit."""
+        with pytest.raises(ValueError, match="max_events"):
+            APISecurityMonitor(max_events=max_events)
 
     def test_log_event(self):
         """Test event logging."""

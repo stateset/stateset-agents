@@ -92,13 +92,13 @@ All supported models train with any of the algorithms shipped in
 | GEPO | `gepo_trainer.py` |
 | DAPO | `dapo_trainer.py` |
 | VAPO | `vapo_trainer.py` |
-| PPO | `base_trainer.py` (PPO path) |
-| RLAIF | `rlaif_trainer.py` |
-| Offline GRPO | `offline_grpo_trainer.py` |
-| Decision Transformer | `decision_transformer.py` |
+| PPO (experimental) | `stateset_agents/experimental/ppo.py` |
+| RLAIF (experimental) | `stateset_agents/experimental/rlaif.py` |
+| Offline GRPO (experimental) | `stateset_agents/experimental/offline_rl/offline_grpo.py` |
+| Decision Transformer (experimental) | `stateset_agents/experimental/offline_rl/decision_transformer.py` |
 
-Offline RL variants (BCQ, BEAR, CQL, IQL) are available via the offline
-trainer; see `docs/OFFLINE_RL_GUIDE.md` if present.
+Offline RL variants (BCQ, BEAR, CQL, IQL) are available via the experimental
+offline trainer; see `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md`.
 
 ## Stub mode for tests
 

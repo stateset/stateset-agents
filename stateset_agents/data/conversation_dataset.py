@@ -6,6 +6,7 @@ for training offline RL algorithms on conversation data.
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
 import random
@@ -286,7 +287,9 @@ class ConversationDataset(TorchDataset):
 
             for turn_data in data.get("turns", []):
                 turn = ConversationTurnData(
-                    role=turn_data.get("role", "user"),
+                    role=_canonical_role(
+                        turn_data.get("role", turn_data.get("from", "user"))
+                    ),
                     content=turn_data.get("content", ""),
                     reward=float(turn_data.get("reward", 0.0)),
                     timestamp=turn_data.get("timestamp"),
@@ -334,7 +337,9 @@ class ConversationDataset(TorchDataset):
                     if isinstance(conv, dict):
                         turns.append(
                             ConversationTurnData(
-                                role=str(conv.get("role", conv.get("from", "user"))),
+                                role=_canonical_role(
+                                    conv.get("role", conv.get("from", "user"))
+                                ),
                                 content=str(
                                     conv.get(
                                         "content",
@@ -518,8 +523,9 @@ class ConversationDataset(TorchDataset):
         else:
             raise ValueError(f"Unknown normalization method: {method}")
 
-        # Apply normalization
+        # Apply normalization (raw totals stay available for raw-scale filters)
         for traj in self.trajectories:
+            traj.metadata.setdefault("raw_total_reward", float(traj.total_reward))
             traj.turn_rewards = [float(normalize(r)) for r in traj.turn_rewards]
             traj.total_reward = sum(traj.turn_rewards)
 
@@ -539,12 +545,30 @@ class ConversationDataset(TorchDataset):
         Returns:
             New ConversationDataset with filtered trajectories
         """
-        filtered = [t for t in self.trajectories if t.total_reward >= min_reward]
+        filtered = [
+            t
+            for t in self.trajectories
+            if t.metadata.get("raw_total_reward", t.total_reward) >= min_reward
+        ]
         logger.info(
             f"Filtered from {len(self.trajectories)} to {len(filtered)} "
             f"trajectories (min_reward={min_reward})"
         )
-        return ConversationDataset(filtered, self.config, self.embedding_cache)
+        return self._derive(filtered)
+
+    def _derive(self, trajectories: list[TrajectoryData]) -> "ConversationDataset":
+        """A subset sharing this dataset's already-processed trajectories.
+
+        Normalization and returns are not re-applied: re-running them mutated
+        the shared objects (changing the parent) and rescaled each subset by
+        its own statistics.
+        """
+        config = dataclasses.replace(
+            self.config, normalize_rewards=False, compute_returns=False
+        )
+        derived = ConversationDataset(trajectories, config, self.embedding_cache)
+        derived.config = self.config
+        return derived
 
     def filter_by_length(
         self,
@@ -560,7 +584,7 @@ class ConversationDataset(TorchDataset):
         if max_length is not None:
             filtered = [t for t in filtered if len(t.turns) <= max_length]
 
-        return ConversationDataset(filtered, self.config, self.embedding_cache)
+        return self._derive(filtered)
 
     def split(
         self,
@@ -572,26 +596,26 @@ class ConversationDataset(TorchDataset):
         trajectories = list(self.trajectories)
 
         if shuffle:
-            if seed is not None:
-                random.seed(seed)
-            random.shuffle(trajectories)
+            random.Random(seed).shuffle(trajectories)
 
         split_idx = int(len(trajectories) * train_ratio)
         train_trajectories = trajectories[:split_idx]
         val_trajectories = trajectories[split_idx:]
 
         return (
-            ConversationDataset(train_trajectories, self.config, self.embedding_cache),
-            ConversationDataset(val_trajectories, self.config, self.embedding_cache),
+            self._derive(train_trajectories),
+            self._derive(val_trajectories),
         )
 
-    def to_offline_rl_format(self) -> dict[str, np.ndarray]:
+    def to_offline_rl_format(self) -> dict[str, Any]:
         """
         Convert to format expected by offline RL algorithms.
 
         Returns:
             Dictionary with numpy arrays for states, actions, rewards,
-            next_states, and dones.
+            next_states, and dones, plus the logged text of each decision:
+            ``contexts`` (the role/content messages before the reply) and
+            ``responses`` (the reply), as lists aligned with the rows.
         """
         _require_torch()
 
@@ -606,39 +630,42 @@ class ConversationDataset(TorchDataset):
         rewards = []
         next_states = []
         dones = []
+        contexts: list[list[dict[str, str]]] = []
+        responses: list[str] = []
 
+        cache = self.embedding_cache
         for traj in self.trajectories:
-            history = ""
+            # One transition per assistant turn (a decision). s is the
+            # conversation before the reply; s' is the state at the next
+            # decision (so V is bootstrapped on states it is trained on); the
+            # reward covers every turn from the reply up to that decision; the
+            # last decision is terminal.
+            turn_rewards = list(traj.turn_rewards or [])
+            decisions = [i for i, t in enumerate(traj.turns) if t.role == "assistant"]
+            prefixes = [""]
+            for turn in traj.turns:
+                prefixes.append(prefixes[-1] + f"{turn.role}: {turn.content}\n")
 
-            for i, turn in enumerate(traj.turns):
-                if turn.role in ("user", "system"):
-                    history += f"{turn.role}: {turn.content}\n"
-                    state_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_s_{i}", history
-                    )
+            def state_at(index: int, traj: Any = traj, prefixes: Any = prefixes) -> Any:
+                return cache.get_or_compute(
+                    f"{traj.trajectory_id}_s_{index}", prefixes[index]
+                )
 
-                elif turn.role == "assistant":
-                    action_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_a_{i}", turn.content
-                    )
-
-                    # Get next state (or same state if last turn)
-                    next_history = history + f"assistant: {turn.content}\n"
-                    next_state_emb = self.embedding_cache.get_or_compute(
-                        f"{traj.trajectory_id}_ns_{i}", next_history
-                    )
-
-                    is_done = i == len(traj.turns) - 1
-
-                    states.append(state_emb.numpy())
-                    actions.append(action_emb.numpy())
-                    rewards.append(
-                        traj.turn_rewards[i] if i < len(traj.turn_rewards) else 0.0
-                    )
-                    next_states.append(next_state_emb.numpy())
-                    dones.append(float(is_done))
-
-                    history = next_history
+            for k, i in enumerate(decisions):
+                is_last = k == len(decisions) - 1
+                stop = len(traj.turns) if is_last else decisions[k + 1]
+                action_emb = cache.get_or_compute(
+                    f"{traj.trajectory_id}_a_{i}", traj.turns[i].content
+                )
+                states.append(state_at(i).numpy())
+                actions.append(action_emb.numpy())
+                rewards.append(float(sum(turn_rewards[i:stop])))
+                next_states.append(state_at(stop).numpy())
+                dones.append(float(is_last))
+                contexts.append(
+                    [{"role": t.role, "content": t.content} for t in traj.turns[:i]]
+                )
+                responses.append(traj.turns[i].content)
 
         return {
             "states": np.array(states),
@@ -646,7 +673,24 @@ class ConversationDataset(TorchDataset):
             "rewards": np.array(rewards),
             "next_states": np.array(next_states),
             "dones": np.array(dones),
+            "contexts": contexts,
+            "responses": responses,
         }
+
+
+_ROLE_ALIASES = {
+    "human": "user",
+    "gpt": "assistant",
+    "bot": "assistant",
+    "model": "assistant",
+    "chatgpt": "assistant",
+}
+
+
+def _canonical_role(role: Any) -> str:
+    """Map ShareGPT-style speaker names onto user/assistant/system roles."""
+    name = str(role)
+    return _ROLE_ALIASES.get(name.lower(), name)
 
 
 class ConversationReplayBuffer:

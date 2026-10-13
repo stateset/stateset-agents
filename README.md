@@ -28,9 +28,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
-- **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
-- **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus experimental PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
+- **Offline RL algorithms** (experimental, `stateset_agents.experimental.offline_rl`) for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
+- **Sim‑to‑Real transfer** (experimental, `stateset_agents.experimental.sim_to_real`) for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
@@ -68,13 +68,23 @@ measurable.
 
 ### Current verification status
 
-The `v0.54.0` release tree completed its Linux Python 3.10 suite on
-**2026-09-09** with **5,496 passed, 18 skipped, and 63.68% coverage**, while
-its release pull request passed the complete Linux Python 3.10–3.13 and
-Windows Python 3.10/3.13 matrices plus CodeQL, dependency and secret scanning,
-package-readiness, docs, Helm, npm-client, benchmark, and security gates. The
-tag-built wheel and source distribution passed isolated-install and attestation
-checks and are live on PyPI. See the retained
+The `v0.64.2` release tree completed its local Linux Python 3.12 suite on
+**2026-10-13** under CI's forced-colour settings with **8,437 passed and 21
+skipped** (three subprocess tests timed out under load and passed when rerun),
+and GitHub Actions passed all 21 checks on Linux 3.10–3.13 and Windows 3.10/3.13, including the per-trainer learning tests added in `v0.63.0`, plus
+pre-commit, strict typing, the stable-API contract, and release governance
+checks before tagging.
+
+The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
+**2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
+checks passed lint, typing, API compatibility, governance, security scanning,
+distribution metadata, and isolated wheel installation. The
+[tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
+published Python distributions, documentation, and the GitHub release; npm's
+initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
+should not be read as certification of every newer checkpoint or platform.
+See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -121,7 +131,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.56.0`, published from the
+- **Current Python release:** `stateset-agents==0.64.2`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -155,6 +165,11 @@ serving, and provider claims.
   publication unless every suite clears the three-seed significance and
   cost-accounting gate. The suites still require measured execution; an
   implemented runner is not a benchmark result.
+- **Public product-use benchmark:** [`benchmarks/product_use/`](benchmarks/product_use/)
+  provides versioned MCP tasks, example traces, and a scorer that runs the
+  real tools for teaching and evaluating how agents use StateSet. Public scores
+  are separate from GPU performance evidence; private holdouts are required
+  for a leaderboard.
 - **Distributed evidence collection:** a shell-free manifest runner executes
   the two-node, three-seed soak and fault matrix, rotates scenario order,
   measures wall time outside provider adapters, hashes retained artifacts,
@@ -371,59 +386,151 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**Current development head (unreleased):**
+**v0.64.2 (latest release; publication triggered by tag):**
 
-- **Evidence-first README refresh.** Release, installation, provider, and
-  benchmark status now match `v0.54.0`; the incomplete corrected v3 comparison
-  and the remaining A+ gates are stated explicitly.
-- **Release-version drift prevention.** README install commands and the
-  current-release declaration are guarded against package-version drift and
-  updated automatically by the release script.
-- **Optional-runtime isolation.** `stateset-agents version --json` reads
-  dependency metadata without importing CUDA runtimes, and an incompatible
-  installed vLLM now preserves the Hugging Face fallback instead of breaking
-  CLI output or package import.
-- **Exact benchmark resume identity.** Measured shootout files now carry the
-  complete manifest digest, and both local and RunPod resume paths require the
-  same manifest, implementation version, seed, and harness commit. Corrected
-  experiments cannot silently reuse stale evidence. New evidence also carries
-  a portable raw-artifact path that is re-hashed before reporting or resume.
-- **Corrected v4 comparison contract.** The pinned 1.5B native-GSPO versus
-  direct-TRL manifest validates and enumerates all six rotated pairs without
-  provisioning hardware; measured execution still requires an explicitly
-  confirmed RunPod spend ceiling.
-- **Fail-closed flagship evidence.** A measured flagship run now rejects
-  template placeholders and stale StateSet versions before execution, while
-  judge-derived scores are bound to the declared judge model, immutable
-  revision, and rubric digest.
-- **Exact scale/recovery provenance.** Local scaling and fault-injection
-  matrices now require a clean checkout and refuse a claimed harness revision
-  that differs from the code actually executing.
-- **Source-bound scaling images.** A dedicated BuildKit path refuses mutable
-  base images, labels the exact commit and package version, requests maximal
-  provenance plus an SBOM, then reads SLSA/SPDX/label/manifest evidence back
-  from the registry. The A+ gate verifies it and requires every provider
-  lifecycle record to use that exact digest.
-- **Provider-exported scaling cost.** Kubernetes lifecycle evidence now carries
-  exact Job start/finish timestamps. The A+ gate requires a raw-export-bound
-  CoreWeave/Nebius billing allocation for every Job, prevents line-item reuse,
-  and reports total cost plus cost per measured optimizer step.
-- **Artifact-backed release readiness.** Readiness now installs the newly built
-  wheel offline into a clean virtual environment outside the checkout, reusing
-  the dependency set that passed the preceding gates, and emits portable schema-v2
-  evidence for both distributions, coverage XML, and Bandit/Safety reports.
-  The A+ gate re-hashes and parses those files instead of trusting a bare
-  `status: passed` marker.
-- **Cross-format backend identity.** A NeMo RL/OpenRLHF/verl conformance roster
-  must bind the same canonical dataset-content digest even when the physical
-  JSONL and Parquet artifacts necessarily have different byte hashes.
-- **Official-suite execution safety.** Measured τ³-bench, BFCL, and
-  SWE-bench collection now rejects template commands, zero revisions, stale
-  package versions, unbound evaluator model revisions, and dirty harness
-  checkouts before invoking an evaluator. Every model-consuming stage is bound,
-  and standalone execution verifies the checkout's exact suite revision.
+- **Security and correctness fixes from CodeQL and review.** Script-tag
+  injection detection catches unclosed and `</script >` tags; Training Lab
+  playground sessions are owner-scoped; `accelerate>=1.15.0` clears
+  PYSEC-2026-3804 (with a reachability guard, since the flaw remains upstream).
+- **Fixes.** `BayesianRewardFunction` initialises its reward base; checkpoint
+  publication works on Windows; Windows CI is green again.
 
-**v0.56.0 (latest release; publication triggered by tag):**
+**v0.64.1:**
+
+- **Security hardening.** API training jobs are confined to a server-side
+  output root, agents and Training Lab experiments are owner-scoped, real model
+  loading is opt-in (`API_ALLOW_EXTERNAL_MODELS`, optional allow-list), and
+  `trust_remote_code` defaults to False. See the CHANGELOG upgrade notes.
+
+**v0.64.0:**
+
+- **Smaller stable surface.** PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR,
+  Decision Transformer, offline GRPO), sim-to-real, and the Bayesian reward
+  model moved to `stateset_agents.experimental`; old import paths still work
+  with a `DeprecationWarning` and are removed in v0.65.0.
+- **Maturity contract.** These components are recorded as experimental with
+  explicit limitations and graduation criteria.
+- **Benchmark harness.** The native shootout leg accepts and verifies the v4
+  matched-objective protocol.
+
+**v0.63.1:**
+
+- **Publishable release gate.** v0.63.0's training-correctness audit,
+  plus CLI tests that pass under CI's forced colour so the tag-triggered
+  publish succeeds.
+
+**v0.63.0:**
+
+Training-correctness audit. A line-by-line audit of every trainer, reward,
+evaluation, rollout, checkpoint, HPO, CLI, and SFT path against the published
+algorithms fixed more than sixty silent correctness bugs, each pinned by a test
+that fails without the fix. New `tests/learning` require every RL, preference,
+and offline trainer to improve a toy task through its real entry point (with a
+sign-flipped control), and `disable_dropout` brings TRL parity for scoring. The ones most likely to have affected
+past runs:
+
+- **GRPO advantages.** `baseline_type="group_median"`/`"global_mean"` had no
+  effect under the default normalisation; the KL/reference-model loss path
+  ignored `reward_clip`, `baseline_type`, and the entropy bonus and masked KL
+  one token off; inner updates counted each batch several times in the running
+  reward mean.
+- **KL control.** PPO silently skipped its KL penalty without an explicit
+  reference model; the adaptive, cosine, and hybrid KL controllers did not
+  follow their documented schedules.
+- **DAPO/VAPO.** DAPO's overlong-length penalty could never fire with default
+  settings; VAPO now uses batch token-mean losses, an undiscounted critic
+  (`gamma=1.0`), the paper's length-adaptive λ, and keeps value-loss gradients
+  out of the policy.
+- **GEPO/GSPO.** GSPO-style ratios in the GEPO trainer use per-token averaged
+  log-ratios (almost every sample was clipped); the GSPO and single-turn
+  optimizers honour the configured Adam betas.
+- **Rewards.** The RULER judge always fell back to its heuristic; failed
+  composite components scored 0; the multi-objective geometric mean capped at
+  0.25; LLM-judge timeouts were cached as 0; untyped rewards were counted twice
+  per episode; `ConversationEnvironment` scored each reply against the
+  following user turn; trajectory totals were rounded to 0.1.
+- **Evaluation.** Post-training evaluation could report 0 reward, dropped
+  crashed episodes from averages, and reset the training RNG; the sim-to-real
+  "reward correlation" (unpaired, i.e. noise) is replaced by
+  `reward_distribution_gap`.
+- **Offline RL.** `OfflineGRPOTrainer.train()` trained on random noise and
+  bootstrapped Q incorrectly; Decision Transformer generation now matches its
+  training inputs; offline transitions keep terminal rewards; the enhanced
+  `DPOTrainer` can take a training step.
+- **PPO/RLAIF.** `PPOTrainer.train()` trained on a constant string instead of
+  sampled completions, and long prompts leaked into the action span; RLAIF
+  trained on padding, skipped the first completion token, and reinforced every
+  sample when rewards were equal.
+- **Distributed training and resume.** DDP/Accelerate checkpoints resumed with
+  no weights or optimizer state while reporting success; every rank generated
+  identical rollouts; the TRL wrapper ignored `resume_from_checkpoint`.
+- **Async rollouts.** Checkpointing with a full queue deadlocked, a cancelled
+  timed `next_batch` could lose a batch, and LoRA weight sync could hand the
+  engine unmerged weights.
+
+- **Offline GRPO, HPO, CLI.** `OfflineGRPOTrainer` never updated its policy;
+  every GRPO HPO trial scored -inf; `train --config` dropped most `training:`
+  values.
+
+Re-run experiments that depended on these paths before comparing them with new
+results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
+
+**v0.62.1:**
+
+- **Publishable release gate.** v0.62.0's training-math fixes, plus a
+  deterministic orchestrator shutdown test so the publish-readiness gate passes
+  on CI's Python 3.11.
+
+**v0.62.0:**
+
+- **Assistant-only supervision everywhere.** Sequence-path GRPO, local and
+  industry SFT, and River/Tinker SFT now train only on assistant tokens using
+  one faithful chat render (shared `core/chat_masking`), fixing corrupted
+  multi-turn rows on Qwen3/Qwen3.5 and keeping tool calls.
+- **Trainer math corrections.** DAPO dynamic sampling no longer discards every
+  group by default; VAPO GAE, PPO terminal rewards, GSPO long-prompt scoring
+  and LR schedule, CQL bootstrapping and Decision Transformer alignment fixed.
+- **Rollout correctness.** Batched groups stop per row, resumes resync the
+  rollout engine, and the TRL backend honours `TrainingConfig.objective`.
+
+**v0.61.0:**
+
+- Add River preflight checks with optional live model-access queries and JSON reports.
+- Make River clients close reliably and resume interrupted RL from committed optimizer state while preserving token accounting.
+- Add native River commerce environments, checkpoint selection, and reproducible evaluation and study tools.
+- Harden GRPO/GSPO optimizer updates, accumulation, checkpoint recovery, and training job admission and shutdown.
+
+**v0.60.0:**
+
+- Add reward-audit CLI and Python APIs to detect constant or unstable reward scores before RL training.
+- Check reviewed candidate rankings, retain failed calls, and include a model-free GSM8K example.
+
+**v0.59.0:**
+
+- Add paired base/adapter evaluation with immutable model revisions, source-group holdouts, and regression gates.
+- Retain real Qwen3.5 2B/4B GPU training and adapter-reload evidence, including failed attempts and confirmed cleanup. Synthetic examples do not certify industry quality.
+
+**v0.58.0:**
+
+- Add industry fine-tuning recipes for all nine sectors, with CLI and Python APIs.
+- Validate chat/tool data, keep related cases in one split, and record dataset hashes.
+- Preview without ML dependencies or run BF16 LoRA SFT on CUDA. Holdout evaluation
+  remains an independent step. See [the industry guide](docs/INDUSTRY_FINETUNING.md).
+
+**v0.57.0:**
+
+- Add 18 small-model checkpoints across Gemma 4, Qwen, SmolLM3, Phi,
+  Ministral, Liquid, Granite, Llama, Olmo, and DeepSeek. Provide 17 GSPO
+  commands with LoRA/QLoRA profiles and isolate each variant's output directory.
+- Add FunctionGemma tool-calling SFT, preserving tool schemas and typed arguments,
+  with a commerce JSONL example. Conversational GSPO explicitly rejects it.
+- Fix Transformers 5 quantization loading, keep adapters out of vision/audio
+  encoders, avoid duplicate model loads, and preserve SFT EOS labels and chat
+  special tokens. Work around dense Granite's recurrent-cache generation error.
+- Validate tiny native architecture training and adapter reload locally.
+  Full pretrained checkpoint quality and GPU quantization remain unverified.
+
+**v0.56.0:**
 
 - Added TLA+ models for rollout admission, policy publication, and
   auto-research checkpoint recovery, checked in CI.
@@ -1252,9 +1359,10 @@ Reward functions can be evaluated per-step or only at episode end. Set
 - `RewardType.IMMEDIATE` or `RewardType.DENSE`: compute per-step rewards only.
 - `RewardType.CUMULATIVE` or `RewardType.SPARSE`: compute a final reward only.
 
-If you pass a custom reward without `reward_type`, the environment assumes legacy
-behavior and may compute both step and final rewards. For new rewards, always
-set `reward_type` explicitly to avoid double counting.
+A reward without `reward_type` is applied exactly once per decision: per step
+in environments that score steps (such as `ConversationEnvironment`, where each
+reply is scored against the conversation it answers), otherwise once at episode
+end. Set `reward_type` explicitly when you need a specific phase.
 
 ---
 
@@ -1296,8 +1404,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.56.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.56.0"
+pip install "stateset-agents==0.64.2" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.64.2"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1375,6 +1483,14 @@ wired up:
 
 | Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
+| `ibm-granite/granite-4.0-micro` | `stateset-agents granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `allenai/Olmo-3-7B-Instruct` | `stateset-agents olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `google/functiongemma-270m-it` | `python -m stateset_agents.training.sft --base-model google/functiongemma-270m-it ...` | | Tool-calling SFT only; [guide](examples/README.md#additional-small-models-and-functiongemma) |
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
@@ -1384,6 +1500,16 @@ wired up:
 | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
 | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
 | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
+| `google/gemma-4-E2B-it` | `stateset-agents gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
+| `google/gemma-4-E4B-it` | `stateset-agents gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
+| `Qwen/Qwen3.5-2B` | `stateset-agents qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-4B` | `stateset-agents qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-9B` | `stateset-agents qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `microsoft/Phi-4-mini-instruct` | `stateset-agents phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `LiquidAI/LFM2.5-2.6B` | `stateset-agents lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
 | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
@@ -1690,14 +1816,18 @@ followup = await trained_agent.generate_response(
 
 ## Other training algorithms
 
-All algorithms are available under `stateset_agents.training` when training deps are installed:
+These algorithms are available when training deps are installed. GSPO, GEPO,
+DAPO, and VAPO live under `stateset_agents.training`; PPO and RLAIF are
+**experimental** and live under `stateset_agents.experimental` (since v0.64.0;
+the old `stateset_agents.training` import paths still work with a
+`DeprecationWarning` until v0.65.0):
 
 - **GSPO**: stable sequence‑level GRPO variant (`GSPOTrainer`, `GSPOConfig`, `train_with_gspo`)
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
 - **DAPO**: decoupled clip + dynamic sampling for reasoning‑heavy tasks
 - **VAPO**: value‑augmented group optimization (strong for math/reasoning)
-- **PPO baseline**: standard PPO trainer for comparison
-- **RLAIF**: RL from AI feedback via judge/reward models
+- **PPO baseline** (experimental): standard PPO trainer for comparison (`stateset_agents.experimental.ppo`)
+- **RLAIF** (experimental): RL from AI feedback via judge/reward models (`stateset_agents.experimental.rlaif`)
 
 Every trainer above evaluates a named [`PolicyObjective`](docs/OBJECTIVES.md)
 and accepts `objective="<preset>"` on its config to swap the advantage
@@ -1842,6 +1972,12 @@ See `benchmark_results/README.md` for the full pipeline reference.
 
 ## Offline RL: Learn from logged conversations
 
+> **Experimental.** The offline RL algorithms live in
+> `stateset_agents.experimental.offline_rl` (moved from `stateset_agents.training`
+> in v0.64.0; the old paths warn and are removed in v0.65.0). They carry no API
+> stability guarantee until they pass a learning test on a realistic dialogue
+> task — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train agents from historical conversation logs without online interaction. Useful when:
 - You have existing customer service transcripts
 - Online training is expensive or risky
@@ -1861,7 +1997,7 @@ Train agents from historical conversation logs without online interaction. Usefu
 
 ```python
 from stateset_agents.data import ConversationDataset, ConversationDatasetConfig
-from stateset_agents.training import BCQTrainer, BCQConfig
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer
 
 # Load historical conversations
 config = ConversationDatasetConfig(quality_threshold=0.7)
@@ -1877,20 +2013,21 @@ trainer = BCQTrainer(bcq_config)
 await trainer.train(dataset)
 ```
 
-### Hybrid Offline + Online Training
+### Offline Value Baselines
 
-Combine offline pretraining with online GRPO fine‑tuning:
+Fit value and Q functions to logged conversations, for use as baselines in
+online training:
 
 ```python
-from stateset_agents.training import OfflineGRPOTrainer, OfflineGRPOConfig
-
-config = OfflineGRPOConfig(
-    offline_algorithm="cql",
-    offline_pretrain_steps=1000,
-    online_ratio=0.3,  # 30% online, 70% offline
+from stateset_agents.experimental.offline_rl.offline_grpo import (
+    OfflineGRPOConfig,
+    OfflineGRPOTrainer,
 )
-trainer = OfflineGRPOTrainer(config)
-trained = await trainer.train(agent, env, reward_fn, offline_dataset=dataset)
+
+config = OfflineGRPOConfig(offline_algorithm="cql", pretrain_value_epochs=10)
+trainer = OfflineGRPOTrainer(config, dataset=dataset)  # dataset with an EmbeddingCache
+await trainer.pretrain_value_functions()
+value = trainer.get_value_estimate(state_embedding)  # one state -> float
 ```
 
 See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
@@ -1899,6 +2036,11 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 
 ## Sim‑to‑Real Transfer
 
+> **Experimental.** Sim-to-real lives in `stateset_agents.experimental.sim_to_real`
+> (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
+> v0.64.0; the old paths warn and are removed in v0.65.0). Public benchmark
+> evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train in simulation, deploy to real users. The framework provides:
 
 ### Domain Randomization
@@ -1906,7 +2048,10 @@ Train in simulation, deploy to real users. The framework provides:
 Generate diverse training scenarios with randomized user personas:
 
 ```python
-from stateset_agents.training import DomainRandomizer, DomainRandomizationConfig
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
+    DomainRandomizationConfig,
+    DomainRandomizer,
+)
 
 config = DomainRandomizationConfig(
     persona_variation=0.3,
@@ -1925,7 +2070,10 @@ scenario = randomizer.sample_scenario(topic="returns")
 Calibratable simulator with adjustable realism:
 
 ```python
-from stateset_agents.environments import ConversationSimulator, ConversationSimulatorConfig
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
+    ConversationSimulator,
+    ConversationSimulatorConfig,
+)
 
 simulator = ConversationSimulator(ConversationSimulatorConfig(
     base_model="gpt2",
@@ -1944,7 +2092,10 @@ gap = simulator.compute_sim_real_gap(real_data, sim_data)
 Gradually transition from simulation to real interactions:
 
 ```python
-from stateset_agents.training import SimToRealTransfer, SimToRealConfig
+from stateset_agents.experimental.sim_to_real.transfer import (
+    SimToRealConfig,
+    SimToRealTransfer,
+)
 
 transfer = SimToRealTransfer(SimToRealConfig(
     transfer_schedule="cosine",  # linear, exponential, step
@@ -1999,6 +2150,18 @@ async def politeness_reward(turns, context=None) -> float:
 ```
 
 Combine with built‑ins via `CompositeReward`.
+
+Before training, exercise the real reward on reviewed candidate groups:
+
+```bash
+stateset-agents reward-audit examples/data/reward_audit_gsm8k.json \
+  --reward stateset_agents.data.gsm8k:GSM8KReward \
+  --output reward-report.json
+```
+
+The [reward audit guide](docs/REWARD_AUDIT.md) covers constant rewards, unstable
+scores, failed calls, and expected rankings. This checks reward behavior on
+supplied examples; keep model quality evaluation independent.
 
 ---
 
@@ -2091,7 +2254,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.56.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.64.2`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
@@ -2127,6 +2290,25 @@ Key docs:
 - Public API docs: https://docs.stateset.com
 
 ---
+
+## Industry fine-tuning
+
+Create task-specific training data for financial services, retail, travel,
+healthcare, services, media, telecommunications, technology, and the public sector:
+
+```bash
+stateset-agents industry init retail ./retail-source
+stateset-agents industry prepare retail ./retail-source/examples.jsonl ./retail-run
+stateset-agents industry train ./retail-run --dry-run
+```
+
+The starters contain synthetic format demonstrations. Replace them with reviewed
+conversations; preparation validates tool calls, groups related cases, and records
+dataset hashes. Paired evaluation checks base-versus-adapter reference and tool
+agreement, retains per-case regressions, and gates on independent source groups
+and optional latency/cost limits. Synthetic starter data cannot pass this gate.
+See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training, prediction
+callbacks, CLI evaluation, and the distinction from autonomous task success.
 
 ## Contributing
 

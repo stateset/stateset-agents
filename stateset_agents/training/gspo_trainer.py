@@ -11,8 +11,10 @@ Reference: https://arxiv.org/abs/2507.18071v2
 from __future__ import annotations
 
 import asyncio
+import functools
 import importlib.util
 import logging
+import math
 from typing import Any
 
 import numpy as np
@@ -43,10 +45,20 @@ from .gspo_generation import (
     _get_model_device,
     build_scoring_text,
     render_prompt_for_scoring,
+    scoring_prompt_length,
 )
 from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
 
 logger = logging.getLogger(__name__)
+
+
+def _require_finite_vector(values: torch.Tensor, name: str) -> None:
+    """Reject invalid training inputs before numerical fallbacks can hide them."""
+    if values.ndim != 1 or values.numel() == 0:
+        raise ValueError(f"{name} must be a nonempty one-dimensional tensor")
+    if not bool(torch.isfinite(values).all()):
+        raise ValueError(f"{name} must contain only finite values")
+
 
 # Optional training dependencies
 try:
@@ -124,7 +136,11 @@ def _load_transformers() -> bool:
     """Lazily load transformers to avoid import-time errors."""
     global _transformers_loaded, AutoModelForCausalLM, AutoTokenizer
     global TrainingArguments, get_cosine_schedule_with_warmup
-    if _transformers_loaded:
+    if (
+        _transformers_loaded
+        and AutoModelForCausalLM is not None
+        and AutoTokenizer is not None
+    ):
         return True
     # Allow tests/consumers to pre-inject mocks without importing transformers.
     if AutoModelForCausalLM is not None and AutoTokenizer is not None:
@@ -258,12 +274,18 @@ class GSPOModelManager(SharedModelManager):
             _require_peft()
 
         # Add quantization if specified
-        if self.config.use_8bit:
+        if self.config.use_8bit or self.config.use_4bit:
             _require_bitsandbytes()
-            model_kwargs["load_in_8bit"] = True
-        elif self.config.use_4bit:
-            _require_bitsandbytes()
-            model_kwargs["load_in_4bit"] = True
+            from transformers import BitsAndBytesConfig
+
+            # Transformers 5 removed the legacy load_in_* model kwargs.
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(
+                load_in_8bit=self.config.use_8bit,
+                load_in_4bit=self.config.use_4bit and not self.config.use_8bit,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+                bnb_4bit_compute_dtype=model_kwargs.get("torch_dtype", torch.bfloat16),
+            )
 
     def _prepare_base_model(self, base_model: Any) -> Any:
         # Enable gradient checkpointing if specified
@@ -304,6 +326,7 @@ class GSPOModelManager(SharedModelManager):
                 self.config.model_name,
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
+                trust_remote_code=self.config.trust_remote_code,
             )
             if self.ref_model is not None:
                 self.ref_model.eval()
@@ -321,6 +344,14 @@ class GSPOModelManager(SharedModelManager):
         except MODEL_LOAD_EXCEPTIONS as e:
             logger.error(f"Failed to load model: {e}")
             raise
+
+
+def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
+    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
+    if step < warmup_steps:
+        return float(step) / float(max(1, warmup_steps))
+    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
+    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
 
 class GSPOTrainer:
@@ -370,24 +401,25 @@ class GSPOTrainer:
                 "GSPOTrainer requires a model with at least one trainable "
                 "parameter; got a parameterless model."
             )
-        self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
-
-        # Scheduler — fallback to constant LR when transformers unavailable.
-        total_steps = max(
-            1, int(config.num_outer_iterations) * int(config.num_iterations)
+        self.optimizer = torch.optim.AdamW(
+            params,
+            lr=config.learning_rate,
+            betas=(float(config.adam_beta1), float(config.adam_beta2)),
+            weight_decay=float(config.weight_decay),
         )
+
+        # Cosine schedule over the optimizer steps actually taken: train_step
+        # makes exactly one per outer iteration. Progress is clamped so steps
+        # past the end hold the final LR (HF's cosine is periodic there and
+        # flipped the LR between full and zero on alternate steps).
+        total_steps = max(1, int(config.num_outer_iterations))
         warmup_steps = int(total_steps * float(config.warmup_ratio))
-        _load_transformers()
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                self.optimizer, lr_lambda=lambda step: 1.0
-            )
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            self.optimizer,
+            lr_lambda=functools.partial(
+                _clamped_cosine_lr, warmup_steps=warmup_steps, total_steps=total_steps
+            ),
+        )
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -398,6 +430,9 @@ class GSPOTrainer:
             "clipping_fraction": [],
             "average_reward": [],
             "reward_std": [],
+            "nonzero_advantage_fraction": [],
+            "zero_advantage_group_fraction": [],
+            "advantage_group_count": [],
             "sequence_importance_ratio": [],
             "generation_log_prob_gap": [],
         }
@@ -447,30 +482,88 @@ class GSPOTrainer:
         Returns:
             advantages: Normalized advantages
             stats: Statistics about rewards
+
+        Raises:
+            ValueError: If rewards are empty, not a vector, or rewards,
+                float32 statistics, or computed advantages are non-finite.
         """
         rewards_tensor = (
             rewards
             if isinstance(rewards, torch.Tensor)
             else torch.as_tensor(rewards, dtype=torch.float32)
-        )
+        ).float()
+        _require_finite_vector(rewards_tensor, "GSPO rewards")
+        mean_reward = rewards_tensor.mean()
+        std_reward = rewards_tensor.std(unbiased=False)
+        if not bool(torch.isfinite(mean_reward) & torch.isfinite(std_reward)):
+            raise ValueError("GSPO reward statistics must be finite in float32")
 
         # The configured objective's estimator (group-normalised by default);
-        # this method only adds the logging stats on top.
+        # this boundary validates inputs/results and adds the logging stats.
         group_ids = torch.zeros(
             rewards_tensor.numel(), dtype=torch.long, device=rewards_tensor.device
         )
         objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["gspo"]
         advantages = objectives.compute_advantages(rewards_tensor, group_ids, objective)
+        _require_finite_vector(advantages, "GSPO advantages")
 
-        std_reward = rewards_tensor.float().std(unbiased=False)
         stats = {
-            "mean_reward": float(rewards_tensor.mean().item()),
-            "std_reward": 0.0 if torch.isnan(std_reward) else float(std_reward.item()),
+            "mean_reward": float(mean_reward.item()),
+            "std_reward": float(std_reward.item()),
             "max_reward": float(rewards_tensor.max().item()),
             "min_reward": float(rewards_tensor.min().item()),
         }
 
         return advantages, stats
+
+    def _prepare_old_log_probs(
+        self,
+        current_log_probs: torch.Tensor,
+        generation_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+    ) -> tuple[torch.Tensor, list[float]]:
+        """Select old-policy scores and measure their gap from generation scores.
+
+        Same-pass detached scores give a ratio of one for fresh rollouts, even
+        with dropout or generation/scoring numerical differences. Disabling
+        rescoring preserves the generator's scores for importance correction.
+        """
+        generation_log_probs = generation_log_probs.to(current_log_probs.device)
+        old_log_probs = (
+            current_log_probs.detach()
+            if bool(getattr(self.config, "rescore_old_log_probs", True))
+            else generation_log_probs
+        )
+        gaps = (
+            ((generation_log_probs - old_log_probs.detach()).abs() / sequence_lengths)
+            .detach()
+            .cpu()
+            .tolist()
+        )
+        return old_log_probs, gaps
+
+    def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
+        """Update only after scalar loss and clipped gradient norm are finite.
+
+        Failed backward or clipping clears partial gradients. Optimizer and
+        scheduler state are untouched until these checks pass.
+        """
+        self.optimizer.zero_grad(set_to_none=True)
+        try:
+            if loss.ndim != 0 or not bool(torch.isfinite(loss)):
+                raise ValueError("GSPO loss must be a finite scalar")
+            max_norm = float(self.config.max_grad_norm)
+            if not math.isfinite(max_norm) or max_norm < 0:
+                raise ValueError("max_grad_norm must be finite and nonnegative")
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(), max_norm, error_if_nonfinite=True
+            )
+        except Exception:
+            self.optimizer.zero_grad(set_to_none=True)
+            raise
+        self.optimizer.step()
+        self.scheduler.step()
 
     def compute_gspo_loss(
         self,
@@ -530,6 +623,7 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_texts = [
             build_scoring_text(rendered_prompt, response) for response in responses
         ]
@@ -545,22 +639,13 @@ class GSPOTrainer:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=self.config.max_prompt_length
-                + self.config.max_completion_length,
+                max_length=prompt_length + self.config.max_completion_length,
                 add_special_tokens=False,
             )
         finally:
             if hasattr(self.tokenizer, "padding_side"):
                 self.tokenizer.padding_side = original_padding_side
 
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = int(prompt_tokens["input_ids"].shape[1])
         response_start_idx = max(prompt_length - 1, 0)
 
         model_device = _get_model_device(self.model)
@@ -610,6 +695,7 @@ class GSPOTrainer:
             Training metrics
         """
         self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
         total_loss = torch.tensor(0.0, device=model_device)
@@ -620,6 +706,9 @@ class GSPOTrainer:
         all_generation_gaps: list[float] = []
 
         processed_groups = 0
+        nonzero_advantages = 0
+        advantage_count = 0
+        zero_advantage_groups = 0
         for query in queries[:num_groups]:
             processed_groups += 1
             if isinstance(query, dict):
@@ -645,6 +734,7 @@ class GSPOTrainer:
                 dtype=torch.float32,
                 device=model_device,
             )
+            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
             # Compute rewards for each response in parallel
             async def _compute_reward_for_response(
@@ -677,32 +767,20 @@ class GSPOTrainer:
 
             # Compute group advantages
             advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
+            active = int(torch.count_nonzero(advantages).item())
+            nonzero_advantages += active
+            advantage_count += advantages.numel()
+            zero_advantage_groups += int(active == 0)
 
             # Compute current log probs (with gradients) for each response
             (
                 current_log_probs,
                 sequence_lengths,
             ) = self._compute_group_sequence_log_probs(prompt, responses)
-            generation_log_probs = old_log_probs.to(current_log_probs.device)
-            if bool(getattr(self.config, "rescore_old_log_probs", True)):
-                # A fresh rollout batch is exactly on-policy: the old policy's
-                # log-probs are this same forward pass, detached (the TRL
-                # convention), so the ratio is 1 and GSPO's narrow clip band
-                # gates only genuine drift. The generator's own log-probs (a
-                # separate unbatched forward, dropout, or an engine's numerics)
-                # differ by more than the band and used to gate ~90% of
-                # on-policy samples to zero gradient.
-                old_log_probs = current_log_probs.detach()
-            else:
-                old_log_probs = generation_log_probs
-            all_generation_gaps.extend(
-                (
-                    (generation_log_probs - old_log_probs.detach()).abs()
-                    / sequence_lengths
-                )
-                .cpu()
-                .tolist()
+            old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                current_log_probs, old_log_probs, sequence_lengths
             )
+            all_generation_gaps.extend(generation_gaps)
 
             # Compute sequence importance ratios
             importance_ratios = self.compute_sequence_importance_ratio(
@@ -742,18 +820,7 @@ class GSPOTrainer:
         # so gradient magnitude does not scale with batch composition.
         total_loss = normalize_total_loss(total_loss, processed_groups)
 
-        # Backward pass
-        self.optimizer.zero_grad()
-        total_loss.backward()
-
-        # Gradient clipping (skip for stub models with no real parameters)
-        model_params = list(self.model.parameters())
-        if model_params:
-            torch.nn.utils.clip_grad_norm_(model_params, self.config.max_grad_norm)
-
-        # Update parameters
-        self.optimizer.step()
-        self.scheduler.step()
+        self._apply_optimizer_step(total_loss)
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -767,6 +834,10 @@ class GSPOTrainer:
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
+            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
+            "zero_advantage_group_fraction": zero_advantage_groups
+            / max(processed_groups, 1),
+            "advantage_group_count": float(processed_groups),
             "generation_log_prob_gap": (
                 float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
             ),
@@ -793,24 +864,15 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_text = build_scoring_text(rendered_prompt, response)
         inputs = self.tokenizer(
             full_text,
             return_tensors="pt",
             truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
+            max_length=prompt_length + self.config.max_completion_length,
             add_special_tokens=False,
         )
-
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
 
         model_device = _get_model_device(self.ref_model)
         if model_device and hasattr(inputs, "to"):
@@ -854,6 +916,7 @@ class GSPOTrainer:
         rendered_prompt = render_prompt_for_scoring(
             self.tokenizer, prompt, system_prompt
         )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
         full_texts = [
             build_scoring_text(rendered_prompt, response) for response in responses
         ]
@@ -869,22 +932,13 @@ class GSPOTrainer:
                 return_tensors="pt",
                 padding=True,
                 truncation=True,
-                max_length=self.config.max_prompt_length
-                + self.config.max_completion_length,
+                max_length=prompt_length + self.config.max_completion_length,
                 add_special_tokens=False,
             )
         finally:
             if hasattr(self.tokenizer, "padding_side"):
                 self.tokenizer.padding_side = original_padding_side
 
-        prompt_tokens = self.tokenizer(
-            rendered_prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = int(prompt_tokens["input_ids"].shape[1])
         response_start_idx = max(prompt_length - 1, 0)
 
         model_device = _get_model_device(self.ref_model)

@@ -108,6 +108,9 @@ class Environment(ABC):
     def reward_function(self, value: RewardFunction | None) -> None:
         self.reward_fn = value
 
+    # Whether step() applies IMMEDIATE/DENSE (and untyped) reward functions.
+    scores_steps: bool = False
+
     def _get_reward_type(self) -> RewardType | None:
         """Return configured reward type when available."""
         reward_fn = self.reward_fn
@@ -130,7 +133,10 @@ class Environment(ABC):
             return False
         reward_type = self._get_reward_type()
         if reward_type is None:
-            return True
+            # An untyped reward function is applied once: per step where the
+            # environment scores steps, otherwise at episode end. Doing both
+            # double counts it.
+            return not self.scores_steps
         return reward_type in (RewardType.CUMULATIVE, RewardType.SPARSE)
 
     @abstractmethod

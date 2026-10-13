@@ -315,8 +315,9 @@ class RewardDataset(Dataset):
             "prompt_attention_mask": prompt_encoding["attention_mask"].squeeze(0),
             "response_input_ids": response_encoding["input_ids"].squeeze(0),
             "response_attention_mask": response_encoding["attention_mask"].squeeze(0),
+            # Metadata stays off the batch: default_collate fails on dicts
+            # whose keys differ between examples, and training never reads it.
             "reward": torch.tensor(example.reward, dtype=torch.float32),
-            "metadata": example.metadata,
         }
 
 
@@ -596,6 +597,10 @@ class TransformerRewardTrainer:
                 num_warmup_steps=self.config.warmup_steps,
                 num_training_steps=total_steps,
             )
+
+        # Early stopping is per call; retrains use a fresh validation split.
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
 
         # Training loop
         for epoch in range(self.config.num_epochs):

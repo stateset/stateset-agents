@@ -188,6 +188,9 @@ class TrajectoryReplayBuffer:
             task_ids = [tid for tid in by_task if tid is not None]
             if not task_ids:
                 return [entry.group for entry in self._rng.sample(candidates, count)]
+            # Random task order: with fewer samples than tasks the truncation
+            # below would otherwise always keep the first-seen tasks.
+            self._rng.shuffle(task_ids)
             per_task = max(1, count // len(task_ids))
             selected: list[ReplayEntry] = []
             for tid in task_ids:

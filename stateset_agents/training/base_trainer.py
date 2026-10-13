@@ -17,7 +17,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
 import torch
@@ -189,6 +189,8 @@ class BaseTrainerConfig:
     # Model identification
     model_name: str = "gpt2"
     model_revision: str | None = None
+    # See TrainingConfig.trust_remote_code; keyword-only keeps positions.
+    trust_remote_code: bool = field(default=False, kw_only=True)
 
     # Generation parameters
     max_prompt_length: int = 256
@@ -292,7 +294,7 @@ class BaseModelManager:
         # Load tokenizer
         self.tokenizer = auto_tokenizer.from_pretrained(
             self.config.model_name,
-            trust_remote_code=True,
+            trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
             padding_side="left",
             revision=self.config.model_revision,
         )
@@ -351,7 +353,7 @@ class BaseModelManager:
         kwargs = {
             "torch_dtype": self._get_dtype(),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
+            "trust_remote_code": bool(getattr(self.config, "trust_remote_code", False)),
             "revision": self.config.model_revision,
         }
 

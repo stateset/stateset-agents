@@ -11,6 +11,8 @@ import asyncio
 import importlib.util
 import inspect
 import logging
+import math
+import os
 import random
 from collections.abc import Callable
 from typing import Any
@@ -192,6 +194,128 @@ def _supported_kwargs(callable_obj: Any, kwargs: dict[str, Any]) -> dict[str, An
     return {name: value for name, value in kwargs.items() if name in parameters}
 
 
+# Presets TRL's GRPOTrainer can express, as (loss_type, importance level). The
+# pairs are verified numerically against TRL in tests/unit/test_objectives_trl_pin.py.
+_TRL_LOSS_TYPES: dict[str, tuple[str, str]] = {
+    "grpo": ("grpo", "token"),
+    "bnpo": ("bnpo", "token"),
+    "dapo": ("dapo", "token"),
+    "dr_grpo": ("dr_grpo", "token"),
+    "cispo": ("cispo", "token"),
+    "gspo": ("grpo", "sequence"),
+}
+_TRL_SCALE_REWARDS = {
+    "group_norm": "group",
+    "group_mean": "none",
+    "batch_norm": "batch",
+}
+
+
+def trl_objective_kwargs(config: Any) -> dict[str, Any]:
+    """TRL ``GRPOConfig`` fields implementing ``config.objective``.
+
+    Returns ``{}`` when no objective is selected (TRL's defaults apply). Raises
+    ``ValueError`` for presets, or overrides, that TRL cannot express rather
+    than silently training a different objective.
+    """
+    from . import objectives
+
+    name = getattr(config, "objective", None)
+    if name is None:
+        return {}
+    if name not in _TRL_LOSS_TYPES:
+        raise ValueError(
+            f"objective {name!r} has no TRL GRPOTrainer equivalent; TRL-backed "
+            f"training supports: {', '.join(sorted(_TRL_LOSS_TYPES))}"
+        )
+    obj = objectives.resolve_objective(
+        config,
+        name,
+        max_completion_length=getattr(config, "max_completion_length", None),
+    )
+    preset = objectives.OBJECTIVES[name]
+    structural = ("ratio", "clip", "aggregate", "advantage", "kl")
+    changed = [f for f in structural if getattr(obj, f) != getattr(preset, f)]
+    if changed or obj.advantage not in _TRL_SCALE_REWARDS:
+        raise ValueError(
+            f"objective_overrides change {', '.join(changed)} of {name!r}, which "
+            "TRL GRPOTrainer cannot express; use a native trainer instead"
+        )
+    loss_type, level = _TRL_LOSS_TYPES[name]
+    kwargs: dict[str, Any] = {
+        "loss_type": loss_type,
+        "importance_sampling_level": level,
+        "scale_rewards": _TRL_SCALE_REWARDS[obj.advantage],
+        "epsilon": obj.clip_low,
+        # TRL's CISPO caps the importance weight with ``epsilon_high``.
+        "epsilon_high": obj.is_cap if obj.clip == "cispo" else obj.clip_high,
+    }
+    if obj.delta is not None:
+        kwargs["delta"] = obj.delta
+    if obj.kl_bias_correction:
+        kwargs["use_bias_correction_kl"] = True
+    return kwargs
+
+
+def _supported_config_kwargs(config_cls: Any, kwargs: dict[str, Any]) -> dict[str, Any]:
+    """Like :func:`_supported_kwargs`, but log settings the installed TRL lacks."""
+    kept = _supported_kwargs(config_cls, kwargs)
+    dropped = sorted(set(kwargs) - set(kept))
+    if dropped:
+        logger.warning(
+            "Installed TRL does not support %s; these settings are ignored.",
+            ", ".join(dropped),
+        )
+    return kept
+
+
+def _trl_warmup_kwargs(config_cls: Any, config: Any) -> dict[str, Any]:
+    """Warmup as a ratio of TRL's own step count.
+
+    TRL decides how many optimizer steps a run takes, so a step count
+    estimated from the native trainer's episode budget does not match it.
+    transformers >= 5 reads a fractional ``warmup_steps`` as that ratio and
+    deprecates ``warmup_ratio``; older versions take ``warmup_ratio``.
+    """
+    ratio = float(getattr(config, "warmup_ratio", 0.0) or 0.0)
+    if not 0.0 < ratio < 1.0:
+        return {"warmup_steps": 0}
+    fields = getattr(config_cls, "__dataclass_fields__", {})
+    warmup_field = fields.get("warmup_steps")
+    if warmup_field is not None and "float" in str(warmup_field.type):
+        return {"warmup_steps": ratio}
+    return {"warmup_steps": 0, "warmup_ratio": ratio}
+
+
+def _trl_generation_batch_kwargs(config: Any) -> dict[str, Any]:
+    """Size TRL's generation batch to whole groups when its default is not.
+
+    TRL generates ``per_device_train_batch_size * num_processes *
+    gradient_accumulation_steps`` completions per generation step by default
+    and requires a multiple of ``num_generations``. When the default falls
+    short, round up to the smallest batch that is a multiple of both the
+    group size and the per-step global batch.
+    """
+    per_device = max(1, int(getattr(config, "per_device_train_batch_size", 1) or 1))
+    accumulation = max(1, int(getattr(config, "gradient_accumulation_steps", 1) or 1))
+    group = max(1, int(getattr(config, "num_generations", 1) or 1))
+    world = max(1, int(os.environ.get("WORLD_SIZE", "1") or 1))
+    step_batch = per_device * world
+    default = step_batch * accumulation
+    if default % group == 0:
+        return {}
+    unit = math.lcm(step_batch, group)
+    generation_batch = unit * math.ceil(default / unit)
+    logger.info(
+        "TRL generation batch %d is not a multiple of num_generations=%d; "
+        "generating %d completions per generation step instead",
+        default,
+        group,
+        generation_batch,
+    )
+    return {"generation_batch_size": generation_batch}
+
+
 def _enable_input_require_grads(model: Any) -> None:
     """
     Ensure at least one checkpoint input requires gradients.
@@ -289,7 +413,9 @@ class TrajectoryGenerator:
             self.vllm_engine = LLM(
                 model=self.config.model_name,
                 revision=self.config.model_revision,
-                trust_remote_code=True,
+                trust_remote_code=bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 dtype="float16" if self.config.fp16 else "bfloat16",
                 gpu_memory_utilization=0.6,  # Reserve memory for training
             )
@@ -431,7 +557,9 @@ class ModelManager:
 
             self.tokenizer = tokenizer_cls.from_pretrained(
                 self.config.model_name,
-                trust_remote_code=True,
+                trust_remote_code=bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 padding_side="left",  # Important for generation
                 revision=self.config.model_revision,
             )
@@ -447,7 +575,9 @@ class ModelManager:
                     else (torch.bfloat16 if self.config.bf16 else torch.float32)
                 ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
-                "trust_remote_code": True,
+                "trust_remote_code": bool(
+                    getattr(self.config, "trust_remote_code", False)
+                ),
                 "revision": self.config.model_revision,
             }
 
@@ -749,9 +879,6 @@ class TRLGRPOTrainerWrapper:
             "lr_scheduler_type": self.config.lr_scheduler_type,
             "num_train_epochs": self.config.num_epochs,
             "max_grad_norm": self.config.max_grad_norm,
-            "warmup_steps": self.config.get_warmup_steps(
-                self.config.max_steps if self.config.max_steps > 0 else None
-            ),
             "fp16": self.config.fp16,
             "bf16": self.config.bf16,
             "logging_steps": self.config.logging_steps,
@@ -779,12 +906,19 @@ class TRLGRPOTrainerWrapper:
             "gradient_checkpointing": self.config.gradient_checkpointing,
             "seed": self.config.seed,
         }
-        return grpo_config_cls(**_supported_kwargs(grpo_config_cls, config_kwargs))
+        config_kwargs.update(_trl_warmup_kwargs(grpo_config_cls, self.config))
+        config_kwargs.update(_trl_generation_batch_kwargs(self.config))
+        config_kwargs.update(trl_objective_kwargs(self.config))
+        return grpo_config_cls(
+            **_supported_config_kwargs(grpo_config_cls, config_kwargs)
+        )
 
     def train(self) -> None:
-        """Run training"""
+        """Run training, resuming from ``config.resume_from_checkpoint`` if set."""
         logger.info("Starting TRL GRPO training...")
-        self.trainer.train()
+        self.trainer.train(
+            resume_from_checkpoint=getattr(self.config, "resume_from_checkpoint", None)
+        )
 
     def save_model(self, output_dir: str) -> None:
         """Save the trained model"""

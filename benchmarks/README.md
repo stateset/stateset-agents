@@ -4,6 +4,27 @@ This directory separates measured evidence from smoke tests and synthetic
 component tests. Only the strict evidence tools below may support comparative
 performance claims.
 
+## Public product-use benchmark
+
+The starter benchmark for teaching and evaluating agent interaction with the
+StateSet product surface lives in [`product_use/`](product_use/). It contains
+versioned MCP tasks, an execution-backed local scorer, an interactive JSONL
+tool-session runner, and guidance for private generated transfer checks. Run
+the public demonstration with:
+
+```bash
+python -m benchmarks.product_use.execution \
+  --tasks benchmarks/product_use/tasks.v0.3.public.json \
+  --submissions benchmarks/product_use/demonstrations.v0.3.json
+```
+
+The public task set measures improvement-loop usage, tool discovery, and
+training configuration. Version 0.4 can generate evaluator-only task files and
+prompts-only participant files from a private seed. These checks are separate
+from the GPU performance evidence below:
+tool-use scores must not be presented as training throughput or model-quality
+claims.
+
 ## External backend conformance
 
 Run each external engine in its own dependency-compatible GPU image using a

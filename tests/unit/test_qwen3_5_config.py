@@ -45,7 +45,7 @@ class TestQwen35Config:
         assert config.use_lora is True
         assert config.use_wandb is False
         assert config.report_to == "none"
-        assert config.trust_remote_code is True
+        assert config.trust_remote_code is False  # native transformers architecture
         assert config.attn_implementation == "sdpa"
 
     def test_memory_profile_defaults(self):
@@ -110,17 +110,23 @@ class TestQwen35Config:
         assert config.lora_alpha is None
 
     def test_quantization_flags(self):
-        config = get_qwen3_5_config(use_4bit=True, use_8bit=True)
+        # Both quantizations requested explicitly is a conflict, not a
+        # silent 4-bit choice.
+        with pytest.raises(ValueError, match="mutually exclusive"):
+            get_qwen3_5_config(use_4bit=True, use_8bit=True)
 
-        assert config.use_4bit is True
-        assert config.use_8bit is False
+        config = get_qwen3_5_config(use_8bit=True)
+        assert config.use_8bit is True
+        assert config.use_4bit is False
 
     def test_agent_config_creation(self):
         config = get_qwen3_5_config()
         agent_config = create_qwen3_5_agent_config(config)
 
         assert agent_config.model_name == QWEN35_08B_BASE_MODEL
-        assert agent_config.trust_remote_code is True
+        assert (
+            agent_config.trust_remote_code is False
+        )  # native transformers architecture
         assert agent_config.attn_implementation == "sdpa"
         assert agent_config.max_new_tokens == 768
 

@@ -44,6 +44,10 @@ conversation_router = APIRouter(prefix="/conversations", tags=["conversations"])
 AGENT_API_EXCEPTIONS = (AttributeError, KeyError, RuntimeError, TypeError, ValueError)
 
 
+def _is_admin(user: AuthenticatedUser) -> bool:
+    return "admin" in user.roles
+
+
 def _can_access_conversation(
     conversation: dict[str, Any], user: AuthenticatedUser
 ) -> bool:
@@ -143,6 +147,10 @@ class ConversationListResponse(PaginatedResponse):
         },
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
+        403: {
+            "description": "Model not permitted by the server's model policy",
+            "model": ErrorResponse,
+        },
         500: {"description": "Internal server error", "model": ErrorResponse},
     },
 )
@@ -180,7 +188,9 @@ async def create_agent(
                     raise PromptInjectionError("system_prompt") from e
                 raise InvalidAgentConfigError(str(e)) from e
 
-        agent_id = await svc.create_agent(config)
+        agent_id = await svc.create_agent(
+            config, owner=user.user_id, roles=list(user.roles)
+        )
 
         return AgentCreatedResponse(
             agent_id=agent_id,
@@ -189,7 +199,7 @@ async def create_agent(
             message="Agent created successfully",
         )
 
-    except PromptInjectionError:
+    except (PromptInjectionError, HTTPException):
         raise
     except ValueError as e:
         raise InvalidAgentConfigError(str(e)) from e
@@ -226,8 +236,13 @@ async def list_agents(
     Returns:
         Paginated list of agent details.
     """
-    # Get all agents from service
-    all_agents = list(svc.agents.items())
+    # Only the caller's own agents (and operator-registered ones); admins see all.
+    is_admin = _is_admin(user)
+    all_agents = [
+        (aid, agent)
+        for aid, agent in svc.agents.items()
+        if svc.can_access_agent(aid, user.user_id, is_admin=is_admin)
+    ]
 
     # Apply status filter if provided
     if status:
@@ -296,7 +311,7 @@ async def get_agent(
     Raises:
         AgentNotFoundError: If the agent doesn't exist.
     """
-    if agent_id not in svc.agents:
+    if not svc.can_access_agent(agent_id, user.user_id, is_admin=_is_admin(user)):
         raise AgentNotFoundError(agent_id)
 
     agent = svc.agents[agent_id]
@@ -338,7 +353,7 @@ async def delete_agent(
     Raises:
         AgentNotFoundError: If the agent doesn't exist.
     """
-    if agent_id not in svc.agents:
+    if not svc.can_access_agent(agent_id, user.user_id, is_admin=_is_admin(user)):
         raise AgentNotFoundError(agent_id)
 
     deleted = svc.delete_agent(agent_id)
@@ -442,7 +457,12 @@ async def converse_with_agent(
                     os.environ.get("STATESET_DEFAULT_CHECKPOINT"),
                 )
             config = AgentConfigRequest(model_name="gpt2")
-            agent_id = await svc.create_agent(config)
+            # Server-chosen demo model: operator rules, not the client policy.
+            agent_id = await svc.create_agent(
+                config, owner=user.user_id, client_model=False
+            )
+        elif not svc.can_access_agent(agent_id, user.user_id, is_admin=_is_admin(user)):
+            raise AgentNotFoundError(agent_id)
 
         response = await svc.get_conversation_response(agent_id, request)
 

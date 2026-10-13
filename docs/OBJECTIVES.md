@@ -215,7 +215,18 @@ for its HF path and, on a fresh rollout batch, takes its old-policy log-probs
 from the current forward pass detached (`rescore_old_log_probs`, default),
 so the sequence ratio is exactly 1 and the narrow GSPO band gates only
 genuine drift; the gap between the sampler's log-probs and that pass is
-reported as `generation_log_prob_gap`.
+reported as `generation_log_prob_gap`. Both GSPO and GSPO-token honor this setting
+and store the diagnostic in step metrics and training history. GSPO-token's
+token log-probabilities retain gradients; only the old-policy scores and its
+sequence ratio are detached.
+
+Set `rescore_old_log_probs=False` when using the generator's original scores
+for importance correction, such as rollouts from a lagging policy. In this mode
+the score-gap diagnostic is zero because the selected old-policy scores are
+the generator's own scores; it does not mean the generator matches the current
+model. Same-pass rescoring assumes fresh rollouts and cannot verify that an
+external engine is synchronized. GSPO-token previously ignored the setting;
+its default now follows GSPO, while `False` retains generator-score behavior.
 
 ## Rollouts from an inference engine
 

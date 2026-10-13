@@ -104,20 +104,41 @@ async def evaluate_agent(
     if cfg.concurrency < 1:
         cfg = replace(cfg, concurrency=1)
 
-    shared_env_lock = asyncio.Lock()
     if cfg.concurrency > 1 and type(environment).clone is Environment.clone:
         logger.warning(
             "Environment clone() is not implemented; forcing sequential evaluation."
         )
         cfg = replace(cfg, concurrency=1)
 
+    # Seed for reproducible evaluation, but hand the caller's RNG streams back
+    # afterwards: re-seeding mid-training would replay the same environment
+    # randomness after every evaluation.
+    saved_rng = None
     if cfg.seed is not None:
+        saved_rng = (random.getstate(), np.random.get_state())
         random.seed(cfg.seed)
         np.random.seed(cfg.seed)
+    try:
+        return await _evaluate_seeded(agent, environment, scenarios, reward_fn, cfg)
+    finally:
+        if saved_rng is not None:
+            random.setstate(saved_rng[0])
+            np.random.set_state(saved_rng[1])
 
+
+async def _evaluate_seeded(
+    agent: Any,
+    environment: Environment,
+    scenarios: Sequence[dict[str, Any]] | None,
+    reward_fn: Any | None,
+    cfg: EvaluationConfig,
+) -> dict[str, float]:
+    shared_env_lock = asyncio.Lock()
+    failed_episodes = 0
     scenario_list: list[dict[str, Any]] = list(scenarios or [])
 
     async def _run_one(episode_idx: int) -> list[dict[str, Any]] | None:
+        nonlocal failed_episodes
         scenario: dict[str, Any] | None = None
         if scenario_list:
             scenario = scenario_list[episode_idx % len(scenario_list)]
@@ -165,7 +186,8 @@ async def evaluate_agent(
                         max_turns=cfg.max_turns,
                     )
             except EVAL_ENV_EXCEPTIONS as exc:
-                logger.debug("Evaluation episode %s failed: %s", episode_idx, exc)
+                failed_episodes += 1
+                logger.warning("Evaluation episode %s failed: %s", episode_idx, exc)
                 continue
 
             reward = float(getattr(trajectory, "total_reward", 0.0))
@@ -211,6 +233,7 @@ async def evaluate_agent(
             "eval_episode_length": 0.0,
             "eval_success_rate": 0.0,
             "eval_num_episodes": 0.0,
+            "eval_failed_episodes": float(failed_episodes),
         }
 
     rewards_arr = np.array(rewards, dtype=float)
@@ -222,6 +245,11 @@ async def evaluate_agent(
         "eval_reward": float(rewards_arr.mean()),
         "eval_reward_std": float(rewards_arr.std()),
         "eval_episode_length": float(lengths_arr.mean()),
-        "eval_success_rate": float((rewards_arr > 0.5).mean()),
+        # A crashed episode is not a success: count it in the denominator so
+        # the rate cannot rise as the agent fails more often.
+        "eval_success_rate": float(
+            (rewards_arr > 0.5).sum() / (len(rewards) + failed_episodes)
+        ),
         "eval_num_episodes": float(len(rewards)),
+        "eval_failed_episodes": float(failed_episodes),
     }

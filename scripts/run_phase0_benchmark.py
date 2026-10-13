@@ -439,6 +439,84 @@ def build_algorithm_config(
     raise ValueError(f"Unknown trainer: {trainer}")
 
 
+SHOOTOUT_BASE_KEYS = frozenset(
+    {
+        "num_train_examples",
+        "num_eval_examples",
+        "max_steps",
+        "per_device_train_batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "adam_beta1",
+        "adam_beta2",
+        "weight_decay",
+        "max_grad_norm",
+        "warmup_ratio",
+        "lr_scheduler_type",
+        "num_train_epochs",
+        "num_generations",
+        "num_iterations",
+        "max_prompt_length",
+        "max_completion_length",
+        "temperature",
+        "top_p",
+        "beta",
+        "lora_r",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "gradient_checkpointing",
+        "bf16",
+    }
+)
+# Protocol v4 states the matched objective explicitly. The native GSPO leg
+# does not take these as inputs; it verifies they describe what it runs.
+SHOOTOUT_V4_OBJECTIVE_KEYS = frozenset(
+    {
+        "objective",
+        "importance_sampling_level",
+        "epsilon",
+        "epsilon_high",
+        "loss_type",
+        "scale_rewards",
+        "trl_version",
+    }
+)
+
+
+def validate_shootout_config(trainer: str, config: Any) -> str | None:
+    """Return why ``config`` cannot drive ``trainer``, or ``None`` if it can.
+
+    Accepts the v3 key set, or v3 plus the v4 objective keys, which must match
+    the native trainer's own objective exactly (never silently ignored).
+    """
+    if not isinstance(config, dict):
+        return "has an unsupported schema"
+    keys = set(config)
+    if keys == SHOOTOUT_BASE_KEYS:
+        return None
+    if keys != SHOOTOUT_BASE_KEYS | SHOOTOUT_V4_OBJECTIVE_KEYS:
+        return "has an unsupported schema"
+    if trainer != "gspo":
+        return f"states a v4 GSPO objective but --trainer is {trainer!r}"
+    native = build_algorithm_config(trainer, config)
+    expected = {
+        "objective": native["objective"],
+        "importance_sampling_level": "sequence",
+        "epsilon": native["clip_range_left"],
+        "epsilon_high": native["clip_range_right"],
+        "loss_type": "grpo",
+        "scale_rewards": "group",
+    }
+    mismatched = sorted(k for k, v in expected.items() if config[k] != v)
+    if mismatched:
+        detail = ", ".join(
+            f"{k}={config[k]!r} (native {expected[k]!r})" for k in mismatched
+        )
+        return f"objective does not match the native GSPO trainer: {detail}"
+    return None
+
+
 def _prompt_reward(
     adapter: TaskAdapter, train_examples: list, train_prompts: list[str]
 ) -> Any:
@@ -1187,36 +1265,9 @@ def main() -> int:
             shootout_config = json.loads(args.shootout_config_json)
         except json.JSONDecodeError as exc:
             parser.error(f"--shootout-config-json is invalid JSON: {exc}")
-        required = {
-            "num_train_examples",
-            "num_eval_examples",
-            "max_steps",
-            "per_device_train_batch_size",
-            "gradient_accumulation_steps",
-            "learning_rate",
-            "adam_beta1",
-            "adam_beta2",
-            "weight_decay",
-            "max_grad_norm",
-            "warmup_ratio",
-            "lr_scheduler_type",
-            "num_train_epochs",
-            "num_generations",
-            "num_iterations",
-            "max_prompt_length",
-            "max_completion_length",
-            "temperature",
-            "top_p",
-            "beta",
-            "lora_r",
-            "lora_alpha",
-            "lora_dropout",
-            "lora_target_modules",
-            "gradient_checkpointing",
-            "bf16",
-        }
-        if not isinstance(shootout_config, dict) or set(shootout_config) != required:
-            parser.error("--shootout-config-json has an unsupported schema")
+        schema_error = validate_shootout_config(args.trainer, shootout_config)
+        if schema_error is not None:
+            parser.error(f"--shootout-config-json {schema_error}")
         if (
             args.num_train_examples != shootout_config["num_train_examples"]
             or args.num_eval_examples != shootout_config["num_eval_examples"]

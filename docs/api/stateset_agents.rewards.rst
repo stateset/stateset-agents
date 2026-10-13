@@ -4,14 +4,6 @@ stateset\_agents.rewards package
 Submodules
 ----------
 
-stateset\_agents.rewards.bayesian\_reward\_model module
--------------------------------------------------------
-
-.. automodule:: stateset_agents.rewards.bayesian_reward_model
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.rewards.kimi\_k25\_reward module
 -------------------------------------------------
 

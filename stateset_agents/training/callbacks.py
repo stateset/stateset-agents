@@ -12,9 +12,11 @@ events without duplicating per-callback boilerplate.
 
 from __future__ import annotations
 
-import asyncio
+import inspect
 import logging
-from collections.abc import Iterable
+import math
+from collections.abc import Iterable, Mapping
+from numbers import Real
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -37,29 +39,39 @@ CHECKPOINT_SAVED_EVENT = "checkpoint_saved"
 
 
 async def _maybe_await(result: Any) -> Any:
-    if asyncio.iscoroutine(result):
+    if inspect.isawaitable(result):
         return await result
     return result
 
 
 async def _call(func: Any, args: tuple[Any, ...]) -> Any:
-    if asyncio.iscoroutinefunction(func):
-        return await func(*args)
     return await _maybe_await(func(*args))
 
 
 async def _try_call_variants(func: Any, variants: Iterable[tuple[Any, ...]]) -> None:
+    """Bind arguments before invoking a callback, never retrying its body.
+
+    A TypeError raised inside a callback is a callback failure, not evidence
+    that another argument variant is safe to execute. Opaque callables without
+    an inspectable signature receive the canonical (first) variant once.
+    """
     variants_list = list(variants)
+    if not variants_list:
+        return
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        await _call(func, variants_list[0])
+        return
     for args in variants_list:
         try:
-            await _call(func, args)
-            return
+            signature.bind(*args)
         except TypeError:
             continue
-
-    # Best-effort final attempt with the first variant to surface a useful error
-    if variants_list:
-        await _call(func, variants_list[0])
+        await _call(func, args)
+        return
+    # Surface a useful signature error without executing an incompatible body.
+    signature.bind(*variants_list[0])
 
 
 async def _dispatch_callable(callback: Any, event: str, data: dict[str, Any]) -> None:
@@ -77,6 +89,8 @@ async def _dispatch_callable(callback: Any, event: str, data: dict[str, Any]) ->
             ),
         )
     except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover - callbacks are best-effort
+        if getattr(callback, "fail_on_error", False) is True:
+            raise
         logger.debug("Callback %r failed for event %s: %s", callback, event, exc)
 
 
@@ -98,6 +112,8 @@ async def notify_training_start(
                     method, variants=((trainer, config), (config,), ())
                 )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug("Callback %r on_train_start failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, TRAINING_START_EVENT, payload)
@@ -119,6 +135,8 @@ async def notify_episode_end(
                     method, variants=((episode, metrics), (metrics,), ())
                 )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug("Callback %r on_episode_end failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, EPISODE_END_EVENT, payload)
@@ -140,6 +158,8 @@ async def notify_step_end(
                     method, variants=((step, metrics), (metrics,), ())
                 )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug("Callback %r on_step_end failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, STEP_END_EVENT, payload)
@@ -160,6 +180,8 @@ async def notify_evaluation_end(
             try:
                 await _try_call_variants(method, variants=((metrics,), ()))
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug("Callback %r on_evaluation_end failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, EVAL_END_EVENT, payload)
@@ -180,6 +202,8 @@ async def notify_training_end(
             try:
                 await _try_call_variants(method, variants=((metrics,), ()))
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug("Callback %r on_train_end failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, TRAINING_END_EVENT, payload)
@@ -203,6 +227,8 @@ async def notify_checkpoint_saved(
                     variants=((path, step, is_best), (payload,), ()),
                 )
             except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
                 logger.debug(
                     "Callback %r on_checkpoint_saved failed: %s", callback, exc
                 )
@@ -210,37 +236,58 @@ async def notify_checkpoint_saved(
         await _dispatch_callable(callback, CHECKPOINT_SAVED_EVENT, payload)
 
 
-class ZeroSignalGuard:
-    """Abort a run whose reward is identically zero for ``max_zero_steps``
-    consecutive steps.
+def has_no_policy_signal(metrics: Mapping[str, Any]) -> bool:
+    """Identify measured zero advantages, without treating missing data as zero.
 
-    A group-relative objective gets no gradient from a batch whose rewards
-    are all equal, so a run that never sees a non-zero reward is not
-    training; it is burning GPU time on a mis-wired prompt, reward context,
-    or generation path. Trainers that honour ``should_abort`` (native GSPO)
-    stop within minutes instead of hours, and the reason is kept for the
-    evidence record.
+    Native GSPO reports the fraction of computed advantages that are nonzero.
+    Prefer that evidence over pooled reward statistics, which can hide constant
+    rewards within each group. Legacy callers must supply both a zero reward
+    mean and zero standard deviation. Unknown or invalid evidence returns False.
+    This describes the policy advantage term, not KL or optimizer-state effects.
+    """
+
+    def finite_number(value: Any) -> bool:
+        if isinstance(value, bool) or not isinstance(value, Real):
+            return False
+        try:
+            return math.isfinite(value)
+        except (OverflowError, ValueError):
+            return False
+
+    if "nonzero_advantage_fraction" in metrics:
+        fraction = metrics["nonzero_advantage_fraction"]
+        return finite_number(fraction) and fraction == 0.0
+
+    mean = metrics.get("average_reward", metrics.get("mean_reward"))
+    std = metrics.get("reward_std")
+    return finite_number(mean) and finite_number(std) and mean == 0.0 and std == 0.0
+
+
+class ZeroSignalGuard:
+    """Request abort after consecutive steps with no policy advantage signal.
+
+    Trainers that honor ``should_abort`` (native GSPO) stop and retain the reason.
+    Missing or invalid evidence breaks the streak; an abort remains latched.
     """
 
     def __init__(self, max_zero_steps: int = 5) -> None:
-        self.max_zero_steps = max(1, int(max_zero_steps))
+        if type(max_zero_steps) is not int or max_zero_steps < 1:
+            raise ValueError("max_zero_steps must be a positive integer")
+        self.max_zero_steps = max_zero_steps
         self.zero_steps = 0
         self.should_abort = False
         self.abort_reason: str | None = None
 
     def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
-        mean = float(
-            metrics.get("average_reward", metrics.get("mean_reward", 0.0)) or 0.0
-        )
-        std = float(metrics.get("reward_std", 0.0) or 0.0)
-        if mean == 0.0 and std == 0.0:
+        if has_no_policy_signal(metrics):
             self.zero_steps += 1
         else:
             self.zero_steps = 0
         if self.zero_steps >= self.max_zero_steps and not self.should_abort:
             self.should_abort = True
             self.abort_reason = (
-                f"reward identically zero for {self.zero_steps} consecutive steps "
-                f"(through step {step}): no learning signal; check prompts, reward "
-                "context and rollout text"
+                f"policy advantages identically zero for {self.zero_steps} "
+                f"consecutive steps (through step {step}): no learning signal "
+                "from policy advantages; check prompts, reward context, rollout "
+                "diversity and task difficulty"
             )

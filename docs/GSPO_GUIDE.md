@@ -181,6 +181,15 @@ trained_agent = await train_with_gspo_token(
 - Numerically identical to GSPO when all tokens have same advantage
 - Higher flexibility for multi-turn conversations
 
+Both native GSPO variants average the complete loss (including KL when enabled)
+over the prompt groups actually processed in a training step. Each prompt has
+equal weight even if response counts differ. Requesting more groups than are
+available does not dilute the loss. GSPO-token previously summed group losses,
+so increasing groups per step also increased gradient scale; multi-group runs
+now use the same averaging convention as GSPO. Single-group behavior is unchanged.
+With identical model state and deterministic scoring, repeating a group preserves
+its mean loss and gradient scale; stochastic rollouts can still change either.
+
 ## Configuration Guide
 
 ### Essential Parameters

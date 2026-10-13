@@ -111,6 +111,82 @@ async def test_backend_failure_falls_back_to_native_generation():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("returned_count", [2, 4])
+async def test_backend_batch_count_mismatch_falls_back_once(returned_count):
+    """An incomplete or oversized engine batch never becomes a training group."""
+
+    class WrongSizeBackend(_FakeRolloutBackend):
+        async def generate_with_logprobs(self, prompts, **kwargs):
+            self.calls.append((list(prompts), dict(kwargs)))
+            return [
+                SimpleNamespace(
+                    prompt=prompts[0],
+                    response=f"engine-{index}",
+                    prompt_token_ids=[1],
+                    response_token_ids=[2],
+                    token_logprobs=[-0.5],
+                )
+                for index in range(returned_count)
+            ]
+
+    agent = _stub_agent()
+    await agent.initialize()
+    backend = WrongSizeBackend()
+    agent.set_rollout_backend(backend)
+
+    turns = await agent.generate_turns("hi", 3)
+
+    assert len(backend.calls) == 1
+    assert len(turns) == 3
+    assert all(turn.content == "ok" for turn in turns)
+    assert all(
+        turn.metadata["rollout_backend_error"].startswith("ValueError:")
+        for turn in turns
+    )
+    assert all("token_ids" not in turn.metadata for turn in turns)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("overrides", "message"),
+    [
+        ({"token_logprobs": []}, "differ in length"),
+        ({"token_logprobs": [float("nan")]}, "invalid token log-probs"),
+        ({"prompt": "wrong prompt"}, "different prompt"),
+    ],
+)
+async def test_backend_invalid_rollout_metadata_uses_native_fallback(
+    overrides, message
+):
+    """Bad token or prompt metadata is rejected before trainers consume it."""
+
+    class InvalidBackend(_FakeRolloutBackend):
+        async def generate_with_logprobs(self, prompts, **kwargs):
+            self.calls.append((list(prompts), dict(kwargs)))
+            fields = {
+                "prompt": prompts[0],
+                "response": "engine",
+                "prompt_token_ids": [1],
+                "response_token_ids": [2],
+                "token_logprobs": [-0.5],
+            }
+            fields.update(overrides)
+            return [SimpleNamespace(**fields)]
+
+    agent = _stub_agent()
+    await agent.initialize()
+    backend = InvalidBackend()
+    agent.set_rollout_backend(backend)
+
+    turn = await agent.generate_turn("hi")
+
+    assert len(backend.calls) == 1
+    assert turn.content == "ok"
+    assert message in turn.metadata["rollout_backend_error"]
+    assert "token_ids" not in turn.metadata
+
+
+@pytest.mark.asyncio
 async def test_vllm_generator_exposes_rollout_backend_entry_point(monkeypatch):
     from stateset_agents.training import vllm_backend
 

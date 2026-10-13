@@ -17,6 +17,7 @@ from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
 
+from .callbacks import has_no_policy_signal
 from .config import get_config_for_task
 from .gspo_config import GSPOConfig
 
@@ -85,9 +86,13 @@ def query_window(
 
 
 def _reward_is_identically_zero(metrics: Mapping[str, Any]) -> bool:
-    return (
-        float(metrics.get("average_reward", 0.0)) == 0.0
-        and float(metrics.get("reward_std", 0.0)) == 0.0
+    """Legacy reward-only diagnostic; absent metrics are not evidence."""
+    return has_no_policy_signal(
+        {
+            key: metrics[key]
+            for key in ("average_reward", "reward_std")
+            if key in metrics
+        }
     )
 
 
@@ -211,13 +216,14 @@ async def train_with_gspo(
         window = query_window(queries, iteration, queries_per_iteration)
         metrics = await trainer.train_step(queries=window, num_groups=len(window))
         zero_signal_iterations = (
-            zero_signal_iterations + 1 if _reward_is_identically_zero(metrics) else 0
+            zero_signal_iterations + 1 if has_no_policy_signal(metrics) else 0
         )
         if zero_signal_iterations == ZERO_SIGNAL_WARN_AFTER:
             logger.warning(
-                "GSPO reward has been identically zero for %s consecutive "
-                "iterations: every group produces zero advantages and no learning "
-                "can happen. Check that the reward receives the scenario context it "
+                "GSPO policy advantages have been identically zero for %s consecutive "
+                "iterations: no learning signal from the policy advantage term. "
+                "Check rollout diversity, task difficulty and that the reward "
+                "receives the scenario context it "
                 "needs (for example gold_answer) and that prompts are the real task "
                 "prompts.",
                 ZERO_SIGNAL_WARN_AFTER,
@@ -280,8 +286,13 @@ async def train_customer_service_with_gspo(
     output_dir: str = "./outputs/gspo",
     **kwargs,
 ) -> Agent:
-    """Train a customer service agent using GSPO."""
+    """Train a customer service agent using GSPO.
+
+    GSPO runs ``num_outer_iterations`` rounds; ``num_episodes`` sets it unless
+    the caller passes ``num_outer_iterations`` explicitly.
+    """
     base_config = get_config_for_task("customer_service", model_name=model_name)
+    kwargs.setdefault("num_outer_iterations", num_episodes)
 
     config = GSPOConfig.from_training_config(
         base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs

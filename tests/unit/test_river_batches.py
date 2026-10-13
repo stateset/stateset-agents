@@ -330,8 +330,27 @@ class TestRlBatch:
         prompt_len = len(tokenizer.encode(traj.prompt))
         lp = [-0.5] * len(tokenizer.encode(traj.response))
         (datum,) = build_rl_batch([traj], tokenizer, old_logprobs=[lp])
-        assert datum["advantages"][:prompt_len] == [0.0] * prompt_len
-        assert all(a == 1.0 for a in datum["advantages"][prompt_len:])
+        # Pre-shifted: entry t is the token predicted at t + 1.
+        assert datum["advantages"][: prompt_len - 1] == [0.0] * (prompt_len - 1)
+        assert all(a == 1.0 for a in datum["advantages"][prompt_len - 1 : -1])
+        assert datum["advantages"][-1] == 0.0
+
+    def test_layout_matches_the_live_group_path(self, tokenizer):
+        traj = self._traj(reward=1.0)
+        prompt_ids = tokenizer.encode(traj.prompt)
+        tokens = tokenizer.encode(traj.response)
+        lp = [-0.5] * len(tokens)
+        (datum,) = build_rl_batch(
+            [traj], tokenizer, old_logprobs=[lp], advantages=[0.5]
+        )
+        live = build_group_rl_datums(
+            prompt_ids,
+            [{"tokens": tokens, "logprobs": lp}, {"tokens": tokens, "logprobs": lp}],
+            [1.0, 0.0],
+        )[0]
+        assert datum["input_ids"] == live["input_ids"]
+        assert datum["old_logprobs"] == live["old_logprobs"]
+        assert datum["advantages"] == live["advantages"]
 
     def test_reward_is_the_default_advantage(self, tokenizer):
         traj = self._traj(reward=0.25)
@@ -357,7 +376,7 @@ class TestRlBatch:
             old_logprobs=[[-0.5] * n],
             advantages=[[float(i) + 1 for i in range(n)]],
         )
-        assert datum["advantages"][-1] == float(n)
+        assert datum["advantages"][-2] == float(n)
 
     def test_attention_mask_is_all_ones(self, tokenizer):
         traj = self._traj()

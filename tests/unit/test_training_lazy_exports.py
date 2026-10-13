@@ -63,8 +63,15 @@ def test_lazy_export_entry_resolves(name: str) -> None:
     """Every ``_OPTIONAL_EXPORTS`` entry must point at a real module attribute."""
     module_name, attr_name = training_pkg._OPTIONAL_EXPORTS[name]
 
-    assert module_name.startswith("stateset_agents.training"), (
-        f"_OPTIONAL_EXPORTS[{name!r}] points outside the training package: "
+    # Names that moved to the experimental namespace are still served (with a
+    # DeprecationWarning) for one release; everything else stays in-package.
+    from stateset_agents.training import _registry
+
+    allowed_prefixes: tuple[str, ...] = ("stateset_agents.training",)
+    if name in _registry.DEPRECATED_EXPORTS:
+        allowed_prefixes = ("stateset_agents.experimental.",)
+    assert module_name.startswith(allowed_prefixes), (
+        f"_OPTIONAL_EXPORTS[{name!r}] points outside {allowed_prefixes}: "
         f"{module_name!r}"
     )
 
@@ -190,3 +197,26 @@ def test_eager_names_are_actually_eager() -> None:
             continue
         assert name in vars(training_pkg), f"{name} is not eagerly bound"
         assert name not in _registry.OPTIONAL_EXPORTS, f"{name} is now a table entry"
+
+
+def test_deprecated_experimental_names_warn_and_resolve() -> None:
+    """Names moved to ``stateset_agents.experimental`` warn on every access."""
+    from stateset_agents.training import _registry
+
+    assert _registry.DEPRECATED_EXPORTS, "expected moved names to be registered"
+    assert not _registry.DEPRECATED_EXPORTS & set(
+        _registry.PUBLIC_NAMES
+    ), "deprecated names must not be advertised in __all__"
+    for name in sorted(_registry.DEPRECATED_EXPORTS):
+        module_name, attr_name = _registry.OPTIONAL_EXPORTS[name]
+        try:
+            expected = getattr(importlib.import_module(module_name), attr_name)
+        except ImportError as exc:
+            if _is_missing_extra(exc):
+                continue
+            raise
+        for _ in range(2):  # not cached: the second access warns too
+            with pytest.warns(DeprecationWarning, match=module_name):
+                value = getattr(training_pkg, name)
+            assert value is expected
+        assert name not in vars(training_pkg)

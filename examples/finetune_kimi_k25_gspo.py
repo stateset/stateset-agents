@@ -279,6 +279,8 @@ async def finetune_kimi_k25(
             base_model_name=model_name,
             adapter_dir=output_dir,
             output_dir=os.path.join(output_dir, "merged"),
+            # Kimi ships its own modelling code (no native transformers class).
+            trust_remote_code=True,
         )
 
     write_serving_manifest(

@@ -53,12 +53,12 @@ def hide_foreign_stubs(test_file: Path) -> dict[str, Any]:
     for name, (stub, owner) in STUBS.items():
         if owner == test_file:
             continue
-        for key in list(sys.modules):
-            if (key == name or key.startswith(name + ".")) and (
-                sys.modules[key] is stub or key != name
-            ):
-                if sys.modules.get(key) is stub or key.startswith(name + "."):
-                    hidden[key] = sys.modules.pop(key)
+        # Real submodules may already be imported by other dependencies. Removing
+        # them creates duplicate class objects on reimport (notably PeftModel),
+        # breaking isinstance checks and Transformers adapter checkpoint saves.
+        # Nested stubs are registered separately and removed by identity too.
+        if sys.modules.get(name) is stub:
+            hidden[name] = sys.modules.pop(name)
     return hidden
 
 

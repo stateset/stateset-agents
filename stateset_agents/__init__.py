@@ -13,7 +13,7 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import Any
 
-__version__ = "0.56.0"
+__version__ = "0.64.2"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
@@ -238,6 +238,20 @@ _DEPRECATED_PLANNING_EXPORTS = (
     "PlanStatus",
 )
 
+# Sim-to-real symbols moved to ``stateset_agents.experimental.sim_to_real`` in
+# v0.64.0. They stay in ``__all__`` and the v1 public API contract for one
+# release, served with a DeprecationWarning, and are removed in v0.65.0.
+_DEPRECATED_EXPERIMENTAL_EXPORTS = {
+    "SimToRealMetrics": "stateset_agents.experimental.sim_to_real.metrics",
+    "SimToRealEvaluator": "stateset_agents.experimental.sim_to_real.metrics",
+    "ConversationSimulator": (
+        "stateset_agents.experimental.sim_to_real.conversation_simulator"
+    ),
+    "ConversationSimulatorConfig": (
+        "stateset_agents.experimental.sim_to_real.conversation_simulator"
+    ),
+}
+
 __all__ = list(_LAZY_EXPORTS)
 
 
@@ -281,6 +295,17 @@ def __getattr__(name: str) -> Any:
         )
         module = import_module("stateset_agents.experimental.long_term_planning")
         return getattr(module, name)
+
+    experimental_module = _DEPRECATED_EXPERIMENTAL_EXPORTS.get(name)
+    if experimental_module is not None:
+        warnings.warn(
+            f"stateset_agents.{name} is deprecated and moved to "
+            f"{experimental_module}.{name}; the old import path will be "
+            "removed in v0.65.0.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return getattr(import_module(experimental_module), name)
 
     export = _LAZY_EXPORTS.get(name)
     if export is None:

@@ -271,8 +271,10 @@ class MultiTurnTrajectory:
         self.turn_rewards.append(float(reward))
         self.rewards = self.turn_rewards
 
-        self.total_reward = round(
-            float(Decimal(str(self.total_reward)) + Decimal(str(reward))), 1
+        # Decimal addition keeps sums like 0.1 + 0.2 exact without quantising
+        # small dense rewards away.
+        self.total_reward = float(
+            Decimal(str(self.total_reward)) + Decimal(str(float(reward)))
         )
 
     def get_context_up_to_turn(self, turn_index: int) -> list[dict[str, str]]:

@@ -135,6 +135,8 @@ SPEC = StarterSpec(
     },
     system_prompt_intro="You are Muse Glimmer, an AI assistant created by Meta.",
     config_defaults={
+        # Non-native architecture: the HF repo ships its modelling code.
+        "trust_remote_code": True,
         "lora_r": 64,
         "lora_alpha": 128,
         "max_new_tokens": 1024,

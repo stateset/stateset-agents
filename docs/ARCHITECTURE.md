@@ -140,9 +140,6 @@ stateset-agents/
 │   │   ├── dapo_trainer.py        # Decoupled clip + dynamic sampling
 │   │   ├── gepo_trainer.py        # Expectation-based GEPO
 │   │   ├── vapo_trainer.py        # Value-augmented (1036 LOC)
-│   │   ├── ppo_trainer.py         # PPO baseline (833 LOC)
-│   │   ├── rlaif_trainer.py       # RL from AI feedback
-│   │   ├── offline_rl_bcq.py      # BCQ / BEAR / CQL / IQL / DT
 │   │   ├── single_turn_trainer.py # Single-turn convenience wrapper
 │   │   ├── distributed_trainer.py # Multi-GPU
 │   │   └── neural_reward_trainer.py # Learned reward models
@@ -577,9 +574,9 @@ and live alongside their `XxxConfig` dataclass.
 | GEPO | `training/gepo_trainer.py` | Expectation-based variant; useful when GSPO's variance is too high |
 | DAPO | `training/dapo_trainer.py` | Decoupled clip + dynamic sampling |
 | VAPO | `training/vapo_trainer.py` | Value-augmented; pairs well with a separate value head |
-| PPO  | `training/ppo_trainer.py` | Reference / baseline |
-| RLAIF | `training/rlaif_trainer.py` | RL-from-AI-feedback via an LLM judge |
-| BCQ / BEAR / CQL / IQL / Decision Transformer | `training/offline_rl_*.py` | Offline-RL baselines for log-replay training |
+| PPO  | `experimental/ppo.py` | Reference / baseline (experimental) |
+| RLAIF | `experimental/rlaif.py` | RL-from-AI-feedback via an LLM judge (experimental) |
+| BCQ / BEAR / CQL / IQL / Decision Transformer | `experimental/offline_rl/*.py` | Offline-RL baselines for log-replay training (experimental) |
 
 Default entry points:
 

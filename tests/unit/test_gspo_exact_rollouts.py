@@ -264,3 +264,64 @@ async def test_generator_log_probs_are_used_when_rescoring_is_off():
     assert metrics["sequence_importance_ratio"] != pytest.approx(1.0, abs=1e-3)
     assert metrics["clipping_fraction"] == 1.0
     assert metrics["generation_log_prob_gap"] == 0.0
+
+
+# --- per-row stopping in batched generation ----------------------------------------
+
+
+def test_stop_criteria_is_per_row():
+    """HF ORs a scalar across the batch: row 0 hitting a stop string used to
+    end every sibling, and a stop string in any other row was ignored."""
+    from stateset_agents.core.agent import StopOnSpecialTokens
+
+    tok = tiny_tokenizer()
+    stop = tok.encode("\n\n", add_special_tokens=False)
+    criteria = StopOnSpecialTokens(["\n\n"], tok)
+    ids = torch.tensor([[5, 6, *stop], [5, 6, 7, 8][: 2 + len(stop)]])
+    assert criteria(ids, None).tolist() == [True, False]
+    ids = torch.tensor([[5, 6, 7, 8][: 2 + len(stop)], [5, 6, *stop]])
+    assert criteria(ids, None).tolist() == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_batched_rows_stop_independently_and_never_record_padding(monkeypatch):
+    agent = _tiny_hf_agent(max_new_tokens=8)
+    tok = agent.tokenizer
+    stop = tok.encode("\n\n", add_special_tokens=False)
+    eos = tok.eos_token_id
+    monkeypatch.setattr(tok, "pad_token_id", eos, raising=False)
+    prompt = "User: hi\nAssistant: "
+    prompt_ids = tok(prompt, return_tensors="pt")["input_ids"]
+    plen = prompt_ids.shape[1]
+    vocab = agent.model.config.vocab_size
+    # Row 0 stops on "\n\n" (then HF pads it with pad == eos); row 1 keeps
+    # going and samples a real EOS later.
+    rows = [[9, *stop, eos, eos, eos], [9, 10, 11, 12, eos, eos]]
+    width = max(len(r) for r in rows)
+    rows = [r + [eos] * (width - len(r)) for r in rows]
+
+    def fake_generate(**kwargs):
+        criteria = kwargs["stopping_criteria"]
+        seq = torch.cat([prompt_ids.repeat(2, 1), torch.tensor(rows)], dim=1)
+        # The criterion must not stop row 1 when row 0 hits the stop string.
+        upto = plen + 1 + len(stop)
+        assert criteria(seq[:, :upto], None).tolist() == [True, False]
+        logits = tuple(torch.zeros(2, vocab) for _ in range(width))
+        return SimpleNamespace(sequences=seq, logits=logits)
+
+    monkeypatch.setattr(agent.model, "generate", fake_generate)
+    batch = await agent._generate_with_model_details_batch(prompt, 2)
+    assert batch[0]["token_ids"] == [9, *stop]  # padding is not a sampled EOS
+    assert batch[1]["token_ids"] == [9, 10, 11, 12, eos]
+
+
+def test_overlong_prompt_keeps_latest_turn_and_assistant_cue():
+    agent = _tiny_hf_agent(max_new_tokens=8)
+    tok = agent.tokenizer
+    original = tok.truncation_side
+    tok.model_max_length = 40
+    prompt = "User: " + "old " * 50 + "\nUser: LATEST\nAssistant: "
+    ids = agent._tokenize_prompt(prompt)["input_ids"][0]
+    assert ids.shape[0] == 32
+    assert tok.decode(ids).endswith("LATEST\nAssistant: ")
+    assert tok.truncation_side == original

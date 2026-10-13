@@ -259,3 +259,126 @@ def test_ratio_and_log_prob_entry_points_agree(dapo_trainer_factory):
         ratios, adv.unsqueeze(1).expand_as(ratios), rm[:, 1:]
     )
     torch.testing.assert_close(via_lp, via_ratio)
+
+
+def _stub_rollouts(trainer, monkeypatch, rewards_by_prompt):
+    ids, am, rm = make_batch()
+
+    async def fake_generate(prompt):
+        return [
+            {
+                "response": f"{prompt}-{i}",
+                "input_ids": ids[i],
+                "attention_mask": am[i],
+                "response_mask": rm[i],
+                "sequence_length": int(rm[i].sum()),
+            }
+            for i in range(2)
+        ]
+
+    def reward_fn(prompt, response):
+        return rewards_by_prompt[prompt][int(response.rsplit("-", 1)[1])]
+
+    monkeypatch.setattr(trainer, "generate_group_responses", fake_generate)
+    trainer.reward_fn = reward_fn
+
+
+@pytest.mark.asyncio
+async def test_dynamic_sampling_without_verifier_keeps_informative_groups(
+    dapo_trainer_factory, monkeypatch
+):
+    """With no verifier (the default), groups with reward spread must survive;
+    only zero-signal groups (all rewards equal) are filtered."""
+    trainer = dapo_trainer_factory(tiny_model())
+    _stub_rollouts(
+        trainer,
+        monkeypatch,
+        {"mixed": [1.0, 0.0], "solved": [1.0, 1.0], "graded": [0.2, 0.4]},
+    )
+    samples, filter_ratio = await trainer.collect_samples_with_dynamic_sampling(
+        ["mixed", "solved", "graded"], target_batch_size=8
+    )
+    assert [s["prompt"] for s in samples] == ["mixed", "graded"]
+    assert filter_ratio == pytest.approx(1 / 3)
+    assert samples[0]["accuracy"] == 0.5
+
+
+@pytest.mark.asyncio
+async def test_dynamic_sampling_with_verifier_uses_accuracy(
+    dapo_trainer_factory, monkeypatch
+):
+    trainer = dapo_trainer_factory(tiny_model())
+    _stub_rollouts(trainer, monkeypatch, {"a": [0.3, 0.7], "b": [0.3, 0.7]})
+    trainer.verifier_fn = lambda prompt, response: prompt == "a" and response.endswith(
+        "-0"
+    )
+    samples, _ = await trainer.collect_samples_with_dynamic_sampling(
+        ["a", "b"], target_batch_size=8
+    )
+    assert [s["prompt"] for s in samples] == ["a"]
+
+
+@pytest.mark.asyncio
+async def test_one_optimizer_step_per_inner_update_over_the_whole_batch(
+    dapo_trainer_factory, monkeypatch
+):
+    """DAPO's token-level loss averages over *all* tokens in the batch: the
+    groups' gradients accumulate into one optimizer step per inner update
+    (previously every prompt group took its own step)."""
+    trainer = dapo_trainer_factory(tiny_model(), num_gradient_updates=2)
+    ids, am, rm = make_batch()
+    rm_short = rm.clone()
+    rm_short[:, 8:] = 0.0  # second group has fewer response tokens
+
+    def sample(response_mask, adv):
+        with torch.no_grad():
+            old, _ = trainer.compute_token_log_probs(ids, am, response_mask)
+        return {
+            "responses": [
+                {
+                    "input_ids": ids[i],
+                    "attention_mask": am[i],
+                    "response_mask": response_mask[i],
+                    "sequence_length": int(response_mask[i].sum()),
+                }
+                for i in range(2)
+            ],
+            "advantages": torch.tensor(adv),
+            "rewards": [1.0, 0.0],
+            "accuracy": 0.5,
+            "old_token_log_probs": old,
+        }
+
+    samples = [sample(rm, [1.0, -1.0]), sample(rm_short, [-1.0, 1.0])]
+
+    # Reference gradient: token-mean of the surrogate over both groups' tokens.
+    trainer.optimizer.zero_grad()
+    per_token, masks = [], []
+    for s, mask in zip(samples, (rm, rm_short), strict=True):
+        cur, _ = trainer.compute_token_log_probs(ids, am, mask)
+        ratio = torch.exp(cur - s["old_token_log_probs"])
+        per_token.append(ratio * s["advantages"].unsqueeze(1))
+        masks.append(mask[:, 1:])
+    loss = -(torch.cat(per_token) * torch.cat(masks)).sum() / torch.cat(masks).sum()
+    loss.backward()
+    expected = [p.grad.clone() for p in trainer.model.parameters()]
+    trainer.optimizer.zero_grad()
+
+    grads, steps = [], []
+
+    def record_step(*args, **kwargs):
+        steps.append(1)
+        if len(steps) == 1:
+            grads.extend(p.grad.clone() for p in trainer.model.parameters())
+
+    monkeypatch.setattr(trainer.optimizer, "step", record_step)
+    monkeypatch.setattr(torch.nn.utils, "clip_grad_norm_", lambda *a, **k: None)
+
+    async def fake_collect(prompts, n):
+        return samples, 0.0
+
+    monkeypatch.setattr(trainer, "collect_samples_with_dynamic_sampling", fake_collect)
+    await trainer.train_step(["q"])
+    assert len(steps) == 2
+    for got, want in zip(grads, expected, strict=True):
+        torch.testing.assert_close(got, want, rtol=1e-4, atol=1e-6)

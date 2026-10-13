@@ -6,11 +6,31 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
 import json
-import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+
+def estimate_grpo_optimizer_steps(
+    rollout_batches: int,
+    *,
+    gradient_accumulation_steps: int = 1,
+    num_gradient_updates: int = 1,
+) -> int:
+    """Estimate native GRPO's optimizer-step budget for a learning-rate schedule.
+
+    Token-path inner updates each commit a full step, bypassing accumulation.
+    Their budget is an upper bound when batches instead use sequence fallback,
+    emit no gradients, or skip updates. A single update per batch uses ordinary
+    accumulation, including one final partial window.
+    """
+    batches = max(0, int(rollout_batches))
+    inner = max(1, int(num_gradient_updates or 1))
+    accumulation = max(1, int(gradient_accumulation_steps or 1))
+    if inner > 1:
+        return batches * inner
+    return (batches + accumulation - 1) // accumulation
 
 
 class TrainingProfile(Enum):
@@ -200,11 +220,23 @@ class TrainingConfig:
     # numerically different rollout engine (TRL's vLLM importance-sampling
     # correction). Falls back to ``"recompute"`` when rollouts carry none.
     old_logprobs_source: str = "recompute"
+    # Zero every dropout module (including LoRA dropout) in the policy before
+    # RL training, so separately scored old/reference log-probs and the
+    # learner's forward pass agree (TRL's ``disable_dropout``). Keyword-only
+    # so subclasses keep their positional arguments.
+    disable_dropout: bool = field(default=False, kw_only=True)
+    # Run Python shipped inside the model's Hugging Face repo when loading it.
+    # Off by default: only enable for a repo you trust whose architecture is
+    # not native to transformers (curated presets opt in explicitly).
+    trust_remote_code: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)
+        # The alias is applied once; keeping it would re-impose this value on
+        # every replace()/from_dict() copy and undo later batch-size changes.
+        self.batch_size = None
         if self.wandb_run_name is not None and self.run_name is None:
             self.run_name = self.wandb_run_name
 
@@ -411,10 +443,13 @@ class TrainingConfig:
         return self.per_device_train_batch_size * self.gradient_accumulation_steps
 
     def get_total_steps(self, num_episodes: int | None = None) -> int:
-        """Calculate total training steps"""
-        episodes = num_episodes or self.num_episodes
-        grad_steps = max(1, int(self.gradient_accumulation_steps or 1))
-        return math.ceil(episodes / grad_steps)
+        """Estimate native GRPO optimizer steps, assuming one batch per episode."""
+        episodes = self.num_episodes if num_episodes is None else num_episodes
+        return estimate_grpo_optimizer_steps(
+            episodes,
+            gradient_accumulation_steps=self.gradient_accumulation_steps,
+            num_gradient_updates=self.num_gradient_updates,
+        )
 
     def get_warmup_steps(self, total_steps: int | None = None) -> int:
         """Calculate warmup steps"""
@@ -555,9 +590,25 @@ def create_config_from_args(
 ) -> TrainingConfig:
     """Create configuration from command line arguments"""
 
-    # Start with task-specific config or profile
+    # Start with task-specific config or profile. A non-balanced profile is
+    # layered over a task config (its tuning keys win); "balanced" is the
+    # default and leaves the task's own tuning in place.
     if task_type != "general":
         config = get_config_for_task(task_type)
+        if TrainingProfile(profile) != TrainingProfile.BALANCED:
+            neutral = TrainingConfig().to_dict()
+            # Every profile sets the same tuning keys; find them by diffing
+            # each profile against the plain defaults.
+            profile_keys = {
+                name
+                for member in TrainingProfile
+                for name, value in TrainingConfig.from_profile(member).to_dict().items()
+                if value != neutral[name]
+            }
+            tuned = TrainingConfig.from_profile(TrainingProfile(profile)).to_dict()
+            config_dict = config.to_dict()
+            config_dict.update({name: tuned[name] for name in profile_keys})
+            config = TrainingConfig.from_dict(config_dict)
     else:
         config = TrainingConfig.from_profile(TrainingProfile(profile))
 

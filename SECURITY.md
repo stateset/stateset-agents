@@ -70,6 +70,10 @@ necessary to demonstrate the issue. It is not a bug-bounty promise.
 - Checkpoints load with `weights_only=True` by default. Pass `trusted=True`
   only for artifacts you produced or independently trust; pickle-capable model
   files can execute code.
+- Framework-owned local model and adapter restores reject sharded checkpoint
+  indexes whose shard paths escape the artifact directory or name symlinks or
+  non-regular files. This preflight cannot protect arbitrary third-party
+  loaders or a directory that another process can change during loading.
 - Redis-backed caches deserialize trusted internal values. Only connect them to
   a Redis deployment whose writers are fully controlled.
 - `API_REQUIRE_AUTH` must remain enabled in production. Disabling it is a
@@ -79,11 +83,49 @@ necessary to demonstrate the issue. It is not a bug-bounty promise.
 - Tools invoked by an agent carry the caller's side-effect authority. Training
   and evaluation should use read-only or sandboxed tools.
 
+## API isolation and operator settings
+
+The API gateway treats every authenticated caller as a separate tenant:
+
+- **Agents** (`/agents`) and **training-lab experiments** (`/api/lab/*`,
+  including its WebSocket) are visible only to the user who created them;
+  other callers get `404`. Admins see everything. Operator-registered agents
+  (for example `serve --checkpoint`) are shared.
+- **Training jobs** (`POST /training`) write only under
+  `API_TRAINING_OUTPUT_ROOT` (default `outputs/api-training`), in a directory
+  named after the job id. `resume_from_checkpoint` must be a job id the
+  caller can access or a path that resolves under that root.
+  `training_config_overrides` accepts only tuning keys; output paths, run
+  names, experiment-tracker settings (`report_to`, `wandb_*`), data loading,
+  and model identity are rejected with `422`.
+- **Model loading.** A client-named model loads real weights only when
+  `API_ALLOW_EXTERNAL_MODELS=true`, in every environment. Set
+  `API_MODEL_ALLOWLIST` (comma-separated ids or `prefix*` patterns) to limit
+  which repositories may be fetched; without it, local filesystem paths are
+  still refused. Loading real weights requires the `trainer` or `admin` role.
+  Without the opt-in, development and staging use the stub backend and
+  production refuses the request with `403`. **Production deployments that
+  let clients load real models must now set `API_ALLOW_EXTERNAL_MODELS=true`
+  explicitly** (and should set `API_MODEL_ALLOWLIST`).
+- **Brute-force lockout** is tracked per credential: a successful login clears
+  only that credential's failures, never those of other credentials from the
+  same address.
+- **Prometheus `/metrics`** requires authentication whenever
+  `API_REQUIRE_AUTH` is on. Set `API_PUBLIC_METRICS=true` only for a scraper
+  that cannot send credentials and is reachable solely from a trusted network.
+- **Training-lab WebSocket** credentials go in the `X-API-Key` or
+  `Authorization: Bearer` header. `API_LAB_WS_QUERY_TOKEN=true` re-enables the
+  `?api_key=` / `?token=` query parameters for browser clients that cannot
+  set headers; query strings are written to access logs.
+
 ## Security controls and updates
 
-CI runs dependency review, secret detection, CodeQL, Bandit, Safety, Trivy, and
+CI runs dependency review, secret detection, CodeQL, Bandit, pip-audit, Trivy, and
 Rust advisory checks where applicable. Release readiness fails closed on high
-severity dependency findings. Security fixes and disclosures are published as
+severity dependency findings except the narrowly reviewed, expiring
+Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md),
+which also records why that advisory is unreachable from StateSet code.
+Security fixes and disclosures are published as
 GitHub Security Advisories.
 
 The machine-readable response commitments live in

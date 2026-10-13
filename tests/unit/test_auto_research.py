@@ -414,6 +414,58 @@ class TestCheckpointManager:
         path = mgr.save_experiment(agent, "exp_1", {"lr": 0.001})
         assert path.exists()
         assert (path / "metadata.json").exists()
+        assert (path / ".complete").exists()
+
+    def test_save_experiment_rejects_existing_checkpoint(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        path = mgr.save_experiment(agent, "exp_1", {"lr": 0.001})
+
+        with pytest.raises(FileExistsError, match="already exists"):
+            mgr.save_experiment(agent, "exp_1", {"lr": 0.01})
+
+        assert json.loads((path / "metadata.json").read_text())["params"] == {
+            "lr": 0.001
+        }
+
+    def test_save_experiment_failure_leaves_no_partial_checkpoint(
+        self, tmp_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ):
+        mgr = CheckpointManager(tmp_dir)
+
+        def fail_save(_agent, _path):
+            raise RuntimeError("weight save failed")
+
+        monkeypatch.setattr(mgr, "_save_agent_state", fail_save)
+        with pytest.raises(RuntimeError, match="weight save failed"):
+            mgr.save_experiment(MagicMock(), "exp_1", {})
+
+        assert not (mgr.checkpoints_dir / "exp_1").exists()
+        assert list(mgr.checkpoints_dir.iterdir()) == []
+
+    @pytest.mark.parametrize("experiment_id", ["best", "BEST", "best."])
+    def test_save_experiment_cannot_replace_best(
+        self, tmp_dir: Path, experiment_id: str
+    ):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "exp_1", {})
+
+        with pytest.raises(ValueError, match="safe checkpoint name"):
+            mgr.save_experiment(agent, experiment_id, {})
+
+        assert mgr.has_best()
+        assert mgr.load_best_metadata()["experiment_id"] == "exp_1"
+
+    @pytest.mark.parametrize("experiment_id", ["../escape", "..", "/tmp/escape", "a/b"])
+    def test_save_experiment_rejects_unsafe_path(
+        self, tmp_dir: Path, experiment_id: str
+    ):
+        mgr = CheckpointManager(tmp_dir)
+        with pytest.raises(ValueError, match="safe checkpoint name"):
+            mgr.save_experiment(MagicMock(), experiment_id, {})
 
     def test_atomic_save_creates_completion_marker(self, tmp_dir: Path):
         mgr = CheckpointManager(tmp_dir)
@@ -465,6 +517,24 @@ class TestCheckpointManager:
         assert mgr.has_best()
         assert mgr.load_best_metadata()["experiment_id"] == "exp_1"
 
+    def test_failed_model_save_preserves_previous_best(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "baseline", {})
+
+        class UnsavableModel:
+            def state_dict(self):
+                raise OSError("weights unavailable")
+
+        agent.model = UnsavableModel()
+        with pytest.raises(RuntimeError, match="could not save model weights"):
+            mgr.save_best(agent, "failed", {})
+
+        assert mgr.has_best()
+        assert mgr.load_best_metadata()["experiment_id"] == "baseline"
+        assert not list(mgr.checkpoints_dir.glob(".best_tmp_*"))
+
     def test_unrecorded_pending_best_rolls_back_on_restart(self, tmp_dir: Path):
         mgr = CheckpointManager(tmp_dir)
         agent = MagicMock()
@@ -506,6 +576,20 @@ class TestCheckpointManager:
         agent = MagicMock()
         agent.model = None
         assert mgr.restore_best(agent) is False
+
+    def test_restore_rejects_unsafe_local_shard_index(self, tmp_dir: Path):
+        mgr = CheckpointManager(tmp_dir)
+        agent = MagicMock()
+        agent.model = None
+        mgr.save_best(agent, "baseline", {})
+        model_dir = mgr.best_dir / "model"
+        (model_dir / "model.safetensors.index.json").write_text(
+            '{"weight_map": {"layer": "../outside"}}', encoding="utf-8"
+        )
+        agent.model = MagicMock()
+
+        with pytest.raises(ValueError, match="unsafe checkpoint shard path"):
+            mgr.restore_best(agent)
 
     def test_lora_adapter_save_records_base_model_name(self, tmp_dir: Path):
         """When saving a PEFT model, the base model name is recorded."""

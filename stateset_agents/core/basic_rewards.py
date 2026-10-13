@@ -461,7 +461,11 @@ class TaskCompletionReward(RewardFunction):
         completed_actions = context.get("completed_actions", []) if context else []
 
         if required_actions:
-            completion_ratio = len(completed_actions) / len(required_actions)
+            # Only distinct required actions count; extra or repeated actions
+            # must not push the ratio past 1.
+            required = set(required_actions)
+            done = required.intersection(completed_actions)
+            completion_ratio = len(done) / len(required)
             completion_score = completion_ratio
             breakdown["action_completion"] = completion_ratio
 

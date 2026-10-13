@@ -131,7 +131,7 @@ async def run_post_training_evaluation(
                     )
                     trajectory.total_reward = score
                 else:
-                    trajectory.total_reward = 0.0
+                    # Keep the reward the environment computed for the episode.
                     reward_breakdown = {}
 
                 traj_info = {

@@ -98,6 +98,22 @@ def render_prompt_for_scoring(
     )
 
 
+def scoring_prompt_length(tokenizer: Any, rendered_prompt: str) -> int:
+    """Untruncated token count of the rendered prompt used for scoring.
+
+    Generation conditions on the whole rendered prompt, so scoring must too:
+    measuring it with ``max_prompt_length`` truncation while the full text is
+    truncated only at prompt + completion limits pushed a long prompt's tail
+    into the response mask.
+    """
+    ids = tokenizer(rendered_prompt, add_special_tokens=False)["input_ids"]
+    if hasattr(ids, "shape"):
+        return int(ids.shape[-1])
+    if ids and isinstance(ids[0], (list, tuple)):
+        ids = ids[0]
+    return len(ids)
+
+
 def build_scoring_text(prompt_text: str, response: str) -> str:
     """Concatenate rendered prompt text and response with no injected separator.
 
@@ -258,6 +274,10 @@ class GSPOTrajectoryGenerator:
             )
 
             results = grouped_results[prompt]
+            if len(results) != num_responses or any(
+                getattr(result, "prompt", None) != prompt for result in results
+            ):
+                raise ValueError("vLLM returned an invalid response group")
 
             if getattr(self.config, "rescore_old_log_probs", True):
                 tokenizer = getattr(self.agent, "tokenizer", None)
@@ -275,8 +295,13 @@ class GSPOTrajectoryGenerator:
             else:
                 if self.config.temperature != 1.0:
                     self._warn_vllm_temperature_bias_once()
+                rendered_prompt = self._rendered_prompt(prompt)
                 responses = [
-                    (result.response, result.cumulative_logprob) for result in results
+                    (
+                        result.response,
+                        await self._vllm_old_log_prob(rendered_prompt, result),
+                    )
+                    for result in results
                 ]
 
             logger.debug("vLLM generated %s responses for prompt", len(responses))
@@ -302,6 +327,79 @@ class GSPOTrajectoryGenerator:
             "docstring.",
             getattr(self.agent, "memory_window", None),
         )
+
+    def _rendered_prompt(self, prompt: str) -> str:
+        agent_config = getattr(self.agent, "config", None)
+        return render_prompt_for_scoring(
+            getattr(self.agent, "tokenizer", None),
+            prompt,
+            getattr(agent_config, "system_prompt", None),
+        )
+
+    async def _vllm_old_log_prob(self, rendered_prompt: str, result: Any) -> float:
+        """vLLM's per-token log-probs over exactly the scored tokens, else rescore.
+
+        Results without token-level data fall back to ``cumulative_logprob``.
+        """
+        if not getattr(result, "token_logprobs", None) or (
+            getattr(result, "response_token_ids", None) is None
+        ):
+            return float(result.cumulative_logprob)
+        exact = self._sampler_sequence_log_prob(
+            rendered_prompt,
+            result.response,
+            {
+                "sampler_log_probs": getattr(result, "token_logprobs", None),
+                "token_ids": getattr(result, "response_token_ids", None),
+                "prompt_token_ids": getattr(result, "prompt_token_ids", None),
+            },
+        )
+        if exact is not None:
+            return exact
+        return await self._compute_sequence_log_prob(rendered_prompt, result.response)
+
+    def _sampler_sequence_log_prob(
+        self, rendered_prompt: str, content: str, metadata: dict[str, Any]
+    ) -> float | None:
+        """Sum of sampler log-probs over exactly the tokens GSPO will score.
+
+        Scoring re-tokenizes ``rendered_prompt + content`` (decoded without
+        special tokens, then cleaned), so a trailing EOS is dropped and the
+        sum is used only when the sampled ids round-trip to the scored ids;
+        otherwise ``None`` (the caller rescores at rollout time, which is the
+        exact old-policy value).
+        """
+        sampler = metadata.get("sampler_log_probs")
+        token_ids = metadata.get("token_ids")
+        tokenizer = getattr(self.agent, "tokenizer", None)
+        if not sampler or token_ids is None or tokenizer is None:
+            return None
+        ids = [int(t) for t in token_ids]
+        log_probs = [float(x) for x in sampler]
+        if len(ids) != len(log_probs):
+            return None
+        eos_id = getattr(tokenizer, "eos_token_id", None)
+        if ids and eos_id is not None and ids[-1] == int(eos_id):
+            ids, log_probs = ids[:-1], log_probs[:-1]
+        if not ids or len(ids) > int(self.config.max_completion_length):
+            return None
+        try:
+            scored = tokenizer(
+                build_scoring_text(rendered_prompt, content), add_special_tokens=False
+            )["input_ids"]
+            prompt_length = scoring_prompt_length(tokenizer, rendered_prompt)
+        except (TypeError, ValueError, KeyError):
+            return None
+        scored = [int(t) for t in scored]
+        prompt_ids = metadata.get("prompt_token_ids")
+        if (
+            prompt_ids is not None
+            and [int(t) for t in prompt_ids] != scored[:prompt_length]
+        ):
+            return None
+        if scored[prompt_length:] != ids:
+            return None
+        return float(sum(log_probs))
 
     async def _generate_with_hf(
         self, prompt: str, num_responses: int
@@ -337,12 +435,18 @@ class GSPOTrajectoryGenerator:
             # per-token log-probs give the rollout-time sequence log-prob
             # without a second forward pass.
             turns = await generate_turns(messages, num_responses)
+            rescore = bool(getattr(self.config, "rescore_old_log_probs", True))
             for turn in turns:
                 content = str(getattr(turn, "content", ""))
-                sampler = (getattr(turn, "metadata", None) or {}).get(
-                    "sampler_log_probs"
+                metadata = getattr(turn, "metadata", None) or {}
+                sampler = metadata.get("sampler_log_probs")
+                exact = self._sampler_sequence_log_prob(
+                    rendered_prompt, content, metadata
                 )
-                if sampler:
+                if exact is not None:
+                    responses.append((content, exact))
+                elif sampler and rescore:
+                    # Only feeds the generation-gap metric when rescoring.
                     responses.append((content, float(sum(float(x) for x in sampler))))
                 else:
                     responses.append(
@@ -368,6 +472,10 @@ class GSPOTrajectoryGenerator:
         self, prompts: list[str], num_responses_per_prompt: int
     ) -> dict[str, list[tuple[str, float]]]:
         """Generate response groups for multiple prompts efficiently."""
+        if num_responses_per_prompt <= 0:
+            raise ValueError("num_responses_per_prompt must be positive")
+        if len(prompts) != len(set(prompts)):
+            raise ValueError("generate_batch_groups requires unique prompts")
         if self.using_vllm:
             try:
                 generator = self.vllm_generator
@@ -382,6 +490,15 @@ class GSPOTrajectoryGenerator:
                     prompts=prompts,
                     num_generations_per_prompt=num_responses_per_prompt,
                 )
+                if set(grouped_results) != set(prompts) or any(
+                    len(grouped_results[prompt]) != num_responses_per_prompt
+                    or any(
+                        getattr(result, "prompt", None) != prompt
+                        for result in grouped_results[prompt]
+                    )
+                    for prompt in prompts
+                ):
+                    raise ValueError("vLLM returned invalid response groups")
 
                 if getattr(self.config, "rescore_old_log_probs", True):
                     tokenizer = getattr(self.agent, "tokenizer", None)
@@ -405,10 +522,14 @@ class GSPOTrajectoryGenerator:
 
                 if self.config.temperature != 1.0:
                     self._warn_vllm_temperature_bias_once()
-                return {
-                    prompt: [(r.response, r.cumulative_logprob) for r in results]
-                    for prompt, results in grouped_results.items()
-                }
+                exact_groups: dict[str, list[tuple[str, float]]] = {}
+                for prompt, results in grouped_results.items():
+                    rendered_prompt = self._rendered_prompt(prompt)
+                    exact_groups[prompt] = [
+                        (r.response, await self._vllm_old_log_prob(rendered_prompt, r))
+                        for r in results
+                    ]
+                return exact_groups
             except VLLM_EXCEPTIONS as e:
                 logger.warning(
                     f"Batch vLLM generation failed: {e}. Falling back to sequential."
@@ -437,24 +558,15 @@ class GSPOTrajectoryGenerator:
                 "Agent tokenizer and model are required for GSPO scoring"
             )
 
+        prompt_length = scoring_prompt_length(tokenizer, prompt_text)
         full_text = build_scoring_text(prompt_text, response)
         inputs = tokenizer(
             full_text,
             return_tensors="pt",
             truncation=True,
-            max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
+            max_length=prompt_length + self.config.max_completion_length,
             add_special_tokens=False,
         )
-
-        prompt_tokens = tokenizer(
-            prompt_text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-            add_special_tokens=False,
-        )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
 
         model_device = _get_model_device(model)
         if model_device and hasattr(inputs, "to"):

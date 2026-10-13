@@ -74,7 +74,7 @@ _REQUIREMENTS = """# Pinned for reproducibility — bump with care.
 stateset-agents[training,api]>=0.7.1
 datasets>=2.0.0
 transformers>=4.57.1
-accelerate>=0.20.0
+accelerate>=1.15.0
 peft>=0.4.0
 wandb>=0.15.0
 """

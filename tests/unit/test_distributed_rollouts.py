@@ -138,8 +138,11 @@ async def test_heartbeat_assigns_new_policy_and_rejects_wrong_snapshot() -> None
     renewed = await control.heartbeat("worker-a", lease.lease_id)
     assert renewed.policy_version == 1
 
+    # A sample from before the heartbeat stays admissible within the lag
+    # bound; one claiming a version ahead of the assignment does not.
+    assert await control.submit("worker-a", renewed.lease_id, _record("in-lag", 0))
     with pytest.raises(WorkerLeaseError, match="assignment"):
-        await control.submit("worker-a", renewed.lease_id, _record("wrong-version", 0))
+        await control.submit("worker-a", renewed.lease_id, _record("ahead", 2))
     assert await control.submit("worker-a", renewed.lease_id, _record("current", 1))
     assert (await control.stats()).rejected_policy_assignment == 1
 
@@ -283,7 +286,9 @@ async def test_checkpoint_restores_queue_fencing_and_live_leases() -> None:
 
 
 @pytest.mark.asyncio
-async def test_checkpoint_waits_for_admitted_backpressured_submission() -> None:
+async def test_checkpoint_does_not_wait_for_backpressured_submission() -> None:
+    # Only the learner frees queue capacity, so a checkpoint that waited for
+    # backpressured producers would deadlock a learner checkpointing itself.
     coordinator = AsyncRolloutCoordinator(
         AsyncRolloutConfig(queue_capacity=1, max_batch_size=1)
     )
@@ -295,17 +300,16 @@ async def test_checkpoint_waits_for_admitted_backpressured_submission() -> None:
         control.submit("worker-a", lease.lease_id, _record("in-flight", 0))
     )
     await asyncio.sleep(0)
-    checkpoint = asyncio.create_task(control.state_dict())
-    await asyncio.sleep(0)
+    state = await asyncio.wait_for(control.state_dict(), timeout=2.0)
     assert not blocked_submit.done()
-    assert not checkpoint.done()
+    # Record and counter are captured together: neither includes "in-flight".
+    assert state["counters"]["accepted_submissions"] == 1
+    assert [r["rollout_id"] for r in state["coordinator"]["queue"]] == ["fills-queue"]
 
     first = await coordinator.next_batch()
     assert first.records[0].rollout_id == "fills-queue"
     assert await blocked_submit
-    state = await checkpoint
-    assert state["counters"]["accepted_submissions"] == 2
-    assert state["coordinator"]["queue"][0]["rollout_id"] == "in-flight"
+    assert (await control.stats()).accepted_submissions == 2
 
 
 @pytest.mark.asyncio
@@ -333,7 +337,7 @@ async def test_replacement_fences_submission_waiting_for_queue_capacity() -> Non
 
 
 @pytest.mark.asyncio
-async def test_heartbeat_fences_old_assignment_waiting_for_capacity() -> None:
+async def test_heartbeat_keeps_in_lag_submission_waiting_for_capacity() -> None:
     coordinator = AsyncRolloutCoordinator(
         AsyncRolloutConfig(queue_capacity=1, max_batch_size=1)
     )
@@ -350,9 +354,11 @@ async def test_heartbeat_fences_old_assignment_waiting_for_capacity() -> None:
     assert renewed.policy_version == 1
 
     await coordinator.next_batch()
-    with pytest.raises(WorkerLeaseError, match="assignment"):
-        await blocked
-    assert (await coordinator.state_dict())["queue"] == []
+    # Lag 1 is within the default max_policy_lag; the coordinator's lag bound,
+    # not the renewed assignment, decides staleness.
+    assert await blocked
+    queue = (await coordinator.state_dict())["queue"]
+    assert [r["rollout_id"] for r in queue] == ["old-policy"]
 
 
 @pytest.mark.asyncio
@@ -368,11 +374,14 @@ async def test_cancelled_checkpoint_releases_new_submissions() -> None:
         control.submit("worker-a", lease.lease_id, _record("second", 0))
     )
     await asyncio.sleep(0)
-    checkpoint = asyncio.create_task(control.state_dict())
-    await asyncio.sleep(0)
-    checkpoint.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await checkpoint
+    # Hold the coordinator so the checkpoint is still running when cancelled.
+    async with coordinator._condition:
+        checkpoint = asyncio.create_task(control.state_dict())
+        await asyncio.sleep(0)
+        assert not checkpoint.done()
+        checkpoint.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await checkpoint
 
     await coordinator.next_batch()
     assert await blocked_submit

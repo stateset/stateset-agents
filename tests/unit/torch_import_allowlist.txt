@@ -12,6 +12,8 @@
 # modules, or anything under a torch-free entry point here — fix those instead.
 
 stateset_agents/core/enhanced/advanced_rl_algorithms.py  # torch RL algorithm implementations (nn.Module subclasses); reached only via a lazy import
+stateset_agents/experimental/ppo.py  # experimental PPO trainer and value head (nn.Module)
+stateset_agents/experimental/rlaif.py  # experimental RLAIF trainer; torch tensors throughout
 stateset_agents/training/base_trainer.py  # trainer base class built on torch optimizers/autograd
 stateset_agents/training/dapo_trainer.py  # DAPO trainer; torch tensors throughout
 stateset_agents/training/distributed.py  # torch.distributed / DDP wrappers
@@ -21,8 +23,6 @@ stateset_agents/training/gepo_trainer.py  # GEPO trainer; torch tensors througho
 stateset_agents/training/gspo_generation.py  # torch generation/log-prob helpers
 stateset_agents/training/gspo_token_trainer.py  # token-level GSPO trainer; torch tensors throughout
 stateset_agents/training/gspo_trainer.py  # GSPO trainer; torch tensors throughout
-stateset_agents/training/ppo_trainer.py  # PPO trainer and value head (nn.Module)
-stateset_agents/training/rlaif_trainer.py  # RLAIF trainer; torch tensors throughout
 stateset_agents/training/trainer_runtime.py  # shared trainer runtime spine (device/dtype/optimizer plumbing)
 stateset_agents/training/trl_grpo_trainer.py  # TRL GRPO wrapper; TRL itself requires torch
 stateset_agents/training/vapo_trainer.py  # VAPO trainer and value head (nn.Module)

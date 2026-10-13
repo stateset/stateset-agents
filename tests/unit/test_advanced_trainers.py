@@ -511,7 +511,9 @@ class TestLengthAdaptiveGAE:
         lambda_long = gae.compute_lambda_policy(100)
 
         assert lambda_long > lambda_short
-        assert 0 < lambda_short < 1
+        # VAPO eq. 7: lambda = 1 - 1/(alpha * l); alpha * l <= 1 (here 0.5)
+        # floors at 0 (one-step TD) rather than going negative.
+        assert lambda_short == 0.0
         assert 0 < lambda_long < 1
 
     def test_gae_computation(self, device):

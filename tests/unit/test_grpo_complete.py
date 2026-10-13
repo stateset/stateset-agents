@@ -352,8 +352,8 @@ class TestGRPOTrainer:
         assert "kl_penalty" in loss_dict
 
     @pytest.mark.asyncio
-    async def test_training_step(self):
-        """Test a single training step"""
+    async def test_stub_training_step_does_not_claim_optimizer_updates(self):
+        """A stub loss without model gradients must not count as learning."""
         config = AgentConfig(model_name="gpt2", use_stub_model=True)
         agent = MultiTurnAgent(config)
         await agent.initialize()
@@ -379,13 +379,20 @@ class TestGRPOTrainer:
 
         group = TrajectoryGroup(scenario_id="test", trajectories=[trajectory])
 
-        # Execute training step
+        before = [p.detach().clone() for p in agent.model.parameters()]
+        # The stub response loss is not connected to optimizer parameters.
         metrics = await trainer.training_step([group])
 
         assert "total_loss" in metrics
         assert "learning_rate" in metrics
         assert "global_step" in metrics
-        assert trainer.global_step == 1
+        assert trainer.global_step == 0
+        assert metrics["optimizer_updates"] == 0
+        assert metrics["optimizer_step"] is False
+        assert all(
+            torch.equal(old, new.detach())
+            for old, new in zip(before, agent.model.parameters(), strict=True)
+        )
 
 
 class TestPolicyGradientComputation:
@@ -509,12 +516,19 @@ class TestIntegration:
         assert "policy_loss" in loss_dict
         assert "total_loss" in loss_dict
 
-        # Execute training step
+        before = [p.detach().clone() for p in agent.model.parameters()]
+        # Exercise the pipeline without mistaking stub execution for learning.
         metrics = await trainer.training_step(trajectory_groups)
 
         assert "total_loss" in metrics
         assert "learning_rate" in metrics
-        assert trainer.global_step == 1
+        assert trainer.global_step == 0
+        assert metrics["optimizer_updates"] == 0
+        assert metrics["optimizer_step"] is False
+        assert all(
+            torch.equal(old, new.detach())
+            for old, new in zip(before, agent.model.parameters(), strict=True)
+        )
 
     @pytest.mark.asyncio
     async def test_engine_with_real_agent(self):
