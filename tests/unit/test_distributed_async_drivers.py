@@ -73,7 +73,7 @@ def _argv(
 @pytest.mark.parametrize("path", [RUNPOD_MANIFEST, LOCAL_MANIFEST])
 def test_manifests_load_and_pin_current_version(path: Path) -> None:
     manifest = load_manifest(path)
-    assert manifest["framework_version"] == PACKAGE_VERSION == "0.64.1"
+    assert manifest["framework_version"] == PACKAGE_VERSION
     config = workload.parse_config(manifest["config"])
     for scenario, minimum in manifest["minimum_duration_seconds"].items():
         if manifest["provider"] == "runpod":
