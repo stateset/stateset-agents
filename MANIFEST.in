@@ -1,6 +1,7 @@
 include LICENSE
 include README.md
 recursive-include stateset_agents/config/presets *.yaml
+recursive-include stateset_agents/evaluation/rubrics *.md
 
 prune htmlcov
 prune outputs
