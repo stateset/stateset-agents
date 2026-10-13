@@ -45,8 +45,11 @@ Since v0.64.0 the code for the `offline-rl`, `ppo-rlaif-trainers`,
 `stateset_agents.experimental` namespace, so the import path itself signals
 that no stability guarantee applies. The previous `stateset_agents.training`,
 `stateset_agents.evaluation`, `stateset_agents.environments`, and
-`stateset_agents.rewards` paths are deprecation shims for one release and are
-removed in v0.65.0.
+`stateset_agents.rewards` paths were deprecated in v0.64.0 and removed in
+v0.65.0. The four root sim-to-real exports (`stateset_agents.SimToRealMetrics`,
+`SimToRealEvaluator`, `ConversationSimulator`, `ConversationSimulatorConfig`)
+are stable v1-contract names, so they stay deprecated through v0.65.x and are
+removed in v0.66.0.
 
 The JSON manifest supplies each component's owner, documentation, tests,
 retained evidence, limitations, graduation criteria, and stable-contract

@@ -239,8 +239,12 @@ _DEPRECATED_PLANNING_EXPORTS = (
 )
 
 # Sim-to-real symbols moved to ``stateset_agents.experimental.sim_to_real`` in
-# v0.64.0. They stay in ``__all__`` and the v1 public API contract for one
-# release, served with a DeprecationWarning, and are removed in v0.65.0.
+# v0.64.0. They are stable v1-contract exports, so docs/API_COMPATIBILITY.md
+# requires them to stay available (with a DeprecationWarning) for at least one
+# minor release after the deprecating one: they remain in ``__all__`` through
+# v0.65.x and are removed in v0.66.0. The ``stateset_agents.evaluation`` /
+# ``.environments`` re-exports they were contracted against are already gone,
+# so ``__getattr__`` serves them straight from the experimental modules.
 _DEPRECATED_EXPERIMENTAL_EXPORTS = {
     "SimToRealMetrics": "stateset_agents.experimental.sim_to_real.metrics",
     "SimToRealEvaluator": "stateset_agents.experimental.sim_to_real.metrics",
@@ -301,7 +305,7 @@ def __getattr__(name: str) -> Any:
         warnings.warn(
             f"stateset_agents.{name} is deprecated and moved to "
             f"{experimental_module}.{name}; the old import path will be "
-            "removed in v0.65.0.",
+            "removed in v0.66.0.",
             DeprecationWarning,
             stacklevel=2,
         )

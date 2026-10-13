@@ -59,8 +59,8 @@ def test_public_api_exports_exist() -> None:
     for name in sa.__all__:
         if name in sa._DEPRECATED_EXPERIMENTAL_EXPORTS:
             # Moved to stateset_agents.experimental in v0.64.0; still exported
-            # (with a DeprecationWarning) until v0.65.0.
-            with pytest.warns(DeprecationWarning, match="v0.65.0"):
+            # (with a DeprecationWarning) through v0.65.x; removed in v0.66.0.
+            with pytest.warns(DeprecationWarning, match="v0.66.0"):
                 assert hasattr(sa, name), f"Missing public export: {name}"
             continue
         assert hasattr(sa, name), f"Missing public export: {name}"

@@ -406,8 +406,8 @@ coverage, live hardware attempts, and successful inference by provider.
 
 - **Smaller stable surface.** PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR,
   Decision Transformer, offline GRPO), sim-to-real, and the Bayesian reward
-  model moved to `stateset_agents.experimental`; old import paths still work
-  with a `DeprecationWarning` and are removed in v0.65.0.
+  model moved to `stateset_agents.experimental`; the old import paths were
+  removed in v0.65.0.
 - **Maturity contract.** These components are recorded as experimental with
   explicit limitations and graduation criteria.
 - **Benchmark harness.** The native shootout leg accepts and verifies the v4
@@ -1819,8 +1819,7 @@ followup = await trained_agent.generate_response(
 These algorithms are available when training deps are installed. GSPO, GEPO,
 DAPO, and VAPO live under `stateset_agents.training`; PPO and RLAIF are
 **experimental** and live under `stateset_agents.experimental` (since v0.64.0;
-the old `stateset_agents.training` import paths still work with a
-`DeprecationWarning` until v0.65.0):
+the old `stateset_agents.training` import paths were removed in v0.65.0):
 
 - **GSPO**: stable sequence‑level GRPO variant (`GSPOTrainer`, `GSPOConfig`, `train_with_gspo`)
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
@@ -1974,7 +1973,7 @@ See `benchmark_results/README.md` for the full pipeline reference.
 
 > **Experimental.** The offline RL algorithms live in
 > `stateset_agents.experimental.offline_rl` (moved from `stateset_agents.training`
-> in v0.64.0; the old paths warn and are removed in v0.65.0). They carry no API
+> in v0.64.0; the old paths were removed in v0.65.0). They carry no API
 > stability guarantee until they pass a learning test on a realistic dialogue
 > task — see [component maturity](docs/COMPONENT_MATURITY.md).
 
@@ -2038,7 +2037,9 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 
 > **Experimental.** Sim-to-real lives in `stateset_agents.experimental.sim_to_real`
 > (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
-> v0.64.0; the old paths warn and are removed in v0.65.0). Public benchmark
+> v0.64.0; the old paths were removed in v0.65.0, and the deprecated root
+> `stateset_agents.SimToRealMetrics`/`SimToRealEvaluator`/`ConversationSimulator`/
+> `ConversationSimulatorConfig` exports are removed in v0.66.0). Public benchmark
 > evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
 
 Train in simulation, deploy to real users. The framework provides:

@@ -388,7 +388,7 @@ Use cases: speeding up training when an LLM-judge reward is the bottleneck (a ho
 
 ### 4.5 RLAIF and Constitutional Critique
 
-`training/rlaif_trainer.py` (749 LOC) implements RLAIF [10] augmented with a Constitutional AI critique-revision loop [9]. The `ConstitutionalAI` class (lines 170-198) implements the three-step inner loop on every training sample:
+`experimental/rlaif.py` (749 LOC) implements RLAIF [10] augmented with a Constitutional AI critique-revision loop [9]. The `ConstitutionalAI` class (lines 170-198) implements the three-step inner loop on every training sample:
 
 1. **Generate** an initial response from the current policy.
 2. **Critique** the response against a domain-specific set of principles. The framework ships four principle sets — `general`, `assistant`, `coding`, `reasoning` — in `CONSTITUTIONAL_PRINCIPLES` (lines 146-167); custom principle sets can be plugged in via config.
