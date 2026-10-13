@@ -1348,7 +1348,13 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         ),
         memory_window=0,
     )
-    renderer.tokenizer = AutoTokenizer.from_pretrained(str(payload["model_path"]))
+    # model_path is the local snapshot directory deps.snapshot() resolved at the
+    # pinned model_revision, not a hub ID, so there is no revision to pass here.
+    renderer.tokenizer = (
+        AutoTokenizer.from_pretrained(  # nosec B615 - local pinned snapshot
+            str(payload["model_path"])
+        )
+    )
     kwargs: dict[str, Any] = {
         "model": payload["model_path"],
         "seed": int(payload["seed"]),

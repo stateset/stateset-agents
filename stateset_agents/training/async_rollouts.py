@@ -273,6 +273,22 @@ class AsyncRolloutCoordinator:
         self._rejected_duplicate = 0
         self._max_observed_policy_lag = 0
         self._seen_rollout_ids: set[str] = set()
+        self._eviction_listeners: list[Callable[[RolloutRecord, int], None]] = []
+
+    def add_eviction_listener(
+        self, listener: Callable[[RolloutRecord, int], None]
+    ) -> None:
+        """Observe every admitted record later evicted for exceeding the lag bound.
+
+        ``listener(record, lag)`` runs synchronously while the coordinator lock
+        is held, so it must not suspend or raise. Listeners are process-local
+        and are not part of :meth:`state_dict`; re-attach them after restore.
+        This lets a transport account for admitted-but-untrained rollout IDs
+        instead of only the aggregate ``dropped_stale`` counter.
+        """
+        if not callable(listener):
+            raise TypeError("eviction listener must be callable")
+        self._eviction_listeners.append(listener)
 
     @property
     def current_policy_version(self) -> int:
@@ -285,8 +301,11 @@ class AsyncRolloutCoordinator:
     def _evict_stale(self) -> None:
         retained: deque[RolloutRecord] = deque()
         for record in self._queue:
-            if self._policy_lag(record) > self.config.max_policy_lag:
+            lag = self._policy_lag(record)
+            if lag > self.config.max_policy_lag:
                 self._dropped_stale += 1
+                for listener in self._eviction_listeners:
+                    listener(record, lag)
             else:
                 retained.append(record)
         self._queue = retained
