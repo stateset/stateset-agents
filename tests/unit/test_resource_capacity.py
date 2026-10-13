@@ -1,6 +1,7 @@
 """Resource admission follows measured process limits, never invented defaults."""
 
 import asyncio
+import sys
 from types import SimpleNamespace
 
 import pytest
@@ -10,6 +11,12 @@ from stateset_agents.training import resource_capacity as capacity
 from stateset_agents.training.advanced_training_models import (
     ResourceRequirement,
     ResourceType,
+)
+
+# These tests fabricate a Linux /proc and cgroup tree to exercise Linux-only
+# capacity discovery; Windows paths and APIs cannot represent that layout.
+pytestmark = pytest.mark.skipif(
+    sys.platform == "win32", reason="cgroup capacity discovery is Linux-only"
 )
 
 GIB = 1024**3

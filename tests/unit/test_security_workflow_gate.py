@@ -230,6 +230,10 @@ def test_workflow_preserves_all_exit_codes_and_always_evaluates_and_uploads():
     assert "--config=auto" not in path.read_text()
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32",
+    reason="executes the bash step of the Linux-only security-scan job",
+)
 @pytest.mark.parametrize("scanner_exit", [0, 2])
 def test_workflow_shell_gate_propagates_failure_and_saves_evidence(
     reports, scanner_exit
