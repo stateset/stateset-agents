@@ -20,6 +20,7 @@ from stateset_agents.core import trajectory as core_trajectory
 from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
+    _maybe_await,
     notify_checkpoint_saved,
     notify_episode_end,
     notify_evaluation_end,
@@ -625,9 +626,7 @@ class MultiTurnGRPOTrainer:
     async def _reset_agent(self) -> None:
         reset_fn = getattr(self.agent, "reset", None)
         if callable(reset_fn):
-            reset_result = reset_fn()
-            if asyncio.iscoroutine(reset_result):
-                await reset_result
+            await _maybe_await(reset_fn())
 
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
