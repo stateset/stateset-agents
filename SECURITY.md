@@ -123,7 +123,8 @@ The API gateway treats every authenticated caller as a separate tenant:
 CI runs dependency review, secret detection, CodeQL, Bandit, pip-audit, Trivy, and
 Rust advisory checks where applicable. Release readiness fails closed on high
 severity dependency findings except the narrowly reviewed, expiring
-Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md).
+Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md),
+which also records why that advisory is unreachable from StateSet code.
 Security fixes and disclosures are published as
 GitHub Security Advisories.
 
