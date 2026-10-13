@@ -33,6 +33,17 @@ def _sync_directory(path: Path) -> None:
             os.close(descriptor)
 
 
+def _sync_file(path: Path) -> None:
+    """Flush a written file to disk. Windows' FlushFileBuffers needs a
+    writable handle (fsync on a read-only one raises EBADF)."""
+    flags = os.O_RDWR | getattr(os, "O_BINARY", 0) if os.name == "nt" else os.O_RDONLY
+    descriptor = os.open(path, flags)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def _write_json(path: Path, value: Any) -> None:
     with path.open("x", encoding="utf-8") as stream:
         json.dump(value, stream, sort_keys=True, allow_nan=False)
@@ -88,8 +99,8 @@ def _inventory(path: Path, *, sync: bool = False) -> dict[str, str]:
         with item.open("rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
-            if sync:
-                os.fsync(stream.fileno())
+        if sync:
+            _sync_file(item)
         files[item.relative_to(path).as_posix()] = digest.hexdigest()
     if sync:
         for directory in sorted(

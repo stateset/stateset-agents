@@ -67,6 +67,8 @@ def secure_env(monkeypatch, tmp_path):
         training_lab._episodes,
         training_lab._logs,
         getattr(training_lab, "_experiment_owners", {}),
+        training_lab._playground_sessions,
+        getattr(training_lab, "_playground_owners", {}),
     ):
         state.clear()
     yield tmp_path / "training-root"
@@ -354,6 +356,42 @@ async def test_training_lab_isolates_experiments(secure_env):
         ).status_code == 200
         assert (
             await client.get(f"/api/lab/experiments/{exp_id}", headers=_h(ADMIN))
+        ).status_code == 200
+
+
+async def test_training_lab_playground_sessions_are_private(secure_env):
+    async with _client(_app()) as client:
+        started = await client.post(
+            "/api/lab/playground/chat",
+            json={"message": "hello from alice"},
+            headers=_h(ALICE),
+        )
+        assert started.status_code == 200
+        session_id = started.json()["session_id"]
+
+        # Another user cannot read, append to, or clear the session.
+        assert (
+            await client.get(f"/api/lab/playground/{session_id}", headers=_h(BOB))
+        ).status_code == 404
+        hijack = await client.post(
+            "/api/lab/playground/chat",
+            json={"session_id": session_id, "message": "bob writes here"},
+            headers=_h(BOB),
+        )
+        assert hijack.status_code == 404
+        assert (
+            await client.delete(f"/api/lab/playground/{session_id}", headers=_h(BOB))
+        ).status_code == 404
+
+        own = await client.get(f"/api/lab/playground/{session_id}", headers=_h(ALICE))
+        assert own.status_code == 200
+        contents = [m["content"] for m in own.json()["history"]]
+        assert "bob writes here" not in contents
+        assert (
+            await client.get(f"/api/lab/playground/{session_id}", headers=_h(ADMIN))
+        ).status_code == 200
+        assert (
+            await client.delete(f"/api/lab/playground/{session_id}", headers=_h(ALICE))
         ).status_code == 200
 
 

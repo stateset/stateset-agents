@@ -48,7 +48,9 @@ class InputValidator:
     ]
 
     XSS_PATTERNS = [
-        re.compile(r"<script[^>]*>.*?</script>", re.IGNORECASE | re.DOTALL),
+        # Any opening script tag is a threat: matching a full element misses
+        # unclosed tags and end-tag variants like ``</script >``.
+        re.compile(r"<script\b", re.IGNORECASE),
         re.compile(r"javascript:", re.IGNORECASE),
         re.compile(r"on\w+\s*="),
     ]

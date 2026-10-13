@@ -68,9 +68,10 @@ measurable.
 
 ### Current verification status
 
-The `v0.64.1` release tree completed its local Linux Python 3.12 suite on
-**2026-10-12** under CI's forced-colour settings with **8,430 passed and 21
-skipped**, including the per-trainer learning tests added in `v0.63.0`, plus
+The `v0.64.2` release tree completed its local Linux Python 3.12 suite on
+**2026-10-13** under CI's forced-colour settings with **8,437 passed and 21
+skipped** (three subprocess tests timed out under load and passed when rerun),
+and GitHub Actions passed all 21 checks on Linux 3.10–3.13 and Windows 3.10/3.13, including the per-trainer learning tests added in `v0.63.0`, plus
 pre-commit, strict typing, the stable-API contract, and release governance
 checks before tagging.
 
@@ -130,7 +131,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.64.1`, published from the
+- **Current Python release:** `stateset-agents==0.64.2`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -385,7 +386,16 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.64.1 (latest release; publication triggered by tag):**
+**v0.64.2 (latest release; publication triggered by tag):**
+
+- **Security and correctness fixes from CodeQL and review.** Script-tag
+  injection detection catches unclosed and `</script >` tags; Training Lab
+  playground sessions are owner-scoped; `accelerate>=1.15.0` clears
+  PYSEC-2026-3804 (with a reachability guard, since the flaw remains upstream).
+- **Fixes.** `BayesianRewardFunction` initialises its reward base; checkpoint
+  publication works on Windows; Windows CI is green again.
+
+**v0.64.1:**
 
 - **Security hardening.** API training jobs are confined to a server-side
   output root, agents and Training Lab experiments are owner-scoped, real model
@@ -1394,8 +1404,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.64.1" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.64.1"
+pip install "stateset-agents==0.64.2" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.64.2"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2244,7 +2254,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.64.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.64.2`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

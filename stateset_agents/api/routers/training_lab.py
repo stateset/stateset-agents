@@ -1237,6 +1237,8 @@ async def get_leaderboard(
 # ---------------------------------------------------------------------------
 
 _playground_sessions: dict[str, dict[str, Any]] = {}
+# session_id -> creating user's id (None when auth is disabled).
+_playground_owners: dict[str, str | None] = {}
 
 MAX_PLAYGROUND_SESSIONS = 200
 MAX_PLAYGROUND_HISTORY = 200  # messages per session (user + assistant)
@@ -1249,6 +1251,17 @@ def _evict_oldest_playground_session() -> None:
         _playground_sessions, key=lambda sid: _playground_sessions[sid]["created_at"]
     )
     _playground_sessions.pop(oldest_id, None)
+    _playground_owners.pop(oldest_id, None)
+
+
+def _can_access_playground(session_id: str, user: LabUser) -> bool:
+    """Owners and admins see a playground session; without auth everyone does."""
+    if session_id not in _playground_sessions:
+        return False
+    if user is None or "admin" in user.roles:
+        return True
+    owner = _playground_owners.get(session_id)
+    return owner is None or owner == user.user_id
 
 
 class PlaygroundMessage(BaseModel):
@@ -1258,9 +1271,15 @@ class PlaygroundMessage(BaseModel):
 
 
 @router.post("/playground/chat")
-async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
+async def playground_chat(
+    req: PlaygroundMessage, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Send a message and get an agent response with reward scoring."""
     session_id = req.session_id or str(uuid.uuid4())
+    if session_id in _playground_sessions and not _can_access_playground(
+        session_id, user
+    ):
+        raise HTTPException(status_code=404, detail="Session not found")
     session = _playground_sessions.get(
         session_id,
         {
@@ -1310,6 +1329,8 @@ async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
         and len(_playground_sessions) >= MAX_PLAYGROUND_SESSIONS
     ):
         _evict_oldest_playground_session()
+    if session_id not in _playground_sessions:
+        _playground_owners[session_id] = user.user_id if user is not None else None
     _playground_sessions[session_id] = session
 
     return {
@@ -1323,19 +1344,27 @@ async def playground_chat(req: PlaygroundMessage) -> dict[str, Any]:
 
 
 @router.delete("/playground/{session_id}")
-async def clear_playground(session_id: str) -> dict[str, str]:
-    """Clear a playground session."""
+async def clear_playground(
+    session_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, str]:
+    """Clear a playground session (404 when it belongs to someone else)."""
+    if session_id in _playground_sessions and not _can_access_playground(
+        session_id, user
+    ):
+        raise HTTPException(status_code=404, detail="Session not found")
     _playground_sessions.pop(session_id, None)
+    _playground_owners.pop(session_id, None)
     return {"status": "cleared"}
 
 
 @router.get("/playground/{session_id}")
-async def get_playground(session_id: str) -> dict[str, Any]:
+async def get_playground(
+    session_id: str, user: LabUser = Depends(require_auth_if_enabled)
+) -> dict[str, Any]:
     """Get playground session history."""
-    session = _playground_sessions.get(session_id)
-    if not session:
+    if not _can_access_playground(session_id, user):
         raise HTTPException(status_code=404, detail="Session not found")
-    return session
+    return _playground_sessions[session_id]
 
 
 def _generate_playground_response(

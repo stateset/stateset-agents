@@ -325,6 +325,7 @@ def exclusive_run(output: Path) -> Iterator[None]:
     """Hold an OS-released lock so concurrent drivers cannot overwrite a run."""
     output.mkdir(parents=True, exist_ok=True)
     with (output / ".rl.lock").open("a+b") as stream:
+        unlock: Callable[[], None]
         if sys.platform == "win32":
             import msvcrt
 
@@ -337,6 +338,11 @@ def exclusive_run(output: Path) -> Iterator[None]:
                 raise ValueError(
                     "Another driver owns this RL output directory"
                 ) from exc
+
+            def unlock() -> None:
+                stream.seek(0)
+                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
+
         else:
             import fcntl
 
@@ -346,14 +352,14 @@ def exclusive_run(output: Path) -> Iterator[None]:
                 raise ValueError(
                     "Another driver owns this RL output directory"
                 ) from exc
+
+            def unlock() -> None:
+                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+
         try:
             yield
         finally:
-            if sys.platform == "win32":
-                stream.seek(0)
-                msvcrt.locking(stream.fileno(), msvcrt.LK_UNLCK, 1)
-            else:
-                fcntl.flock(stream.fileno(), fcntl.LOCK_UN)
+            unlock()
 
 
 def run_fingerprint(

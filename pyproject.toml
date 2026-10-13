@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "stateset-agents"
-version = "0.64.1"
+version = "0.64.2"
 description = "Production-ready RL framework for training multi-turn conversational AI agents using GRPO and GSPO"
 readme = "README.md"
 license = "BUSL-1.1"
@@ -102,7 +102,7 @@ dev = [
     "torch>=2.0.0",
     "transformers>=4.57.1",
     "datasets>=5.0.1",
-    "accelerate>=0.20.0",
+    "accelerate>=1.15.0",
     "wandb>=0.15.0",
     "peft>=0.4.0",
     "trl>=0.14.0,<2.0.0",
@@ -121,7 +121,7 @@ training = [
     "torch>=2.0.0",
     "transformers>=4.57.1",
     "datasets>=5.0.1",
-    "accelerate>=0.20.0",
+    "accelerate>=1.15.0",
     "wandb>=0.15.0",
     "peft>=0.4.0",
     "trl>=0.14.0,<2.0.0",
@@ -375,7 +375,7 @@ omit = [
 # 63.21%. Real-model streaming tests raised the Python 3.11 CI measurement
 # to 64.06%. The expanded local Python 3.12 suite measured 65.80% after the
 # River workflow and training-integrity additions, raising the floor to 65.
-fail_under = 65
+fail_under = 71
 precision = 2
 show_missing = true
 skip_covered = false
