@@ -74,6 +74,10 @@ class TrainingConfig:
     # 4th training_step takes an optimizer step by default.
     gradient_accumulation_steps: int = 4
     num_generations: int = 16  # GRPO: trajectories per scenario
+    # Roll every group out in lockstep, one batched generate per conversation
+    # turn, when the agent has generate_turns_batch and the environment
+    # supports concurrent episodes. False forces one episode at a time.
+    batched_rollouts: bool = True
     generation_batch_size: int = 4
     # Rollout/evaluation parallelism (requires environments that support clone()).
     rollout_concurrency: int = 1

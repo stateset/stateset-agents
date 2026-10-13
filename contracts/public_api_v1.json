@@ -3600,6 +3600,11 @@
               "name": "num_generations"
             },
             {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batched_rollouts"
+            },
+            {
               "default": 4,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "generation_batch_size"

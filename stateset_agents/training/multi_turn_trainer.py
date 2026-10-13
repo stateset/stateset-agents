@@ -543,32 +543,21 @@ class MultiTurnGRPOTrainer:
                     return turn
             return await self.agent.generate_response(history, context)
 
-        for scenario in scenarios:
+        batched = await self._generate_batched_trajectories(scenarios, num_generations)
+
+        for index, scenario in enumerate(scenarios):
             # Generate multiple trajectories for the same scenario
             trajectories: list[MultiTurnTrajectory] = []
 
-            for _ in range(num_generations):
+            if batched is not None:
+                trajectories = batched[index]
+            for _ in range(num_generations if batched is None else 0):
                 try:
-                    reset_fn = getattr(self.agent, "reset", None)
-                    if callable(reset_fn):
-                        reset_result = reset_fn()
-                        if asyncio.iscoroutine(reset_result):
-                            await reset_result
+                    await self._reset_agent()
 
                     # Generate trajectory
                     trajectory = await self.environment.run_episode(agent_fn, scenario)
-
-                    # Apply reward function if provided
-                    if self.reward_fn:
-                        reward_result = await self.reward_fn.compute_reward(
-                            trajectory.turns, scenario
-                        )
-                        score, breakdown = await self._coerce_reward_result(
-                            reward_result
-                        )
-                        trajectory.total_reward = score
-                        trajectory.metadata["reward_breakdown"] = breakdown
-
+                    await self._score_trajectory(trajectory, scenario)
                     trajectories.append(trajectory)
 
                 except MULTI_TRAINER_EXCEPTIONS as e:
@@ -589,6 +578,64 @@ class MultiTurnGRPOTrainer:
                 trajectory_groups.append(group)
 
         return trajectory_groups
+
+    async def _reset_agent(self) -> None:
+        reset_fn = getattr(self.agent, "reset", None)
+        if callable(reset_fn):
+            reset_result = reset_fn()
+            if asyncio.iscoroutine(reset_result):
+                await reset_result
+
+    async def _score_trajectory(
+        self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
+    ) -> None:
+        """Apply the trainer's reward function, if any, to a finished episode."""
+        if self.reward_fn:
+            reward_result = await self.reward_fn.compute_reward(
+                trajectory.turns, scenario
+            )
+            score, breakdown = await self._coerce_reward_result(reward_result)
+            trajectory.total_reward = score
+            trajectory.metadata["reward_breakdown"] = breakdown
+
+    async def _generate_batched_trajectories(
+        self, scenarios: list[dict[str, Any]], num_generations: int
+    ) -> list[list[MultiTurnTrajectory]] | None:
+        """Roll out every scenario x generation in lockstep, or return None.
+
+        Each conversation turn of all still-running episodes is one call to
+        ``agent.generate_turns_batch``; trajectories are identical to running
+        the episodes one by one. Returns None (use the sequential path) when
+        ``config.batched_rollouts`` is off, the agent or environment cannot
+        batch, or the batched rollout fails.
+        """
+        batch_turns = getattr(self.agent, "generate_turns_batch", None)
+        run_batched = getattr(self.environment, "run_episodes_batched", None)
+        if (
+            not getattr(self.config, "batched_rollouts", True)
+            or not inspect.iscoroutinefunction(batch_turns)
+            or not inspect.iscoroutinefunction(run_batched)
+            or getattr(self.environment, "supports_concurrent_episodes", False)
+            is not True
+        ):
+            return None
+        flat = [s for s in scenarios for _ in range(num_generations)]
+        try:
+            await self._reset_agent()
+            episodes = await run_batched(
+                lambda histories, contexts: batch_turns(histories, contexts), flat
+            )
+            for trajectory, scenario in zip(episodes, flat, strict=True):
+                await self._score_trajectory(trajectory, scenario)
+        except MULTI_TRAINER_EXCEPTIONS as e:
+            logger.warning(
+                "Batched rollout failed (%s); rolling episodes out one at a time", e
+            )
+            return None
+        return [
+            list(episodes[i * num_generations : (i + 1) * num_generations])
+            for i in range(len(scenarios))
+        ]
 
     async def _coerce_reward_result(
         self, reward_result: Any
