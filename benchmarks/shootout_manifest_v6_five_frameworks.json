@@ -2,7 +2,7 @@
   "schema_version": 1,
   "protocol": "stateset-five-framework-gspo-shootout-v6",
   "algorithm": "gspo",
-  "algorithm_revision": "matched-gspo-sequence-trl-1.12-v2-prompt-batch",
+  "algorithm_revision": "matched-gspo-sequence-trl-1.12-v3-protocol-sampling",
   "model": "Qwen/Qwen2.5-1.5B-Instruct",
   "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
   "task": "gsm8k",
@@ -60,7 +60,7 @@
   "implementations": [
     {
       "name": "stateset-agents-gspo",
-      "version": "0.64.1",
+      "version": "0.64.2",
       "command": [
         "python",
         "scripts/run_phase0_benchmark.py",

@@ -668,7 +668,7 @@ def test_v6_manifest_loads_and_covers_required_frameworks() -> None:
     assert {item["name"] for item in manifest["implementations"]} == set(
         gate.REQUIRED_FRAMEWORKS
     )
-    v5 = json.loads((BENCHMARKS / "shootout_manifest_v5.json").read_text())
+    v5 = json.loads((BENCHMARKS / "shootout_manifest_v5_1.json").read_text())
     for field in (
         "algorithm",
         "algorithm_revision",
