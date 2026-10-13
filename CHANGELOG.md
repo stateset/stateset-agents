@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Performance
+
+- **GSPO samples a whole step in one `generate` call.** GSPO and GSPO-token
+  generated each prompt's group separately; they now sample all prompts x
+  `num_generations` rows through `MultiTurnAgent.generate_turns_batch`
+  (greedy decoding gives identical groups either way). On CPU with a tiny
+  Qwen2+LoRA policy a 4x4 step went from ~23 s to ~15 s; the v5 shootout
+  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work,
+  which this addresses.
+
+### Fixed
+
+- **GSPO rollouts use the trainer's sampling settings.** `train_with_gspo`
+  rebuilt the agent's generation config from `AgentConfig` defaults, so
+  `GSPOConfig.temperature`/`top_p` never reached generation. The trainer
+  config's `temperature`, `top_p`, `top_k` and `repetition_penalty` now drive
+  GSPO rollouts (`apply_rollout_sampling`).
+- **The phase-0 native shootout leg samples exactly like the TRL leg**
+  (protocol temperature/top_p, no top-k, no repetition penalty, no stop
+  strings) and records it as `algorithm_config.sampling`.
+
 ### Changed
 
 - **Agent-quality gate: SWE-bench Verified is now optional.** The A+ gate in
