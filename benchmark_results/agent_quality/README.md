@@ -1,7 +1,8 @@
 # Standard agent-quality evidence
 
 This directory is reserved for measured, paired base-versus-trained evaluations
-on tau-bench, BFCL, and SWE-bench Verified. It intentionally contains no result
+on the required suites, tau-bench (τ³) and BFCL V4, plus SWE-bench Verified
+when it is included as an optional suite. It intentionally contains no result
 claim until the complete matrix has run and passed.
 
 ## Collection
@@ -25,7 +26,8 @@ The runner creates:
   baseline policy, trained policy, trained artifact, task set, configuration,
   harness, suite, cost, and raw artifact digest;
 - `_accounting/matrix-summary.json`: one record for every requested attempt;
-- `report.json`: emitted only after the full three-suite matrix passes.
+- `report.json`: emitted only after every suite in the manifest roster passes.
+  The roster must include both required suites.
 
 `--preflight` executes one seed per suite and cannot emit a publication report.
 The measured runner rejects a dirty worktree. A complete matrix still needs a

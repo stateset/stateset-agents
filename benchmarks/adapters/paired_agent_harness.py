@@ -20,6 +20,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from benchmarks.agent_quality_evidence import (  # noqa: E402
+    REQUIRED_SUITES,
+    SUPPORTED_SUITES,
+)
+
 
 class PairedHarnessError(ValueError):
     """Raised when paired upstream evidence is incomplete or untrustworthy."""
@@ -59,6 +68,21 @@ def _load_object(path: Path, *, label: str) -> dict[str, Any]:
     if not isinstance(value, Mapping):
         raise PairedHarnessError(f"{label} must be a JSON object: {path}")
     return dict(value)
+
+
+def configured_suites(path: Path) -> tuple[str, ...]:
+    """Return the configured suites, requiring every required suite."""
+    config = _load_object(path, label="harness config")
+    suites = config.get("suites")
+    if not isinstance(suites, Mapping):
+        raise PairedHarnessError("harness config suites must be an object")
+    unknown = sorted(set(suites).difference(SUPPORTED_SUITES))
+    if unknown:
+        raise PairedHarnessError(f"harness config defines unsupported suites {unknown}")
+    missing = [suite for suite in REQUIRED_SUITES if suite not in suites]
+    if missing:
+        raise PairedHarnessError(f"harness config does not define {missing}")
+    return tuple(suite for suite in SUPPORTED_SUITES if suite in suites)
 
 
 def load_suite_config(path: Path, suite: str) -> dict[str, Any]:
@@ -243,7 +267,7 @@ def run_policy(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     """Execute the policy pair and return the neutral matrix-runner payload."""
-    if args.suite not in {"tau3-bench", "bfcl-v4", "swe-bench-verified"}:
+    if args.suite not in SUPPORTED_SUITES:
         raise PairedHarnessError(f"unsupported suite: {args.suite}")
     try:
         evaluation_config = json.loads(args.evaluation_config_json)
@@ -375,9 +399,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.adapter_command == "validate":
             config_path = Path(args.harness_config).resolve()
-            for suite in ("tau3-bench", "bfcl-v4", "swe-bench-verified"):
+            suites = configured_suites(config_path)
+            for suite in suites:
                 load_suite_config(config_path, suite)
-            print("validated paired harness commands for 3 suites")
+            print(
+                f"validated paired harness commands for {len(suites)} suites: "
+                + ", ".join(suites)
+            )
             return 0
         result = run(args)
         output = Path(args.adapter_output)

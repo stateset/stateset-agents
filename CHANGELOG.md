@@ -7,6 +7,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Agent-quality gate: SWE-bench Verified is now optional.** The A+ gate in
+  `benchmarks/agent_quality_evidence.py` now requires only `tau3-bench` and
+  `bfcl-v4` (`REQUIRED_SUITES`). `swe-bench-verified` is in the new
+  `OPTIONAL_SUITES`. The flagship is a 7–8B customer-support / tool-use policy,
+  so repository-level software engineering is out of domain. The threshold did
+  not get weaker:
+  - Every suite in the evidence, including an optional one, must pass the same
+    per-suite gate: at least +3% mean improvement, a paired 95% confidence
+    bound above zero, matched seeds, and one shared trained artifact.
+  - `run_agent_quality_matrix.py` requires the evidence to cover exactly the
+    manifest roster. You cannot run an optional suite and then drop it.
+  - Unknown suites and duplicate roster entries are still rejected.
+  - The suite sets in the adapters (`official_suite_pipeline`,
+    `official_result_normalizer`, `paired_agent_harness`) now come from the
+    shared constants. `paired_agent_harness validate` checks the required
+    suites plus any optional suites that are configured.
+  - The example manifests list only the two required suites.
+    `benchmarks/README.md` explains how to add SWE-bench Verified.
+  - Matrix reports now record `required_suites`.
+
+- **`MultiTurnAgent` text is exactly what the policy sampled.** For every
+  generated assistant turn, `content == tokenizer.decode(token_ids,
+  skip_special_tokens=True)`, so the conversation history, rewards and the
+  token-path loss agree:
+  - No default stop strings: replies are no longer cut at the first blank
+    line (`"\n\n"`) or at `User:`/`System:`. Stops are explicit via the new
+    `AgentConfig.stop_sequences` (default `[]`); text and `token_ids` are
+    truncated at the same token boundary, including when a stop string lands
+    inside a merged token. `LEGACY_STOP_SEQUENCES` restores the old set.
+  - Sampled text is no longer whitespace-stripped or cut at speaker labels
+    (the streaming display path still hides speaker labels).
+  - Canned persona sentences ("I'll help you with your billing question
+    right away.") are off by default (`AgentConfig.enable_persona_hints`) and
+    are never applied by `generate_turn`/`generate_turns` (a warning is
+    logged instead), so they cannot reach training rollouts.
+  - Rollout-engine results get the same stop handling and now receive the
+    configured `top_k` (`-1` when disabled).
+- **`AgentConfig.top_k` accepts `0` or `None` to disable top-k** (both map to
+  HF `top_k=0`; booleans are rejected). The default stays 50.
+- **`ConversationEnvironment` no longer overrides the agent's system prompt.**
+  `get_initial_prompt` returns `""` unless a system prompt is explicitly
+  provided (new `system_prompt` argument, scenario `"system_prompt"`, or
+  scenario `"context"`); the generic "You are a helpful AI assistant..." turn
+  is gone and `persona` alone no longer creates a system turn. A system turn
+  in the history still takes precedence over `AgentConfig.system_prompt`
+  (now checked anywhere in the history, not only at index 0).
+- **Farewell endings are configurable and skip scripted scenarios.** New
+  `ConversationEnvironment(end_on_farewell=True)`; scenarios with
+  `user_turns` run their full script even if the agent says "Goodbye!", and
+  farewell phrases match whole words only ("see your order" no longer ends an
+  episode).
+
 ## [0.64.2] - 2026-10-12 — Security and Windows fixes
 
 ### Fixed

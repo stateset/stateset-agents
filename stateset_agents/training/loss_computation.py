@@ -147,6 +147,19 @@ def _token_objective(config: Any) -> Any:
     )
 
 
+def _token_kl_objective(objective: Any, config: Any, *, beta: float) -> Any:
+    """Enable the KL penalty with coefficient ``beta`` on the token path.
+
+    An objective chosen through ``config.objective`` keeps its own estimator
+    (``gspo`` regularizes the length-normalized sequence log-ratio); the native
+    objective, which has none, uses per-token k3.
+    """
+    kind = objective.kl
+    if getattr(config, "objective", None) is None or kind == "none":
+        kind = "k3_token"
+    return objective.with_(kl=kind, kl_coef=float(beta))
+
+
 def _legacy_group_advantages(
     rewards: Any,
     config: Any,
@@ -269,6 +282,67 @@ def _token_advantages(
     )
 
 
+def _response_token_logprobs(
+    logits: Any, input_ids: Any, response_mask: Any, *, want_entropy: bool
+) -> tuple[Any, Any, Any | None]:
+    """Shift-by-one token log-probs computed at response positions only.
+
+    Same contract as :func:`rl_losses.gather_token_logprobs` (``[B, T-1]``
+    log-probs, zero off the mask, plus the fp32 shifted mask), but only the
+    ``n`` response positions are upcast and normalised: the largest tensor is
+    ``[n, V]`` in fp32 instead of a full ``[B, T-1, V]`` fp32 log-softmax.
+    Without entropy the log-prob is ``logit[y] - logsumexp(logits)``; with it
+    one ``log_softmax`` over the selected rows serves both. ``entropy`` is the
+    per-token entropy at response positions (zero elsewhere) or ``None``.
+    """
+    torch = require_torch()
+    shifted_mask = response_mask[..., 1:].to(torch.float32)
+    selected = shifted_mask > 0
+    dtype = torch.promote_types(logits.dtype, torch.float32)
+    labels = input_ids[..., 1:][selected].unsqueeze(-1)
+    picked = logits[..., :-1, :][selected].to(dtype)  # [n, V]
+    if want_entropy:
+        log_probs = torch.log_softmax(picked, dim=-1)
+        token = log_probs.gather(-1, labels).squeeze(-1)
+        ent = -(log_probs.exp() * log_probs).sum(-1)
+    else:
+        token = picked.gather(-1, labels).squeeze(-1) - torch.logsumexp(picked, dim=-1)
+        ent = None
+    zeros = torch.zeros(shifted_mask.shape, dtype=dtype, device=logits.device)
+    token_logprobs = zeros.index_put((selected,), token)
+    entropy = None if ent is None else zeros.index_put((selected,), ent)
+    return token_logprobs, shifted_mask, entropy
+
+
+def _forward_token_chunk(
+    model: Any,
+    chunk: list[tuple[list[int], list[int], int]],
+    width: int,
+    device: Any,
+    *,
+    grad: bool,
+    want_entropy: bool = False,
+) -> tuple[Any, Any, Any | None]:
+    """Pad ``chunk`` to ``width`` and run one forward pass.
+
+    Returns ``(token_logprobs, response_mask, entropy)``, each ``[len(chunk),
+    width-1]``; see :func:`_response_token_logprobs`. The full-vocabulary
+    logits are released on return; only the response-position graph is kept.
+    """
+    torch = require_torch()
+    ids = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
+    attn = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
+    resp = torch.zeros(len(chunk), width, dtype=torch.float32, device=device)
+    for i, (p, r, _) in enumerate(chunk):
+        seq = torch.tensor(p + r, dtype=torch.long, device=device)
+        ids[i, : seq.numel()] = seq
+        attn[i, : seq.numel()] = 1
+        resp[i, len(p) : seq.numel()] = 1.0
+    with torch.set_grad_enabled(grad):
+        logits = model(input_ids=ids, attention_mask=attn).logits
+        return _response_token_logprobs(logits, ids, resp, want_entropy=want_entropy)
+
+
 def _forward_token_rows(
     model: Any,
     rows: list[tuple[list[int], list[int], int]],
@@ -282,30 +356,25 @@ def _forward_token_rows(
 
     Returns ``(token_logprobs [R, W-1], response_mask [R, W-1], entropy)``
     where ``entropy`` is the differentiable per-token entropy (or ``None``).
-    Graphs are retained across chunks when ``grad`` is True.
+    Graphs are retained across chunks when ``grad`` is True; the training
+    loss uses :func:`_forward_token_chunk` per chunk instead.
     """
     torch = require_torch()
     width = max(len(p) + len(r) for p, r, _ in rows)
+    size = max(int(chunk_size), 1)
     lp_chunks, mask_chunks, ent_chunks = [], [], []
-    for start in range(0, len(rows), max(int(chunk_size), 1)):
-        chunk = rows[start : start + max(int(chunk_size), 1)]
-        ids = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
-        attn = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
-        resp = torch.zeros(len(chunk), width, dtype=torch.float32, device=device)
-        for i, (p, r, _) in enumerate(chunk):
-            seq = torch.tensor(p + r, dtype=torch.long, device=device)
-            ids[i, : seq.numel()] = seq
-            attn[i, : seq.numel()] = 1
-            resp[i, len(p) : seq.numel()] = 1.0
-        with torch.set_grad_enabled(grad):
-            logits = model(input_ids=ids, attention_mask=attn).logits
-            lp, m = rl_losses.gather_token_logprobs(logits, ids, resp)
-            if want_entropy:
-                shifted = logits[:, :-1, :].float()
-                lsm = torch.log_softmax(shifted, dim=-1)
-                ent_chunks.append(-(lsm.exp() * lsm).sum(-1))
+    for start in range(0, len(rows), size):
+        lp, m, ent = _forward_token_chunk(
+            model,
+            rows[start : start + size],
+            width,
+            device,
+            grad=grad,
+            want_entropy=want_entropy,
+        )
         lp_chunks.append(lp)
         mask_chunks.append(m)
+        ent_chunks.append(ent)
     entropy = torch.cat(ent_chunks) if want_entropy else None
     return torch.cat(lp_chunks), torch.cat(mask_chunks), entropy
 
@@ -394,6 +463,23 @@ def _assistant_turns(group: Any) -> list[Any]:
     return turns
 
 
+class _WeightedMean:
+    """Running weighted mean for per-chunk metrics."""
+
+    __slots__ = ("total", "weight")
+
+    def __init__(self) -> None:
+        self.total = 0.0
+        self.weight = 0.0
+
+    def add(self, value: float, weight: float) -> None:
+        self.total += float(value) * float(weight)
+        self.weight += float(weight)
+
+    def value(self, default: float) -> float:
+        return self.total / self.weight if self.weight > 0 else default
+
+
 def _compute_token_path_loss(
     trajectory_groups: list[Any],
     rows_per_group: list[list[tuple[list[int], list[int], int]]],
@@ -405,8 +491,22 @@ def _compute_token_path_loss(
     old_logprobs: list[Any] | None = None,
     global_reward_mean: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
+    backward_fn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """Batched per-token GRPO over stored token ids for every group.
+
+    The loss is the mean over groups of each group's ``policy_loss``. It is
+    evaluated one row chunk (``generation_batch_size`` rows) at a time: each
+    chunk's share is computed with the group's row/token counts as the
+    aggregation denominators (``policy_loss(total_rows=, total_tokens=)``)
+    and divided by the group count, so the shares sum exactly to the loss.
+
+    With ``backward_fn`` every share is handed to it as soon as it is
+    computed (the trainer scales and backpropagates it), so only one chunk's
+    autograd graph -- its response-position log-softmax and activations --
+    is alive at a time; the returned ``total_loss`` is then detached and
+    ``backward_done`` is True. Without it the shares are summed into one
+    differentiable ``total_loss`` (every chunk's graph retained).
 
     ``old_logprobs`` (from :func:`compute_token_old_logprobs`) makes the
     ratio off-policy for later inner updates; ``None`` means on-policy
@@ -418,7 +518,12 @@ def _compute_token_path_loss(
     entropy_coef = float(getattr(config, "entropy_coef", 0.0))
     use_kl = beta > 0 and reference_model is not None
     if use_kl:
-        objective = objective.with_(kl="k3_token", kl_coef=float(beta))
+        objective = _token_kl_objective(objective, config, beta=beta)
+    if objective.ratio == "group_expectation":
+        raise ValueError(
+            "ratio='group_expectation' couples a group's rows and cannot be "
+            "evaluated per chunk on the token path"
+        )
     chunk = int(getattr(config, "generation_batch_size", 0) or 0) or len(
         max(rows_per_group, key=len)
     )
@@ -435,7 +540,10 @@ def _compute_token_path_loss(
         old_logprobs = sampler_old_logprobs(trajectory_groups, device)
         if old_logprobs is not None:
             old_source = "sampler"
-    losses, kls, ents, adv_log, n_rows = [], [], [], [], 0
+    chunk_objective = objective.with_(entropy_coef=entropy_coef)
+    n_groups = max(len(rows_per_group), 1)
+    shares: list[Any] = []
+    kls, ents, adv_log, n_rows = [], [], [], 0
     ratio_means, clip_fracs = [], []
     for gi, (group, rows) in enumerate(
         zip(trajectory_groups, rows_per_group, strict=True)
@@ -460,38 +568,64 @@ def _compute_token_path_loss(
         adv_log.extend(advantages.detach().cpu().tolist())
         row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
 
-        logp_cur, mask, entropy = _forward_token_rows(
-            agent.model, rows, device, chunk, grad=True, want_entropy=entropy_coef > 0
-        )
-        logp_ref = None
-        if use_kl:
-            logp_ref, _, _ = _forward_token_rows(
-                reference_model, rows, device, chunk, grad=False
+        width = max(len(p) + len(r) for p, r, _ in rows)
+        group_rows = float(len(rows))
+        group_tokens = float(sum(len(r) for _, r, _ in rows))
+        kl_mean, ent_mean = _WeightedMean(), _WeightedMean()
+        ratio_mean, clip_mean = _WeightedMean(), _WeightedMean()
+        for start in range(0, len(rows), chunk):
+            stop = start + chunk
+            sub = rows[start:stop]
+            logp_cur, mask, entropy = _forward_token_chunk(
+                agent.model,
+                sub,
+                width,
+                device,
+                grad=True,
+                want_entropy=entropy_coef > 0,
             )
-        result = objectives.policy_loss(
-            logp_cur=logp_cur,
-            mask=mask,
-            advantages=row_adv,
-            objective=objective.with_(entropy_coef=entropy_coef),
-            logp_old=None if old_logprobs is None else old_logprobs[gi],
-            logp_ref=logp_ref,
-            entropy=entropy,
-        )
-        losses.append(result.loss)
-        kls.append(result.metrics["kl"])
-        ents.append(result.metrics["entropy"])
-        ratio_means.append(result.metrics["ratio_mean"])
-        clip_fracs.append(result.metrics["clip_fraction"])
+            logp_ref = None
+            if use_kl:
+                logp_ref, _, _ = _forward_token_chunk(
+                    reference_model, sub, width, device, grad=False
+                )
+            result = objectives.policy_loss(
+                logp_cur=logp_cur,
+                mask=mask,
+                advantages=row_adv[start:stop],
+                objective=chunk_objective,
+                logp_old=None if old_logprobs is None else old_logprobs[gi][start:stop],
+                logp_ref=logp_ref,
+                entropy=entropy,
+                total_rows=group_rows,
+                total_tokens=group_tokens,
+            )
+            share = result.loss / n_groups
+            if backward_fn is not None:
+                backward_fn(share)
+                share = share.detach()
+            shares.append(share)
+            chunk_tokens = float(mask.sum().item())
+            kl_weight = len(sub) if objective.kl == "k3_sequence" else chunk_tokens
+            kl_mean.add(result.metrics["kl"], kl_weight)
+            ent_mean.add(result.metrics["entropy"], chunk_tokens)
+            ratio_mean.add(result.metrics["ratio_mean"], chunk_tokens)
+            clip_mean.add(result.metrics["clip_fraction"], chunk_tokens)
+            del result, logp_cur, logp_ref, entropy, share
+        kls.append(kl_mean.value(0.0))
+        ents.append(ent_mean.value(0.0))
+        ratio_means.append(ratio_mean.value(1.0))
+        clip_fracs.append(clip_mean.value(0.0))
         n_rows += len(rows)
 
-    total = (
-        torch.stack(losses).mean()
-        if losses
-        else torch.tensor(0.0, device=device, requires_grad=True)
-    )
+    if shares:
+        total = torch.stack(shares).sum()
+    else:
+        total = torch.tensor(0.0, device=device, requires_grad=backward_fn is None)
     return {
         "total_loss": total,
         "policy_loss": total,
+        "backward_done": backward_fn is not None,
         "kl_penalty": torch.tensor(float(np.mean(kls)) if kls else 0.0, device=device),
         "entropy": float(np.mean(ents)) if ents else 0.0,
         "mean_advantage": float(np.mean(adv_log)) if adv_log else 0.0,
@@ -530,12 +664,20 @@ def compute_grpo_loss(
     global_reward_count: int,
     update_global_stats: Callable[[float, int], None] | None,
     old_logprobs: list[Any] | None = None,
+    *,
+    backward_fn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """
     Compute GRPO loss from trajectory groups with configurable baseline and normalization.
 
     ``old_logprobs`` (see :func:`compute_token_old_logprobs`) is honoured on the
     batched token path only, for multiple inner updates per rollout batch.
+
+    ``backward_fn`` (token path only) receives each row chunk's share of the
+    loss as soon as it is computed, bounding peak activation memory by one
+    chunk; the result then carries ``backward_done=True`` and a detached
+    ``total_loss`` that must not be backpropagated again. The sequence path
+    ignores it and returns a differentiable loss as before.
 
     Args:
         trajectory_groups: List of TrajectoryGroup objects
@@ -557,6 +699,7 @@ def compute_grpo_loss(
         old_logprobs=old_logprobs,
         global_reward_mean=effective_global_mean,
         update_global_stats=update_global_stats,
+        backward_fn=backward_fn,
     )
     if token_result is not None:
         return token_result
@@ -815,12 +958,14 @@ def compute_enhanced_grpo_loss(
     global_reward_mean: float | None = None,
     global_reward_count: int = 0,
     update_global_stats: Callable[[float, int], None] | None = None,
+    backward_fn: Callable[[Any], None] | None = None,
 ) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
 
     Advantages, reward clipping and the entropy bonus match
     :func:`compute_grpo_loss`; only the reference-model KL term is added.
+    ``backward_fn`` has the same chunked-backward contract as there.
 
     Args:
         trajectory_groups: List of TrajectoryGroup objects
@@ -849,6 +994,7 @@ def compute_enhanced_grpo_loss(
         old_logprobs=old_logprobs,
         global_reward_mean=effective_global_mean,
         update_global_stats=update_global_stats,
+        backward_fn=backward_fn,
     )
     if token_result is not None:
         return token_result

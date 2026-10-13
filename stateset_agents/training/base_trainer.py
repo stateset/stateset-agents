@@ -424,6 +424,8 @@ class BaseModelManager:
             self.config.model_name,
             torch_dtype=model_kwargs["torch_dtype"],
             device_map="auto" if torch.cuda.device_count() > 1 else None,
+            trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
+            revision=self.config.model_revision,
         )
         self.ref_model.eval()
         for param in self.ref_model.parameters():

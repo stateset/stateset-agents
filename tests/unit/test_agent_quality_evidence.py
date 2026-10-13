@@ -10,13 +10,16 @@ from typing import Any
 import pytest
 
 from benchmarks.agent_quality_evidence import (
+    OPTIONAL_SUITES,
     REQUIRED_SUITES,
+    SUPPORTED_SUITES,
     AgentQualityEvidenceError,
     hash_artifact,
     load_runs,
     summarize,
     validate_matrix,
     validate_run,
+    validate_suite_roster,
 )
 
 
@@ -62,12 +65,85 @@ def _run(suite: str, seed: int, improvement: float = 0.08) -> dict[str, Any]:
 
 def _matrix(
     improvements: tuple[float, float, float] = (0.08, 0.08, 0.08),
+    suites: tuple[str, ...] = REQUIRED_SUITES,
 ) -> list[dict[str, Any]]:
     return [
         _run(suite, seed, improvements[index])
-        for suite in REQUIRED_SUITES
+        for suite in suites
         for index, seed in enumerate((42, 1337, 2026))
     ]
+
+
+def test_suite_policy_constants() -> None:
+    assert REQUIRED_SUITES == ("tau3-bench", "bfcl-v4")
+    assert OPTIONAL_SUITES == ("swe-bench-verified",)
+    assert SUPPORTED_SUITES == REQUIRED_SUITES + OPTIONAL_SUITES
+
+
+def test_required_only_matrix_passes() -> None:
+    runs = [validate_run(run, Path("run.json")) for run in _matrix()]
+    validate_matrix(runs)
+    validate_matrix(runs, expected_suites=REQUIRED_SUITES)
+    report = summarize(runs)
+    assert list(report["suites"]) == list(REQUIRED_SUITES)
+    assert report["required_suites"] == list(REQUIRED_SUITES)
+
+
+def test_matrix_missing_required_suite_fails() -> None:
+    runs = _matrix(suites=("tau3-bench", "swe-bench-verified"))
+    with pytest.raises(AgentQualityEvidenceError, match="missing required.*bfcl-v4"):
+        validate_matrix(runs)
+
+
+def test_optional_suite_in_roster_but_missing_from_evidence_fails() -> None:
+    with pytest.raises(AgentQualityEvidenceError, match="exactly the executed roster"):
+        validate_matrix(_matrix(), expected_suites=SUPPORTED_SUITES)
+
+
+def test_failing_optional_suite_fails_whole_gate() -> None:
+    runs = _matrix(suites=REQUIRED_SUITES) + _matrix(
+        (0.0, 0.0, 0.0), suites=OPTIONAL_SUITES
+    )
+    with pytest.raises(
+        AgentQualityEvidenceError, match="swe-bench-verified: mean improvement"
+    ):
+        validate_matrix(runs)
+    with pytest.raises(AgentQualityEvidenceError, match="swe-bench-verified"):
+        validate_matrix(runs, expected_suites=SUPPORTED_SUITES)
+
+
+def test_passing_optional_suite_passes_and_is_reported() -> None:
+    runs = [
+        validate_run(run, Path("run.json")) for run in _matrix(suites=SUPPORTED_SUITES)
+    ]
+    validate_matrix(runs)
+    validate_matrix(runs, expected_suites=SUPPORTED_SUITES)
+    report = summarize(runs)
+    assert list(report["suites"]) == list(SUPPORTED_SUITES)
+    assert report["suites"]["swe-bench-verified"]["seeds"] == [42, 1337, 2026]
+
+
+def test_optional_suite_must_share_trained_artifact() -> None:
+    runs = _matrix(suites=SUPPORTED_SUITES)
+    runs[-1]["training_artifact_sha256"] = "7" * 64
+    with pytest.raises(AgentQualityEvidenceError, match="training_artifact"):
+        validate_matrix(runs)
+
+
+def test_unknown_suite_rejected() -> None:
+    with pytest.raises(AgentQualityEvidenceError, match="unsupported suite"):
+        validate_run(_run("webarena", 42), Path("unknown.json"))
+    with pytest.raises(AgentQualityEvidenceError, match="unsupported suites"):
+        validate_matrix(_matrix() + _matrix(suites=("webarena",)))
+    with pytest.raises(AgentQualityEvidenceError, match="unsupported suites"):
+        validate_suite_roster([*REQUIRED_SUITES, "webarena"])
+    with pytest.raises(AgentQualityEvidenceError, match="duplicate suites"):
+        validate_suite_roster([*REQUIRED_SUITES, "bfcl-v4"])
+    assert validate_suite_roster(["swe-bench-verified", "bfcl-v4", "tau3-bench"]) == (
+        "tau3-bench",
+        "bfcl-v4",
+        "swe-bench-verified",
+    )
 
 
 def test_matched_standard_suite_matrix_passes() -> None:
