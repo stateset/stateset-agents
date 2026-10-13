@@ -6,8 +6,9 @@ This guide covers StateSet Agents' offline reinforcement learning and sim-to-rea
 > `stateset_agents.experimental` namespace (`stateset_agents.experimental.offline_rl`
 > and `stateset_agents.experimental.sim_to_real`) and carry no API stability
 > guarantee. The previous import paths (`stateset_agents.training`,
-> `stateset_agents.evaluation`, `stateset_agents.environments`) still work for one
-> release with a `DeprecationWarning` and are removed in v0.65.0. See
+> `stateset_agents.evaluation`, `stateset_agents.environments`) were deprecated
+> in v0.64.0 and removed in v0.65.0 (the deprecated root `stateset_agents`
+> sim-to-real exports follow in v0.66.0). See
 > [component maturity](COMPONENT_MATURITY.md) for the limitations and the
 > evidence required for graduation.
 

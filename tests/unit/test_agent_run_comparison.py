@@ -44,28 +44,19 @@ assert not any(name in sys.modules for name in ('torch', 'transformers', 'river_
     "package,provider,export",
     [
         ("examples", "examples.customer_service_agent", "CustomerServiceAgent"),
-        (
-            "stateset_agents.evaluation",
-            "stateset_agents.experimental.sim_to_real.metrics",
-            "SimToRealEvaluator",
-        ),
     ],
 )
 def test_lazy_package_exports_preserve_public_api(
     monkeypatch, package, provider, export
 ):
     import importlib
-    import warnings
 
     module = importlib.import_module(package)
     sentinel = object()
     monkeypatch.delitem(module.__dict__, export, raising=False)
     monkeypatch.setitem(sys.modules, provider, SimpleNamespace(**{export: sentinel}))
     try:
-        with warnings.catch_warnings():
-            # evaluation.SimToRealEvaluator is a deprecated alias (v0.64.0).
-            warnings.simplefilter("ignore", DeprecationWarning)
-            assert getattr(module, export) is sentinel
+        assert getattr(module, export) is sentinel
         with pytest.raises(AttributeError):
             _ = module.unknown_export
     finally:

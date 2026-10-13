@@ -6,7 +6,6 @@ is data only and must not import anything heavy.
 """
 
 _PKG = __name__.rpartition(".")[0]
-_EXP = f"{_PKG.rpartition('.')[0]}.experimental"
 
 OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     # Core training surface (lazy so that importing this package stays
@@ -1270,13 +1269,6 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "ValueHead": (f"{_PKG}.vapo_trainer", "ValueHead"),
     "LengthAdaptiveGAE": (f"{_PKG}.vapo_trainer", "LengthAdaptiveGAE"),
     "train_with_vapo": (f"{_PKG}.vapo_trainer", "train_with_vapo"),
-    # PPO
-    "PPOConfig": (f"{_EXP}.ppo", "PPOConfig"),
-    "PPOTrainer": (f"{_EXP}.ppo", "PPOTrainer"),
-    "PPOValueHead": (f"{_EXP}.ppo", "PPOValueHead"),
-    "AdaptiveKLController": (f"{_EXP}.ppo", "AdaptiveKLController"),
-    "compute_gae": (f"{_EXP}.ppo", "compute_gae"),
-    "train_ppo": (f"{_EXP}.ppo", "train_ppo"),
     # KL controllers
     "KLController": (f"{_PKG}.kl_controllers", "KLController"),
     "FixedKLController": (f"{_PKG}.kl_controllers", "FixedKLController"),
@@ -1291,92 +1283,7 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "EMACallback": (f"{_PKG}.ema", "EMACallback"),
     "MultiEMA": (f"{_PKG}.ema", "MultiEMA"),
     "create_ema_model": (f"{_PKG}.ema", "create_ema_model"),
-    # RLAIF
-    "RLAIFConfig": (f"{_EXP}.rlaif", "RLAIFConfig"),
-    "RLAIFTrainer": (f"{_EXP}.rlaif", "RLAIFTrainer"),
-    "ConstitutionalAI": (f"{_EXP}.rlaif", "ConstitutionalAI"),
-    "train_rlaif": (f"{_EXP}.rlaif", "train_rlaif"),
-    # Offline RL - CQL/IQL
-    "CQLConfig": (f"{_EXP}.offline_rl.algorithms", "CQLConfig"),
-    "IQLConfig": (f"{_EXP}.offline_rl.algorithms", "IQLConfig"),
-    "ConservativeQLearning": (
-        f"{_EXP}.offline_rl.algorithms",
-        "ConservativeQLearning",
-    ),
-    "ImplicitQLearning": (f"{_EXP}.offline_rl.algorithms", "ImplicitQLearning"),
-    "OfflineRLTrainer": (f"{_EXP}.offline_rl.algorithms", "OfflineRLTrainer"),
-    # Offline RL - BCQ
-    "BCQConfig": (f"{_EXP}.offline_rl.bcq", "BCQConfig"),
-    "BatchConstrainedQLearning": (
-        f"{_EXP}.offline_rl.bcq",
-        "BatchConstrainedQLearning",
-    ),
-    "ConversationalVAE": (f"{_EXP}.offline_rl.bcq", "ConversationalVAE"),
-    "BCQTrainer": (f"{_EXP}.offline_rl.bcq", "BCQTrainer"),
-    # Offline RL - BEAR
-    "BEARConfig": (f"{_EXP}.offline_rl.bear", "BEARConfig"),
-    "ConversationalBEAR": (f"{_EXP}.offline_rl.bear", "ConversationalBEAR"),
-    "MMDKernel": (f"{_EXP}.offline_rl.bear", "MMDKernel"),
-    "BEARTrainer": (f"{_EXP}.offline_rl.bear", "BEARTrainer"),
-    # Decision Transformer
-    "DecisionTransformerConfig": (
-        f"{_EXP}.offline_rl.decision_transformer",
-        "DecisionTransformerConfig",
-    ),
-    "DecisionTransformer": (
-        f"{_EXP}.offline_rl.decision_transformer",
-        "DecisionTransformer",
-    ),
-    "DecisionTransformerTrainer": (
-        f"{_EXP}.offline_rl.decision_transformer",
-        "DecisionTransformerTrainer",
-    ),
-    "ConversationEmbedder": (
-        f"{_EXP}.offline_rl.decision_transformer",
-        "ConversationEmbedder",
-    ),
-    # Offline GRPO
-    "OfflineGRPOConfig": (f"{_EXP}.offline_rl.offline_grpo", "OfflineGRPOConfig"),
-    "OfflineGRPOTrainer": (f"{_EXP}.offline_rl.offline_grpo", "OfflineGRPOTrainer"),
-    "OfflineRLAlgorithm": (f"{_EXP}.offline_rl.offline_grpo", "OfflineRLAlgorithm"),
-    # Domain Randomization
-    "DomainRandomizationConfig": (
-        f"{_EXP}.sim_to_real.domain_randomization",
-        "DomainRandomizationConfig",
-    ),
-    "DomainRandomizer": (
-        f"{_EXP}.sim_to_real.domain_randomization",
-        "DomainRandomizer",
-    ),
-    "PersonaGenerator": (
-        f"{_EXP}.sim_to_real.domain_randomization",
-        "PersonaGenerator",
-    ),
-    "ScenarioGenerator": (
-        f"{_EXP}.sim_to_real.domain_randomization",
-        "ScenarioGenerator",
-    ),
-    "UserPersona": (f"{_EXP}.sim_to_real.domain_randomization", "UserPersona"),
-    # Sim-to-Real Transfer
-    "SimToRealConfig": (f"{_EXP}.sim_to_real.transfer", "SimToRealConfig"),
-    "SimToRealTransfer": (f"{_EXP}.sim_to_real.transfer", "SimToRealTransfer"),
-    "UserBehaviorModel": (f"{_EXP}.sim_to_real.transfer", "UserBehaviorModel"),
-    "DomainAdaptationModule": (
-        f"{_EXP}.sim_to_real.transfer",
-        "DomainAdaptationModule",
-    ),
 }
-
-#: Names that moved to :mod:`stateset_agents.experimental` in v0.64.0. They are
-#: still served from :mod:`stateset_agents.training` for one release, with a
-#: ``DeprecationWarning`` naming the new home, and are removed in
-#: :data:`DEPRECATED_REMOVAL_VERSION`.
-DEPRECATED_EXPORTS: frozenset[str] = frozenset(
-    name
-    for name, (module_name, _attr) in OPTIONAL_EXPORTS.items()
-    if module_name.startswith(f"{_EXP}.")
-)
-DEPRECATED_REMOVAL_VERSION = "0.65.0"
 
 #: The full public surface of :mod:`stateset_agents.training`, in the order it
 #: is advertised.  ``__init__`` re-exports this as ``__all__``; most entries are
