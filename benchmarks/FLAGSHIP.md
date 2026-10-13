@@ -141,11 +141,12 @@ draws, about half an epoch of the 500 train scenarios) take ~1-2 h; with setup
 one-seed `--preflight` first and re-pin `max_steps` from its measured step
 time before the measured matrix.
 
-**One revision is still the all-zero placeholder and blocks measured runs**
-(`run_flagship_matrix.py` and the driver both refuse them):
+**Both revisions are pinned.**
 
-- `dataset_revision` — pin the commit of `stateset/customer-support-multiturn-v1`
-  once it is published to the Hugging Face Hub.
+- `dataset_revision` is commit `db0fd73c` of
+  [`stateset/customer-support-multiturn-v1`](https://huggingface.co/datasets/stateset/customer-support-multiturn-v1)
+  (560 train / 240 eval; generator export sha256 `59ccd505...`; loading it at
+  that revision reproduces `build_support_dataset()` exactly).
 - `judge.rubric_revision` is pinned to `rubric_revision()` (the git blob SHA
   of `stateset_agents/evaluation/rubrics/support_rubric_v1.md`); editing the
   rubric changes it, and the workload refuses a mismatch.
