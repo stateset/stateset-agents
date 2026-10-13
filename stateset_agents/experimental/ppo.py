@@ -227,7 +227,6 @@ def compute_gae(
     device = rewards.device
 
     advantages = torch.zeros_like(rewards)
-    returns = torch.zeros_like(rewards)
 
     # Compute advantages in reverse order
     last_gae = torch.zeros(batch_size, device=device)
