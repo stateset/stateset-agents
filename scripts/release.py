@@ -61,6 +61,7 @@ ANCHORED_FILES: list[tuple[str, str]] = [
         "benchmarks/distributed_async_local_manifest.json",
         '"framework_version": "{v}"',
     ),
+    ("benchmarks/shootout_manifest_v6_five_frameworks.json", '"version": "{v}"'),
 ]
 
 #: Files where every occurrence of the current version becomes the new one.
