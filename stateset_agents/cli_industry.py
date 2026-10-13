@@ -8,10 +8,7 @@ from typing import Any
 
 import typer
 
-from stateset_agents.cli import app
-
 industry_app = typer.Typer(help="Prepare industry datasets and train LoRA adapters.")
-app.add_typer(industry_app, name="industry")
 
 
 def _emit(value: Any) -> None:

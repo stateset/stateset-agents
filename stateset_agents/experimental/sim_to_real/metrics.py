@@ -11,11 +11,6 @@ from typing import Any
 
 import numpy as np
 
-try:
-    import torch
-except ImportError:
-    torch = None
-
 logger = logging.getLogger(__name__)
 
 

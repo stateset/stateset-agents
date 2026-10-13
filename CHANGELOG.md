@@ -14,8 +14,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `num_generations` rows through `MultiTurnAgent.generate_turns_batch`
   (greedy decoding gives identical groups either way). On CPU with a tiny
   Qwen2+LoRA policy a 4x4 step went from ~23 s to ~15 s; the v5 shootout
-  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work,
-  which this addresses.
+  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work.
+  On an L40S (Qwen2.5-1.5B, 200 steps) training time fell from 6,032 s to
+  1,357 s (~6.7 s/step); the matched v5.1 shootout measured 1.01 samples/s
+  against TRL's 0.99.
 
 ### Fixed
 

@@ -16,13 +16,11 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from torch.distributions import Normal
     from torch.optim import Adam
 except ImportError:
     torch = cast(Any, None)
     nn = cast(Any, None)
     F = cast(Any, None)
-    Normal = cast(Any, None)
     Adam = cast(Any, None)
 
 from stateset_agents.core.reward import RewardFunction, RewardResult

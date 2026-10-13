@@ -24,6 +24,10 @@ REQUIRED_SCENARIOS = (
     "network_interruption",
 )
 HEX_DIGITS = frozenset("0123456789abcdef")
+#: Providers whose "nodes" are not separate physical machines. Their runs pass
+#: per-run validation (so drivers can be exercised end to end) but can never
+#: satisfy the multi-node publication gate.
+NON_PUBLISHABLE_PROVIDERS = frozenset({"local", "local-diagnostic"})
 
 
 class DistributedAsyncEvidenceError(ValueError):
@@ -243,6 +247,26 @@ def validate_matrix(
         raise DistributedAsyncEvidenceError("invalid matrix gate configuration")
     if not runs:
         raise DistributedAsyncEvidenceError("evidence matrix is empty")
+    for run in runs:
+        topology = run.get("topology") or {}
+        if (
+            str(run.get("provider")) in NON_PUBLISHABLE_PROVIDERS
+            or topology.get("diagnostic") is True
+            or run.get("diagnostic") is True
+        ):
+            raise DistributedAsyncEvidenceError(
+                f"{run.get('scenario')} seed {run.get('seed')}: diagnostic "
+                f"{run.get('provider')!r} evidence is not publishable multi-node "
+                "evidence"
+            )
+        hosts = topology.get("physical_hosts")
+        if hosts is not None and (
+            isinstance(hosts, bool) or not isinstance(hosts, int) or hosts < min_nodes
+        ):
+            raise DistributedAsyncEvidenceError(
+                f"matrix uses fewer than {min_nodes} physical hosts"
+            )
+
     grouped: dict[str, list[Mapping[str, Any]]] = {}
     for run in runs:
         grouped.setdefault(str(run["scenario"]), []).append(run)

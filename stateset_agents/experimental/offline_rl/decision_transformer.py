@@ -222,12 +222,17 @@ class CausalSelfAttention(nn.Module):
             ),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+        self, x: torch.Tensor, key_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
         """
         Forward pass with causal attention.
 
         Args:
             x: [batch, seq_len, n_embd]
+            key_mask: optional [batch, seq_len]; positions with 0 are padding
+                and are never attended to (each position still sees itself,
+                so padded rows stay finite).
 
         Returns:
             output: [batch, seq_len, n_embd]
@@ -245,7 +250,12 @@ class CausalSelfAttention(nn.Module):
 
         # Attention
         att = (q @ k.transpose(-2, -1)) * (1.0 / math.sqrt(self.head_dim))
-        att = att.masked_fill(self.bias[:, :, :T, :T] == 0, float("-inf"))
+        allowed = self.bias[:, :, :T, :T] != 0
+        if key_mask is not None:
+            keys = key_mask[:, None, None, :T].to(torch.bool)
+            diagonal = torch.eye(T, dtype=torch.bool, device=x.device)
+            allowed = (allowed & keys) | diagonal
+        att = att.masked_fill(~allowed, float("-inf"))
         att = F.softmax(att, dim=-1)
         att = self.attn_dropout(att)
 
@@ -280,8 +290,10 @@ class TransformerBlock(nn.Module):
             nn.Dropout(dropout),
         )
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = x + self.attn(self.ln_1(x))
+    def forward(
+        self, x: torch.Tensor, key_mask: torch.Tensor | None = None
+    ) -> torch.Tensor:
+        x = x + self.attn(self.ln_1(x), key_mask)
         x = x + self.mlp(self.ln_2(x))
         return x
 
@@ -418,7 +430,7 @@ class DecisionTransformer(nn.Module):
         # Transformer blocks
         hidden = stacked
         for block in self.blocks:
-            hidden = block(hidden)
+            hidden = block(hidden, attention_mask)
 
         hidden = self.ln_f(hidden)
 
