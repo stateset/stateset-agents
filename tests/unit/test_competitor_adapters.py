@@ -135,7 +135,9 @@ class FakeFramework:
         root = Path(overrides["trainer.default_local_dir"].strip("'"))
         (root / f"global_step_{self.steps}" / "actor").mkdir(parents=True)
         if self.write_metrics:
-            with Path(env["VERL_FILE_LOGGER_PATH"]).open("w") as stream:
+            with Path(env["VERL_FILE_LOGGER_PATH"]).open(
+                "w", encoding="utf-8"
+            ) as stream:
                 for step in range(1, self.steps + 1):
                     data = {
                         "training/global_step": step,
@@ -148,7 +150,7 @@ class FakeFramework:
     def _openrlhf(self, command: list[str], env: Mapping[str, str], log: Path) -> None:
         _write_adapter(Path(_flag(command, "--ckpt.output_dir")))
         if self.write_metrics:
-            with log.open("a") as stream:
+            with log.open("a", encoding="utf-8") as stream:
                 for step in range(1, self.steps + 1):
                     status = {
                         "rollout/reward_mean": self.reward,
@@ -162,7 +164,9 @@ class FakeFramework:
         checkpoint = Path(payload["checkpointing"]["checkpoint_dir"])
         _write_adapter(checkpoint / f"step_{self.steps}" / "policy" / "weights")
         if self.write_metrics:
-            with Path(_flag(command, "--metrics-jsonl")).open("w") as stream:
+            with Path(_flag(command, "--metrics-jsonl")).open(
+                "w", encoding="utf-8"
+            ) as stream:
                 for step in range(1, self.steps + 1):
                     record = {
                         "step": step,

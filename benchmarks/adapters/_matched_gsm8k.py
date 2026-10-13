@@ -352,7 +352,9 @@ def run_command(
         process = subprocess.Popen(
             list(command),
             cwd=cwd,
-            env=dict(env),
+            # Framework logs contain non-ASCII (OpenRLHF prints "✨"); keep the
+            # child's stdio UTF-8 so it never fails on a legacy console codec.
+            env={**dict(env), "PYTHONIOENCODING": "utf-8"},
             stdout=log,
             stderr=subprocess.STDOUT,
             text=True,
