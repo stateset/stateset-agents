@@ -47,6 +47,7 @@ class ConversationEnvironment(Environment):
     """Environment for open-ended conversations with a convenience step API."""
 
     scores_steps = True
+    supports_concurrent_episodes = True
 
     def __init__(
         self,
