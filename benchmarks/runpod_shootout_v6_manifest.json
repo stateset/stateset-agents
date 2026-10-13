@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "harness_revision": "fad08f95365db49b4e554f969b4eca3601c2fe4f",
-  "harness_revision_note": "Placeholder: this commit predates the competitor adapters. Set it to the commit that contains benchmarks/adapters/{verl,openrlhf,nemo_rl}_gspo.py before --execute.",
+  "harness_revision": "fcc160fcdc49fc02ea09db1036978cae25cf36cd",
+  "harness_revision_note": "Pins the commit that adds the v6 five-framework manifest and the verl/OpenRLHF/NeMo-RL adapters on top of shootout protocol v5.",
   "shootout_manifest": "benchmarks/shootout_manifest_v6_five_frameworks.json",
   "execution": {
     "provider": "runpod",
