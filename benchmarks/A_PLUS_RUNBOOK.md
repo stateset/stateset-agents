@@ -41,7 +41,7 @@ ceiling at or above its worst case, and terminates what it provisions.
 | Scaling 1/2/4/8 GPUs x 3 seeds | `run_scaling_matrix.py --launcher-manifest scaling_launcher_runpod.example.json` | A40 pods, 2 nodes for 8 GPUs | ~$10-25 |
 | Scaling image attestation | `scripts/build_scaling_image.py --execute --confirm-push ...` | registry push | free |
 | Distributed async (4 scenarios x 3 seeds, 12 h soak) | `run_distributed_async_matrix.py distributed_async_manifest.json` | 2 CPU pods | ~$10.36 |
-| Agent quality (tau3-bench + BFCL-v4) | `run_agent_quality_matrix.py` | GPU endpoint + user-simulator API | not yet priced |
+| Agent quality (tau3-bench + BFCL-v4) | `agent_quality_endpoint.py serve ... -- run_agent_quality_matrix.py agent_quality_manifest.json` (see `benchmarks/README.md`) | 1x GPU vLLM endpoint + OpenAI user simulator | planned ceiling 6 x $30 = $180 |
 | Providers (River, RunPod, Fireworks, CoreWeave, Nebius) | provider canaries | read-only | free; needs credentials |
 
 Copy each run's evidence into the `a_plus_evidence.py` layout (`status` lists

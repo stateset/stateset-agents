@@ -55,7 +55,9 @@ from stateset_agents.remote.runpod import (
 
 __all__ = [
     "RemoteServeSession",
+    "adapter_no_effect_message",
     "find_serve_pod",
+    "greedy_completion",
     "list_serve_pods",
     "self_destruct_script",
 ]
@@ -128,6 +130,47 @@ def _default_http_post_json(
     response = requests.post(url, headers=headers, json=payload, timeout=120)
     response.raise_for_status()
     return dict(response.json())
+
+
+def greedy_completion(
+    endpoint_url: str,
+    token: str,
+    model: str,
+    *,
+    http_post_json: HttpPostJson | None = None,
+) -> str:
+    """One greedy probe completion from ``model`` on an OpenAI-compatible URL.
+
+    ``endpoint_url`` is the server root (without ``/v1``). Shared by the
+    RunPod serve session and the agent-quality endpoint wrapper so both run
+    the identical adapter-effect probe.
+    """
+    post = http_post_json or _default_http_post_json
+    body = post(
+        f"{endpoint_url}/v1/chat/completions",
+        {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 48,
+            "messages": [{"role": "user", "content": _PROBE_PROMPT}],
+        },
+    )
+    return str(body["choices"][0]["message"]["content"])
+
+
+def adapter_no_effect_message(name: str) -> str:
+    """The failure text for an adapter whose greedy output equals the base."""
+    return (
+        f"adapter {name!r} has NO EFFECT: its greedy completion "
+        "is byte-identical to the base model's. vLLM loads some "
+        "adapters (hybrid Qwen3.5 families) without error and "
+        "silently serves base weights — use --merge for those. "
+        "See docs/PROOFS.md."
+    )
 
 
 def self_destruct_script(
@@ -643,20 +686,12 @@ class RemoteServeSession:
     def _greedy_probe(self, model: str) -> str:
         """One greedy completion from ``model`` through the live endpoint."""
         assert self.endpoint_url is not None
-        body = self._http_post_json(
-            f"{self.endpoint_url}/v1/chat/completions",
-            {
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-            {
-                "model": model,
-                "temperature": 0,
-                "max_tokens": 48,
-                "messages": [{"role": "user", "content": _PROBE_PROMPT}],
-            },
+        return greedy_completion(
+            self.endpoint_url,
+            self.token,
+            model,
+            http_post_json=self._http_post_json,
         )
-        return str(body["choices"][0]["message"]["content"])
 
     def _verify_adapter_effect(
         self, base_model: str, adapter_names: list[str], *, strict: bool
@@ -688,13 +723,7 @@ class RemoteServeSession:
                 )
                 continue
             if adapter_completion == base_completion:
-                message = (
-                    f"adapter {name!r} has NO EFFECT: its greedy completion "
-                    "is byte-identical to the base model's. vLLM loads some "
-                    "adapters (hybrid Qwen3.5 families) without error and "
-                    "silently serves base weights — use --merge for those. "
-                    "See docs/PROOFS.md."
-                )
+                message = adapter_no_effect_message(name)
                 if strict:
                     raise RemoteExecutionError(message, provider=self.provider)
                 self.effect_warnings.append(message)

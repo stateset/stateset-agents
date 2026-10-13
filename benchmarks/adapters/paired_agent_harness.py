@@ -122,6 +122,33 @@ def load_suite_config(path: Path, suite: str) -> dict[str, Any]:
     return dict(value)
 
 
+def resolve_repository_path(raw: str) -> Path:
+    """Expand ``${VAR}`` references in a checkout path, failing closed.
+
+    Committed harness configs name checkouts relative to an operator-chosen
+    root (for example ``${STATESET_AQ_UPSTREAM_ROOT}/tau2-bench``) so no
+    machine-specific path is checked in. An unset variable is an error, never
+    an empty string.
+    """
+    names = re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)
+    missing = [name for name in names if not os.environ.get(name)]
+    if missing:
+        raise PairedHarnessError(
+            "repository_path references unset environment variable(s): "
+            + ", ".join(missing)
+        )
+    expanded = re.sub(
+        r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}",
+        lambda match: os.environ[match.group(1)],
+        raw,
+    )
+    if "$" in expanded:
+        raise PairedHarnessError(
+            "repository_path may only reference variables as ${NAME}"
+        )
+    return Path(expanded)
+
+
 def verify_repository(path: Path, expected_revision: str) -> None:
     """Require a clean upstream checkout at the manifest-pinned revision."""
     if not path.is_dir():
@@ -277,7 +304,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise PairedHarnessError("evaluation config must be a non-empty object")
     config_path = Path(args.harness_config).resolve()
     suite_config = load_suite_config(config_path, args.suite)
-    repository_path = Path(suite_config["repository_path"])
+    repository_path = resolve_repository_path(suite_config["repository_path"])
     if not repository_path.is_absolute():
         repository_path = (config_path.parent / repository_path).resolve()
     verify_repository(repository_path, args.suite_revision)
@@ -294,6 +321,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "official_suite_pipeline": Path(__file__)
         .with_name("official_suite_pipeline.py")
         .resolve(),
+        "python": sys.executable,
         "upstream_repository": repository_path,
     }
     command = suite_config["command"]

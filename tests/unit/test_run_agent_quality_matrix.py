@@ -59,6 +59,10 @@ def _manifest(
             "artifact_sha256": "c" * 64,
         },
         "evaluation_config": {"temperature": 0.0, "max_turns": 20},
+        "budget": {
+            "max_total_cost_usd": 100.0,
+            "estimated_cost_usd_per_attempt": 10.0,
+        },
         "seeds": [42, 1337, 2026],
         "suites": [
             {
@@ -164,7 +168,9 @@ def test_matrix_gate_requires_evidence_for_every_rostered_optional_suite(
     captured: dict[str, Any] = {}
 
     def fake_run_suite(manifest: Any, suite: Any, seed: int, **_: Any) -> Path:
-        return tmp_path / f"{suite['name']}-{seed}.json"
+        evidence = tmp_path / f"{suite['name']}-{seed}.json"
+        evidence.write_text(json.dumps({"evaluation_cost_usd": 1.0}), "utf-8")
+        return evidence
 
     def fake_validate_matrix(runs: Any, **kwargs: Any) -> None:
         captured.update(kwargs)
