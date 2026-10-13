@@ -102,22 +102,19 @@ serving, and provider claims.
   full weights and a LoRA adapter: the engine-vs-policy log-prob gap of the
   sampled tokens returns to bf16 noise after the sync (retained in
   [`benchmark_results/vllm_rollout_check/`](benchmark_results/vllm_rollout_check/README.md)).
-- **Measured comparisons:** two retained three-seed A40 shootouts against
-  direct TRL at 0.5B (a four-step and a 48-step protocol) establish
-  throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
-  slower than direct TRL) and **no learning-quality signal for either
-  implementation at that scale** (see
-  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). The native-GSPO rows of those
-  matrices are **withdrawn**: a harness bug trained them on a placeholder
-  prompt with a reward that never saw the ground truth (identically zero at
-  every step). Versions `0.53.0` and `0.54.0` fixed the prompt/reward wiring,
-  on-policy reference log-probs, batched sampling, inference-mode generation,
-  and zero-signal detection. The legacy 1.5B v3 matrix remains incomplete:
-  two direct-TRL seeds are retained, but no corrected native-GSPO seed is yet
-  publishable. Unreleased resume hardening now binds evidence to the exact
-  manifest and harness, so the corrected protocol will rerun every pair in a
-  fresh matrix rather than mix those legacy rows. No quality superiority is
-  claimed.
+- **Measured comparisons:** the matched 1.5B GSPO shootout (protocol v5.1,
+  Qwen2.5-1.5B, GSM8K, 200 steps, three seeds, one L40S) finds **parity with
+  direct TRL 1.12**: mean held-out gain +2.08 vs +1.82 points (paired
+  difference +0.26, 95% CI [−7.5, +8.0]) at 0.993 vs 0.999 samples/s
+  ([`benchmark_results/framework_comparison_v5_1/`](benchmark_results/framework_comparison_v5_1/README.md)).
+  Both legs do identical work per step and sample identically; earlier
+  protocols (v4, v5) were stopped when they proved unmatched, and native GSPO
+  was 4.4× slower until rollout generation was batched in `v0.65.0`. No quality
+  superiority is claimed. This run used a pre-release harness, so it is not
+  A+ gate evidence until repeated at the frozen release commit. The older 0.5B
+  A40 shootouts showed throughput parity and no learning signal at that scale;
+  their native-GSPO rows remain withdrawn (see
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)).
 - **Auditable rented-compute cost:** schema-v2 comparison rows are bound to one
   exact shootout manifest. The publication gate can require every RunPod pod
   lifecycle record, verify its post-allocation rate, observed lifetime,

@@ -375,3 +375,12 @@ benchmark_results/framework_comparison_v*/raw/
 !benchmark_results/vllm_rollout_check/*.json
 !benchmark_results/vllm_rollout_check/*.md
 !benchmark_results/vllm_rollout_check/*.log
+!benchmark_results/framework_comparison_v5_1/
+!benchmark_results/framework_comparison_v5_1/README.md
+!benchmark_results/framework_comparison_v5_1/evidence/
+!benchmark_results/framework_comparison_v5_1/evidence/*.json
+!benchmark_results/framework_comparison_v5_1/report/
+!benchmark_results/framework_comparison_v5_1/report/*
+!benchmark_results/framework_comparison_v5_1/accounting/
+!benchmark_results/framework_comparison_v5_1/accounting/*.json
+!benchmark_results/framework_comparison_v5_1/runpod-provider.json
