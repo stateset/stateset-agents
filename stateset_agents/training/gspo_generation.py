@@ -255,12 +255,11 @@ class GSPOTrajectoryGenerator:
         without batching, and an instance-overridden
         ``generate_group_responses`` keep the per-prompt path.
         """
+        generate_turns_batch: Any = getattr(self.agent, "generate_turns_batch", None)
         per_prompt = (
             self.using_vllm
             or "generate_group_responses" in vars(self)
-            or not inspect.iscoroutinefunction(
-                getattr(self.agent, "generate_turns_batch", None)
-            )
+            or not inspect.iscoroutinefunction(generate_turns_batch)
         )
         if not per_prompt and prompts and num_responses > 0:
             if getattr(self.agent, "memory_window", 0):
@@ -270,7 +269,7 @@ class GSPOTrajectoryGenerator:
                 for prompt in prompts
                 for _ in range(num_responses)
             ]
-            turns = await self.agent.generate_turns_batch(histories)
+            turns = await generate_turns_batch(histories)
             if len(turns) == len(histories):
                 groups = []
                 for index, prompt in enumerate(prompts):
