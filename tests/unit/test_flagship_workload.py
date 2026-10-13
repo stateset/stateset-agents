@@ -367,7 +367,8 @@ def test_phase_judge_loads_snapshot_and_records_findings(
     def fake_vllm(model: str, revision: Any) -> Any:
         loaded.append((model, revision))
         return lambda prompts: [
-            json.dumps(dict.fromkeys(support_judge.CRITERIA, 3)) for _ in prompts
+            json.dumps({"checks": dict.fromkeys(support_judge.ALL_CHECKS, True)})
+            for _ in prompts
         ]
 
     monkeypatch.setattr(support_judge, "vllm_generate_fn", fake_vllm)
@@ -413,7 +414,14 @@ def test_phase_judge_loads_snapshot_and_records_findings(
         "must_avoid_hits": [],
         "placeholders": [],
         "repeated_turns": [],
+        "long_turns": [],
     }
+    # Verified findings force check values the judge answered differently.
+    assert first["forced"]["policy_no_must_avoid_phrase"] is False
+    assert first["forced"]["accuracy_no_placeholder"] is False
+    assert first["criteria"][0]["policy_compliance"] == pytest.approx(0.75)
+    assert second["score"] == pytest.approx(1.0)
+    assert group["summary"]["judge_overrides"] == 4.0
     assert group["findings_summary"] == {
         "must_avoid_hits": 1,
         "placeholders": 1,

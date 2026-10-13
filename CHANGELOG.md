@@ -22,6 +22,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   components per step. On the H100 preflight transcripts the v1 turn-mean
   reward rose 0.707 -> 0.899 under a hacked policy (repeated paragraphs);
   v2 scores the same transcripts 0.550 (base) -> 0.455 (trained).
+- **`benchmarks/flagship_rejudge.py`.** Re-scores an existing flagship seed's
+  `transcripts/{baseline,final}.jsonl` with the installed judge and rubric (judge
+  phase only, no training): `--local` on a GPU host, or on one rented RunPod
+  GPU (cheapest 80 GB A100/H100 in the public catalog) with an explicit spend
+  ceiling, a harness-commit-published check, unconditional termination and
+  ledger accounting; `--plan` and `--dry-run` are free.
+
+### Changed
+
+- **Support judge rubric v3 (checklist).** `support_rubric_v3.md` replaces the
+  1-5 Likert scores with 21 yes/no checks (3-5 per criterion); a criterion's
+  score is the fraction of its checks that hold. Pass 2 reverses both the
+  criteria and the checks inside each criterion. Verified findings are now
+  applied after parsing: exact checks (`policy_no_must_avoid_phrase`,
+  `conciseness_reply_length` <= 120 words) take the detector's value and
+  veto checks (`accuracy_no_placeholder`, `conciseness_no_repetition`) are
+  forced false when the detector fires; `JudgeResult` records `checks`,
+  `forced` and the judge answers they `overrides`, and `summarize` adds
+  `check_flip_rate`, `forced_false_checks`, `judge_overrides` and per-criterion
+  disagreement. `JudgeResult.criteria` now holds per-criterion fractions.
+  Motivation: the v2 judge's two-pass self-disagreement was 0.072 on the H100
+  preflight (gate: <= 0.05), led by `empathy_tone` (pass 1 scored +0.38 points
+  higher on average) and `resolution`.
 
 ## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
 
