@@ -17,6 +17,11 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash
 
 
+async def _settle(value: Any) -> Any:
+    """Await ``value`` if it is awaitable (sync or async callbacks)."""
+    return await value if inspect.isawaitable(value) else value
+
+
 def river_environment_factory(
     factory: Callable[[], Environment],
     *,
@@ -77,9 +82,7 @@ def river_environment_factory(
             scenario = deepcopy(row)
             case_hash = content_hash(scenario)
             if before_reset is not None:
-                admission = before_reset()
-                if inspect.isawaitable(admission):
-                    await admission
+                await _settle(before_reset())
             state = await self.environment.reset(scenario)
             messages = state.context.get("messages")
             if not isinstance(messages, list) or not messages:
@@ -181,9 +184,7 @@ def river_environment_factory(
         async def close(self) -> None:
             close = getattr(self.environment, "close", None)
             if close is not None:
-                result = close()
-                if inspect.isawaitable(result):
-                    await result
+                await _settle(close())
 
     return StateSetRiverEnv
 

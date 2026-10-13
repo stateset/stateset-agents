@@ -47,7 +47,6 @@ except ImportError:
     logger.warning("NumPy not available")
 
 # Lazy import transformers
-_transformers_ppo_loaded = False
 AutoModelForCausalLM = None
 AutoTokenizer = None
 get_cosine_schedule_with_warmup = None
@@ -55,10 +54,10 @@ get_cosine_schedule_with_warmup = None
 
 def _load_transformers_ppo():
     """Lazily load transformers to avoid import-time errors."""
-    global _transformers_ppo_loaded, AutoModelForCausalLM, AutoTokenizer
+    global AutoModelForCausalLM, AutoTokenizer
     global get_cosine_schedule_with_warmup
 
-    if _transformers_ppo_loaded:
+    if AutoModelForCausalLM is not None:
         return True
 
     try:
@@ -69,7 +68,6 @@ def _load_transformers_ppo():
         AutoModelForCausalLM = _AutoModelForCausalLM
         AutoTokenizer = _AutoTokenizer
         get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_ppo_loaded = True
         return True
     except (ImportError, RuntimeError) as e:
         logger.warning(f"Failed to load transformers: {e}")
