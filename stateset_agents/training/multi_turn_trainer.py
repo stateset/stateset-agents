@@ -70,6 +70,48 @@ TrajectoryGroup: TypeAlias = core_trajectory.TrajectoryGroup
 logger = logging.getLogger(__name__)
 
 
+def rollout_sampling_transforms(agent: Any) -> list[str]:
+    """Sampling settings that make rollouts differ from the policy's distribution.
+
+    Policy-gradient objectives assume each reply was sampled from the policy
+    itself (temperature 1, no top-p/top-k truncation, no repetition penalty).
+    Returns a description of every setting on ``agent.config`` that changes
+    that distribution; an empty list means rollouts are on-policy.
+    """
+    config = getattr(agent, "config", None)
+    if config is None:
+        return []
+    found: list[str] = []
+    if getattr(config, "do_sample", True) is False:
+        found.append("greedy decoding")
+        return found
+    temperature = getattr(config, "temperature", 1.0)
+    if isinstance(temperature, (int, float)) and float(temperature) != 1.0:
+        found.append(f"temperature={temperature}")
+    top_p = getattr(config, "top_p", 1.0)
+    if isinstance(top_p, (int, float)) and float(top_p) < 1.0:
+        found.append(f"top_p={top_p}")
+    top_k = getattr(config, "top_k", None)
+    if isinstance(top_k, int) and not isinstance(top_k, bool) and top_k > 0:
+        found.append(f"top_k={top_k}")
+    penalty = getattr(config, "repetition_penalty", 1.0)
+    if isinstance(penalty, (int, float)) and float(penalty) != 1.0:
+        found.append(f"repetition_penalty={penalty}")
+    return found
+
+
+def _warn_on_biased_rollout_sampling(agent: Any) -> None:
+    transforms = rollout_sampling_transforms(agent)
+    if transforms:
+        logger.warning(
+            "Rollouts are not sampled from the policy itself (%s), so the "
+            "on-policy gradient is biased toward the transformed distribution. "
+            "For unbiased RL set temperature=1.0, top_p=1.0, top_k=0, "
+            "repetition_penalty=1.0, do_sample=True on the agent.",
+            ", ".join(transforms),
+        )
+
+
 class AdapterDisabledReference:
     """Frozen-base reference for a PEFT policy, without a second weight copy.
 
@@ -190,6 +232,7 @@ class MultiTurnGRPOTrainer:
             await self.agent.initialize()
 
         apply_dropout_setting(self.config, getattr(self.agent, "model", None))
+        _warn_on_biased_rollout_sampling(self.agent)
         self._apply_gradient_checkpointing()
         self._warn_ignored_config_fields()
 

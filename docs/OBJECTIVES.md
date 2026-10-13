@@ -275,6 +275,15 @@ skip_special_tokens=True)` for the `token_ids` the token path trains on:
 - With `enable_reasoning`, the `<think>` block is removed from `content` and
   kept in `metadata["reasoning"]`; the ids still cover it.
 
+### Rollouts should be sampled from the policy itself
+
+Policy-gradient objectives assume each reply was drawn from the policy's own
+distribution. `AgentConfig` defaults (`top_p=0.9`, `top_k=50`,
+`repetition_penalty=1.1`) suit serving but transform that distribution, which
+biases the gradient. `MultiTurnGRPOTrainer.initialize()` logs a warning naming
+every such setting; for unbiased training set `temperature=1.0`, `top_p=1.0`,
+`top_k=0`, `repetition_penalty=1.0`, and `do_sample=True`.
+
 ## Group sampling in one call
 
 `MultiTurnAgent.generate_turns(messages, n)` samples the whole group of a
