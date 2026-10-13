@@ -102,22 +102,19 @@ serving, and provider claims.
   full weights and a LoRA adapter: the engine-vs-policy log-prob gap of the
   sampled tokens returns to bf16 noise after the sync (retained in
   [`benchmark_results/vllm_rollout_check/`](benchmark_results/vllm_rollout_check/README.md)).
-- **Measured comparisons:** two retained three-seed A40 shootouts against
-  direct TRL at 0.5B (a four-step and a 48-step protocol) establish
-  throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
-  slower than direct TRL) and **no learning-quality signal for either
-  implementation at that scale** (see
-  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). The native-GSPO rows of those
-  matrices are **withdrawn**: a harness bug trained them on a placeholder
-  prompt with a reward that never saw the ground truth (identically zero at
-  every step). Versions `0.53.0` and `0.54.0` fixed the prompt/reward wiring,
-  on-policy reference log-probs, batched sampling, inference-mode generation,
-  and zero-signal detection. The legacy 1.5B v3 matrix remains incomplete:
-  two direct-TRL seeds are retained, but no corrected native-GSPO seed is yet
-  publishable. Unreleased resume hardening now binds evidence to the exact
-  manifest and harness, so the corrected protocol will rerun every pair in a
-  fresh matrix rather than mix those legacy rows. No quality superiority is
-  claimed.
+- **Measured comparisons:** the matched 1.5B GSPO shootout (protocol v5.1,
+  Qwen2.5-1.5B, GSM8K, 200 steps, three seeds, one L40S) finds **parity with
+  direct TRL 1.12**: mean held-out gain +2.08 vs +1.82 points (paired
+  difference +0.26, 95% CI [−7.5, +8.0]) at 0.993 vs 0.999 samples/s
+  ([`benchmark_results/framework_comparison_v5_1/`](benchmark_results/framework_comparison_v5_1/README.md)).
+  Both legs do identical work per step and sample identically; earlier
+  protocols (v4, v5) were stopped when they proved unmatched, and native GSPO
+  was 4.4× slower until rollout generation was batched in `v0.65.0`. No quality
+  superiority is claimed. This run used a pre-release harness, so it is not
+  A+ gate evidence until repeated at the frozen release commit. The older 0.5B
+  A40 shootouts showed throughput parity and no learning signal at that scale;
+  their native-GSPO rows remain withdrawn (see
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)).
 - **Auditable rented-compute cost:** schema-v2 comparison rows are bound to one
   exact shootout manifest. The publication gate can require every RunPod pod
   lifecycle record, verify its post-allocation rate, observed lifetime,
@@ -131,7 +128,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.64.2`, published from the
+- **Current Python release:** `stateset-agents==0.65.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -386,7 +383,20 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**v0.64.2 (latest release; publication triggered by tag):**
+**v0.65.0 (latest release; publication triggered by tag):**
+
+- **Multi-turn RL that matches the conversation.** `ConversationEnvironment` now opens each episode with the scenario's first user message and replays scripted `user_turns`. Previously the agent spoke first and follow-ups were random filler.
+- **Rollout text is exactly what the policy sampled.** There are no default stop strings and no canned persona text, and truncation cuts the text and the token ids at the same boundary. `top_k=0` disables top-k, and a warning names any sampling setting that biases on-policy gradients.
+- **Faster, leaner training.**
+  - Lockstep batched multi-turn rollouts: one `generate` per conversation turn.
+  - Batched GSPO generation: 4.4x faster per run in the matched shootout.
+  - Chunked token-path backward bounds activation memory to one chunk; gradients are identical.
+  - The LoRA KL reference reuses the frozen base.
+- **Correct KL and references.** Reference models load at the policy's pinned revision, and selected objectives keep their own KL estimator (`gspo` uses sequence k3).
+- **Matched evidence.** GSPO on Qwen2.5-1.5B / GSM8K under protocol v5.1 (identical prompts x completions per step and identical sampling) runs at parity with TRL 1.12 so far: about 98% of TRL's throughput, with the same accuracy gains within noise.
+- **Breaking:** the v0.64.0 deprecation shims are removed (import from `stateset_agents.experimental`). See the CHANGELOG for the changed agent and environment defaults.
+
+**v0.64.2:**
 
 - **Security and correctness fixes from CodeQL and review.** Script-tag
   injection detection catches unclosed and `</script >` tags; Training Lab
@@ -406,8 +416,8 @@ coverage, live hardware attempts, and successful inference by provider.
 
 - **Smaller stable surface.** PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR,
   Decision Transformer, offline GRPO), sim-to-real, and the Bayesian reward
-  model moved to `stateset_agents.experimental`; old import paths still work
-  with a `DeprecationWarning` and are removed in v0.65.0.
+  model moved to `stateset_agents.experimental`; the old import paths were
+  removed in v0.65.0.
 - **Maturity contract.** These components are recorded as experimental with
   explicit limitations and graduation criteria.
 - **Benchmark harness.** The native shootout leg accepts and verifies the v4
@@ -1404,8 +1414,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.64.2" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.64.2"
+pip install "stateset-agents==0.65.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.65.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1819,8 +1829,7 @@ followup = await trained_agent.generate_response(
 These algorithms are available when training deps are installed. GSPO, GEPO,
 DAPO, and VAPO live under `stateset_agents.training`; PPO and RLAIF are
 **experimental** and live under `stateset_agents.experimental` (since v0.64.0;
-the old `stateset_agents.training` import paths still work with a
-`DeprecationWarning` until v0.65.0):
+the old `stateset_agents.training` import paths were removed in v0.65.0):
 
 - **GSPO**: stable sequence‑level GRPO variant (`GSPOTrainer`, `GSPOConfig`, `train_with_gspo`)
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
@@ -1974,7 +1983,7 @@ See `benchmark_results/README.md` for the full pipeline reference.
 
 > **Experimental.** The offline RL algorithms live in
 > `stateset_agents.experimental.offline_rl` (moved from `stateset_agents.training`
-> in v0.64.0; the old paths warn and are removed in v0.65.0). They carry no API
+> in v0.64.0; the old paths were removed in v0.65.0). They carry no API
 > stability guarantee until they pass a learning test on a realistic dialogue
 > task — see [component maturity](docs/COMPONENT_MATURITY.md).
 
@@ -2038,7 +2047,9 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 
 > **Experimental.** Sim-to-real lives in `stateset_agents.experimental.sim_to_real`
 > (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
-> v0.64.0; the old paths warn and are removed in v0.65.0). Public benchmark
+> v0.64.0; the old paths were removed in v0.65.0, and the deprecated root
+> `stateset_agents.SimToRealMetrics`/`SimToRealEvaluator`/`ConversationSimulator`/
+> `ConversationSimulatorConfig` exports are removed in v0.66.0). Public benchmark
 > evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
 
 Train in simulation, deploy to real users. The framework provides:
@@ -2254,7 +2265,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.64.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.65.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

@@ -8,22 +8,9 @@ Includes state-of-the-art RL algorithms:
 - DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization (best for reasoning)
 - VAPO: Value-Augmented Policy Optimization (SOTA: 60.4 on AIME 2024)
 
-Experimental (moved to ``stateset_agents.experimental`` in v0.64.0; the names
-below are still re-exported here with a ``DeprecationWarning`` until v0.65.0):
-
-PPO and RLAIF trainers: ``stateset_agents.experimental.ppo`` / ``.rlaif``
-
-Offline RL algorithms (``stateset_agents.experimental.offline_rl``):
-- CQL: Conservative Q-Learning
-- IQL: Implicit Q-Learning
-- BCQ: Batch-Constrained Q-Learning
-- BEAR: Bootstrapping Error Accumulation Reduction
-- Decision Transformer: Sequence modeling approach
-
-Sim-to-Real Transfer (``stateset_agents.experimental.sim_to_real``):
-- Domain Randomization: Persona, topic, and style randomization
-- System Identification: Learn user behavior models
-- Progressive Transfer: Gradual sim-to-real transition
+PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR, Decision Transformer, offline
+GRPO) and sim-to-real transfer live in :mod:`stateset_agents.experimental`
+(moved in v0.64.0; the re-exports from this package were removed in v0.65.0).
 
 Generation backends:
 - vLLM: 5-20x faster generation with automatic log probability extraction
@@ -38,12 +25,9 @@ import importlib
 import importlib.util
 import logging
 import sys
-import warnings
 from types import ModuleType
 from typing import Any
 
-from ._registry import DEPRECATED_EXPORTS as _DEPRECATED_EXPORTS
-from ._registry import DEPRECATED_REMOVAL_VERSION as _DEPRECATED_REMOVAL_VERSION
 from ._registry import OPTIONAL_EXPORTS as _OPTIONAL_EXPORTS
 from ._registry import PUBLIC_NAMES
 
@@ -144,17 +128,6 @@ def __getattr__(name: str) -> Any:
         return value
     if name in _OPTIONAL_EXPORTS:
         module_name, attr_name = _OPTIONAL_EXPORTS[name]
-        if name in _DEPRECATED_EXPORTS:
-            # Moved to the experimental namespace: warn on every access (the
-            # value is deliberately not cached in globals()).
-            warnings.warn(
-                f"stateset_agents.training.{name} is deprecated and moved to "
-                f"{module_name}.{attr_name}; the old import path will be "
-                f"removed in v{_DEPRECATED_REMOVAL_VERSION}.",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-            return getattr(importlib.import_module(module_name), attr_name)
         module = importlib.import_module(module_name)
         value = getattr(module, attr_name)
         globals()[name] = value

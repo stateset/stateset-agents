@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
+
 ### Performance
 
 - **GSPO samples a whole step in one `generate` call.** GSPO and GSPO-token
@@ -14,8 +16,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `num_generations` rows through `MultiTurnAgent.generate_turns_batch`
   (greedy decoding gives identical groups either way). On CPU with a tiny
   Qwen2+LoRA policy a 4x4 step went from ~23 s to ~15 s; the v5 shootout
-  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work,
-  which this addresses.
+  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work.
+  On an L40S (Qwen2.5-1.5B, 200 steps) training time fell from 6,032 s to
+  1,357 s (~6.7 s/step); the matched v5.1 shootout measured 1.01 samples/s
+  against TRL's 0.99.
 
 ### Fixed
 
@@ -131,6 +135,80 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 `API_ALLOW_EXTERNAL_MODELS=true` (and ideally `API_MODEL_ALLOWLIST`);
 Prometheus scrapers need credentials or `API_PUBLIC_METRICS=true`; custom
 models that need remote code must set `trust_remote_code=True` explicitly.
+
+### Removed
+
+- **The v0.64.0 experimental-move deprecation shims are gone.** These old
+  module paths now raise `ModuleNotFoundError`; import from
+  `stateset_agents.experimental` instead:
+  - `stateset_agents.training.ppo_trainer` → `stateset_agents.experimental.ppo`
+  - `stateset_agents.training.rlaif_trainer` → `stateset_agents.experimental.rlaif`
+  - `stateset_agents.training.offline_rl_algorithms` (CQL/IQL) →
+    `stateset_agents.experimental.offline_rl.algorithms`
+  - `stateset_agents.training.offline_rl_bcq` → `stateset_agents.experimental.offline_rl.bcq`
+  - `stateset_agents.training.offline_rl_bear` → `stateset_agents.experimental.offline_rl.bear`
+  - `stateset_agents.training.decision_transformer` →
+    `stateset_agents.experimental.offline_rl.decision_transformer`
+  - `stateset_agents.training.offline_grpo_trainer` →
+    `stateset_agents.experimental.offline_rl.offline_grpo`
+  - `stateset_agents.training.sim_to_real` → `stateset_agents.experimental.sim_to_real.transfer`
+  - `stateset_agents.training.domain_randomization` →
+    `stateset_agents.experimental.sim_to_real.domain_randomization`
+  - `stateset_agents.environments.conversation_simulator` →
+    `stateset_agents.experimental.sim_to_real.conversation_simulator`
+  - `stateset_agents.evaluation.sim_to_real_metrics` →
+    `stateset_agents.experimental.sim_to_real.metrics`
+  - `stateset_agents.rewards.bayesian_reward_model` →
+    `stateset_agents.experimental.bayesian_reward_model`
+- **Package-level re-exports removed** (now `AttributeError`/`ImportError`):
+  - `stateset_agents.training`: `PPOConfig`, `PPOTrainer`, `PPOValueHead`,
+    `AdaptiveKLController`, `compute_gae`, `train_ppo` (→ `experimental.ppo`);
+    `RLAIFConfig`, `RLAIFTrainer`, `ConstitutionalAI`, `train_rlaif`
+    (→ `experimental.rlaif`); `CQLConfig`, `IQLConfig`,
+    `ConservativeQLearning`, `ImplicitQLearning`, `OfflineRLTrainer`
+    (→ `experimental.offline_rl.algorithms`); `BCQConfig`,
+    `BatchConstrainedQLearning`, `ConversationalVAE`, `BCQTrainer`
+    (→ `experimental.offline_rl.bcq`); `BEARConfig`, `ConversationalBEAR`,
+    `MMDKernel`, `BEARTrainer` (→ `experimental.offline_rl.bear`);
+    `DecisionTransformerConfig`, `DecisionTransformer`,
+    `DecisionTransformerTrainer`, `ConversationEmbedder`
+    (→ `experimental.offline_rl.decision_transformer`); `OfflineGRPOConfig`,
+    `OfflineGRPOTrainer`, `OfflineRLAlgorithm`
+    (→ `experimental.offline_rl.offline_grpo`); `DomainRandomizationConfig`,
+    `DomainRandomizer`, `PersonaGenerator`, `ScenarioGenerator`, `UserPersona`
+    (→ `experimental.sim_to_real.domain_randomization`); `SimToRealConfig`,
+    `SimToRealTransfer`, `UserBehaviorModel`, `DomainAdaptationModule`
+    (→ `experimental.sim_to_real.transfer`). The `*_AVAILABLE` flags
+    (`PPO_AVAILABLE`, `SIM_TO_REAL_AVAILABLE`, ...) are unchanged.
+  - `stateset_agents.evaluation`: `SimToRealMetrics`, `SimToRealEvaluator`,
+    `compute_distribution_divergence`, `compute_response_statistics`
+    (→ `experimental.sim_to_real.metrics`).
+  - `stateset_agents.environments`: `ConversationSimulator`,
+    `ConversationSimulatorConfig`, `UserSimulator`
+    (→ `experimental.sim_to_real.conversation_simulator`).
+- `pytest.ini` no longer escalates the v0.65.0 removal warnings;
+  `tests/unit/test_experimental_shims.py` is replaced by
+  `tests/unit/test_experimental_shims_removed.py`, which asserts the old paths
+  stay gone and the experimental paths import.
+
+**Migration:** replace the old import with the experimental path, e.g.
+`from stateset_agents.training import PPOTrainer` →
+`from stateset_agents.experimental.ppo import PPOTrainer`, and
+`from stateset_agents.environments import ConversationSimulator` →
+`from stateset_agents.experimental.sim_to_real.conversation_simulator import
+ConversationSimulator`. Objects, signatures and behavior are unchanged.
+
+### Deprecated
+
+- **Root sim-to-real exports kept one more minor release.**
+  `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator`, and `ConversationSimulatorConfig` are stable v1
+  public-API-contract names. `docs/API_COMPATIBILITY.md` requires a deprecated
+  stable symbol to remain available for at least one minor release after the
+  one that deprecated it (v0.64.0), so they stay in `stateset_agents.__all__`
+  and the v1 contract (unchanged) through v0.65.x, still warning, and are now
+  scheduled for removal in **v0.66.0** (the v0.64.0 notes said v0.65.0). They
+  resolve directly from `stateset_agents.experimental.sim_to_real`.
 
 ## [0.64.0] - 2026-10-12 — Smaller stable surface
 

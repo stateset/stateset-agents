@@ -177,6 +177,36 @@ GRPO orchestration preserves upstream behavior without material overhead.
 - [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
 - Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
 
+### Matched 1.5B native GSPO vs direct TRL (protocol v5.1)
+
+Qwen2.5-1.5B-Instruct (pinned revision), GSM8K (pinned revision), 800
+training and 256 held-out problems, 200 steps, LoRA r=16, bf16, one NVIDIA
+L40S, three seeds per framework. Both legs train on 4 prompts × 4 completions
+per step and sample with temperature 0.7 and top-p 0.9 only (no top-k, no
+repetition penalty, no stop strings); the native leg records its sampling in
+`algorithm_config.sampling`.
+
+| Framework | Samples/s | Peak VRAM | Baseline | Final | Gain |
+|---|---:|---:|---:|---:|---:|
+| StateSet native GSPO (0.64.2 + #99 + #101) | 0.993 ± 0.028 | 10.2 GiB | 29.3% | 31.4% ± 1.5 | +2.1 ± 1.5 |
+| TRL 1.12 GRPOTrainer (GSPO ratio) | 0.999 ± 0.012 | 10.5 GiB | 29.3% | 31.1% ± 1.9 | +1.8 ± 1.9 |
+
+Paired per-seed differences are +3.5, −2.7 and 0.0 points (mean +0.26, 95% CI
+[−7.5, +8.0]): **parity, with no quality claim in either direction.** Both
+frameworks improve held-out accuracy by about two points in 200 steps.
+
+The protocol history matters for interpreting older numbers. v4 under-trained
+TRL (its batch counts completions, so it saw one prompt per step) and
+overstated its throughput 4×; v5 left the native leg on agent default sampling
+(temperature 0.8, top-k 50, repetition penalty 1.1, a blank-line stop that
+truncated reasoning). Both were stopped and retained only as diagnostics.
+Batching GSPO rollout generation reduced native training time for these 200
+steps from 6,032 s to 1,357 s.
+
+The harness (`b006aab`) predates the frozen release commit, so this matrix is
+not `a_plus_gate` evidence until rerun there. Cost $5.97 (5.5 h).
+[Evidence, validated report, and provider record](../benchmark_results/framework_comparison_v5_1/README.md).
+
 ### One-command matched comparison on RunPod (v2 protocol)
 
 `benchmarks/runpod_shootout.py` runs `benchmarks/shootout.py` on exactly one

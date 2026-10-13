@@ -12,9 +12,10 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = all 387 packaged Python files, including core/chat_masking.py and
-# the v0.64.0 experimental-move shims and experimental subpackages.
-ALLOWLIST_FLOOR = 390
+# Floor = all 378 packaged Python files (the whole package is gated). Lowered
+# from 390 in v0.65.0 only because the twelve v0.64.0 experimental-move shim
+# modules were deleted; no gated source file left the type check.
+ALLOWLIST_FLOOR = 378
 
 
 def _allowlisted_files() -> list[str]:

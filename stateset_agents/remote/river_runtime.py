@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import importlib
+import importlib.metadata
 import inspect
 import math
 import os
 import sys
 from collections.abc import Sequence
 from datetime import datetime, timezone
-from importlib import metadata
 from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutionError
+
+# Module-level alias: callers and tests patch ``river_runtime.metadata``.
+metadata = importlib.metadata
 
 SUPPORTED_RIVER_SDK = ">=0.11.0,<0.12"
 

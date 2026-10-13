@@ -430,3 +430,5 @@ framework-superiority, GPU-scaling, or production-capacity claims.
 
 See [`docs/BENCHMARKS.md`](../docs/BENCHMARKS.md) for supported claims and the
 publication policy.
+
+See [A_PLUS_RUNBOOK.md](A_PLUS_RUNBOOK.md) for the ordered, costed path to a passing `a_plus_gate.py`.

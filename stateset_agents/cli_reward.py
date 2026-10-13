@@ -9,10 +9,7 @@ from pathlib import Path
 
 import typer
 
-from stateset_agents.cli import app
 
-
-@app.command("reward-audit")
 def reward_audit(
     suite: Path = typer.Argument(..., help="Reviewed JSON candidate suite."),
     reward: str = typer.Option(
