@@ -134,6 +134,10 @@ def fixture_repo(tmp_path: Path) -> Path:
         (benchmarks / name).write_text(
             '{"framework_version": "0.25.0"}\n', encoding="utf-8"
         )
+    (benchmarks / "shootout_manifest_v6_five_frameworks.json").write_text(
+        '{"implementations": [{"version": "0.25.0"}, {"version": "1.12.0"}]}\n',
+        encoding="utf-8",
+    )
 
     (tmp_path / "CHANGELOG.md").write_text(CHANGELOG_FIXTURE, encoding="utf-8")
     (tmp_path / "README.md").write_text(README_FIXTURE, encoding="utf-8")

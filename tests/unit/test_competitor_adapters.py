@@ -25,6 +25,7 @@ from benchmarks.adapters import framework_envs
 from benchmarks.adapters import nemo_rl_gspo as nemo
 from benchmarks.adapters import openrlhf_gspo as openrlhf
 from benchmarks.adapters import verl_gspo as verl
+from stateset_agents import __version__ as PACKAGE_VERSION
 
 BENCHMARKS = Path(__file__).resolve().parents[2] / "benchmarks"
 if str(BENCHMARKS) not in sys.path:
@@ -685,7 +686,12 @@ def test_v6_manifest_loads_and_covers_required_frameworks() -> None:
     native = {item["name"]: item for item in v5["implementations"]}
     for item in manifest["implementations"]:
         if item["name"] in native:
-            assert item == native[item["name"]], item["name"]
+            # Same command and pins as v5.1; the native leg's version tracks
+            # the installed package (the A+ gate requires it).
+            expected = dict(native[item["name"]])
+            if item["name"] == "stateset-agents-gspo":
+                expected["version"] = PACKAGE_VERSION
+            assert item == expected, item["name"]
 
 
 def test_v6_manifest_pins_match_adapters_and_envs() -> None:
