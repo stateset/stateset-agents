@@ -13,8 +13,8 @@ pinned inputs that ``run_flagship_matrix.py`` hands the driver. The run is:
 3. on-policy multi-turn GSPO + LoRA with ``MultiTurnGRPOTrainer``
    (``objective="gspo"``): every step samples ``num_generations`` full
    conversations per scheduled train scenario from the *current* policy in
-   that same environment, scores each episode with
-   :class:`ConversationSupportReward`, and optimizes the length-normalized
+   that same environment, scores each episode with :func:`support_reward`
+   (``SupportConversationReward``), and optimizes the length-normalized
    sequence ratio of every assistant turn against the episode's
    group-normalized advantage;
 4. final evaluation with the trained adapter: the identical environment
@@ -448,66 +448,57 @@ def _turn_field(turn: Any, name: str) -> Any:
     return turn.get(name) if isinstance(turn, Mapping) else getattr(turn, name, None)
 
 
-class ConversationSupportReward:
-    """Episode reward: ``SupportRewardComposite`` averaged over assistant turns.
+def support_reward() -> Any:
+    """The training reward: conversation-level ``SupportConversationReward``.
 
-    ``SupportRewardComposite`` grades the concatenation of every assistant
-    message it is given, so scoring a whole episode at once would credit an
-    early reply's keywords to the episode once and apply its 10-120 word
-    brand-voice window to all replies combined (a three-turn conversation is
-    penalized for being three turns long). This wrapper scores each assistant
-    reply on its own -- with the scenario context and the customer turns that
-    preceded it -- and returns the mean, so every turn earns its share of the
-    episode's reward. The judge stays the held-out evaluator.
+    v1 averaged ``SupportRewardComposite`` over assistant turns and was
+    reward-hacked on the H100 preflight (held-out rule reward 0.707 -> 0.899
+    while the judge fell 0.748 -> 0.605): the policy repeated one
+    policy-correct paragraph on every turn. v2 multiplies each turn's
+    composite score by repetition, placeholder and responsiveness penalties
+    and zeroes an episode on a ``must_avoid`` hit; see
+    :mod:`stateset_agents.rewards.support_conversation_reward`.
     """
+    from stateset_agents.rewards.support_conversation_reward import (
+        SupportConversationReward,
+    )
 
-    name = "support_composite_turn_mean"
+    return SupportConversationReward()
 
-    def __init__(self, composite: Any | None = None, weight: float = 1.0) -> None:
-        if composite is None:
-            from stateset_agents.data.customer_support_bench import (
-                SupportRewardComposite,
-            )
 
-            composite = SupportRewardComposite()
-        self.composite = composite
-        self.weight = float(weight)
+#: Train-log key -> reward breakdown key, averaged over a step's episodes so a
+#: drift toward a known hack (repeating, placeholders, ...) shows up in the log.
+REWARD_COMPONENT_LOG_KEYS: dict[str, str] = {
+    "base_reward_mean": "base_mean",
+    "repetition_penalty_mean": "repetition_penalty_mean",
+    "max_similarity_mean": "max_similarity_mean",
+    "placeholder_rate": "placeholder_rate",
+    "must_avoid_rate": "must_avoid_rate",
+    "unresponsive_rate": "unresponsive_rate",
+}
 
-    async def compute_reward(self, turns: Sequence[Any], context: Any = None) -> Any:
-        from stateset_agents.core.reward_base import RewardResult
-        from stateset_agents.core.trajectory import ConversationTurn
 
-        normalized = [
-            ConversationTurn(
-                role=str(_turn_field(t, "role")),
-                content=str(_turn_field(t, "content") or ""),
-            )
-            for t in turns
-        ]
-        scores: list[float] = []
-        sums: dict[str, float] = {}
-        for index, turn in enumerate(normalized):
-            if turn.role != "assistant":
-                continue
-            prefix = [t for t in normalized[:index] if t.role == "user"]
-            result = await self.composite.compute_reward(prefix + [turn], context)
-            scores.append(float(result.score))
-            for key, value in (getattr(result, "breakdown", None) or {}).items():
+def reward_component_means(groups: Sequence[Any]) -> dict[str, float | None]:
+    """Per-step mean of each :data:`REWARD_COMPONENT_LOG_KEYS` component.
+
+    Reads ``trajectory.metadata["reward_breakdown"]`` (set by the trainer);
+    a component no episode reported is ``None``.
+    """
+    sums = dict.fromkeys(REWARD_COMPONENT_LOG_KEYS, 0.0)
+    counts = dict.fromkeys(REWARD_COMPONENT_LOG_KEYS, 0)
+    for group in groups:
+        for trajectory in getattr(group, "trajectories", None) or ():
+            metadata = getattr(trajectory, "metadata", None) or {}
+            breakdown = metadata.get("reward_breakdown") or {}
+            for log_key, key in REWARD_COMPONENT_LOG_KEYS.items():
+                value = breakdown.get(key)
                 if _is_number(value):
-                    sums[key] = sums.get(key, 0.0) + float(value)
-        if not scores:
-            return RewardResult(score=0.0, breakdown={"no_assistant_turn": 1.0})
-        mean = sum(scores) / len(scores)
-        breakdown = {key: value / len(scores) for key, value in sums.items()}
-        breakdown.update(
-            {
-                "turn_mean": mean,
-                "turn_min": min(scores),
-                "assistant_turns": float(len(scores)),
-            }
-        )
-        breakdown.update({f"turn_{i}": s for i, s in enumerate(scores)})
-        return RewardResult(score=mean, breakdown=breakdown)
+                    sums[log_key] += float(value)
+                    counts[log_key] += 1
+    return {
+        key: (sums[key] / counts[key] if counts[key] else None)
+        for key in REWARD_COMPONENT_LOG_KEYS
+    }
 
 
 def rule_reward_mean(
@@ -747,6 +738,7 @@ async def run_training_loop(
             "learning_rate",
             "optimizer_step",
             "seconds",
+            *REWARD_COMPONENT_LOG_KEYS,
         )
     }
     aborted: str | None = None
@@ -793,15 +785,23 @@ async def run_training_loop(
             value = metrics.get(key)
             log[key].append(float(value) if _is_number(value) else None)
         log["optimizer_step"].append(bool(metrics.get("optimizer_step")))
+        components = reward_component_means(groups)
+        for key, value in components.items():
+            log[key].append(value)
         log["seconds"].append(round(clock() - started, 3))
         logger.info(
-            "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs",
+            "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs "
+            "repetition=%s placeholders=%s must_avoid=%s unresponsive=%s",
             step,
             len(schedule),
             mean,
             fraction,
             log["total_loss"][-1],
             log["seconds"][-1],
+            components["repetition_penalty_mean"],
+            components["placeholder_rate"],
+            components["must_avoid_rate"],
+            components["unresponsive_rate"],
         )
         guard.on_step_end(step, {"nonzero_advantage_fraction": fraction})
         if guard.should_abort:
@@ -899,7 +899,7 @@ def _default_snapshot(model: str, revision: str | None) -> str:
 
 
 def _default_reward_fn() -> Any:
-    return ConversationSupportReward()
+    return support_reward()
 
 
 def _default_hardware() -> dict[str, Any]:
@@ -1137,6 +1137,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
             eval_records, baseline, reward_fn
         ),
         "final_rule_reward_mean": rule_reward_mean(eval_records, final, reward_fn),
+        "rule_reward": str(getattr(reward_fn, "name", type(reward_fn).__name__)),
         "training": "on-policy multi-turn GSPO (MultiTurnGRPOTrainer, objective=gspo)",
         "train_steps": train_out.get("steps"),
         "train_optimizer_steps": train_out.get("optimizer_steps"),
@@ -1523,7 +1524,7 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
             environment=environment,
-            reward_fn=ConversationSupportReward(),
+            reward_fn=support_reward(),
             config=TrainingConfig(**training_config_kwargs(payload, config)),
         )
         await trainer.initialize()

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`SupportConversationReward` (support reward v2).** A conversation-level,
+  hack-resistant customer-support reward in
+  `stateset_agents.rewards.support_conversation_reward`: each assistant turn's
+  `SupportRewardComposite` score is scaled by a repetition penalty (difflib
+  similarity to earlier replies above tau=0.5; an identical reply scores 0),
+  an unfilled-placeholder penalty (x0.5, same detector as the support judge)
+  and a responsiveness penalty (x0.8 when a follow-up's new content words are
+  ignored); any `must_avoid` phrase zeroes the episode. The breakdown exposes
+  `repetition_penalty_mean`, `placeholder_rate`, `must_avoid_rate` and
+  `unresponsive_rate`. The flagship workload trains on it and logs those
+  components per step. On the H100 preflight transcripts the v1 turn-mean
+  reward rose 0.707 -> 0.899 under a hacked policy (repeated paragraphs);
+  v2 scores the same transcripts 0.550 (base) -> 0.455 (trained).
+
 ## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
 
 ### Performance

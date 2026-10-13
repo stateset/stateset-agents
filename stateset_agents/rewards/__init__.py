@@ -27,6 +27,7 @@ from .multi_objective_reward import (
 from .ruler_reward import RulerRewardFunction
 from .ruler_reward import RulerRewardFunction as LLMRewardFunction
 from .ruler_reward import create_customer_service_ruler, create_general_ruler
+from .support_conversation_reward import SupportConversationReward
 from .symbolic_physics_reward import SymbolicPhysicsRewardFunction, SymbolicRewardConfig
 
 # LLM-as-Judge for RLAIF
@@ -66,6 +67,7 @@ __all__ = [
     "RulerRewardFunction",
     "create_customer_service_ruler",
     "create_general_ruler",
+    "SupportConversationReward",
     "SymbolicPhysicsRewardFunction",
     "SymbolicRewardConfig",
     "ThinkingModeReward",
