@@ -808,17 +808,21 @@ def starter(
 from stateset_agents import cli_benchmark  # noqa: E402, F401 — benchmark sub-app
 from stateset_agents import cli_chat  # noqa: E402, F401 — chat
 from stateset_agents import cli_flywheel  # noqa: E402, F401 — autonomous loop
-from stateset_agents import cli_industry  # noqa: E402, F401 — industry fine-tuning
 from stateset_agents import cli_ingest  # noqa: E402, F401 — ingest third-party logs
 from stateset_agents import cli_mcp  # noqa: E402, F401 — run the MCP server
 from stateset_agents import cli_remote  # noqa: E402, F401 — train-remote
 from stateset_agents import cli_research  # noqa: E402, F401 — auto-research, fine-tune
-from stateset_agents import cli_reward  # noqa: E402, F401 — reward audit
 from stateset_agents import (  # noqa: E402, F401 — grade -> curate -> retrain loop; noqa: E402, F401 — train, qwen3-5-0-8b, kimi-k2-6, gemma-4-31b; noqa: E402, F401 — doctor, preflight, publish-check
     cli_improve,
     cli_meta,
     cli_train,
 )
+from stateset_agents.cli_industry import industry_app  # noqa: E402 — industry
+from stateset_agents.cli_reward import reward_audit  # noqa: E402 — reward audit
+
+# Sub-apps that do not import this module (no import cycle) register here.
+app.add_typer(industry_app, name="industry")
+app.command("reward-audit")(reward_audit)
 
 
 def _register_advanced_cli() -> None:

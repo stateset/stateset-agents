@@ -23,7 +23,6 @@ class AuditableReward(Protocol):
         self, turns: list[Any], context: dict[str, Any] | None = None
     ) -> Any:
         """Return an object exposing a finite numeric ``score``."""
-        ...
 
 
 @dataclass(frozen=True)
