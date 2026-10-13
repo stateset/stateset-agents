@@ -72,6 +72,15 @@ TRAINED_REVISION = "e" * 40
 HARNESS_COMMIT = "f" * 40
 
 
+# The agent-quality harness runs on Linux GPU hosts (vLLM, upstream virtualenv
+# binaries). These tests exec POSIX stub executables via their shebang, which
+# Windows cannot run, so they are POSIX-only; the pure validation tests in this
+# file still run everywhere.
+posix_only = pytest.mark.skipif(
+    sys.platform == "win32", reason="execs POSIX stub executables (Linux-only harness)"
+)
+
+
 def _free_port() -> int:
     with socket.socket() as sock:
         sock.bind(("127.0.0.1", 0))
@@ -238,6 +247,7 @@ def test_upstream_install_pins_clean_checkout(tmp_path: Path) -> None:
 # -- endpoint wrapper -----------------------------------------------------------
 
 
+@posix_only
 def test_endpoint_serves_binds_and_tears_down(
     tmp_path: Path, models: dict[str, Path], fake_vllm: Path
 ) -> None:
@@ -263,6 +273,7 @@ def test_endpoint_serves_binds_and_tears_down(
         resolve_policy(record, TRAINED_MODEL, "d" * 40)
 
 
+@posix_only
 def test_endpoint_merged_mode_runs_second_server(
     tmp_path: Path,
     models: dict[str, Path],
@@ -297,6 +308,7 @@ def test_endpoint_rejects_manifest_digest_mismatch(
     assert not endpoint.processes
 
 
+@posix_only
 def test_endpoint_rejects_adapter_without_effect(
     tmp_path: Path,
     models: dict[str, Path],
@@ -393,6 +405,7 @@ def test_meter_rejects_unpriced_user_simulator(tmp_path: Path) -> None:
         meter_costs("tau3-bench", results, attestation)
 
 
+@posix_only
 def test_serve_cli_runs_child_against_record_then_tears_down(
     tmp_path: Path, models: dict[str, Path], fake_vllm: Path
 ) -> None:
@@ -436,6 +449,7 @@ def test_serve_cli_runs_child_against_record_then_tears_down(
 # -- the full offline matrix -----------------------------------------------------
 
 
+@posix_only
 def test_offline_matrix_produces_bundle_the_gates_validate(
     tmp_path: Path,
     models: dict[str, Path],
