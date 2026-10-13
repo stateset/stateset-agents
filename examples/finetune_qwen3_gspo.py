@@ -96,7 +96,7 @@ def get_qwen3_config(
     and optimized for different model sizes.
     """
     from stateset_agents.training.config import get_config_for_task
-    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.gspo_config import GSPOConfig
 
     # Get base config for task
     base_config = get_config_for_task(task, model_name=model_name)
