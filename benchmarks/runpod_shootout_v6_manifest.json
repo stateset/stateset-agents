@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
-  "harness_revision": "fcc160fcdc49fc02ea09db1036978cae25cf36cd",
-  "harness_revision_note": "Pins the commit that adds the v6 five-framework manifest and the verl/OpenRLHF/NeMo-RL adapters on top of shootout protocol v5.",
+  "harness_revision": "c8680bf10b5acc916636a5da0e71c7a2892d7a23",
+  "harness_revision_note": "Pins the commit that adds the v6 five-framework manifest and the verl/OpenRLHF/NeMo-RL adapters on top of shootout protocol v5.1.",
   "shootout_manifest": "benchmarks/shootout_manifest_v6_five_frameworks.json",
   "execution": {
     "provider": "runpod",
