@@ -70,6 +70,8 @@ class TrainingConfig:
     per_device_train_batch_size: int = 1
     # Aliases for compatibility with some tests/configs
     batch_size: int | None = None
+    # Note for manual generate_trajectories/training_step loops: only every
+    # 4th training_step takes an optimizer step by default.
     gradient_accumulation_steps: int = 4
     num_generations: int = 16  # GRPO: trajectories per scenario
     generation_batch_size: int = 4
@@ -136,7 +138,9 @@ class TrainingConfig:
     # clips this quantity at ~3e-4/4e-4 instead; see `gspo_config.py`.
     seq_clip_ratio: float = 3e-4  # Sequence-mean ratio clip (GSPO scale)
     value_clip: float = 0.2  # Value function clipping
-    entropy_coef: float = 0.01  # Entropy bonus coefficient
+    # Entropy bonus coefficient. On by default (0.01); set 0.0 for the plain
+    # objective (the token path then skips the full-vocabulary softmax).
+    entropy_coef: float = 0.01
 
     # Continual learning (replay + LwF + EWC)
     continual_strategy: str = "none"  # "none", "replay", "lwf", "ewc", combos

@@ -188,6 +188,50 @@ update is a full optimizer step; gradient accumulation applies to the
 single-update default only. Groups on the sequence fallback ignore the
 setting (a warning is logged once).
 
+### Memory: one chunk's graph at a time
+
+Inside `MultiTurnGRPOTrainer.training_step` the token path backpropagates
+each chunk of `generation_batch_size` rows as soon as its loss share is
+computed, instead of keeping every chunk of every group alive for one final
+`backward`. Each share is the chunk's part of the full loss: means use the
+whole group's row count (`seq_mean`, `seq_sum_const`, `k3_sequence` KL) or
+response-token count (`token_mean`, entropy) as the denominator
+(`policy_loss(total_rows=, total_tokens=)`), and the result is divided by the
+number of groups, so the summed gradient equals the single-backward
+gradient for every preset (`group_expectation` couples rows and is rejected
+on this path). Log-probs are computed only at response positions as
+`logit[y] - logsumexp(logits)` in fp32 (one `log_softmax` when
+`entropy_coef > 0`), so the largest per-chunk tensor is
+`[response tokens, vocab]` rather than a full-width fp32 log-softmax. At
+~600-token rows and a 152k vocabulary the old layout kept roughly
+0.4-0.55 GB per row alive until the end of the step; peak activation memory
+is now bounded by one chunk. Lower `generation_batch_size` to trade speed for
+memory. The loss dict reports `backward_done=True` and a detached
+`total_loss`. Calling `compute_grpo_loss` directly (outside `training_step`)
+still returns a differentiable loss with all chunk graphs kept.
+
+### Driving the trainer by hand
+
+Loops that call `generate_trajectories` and `training_step` themselves
+(instead of `train()`) get the configured warmup and decay schedule from
+`initialize()`, sized from `num_episodes` exactly as `train()` sizes it;
+call `trainer._setup_scheduler(n)` after `initialize()` for a different
+budget. `TrainingConfig` defaults to watch in such loops:
+
+- `gradient_accumulation_steps` defaults to **4**: only every fourth
+  `training_step` takes an optimizer step. Set it to 1 for one update per
+  rollout batch.
+- `entropy_coef` defaults to **0.01**: the token path then adds an entropy
+  bonus (and computes a full-vocabulary softmax at response positions).
+  Set it to 0.0 for the plain objective.
+- `gradient_checkpointing=True` is applied to the policy in `initialize()`
+  (non-reentrant; PEFT policies also get `enable_input_require_grads`).
+- `bf16=True` uses autocast without a `GradScaler`; only `fp16` is scaled.
+- Fields the trainer cannot act on (model, LoRA, sampling, vLLM settings,
+  which belong to `AgentConfig`, and other trainers' fields such as
+  `num_epochs`) are reported once in a warning when they differ from their
+  defaults.
+
 Groups with any trajectory lacking token metadata (text-only agents, stub
 backends, legacy transcripts) take the **sequence fallback**: per-trajectory
 forward passes, sequence-level ratio clipped at `seq_clip_ratio`, and the

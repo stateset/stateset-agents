@@ -78,6 +78,9 @@ def _train(seed: int, *, sign: float) -> tuple[float, float, list[Any], list[Any
         fp16=False,
         report_to="none",
         seed=seed,
+        # Thresholds were calibrated at a constant learning rate; initialize()
+        # now builds the configured (default cosine + warmup) schedule.
+        lr_scheduler_type="constant",
     )
     config.objective = "gspo"
     trainer = MultiTurnGRPOTrainer(
