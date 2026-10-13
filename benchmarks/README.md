@@ -267,6 +267,77 @@ Verified, make the same three additions to your experiment copies:
    shape as the other suites, plus a pinned SWE-bench checkout as
    `repository_path`.
 
+### Planned τ³-bench + BFCL V4 run (served base vs. trained adapter)
+
+`agent_quality_manifest.json` and `agent_quality_harnesses.json` are the
+concrete plan: Qwen/Qwen2.5-7B-Instruct at `a09a3545…` (the flagship base)
+versus the trained StateSet adapter, both served by one vLLM OpenAI server.
+Upstreams are pinned to τ³-bench v1.0.1 (`sierra-research/tau2-bench@fc0055dc`)
+and BFCL V4 (`ShishirPatil/gorilla@6ea57973`, the latest BFCL commit; no
+release tag exists). The manifest fails closed until the operator fills
+`trained_policy.{model,revision,artifact_sha256}` and
+`budget.max_total_cost_usd` (the planned worst case is 6 attempts x $30).
+
+```bash
+# 0. Pinned upstream checkouts + their environments (public downloads, no spend)
+export STATESET_AQ_UPSTREAM_ROOT=/srv/stateset-aq/upstream
+python benchmarks/agent_quality_upstream.py install \
+  --harness-config benchmarks/agent_quality_harnesses.json \
+  --root "$STATESET_AQ_UPSTREAM_ROOT" \
+  --manifest benchmarks/agent_quality_manifest.json
+
+# 1. Fill the manifest placeholders (digest = hash_artifact of the adapter
+#    directory) and commit: measured runs reject a dirty harness tree.
+python -c "import sys; from pathlib import Path; \
+from benchmarks.agent_quality_evidence import hash_artifact; \
+print(hash_artifact(Path(sys.argv[1])))" /path/to/adapter
+
+# 2. Secrets are environment references only; the τ³ user simulator is
+#    gpt-4.1-2025-04-14 (the upstream default), so it needs OPENAI_API_KEY.
+export OPENAI_API_KEY=...
+python benchmarks/agent_quality_endpoint.py check-env \
+  --manifest benchmarks/agent_quality_manifest.json
+
+# 3. Serve both policies, run the matrix against them, tear down.
+python benchmarks/agent_quality_endpoint.py serve \
+  --manifest benchmarks/agent_quality_manifest.json \
+  --base-model Qwen/Qwen2.5-7B-Instruct \
+  --base-revision a09a35458c702b33eeacc393d103063234e8bc28 \
+  --adapter /path/to/adapter --workdir /srv/stateset-aq/endpoint \
+  --gpu-hourly-usd 2.69 \
+  --vllm-arg=--enable-auto-tool-choice --vllm-arg=--tool-call-parser \
+  --vllm-arg=hermes --vllm-arg=--max-lora-rank --vllm-arg=32 \
+  -- python benchmarks/run_agent_quality_matrix.py \
+       benchmarks/agent_quality_manifest.json \
+       --output-dir benchmark_results/agent_quality
+```
+
+`agent_quality_endpoint.py serve` launches `vllm serve` with the pinned
+`--revision`, registers the adapter with `--enable-lora` (or merges it through
+`serving_artifacts` with `--trained-mode merged`, on a second port), checks the
+adapter digest against the manifest, runs the `serve-remote` greedy
+adapter-effect probe, and writes an endpoint record (served names, revisions,
+adapter digest, vLLM argv, GPU rate; the API key stays in a 0600 file). Every
+official stage runs through its `exec` shim, which receives `{model}` and
+`{model_revision}` (the `command-argument` binding), resolves the served policy,
+re-verifies the revision marker, adapter digest and live `/v1/models`, fails
+closed on missing `--require-env` secrets, exports the endpoint to litellm
+(`HOSTED_VLLM_*`) and BFCL (`REMOTE_OPENAI_*`), and retains a secret-free
+attestation. Its `meter` stage writes the per-task cost rows (endpoint wall
+time x the declared GPU rate, split equally, plus τ³'s own user-simulator
+cost), so both suites report `cost_source: local-meter`. The runner stops
+scheduling attempts once metered spend reaches `budget.max_total_cost_usd`.
+
+Known constraints of this plan: τ³ runs the `retail` domain, `base` split;
+BFCL runs `single_turn,multi_turn` (the V4 agentic web-search category needs a
+paid SerpAPI key and is excluded); BFCL has no seed, so its three seeds are
+near-identical; and BFCL has no registered Qwen2.5 handler at the pinned
+commit, so `bfcl_model_handler` uses the Qwen FC prompt handler
+(`Qwen/Qwen3-8B-FC`) for both policies. Absolute BFCL numbers are therefore
+not leaderboard-comparable; the paired difference is. The A+ gate rejects any
+bundle whose suite revisions differ from these pins, so a stub dry run
+(`tests/unit/test_agent_quality_dry_run.py`) can never pass it.
+
 Start from `agent_quality_manifest.example.json` and
 `agent_quality_harnesses.example.json`. The included
 `adapters/paired_agent_harness.py` executes both policies shell-free against the

@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-paired-agent-harness-config",
+  "suites": {
+    "tau3-bench": {
+      "repository_path": "${STATESET_AQ_UPSTREAM_ROOT}/tau2-bench",
+      "timeout_seconds": 21600,
+      "cost_source": "local-meter",
+      "upstream": {
+        "url": "https://github.com/sierra-research/tau2-bench.git",
+        "release": "v1.0.1",
+        "revision": "fc0055dc4e0a316c3f83133267fbd6faaa770992",
+        "checkout_dir": "tau2-bench",
+        "install": [
+          ["uv", "sync", "--frozen", "--python", "3.12"]
+        ],
+        "executables": [".venv/bin/tau2"]
+      },
+      "command": [
+        "{python}",
+        "{official_suite_pipeline}",
+        "--policy", "{policy}",
+        "--model", "{model}",
+        "--model-revision", "{model_revision}",
+        "--seed", "{seed}",
+        "--suite", "{suite}",
+        "--suite-revision", "{suite_revision}",
+        "--split", "{split}",
+        "--evaluation-config-json", "{evaluation_config_json}",
+        "--output", "{output}",
+        "--artifact-dir", "{artifact_dir}",
+        "--upstream-repository", "{upstream_repository}"
+      ]
+    },
+    "bfcl-v4": {
+      "repository_path": "${STATESET_AQ_UPSTREAM_ROOT}/gorilla",
+      "timeout_seconds": 21600,
+      "cost_source": "local-meter",
+      "upstream": {
+        "url": "https://github.com/ShishirPatil/gorilla.git",
+        "release": "berkeley-function-call-leaderboard @ 2026-03-23 (BFCL V4; no release tag)",
+        "revision": "6ea57973c7a6097fd7c5915698c54c17c5b1b6c8",
+        "checkout_dir": "gorilla",
+        "install": [
+          ["uv", "venv", "--python", "3.11", ".venv"],
+          [
+            "uv", "pip", "install", "--python", ".venv/bin/python",
+            "-e", "./berkeley-function-call-leaderboard"
+          ]
+        ],
+        "executables": [".venv/bin/bfcl"]
+      },
+      "command": [
+        "{python}",
+        "{official_suite_pipeline}",
+        "--policy", "{policy}",
+        "--model", "{model}",
+        "--model-revision", "{model_revision}",
+        "--seed", "{seed}",
+        "--suite", "{suite}",
+        "--suite-revision", "{suite_revision}",
+        "--split", "{split}",
+        "--evaluation-config-json", "{evaluation_config_json}",
+        "--output", "{output}",
+        "--artifact-dir", "{artifact_dir}",
+        "--upstream-repository", "{upstream_repository}"
+      ]
+    }
+  }
+}

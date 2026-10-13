@@ -58,7 +58,12 @@ RESERVED_VALUES = {
     "official_results",
     "official_scores",
     "cost_records",
+    "python",
+    "agent_quality_endpoint",
 }
+#: The StateSet endpoint shim that binds a served policy to its immutable
+#: revision before an upstream evaluator runs (see agent_quality_endpoint.py).
+AGENT_QUALITY_ENDPOINT = REPOSITORY_ROOT / "benchmarks" / "agent_quality_endpoint.py"
 
 
 def _canonical_digest(value: Any) -> str:
@@ -324,6 +329,8 @@ def execute_pipeline(args: argparse.Namespace) -> list[dict[str, Any]]:
         "split": args.split,
         "artifact_dir": str(artifact_dir),
         "upstream_repository": str(repository),
+        "python": sys.executable,
+        "agent_quality_endpoint": str(AGENT_QUALITY_ENDPOINT),
     }
     commands = [_format_command(command, values) for command in pipeline["commands"]]
     manifest = {
