@@ -29,7 +29,7 @@
     "learning_rate": 2e-05,
     "num_generations": 8,
     "scenarios_per_step": 4,
-    "max_steps": 24,
+    "max_steps": 64,
     "lora_r": 32,
     "lora_alpha": 64,
     "lora_dropout": 0.05,
@@ -57,7 +57,7 @@
   "judge": {
     "model": "mistralai/Mistral-7B-Instruct-v0.3",
     "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
-    "rubric_revision": "0000000000000000000000000000000000000000"
+    "rubric_revision": "edcd6e8247da8004fb7ec9c321bef46e8349f8bf"
   },
   "hardware": {
     "gpu": "NVIDIA H100 80GB HBM3",

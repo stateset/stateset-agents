@@ -127,28 +127,28 @@ flattened histories. The workload drives `MultiTurnGRPOTrainer` with
 
 ### Runtime and cost (1x H100 80GB at $3.99/h)
 
-Training rollouts use the policy's own HF `generate` (one episode at a time,
-batch 1), which dominates the run: per step `scenarios_per_step x
-num_generations` = 32 episodes of ~3.2 assistant turns (dataset mean) and at
-most 192 new tokens each. At 28-40 tokens/s that is 12-22 s per episode, so
-~6-12 min per step including the LoRA update (forward/backward over ~100
-turn rows with gradient checkpointing is seconds). The pinned 24 steps
-(768 episodes, 96 scenario draws) therefore take ~2.5 h nominal and ~4.8 h
-if every reply hits the token cap at the slow end. Setup (~25 min), the two
-vLLM evaluations and the judge (~25 min together) bring the worst case to
-~5.6 h, inside the 6 h `max_wall_clock_seconds` (the pod lifetime, which also
-bounds spend at <= $23.94 per seed). Batched multi-episode generation or a
-weight-synced vLLM rollout engine would allow several times more steps in the
-same budget; neither is used in v1.
+Training rollouts are lockstep-batched: each conversation turn of all
+`scenarios_per_step x num_generations` = 32 episodes is one HF `generate`
+call (`MultiTurnGRPOTrainer` with `batched_rollouts=True`), and the LoRA
+update backpropagates one `train_forward_rows` chunk at a time. Estimated per
+step on one H100 (unmeasured until the preflight): ~3.2 batched decoding
+rounds of at most 192 tokens (~30-60 s) plus the update over ~100 turn rows
+(~30-60 s), so ~1-2 min. The pinned 64 steps (2,048 episodes, 256 scenario
+draws, about half an epoch of the 500 train scenarios) take ~1-2 h; with setup
+(~25 min) and the two vLLM evaluations plus the judge (~25 min) a seed is
+~2-3 h nominal. The 6 h `max_wall_clock_seconds` pod lifetime bounds spend at
+<= $23.94 per seed even if throughput is 2-3x below the estimate. Run the
+one-seed `--preflight` first and re-pin `max_steps` from its measured step
+time before the measured matrix.
 
-**Two revisions are still the all-zero placeholder and block measured runs**
+**One revision is still the all-zero placeholder and blocks measured runs**
 (`run_flagship_matrix.py` and the driver both refuse them):
 
 - `dataset_revision` — pin the commit of `stateset/customer-support-multiturn-v1`
   once it is published to the Hugging Face Hub.
-- `judge.rubric_revision` — pin `rubric_revision()` from
-  `stateset_agents.evaluation.support_judge` (the git blob SHA of the rubric)
-  at the harness commit that will run the matrix.
+- `judge.rubric_revision` is pinned to `rubric_revision()` (the git blob SHA
+  of `stateset_agents/evaluation/rubrics/support_rubric_v1.md`); editing the
+  rubric changes it, and the workload refuses a mismatch.
 
 Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
 (the manifest command is fixed, so pass it through the environment):
