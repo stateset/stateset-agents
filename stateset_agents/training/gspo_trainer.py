@@ -712,7 +712,14 @@ class GSPOTrainer:
         nonzero_advantages = 0
         advantage_count = 0
         zero_advantage_groups = 0
-        for query in queries[:num_groups]:
+        step_queries = list(queries[:num_groups])
+        # Every group of the step is sampled in one batched generate before any
+        # scoring; weights only change at the optimizer step after the loop.
+        step_groups = await self.generator.generate_groups_batch(
+            [_query_prompt(query) for query in step_queries],
+            self.config.num_generations,
+        )
+        for query, group_responses in zip(step_queries, step_groups, strict=True):
             processed_groups += 1
             if isinstance(query, dict):
                 prompt = str(query.get("prompt", ""))
@@ -724,11 +731,6 @@ class GSPOTrainer:
                 query_context = {}
             prompt_value = prompt
             query_context_value = dict(query_context)
-
-            # Generate group of responses for this query
-            group_responses = await self.generator.generate_group_responses(
-                prompt, self.config.num_generations
-            )
 
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]
@@ -1003,3 +1005,10 @@ __all__ = [
     "train_with_gspo",
     "train_customer_service_with_gspo",
 ]
+
+
+def _query_prompt(query: Any) -> str:
+    """The prompt text of a query (a string or ``{"prompt": ..., ...}``)."""
+    if isinstance(query, dict):
+        return str(query.get("prompt", ""))
+    return str(query)
