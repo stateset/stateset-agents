@@ -235,20 +235,41 @@ def surrogate(objective: PolicyObjective, ratio: Any, adv: Any, logp_cur: Any) -
     return -ratio * adv
 
 
-def aggregate(objective: PolicyObjective, per_token: Any, mask: Any) -> Any:
-    """Reduce a per-token loss ``[N, T]`` (or ``[N, 1]``) to a scalar."""
+def aggregate(
+    objective: PolicyObjective,
+    per_token: Any,
+    mask: Any,
+    *,
+    total_rows: float | None = None,
+    total_tokens: float | None = None,
+) -> Any:
+    """Reduce a per-token loss ``[N, T]`` (or ``[N, 1]``) to a scalar.
+
+    ``total_rows``/``total_tokens`` replace this slice's own row/token counts
+    as the batch-level denominators, so the result is the slice's additive
+    share of the loss over the whole batch (summing the shares of disjoint
+    row slices gives exactly the full-batch value). ``None`` uses the slice's
+    own counts.
+    """
     torch = _t()
     per_token = per_token * torch.ones_like(mask)  # broadcast [N,1] -> [N,T]
     if objective.aggregate == "seq_mean":
-        return rl_losses.masked_mean(per_token, mask, mode="seq")
+        if total_rows is None:
+            return rl_losses.masked_mean(per_token, mask, mode="seq")
+        mask = mask.to(per_token.dtype)
+        per_row = (per_token * mask).sum(-1) / torch.clamp(mask.sum(-1), min=1.0)
+        return per_row.sum() / max(float(total_rows), 1.0)
     if objective.aggregate == "token_mean":
-        return rl_losses.masked_mean(per_token, mask, mode="token")
+        if total_tokens is None:
+            return rl_losses.masked_mean(per_token, mask, mode="token")
+        mask = mask.to(per_token.dtype)
+        return (per_token * mask).sum() / max(float(total_tokens), 1.0)
     if objective.max_completion_length is None:
         raise ValueError(
             f"objective {objective.name!r} aggregates with seq_sum_const and needs "
             "max_completion_length; use objective.with_(max_completion_length=...)"
         )
-    n = per_token.shape[0]
+    n = per_token.shape[0] if total_rows is None else max(float(total_rows), 1.0)
     return (per_token * mask).sum() / float(n * int(objective.max_completion_length))
 
 
@@ -266,6 +287,8 @@ def policy_loss(
     group_ids: Any | None = None,
     kl: Any | None = None,
     entropy: Any | None = None,
+    total_rows: float | None = None,
+    total_tokens: float | None = None,
 ) -> PolicyLossResult:
     """Evaluate ``objective`` on one batch.
 
@@ -274,6 +297,15 @@ def policy_loss(
     ``advantages`` is ``[N]`` or ``[N, T]``; ``logp_ref`` is ``[N, T]`` or
     ``[N]`` sums (only read when ``kl_coef > 0``); ``kl`` is the external
     per-token KL ``[N, T]`` for ``kl='external'``; ``entropy`` is ``[N, T]``.
+
+    ``total_rows``/``total_tokens`` evaluate a row slice of a larger batch:
+    every mean (the aggregation, the sequence KL, the entropy bonus) divides
+    by the batch's row/token count instead of the slice's, so ``loss`` is
+    the slice's additive share and the shares of disjoint slices sum to the
+    full-batch loss. Ratios, clipping and per-row statistics are per row, so
+    this is exact for every preset except ``group_expectation`` (which
+    couples rows through its group statistic). The returned metrics other
+    than ``policy_loss`` stay slice-local means.
     """
     torch = _t()
     if logp_cur.dim() != 2:
@@ -321,10 +353,18 @@ def policy_loss(
             cur_seq = (logp_cur * mask).sum(-1) / lengths
             ref = logp_ref.detach().to(logp_cur.dtype)
             ref_seq = ((ref * mask).sum(-1) if ref.dim() == 2 else ref) / lengths
-            kl_seq_term = rl_losses.k3_kl(cur_seq, ref_seq)
-            kl_value = float(kl_seq_term.detach().item())
+            if total_rows is None:
+                kl_seq_term = rl_losses.k3_kl(cur_seq, ref_seq)
+                kl_value = float(kl_seq_term.detach().item())
+            else:
+                r = ref_seq.detach() - cur_seq
+                k3_rows = torch.exp(r) - r - 1.0
+                kl_seq_term = k3_rows.sum() / max(float(total_rows), 1.0)
+                kl_value = float(k3_rows.detach().mean().item())
 
-    policy = aggregate(objective, per_token, mask)
+    policy = aggregate(
+        objective, per_token, mask, total_rows=total_rows, total_tokens=total_tokens
+    )
     loss = policy
     if kl_seq_term is not None:
         loss = loss + objective.kl_coef * kl_seq_term
@@ -334,6 +374,10 @@ def policy_loss(
         ent = rl_losses.masked_mean(entropy.to(logp_cur.dtype), mask, mode="token")
         entropy_value = float(ent.detach().item())
         if objective.entropy_coef > 0:
+            if total_tokens is not None:
+                ent = (entropy.to(logp_cur.dtype) * mask).sum() / max(
+                    float(total_tokens), 1.0
+                )
             loss = loss - objective.entropy_coef * ent
 
     with torch.no_grad():

@@ -5,9 +5,10 @@ Base environment abstractions and state containers.
 from __future__ import annotations
 
 import asyncio
+import inspect
 import logging
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -153,6 +154,16 @@ class Environment(ABC):
         """Get initial prompt/context (override in subclasses)"""
         return ""
 
+    async def get_initial_turns(
+        self, state: EnvironmentState
+    ) -> list[ConversationTurn]:
+        """Return non-agent turns that open an episode, after the system prompt.
+
+        Override to start an episode with, for example, the user's first
+        message, so the agent replies to it instead of speaking first.
+        """
+        return []
+
     def clone(self) -> Environment:
         """Return a new environment instance with the same configuration."""
         raise NotImplementedError(
@@ -183,6 +194,12 @@ class Environment(ABC):
 
         return 0.5
 
+    #: Whether ``reset``/``step`` keep all per-episode state in the
+    #: ``EnvironmentState`` they return, so several episodes can be advanced
+    #: concurrently on one instance. ``run_episodes_batched`` falls back to one
+    #: episode at a time when this is ``False``.
+    supports_concurrent_episodes: bool = False
+
     async def run_episode(
         self,
         agent_fn: Callable,
@@ -191,101 +208,105 @@ class Environment(ABC):
     ) -> MultiTurnTrajectory:
         """Run a complete episode using the standard step signature."""
         max_turns = max_turns or self.max_turns
+        episode = await self._start_episode(scenario)
+        for _ in range(max_turns):
+            history = [{"role": t.role, "content": t.content} for t in episode.turns]
+            agent_response = await agent_fn(history, episode.state.context)
+            if await self._advance_episode(episode, agent_response):
+                break
+        return await self._finish_episode(episode)
+
+    async def run_episodes_batched(
+        self,
+        batch_agent_fn: Callable,
+        scenarios: Sequence[dict[str, Any] | None],
+        max_turns: int | None = None,
+    ) -> list[MultiTurnTrajectory]:
+        """Run one episode per scenario, generating each round in one batch.
+
+        ``batch_agent_fn(histories, contexts)`` receives the visible history and
+        context of every still-running episode and returns one reply (a string
+        or ``ConversationTurn``) per episode, in order. Each episode follows
+        exactly the same sequence of calls as :meth:`run_episode`; finished
+        episodes drop out of later rounds. Environments that do not declare
+        ``supports_concurrent_episodes`` run their episodes one at a time.
+        """
+        max_turns = max_turns or self.max_turns
+        if not self.supports_concurrent_episodes:
+            results = []
+            for scenario in scenarios:
+
+                async def single(history: Any, context: Any) -> Any:
+                    [reply] = await _batch_replies(batch_agent_fn, [history], [context])
+                    return reply
+
+                results.append(await self.run_episode(single, scenario, max_turns))
+            return results
+
+        episodes = [await self._start_episode(s) for s in scenarios]
+        active = list(episodes)
+        for _ in range(max_turns):
+            if not active:
+                break
+            histories = [
+                [{"role": t.role, "content": t.content} for t in e.turns]
+                for e in active
+            ]
+            replies = await _batch_replies(
+                batch_agent_fn, histories, [e.state.context for e in active]
+            )
+            still_running = []
+            for episode, reply in zip(active, replies, strict=True):
+                if not await self._advance_episode(episode, reply):
+                    still_running.append(episode)
+            active = still_running
+        return [await self._finish_episode(e) for e in episodes]
+
+    async def _start_episode(self, scenario: dict[str, Any] | None) -> _Episode:
         state = await self.reset(scenario)
-        turns: list[ConversationTurn] = []
-        turn_rewards: list[float] = []
-        total_reward = 0.0
-
-        def _is_reward(value: Any) -> bool:
-            return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-        def _is_done(value: Any) -> bool:
-            return isinstance(value, bool)
-
+        episode = _Episode(scenario=scenario, state=state)
         initial_prompt = ""
+        # With no scenario, reset() chose one; use the episode's own choice
+        # rather than whatever the instance saw last.
+        prompt_scenario = scenario
+        if prompt_scenario is None and isinstance(state.context, dict):
+            prompt_scenario = state.context.get("scenario")
         try:
-            initial_prompt = await self.get_initial_prompt(scenario)
+            initial_prompt = await self.get_initial_prompt(prompt_scenario)
         except ENVIRONMENT_EXCEPTIONS:
             pass
         if initial_prompt:
-            turns.append(
+            episode.turns.append(
                 ConversationTurn(
                     role="system",
                     content=initial_prompt,
                     metadata={"scenario": scenario},
                 )
             )
+        episode.turns.extend(await self.get_initial_turns(state))
+        return episode
 
-        for _ in range(max_turns):
-            history = [{"role": t.role, "content": t.content} for t in turns]
-            agent_response = await agent_fn(history, state.context)
-            agent_turn = (
-                agent_response
-                if isinstance(agent_response, ConversationTurn)
-                else ConversationTurn(role="assistant", content=str(agent_response))
-            )
-            turns.append(agent_turn)
+    async def _advance_episode(self, episode: _Episode, agent_response: Any) -> bool:
+        """Apply one agent reply; return True when the episode has ended."""
+        agent_turn = (
+            agent_response
+            if isinstance(agent_response, ConversationTurn)
+            else ConversationTurn(role="assistant", content=str(agent_response))
+        )
+        episode.turns.append(agent_turn)
+        raw_step_result = await self.step(episode.state, agent_turn)
+        new_state, step_reward, done, env_response = _parse_step_result(raw_step_result)
+        episode.total_reward += float(step_reward)
+        episode.turn_rewards.append(float(step_reward))
+        if isinstance(env_response, ConversationTurn):
+            episode.turns.append(env_response)
+        episode.state = new_state
+        return bool(done or new_state.status != EpisodeStatus.ONGOING)
 
-            raw_step_result = await self.step(state, agent_turn)
-            if not isinstance(raw_step_result, tuple) or len(raw_step_result) != 4:
-                raise TypeError(
-                    "Environment.step() must return a 4-tuple "
-                    "(state, reward, done, info) or legacy "
-                    "(state, env_response, reward, done)"
-                )
-
-            step_result: tuple[Any, Any, Any, Any] = raw_step_result
-            new_state: EnvironmentState
-            step_reward: float
-            done: bool
-            info: dict[str, Any]
-            env_response: ConversationTurn | None = None
-
-            if _is_reward(step_result[1]) and _is_done(step_result[2]):
-                new_state = step_result[0]
-                step_reward = float(step_result[1])
-                done = bool(step_result[2])
-                info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
-                maybe_env_response = info.get("env_response")
-                if isinstance(maybe_env_response, ConversationTurn):
-                    env_response = maybe_env_response
-            elif _is_reward(step_result[2]) and _is_done(step_result[3]):
-                new_state = step_result[0]
-                env_response = (
-                    step_result[1]
-                    if isinstance(step_result[1], ConversationTurn)
-                    else None
-                )
-                step_reward = float(step_result[2])
-                done = bool(step_result[3])
-                info = {}
-            elif isinstance(step_result[1], ConversationTurn):
-                new_state = step_result[0]
-                env_response = step_result[1]
-                step_reward = float(step_result[2])
-                done = bool(step_result[3])
-                info = {}
-            else:
-                logger.warning(
-                    "Ambiguous Environment.step() return signature; "
-                    "assuming (state, reward, done, info)."
-                )
-                new_state = step_result[0]
-                step_reward = float(step_result[1])
-                done = bool(step_result[2])
-                info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
-                maybe_env_response = info.get("env_response")
-                if isinstance(maybe_env_response, ConversationTurn):
-                    env_response = maybe_env_response
-
-            total_reward += float(step_reward)
-            turn_rewards.append(float(step_reward))
-            if isinstance(env_response, ConversationTurn):
-                turns.append(env_response)
-            state = new_state
-            if done or state.status != EpisodeStatus.ONGOING:
-                break
-
+    async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
+        turns, state, scenario = episode.turns, episode.state, episode.scenario
+        turn_rewards = episode.turn_rewards
+        total_reward = episode.total_reward
         if self.reward_fn and self._should_compute_final_reward():
             try:
                 final_reward = await self.reward_fn.compute_reward(turns, state.context)
@@ -316,3 +337,77 @@ class Environment(ABC):
                 "scenario": scenario,
             },
         )
+
+
+@dataclass
+class _Episode:
+    """Mutable bookkeeping for one episode while it runs."""
+
+    scenario: dict[str, Any] | None
+    state: EnvironmentState
+    turns: list[ConversationTurn] = field(default_factory=list)
+    turn_rewards: list[float] = field(default_factory=list)
+    total_reward: float = 0.0
+
+
+def _is_reward(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _parse_step_result(
+    raw_step_result: Any,
+) -> tuple[EnvironmentState, float, bool, ConversationTurn | None]:
+    """Normalize ``Environment.step`` returns to ``(state, reward, done, reply)``.
+
+    Accepts ``(state, reward, done, info)`` and the legacy
+    ``(state, env_response, reward, done)``.
+    """
+    if not isinstance(raw_step_result, tuple) or len(raw_step_result) != 4:
+        raise TypeError(
+            "Environment.step() must return a 4-tuple "
+            "(state, reward, done, info) or legacy "
+            "(state, env_response, reward, done)"
+        )
+    step_result: tuple[Any, Any, Any, Any] = raw_step_result
+    env_response: ConversationTurn | None = None
+    if _is_reward(step_result[1]) and isinstance(step_result[2], bool):
+        info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
+        maybe = info.get("env_response")
+        if isinstance(maybe, ConversationTurn):
+            env_response = maybe
+        return step_result[0], float(step_result[1]), bool(step_result[2]), env_response
+    if _is_reward(step_result[2]) and isinstance(step_result[3], bool):
+        if isinstance(step_result[1], ConversationTurn):
+            env_response = step_result[1]
+        return step_result[0], float(step_result[2]), bool(step_result[3]), env_response
+    if isinstance(step_result[1], ConversationTurn):
+        return (
+            step_result[0],
+            float(step_result[2]),
+            bool(step_result[3]),
+            step_result[1],
+        )
+    logger.warning(
+        "Ambiguous Environment.step() return signature; "
+        "assuming (state, reward, done, info)."
+    )
+    info = dict(step_result[3]) if isinstance(step_result[3], dict) else {}
+    maybe = info.get("env_response")
+    if isinstance(maybe, ConversationTurn):
+        env_response = maybe
+    return step_result[0], float(step_result[1]), bool(step_result[2]), env_response
+
+
+async def _batch_replies(
+    batch_agent_fn: Callable, histories: list[Any], contexts: list[Any]
+) -> list[Any]:
+    replies = batch_agent_fn(histories, contexts)
+    if inspect.isawaitable(replies):
+        replies = await replies
+    replies = list(replies)
+    if len(replies) != len(histories):
+        raise ValueError(
+            f"batch agent returned {len(replies)} replies for "
+            f"{len(histories)} episodes"
+        )
+    return replies

@@ -182,7 +182,7 @@ make benchmark-distributed-async-gate \
   INPUTS=benchmark_results/distributed_async/evidence \
   OUTPUT=benchmark_results/distributed_async/report.json
 
-# Three-seed τ³-bench, BFCL V4, and SWE-bench Verified quality matrix
+# Three-seed τ³-bench and BFCL V4 quality matrix (SWE-bench Verified optional)
 make benchmark-agent-quality-contract
 make benchmark-agent-quality-run \
   MANIFEST=benchmarks/agent_quality_manifest.json \
@@ -225,8 +225,47 @@ and an SBOM request, raw provider billing bound to every Kubernetes Job with
 matrix-level cost per optimizer step, 70%
 strong-scaling efficiency across at least two
 physical nodes, zero-loss recovery, a 12-hour multi-node soak, fresh passing
-River/RunPod/Fireworks/CoreWeave/Nebius canaries, all three standard agent
-suites, the 7–9B flagship, and publish readiness for the same commit.
+River/RunPod/Fireworks/CoreWeave/Nebius canaries, the required standard agent
+suites (plus any optional suite that was run), the 7–9B flagship, and publish readiness for the same commit.
+
+### Agent-quality suite policy
+
+The agent-quality gate (`agent_quality_evidence.py`) splits suites into:
+
+- **Required** (`REQUIRED_SUITES`): `tau3-bench` and `bfcl-v4`. Every matrix
+  must include both. They match the flagship's domain: a 7–8B
+  customer-support / tool-use policy.
+- **Optional** (`OPTIONAL_SUITES`): `swe-bench-verified`. Repository-level
+  software engineering is out of domain for the flagship, so it is not
+  required. A matrix may still include it.
+
+No suite is exempt once it is present. Every suite in the evidence must pass
+the same per-suite gate: at least `+0.03` mean improvement, a paired 95%
+confidence bound above zero, the same seed set, and one shared trained
+artifact across all suites. When the collection runner gates its own output, the
+evidence must cover exactly the manifest roster. A suite that is run but fails
+cannot be dropped from the published matrix. Unknown suite names are
+rejected.
+
+The example manifests list only the two required suites. To add SWE-bench
+Verified, make the same three additions to your experiment copies:
+
+1. Append a `{"name": "swe-bench-verified", "revision": ..., "split": "test",
+   "command": [...]}` entry to `suites` in the manifest. The command is the
+   same `paired_agent_harness.py run ...` argv used by the other suites.
+2. Add a `swe-bench-verified` pipeline under
+   `evaluation_config.official_suite_pipelines`. It runs a pinned coding agent
+   that writes `{predictions}` and `{cost_records}`, then
+   `python -m swebench.harness.run_evaluation --dataset_name
+   princeton-nlp/SWE-bench_Verified --split {split} --predictions_path
+   {predictions} --max_workers {parallelism} --run_id {policy} --report_dir
+   {official_results}`. Set `results_path: "official/report"`,
+   `cost_records_path: "official/costs.jsonl"`, and
+   `artifact_paths: {"predictions": "official/predictions.jsonl"}`. A
+   `command_timeout_seconds` of 43200 is typical.
+3. Add a `swe-bench-verified` entry to the harness config. It has the same
+   shape as the other suites, plus a pinned SWE-bench checkout as
+   `repository_path`.
 
 Start from `agent_quality_manifest.example.json` and
 `agent_quality_harnesses.example.json`. The included
@@ -236,12 +275,12 @@ same clean upstream checkout at the manifest-pinned revision. Its built-in
 CLI stages, retains a revision-bound execution manifest and per-command logs,
 rejects stale or out-of-directory artifacts, and verifies that no command
 modifies the pinned checkout. It then converts official τ³-bench, BFCL V4, or
-SWE-bench Verified artifacts into ordered JSONL records with a non-empty string
+(optional) SWE-bench Verified artifacts into ordered JSONL records with a non-empty string
 `task_id`, a boolean `success`, and a finite, non-negative `cost_usd`.
 
 The example contains runnable official τ³ and BFCL CLI stages. Replace its
-explicit user-simulator model, provider-meter exporter, coding-agent command,
-model revisions, and checkout paths with immutable experiment values. The
+explicit user-simulator model, provider-meter exporter, coding-agent command
+(if you add SWE-bench Verified), model revisions, and checkout paths with immutable experiment values. The
 meter exporter must write exactly one measured `task_id`/`cost_usd` JSONL row
 per BFCL or SWE task; the SWE coding agent must also write the official
 predictions JSONL. These are experiment inputs, not framework driver code.
@@ -293,3 +332,5 @@ framework-superiority, GPU-scaling, or production-capacity claims.
 
 See [`docs/BENCHMARKS.md`](../docs/BENCHMARKS.md) for supported claims and the
 publication policy.
+
+See [A_PLUS_RUNBOOK.md](A_PLUS_RUNBOOK.md) for the ordered, costed path to a passing `a_plus_gate.py`.

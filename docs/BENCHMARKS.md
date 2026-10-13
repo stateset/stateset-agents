@@ -68,7 +68,10 @@ scenario duration that exceeds its independently measured wall time.
 
 Standard agent capability evidence is gated by
 `benchmarks/agent_quality_evidence.py`. It requires matched three-seed
-base-versus-trained evaluations on τ³-bench, BFCL V4, and SWE-bench Verified,
+base-versus-trained evaluations on the required suites, τ³-bench and BFCL V4.
+SWE-bench Verified is optional because it is out of domain for the
+customer-support / tool-use flagship. Any suite that is run, optional or not,
+must appear in the evidence and pass the same gate. The gate also requires
 immutable suite/model/harness revisions, identical evaluation configuration,
 retained artifacts, task and cost accounting, at least `+0.03` mean improvement
 per suite, and a paired 95% confidence bound above zero. Until those measured
@@ -78,7 +81,9 @@ Collection is executable rather than hand-authored. Copy
 `benchmarks/agent_quality_manifest.example.json` and
 `benchmarks/agent_quality_harnesses.example.json`, replace every model,
 artifact, upstream-suite revision, checkout path, user-simulator, provider
-meter, and coding-agent command with immutable experiment values. The included
+meter, and (for the optional SWE-bench Verified suite) coding-agent command
+with immutable experiment values. `benchmarks/README.md` shows how to add the
+optional suite. The included
 paired adapter and official-suite pipeline verify that each upstream checkout
 is clean and exactly matches its pinned revision, execute every official stage
 without a shell, reject stale/out-of-tree artifacts and checkout mutation, and

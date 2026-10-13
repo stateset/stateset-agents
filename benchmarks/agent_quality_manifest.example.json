@@ -60,31 +60,6 @@
             "--output", "{cost_records}", "--artifact-dir", "{artifact_dir}"
           ]
         ]
-      },
-      "swe-bench-verified": {
-        "model_revision_binding": "local-marker",
-        "command_timeout_seconds": 43200,
-        "results_path": "official/report",
-        "cost_records_path": "official/costs.jsonl",
-        "artifact_paths": {
-          "predictions": "official/predictions.jsonl"
-        },
-        "commands": [
-          [
-            "REPLACE_WITH_PINNED_CODING_AGENT",
-            "--model", "{model}", "--model-revision", "{model_revision}",
-            "--seed", "{seed}", "--split", "{split}",
-            "--predictions", "{predictions}", "--cost-records", "{cost_records}",
-            "--artifact-dir", "{artifact_dir}"
-          ],
-          [
-            "python", "-m", "swebench.harness.run_evaluation",
-            "--dataset_name", "princeton-nlp/SWE-bench_Verified",
-            "--split", "{split}", "--predictions_path", "{predictions}",
-            "--max_workers", "{parallelism}", "--run_id", "{policy}",
-            "--report_dir", "{official_results}"
-          ]
-        ]
       }
     }
   },
@@ -128,42 +103,6 @@
     },
     {
       "name": "bfcl-v4",
-      "revision": "0000000000000000000000000000000000000000",
-      "split": "test",
-      "command": [
-        "python",
-        "benchmarks/adapters/paired_agent_harness.py",
-        "run",
-        "--harness-config",
-        "benchmarks/agent_quality_harnesses.example.json",
-        "--seed",
-        "{seed}",
-        "--suite",
-        "{suite}",
-        "--suite-revision",
-        "{suite_revision}",
-        "--split",
-        "{split}",
-        "--framework-version",
-        "{framework_version}",
-        "--baseline-model",
-        "{baseline_model}",
-        "--baseline-revision",
-        "{baseline_revision}",
-        "--trained-model",
-        "{trained_model}",
-        "--trained-revision",
-        "{trained_revision}",
-        "--evaluation-config-json",
-        "{evaluation_config_json}",
-        "--adapter-output",
-        "{adapter_output}",
-        "--artifact-dir",
-        "{artifact_dir}"
-      ]
-    },
-    {
-      "name": "swe-bench-verified",
       "revision": "0000000000000000000000000000000000000000",
       "split": "test",
       "command": [
