@@ -1,0 +1,110 @@
+{
+  "comparison": {
+    "algorithm": "gspo",
+    "algorithm_revision": "matched-gspo-sequence-trl-1.12-v3-protocol-sampling",
+    "cache_policy": "prewarmed-model-and-dataset-v1",
+    "dataset_revision": "740312add88f781978c0658806c59bc2815b9866",
+    "harness_commit": "b006aabb1e46788926acfdce28af030c32199ac1",
+    "model": "Qwen/Qwen2.5-1.5B-Instruct",
+    "model_revision": "989aa7980e4cf806f80c7fef2b1adb7bc71aa306",
+    "protocol": "stateset-trl-gspo-shootout-v5.1",
+    "task": "gsm8k"
+  },
+  "evidence_schema_version": 2,
+  "evidence_sha256": "d3b5152bc4e2a4f601681e2180a5dc0924cde018c09ad58aa53c1be758634113",
+  "frameworks": {
+    "stateset-agents-gspo": {
+      "eval_score_baseline": {
+        "mean": 0.29296875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.3138020833333333,
+        "n": 3,
+        "std": 0.014788823817188212
+      },
+      "evidence": [
+        "stateset-agents-gspo-seed1337.json",
+        "stateset-agents-gspo-seed2026.json",
+        "stateset-agents-gspo-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.020833333333333332,
+        "n": 3,
+        "std": 0.014788823817188212
+      },
+      "peak_vram_mb": {
+        "mean": 10492.440266927084,
+        "n": 3,
+        "std": 2.1054011082208053
+      },
+      "samples_per_second": {
+        "mean": 0.992521856862175,
+        "n": 3,
+        "std": 0.02755468539366921
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "0.64.2",
+      "wall_clock_seconds": {
+        "mean": 3225.7901622326463,
+        "n": 3,
+        "std": 90.76363821806329
+      }
+    },
+    "trl": {
+      "eval_score_baseline": {
+        "mean": 0.29296875,
+        "n": 3,
+        "std": 0.0
+      },
+      "eval_score_final": {
+        "mean": 0.3111979166666667,
+        "n": 3,
+        "std": 0.01926907368092284
+      },
+      "evidence": [
+        "trl-seed1337.json",
+        "trl-seed2026.json",
+        "trl-seed42.json"
+      ],
+      "improvement": {
+        "mean": 0.018229166666666668,
+        "n": 3,
+        "std": 0.01926907368092284
+      },
+      "peak_vram_mb": {
+        "mean": 10752.896809895834,
+        "n": 3,
+        "std": 0.22609337656183165
+      },
+      "samples_per_second": {
+        "mean": 0.9987278283292492,
+        "n": 3,
+        "std": 0.011574891551526752
+      },
+      "seeds": [
+        42,
+        1337,
+        2026
+      ],
+      "version": "1.12.0",
+      "wall_clock_seconds": {
+        "mean": 3204.36131406102,
+        "n": 3,
+        "std": 36.90971860712475
+      }
+    }
+  },
+  "hardware": {
+    "cuda": "12.8",
+    "gpu": "NVIDIA L40S",
+    "gpu_count": 1
+  },
+  "manifest_sha256": "01a21333def8c264d69e529db3537bae94790a68ec0b81fbd640e40b5d8fa058",
+  "schema_version": 1
+}
