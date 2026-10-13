@@ -299,3 +299,17 @@ def test_hf_factory_missing_dependency(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setitem(sys.modules, "transformers", None)
     with pytest.raises(ImportError, match="requires 'transformers' and 'torch'"):
         sj.hf_generate_fn("m", "r")
+
+
+def test_rubric_identity_ignores_crlf_checkouts(tmp_path, monkeypatch) -> None:
+    """Windows checkouts may convert the rubric to CRLF; identity must not change."""
+    from stateset_agents.evaluation import support_judge
+
+    lf_revision = support_judge.rubric_revision()
+    lf_sections = support_judge._load_rubric()
+    crlf = tmp_path / "support_rubric_v1.md"
+    crlf.write_bytes(support_judge.RUBRIC_PATH.read_bytes().replace(b"\n", b"\r\n"))
+    monkeypatch.setattr(support_judge, "RUBRIC_PATH", crlf)
+
+    assert support_judge.rubric_revision() == lf_revision
+    assert support_judge._load_rubric() == lf_sections

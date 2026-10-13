@@ -66,9 +66,18 @@ _RETRY_REMINDER = (
 )
 
 
+def _rubric_bytes() -> bytes:
+    """Rubric bytes with LF line endings, whatever the checkout converted them to."""
+    return RUBRIC_PATH.read_bytes().replace(b"\r\n", b"\n")
+
+
 def rubric_revision() -> str:
-    """Return the git blob SHA-1 of the rubric file (equals ``git hash-object``)."""
-    data = RUBRIC_PATH.read_bytes()
+    """Return the git blob SHA-1 of the rubric (equals ``git hash-object``).
+
+    Line endings are normalized to LF first, so a Windows checkout that
+    converted the file to CRLF reports the same revision as the repository.
+    """
+    data = _rubric_bytes()
     header = b"blob %d\0" % len(data)
     return hashlib.sha1(header + data, usedforsecurity=False).hexdigest()
 
@@ -144,7 +153,7 @@ def _split_rubric(text: str) -> tuple[str, dict[str, str], str]:
 
 
 def _load_rubric() -> tuple[str, dict[str, str], str]:
-    return _split_rubric(RUBRIC_PATH.read_text(encoding="utf-8"))
+    return _split_rubric(_rubric_bytes().decode("utf-8"))
 
 
 # --------------------------------------------------------------------------- #
