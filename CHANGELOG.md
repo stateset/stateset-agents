@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **`MultiTurnAgent` text is exactly what the policy sampled.** For every
+  generated assistant turn, `content == tokenizer.decode(token_ids,
+  skip_special_tokens=True)`, so the conversation history, rewards and the
+  token-path loss agree:
+  - No default stop strings: replies are no longer cut at the first blank
+    line (`"\n\n"`) or at `User:`/`System:`. Stops are explicit via the new
+    `AgentConfig.stop_sequences` (default `[]`); text and `token_ids` are
+    truncated at the same token boundary, including when a stop string lands
+    inside a merged token. `LEGACY_STOP_SEQUENCES` restores the old set.
+  - Sampled text is no longer whitespace-stripped or cut at speaker labels
+    (the streaming display path still hides speaker labels).
+  - Canned persona sentences ("I'll help you with your billing question
+    right away.") are off by default (`AgentConfig.enable_persona_hints`) and
+    are never applied by `generate_turn`/`generate_turns` (a warning is
+    logged instead), so they cannot reach training rollouts.
+  - Rollout-engine results get the same stop handling and now receive the
+    configured `top_k` (`-1` when disabled).
+- **`AgentConfig.top_k` accepts `0` or `None` to disable top-k** (both map to
+  HF `top_k=0`; booleans are rejected). The default stays 50.
+- **`ConversationEnvironment` no longer overrides the agent's system prompt.**
+  `get_initial_prompt` returns `""` unless a system prompt is explicitly
+  provided (new `system_prompt` argument, scenario `"system_prompt"`, or
+  scenario `"context"`); the generic "You are a helpful AI assistant..." turn
+  is gone and `persona` alone no longer creates a system turn. A system turn
+  in the history still takes precedence over `AgentConfig.system_prompt`
+  (now checked anywhere in the history, not only at index 0).
+- **Farewell endings are configurable and skip scripted scenarios.** New
+  `ConversationEnvironment(end_on_farewell=True)`; scenarios with
+  `user_turns` run their full script even if the agent says "Goodbye!", and
+  farewell phrases match whole words only ("see your order" no longer ends an
+  episode).
+
 ## [0.64.1] - 2026-10-12 — Security hardening
 
 ### Security

@@ -205,6 +205,32 @@ real 1.5B model (and therefore zero reward), which is how the earlier
 native-GSPO comparison rows went wrong; the guard makes that impossible for
 any trainer that samples through the agent.
 
+## Rollout text is exactly what the policy sampled
+
+An assistant turn's `content` (what the conversation history, the reward and
+the next prompt see) equals `tokenizer.decode(token_ids,
+skip_special_tokens=True)` for the `token_ids` the token path trains on:
+
+- Generation ends at EOS or `max_new_tokens`. Stop strings are explicit
+  (`AgentConfig.stop_sequences`, default empty); when one fires, text and ids
+  are cut at the same token boundary, and a merged token that straddles the
+  stop string is dropped whole (it cannot be split). The criterion also
+  matches stop strings inside merged tokens, so generation still ends there.
+  `LEGACY_STOP_SEQUENCES` (`"User:"`, `"System:"`, `"\n\n"`) restores the
+  old stop set for no-chat-template models that would otherwise continue
+  into an invented next turn.
+- No whitespace stripping or speaker-label cutting is applied to sampled
+  text; rollout-engine results get the same stop handling.
+- `AgentConfig.enable_persona_hints` (canned billing/technical sentences,
+  default off) only affects `generate_response`; `generate_turn` and
+  `generate_turns` ignore it and log a warning, so injected text can never
+  reach a training row or a reward.
+- `top_k=0` / `top_k=None` disables top-k (both map to HF `top_k=0` and to
+  `top_k=-1` for a rollout engine), so the sampling distribution is the one
+  the config names. `top_p` and `repetition_penalty` still apply when set.
+- With `enable_reasoning`, the `<think>` block is removed from `content` and
+  kept in `metadata["reasoning"]`; the ids still cover it.
+
 ## Group sampling in one call
 
 `MultiTurnAgent.generate_turns(messages, n)` samples the whole group of a

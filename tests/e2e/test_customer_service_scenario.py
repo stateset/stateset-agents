@@ -264,6 +264,8 @@ class TestCustomerServiceE2E:
         mock_model.from_pretrained.return_value = mock_model_instance
         mock_tokenizer.from_pretrained.return_value = mock_tokenizer_instance
 
+        # Canned persona sentences are opt-in (never applied to rollout turns).
+        customer_service_config.enable_persona_hints = True
         agent = MultiTurnAgent(customer_service_config)
         await agent.initialize()
 
