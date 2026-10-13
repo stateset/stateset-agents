@@ -627,7 +627,7 @@ class MultiTurnGRPOTrainer:
         if callable(reset_fn):
             reset_result = reset_fn()
             if asyncio.iscoroutine(reset_result):
-                await reset_result
+                reset_result = await reset_result
 
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
