@@ -29,7 +29,7 @@
     "learning_rate": 2e-05,
     "num_generations": 8,
     "scenarios_per_step": 4,
-    "max_steps": 64,
+    "max_steps": 250,
     "lora_r": 32,
     "lora_alpha": 64,
     "lora_dropout": 0.05,
