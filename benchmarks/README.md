@@ -133,6 +133,104 @@ the command returns nonzero after all attempts. Dirty-worktree runs and
 unpinned model/dataset revisions are rejected. Preflight results are diagnostic
 and cannot satisfy the three-seed publication gate.
 
+### Five-framework matched GSPO matrix (v5)
+
+`shootout_manifest_v6_five_frameworks.json` is the v4 protocol (same config
+object, Qwen2.5-1.5B-Instruct and GSM8K revisions, seeds 42/1337/2026, one
+NVIDIA L40S) extended to every framework `a_plus_gate.py` requires:
+`stateset-agents-gspo`, `trl`, `verl`, `openrlhf`, `nemo-rl`. The three
+competitor adapters keep the TRL adapter's CLI and result schema and import
+its GSM8K split, prompt template, exact-numeric reward and evaluator
+(`benchmarks/adapters/_matched_gsm8k.py`). Each one evaluates the base model,
+trains in its framework's own environment as a subprocess, parses that
+framework's own metrics, loads the trained LoRA adapter on the base model,
+evaluates it with the shared evaluator, and only then writes the result.
+A nonzero exit, a short run (fewer than `max_steps` optimizer steps), missing
+reward metrics, a version mismatch, or a missing adapter fails closed with no
+result file.
+
+| Adapter | Pinned | GSPO switch | Native | Recorded deviations |
+|---|---|---|---|---|
+| `verl_gspo.py` | verl 0.9.1 (PyPI) | `actor.policy_loss.loss_mode=gspo`, `loss_agg_mode=seq-mean-token-mean` | sequence ratio, ε 3e-4/4e-4, β 0, group-normalized GRPO advantages, LoRA r16/α32 q,k,v,o | `lora_dropout` 0.0 (FSDP LoRA path has no dropout field) |
+| `openrlhf_gspo.py` | OpenRLHF 0.11.2 (PyPI) | `--actor.policy_loss_type gspo` | sequence ratio, `--actor.eps_clip_low_high 3e-4 4e-4`, β 0 (no ref model), `group_norm`, LoRA r16/α32/dropout 0.05 | none |
+| `nemo_rl_gspo.py` | NeMo-RL 0.7.0 (git tag `v0.7.0`, `81aa43d`) | `loss_fn.sequence_level_importance_ratios=true`, `token_level_loss=false` | sequence ratio, `ratio_clip_min/max`, β 0, mean/std group normalization, LoRA r16/α32/dropout 0.05 | LoRA A init is xavier (no kaiming option); LoRA weights are merged into the base for vLLM generation |
+
+Every adapter result also carries `protocol` (the exact framework settings),
+`protocol_deviations` and `protocol_notes`; `framework/launch.json` and the
+framework's own log/metrics are kept in the hashed artifact directory. The
+shootout evidence documents do not copy those fields, so read
+`runs/<framework>-seed<N>/adapter-result.json` alongside the report.
+
+Batch geometry follows the StateSet harness: `per_device_train_batch_size x
+gradient_accumulation_steps` prompts per optimizer step (4), each with
+`num_generations` completions (16 completions per step, one optimizer step per
+rollout batch), and `samples_processed = steps x 16`. TRL 1.x instead counts
+`per_device_train_batch_size` in completions (1 prompt x 4 completions per
+step) while `trl_grpo.py` reports the same `steps x 16`, so the TRL leg does a
+quarter of the declared work per step. That adapter is unchanged here; fix it
+(and re-pin the protocol) before treating TRL throughput as comparable.
+
+`hardware.cuda` is the harness venv's CUDA version, because the comparison
+key requires one value across frameworks; the framework venv's CUDA runtime
+is recorded as `hardware.framework_cuda`. Peak VRAM is the larger of the
+shared evaluator's allocator peak and the training peak; verl reports a
+trainer allocator peak, while OpenRLHF and NeMo-RL fall back to device-wide
+`nvidia-smi` sampling (`peak_vram_source`), which includes vLLM's
+preallocated KV cache, so VRAM is not comparable across those rows.
+
+Framework environments (`benchmarks/adapters/framework_envs.py`; prints the
+install script, `--execute` runs it):
+
+| Framework | Environment | Est. disk | Est. install |
+|---|---|---|---|
+| verl | `uv venv` py3.12 at `/workspace/venvs/verl`, `verl[vllm,fsdp]==0.9.1` (torch 2.11, vLLM 0.24) | ~25 GB | ~15 min |
+| OpenRLHF | `uv venv` py3.12 at `/workspace/venvs/openrlhf`, `openrlhf[vllm]==0.11.2` (DeepSpeed 0.19.6, vLLM 0.29, flash-attn 2.8.3) | ~30 GB | ~45 min (flash-attn may compile) |
+| NeMo-RL | source checkout at `/workspace/frameworks/nemo-rl`, `uv sync --locked` (py3.13) + `prefetch_venvs.py` for the vLLM and DTensor-v2 workers | ~60 GB | ~40 min |
+
+The harness venv keeps StateSet and `trl==1.12.0` (via `extra_pip`) for
+`shootout.py`, the StateSet/TRL legs, and all evaluation. The framework
+venvs pin torch 2.11 wheels, which need a host driver new enough for their
+CUDA runtime; check `nvidia-smi` on the pod before a paid run.
+
+```bash
+# Local GPU box (after building the framework environments):
+python benchmarks/adapters/framework_envs.py --execute
+python benchmarks/shootout.py benchmarks/shootout_manifest_v6_five_frameworks.json \
+  --preflight \
+  --required-framework stateset-agents-gspo --required-framework trl \
+  --required-framework verl --required-framework openrlhf \
+  --required-framework nemo-rl \
+  --output-dir benchmark_results/framework_comparison_v5/preflight
+
+# RunPod: free plan first. Set harness_revision to the commit containing the
+# adapters before --execute (the checked-in value is a placeholder).
+python benchmarks/runpod_shootout.py benchmarks/runpod_shootout_v6_manifest.json
+python benchmarks/runpod_shootout.py benchmarks/runpod_shootout_v6_manifest.json \
+  --execute --confirm-max-cost-usd 45.0 \
+  --output-dir benchmark_results/framework_comparison_v5/evidence
+```
+
+Cost estimate (planning, not measured): no v4 or v5 run has completed in this
+tree, so per-run time is unknown. The v3 launcher budgeted at most 1.83 h per
+1.5B/200-step run (11 h for 6 runs). Two greedy evaluations of 256 problems
+with batch-1 `generate` are shared by every framework and likely take ~45-60
+min of each run. Planning range: 1-2 GPU-hours per run, so 15 runs is 15-30
+GPU-hours, plus ~2 h one-time environment install and cache prewarm: about
+17-32 L40S-hours, roughly $15-28 at RunPod Secure $0.86/h. Per framework
+(3 seeds): ~3-6 GPU-hours, ~$2.6-5.2. The launcher caps the pod at 48 h and
+$45. A `--preflight` pass (one seed per framework, 5 runs) costs roughly a
+third of that and is the recommended first spend. The environment install
+runs inside one blocking SSH command during setup; a dropped session fails
+the launch.
+
+Status: the adapters are verified against the pinned upstream sources (config
+keys, CLI flags, loss switches, reward hooks, log formats) and by
+`tests/unit/test_competitor_adapters.py` with the subprocess and GPU mocked.
+None has run end to end on a GPU yet. The least-verified pieces are the
+NeMo-RL DTensor-v2 LoRA checkpoint layout (the adapter fails closed unless it
+finds exactly one PEFT adapter) and the verl v1-trainer checkpoint path
+consumed by `verl.model_merger`.
+
 ## Other strict evidence gates
 
 ```bash
