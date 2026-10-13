@@ -153,6 +153,16 @@ class Environment(ABC):
         """Get initial prompt/context (override in subclasses)"""
         return ""
 
+    async def get_initial_turns(
+        self, state: EnvironmentState
+    ) -> list[ConversationTurn]:
+        """Return non-agent turns that open an episode, after the system prompt.
+
+        Override to start an episode with, for example, the user's first
+        message, so the agent replies to it instead of speaking first.
+        """
+        return []
+
     def clone(self) -> Environment:
         """Return a new environment instance with the same configuration."""
         raise NotImplementedError(
@@ -215,6 +225,8 @@ class Environment(ABC):
                     metadata={"scenario": scenario},
                 )
             )
+
+        turns.extend(await self.get_initial_turns(state))
 
         for _ in range(max_turns):
             history = [{"role": t.role, "content": t.content} for t in turns]

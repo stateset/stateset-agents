@@ -21,6 +21,28 @@ from .trajectory import ConversationTurn
 logger = logging.getLogger(__name__)
 
 
+def _scripted_user_turns(scenario: Any) -> list[str] | None:
+    """Return a scenario's scripted user messages, if it declares them."""
+    if not isinstance(scenario, dict):
+        return None
+    turns = scenario.get("user_turns")
+    if not isinstance(turns, (list, tuple)) or not turns:
+        return None
+    return [str(turn) for turn in turns]
+
+
+def _opening_user_message(scenario: Any) -> str | None:
+    """The message the customer opens with: ``user_turns[0]`` or ``user_query``."""
+    scripted = _scripted_user_turns(scenario)
+    if scripted is not None:
+        return scripted[0]
+    if isinstance(scenario, dict):
+        query = scenario.get("user_query")
+        if isinstance(query, str) and query.strip():
+            return query
+    return None
+
+
 class ConversationEnvironment(Environment):
     """Environment for open-ended conversations with a convenience step API."""
 
@@ -79,6 +101,9 @@ class ConversationEnvironment(Environment):
                 "history": [],
             },
         )
+        opening = _opening_user_message(scenario)
+        if opening is not None:
+            state.context["history"] = [{"role": "user", "content": opening}]
         if isinstance(scenario, dict):
             if scenario.get("id") is not None:
                 state.context["scenario_id"] = scenario.get("id")
@@ -172,11 +197,24 @@ class ConversationEnvironment(Environment):
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))
 
-        user_response = await self._generate_user_response(agent_turn, state)
-        history.append({"role": "user", "content": user_response.content})
+        scripted = _scripted_user_turns(new_state.context.get("scenario"))
+        user_response: ConversationTurn | None
+        if scripted is None:
+            user_response = await self._generate_user_response(agent_turn, state)
+        elif new_state.turn_count < len(scripted):
+            user_response = ConversationTurn(
+                role="user",
+                content=scripted[new_state.turn_count],
+                metadata={"scripted": True, "turn_number": new_state.turn_count},
+            )
+        else:
+            user_response = None
+        if user_response is not None:
+            history.append({"role": "user", "content": user_response.content})
 
         done = (
             new_state.turn_count >= self.max_turns
+            or user_response is None
             or await self._should_end_conversation(agent_turn, state)
         )
         if done:
@@ -189,6 +227,15 @@ class ConversationEnvironment(Environment):
             "scenario": new_state.context.get("scenario"),
         }
         return new_state, step_reward, bool(done), info
+
+    async def get_initial_turns(
+        self, state: EnvironmentState
+    ) -> list[ConversationTurn]:
+        """Open with the scenario's first user message when it has one."""
+        return [
+            ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+            for m in state.context.get("history", [])
+        ]
 
     async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
         scenario = scenario or self.current_scenario
