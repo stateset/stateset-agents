@@ -204,8 +204,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "status":
         rows = status(args.root)
         print(json.dumps(rows, indent=2))
-        missing = [r for r in rows if r["required"] and not r["present"]]
-        print(f"{len(rows) - len(missing)}/{len(rows)} inputs present", file=sys.stderr)
+        required = [r for r in rows if r["required"]]
+        missing = [r for r in required if not r["present"]]
+        print(
+            f"{len(required) - len(missing)}/{len(required)} required inputs present",
+            file=sys.stderr,
+        )
         return 0 if not missing else 1
     if args.command == "collect-free":
         collect_free(args.root, args.python)
