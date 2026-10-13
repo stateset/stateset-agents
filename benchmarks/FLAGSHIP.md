@@ -166,3 +166,13 @@ make benchmark-flagship-run MANIFEST=benchmarks/flagship_manifest.json \
 
 `STATESET_FLAGSHIP_GPU` overrides the GPU (the manifest's `hardware.gpu` must
 then change too, or the evidence is rejected).
+
+### Preflight manifest
+
+`benchmarks/flagship_preflight_manifest.json` is the measured manifest with
+`max_steps` 16 and `max_wall_clock_seconds` 12600, so one diagnostic seed
+exercises the whole pipeline (rollouts, training, both evaluations, judge)
+with a worst case of about $13.30 on one H100 at $3.99/h. Its config hash
+differs from the measured manifest, and `run_flagship_matrix.py` never accepts
+preflight evidence for publication. Use its measured step time to re-pin
+`max_steps` in `flagship_manifest.json`.
