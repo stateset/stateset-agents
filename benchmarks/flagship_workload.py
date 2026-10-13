@@ -633,7 +633,7 @@ def agent_config_kwargs(
         "do_sample": sampling,
         "repetition_penalty": 1.0,
         "torch_dtype": "bfloat16" if payload.get("bf16", True) else "float32",
-        "attn_implementation": "sdpa",
+        "attn_implementation": str(payload.get("attn_implementation", "sdpa")),
     }
     if lora is not None:
         kwargs.update({"use_peft": True, "peft_config": lora_peft_config(lora)})
@@ -1030,6 +1030,9 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "seed": int(args.seed),
         "lora_r": int(run_config["lora_r"]),
         "bf16": bool(run_config["bf16"]),
+        # HF attention kernel for the policy ("sdpa" default; "eager" avoids
+        # SDPA's bf16 backward when diagnosing non-finite gradients).
+        "attn_implementation": str(run_config.get("attn_implementation", "sdpa")),
     }
     evaluation_payload = {
         **common,
