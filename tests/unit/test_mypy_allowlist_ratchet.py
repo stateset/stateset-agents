@@ -14,7 +14,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
 # Floor = all 387 packaged Python files, including core/chat_masking.py and
 # the v0.64.0 experimental-move shims and experimental subpackages.
-ALLOWLIST_FLOOR = 388
+ALLOWLIST_FLOOR = 390
 
 
 def _allowlisted_files() -> list[str]:

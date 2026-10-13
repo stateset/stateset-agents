@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Callable, Sequence
 from importlib import import_module
 from typing import TYPE_CHECKING, Any, cast
 
@@ -899,6 +899,177 @@ class MultiTurnAgent(Agent):
             )
         return turns
 
+    async def generate_turns_batch(
+        self,
+        histories: Sequence[str | list[dict[str, str]]],
+        contexts: Sequence[dict[str, Any] | None] | None = None,
+    ) -> list[ConversationTurn]:
+        """Generate one assistant turn for each of several conversations at once.
+
+        Unlike :meth:`generate_turns` (``n`` samples of one conversation), the
+        conversations may differ, as in a lockstep multi-turn rollout. A rollout
+        backend receives all prompts in one call; a real HF model generates them
+        as one left-padded batch; a stub backend generates them one by one.
+        Each turn carries exactly what :meth:`generate_turn` would record for
+        its conversation (``prompt_token_ids`` without padding, ``token_ids``,
+        ``sampler_log_probs``), and its ``content`` decodes from ``token_ids``.
+        """
+        if contexts is None:
+            contexts = [None] * len(histories)
+        if len(contexts) != len(histories):
+            raise ValueError(
+                f"got {len(contexts)} contexts for {len(histories)} histories"
+            )
+        if not histories:
+            return []
+        self._warn_persona_hints_ignored()
+        rendered = [
+            self._render_prompt(history, context)
+            for history, context in zip(histories, contexts, strict=True)
+        ]
+        prompts = [prompt for prompt, _ in rendered]
+        batch = await self._generate_with_model_details_multi(prompts, list(contexts))
+        turns: list[ConversationTurn] = []
+        for (_, messages), details in zip(rendered, batch, strict=True):
+            reasoning = details.pop("_reasoning", None)
+            content = self._finalize_response(str(details["response"]), messages)
+            metadata: dict[str, Any] = {"generated": True}
+            for key in _TURN_METADATA_KEYS:
+                if details.get(key) is not None:
+                    metadata[key] = details[key]
+            reasoning = reasoning or self._last_reasoning
+            if reasoning:
+                metadata["reasoning"] = reasoning
+            turns.append(
+                ConversationTurn(role="assistant", content=content, metadata=metadata)
+            )
+        return turns
+
+    async def _generate_with_model_details_multi(
+        self, prompts: list[str], contexts: list[dict[str, Any] | None]
+    ) -> list[dict[str, Any]]:
+        """One :meth:`_generate_with_model_details` result per distinct prompt,
+        batched where the backend allows it; sequential otherwise."""
+        backend_error: str | None = None
+        backend = getattr(self, "_rollout_backend", None)
+        if backend is not None:
+            try:
+                results = await backend.generate_with_logprobs(
+                    list(prompts),
+                    temperature=float(self.config.temperature),
+                    top_p=float(self.config.top_p),
+                    top_k=_backend_top_k(self.config.top_k),
+                    max_tokens=int(self.config.max_new_tokens),
+                )
+                if len(results) != len(prompts):
+                    raise ValueError(
+                        f"rollout backend returned {len(results)} results for "
+                        f"{len(prompts)} prompts"
+                    )
+                backend_batch = [
+                    self._faithful_backend_details(
+                        _validated_backend_result(result, prompt)
+                    )
+                    for result, prompt in zip(results, prompts, strict=True)
+                ]
+                for backend_item in backend_batch:
+                    backend_item["rollout_backend"] = type(backend).__name__
+                    backend_item["rollout_backend_version"] = (
+                        self.rollout_backend_version
+                    )
+                    backend_item["rollout_backend_stale"] = self.rollout_backend_stale
+                return backend_batch
+            except Exception as e:  # noqa: BLE001 - engine failure falls back
+                backend_error = f"{type(e).__name__}: {e}"
+                logger.warning(
+                    "rollout backend %s failed for a batch of %d prompts, falling "
+                    "back to native generation: %s",
+                    type(backend).__name__,
+                    len(prompts),
+                    e,
+                )
+
+        async def sequential_fallback() -> list[dict[str, Any]]:
+            details = []
+            for prompt, context in zip(prompts, contexts, strict=True):
+                item = await self._generate_with_model_details(
+                    prompt, context, use_rollout_backend=False
+                )
+                if self._last_reasoning:
+                    item["_reasoning"] = self._last_reasoning
+                if backend_error:
+                    item["rollout_backend_error"] = backend_error
+                details.append(item)
+            return details
+
+        if (
+            len(prompts) == 1
+            or (self._is_stub_backend and isinstance(self.model, StubModel))
+            or self.model is None
+            or self.tokenizer is None
+            or self.generation_config is None
+            or not callable(getattr(self.model, "generate", None))
+            or getattr(self.tokenizer, "pad_token_id", None) is None
+            or self.config.enable_reasoning
+        ):
+            return await sequential_fallback()
+
+        encoded = [
+            [int(t) for t in self._tokenize_prompt(prompt)["input_ids"][0]]
+            for prompt in prompts
+        ]
+        width = max(len(ids) for ids in encoded)
+        pad_id = int(self.tokenizer.pad_token_id)
+        input_ids = torch.full((len(encoded), width), pad_id, dtype=torch.long)
+        attention_mask = torch.zeros((len(encoded), width), dtype=torch.long)
+        for row, ids in enumerate(encoded):
+            input_ids[row, width - len(ids) :] = torch.tensor(ids, dtype=torch.long)
+            attention_mask[row, width - len(ids) :] = 1
+        model_device = None
+        if hasattr(self.model, "parameters"):
+            try:
+                model_device = next(self.model.parameters()).device
+            except StopIteration:
+                model_device = None
+        if model_device is not None:
+            input_ids = input_ids.to(model_device)
+            attention_mask = attention_mask.to(model_device)
+        stopping_criteria = self._stopping_criteria_for(width)
+        try:
+            with inference_mode(self.model), torch.no_grad():
+                outputs = self.model.generate(
+                    input_ids=input_ids,
+                    attention_mask=attention_mask,
+                    generation_config=self.generation_config,
+                    stopping_criteria=stopping_criteria,
+                    return_dict_in_generate=True,
+                    output_scores=True,
+                    output_logits=True,
+                )
+            sequences = outputs.sequences
+            if not torch.is_tensor(sequences) or int(sequences.shape[0]) != len(
+                prompts
+            ):
+                raise ValueError("batched generate returned an unexpected shape")
+        except (RuntimeError, TypeError, ValueError, AttributeError) as e:
+            logger.debug(
+                "batched generation unavailable (%s); generating sequentially", e
+            )
+            return await sequential_fallback()
+
+        raw_logits = getattr(outputs, "logits", None)
+        steps = (
+            [t for t in raw_logits if torch.is_tensor(t)]
+            if isinstance(raw_logits, (tuple, list))
+            else []
+        )
+        return [
+            self._sequence_row_details(
+                sequences[row, width:], steps, row, encoded[row], backend_error
+            )
+            for row in range(len(prompts))
+        ]
+
     async def _generate_with_model_details_batch(
         self, prompt: str, n: int, context: dict[str, Any] | None = None
     ) -> list[dict[str, Any]]:
@@ -1002,57 +1173,71 @@ class MultiTurnAgent(Agent):
             if isinstance(raw_logits, (tuple, list))
             else []
         )
+        return [
+            self._sequence_row_details(
+                sequences[row, prompt_len:], steps, row, prompt_ids, backend_error
+            )
+            for row in range(n)
+        ]
+
+    def _sequence_row_details(
+        self,
+        response_tokens: Any,
+        steps: list[Any],
+        row: int,
+        prompt_ids: list[int],
+        backend_error: str | None,
+    ) -> dict[str, Any]:
+        """Text, ids, and sampler log-probs for one row of a batched generate.
+
+        ``steps`` are the per-step logits of the whole batch; ``prompt_ids`` are
+        the row's own (unpadded) prompt ids.
+        """
         pad_id = getattr(self.tokenizer, "pad_token_id", None)
         eos_id = getattr(self.tokenizer, "eos_token_id", None)
-        batch: list[dict[str, Any]] = []
-        for row in range(n):
-            response_tokens = sequences[row, prompt_len:]
-            # Rows that finished early are padded to the longest row: keep
-            # everything through the first EOS and drop the padding after it.
-            length = int(response_tokens.shape[0])
-            if length and eos_id is not None:
-                hits = (response_tokens == int(eos_id)).nonzero()
-                if hits.numel():
-                    length = int(hits[0].item()) + 1
-            if pad_id is not None and pad_id != eos_id:
-                while length and int(response_tokens[length - 1]) == int(pad_id):
-                    length -= 1
-            # A row stopped by a stop string is cut before it (text and ids);
-            # with pad == eos that also drops the padding, which is not a
-            # sampled EOS.
-            kept, _, _ = self._truncate_at_stop(
-                [int(t) for t in response_tokens[:length]]
-            )
-            length = len(kept)
-            response_tokens = response_tokens[:length]
-            text = self._decode_reply([int(t) for t in response_tokens])
-            details: dict[str, Any] = {"response": text}
-            if backend_error:
-                details["rollout_backend_error"] = backend_error
-            try:
-                if steps and length:
-                    with torch.no_grad():
-                        stacked = torch.stack(steps, dim=1)[row].float()
-                        log_probs = torch.log_softmax(stacked, dim=-1)
-                        k = min(length, int(log_probs.shape[0]))
-                        picked = (
-                            log_probs[:k]
-                            .gather(-1, response_tokens[:k].unsqueeze(-1))
-                            .squeeze(-1)
-                        )
-                    details["prompt_token_ids"] = list(prompt_ids)
-                    details["token_ids"] = [int(t) for t in response_tokens[:k]]
-                    details["sampler_log_probs"] = [float(x) for x in picked]
-            except (
-                RuntimeError,
-                TypeError,
-                ValueError,
-                AttributeError,
-                IndexError,
-            ) as e:
-                logger.debug("token capture skipped for row %d: %s", row, e)
-            batch.append(details)
-        return batch
+        # Rows that finished early are padded to the longest row: keep
+        # everything through the first EOS and drop the padding after it.
+        length = int(response_tokens.shape[0])
+        if length and eos_id is not None:
+            hits = (response_tokens == int(eos_id)).nonzero()
+            if hits.numel():
+                length = int(hits[0].item()) + 1
+        if pad_id is not None and pad_id != eos_id:
+            while length and int(response_tokens[length - 1]) == int(pad_id):
+                length -= 1
+        # A row stopped by a stop string is cut before it (text and ids);
+        # with pad == eos that also drops the padding, which is not a
+        # sampled EOS.
+        kept, _, _ = self._truncate_at_stop([int(t) for t in response_tokens[:length]])
+        length = len(kept)
+        response_tokens = response_tokens[:length]
+        text = self._decode_reply([int(t) for t in response_tokens])
+        details: dict[str, Any] = {"response": text}
+        if backend_error:
+            details["rollout_backend_error"] = backend_error
+        try:
+            if steps and length:
+                with torch.no_grad():
+                    stacked = torch.stack(steps, dim=1)[row].float()
+                    log_probs = torch.log_softmax(stacked, dim=-1)
+                    k = min(length, int(log_probs.shape[0]))
+                    picked = (
+                        log_probs[:k]
+                        .gather(-1, response_tokens[:k].unsqueeze(-1))
+                        .squeeze(-1)
+                    )
+                details["prompt_token_ids"] = list(prompt_ids)
+                details["token_ids"] = [int(t) for t in response_tokens[:k]]
+                details["sampler_log_probs"] = [float(x) for x in picked]
+        except (
+            RuntimeError,
+            TypeError,
+            ValueError,
+            AttributeError,
+            IndexError,
+        ) as e:
+            logger.debug("token capture skipped for row %d: %s", row, e)
+        return details
 
     def _render_prompt(
         self,
