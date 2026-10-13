@@ -74,3 +74,95 @@ python benchmarks/run_flagship_matrix.py benchmarks/flagship_manifest.json \
   --validate-existing benchmark_results/flagship_v1/measured/evidence \
   --output-dir benchmark_results/flagship_v1/validated
 ```
+
+## RunPod manifest (`flagship_manifest.json`) and pending pins
+
+`benchmarks/flagship_manifest.json` is the real (non-example) v1 contract:
+Qwen2.5-7B-Instruct policy, Mistral-7B-Instruct-v0.3 cross-family judge, one
+`NVIDIA H100 80GB HBM3` per seed, provider cost from the RunPod API. Each seed
+runs `flagship_runpod_driver.py`, which provisions one pod, runs
+`flagship_workload.py` on it (baseline eval -> multi-turn GSPO+LoRA -> final
+eval -> judge, each GPU phase in its own process), downloads every artifact,
+and terminates the pod unconditionally.
+
+### Training protocol: on-policy multi-turn GSPO
+
+Training is genuine on-policy multi-turn RL, not single-turn GSPO on
+flattened histories. The workload drives `MultiTurnGRPOTrainer` with
+`objective="gspo"` step by step (`generate_trajectories` then
+`training_step`):
+
+- **Episodes.** `ConversationEnvironment` (subclassed only to put the
+  scenario's product and store policy in the system turn and to end episodes
+  solely when the script runs out) opens with the scenario's first scripted
+  customer message and replays each later scripted message after the agent's
+  reply. Every assistant turn is sampled from the *current* policy
+  (`rollout_temperature`, top-k/top-p off, no repetition penalty), so later
+  turns condition on the policy's own earlier replies.
+- **Objective.** Each assistant turn is one row on the trainer's batched token
+  path; GSPO's length-normalized sequence ratio is taken per assistant turn
+  (clip `clip_range_left`/`clip_range_right` = 3e-4/4e-4), weighted by the
+  episode's group-normalized advantage over the `num_generations` episodes of
+  the same scenario, with a sequence-level k3 KL to the base model
+  (`beta`). A step that falls back to the sequence-level path fails the run.
+- **Reward.** `ConversationSupportReward` = `SupportRewardComposite` scored on
+  each assistant reply (with the scenario context and the preceding customer
+  turns) and averaged over the episode's replies, so every turn earns credit
+  and the composite's 10-120 word brand-voice window applies per reply rather
+  than to the whole conversation. The cross-family judge is evaluation-only.
+- **Schedule.** `scenarios_per_step` train scenarios per step, drawn in order
+  from seeded per-epoch permutations of the train split; a run whose groups
+  have no reward variance for `zero_signal_steps` consecutive steps, or whose
+  rollout groups come back incomplete, fails closed.
+- **Evaluation parity.** Baseline and final evaluation roll out the same
+  environment (same system turn, scripted turns, prompt rendering through the
+  training agent's chat template, greedy decoding at `temperature`,
+  `max_completion_length`), via vLLM, the final one with the trained LoRA
+  adapter. The judge scores exactly those multi-turn conversations.
+- **Text fidelity.** The policy's replies end only at the chat template's
+  EOS and enter the conversation verbatim; the base agent's blank-line stop,
+  speaker-label truncation and keyword-injection hints are disabled for the
+  flagship so training rows, conversation history and judged transcripts
+  agree.
+
+### Runtime and cost (1x H100 80GB at $3.99/h)
+
+Training rollouts use the policy's own HF `generate` (one episode at a time,
+batch 1), which dominates the run: per step `scenarios_per_step x
+num_generations` = 32 episodes of ~3.2 assistant turns (dataset mean) and at
+most 192 new tokens each. At 28-40 tokens/s that is 12-22 s per episode, so
+~6-12 min per step including the LoRA update (forward/backward over ~100
+turn rows with gradient checkpointing is seconds). The pinned 24 steps
+(768 episodes, 96 scenario draws) therefore take ~2.5 h nominal and ~4.8 h
+if every reply hits the token cap at the slow end. Setup (~25 min), the two
+vLLM evaluations and the judge (~25 min together) bring the worst case to
+~5.6 h, inside the 6 h `max_wall_clock_seconds` (the pod lifetime, which also
+bounds spend at <= $23.94 per seed). Batched multi-episode generation or a
+weight-synced vLLM rollout engine would allow several times more steps in the
+same budget; neither is used in v1.
+
+**Two revisions are still the all-zero placeholder and block measured runs**
+(`run_flagship_matrix.py` and the driver both refuse them):
+
+- `dataset_revision` — pin the commit of `stateset/customer-support-multiturn-v1`
+  once it is published to the Hugging Face Hub.
+- `judge.rubric_revision` — pin `rubric_revision()` from
+  `stateset_agents.evaluation.support_judge` (the git blob SHA of the rubric)
+  at the harness commit that will run the matrix.
+
+Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
+(the manifest command is fixed, so pass it through the environment):
+
+```bash
+# free: price the worst case for one seed from the public catalog
+python benchmarks/flagship_runpod_driver.py <placeholder args> --plan
+# paid: the matrix runner invokes the driver once per seed
+export RUNPOD_API_KEY=...            # never commit it
+export HF_TOKEN=...                  # the Mistral judge is gated
+export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=25
+make benchmark-flagship-run MANIFEST=benchmarks/flagship_manifest.json \
+  OUTPUT_DIR=benchmark_results/flagship_v1/preflight EXTRA_ARGS=--preflight
+```
+
+`STATESET_FLAGSHIP_GPU` overrides the GPU (the manifest's `hardware.gpu` must
+then change too, or the evidence is rejected).
