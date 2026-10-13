@@ -84,3 +84,115 @@ def test_scenarios_without_user_messages_keep_legacy_behaviour() -> None:
     _, seen = _run(env, scenario)
 
     assert [m["role"] for m in seen[0]] == ["system"]
+
+
+# --- system prompt ownership and farewell handling ------------------------------
+
+
+def _replying(text: str):
+    async def agent_fn(history: list[dict[str, str]], context: Any) -> str:
+        return text
+
+    return agent_fn
+
+
+def test_no_generic_system_turn_when_nothing_provides_one() -> None:
+    """The agent's own ``AgentConfig.system_prompt`` must not be clobbered."""
+    scenario = {"id": "s4", "user_query": "hi"}
+    env = ConversationEnvironment(scenarios=[scenario], max_turns=1)
+
+    assert asyncio.run(env.get_initial_prompt(scenario)) == ""
+    trajectory, seen = _run(env, scenario)
+    assert all(m["role"] != "system" for m in seen[0])
+    assert all(t.role != "system" for t in trajectory.turns)
+
+
+def test_explicit_system_prompts_are_emitted() -> None:
+    env = ConversationEnvironment(
+        scenarios=[], max_turns=1, system_prompt="You are Luna."
+    )
+    assert asyncio.run(env.get_initial_prompt({})) == "You are Luna."
+    assert (
+        asyncio.run(env.get_initial_prompt({"context": "Order #1 is late."}))
+        == "You are Luna. Context: Order #1 is late."
+    )
+
+    plain = ConversationEnvironment(scenarios=[], max_turns=1)
+    assert asyncio.run(plain.get_initial_prompt({"system_prompt": "Be brief."})) == (
+        "Be brief."
+    )
+    assert asyncio.run(plain.get_initial_prompt({"context": "VIP customer"})) == (
+        "Context: VIP customer"
+    )
+
+
+def test_persona_alone_does_not_create_a_system_turn() -> None:
+    env = ConversationEnvironment(scenarios=[], max_turns=1, persona="Calm.")
+    assert asyncio.run(env.get_initial_prompt({})) == ""
+    assert (
+        asyncio.run(env.get_initial_prompt({"system_prompt": "Be brief."}))
+        == "Be brief. Calm."
+    )
+
+
+def test_agent_system_prompt_applies_when_environment_has_none() -> None:
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+
+    agent = MultiTurnAgent(
+        AgentConfig(
+            model_name="stub://test",
+            use_stub_model=True,
+            system_prompt="You are Byte.",
+            use_chat_template=False,
+        )
+    )
+    scenario = {"id": "s5", "user_query": "hi"}
+    env = ConversationEnvironment(scenarios=[scenario], max_turns=1)
+    _, seen = _run(env, scenario)
+    prompt, _ = agent._render_prompt(seen[0])
+    assert prompt.startswith("System: You are Byte.\n")
+
+    # An explicit system turn in the history takes precedence (documented).
+    prompt, _ = agent._render_prompt(
+        [{"role": "system", "content": "Env rules."}, *seen[0]]
+    )
+    assert "You are Byte." not in prompt and "System: Env rules." in prompt
+
+
+def test_scripted_conversations_do_not_end_on_a_farewell() -> None:
+    scenario = {"id": "s6", "user_turns": ["hi", "one more thing", "thanks"]}
+    env = ConversationEnvironment(scenarios=[scenario], max_turns=10)
+
+    trajectory = asyncio.run(env.run_episode(_replying("Goodbye!"), scenario))
+
+    assert sum(t.role == "assistant" for t in trajectory.turns) == 3
+
+
+def test_unscripted_farewell_ending_is_configurable() -> None:
+    scenario = {"id": "s7", "user_query": "hi"}
+    default = ConversationEnvironment(scenarios=[scenario], max_turns=4)
+    trajectory = asyncio.run(default.run_episode(_replying("Goodbye!"), scenario))
+    assert sum(t.role == "assistant" for t in trajectory.turns) == 1
+
+    keep_going = ConversationEnvironment(
+        scenarios=[scenario], max_turns=4, end_on_farewell=False
+    )
+    trajectory = asyncio.run(keep_going.run_episode(_replying("Goodbye!"), scenario))
+    assert sum(t.role == "assistant" for t in trajectory.turns) == 4
+
+
+def test_farewell_matching_uses_word_boundaries() -> None:
+    scenario = {"id": "s8", "user_query": "hi"}
+    env = ConversationEnvironment(scenarios=[scenario], max_turns=3)
+    trajectory = asyncio.run(
+        env.run_episode(_replying("Please see your order page."), scenario)
+    )
+    assert sum(t.role == "assistant" for t in trajectory.turns) == 3
+
+
+def test_clone_keeps_system_prompt_and_farewell_settings() -> None:
+    env = ConversationEnvironment(
+        scenarios=[], max_turns=2, system_prompt="S", end_on_farewell=False
+    )
+    clone = env.clone()
+    assert clone.system_prompt == "S" and clone.end_on_farewell is False

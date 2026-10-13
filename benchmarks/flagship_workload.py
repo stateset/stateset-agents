@@ -1275,14 +1275,13 @@ def _peak_vram_mb() -> float:
 def flagship_agent_cls() -> type:
     """``MultiTurnAgent`` whose conversation text is exactly what it sampled.
 
-    The base agent stops at the first blank line (``"\\n\\n"``) and other
-    stop strings, cuts replies at speaker labels, and appends canned billing /
-    technical sentences when a reply misses a keyword. For a chat-templated
-    policy that would truncate multi-paragraph replies and put words in the
-    transcript (and the reward) that the policy never generated. This agent
-    ends a reply only at the chat template's EOS and keeps the decoded text
-    verbatim (whitespace-stripped), so the training rows, the conversation
-    history and the judged transcripts agree.
+    The base agent now does this by default (no default stop strings, no
+    canned persona text; see ``docs/OBJECTIVES.md``). This subclass pins the
+    behaviour for the flagship workload regardless of config: it ends a reply
+    only at the chat template's EOS, never appends text, and its
+    ``_clean_response`` (used on the vLLM evaluation path) only strips
+    whitespace, so the training rows, the conversation history and the
+    judged transcripts agree.
     """
     from stateset_agents.core.agent import MultiTurnAgent, StopOnSpecialTokens
 
@@ -1307,8 +1306,10 @@ def flagship_agent_cls() -> type:
 
 
 def disable_top_k(agent: Any) -> None:
-    """Plain ancestral sampling: ``top_k=0`` (``AgentConfig`` requires >= 1,
-    and an unset value would inherit the checkpoint's generation default)."""
+    """Plain ancestral sampling: ``top_k=0`` on the built generation config.
+
+    ``AgentConfig(top_k=0)`` now does the same; this stays for agents built
+    from configs that keep the default ``top_k=50``."""
     generation_config = getattr(agent, "generation_config", None)
     if generation_config is not None:
         generation_config.top_k = 0
