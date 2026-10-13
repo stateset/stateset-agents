@@ -271,6 +271,8 @@ def test_run_workload_produces_metrics_and_artifacts(tmp_path: Path) -> None:
     judge_payload = phases.calls[3][1]
     assert judge_payload["model"] == "judge/model"
     assert judge_payload["revision"] == "d" * 40
+    # The judge loads the pinned local snapshot resolved before any GPU phase.
+    assert judge_payload["model_path"] == "/snapshots/" + "d" * 40
 
     artifacts = tmp_path / "artifacts"
     for relative in (
@@ -352,6 +354,71 @@ def test_fail_closed_before_any_phase(
     with pytest.raises(workload.WorkloadError, match=message):
         workload.run_workload(_args(tmp_path, **updates), _deps(phases, **deps_updates))
     assert phases.calls == []
+
+
+def test_phase_judge_loads_snapshot_and_records_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stateset_agents.evaluation import support_judge
+
+    loaded: list[tuple[str, Any]] = []
+
+    def fake_vllm(model: str, revision: Any) -> Any:
+        loaded.append((model, revision))
+        return lambda prompts: [
+            json.dumps(dict.fromkeys(support_judge.CRITERIA, 3)) for _ in prompts
+        ]
+
+    monkeypatch.setattr(support_judge, "vllm_generate_fn", fake_vllm)
+    scenario = {
+        "policy_facts": ["Duties are the customer's responsibility."],
+        "expected_resolution": "Decline reimbursement of customs duties.",
+        "must_avoid": ["reimburse"],
+    }
+    out = workload.phase_judge(
+        {
+            "model": "org/judge",
+            "revision": "d" * 40,
+            "model_path": "/snapshots/" + "d" * 40,
+            "backend": "auto",
+            "groups": {
+                "baseline": [
+                    {
+                        "id": "s-1",
+                        "scenario": scenario,
+                        "transcript": [
+                            ["user", "Will you cover the duties?"],
+                            ["assistant", "Hi [Customer's Name], I'll reimburse you."],
+                        ],
+                    },
+                    {
+                        "id": "s-2",
+                        "scenario": scenario,
+                        "transcript": [
+                            ["user", "Will you cover the duties?"],
+                            ["assistant", "Sorry, duties are not covered by us."],
+                        ],
+                    },
+                ]
+            },
+        }
+    )
+    assert loaded == [("/snapshots/" + "d" * 40, None)]
+    group = out["groups"]["baseline"]
+    first, second = group["results"]
+    assert first["findings"]["must_avoid_hits"][0]["phrase"] == "reimburse"
+    assert first["findings"]["placeholders"][0]["text"] == "[Customer's Name]"
+    assert second["findings"] == {
+        "must_avoid_hits": [],
+        "placeholders": [],
+        "repeated_turns": [],
+    }
+    assert group["findings_summary"] == {
+        "must_avoid_hits": 1,
+        "placeholders": 1,
+        "repeated_turns": 0,
+    }
+    assert out["rubric_revision"] == support_judge.rubric_revision()
 
 
 def test_judge_phase_rubric_mismatch_fails(tmp_path: Path) -> None:

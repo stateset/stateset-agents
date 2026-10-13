@@ -55,9 +55,9 @@
     "zero_signal_steps": 5
   },
   "judge": {
-    "model": "mistralai/Mistral-7B-Instruct-v0.3",
-    "revision": "c170c708c41dac9275d15a8fff4eca08d52bab71",
-    "rubric_revision": "edcd6e8247da8004fb7ec9c321bef46e8349f8bf"
+    "model": "mistralai/Mistral-Small-24B-Instruct-2501",
+    "revision": "9527884be6e5616bdd54de542f9ae13384489724",
+    "rubric_revision": "3b78a6c72688457ea8453acbed59e0e2832d4ab8"
   },
   "hardware": {
     "gpu": "NVIDIA H100 80GB HBM3",

@@ -138,6 +138,22 @@ def test_example_manifest_is_valid() -> None:
 
 
 @pytest.mark.parametrize(
+    "name", ["flagship_manifest.json", "flagship_preflight_manifest.json"]
+)
+def test_real_manifests_pin_the_v2_judge_and_are_execution_ready(name: str) -> None:
+    from stateset_agents.evaluation.support_judge import rubric_revision
+
+    loaded = runner.load_manifest(ROOT / "benchmarks" / name)
+    assert loaded["judge"] == {
+        "model": "mistralai/Mistral-Small-24B-Instruct-2501",
+        "revision": "9527884be6e5616bdd54de542f9ae13384489724",
+        "rubric_revision": rubric_revision(),
+    }
+    runner.validate_execution_ready(loaded, PACKAGE_VERSION)
+    runner.validate_execution_ready(loaded, "0.65.0")
+
+
+@pytest.mark.parametrize(
     ("mutation", "message"),
     [
         (

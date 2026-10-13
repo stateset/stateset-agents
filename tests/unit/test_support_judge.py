@@ -8,17 +8,20 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 
 from stateset_agents.evaluation import support_judge as sj
 from stateset_agents.evaluation.support_judge import (
     CRITERIA,
+    JUDGE_SYSTEM_PROMPT,
     RUBRIC_PATH,
     JudgeItem,
     JudgeResult,
     SupportJudge,
     build_judge_prompt,
+    detect_findings,
     parse_judge_output,
     rubric_revision,
     summarize,
@@ -76,6 +79,38 @@ def test_rubric_ships_and_names_every_criterion() -> None:
     for name in CRITERIA:
         assert f"### {name}" in text
     assert "policy_facts" in text and "expected_resolution" in text
+
+
+def test_judge_uses_rubric_v2_and_keeps_v1_for_history() -> None:
+    assert RUBRIC_PATH.name == "support_rubric_v2.md"
+    assert (RUBRIC_PATH.parent / "support_rubric_v1.md").is_file()
+    text = RUBRIC_PATH.read_text(encoding="utf-8")
+    assert "## Hard caps" in text
+    for cap in (
+        "policy_compliance = 1",
+        "resolution <= 2",
+        "accuracy <= 2",
+        "resolution <= 3",
+        "conciseness <= 2",
+        "[Customer's Name]",
+        "{order_id}",
+    ):
+        assert cap in text
+    # Every criterion keeps concrete 1/3/5 anchors.
+    _preamble, sections, _epilogue = sj._load_rubric()
+    for name in CRITERIA:
+        for anchor in ("- 1:", "- 3:", "- 5:"):
+            assert anchor in sections[name], (name, anchor)
+
+
+def test_rubric_revision_is_lf_blob_sha_of_v2() -> None:
+    data = RUBRIC_PATH.read_bytes().replace(b"\r\n", b"\n")
+    import hashlib
+
+    expected = hashlib.sha1(
+        b"blob %d\0" % len(data) + data, usedforsecurity=False
+    ).hexdigest()
+    assert rubric_revision() == expected
 
 
 def test_rubric_revision_matches_git_hash_object() -> None:
@@ -268,6 +303,33 @@ def test_score_empty_items() -> None:
     assert generate.calls == []
 
 
+def test_judge_results_carry_findings_and_both_passes_show_them() -> None:
+    item = JudgeItem(
+        id="f",
+        scenario=SCENARIO,
+        transcript=(
+            ("user", "Where is my order?"),
+            ("assistant", "Hi [Customer's Name], promising expedited shipping now."),
+        ),
+    )
+    generate = RecordingGenerate(lambda _p: _scores_json(4))
+    (result,) = SupportJudge(generate).score([item])
+    assert result.findings == detect_findings(item)
+    assert result.findings["must_avoid_hits"][0]["phrase"] == (
+        "Promising expedited shipping"
+    )
+    prompts = generate.calls[0]
+    assert len(prompts) == 2
+    for prompt in prompts:
+        assert "## Automated findings (verified, treat as fact)" in prompt
+        assert 'must_avoid phrase "Promising expedited shipping"' in prompt
+        section = prompt[
+            prompt.index("## Automated findings") : prompt.index("## Criteria")
+        ]
+        assert 'Unfilled template placeholder "[Customer\'s Name]"' in section
+        assert "expedited shipping now" in section  # the excerpt
+
+
 def test_summarize_math() -> None:
     results = [
         JudgeResult("a", 0.75, (0.5, 1.0), ({}, {}), 0, 0.5),
@@ -307,9 +369,156 @@ def test_rubric_identity_ignores_crlf_checkouts(tmp_path, monkeypatch) -> None:
 
     lf_revision = support_judge.rubric_revision()
     lf_sections = support_judge._load_rubric()
-    crlf = tmp_path / "support_rubric_v1.md"
+    crlf = tmp_path / "support_rubric_v2.md"
     crlf.write_bytes(support_judge.RUBRIC_PATH.read_bytes().replace(b"\n", b"\r\n"))
     monkeypatch.setattr(support_judge, "RUBRIC_PATH", crlf)
 
     assert support_judge.rubric_revision() == lf_revision
     assert support_judge._load_rubric() == lf_sections
+
+
+# --------------------------------------------------------------------------- #
+# Deterministic findings
+# --------------------------------------------------------------------------- #
+
+
+def _findings_item(
+    *assistant: str, must_avoid: Sequence[str] = ("reimburse",)
+) -> JudgeItem:
+    turns: list[tuple[str, str]] = []
+    for index, text in enumerate(assistant):
+        turns.append(("user", f"customer message {index}"))
+        turns.append(("assistant", text))
+    scenario = {**SCENARIO, "must_avoid": list(must_avoid)}
+    return JudgeItem(id="x", scenario=scenario, transcript=tuple(turns))
+
+
+def test_findings_detect_must_avoid_case_insensitively_in_assistant_turns() -> None:
+    item = JudgeItem(
+        id="m",
+        scenario={**SCENARIO, "must_avoid": ["reimburse", "refund has been issued"]},
+        transcript=(
+            ("user", "Will you reimburse me?"),  # user text never counts
+            ("assistant", "To proceed with the REIMBURSEMENT, send the receipt."),
+            ("user", "ok"),
+            ("assistant", "Thanks, all set."),
+        ),
+    )
+    hits = detect_findings(item)["must_avoid_hits"]
+    assert len(hits) == 1
+    assert hits[0]["phrase"] == "reimburse"
+    assert hits[0]["turn"] == 2
+    assert "REIMBURSEMENT" in hits[0]["excerpt"]
+
+
+def test_findings_no_must_avoid_hit_when_absent() -> None:
+    item = _findings_item("We can't offer a refund for final-sale items.")
+    assert detect_findings(item)["must_avoid_hits"] == []
+
+
+@pytest.mark.parametrize(
+    "text, expected",
+    [
+        ("Dear [Customer's Name], thanks.", ["[Customer's Name]"]),
+        ("Best regards, [Your Name]", ["[Your Name]"]),
+        ("Your order {order_id} shipped.", ["{order_id}"]),
+        ("Your order {{ order_id }} shipped.", ["{{ order_id }}"]),
+        ("Hello <name>, welcome back.", ["<name>"]),
+        ("Hi <Customer Name>!", ["<Customer Name>"]),
+        ("I checked [order #123] for you.", []),
+        ("See [our policy](https://example.com/returns).", []),
+        ("As noted in [1], refunds take 5 days.", []),
+        ("Line one<br>line two", []),
+        ("Totally normal reply with no fields.", []),
+    ],
+)
+def test_findings_placeholder_regex(text: str, expected: list[str]) -> None:
+    found = detect_findings(_findings_item(text))["placeholders"]
+    assert [entry["text"] for entry in found] == expected
+    assert all(entry["turn"] == 2 for entry in found)
+
+
+def test_findings_placeholder_reported_once_per_turn() -> None:
+    found = detect_findings(
+        _findings_item("[Customer's Name], hi [Customer's Name]", "[Customer's Name]")
+    )["placeholders"]
+    assert [(f["text"], f["turn"]) for f in found] == [
+        ("[Customer's Name]", 2),
+        ("[Customer's Name]", 4),
+    ]
+
+
+def test_findings_detect_near_verbatim_repetition() -> None:
+    base = (
+        "I understand your frustration. Final-sale items cannot be returned "
+        "unless they are defective. Could you send a photo of the item?"
+    )
+    item = _findings_item(
+        base,
+        "Thanks for the details. A replacement is on its way.",
+        base.replace("frustration", "situation"),
+    )
+    repeated = detect_findings(item)["repeated_turns"]
+    assert len(repeated) == 1
+    assert repeated[0]["turns"] == [2, 6]
+    assert repeated[0]["similarity"] >= sj.REPETITION_THRESHOLD
+
+
+def test_findings_distinct_turns_are_not_repetition() -> None:
+    item = _findings_item(
+        "Sorry about the delay; I have opened a trace with the carrier.",
+        "The trace usually takes 2 business days; I'll email you the result.",
+    )
+    assert detect_findings(item)["repeated_turns"] == []
+
+
+def test_prompt_without_findings_says_none_detected() -> None:
+    prompt = build_judge_prompt(_item(), CRITERIA)
+    assert "## Automated findings (verified, treat as fact)" in prompt
+    assert "None detected" in prompt
+
+
+def test_backends_send_fixed_system_message(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The system message replaces date-bearing chat-template defaults."""
+    captured: dict[str, object] = {}
+
+    class FakeOutput:
+        def __init__(self) -> None:
+            self.outputs = [type("C", (), {"text": "{}"})()]
+
+    class FakeLLM:
+        def __init__(self, **kwargs: object) -> None:
+            captured["init"] = kwargs
+
+        def chat(self, conversations, params, use_tqdm=False):  # type: ignore[no-untyped-def]
+            captured["conversations"] = conversations
+            return [FakeOutput() for _ in conversations]
+
+    fake_vllm = type(sys)("vllm")
+    fake_vllm.LLM = FakeLLM  # type: ignore[attr-defined]
+    fake_vllm.SamplingParams = lambda **kwargs: kwargs  # type: ignore[attr-defined]
+    monkeypatch.setitem(sys.modules, "vllm", fake_vllm)
+
+    generate = sj.vllm_generate_fn("/snapshots/judge", None)
+    assert generate(["P"]) == ["{}"]
+    init = captured["init"]
+    assert isinstance(init, dict)
+    assert init["gpu_memory_utilization"] == 0.85
+    assert init["dtype"] == "bfloat16"
+    assert init["max_model_len"] >= 8192
+    assert captured["conversations"] == [
+        [
+            {"role": "system", "content": JUDGE_SYSTEM_PROMPT},
+            {"role": "user", "content": "P"},
+        ]
+    ]
+    assert "today" not in JUDGE_SYSTEM_PROMPT.lower()
+
+
+def test_flagship_manifests_pin_the_v2_rubric_and_new_judge() -> None:
+    root = Path(__file__).resolve().parents[2] / "benchmarks"
+    for name in ("flagship_manifest.json", "flagship_preflight_manifest.json"):
+        judge = json.loads((root / name).read_text(encoding="utf-8"))["judge"]
+        assert judge["model"] == "mistralai/Mistral-Small-24B-Instruct-2501"
+        assert judge["revision"] == "9527884be6e5616bdd54de542f9ae13384489724"
+        assert judge["rubric_revision"] == rubric_revision()

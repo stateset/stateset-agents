@@ -877,6 +877,12 @@ def _default_snapshot(model: str, revision: str | None) -> str:
         repo_id=model,
         revision=revision,
         allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.jinja"],
+        # Mistral repos also ship a Mistral-format copy of the weights
+        # (consolidated.safetensors: +47 GB for the 24B judge) described by
+        # params.json. Only the HF-format config and shards are loaded, so
+        # both are skipped; tekken.json stays so vLLM can use the official
+        # mistral_common tokenizer.
+        ignore_patterns=["consolidated*.safetensors", "original/*", "params.json"],
     )
     if revision is not None and Path(path).name != revision:
         raise WorkloadError(
@@ -1006,6 +1012,9 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
     judge_model = args.smoke_model if smoke else str(judge["model"])
     judge_revision = None if smoke else str(judge["revision"])
     model_path = deps.snapshot(policy_model, policy_revision)
+    # Resolve the judge before any GPU phase so a bad pin fails fast; phase 4
+    # loads this exact local snapshot.
+    judge_path = deps.snapshot(judge_model, judge_revision)
     backend = "hf" if smoke else "auto"
     max_turns = int(run_config["max_turns"])
     common = {
@@ -1070,6 +1079,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         {
             "model": judge_model,
             "revision": judge_revision,
+            "model_path": judge_path,
             "backend": backend,
             "groups": {
                 "baseline": judge_items(eval_records, baseline),
@@ -1124,6 +1134,8 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),
         "judge_backend": judge_out.get("backend"),
+        "baseline_judge_findings": groups["baseline"].get("findings_summary"),
+        "final_judge_findings": groups["final"].get("findings_summary"),
         "phase_peak_vram_mb": peaks,
         "workload_seconds": round(time.monotonic() - started, 3),
     }
@@ -1539,6 +1551,10 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     backend = str(payload.get("backend", "auto"))
     model, revision = str(payload["model"]), payload.get("revision")
+    if payload.get("model_path"):
+        # The pinned local snapshot resolved by deps.snapshot(); its directory
+        # is the pinned revision, so no hub revision is passed with it.
+        model, revision = str(payload["model_path"]), None
     used = "hf"
     if backend in {"auto", "vllm"}:
         try:
@@ -1573,6 +1589,10 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         groups[name] = {
             "results": [asdict(result) for result in chosen],
             "summary": summarize(chosen),
+            "findings_summary": {
+                kind: sum(1 for result in chosen if result.findings.get(kind))
+                for kind in ("must_avoid_hits", "placeholders", "repeated_turns")
+            },
         }
     return {
         "groups": groups,

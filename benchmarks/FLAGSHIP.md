@@ -78,7 +78,7 @@ python benchmarks/run_flagship_matrix.py benchmarks/flagship_manifest.json \
 ## RunPod manifest (`flagship_manifest.json`) and pending pins
 
 `benchmarks/flagship_manifest.json` is the real (non-example) v1 contract:
-Qwen2.5-7B-Instruct policy, Mistral-7B-Instruct-v0.3 cross-family judge, one
+Qwen2.5-7B-Instruct policy, Mistral-Small-24B-Instruct-2501 cross-family judge, one
 `NVIDIA H100 80GB HBM3` per seed, provider cost from the RunPod API. Each seed
 runs `flagship_runpod_driver.py`, which provisions one pod, runs
 `flagship_workload.py` on it (baseline eval -> multi-turn GSPO+LoRA -> final
@@ -148,8 +148,23 @@ time before the measured matrix.
   (560 train / 240 eval; generator export sha256 `59ccd505...`; loading it at
   that revision reproduces `build_support_dataset()` exactly).
 - `judge.rubric_revision` is pinned to `rubric_revision()` (the git blob SHA
-  of `stateset_agents/evaluation/rubrics/support_rubric_v1.md`); editing the
+  of `stateset_agents/evaluation/rubrics/support_rubric_v2.md`); editing the
   rubric changes it, and the workload refuses a mismatch.
+
+**Judge.** `mistralai/Mistral-Small-24B-Instruct-2501` (Apache-2.0, ungated,
+cross-family vs the Qwen policy) at commit `9527884b`. It replaced
+Mistral-7B-Instruct-v0.3 after the H100 preflight measured that judge as far
+too lenient (base-model mean 0.901, self-disagreement 0.08 against the 0.05
+gate; it scored policy_compliance 5 on replies that granted a must_avoid
+reimbursement). Rubric v2 adds hard caps with concrete anchors (forbidden
+commitments, unfilled placeholders, contradicted outcomes, redundant requests,
+repetition), and `support_judge.detect_findings` puts deterministic findings
+(must_avoid phrases present, template placeholders, near-verbatim repeated
+assistant turns) into both passes as verified facts and into every per-item
+judge record. The judge phase loads the local snapshot (HF-format shards only;
+the duplicate `consolidated.safetensors` is skipped) with vLLM at
+`gpu_memory_utilization=0.85` in its own process after the policy is freed;
+v1 stays in the package for history.
 
 Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
 (the manifest command is fixed, so pass it through the environment):
@@ -159,7 +174,7 @@ Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
 python benchmarks/flagship_runpod_driver.py <placeholder args> --plan
 # paid: the matrix runner invokes the driver once per seed
 export RUNPOD_API_KEY=...            # never commit it
-export HF_TOKEN=...                  # the Mistral judge is gated
+export HF_TOKEN=...                  # optional: the judge is ungated
 export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=25
 make benchmark-flagship-run MANIFEST=benchmarks/flagship_manifest.json \
   OUTPUT_DIR=benchmark_results/flagship_v1/preflight EXTRA_ARGS=--preflight
