@@ -7,8 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- `BayesianRewardFunction` initialises its `RewardFunction` base (it had no
+  `weight`, `reward_type` or `name`, so composite rewards and environments
+  failed on it).
+- Checkpoint publication flushes files through a writable handle on Windows
+  (fsync on a read-only handle raised EBADF there).
+
 ### Security
 
+- `InputValidator.detect_injection_attempts` flags any `<script` opening tag;
+  it missed unclosed tags and end tags such as `</script >` (CodeQL
+  `py/bad-tag-filter`).
 - Training Lab playground sessions are owner-scoped: another user's session
   returns 404 on read, chat, and clear (admins see all).
 

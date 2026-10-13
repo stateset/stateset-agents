@@ -419,6 +419,7 @@ class BayesianRewardFunction(RewardFunction):
         device: str = "cuda" if torch.cuda.is_available() else "cpu",
     ):
         _require_torch()
+        super().__init__(name="bayesian_reward")
 
         self.config = config or BayesianRewardConfig()
         self.device = device
