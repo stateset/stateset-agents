@@ -9,6 +9,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Agent-quality gate: SWE-bench Verified is now optional.** The A+ gate in
+  `benchmarks/agent_quality_evidence.py` now requires only `tau3-bench` and
+  `bfcl-v4` (`REQUIRED_SUITES`). `swe-bench-verified` is in the new
+  `OPTIONAL_SUITES`. The flagship is a 7–8B customer-support / tool-use policy,
+  so repository-level software engineering is out of domain. The threshold did
+  not get weaker:
+  - Every suite in the evidence, including an optional one, must pass the same
+    per-suite gate: at least +3% mean improvement, a paired 95% confidence
+    bound above zero, matched seeds, and one shared trained artifact.
+  - `run_agent_quality_matrix.py` requires the evidence to cover exactly the
+    manifest roster. You cannot run an optional suite and then drop it.
+  - Unknown suites and duplicate roster entries are still rejected.
+  - The suite sets in the adapters (`official_suite_pipeline`,
+    `official_result_normalizer`, `paired_agent_harness`) now come from the
+    shared constants. `paired_agent_harness validate` checks the required
+    suites plus any optional suites that are configured.
+  - The example manifests list only the two required suites.
+    `benchmarks/README.md` explains how to add SWE-bench Verified.
+  - Matrix reports now record `required_suites`.
+
 - **`MultiTurnAgent` text is exactly what the policy sampled.** For every
   generated assistant turn, `content == tokenizer.decode(token_ids,
   skip_special_tokens=True)`, so the conversation history, rewards and the

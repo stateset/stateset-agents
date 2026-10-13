@@ -41,26 +41,6 @@
         "--artifact-dir", "{artifact_dir}",
         "--upstream-repository", "{upstream_repository}"
       ]
-    },
-    "swe-bench-verified": {
-      "repository_path": "REPLACE_WITH_PINNED_SWE_BENCH_CHECKOUT",
-      "timeout_seconds": 43200,
-      "cost_source": "provider-api",
-      "command": [
-        "python",
-        "{official_suite_pipeline}",
-        "--policy", "{policy}",
-        "--model", "{model}",
-        "--model-revision", "{model_revision}",
-        "--seed", "{seed}",
-        "--suite", "{suite}",
-        "--suite-revision", "{suite_revision}",
-        "--split", "{split}",
-        "--evaluation-config-json", "{evaluation_config_json}",
-        "--output", "{output}",
-        "--artifact-dir", "{artifact_dir}",
-        "--upstream-repository", "{upstream_repository}"
-      ]
     }
   }
 }

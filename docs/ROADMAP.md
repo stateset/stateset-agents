@@ -124,9 +124,10 @@ measured evaluation improvement.
 - [x] Freeze a v1 public API and publish compatibility/migration guarantees
 - [x] Govern beta graduation with explicit, machine-validated per-component
   maturity criteria and retained evidence references
-- [ ] Complete standard agent benchmarks for tool use, long horizon, and SWE tasks
-- [x] Add a fail-closed τ³-bench/BFCL V4/SWE-bench Verified evidence gate with
-  paired significance, immutable revisions, artifacts, and cost accounting
+- [ ] Complete standard agent benchmarks for tool use and long horizon (SWE tasks
+  optional for the customer-support / tool-use flagship)
+- [x] Add a fail-closed τ³-bench/BFCL V4 evidence gate (SWE-bench Verified
+  optional, gated identically when present) with paired significance, immutable revisions, artifacts, and cost accounting
 - [x] Add an executable, manifest-driven τ³-bench/BFCL V4/SWE collection runner
   that binds both policies, the trained artifact, paired task IDs, raw outputs,
   failures, and cost provenance before invoking the evidence gate
@@ -185,7 +186,8 @@ canaries, and binds every benchmark and publish-readiness result to one commit.
 5. Prove multi-node asynchronous rollout/training, weight synchronization,
    staleness bounds, checkpoint recovery, and a long-running soak.
 6. Add reproducible tool-use and long-horizon agent suites (starting with
-   τ³-bench/BFCL V4 and a SWE task) and obtain an independent reproduction.
+   the required τ³-bench/BFCL V4 suites, with SWE-bench Verified optional) and
+   obtain an independent reproduction.
 7. Bootstrap `@stateset/agents` with an npm automation token, configure
    Fireworks and Docker credentials, and remove the scoped PyPI-token fallback
    after the trusted-publisher identity is independently verified.

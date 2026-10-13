@@ -152,8 +152,8 @@ serving, and provider claims.
   [security response](contracts/security_response_v1.json) contracts. CI and
   package publication fail closed if evidence, limitations, graduation
   criteria, stable API references, or response targets drift.
-- **Standard agent benchmarks:** a manifest-driven τ³-bench, BFCL V4, and
-  SWE-bench Verified runner now executes paired base-versus-trained matrices,
+- **Standard agent benchmarks:** a manifest-driven τ³-bench and BFCL V4 runner
+  (SWE-bench Verified optional) now executes paired base-versus-trained matrices,
   drives multi-stage official suite commands without a shell, verifies clean
   pinned upstream checkouts and fresh confined artifacts, derives scores from
   identical ordered per-task records, proves that each evaluator receives its
@@ -189,9 +189,9 @@ credible path is:
    report throughput, peak memory, total provider cost, and quality together.
 3. Retain a multi-node training run, the complete fault matrix, and a 12-hour
    soak proving no lost or duplicate updates and bounded policy staleness.
-4. Execute the official τ³-bench, BFCL V4, and SWE-bench Verified pipelines on
-   base and trained policies rather than treating implemented adapters as
-   benchmark results.
+4. Execute the official τ³-bench and BFCL V4 pipelines (plus optional SWE-bench
+   Verified) on base and trained policies rather than treating implemented
+   adapters as benchmark results.
 5. Close npm, container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
    then obtain an independent reproduction and security review.
 

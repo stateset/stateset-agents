@@ -13,6 +13,7 @@ from benchmarks.adapters.paired_agent_harness import (
     PairedHarnessError,
     build_parser,
     canonical_digest,
+    configured_suites,
     load_suite_config,
     load_task_records,
     main,
@@ -118,6 +119,37 @@ def test_validate_command_checks_complete_suite_roster(tmp_path: Path) -> None:
     config = tmp_path / "config.json"
     _write_config(config, tmp_path)
     assert main(["validate", "--harness-config", str(config)]) == 2
+
+
+def test_validate_command_accepts_required_and_optional_suites(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    config = tmp_path / "config.json"
+    _write_config(config, tmp_path)
+    payload = json.loads(config.read_text(encoding="utf-8"))
+    template = payload["suites"]["tau3-bench"]
+    payload["suites"]["bfcl-v4"] = template
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    assert configured_suites(config) == ("tau3-bench", "bfcl-v4")
+    assert main(["validate", "--harness-config", str(config)]) == 0
+
+    payload["suites"]["swe-bench-verified"] = template
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    assert main(["validate", "--harness-config", str(config)]) == 0
+    assert "3 suites" in capsys.readouterr().out
+
+    payload["suites"]["webarena"] = template
+    config.write_text(json.dumps(payload), encoding="utf-8")
+    with pytest.raises(PairedHarnessError, match="unsupported suites"):
+        configured_suites(config)
+    assert main(["validate", "--harness-config", str(config)]) == 2
+
+
+def test_example_harness_config_validates() -> None:
+    root = Path(__file__).resolve().parents[2]
+    config = root / "benchmarks/agent_quality_harnesses.example.json"
+    assert configured_suites(config) == ("tau3-bench", "bfcl-v4")
+    assert main(["validate", "--harness-config", str(config)]) == 0
 
 
 def test_task_records_reject_duplicates_and_invalid_cost(tmp_path: Path) -> None:

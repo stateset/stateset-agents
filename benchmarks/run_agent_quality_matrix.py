@@ -22,13 +22,13 @@ try:
         load_pipeline_config,
     )
     from .agent_quality_evidence import (
-        REQUIRED_SUITES,
         AgentQualityEvidenceError,
         hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
+        validate_suite_roster,
     )
     from .benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 except ImportError:  # pragma: no cover - direct script execution
@@ -37,13 +37,13 @@ except ImportError:  # pragma: no cover - direct script execution
         load_pipeline_config,
     )
     from agent_quality_evidence import (
-        REQUIRED_SUITES,
         AgentQualityEvidenceError,
         hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
+        validate_suite_roster,
     )
     from benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 
@@ -134,8 +134,8 @@ def load_manifest(path: Path) -> dict[str, Any]:
         )
 
     suites = raw.get("suites")
-    if not isinstance(suites, list) or len(suites) != len(REQUIRED_SUITES):
-        raise AgentQualityRunnerError("manifest must configure every required suite")
+    if not isinstance(suites, list) or not suites:
+        raise AgentQualityRunnerError("manifest.suites must be a non-empty list")
     names: list[str] = []
     for index, suite in enumerate(suites):
         label = f"manifest.suites[{index}]"
@@ -157,14 +157,14 @@ def load_manifest(path: Path) -> dict[str, Any]:
                 f"{label}.command is missing placeholders: "
                 + ", ".join(sorted(missing))
             )
-    if set(names) != set(REQUIRED_SUITES) or len(names) != len(set(names)):
-        raise AgentQualityRunnerError(
-            f"suite roster must be exactly {sorted(REQUIRED_SUITES)}"
-        )
+    try:
+        validate_suite_roster(names)
+    except AgentQualityEvidenceError as exc:
+        raise AgentQualityRunnerError(f"invalid suite roster: {exc}") from exc
     if "official_suite_pipelines" in config:
         contract_dir = path.parent.resolve() / ".agent-quality-contract"
         try:
-            for suite in REQUIRED_SUITES:
+            for suite in names:
                 load_pipeline_config(config, suite, contract_dir / suite)
         except OfficialPipelineError as exc:
             raise AgentQualityRunnerError(
@@ -553,6 +553,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 runs,
                 min_seeds=len(manifest["seeds"]),
                 minimum_mean_improvement=args.minimum_mean_improvement,
+                expected_suites=[str(suite["name"]) for suite in manifest["suites"]],
             )
             report = summarize(runs)
             report_path = args.output_dir / "report.json"

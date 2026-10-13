@@ -34,13 +34,14 @@ from benchmarks.adapters.official_result_normalizer import (  # noqa: E402
     normalize_tau3,
     write_jsonl,
 )
+from benchmarks.agent_quality_evidence import SUPPORTED_SUITES as _SUITES  # noqa: E402
 
 
 class OfficialPipelineError(ValueError):
     """Raised when an official suite pipeline is unsafe or incomplete."""
 
 
-SUPPORTED_SUITES = {"tau3-bench", "bfcl-v4", "swe-bench-verified"}
+SUPPORTED_SUITES = frozenset(_SUITES)
 REQUIRED_COMMAND_PLACEHOLDERS = {"{model}"}
 MODEL_REVISION_BINDINGS = {"command-argument", "local-marker"}
 IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}")
