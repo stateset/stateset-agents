@@ -173,7 +173,16 @@ class GSPOTokenTrainer(GSPOTrainer):
         advantage_count = 0
         zero_advantage_groups = 0
 
-        for raw_query in queries[:num_groups]:
+        step_queries = list(queries[:num_groups])
+        # One batched generate samples every group before any scoring.
+        step_groups = await self.generator.generate_groups_batch(
+            [
+                str(q.get("prompt", "")) if isinstance(q, dict) else str(q)
+                for q in step_queries
+            ],
+            self.config.num_generations,
+        )
+        for raw_query, group_responses in zip(step_queries, step_groups, strict=True):
             processed_groups += 1
             # A query is a prompt string or {"prompt": ..., "context": {...}};
             # the context (gold answers, expected tools, ...) reaches the reward.
@@ -185,11 +194,6 @@ class GSPOTokenTrainer(GSPOTrainer):
                     query_context = dict(raw_context)
             else:
                 query = str(raw_query)
-            # Generate group of responses for this query
-            group_responses = await self.generator.generate_group_responses(
-                query, self.config.num_generations
-            )
-
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]
             old_log_probs = torch.tensor(

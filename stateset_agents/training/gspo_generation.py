@@ -242,6 +242,85 @@ class GSPOTrajectoryGenerator:
             return await self._generate_with_vllm(prompt, num_responses)
         return await self._generate_with_hf(prompt, num_responses)
 
+    async def generate_groups_batch(
+        self, prompts: list[str], num_responses: int
+    ) -> list[list[tuple[str, float]]]:
+        """One group per prompt, sampled together where the agent can batch.
+
+        A HuggingFace agent with ``generate_turns_batch`` samples every
+        prompt's ``num_responses`` rows in a single left-padded ``generate``
+        call; decode is per-token-overhead bound, so one call over all groups
+        costs about as much as one call per group. Each group is converted
+        exactly as :meth:`generate_group_responses` converts it. vLLM, agents
+        without batching, and an instance-overridden
+        ``generate_group_responses`` keep the per-prompt path.
+        """
+        generate_turns_batch: Any = getattr(self.agent, "generate_turns_batch", None)
+        per_prompt = (
+            self.using_vllm
+            or "generate_group_responses" in vars(self)
+            or not inspect.iscoroutinefunction(generate_turns_batch)
+        )
+        if not per_prompt and prompts and num_responses > 0:
+            if getattr(self.agent, "memory_window", 0):
+                self._warn_post_processing_divergence_once()
+            histories = [
+                [{"role": "user", "content": prompt}]
+                for prompt in prompts
+                for _ in range(num_responses)
+            ]
+            turns = await generate_turns_batch(histories)
+            if len(turns) == len(histories):
+                groups = []
+                for index, prompt in enumerate(prompts):
+                    group_turns = turns[
+                        index * num_responses : (index + 1) * num_responses
+                    ]
+                    groups.append(await self._responses_from_turns(prompt, group_turns))
+                return groups
+            logger.warning(
+                "batched generation returned %d turns for %d rows; "
+                "sampling groups one prompt at a time",
+                len(turns),
+                len(histories),
+            )
+        return [
+            await self.generate_group_responses(prompt, num_responses)
+            for prompt in prompts
+        ]
+
+    def _rendered_scoring_prompt(self, prompt: str) -> str:
+        tokenizer = getattr(self.agent, "tokenizer", None)
+        agent_config = getattr(self.agent, "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        return render_prompt_for_scoring(tokenizer, prompt, system_prompt)
+
+    async def _responses_from_turns(
+        self, prompt: str, turns: list[Any]
+    ) -> list[tuple[str, float]]:
+        """``(content, rollout-time sequence log-prob)`` for sampled turns."""
+        rendered_prompt = self._rendered_scoring_prompt(prompt)
+        rescore = bool(getattr(self.config, "rescore_old_log_probs", True))
+        responses: list[tuple[str, float]] = []
+        for turn in turns:
+            content = str(getattr(turn, "content", ""))
+            metadata = getattr(turn, "metadata", None) or {}
+            sampler = metadata.get("sampler_log_probs")
+            exact = self._sampler_sequence_log_prob(rendered_prompt, content, metadata)
+            if exact is not None:
+                responses.append((content, exact))
+            elif sampler and rescore:
+                # Only feeds the generation-gap metric when rescoring.
+                responses.append((content, float(sum(float(x) for x in sampler))))
+            else:
+                responses.append(
+                    (
+                        content,
+                        await self._compute_sequence_log_prob(rendered_prompt, content),
+                    )
+                )
+        return responses
+
     def _warn_vllm_temperature_bias_once(self) -> None:
         """Emit a one-time warning that vLLM's cumulative_logprob is biased as an
         old-policy log prob when sampling temperature != 1.0 and rescoring is
@@ -435,28 +514,7 @@ class GSPOTrajectoryGenerator:
             # per-token log-probs give the rollout-time sequence log-prob
             # without a second forward pass.
             turns = await generate_turns(messages, num_responses)
-            rescore = bool(getattr(self.config, "rescore_old_log_probs", True))
-            for turn in turns:
-                content = str(getattr(turn, "content", ""))
-                metadata = getattr(turn, "metadata", None) or {}
-                sampler = metadata.get("sampler_log_probs")
-                exact = self._sampler_sequence_log_prob(
-                    rendered_prompt, content, metadata
-                )
-                if exact is not None:
-                    responses.append((content, exact))
-                elif sampler and rescore:
-                    # Only feeds the generation-gap metric when rescoring.
-                    responses.append((content, float(sum(float(x) for x in sampler))))
-                else:
-                    responses.append(
-                        (
-                            content,
-                            await self._compute_sequence_log_prob(
-                                rendered_prompt, content
-                            ),
-                        )
-                    )
+            responses = await self._responses_from_turns(prompt, list(turns))
             if len(responses) == num_responses:
                 return responses
             responses = []

@@ -371,6 +371,44 @@ def _build_env_reward(
     return env, reward_fn, scenarios
 
 
+def protocol_sampling(protocol_config: dict[str, Any]) -> dict[str, Any]:
+    """The exact rollout sampling a matched shootout leg uses.
+
+    Plain temperature/top-p sampling as the TRL leg does it: no top-k, no
+    repetition penalty, no stop strings (a blank-line stop truncated GSM8K
+    chain-of-thought). Recorded in ``algorithm_config`` so a mismatch is
+    visible in the evidence.
+    """
+    return {
+        "temperature": float(protocol_config.get("temperature", 0.7)),
+        "top_p": float(protocol_config.get("top_p", 0.9)),
+        "top_k": 0,
+        "repetition_penalty": 1.0,
+        "stop_sequences": [],
+    }
+
+
+def native_agent_config(
+    model_name: str,
+    model_revision: str | None,
+    max_new_tokens: int,
+    sampling: dict[str, Any],
+) -> Any:
+    """``AgentConfig`` for a native leg that samples exactly ``sampling``."""
+    from stateset_agents.core.agent import AgentConfig
+
+    return AgentConfig(
+        model_name=model_name,
+        model_revision=model_revision,
+        max_new_tokens=max_new_tokens,
+        temperature=float(sampling["temperature"]),
+        top_p=float(sampling["top_p"]),
+        top_k=int(sampling["top_k"]),
+        repetition_penalty=float(sampling["repetition_penalty"]),
+        stop_sequences=list(sampling["stop_sequences"]),
+    )
+
+
 def build_algorithm_config(
     trainer: str, protocol_config: dict[str, Any]
 ) -> dict[str, Any]:
@@ -406,6 +444,7 @@ def build_algorithm_config(
             "objective": "gspo-sequence",
             "clip_range_left": 3e-4,
             "clip_range_right": 4e-4,
+            "sampling": protocol_sampling(protocol_config),
         }
     if trainer == "dapo":
         return {
@@ -648,8 +687,13 @@ def train_with_trainer(
                 tools=SAMPLE_TOOLS,
             )
         else:
+            sampling = algorithm_config.get("sampling")
             trainer_agent = MultiTurnAgent(
-                AgentConfig(
+                native_agent_config(
+                    model_name, model_revision, adapter.max_new_tokens, sampling
+                )
+                if sampling is not None
+                else AgentConfig(
                     model_name=model_name,
                     model_revision=model_revision,
                     max_new_tokens=adapter.max_new_tokens,
@@ -690,8 +734,10 @@ def train_with_trainer(
                 num_epochs=int(protocol.get("num_train_epochs", 1)),
                 max_prompt_length=algorithm_config["max_prompt_length"],
                 max_completion_length=algorithm_config["max_completion_length"],
-                temperature=algorithm_config["temperature"],
-                top_p=algorithm_config["top_p"],
+                temperature=algorithm_config["sampling"]["temperature"],
+                top_p=algorithm_config["sampling"]["top_p"],
+                top_k=algorithm_config["sampling"]["top_k"],
+                repetition_penalty=algorithm_config["sampling"]["repetition_penalty"],
                 beta=algorithm_config["beta"],
                 use_lora=bool(protocol.get("use_lora", True)),
                 lora_r=int(protocol.get("lora_r", 16)),

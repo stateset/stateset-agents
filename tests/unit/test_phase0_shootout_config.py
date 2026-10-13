@@ -28,7 +28,13 @@ def _script():
 
 
 @pytest.mark.parametrize(
-    "manifest", ["shootout_manifest_v3.json", "shootout_manifest_v4.json"]
+    "manifest",
+    [
+        "shootout_manifest_v3.json",
+        "shootout_manifest_v4.json",
+        "shootout_manifest_v5.json",
+        "shootout_manifest_v5_1.json",
+    ],
 )
 def test_checked_in_manifest_config_is_accepted(manifest):
     data = json.loads((ROOT / "benchmarks" / manifest).read_text())
