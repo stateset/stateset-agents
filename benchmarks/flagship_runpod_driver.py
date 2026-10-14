@@ -134,11 +134,14 @@ CUDA_CHECK = (
 #: it is bounded and non-fatal, so a failed build keeps the slower fallback
 #: instead of failing a paid run.
 CAUSAL_CONV1D_TIMEOUT_SECONDS = 900
+#: A build that installs but does not import is uninstalled again, so
+#: Transformers (which checks package metadata) does not pick a broken kernel.
 CAUSAL_CONV1D_INSTALL = (
     f"(timeout {CAUSAL_CONV1D_TIMEOUT_SECONDS} env MAX_JOBS=8 "
     "python -m pip install --quiet --no-build-isolation causal-conv1d==1.7.0 "
     "&& python -c 'import causal_conv1d' "
-    "|| echo 'causal-conv1d unavailable; using the PyTorch fallback')"
+    "|| { python -m pip uninstall --quiet -y causal-conv1d; "
+    "echo 'causal-conv1d unavailable; using the PyTorch fallback'; })"
 )
 RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},

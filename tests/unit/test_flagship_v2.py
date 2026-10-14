@@ -544,13 +544,7 @@ def test_v2_setup_tries_causal_conv1d_without_failing_the_run() -> None:
     assert "causal-conv1d==1.7.0" in driver.CAUSAL_CONV1D_INSTALL
     assert "--no-build-isolation" in driver.CAUSAL_CONV1D_INSTALL
     assert driver.CAUSAL_CONV1D_INSTALL.startswith("(timeout 900 ")
-    # Non-fatal: the group ends with an `|| echo` fallback inside the subshell.
-    assert (
-        driver.CAUSAL_CONV1D_INSTALL.rstrip(")")
-        .split("||")[-1]
-        .strip()
-        .startswith("echo")
-    )
+    assert "pip uninstall --quiet -y causal-conv1d" in driver.CAUSAL_CONV1D_INSTALL
     shlex.split(setup)  # the composed setup stays valid shell quoting
     v1 = driver.remote_commands(
         _driver_args("flagship_preflight_manifest.json"), "f" * 40, with_hf_token=False
@@ -558,12 +552,65 @@ def test_v2_setup_tries_causal_conv1d_without_failing_the_run() -> None:
     assert "causal-conv1d" not in v1
 
 
+def _run_causal_conv1d(bash: str, tmp_path: Path, *, build: bool, imports: bool) -> Any:
+    """Run the install group with python replaced by a recording fake."""
+    log = tmp_path / "calls.log"
+    fake = tmp_path / "python"
+    fake.write_text(
+        "#!/bin/bash\n"
+        f'echo "$*" >> {log}\n'
+        'case "$*" in\n'
+        f'  *"pip install"*) exit {0 if build else 1};;\n'
+        f'  *"import causal_conv1d"*) exit {0 if imports else 1};;\n'
+        "  *) exit 0;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    command = driver.CAUSAL_CONV1D_INSTALL.replace(
+        f"timeout {driver.CAUSAL_CONV1D_TIMEOUT_SECONDS} env MAX_JOBS=8 ", ""
+    )
+    result = subprocess.run(
+        [bash, "-c", command + " && echo next-step"],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PATH": f"{tmp_path}:{os.environ.get('PATH', '')}"},
+    )
+    calls = log.read_text(encoding="utf-8") if log.exists() else ""
+    return result, calls
+
+
+@pytest.mark.parametrize(
+    ("build", "imports", "uninstalled", "fallback"),
+    [
+        (True, True, False, False),
+        (False, False, True, True),
+        # Built but broken: uninstall so Transformers cannot detect it.
+        (True, False, True, True),
+    ],
+)
+def test_causal_conv1d_install_outcomes(
+    tmp_path: Path, build: bool, imports: bool, uninstalled: bool, fallback: bool
+) -> None:
+    import shutil
+
+    bash = shutil.which("bash")
+    if bash is None or sys.platform == "win32":
+        pytest.skip("needs a POSIX bash")
+    result, calls = _run_causal_conv1d(bash, tmp_path, build=build, imports=imports)
+    assert result.returncode == 0
+    assert "next-step" in result.stdout
+    assert ("pip uninstall" in calls) is uninstalled
+    assert ("PyTorch fallback" in result.stdout) is fallback
+
+
 def test_causal_conv1d_failure_is_non_fatal_in_bash(tmp_path: Path) -> None:
     import shutil
 
     bash = shutil.which("bash")
-    if bash is None:
-        pytest.skip("bash unavailable")
+    if bash is None or sys.platform == "win32":
+        pytest.skip("needs a POSIX bash")
     # Replace pip with a failing command; the group must still exit 0.
     command = driver.CAUSAL_CONV1D_INSTALL.replace(
         "python -m pip install", "false"
