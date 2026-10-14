@@ -109,18 +109,23 @@ V2_TORCH_STACK: tuple[str, ...] = (
     "torch==2.13.0+cu129",
     "torchvision==0.28.0+cu129",
     "torchaudio==2.11.0+cu129",
+    # vLLM's multimodal stack imports torchcodec at engine import; the PyPI
+    # wheel needs libnvrtc.so.13 (second v2 preflight, 2026-10-14).
+    "torchcodec==0.16.0+cu129",
 )
 V2_VLLM_WHEEL = (
     "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.31.0/"
     "vllm-0.31.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl"
     "#sha256=5176ab746f4e736c4a354a11d0620abf0a941de287cad937ac34039293ca6f5f"
 )
-#: Fails setup unless torch is a CUDA 12.x build that initializes the GPU.
+#: Fails setup unless torch is a CUDA 12.x build that initializes the GPU
+#: and vLLM's engine entrypoint (which loads torchcodec's native libraries)
+#: imports cleanly, so a CUDA-13-only wheel fails before any model download.
 CUDA_CHECK = (
     "import torch; v = torch.version.cuda or ''; "
     "assert v.startswith('12.'), 'torch CUDA ' + v + ' != 12.x'; "
-    "torch.cuda.init(); print('torch', torch.__version__, 'cuda', v, "
-    "torch.cuda.get_device_name(0))"
+    "torch.cuda.init(); import torchcodec, vllm.entrypoints.llm; "
+    "print('torch', torch.__version__, 'cuda', v, torch.cuda.get_device_name(0))"
 )
 RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},

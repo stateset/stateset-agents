@@ -472,6 +472,8 @@ def test_v2_setup_installs_cuda129_stack_before_the_package() -> None:
     check = next(i for i, s in enumerate(steps) if "torch.cuda.init()" in s)
     assert pre < editable < check
     assert "torch==2.13.0+cu129" in steps[pre]
+    assert "torchcodec==0.16.0+cu129" in steps[pre]
+    assert "import torchcodec, vllm.entrypoints.llm" in driver.CUDA_CHECK
     assert "vllm-0.31.0%2Bcu129" in steps[pre] and "#sha256=" in steps[pre]
     import shlex
 
@@ -494,12 +496,19 @@ def test_v2_cuda_check_rejects_a_cuda13_torch() -> None:
         cuda=types.SimpleNamespace(init=lambda: None, get_device_name=lambda i: "H100"),
     )
     with pytest.raises(AssertionError, match="13.0"):
-        code = driver.CUDA_CHECK.replace("import torch; ", "")
+        code = driver.CUDA_CHECK.replace("import torch; ", "").replace(
+            "import torchcodec, vllm.entrypoints.llm; ", ""
+        )
         exec(code, {"torch": fake})
     ok = types.SimpleNamespace(
         **{**vars(fake), "version": types.SimpleNamespace(cuda="12.9")}
     )
-    exec(driver.CUDA_CHECK.replace("import torch; ", ""), {"torch": ok})
+    exec(
+        driver.CUDA_CHECK.replace("import torch; ", "").replace(
+            "import torchcodec, vllm.entrypoints.llm; ", ""
+        ),
+        {"torch": ok},
+    )
 
 
 def test_v2_vllm_wheel_matches_the_extra() -> None:
