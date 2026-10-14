@@ -537,7 +537,12 @@ def remote_commands(
             *profile.get("pre_install", []),
             "python -m pip install --quiet -e "
             f"{repo}'[{JUDGE_LOADER_EXTRAS[str(pins.get('judge_loader', 'mistral'))]}]'",
-            *profile.get("post_install", []),
+            # The judge-only pod needs no Qwen3.5 training kernels.
+            *(
+                step
+                for step in profile.get("post_install", [])
+                if "causal-conv1d" not in step
+            ),
             f"mkdir -p {shlex.quote(_REMOTE_INPUT + '/transcripts')} "
             f"{shlex.quote(_REMOTE_OUTPUT)}",
         ]

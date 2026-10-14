@@ -521,8 +521,58 @@ def test_gemma_rejudge_uses_the_cuda129_stack() -> None:
     pins = rejudge.resolve_pins(_rejudge_args(BENCHMARKS / "flagship_v2_manifest.json"))
     setup = rejudge.remote_commands(pins, "f" * 40, with_hf_token=False)["setup"]
     assert "whl/cu129" in setup and "torch.cuda.init()" in setup
+    assert "causal-conv1d" not in setup
     v1 = rejudge.resolve_pins(_rejudge_args(BENCHMARKS / "flagship_manifest.json"))
     assert (
         "cu129"
         not in rejudge.remote_commands(v1, "f" * 40, with_hf_token=False)["setup"]
     )
+
+
+def test_v2_setup_tries_causal_conv1d_without_failing_the_run() -> None:
+    import shlex
+
+    setup = driver.remote_commands(
+        _driver_args("flagship_v2_preflight_manifest.json"),
+        "f" * 40,
+        with_hf_token=False,
+    )["setup"]
+    steps = setup.split(" && ")
+    check = next(i for i, s in enumerate(steps) if "torch.cuda.init()" in s)
+    assert driver.CAUSAL_CONV1D_INSTALL in setup
+    assert setup.index(driver.CAUSAL_CONV1D_INSTALL) > setup.index(steps[check])
+    assert "causal-conv1d==1.7.0" in driver.CAUSAL_CONV1D_INSTALL
+    assert "--no-build-isolation" in driver.CAUSAL_CONV1D_INSTALL
+    assert driver.CAUSAL_CONV1D_INSTALL.startswith("(timeout 900 ")
+    # Non-fatal: the group ends with an `|| echo` fallback inside the subshell.
+    assert (
+        driver.CAUSAL_CONV1D_INSTALL.rstrip(")")
+        .split("||")[-1]
+        .strip()
+        .startswith("echo")
+    )
+    shlex.split(setup)  # the composed setup stays valid shell quoting
+    v1 = driver.remote_commands(
+        _driver_args("flagship_preflight_manifest.json"), "f" * 40, with_hf_token=False
+    )["setup"]
+    assert "causal-conv1d" not in v1
+
+
+def test_causal_conv1d_failure_is_non_fatal_in_bash(tmp_path: Path) -> None:
+    import shutil
+
+    bash = shutil.which("bash")
+    if bash is None:
+        pytest.skip("bash unavailable")
+    # Replace pip with a failing command; the group must still exit 0.
+    command = driver.CAUSAL_CONV1D_INSTALL.replace(
+        "python -m pip install", "false"
+    ).replace("timeout 900 env MAX_JOBS=8 ", "")
+    result = subprocess.run(
+        [bash, "-c", command + " && echo next-step"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0
+    assert "PyTorch fallback" in result.stdout and "next-step" in result.stdout

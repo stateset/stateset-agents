@@ -127,6 +127,19 @@ CUDA_CHECK = (
     "torch.cuda.init(); import torchcodec, vllm.entrypoints.llm; "
     "print('torch', torch.__version__, 'cuda', v, torch.cuda.get_device_name(0))"
 )
+#: Optional fast kernels for Qwen3.5's GatedDeltaNet short convolution. The
+#: third v2 preflight logged Transformers' "causal_conv1d ... falling back to
+#: its reference PyTorch implementation" (~74 s per GSPO step). No prebuilt
+#: wheel targets torch 2.13, so this compiles against the installed torch;
+#: it is bounded and non-fatal, so a failed build keeps the slower fallback
+#: instead of failing a paid run.
+CAUSAL_CONV1D_TIMEOUT_SECONDS = 900
+CAUSAL_CONV1D_INSTALL = (
+    f"(timeout {CAUSAL_CONV1D_TIMEOUT_SECONDS} env MAX_JOBS=8 "
+    "python -m pip install --quiet --no-build-isolation causal-conv1d==1.7.0 "
+    "&& python -c 'import causal_conv1d' "
+    "|| echo 'causal-conv1d unavailable; using the PyTorch fallback')"
+)
 RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},
     "flagship-v2": {
@@ -138,7 +151,10 @@ RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
             + " "
             + " ".join(shlex.quote(spec) for spec in (*V2_TORCH_STACK, V2_VLLM_WHEEL))
         ],
-        "post_install": ["python -c " + shlex.quote(CUDA_CHECK)],
+        "post_install": [
+            "python -c " + shlex.quote(CUDA_CHECK),
+            CAUSAL_CONV1D_INSTALL,
+        ],
     },
 }
 DEFAULT_POLL_SECONDS = 120.0
