@@ -380,10 +380,13 @@ def policy_loss(
                 w = torch.as_tensor(row_weights).to(cur_seq).detach()
                 r = ref_seq.detach() - cur_seq
                 k3_rows = torch.exp(r) - r - 1.0
-                denom = float(w.sum().item()) if total_rows is None else total_rows
-                kl_seq_term = (k3_rows * w).sum() / max(float(denom), 1e-12)
+                denom = (
+                    float(w.sum().item()) if total_rows is None else float(total_rows)
+                )
+                kl_seq_term = (k3_rows * w).sum() / max(denom, 1e-12)
                 kl_value = float(k3_rows.detach().mean().item())
             else:
+                assert total_rows is not None  # narrowed by the branches above
                 r = ref_seq.detach() - cur_seq
                 k3_rows = torch.exp(r) - r - 1.0
                 kl_seq_term = k3_rows.sum() / max(float(total_rows), 1.0)

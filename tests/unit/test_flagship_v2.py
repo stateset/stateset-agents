@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import os
 import subprocess
 import sys
 import tomllib
@@ -287,7 +288,12 @@ def test_driver_dry_run_for_v2_is_offline(tmp_path: Path) -> None:
         capture_output=True,
         text=True,
         check=False,
-        env={"PATH": "/usr/bin:/bin"},
+        # No provider credentials reach the dry run (Windows needs the rest).
+        env={
+            k: v
+            for k, v in os.environ.items()
+            if k not in {"RUNPOD_API_KEY", "HF_TOKEN", driver.ENV_CEILING}
+        },
     )
     assert result.returncode == 0, result.stderr
     preview = json.loads(result.stdout)
