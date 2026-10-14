@@ -453,3 +453,67 @@ def test_vllm_generate_fn_forwards_engine_and_template_kwargs(
     assert "limit_mm_per_prompt" not in engines[1]
     assert engines[1]["gpu_memory_utilization"] == 0.85
     assert "chat_template_kwargs" not in chats[1]
+
+
+# --------------------------------------------------------------------------- #
+# CUDA 12.9 runtime (first v2 preflight: cu13 torch on a 12.9 driver)
+# --------------------------------------------------------------------------- #
+
+
+def test_v2_setup_installs_cuda129_stack_before_the_package() -> None:
+    setup = driver.remote_commands(
+        _driver_args("flagship_v2_preflight_manifest.json"),
+        "f" * 40,
+        with_hf_token=False,
+    )["setup"]
+    steps = setup.split(" && ")
+    pre = next(i for i, s in enumerate(steps) if "download.pytorch.org/whl/cu129" in s)
+    editable = next(i for i, s in enumerate(steps) if "pip install --quiet -e" in s)
+    check = next(i for i, s in enumerate(steps) if "torch.cuda.init()" in s)
+    assert pre < editable < check
+    assert "torch==2.13.0+cu129" in steps[pre]
+    assert "vllm-0.31.0%2Bcu129" in steps[pre] and "#sha256=" in steps[pre]
+    import shlex
+
+    assert shlex.split(steps[check])[2] == driver.CUDA_CHECK
+
+
+def test_v1_setup_is_unchanged_by_the_cuda_pin() -> None:
+    setup = driver.remote_commands(
+        _driver_args("flagship_preflight_manifest.json"), "f" * 40, with_hf_token=False
+    )["setup"]
+    assert "cu129" not in setup and "torch.cuda.init()" not in setup
+
+
+def test_v2_cuda_check_rejects_a_cuda13_torch() -> None:
+    import types
+
+    fake = types.SimpleNamespace(
+        __version__="2.13.0",
+        version=types.SimpleNamespace(cuda="13.0"),
+        cuda=types.SimpleNamespace(init=lambda: None, get_device_name=lambda i: "H100"),
+    )
+    with pytest.raises(AssertionError, match="13.0"):
+        code = driver.CUDA_CHECK.replace("import torch; ", "")
+        exec(code, {"torch": fake})
+    ok = types.SimpleNamespace(
+        **{**vars(fake), "version": types.SimpleNamespace(cuda="12.9")}
+    )
+    exec(driver.CUDA_CHECK.replace("import torch; ", ""), {"torch": ok})
+
+
+def test_v2_vllm_wheel_matches_the_extra() -> None:
+    assert "vllm-0.31.0" in driver.V2_VLLM_WHEEL
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert "vllm>=0.29.0" in project["project"]["optional-dependencies"]["flagship-v2"]
+
+
+def test_gemma_rejudge_uses_the_cuda129_stack() -> None:
+    pins = rejudge.resolve_pins(_rejudge_args(BENCHMARKS / "flagship_v2_manifest.json"))
+    setup = rejudge.remote_commands(pins, "f" * 40, with_hf_token=False)["setup"]
+    assert "whl/cu129" in setup and "torch.cuda.init()" in setup
+    v1 = rejudge.resolve_pins(_rejudge_args(BENCHMARKS / "flagship_manifest.json"))
+    assert (
+        "cu129"
+        not in rejudge.remote_commands(v1, "f" * 40, with_hf_token=False)["setup"]
+    )

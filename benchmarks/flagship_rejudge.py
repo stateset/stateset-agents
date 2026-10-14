@@ -59,6 +59,7 @@ if str(_BENCHMARKS) not in sys.path:
 import flagship_workload as workload  # noqa: E402
 from flagship_runpod_driver import (  # noqa: E402
     DEFAULT_IMAGE,
+    RUNTIME_PROFILES,
     FlagshipDriverError,
     resolve_harness_revision,
 )
@@ -526,12 +527,17 @@ def remote_commands(
 ) -> dict[str, str]:
     """Setup and detached-launch shell commands (pure; no secrets inline)."""
     repo = shlex.quote(_REMOTE_REPOSITORY)
+    loader = str(pins.get("judge_loader", "mistral"))
+    # The Gemma 4 judge needs the v2 stack, CUDA 12.9 builds included.
+    profile = RUNTIME_PROFILES["flagship-v2" if loader == "gemma4" else "flagship-v1"]
     setup = " && ".join(
         [
             f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
             f"git -C {repo} checkout --detach {shlex.quote(harness_revision)}",
+            *profile.get("pre_install", []),
             "python -m pip install --quiet -e "
             f"{repo}'[{JUDGE_LOADER_EXTRAS[str(pins.get('judge_loader', 'mistral'))]}]'",
+            *profile.get("post_install", []),
             f"mkdir -p {shlex.quote(_REMOTE_INPUT + '/transcripts')} "
             f"{shlex.quote(_REMOTE_OUTPUT)}",
         ]

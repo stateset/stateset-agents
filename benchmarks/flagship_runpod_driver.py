@@ -95,9 +95,46 @@ DEFAULT_DISK_GB = 150
 #: preflight): ~35 min of setup and downloads, slower training steps than
 #: v1 (9B policy, hybrid linear attention), ~10 min to merge the adapter and
 #: a ~30 min 31B judge phase.
+#:
+#: The first v2 preflight (2026-10-14) died at the first vLLM engine start:
+#: PyPI's vLLM >= 0.29 pins torch 2.13.0, whose PyPI build targets CUDA 13,
+#: and RunPod's H100 hosts run a CUDA 12.9 driver ("NVIDIA driver on your
+#: system is too old (found version 12090)"). v2 therefore installs the
+#: CUDA 12.9 builds first (torch from the PyTorch cu129 index, vLLM's
+#: +cu129 release wheel pinned by sha256); the editable install then sees
+#: them as satisfying its pins, and a CUDA check fails the setup before any
+#: model download if the driver still cannot run them.
+V2_TORCH_INDEX = "https://download.pytorch.org/whl/cu129"
+V2_TORCH_STACK: tuple[str, ...] = (
+    "torch==2.13.0+cu129",
+    "torchvision==0.28.0+cu129",
+    "torchaudio==2.11.0+cu129",
+)
+V2_VLLM_WHEEL = (
+    "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.31.0/"
+    "vllm-0.31.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl"
+    "#sha256=5176ab746f4e736c4a354a11d0620abf0a941de287cad937ac34039293ca6f5f"
+)
+#: Fails setup unless torch is a CUDA 12.x build that initializes the GPU.
+CUDA_CHECK = (
+    "import torch; v = torch.version.cuda or ''; "
+    "assert v.startswith('12.'), 'torch CUDA ' + v + ' != 12.x'; "
+    "torch.cuda.init(); print('torch', torch.__version__, 'cuda', v, "
+    "torch.cuda.get_device_name(0))"
+)
 RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
     "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},
-    "flagship-v2": {"extras": "training,vllm,flagship-v2", "disk_gb": 250},
+    "flagship-v2": {
+        "extras": "training,vllm,flagship-v2",
+        "disk_gb": 250,
+        "pre_install": [
+            "python -m pip install --quiet --extra-index-url "
+            + V2_TORCH_INDEX
+            + " "
+            + " ".join(shlex.quote(spec) for spec in (*V2_TORCH_STACK, V2_VLLM_WHEEL))
+        ],
+        "post_install": ["python -c " + shlex.quote(CUDA_CHECK)],
+    },
 }
 DEFAULT_POLL_SECONDS = 120.0
 #: Seconds of the external wall-clock budget kept for local provisioning,
@@ -350,12 +387,15 @@ def remote_commands(
 ) -> dict[str, str]:
     """Setup and detached-launch shell commands (pure; no secrets inline)."""
     repo = shlex.quote(_REMOTE_REPOSITORY)
-    extras = runtime_profile(args)["extras"]
+    profile = runtime_profile(args)
+    extras = profile["extras"]
     setup = " && ".join(
         [
             f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
             f"git -C {repo} checkout --detach {shlex.quote(harness_revision)}",
+            *profile.get("pre_install", []),
             f"python -m pip install --quiet -e {repo}'[{extras}]'",
+            *profile.get("post_install", []),
             "python -c "
             + shlex.quote(
                 "import sys, stateset_agents as s; "
