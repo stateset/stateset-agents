@@ -868,3 +868,317 @@ def test_pinned_manifest_config_is_valid_for_the_workload() -> None:
     assert config["max_wall_clock_seconds"] / 3600 * 3.99 <= (
         config["max_cost_usd_per_seed"]
     )
+
+
+# --------------------------------------------------------------------------- #
+# Flagship v2 (Qwen3.5 policy, Gemma 4 judge): config-driven, v1 unchanged
+# --------------------------------------------------------------------------- #
+
+V2_CONFIG = {
+    **CONFIG,
+    "runtime_profile": "flagship-v2",
+    "chat_template_kwargs": {"enable_thinking": False},
+    "forbid_think_blocks": True,
+    "trust_remote_code": False,
+    "merge_adapter_for_eval": True,
+}
+V2_JUDGE = {**JUDGE, "loader": "gemma4"}
+
+
+def _v2_args(tmp_path: Path) -> argparse.Namespace:
+    return _args(
+        tmp_path,
+        config_json=workload.canonical_json(V2_CONFIG),
+        config_sha256=_sha(V2_CONFIG),
+        judge_json=workload.canonical_json(V2_JUDGE),
+        judge_sha256=_sha(V2_JUDGE),
+    )
+
+
+def test_v2_config_and_judge_validate() -> None:
+    workload.validate_config(V2_CONFIG)
+    workload.validate_judge(V2_JUDGE, RUBRIC)
+    assert workload.judge_loader(V2_JUDGE) == "gemma4"
+    assert workload.judge_loader(JUDGE) == "mistral"
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"runtime_profile": "flagship-v9"}, "runtime_profile"),
+        ({"chat_template_kwargs": ["enable_thinking"]}, "chat_template_kwargs"),
+        ({"forbid_think_blocks": "yes"}, "forbid_think_blocks"),
+        ({"trust_remote_code": 1}, "trust_remote_code"),
+        ({"merge_adapter_for_eval": None}, "merge_adapter_for_eval"),
+    ],
+)
+def test_v2_config_rejects_bad_knobs(updates: dict[str, Any], message: str) -> None:
+    with pytest.raises(workload.WorkloadError, match=message):
+        workload.validate_config({**V2_CONFIG, **updates})
+
+
+def test_unknown_judge_loader_fails_closed() -> None:
+    with pytest.raises(workload.WorkloadError, match="judge.loader"):
+        workload.validate_judge({**JUDGE, "loader": "llama"}, RUBRIC)
+
+
+class TemplateTokenizer:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def apply_chat_template(
+        self,
+        conversation: Any,
+        tokenize: bool = True,
+        add_generation_prompt: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        self.calls.append(
+            {"tokenize": tokenize, "add_generation_prompt": add_generation_prompt}
+            | kwargs
+        )
+        return "rendered"
+
+
+def test_bind_chat_template_kwargs_reaches_every_render() -> None:
+    import inspect
+
+    tokenizer = TemplateTokenizer()
+    workload.bind_chat_template_kwargs(tokenizer, {"enable_thinking": False})
+    # Binding twice must not stack wrappers.
+    workload.bind_chat_template_kwargs(tokenizer, {"enable_thinking": False})
+    tokenizer.apply_chat_template([], tokenize=False, add_generation_prompt=True)
+    tokenizer.apply_chat_template([], enable_thinking=True)
+    assert tokenizer.calls[0]["enable_thinking"] is False
+    assert tokenizer.calls[0]["add_generation_prompt"] is True
+    # An explicit call-site value wins over the pinned default.
+    assert tokenizer.calls[1]["enable_thinking"] is True
+    # Signature introspection (the trainer's token path) still sees the
+    # original parameters through functools.wraps.
+    params = inspect.signature(tokenizer.apply_chat_template).parameters
+    assert "add_generation_prompt" in params
+
+
+def test_bind_chat_template_kwargs_is_a_no_op_for_v1() -> None:
+    tokenizer = TemplateTokenizer()
+    original = tokenizer.apply_chat_template
+    assert workload.bind_chat_template_kwargs(tokenizer, {}) is tokenizer
+    assert tokenizer.apply_chat_template == original
+    assert workload.bind_chat_template_kwargs(None, {"enable_thinking": False}) is None
+
+
+def test_qwen35_template_renders_no_thinking_with_bound_kwargs() -> None:
+    """The real Qwen3.5 template branch: enable_thinking=False closes the block."""
+    jinja2 = pytest.importorskip("jinja2")
+    template = jinja2.Environment().from_string(
+        "{%- if add_generation_prompt %}<|im_start|>assistant\n"
+        "{%- if enable_thinking is defined and enable_thinking is false %}"
+        "<think>\n\n</think>\n\n{%- else %}<think>\n{%- endif %}{%- endif %}"
+    )
+
+    class Rendering:
+        def apply_chat_template(self, conversation: Any, **kwargs: Any) -> str:
+            return template.render(messages=conversation, **kwargs)
+
+    tokenizer = workload.bind_chat_template_kwargs(
+        Rendering(), {"enable_thinking": False}
+    )
+    rendered = tokenizer.apply_chat_template([], add_generation_prompt=True)
+    assert rendered.endswith("</think>")
+    # Unbound, the template leaves the think block open for the model.
+    assert (
+        Rendering()
+        .apply_chat_template([], add_generation_prompt=True)
+        .endswith("<think>")
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["<think>plan</think>Hi", "Sure.</think>", "<|think|>reasoning"],
+)
+def test_think_blocks_fail_closed(text: str) -> None:
+    assert workload.find_think_blocks(["clean reply", text]) == [text]
+    with pytest.raises(workload.WorkloadError, match="think"):
+        workload.assert_no_think_blocks(["clean reply", text], "eval")
+    workload.assert_no_think_blocks(["We think this is fine."], "eval")
+
+
+class ThinkingTrainer(FakeTrainer):
+    async def generate_trajectories(
+        self, scenarios: Any, num_generations: int | None = None
+    ) -> list[FakeGroup]:
+        groups = await super().generate_trajectories(scenarios, num_generations)
+        groups[0].trajectories[0].turns[2] = FakeTurn("assistant", "<think>x</think>")
+        return groups
+
+
+def test_training_loop_rejects_think_blocks_only_when_forbidden() -> None:
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    scenarios = [{"id": f"s{i}"} for i in range(4)]
+    schedule = workload.training_schedule(4, 2, 1, seed=7)
+    trainer = ThinkingTrainer(lambda step, index: float(index))
+    with pytest.raises(workload.WorkloadError, match="training step 1"):
+        asyncio.run(
+            workload.run_training_loop(
+                trainer,
+                scenarios,
+                schedule,
+                3,
+                ZeroSignalGuard(max_zero_steps=10),
+                forbid_think_blocks=True,
+            )
+        )
+    assert trainer.trained == []
+    # v1 (flag off) does not inspect the text.
+    result = asyncio.run(
+        workload.run_training_loop(
+            ThinkingTrainer(lambda step, index: float(index)),
+            scenarios,
+            schedule,
+            3,
+            ZeroSignalGuard(max_zero_steps=10),
+        )
+    )
+    assert result["steps"] == 1
+
+
+def test_v2_lora_targets_come_from_the_config() -> None:
+    targets = ["q_proj", "in_proj_qkv", "in_proj_a", "in_proj_b", "out_proj"]
+    assert (
+        workload.lora_peft_config({**V2_CONFIG, "lora_target_modules": targets})[
+            "target_modules"
+        ]
+        == targets
+    )
+    # v1 default is unchanged.
+    assert workload.lora_peft_config(CONFIG)["target_modules"] == list(
+        workload.DEFAULT_LORA_TARGET_MODULES
+    )
+    assert "in_proj_qkv" not in workload.DEFAULT_LORA_TARGET_MODULES
+
+
+def test_trust_remote_code_is_opt_in() -> None:
+    payload = {"model_path": "/snap", "bf16": True}
+    kwargs = workload.agent_config_kwargs(payload, temperature=0.0, max_new_tokens=8)
+    assert "trust_remote_code" not in kwargs
+    kwargs = workload.agent_config_kwargs(
+        {**payload, "trust_remote_code": True}, temperature=0.0, max_new_tokens=8
+    )
+    assert kwargs["trust_remote_code"] is True
+
+
+def test_v2_workload_wires_template_think_guard_merge_and_judge_loader(
+    tmp_path: Path,
+) -> None:
+    phases = FakePhases()
+    outcome = workload.run_workload(_v2_args(tmp_path), _deps(phases))
+    rollouts = [p for name, p in phases.calls if name == "rollout"]
+    train = next(p for name, p in phases.calls if name == "train")
+    judge = next(p for name, p in phases.calls if name == "judge")
+    for payload in [*rollouts, train]:
+        assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+        assert payload["forbid_think_blocks"] is True
+        assert payload["trust_remote_code"] is False
+        assert payload["vllm_language_model_only"] is True
+    assert "merge_adapter" not in rollouts[0]
+    assert rollouts[1]["merge_adapter"] is True
+    assert rollouts[1]["merged_dir"].endswith("merged-policy")
+    assert judge["loader"] == "gemma4"
+    assert outcome["diagnostics"]["judge_loader"] == "gemma4"
+
+
+def test_v1_workload_payloads_keep_v1_behaviour(tmp_path: Path) -> None:
+    phases = FakePhases()
+    outcome = workload.run_workload(_args(tmp_path), _deps(phases))
+    rollouts = [p for name, p in phases.calls if name == "rollout"]
+    judge = next(p for name, p in phases.calls if name == "judge")
+    for payload in rollouts:
+        assert payload["chat_template_kwargs"] == {}
+        assert payload["forbid_think_blocks"] is False
+        assert payload["vllm_language_model_only"] is False
+    assert "merge_adapter" not in rollouts[1]
+    assert judge["loader"] == "mistral"
+    assert outcome["diagnostics"]["final_eval_weights"] == "adapter"
+
+
+def test_eval_weights_base_adapter_and_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stateset_agents.training import merge_adapter as merge_module
+
+    merged_calls: list[tuple[str, Path, Path]] = []
+
+    def fake_merge(base: str, adapter: Path, output: Path, **_: Any) -> Path:
+        merged_calls.append((base, adapter, output))
+        return output
+
+    monkeypatch.setattr(merge_module, "merge_adapter", fake_merge)
+    base = {"model_path": "/snap", "adapter_path": None}
+    assert workload._eval_weights(base) == (base, "base")
+    adapter = {**base, "adapter_path": str(tmp_path / "adapter")}
+    assert workload._eval_weights(adapter)[1] == "adapter"
+    merged_payload, weights = workload._eval_weights(
+        {**adapter, "merge_adapter": True, "merged_dir": str(tmp_path / "merged")}
+    )
+    assert weights == "merged"
+    assert merged_payload["model_path"] == str(tmp_path / "merged")
+    assert merged_payload["adapter_path"] is None
+    assert merged_payload["vllm_language_model_only"] is True
+    assert merged_calls == [("/snap", tmp_path / "adapter", tmp_path / "merged")]
+
+
+def test_phase_rollout_rejects_think_blocks_in_eval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        workload,
+        "_hf_policy_generate",
+        lambda payload: lambda conversations: ["<think>hm</think>ok"]
+        * len(conversations),
+    )
+    payload = {
+        "seed": 1,
+        "backend": "hf",
+        "max_turns": 1,
+        "model_path": "/snap",
+        "adapter_path": None,
+        "forbid_think_blocks": True,
+        "scenarios": [workload.scenario_record(_scenarios("eval", 1)[0])["scenario"]],
+    }
+    with pytest.raises(workload.WorkloadError, match="evaluation rollout"):
+        workload.phase_rollout(payload)
+
+
+@pytest.mark.parametrize(
+    ("loader", "expected"),
+    [
+        ("mistral", {}),
+        (
+            "gemma4",
+            {
+                "gpu_memory_utilization": 0.92,
+                "llm_kwargs": {"limit_mm_per_prompt": {"image": 0}},
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        ),
+    ],
+)
+def test_phase_judge_uses_the_pinned_loader(
+    monkeypatch: pytest.MonkeyPatch, loader: str, expected: dict[str, Any]
+) -> None:
+    from stateset_agents.evaluation import support_judge
+
+    seen: list[dict[str, Any]] = []
+
+    def fake_vllm(model: str, revision: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs)
+        return lambda prompts: []
+
+    monkeypatch.setattr(support_judge, "vllm_generate_fn", fake_vllm)
+    out = workload.phase_judge(
+        {"model": "m", "model_path": "/snap", "loader": loader, "groups": {}}
+    )
+    assert seen == [expected]
+    assert out["loader"] == loader

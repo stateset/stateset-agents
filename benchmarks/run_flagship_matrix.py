@@ -39,6 +39,13 @@ REQUIRED_PLACEHOLDERS = {
 }
 SECRET_FRAGMENTS = ("api_key", "token", "password", "credential", "secret")
 T_CRITICAL_95_DF2 = 4.303
+#: Judge engine loaders and runtime profiles the workload implements
+#: (``flagship_workload.JUDGE_LOADERS`` / ``RUNTIME_PROFILES``); absent keys
+#: mean the v1 Mistral judge and v1 dependencies.
+JUDGE_LOADERS: tuple[str, ...] = ("gemma4", "mistral")
+RUNTIME_PROFILES: tuple[str, ...] = ("flagship-v1", "flagship-v2")
+#: The publication gate's ceiling on judge self-disagreement (every protocol).
+SELF_DISAGREEMENT_GATE = 0.05
 
 
 def canonical_json(value: Mapping[str, Any]) -> str:
@@ -149,6 +156,17 @@ def load_manifest(path: Path) -> dict[str, Any]:
     _text(judge, "model", "manifest.judge")
     _hex(judge, "revision", "manifest.judge", 40)
     _hex(judge, "rubric_revision", "manifest.judge", 40)
+    loader = judge.get("loader", "mistral")
+    if loader not in JUDGE_LOADERS:
+        raise FlagshipError(
+            "manifest.judge.loader must be one of " + ", ".join(JUDGE_LOADERS)
+        )
+    profile = config.get("runtime_profile", "flagship-v1")
+    if profile not in RUNTIME_PROFILES:
+        raise FlagshipError(
+            "manifest.config.runtime_profile must be one of "
+            + ", ".join(RUNTIME_PROFILES)
+        )
 
     hardware = raw.get("hardware")
     if not isinstance(hardware, Mapping):
@@ -483,8 +501,13 @@ def validate_matrix(
         raise FlagshipError(
             f"final-score standard deviation {final_std:.4f} exceeds 0.10"
         )
-    if any(float(run["metrics"]["judge_self_disagreement"]) > 0.05 for run in runs):
-        raise FlagshipError("judge self-disagreement exceeded 0.05")
+    if any(
+        float(run["metrics"]["judge_self_disagreement"]) > SELF_DISAGREEMENT_GATE
+        for run in runs
+    ):
+        raise FlagshipError(
+            f"judge self-disagreement exceeded {SELF_DISAGREEMENT_GATE}"
+        )
     return {
         "passed": True,
         "seed_count": len(runs),

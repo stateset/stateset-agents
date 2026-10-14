@@ -87,6 +87,18 @@ DEFAULT_GPU = "NVIDIA H100 80GB HBM3"
 DEFAULT_TIER = "SECURE"
 DEFAULT_IMAGE = "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204"
 DEFAULT_DISK_GB = 150
+#: Per-profile pod setup, keyed by ``config.runtime_profile`` (absent = v1).
+#: v2 adds the ``flagship-v2`` extra (Transformers >= 5.5, vLLM >= 0.29,
+#: flash-linear-attention) and more disk: the Qwen3.5-9B snapshot (~19 GB),
+#: the Gemma 4 31B judge (~62 GB), a merged policy copy for the final eval
+#: (~19 GB), pip caches and artifacts. Its estimate (unmeasured until the v2
+#: preflight): ~35 min of setup and downloads, slower training steps than
+#: v1 (9B policy, hybrid linear attention), ~10 min to merge the adapter and
+#: a ~30 min 31B judge phase.
+RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
+    "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},
+    "flagship-v2": {"extras": "training,vllm,flagship-v2", "disk_gb": 250},
+}
 DEFAULT_POLL_SECONDS = 120.0
 #: Seconds of the external wall-clock budget kept for local provisioning,
 #: artifact download, and termination; the pod lifetime gets the rest.
@@ -185,6 +197,22 @@ def resolve_spend_ceiling(
     return ceiling
 
 
+def runtime_profile(args: argparse.Namespace) -> dict[str, Any]:
+    """The pinned config's runtime profile (v1 when the config has none)."""
+    try:
+        config = json.loads(str(args.config_json))
+    except ValueError as exc:
+        raise FlagshipDriverError("config is not valid JSON") from exc
+    name = (
+        config.get("runtime_profile", "flagship-v1")
+        if isinstance(config, dict)
+        else "flagship-v1"
+    )
+    if name not in RUNTIME_PROFILES:
+        raise FlagshipDriverError(f"unknown config.runtime_profile {name!r}")
+    return {"name": name, **RUNTIME_PROFILES[name]}
+
+
 def execution_settings(
     args: argparse.Namespace, config: Mapping[str, Any], environ: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -203,7 +231,11 @@ def execution_settings(
         "gpu_name": args.gpu or environ.get(ENV_GPU, "").strip() or DEFAULT_GPU,
         "gpu_count": 1,
         "container_image": args.container_image,
-        "container_disk_gb": int(args.container_disk_gb),
+        "container_disk_gb": int(
+            args.container_disk_gb
+            if args.container_disk_gb is not None
+            else runtime_profile(args)["disk_gb"]
+        ),
         "max_lifetime_seconds": lifetime,
     }
 
@@ -318,11 +350,12 @@ def remote_commands(
 ) -> dict[str, str]:
     """Setup and detached-launch shell commands (pure; no secrets inline)."""
     repo = shlex.quote(_REMOTE_REPOSITORY)
+    extras = runtime_profile(args)["extras"]
     setup = " && ".join(
         [
             f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
             f"git -C {repo} checkout --detach {shlex.quote(harness_revision)}",
-            f"python -m pip install --quiet -e {repo}'[training,vllm]'",
+            f"python -m pip install --quiet -e {repo}'[{extras}]'",
             "python -c "
             + shlex.quote(
                 "import sys, stateset_agents as s; "
@@ -779,7 +812,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu", default=None, help=f"default ${ENV_GPU} or H100")
     parser.add_argument("--provider-tier", default=DEFAULT_TIER)
     parser.add_argument("--container-image", default=DEFAULT_IMAGE)
-    parser.add_argument("--container-disk-gb", type=int, default=DEFAULT_DISK_GB)
+    parser.add_argument(
+        "--container-disk-gb",
+        type=int,
+        default=None,
+        help="default: the runtime profile's disk (v1 150 GB, v2 250 GB)",
+    )
     parser.add_argument("--harness-revision", default=None)
     parser.add_argument("--ssh-public-key", type=Path)
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)

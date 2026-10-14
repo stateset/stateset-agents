@@ -850,6 +850,8 @@ def vllm_generate_fn(
     gpu_memory_utilization: float = 0.85,
     max_model_len: int = 8192,
     dtype: str = "bfloat16",
+    llm_kwargs: Mapping[str, Any] | None = None,
+    chat_template_kwargs: Mapping[str, Any] | None = None,
 ) -> GenerateFn:
     """Build a greedy vLLM ``GenerateFn`` using the model's chat template.
 
@@ -857,7 +859,10 @@ def vllm_generate_fn(
     process after the policy has been freed: a 24B bf16 judge needs ~44 GiB of
     weights, so it takes 0.85 of an 80 GB GPU (the rest of the budget is KV
     cache). ``model`` may be a local snapshot directory, in which case
-    ``revision`` should be ``None``.
+    ``revision`` should be ``None``. ``llm_kwargs`` are extra ``vllm.LLM``
+    engine arguments (e.g. ``limit_mm_per_prompt`` for a multimodal judge
+    used on text only) and ``chat_template_kwargs`` are passed to every
+    ``LLM.chat`` call (e.g. ``enable_thinking=False``).
 
     Raises:
         ImportError: If ``vllm`` is not installed.
@@ -878,12 +883,16 @@ def vllm_generate_fn(
         dtype=dtype,
         gpu_memory_utilization=gpu_memory_utilization,
         max_model_len=max_model_len,
+        **dict(llm_kwargs or {}),
     )
     params = SamplingParams(temperature=0.0, max_tokens=max_tokens, seed=0)
+    chat_kwargs: dict[str, Any] = {}
+    if chat_template_kwargs:
+        chat_kwargs["chat_template_kwargs"] = dict(chat_template_kwargs)
 
     def generate(prompts: Sequence[str]) -> list[str]:
         conversations = [_chat(p) for p in prompts]
-        outputs = llm.chat(conversations, params, use_tqdm=False)
+        outputs = llm.chat(conversations, params, use_tqdm=False, **chat_kwargs)
         return [output.outputs[0].text for output in outputs]
 
     return generate
@@ -895,6 +904,7 @@ def hf_generate_fn(
     *,
     max_new_tokens: int = 512,
     batch_size: int = 8,
+    chat_template_kwargs: Mapping[str, Any] | None = None,
 ) -> GenerateFn:
     """Build a greedy transformers ``GenerateFn`` (fallback when vLLM is absent).
 
@@ -934,6 +944,7 @@ def hf_generate_fn(
                     _chat(prompt),
                     tokenize=False,
                     add_generation_prompt=True,
+                    **dict(chat_template_kwargs or {}),
                 )
                 for prompt in prompts[start : start + batch_size]
             ]

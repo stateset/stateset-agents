@@ -46,7 +46,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -107,6 +107,27 @@ DEFAULT_LORA_TARGET_MODULES: tuple[str, ...] = (
     "down_proj",
 )
 REQUIRED_JUDGE_KEYS: tuple[str, ...] = ("model", "revision", "rubric_revision")
+#: Runtime profiles a config may pin (``config.runtime_profile``). A missing
+#: key is the v1 profile, so v1 manifests and their config hashes are unchanged.
+RUNTIME_PROFILES: tuple[str, ...] = ("flagship-v1", "flagship-v2")
+#: Judge engine loaders (``judge.loader``). ``mistral`` is the v1 path: plain
+#: vLLM ``LLM.chat`` with the HF-format Mistral snapshot (mistral_common's
+#: tekken.json kept, consolidated weights skipped by ``_default_snapshot``).
+#: ``gemma4`` loads ``Gemma4ForConditionalGeneration`` text-only (no image
+#: slots, so vLLM does not reserve vision-encoder memory), with thinking off
+#: and a higher memory fraction for the ~62 GB of bf16 31B weights.
+JUDGE_LOADERS: dict[str, dict[str, Any]] = {
+    "mistral": {},
+    "gemma4": {
+        "gpu_memory_utilization": 0.92,
+        "llm_kwargs": {"limit_mm_per_prompt": {"image": 0}},
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
+}
+DEFAULT_JUDGE_LOADER = "mistral"
+#: Reasoning markers a non-thinking policy must never emit (Qwen3/3.5 style
+#: ``<think>`` blocks and Gemma 4's ``<|think|>`` channel marker).
+THINK_MARKERS: tuple[str, ...] = ("<think>", "</think>", "<|think|>")
 SYSTEM_PROMPT = (
     "You are a customer-support agent for an online store. Follow the store "
     "policy exactly: never promise anything the policy does not allow, never "
@@ -205,6 +226,72 @@ def validate_config(config: Mapping[str, Any]) -> None:
         or not all(isinstance(t, str) and t for t in targets)
     ):
         raise WorkloadError("config.lora_target_modules must be a non-empty list")
+    profile = config.get("runtime_profile", "flagship-v1")
+    if profile not in RUNTIME_PROFILES:
+        raise WorkloadError(
+            f"config.runtime_profile must be one of {', '.join(RUNTIME_PROFILES)}"
+        )
+    template_kwargs = config.get("chat_template_kwargs")
+    if template_kwargs is not None and (
+        not isinstance(template_kwargs, Mapping)
+        or not all(isinstance(key, str) and key for key in template_kwargs)
+    ):
+        raise WorkloadError("config.chat_template_kwargs must be an object")
+    for key in ("trust_remote_code", "forbid_think_blocks", "merge_adapter_for_eval"):
+        if key in config and not isinstance(config[key], bool):
+            raise WorkloadError(f"config.{key} must be a boolean")
+
+
+def judge_loader(judge: Mapping[str, Any]) -> str:
+    """The pinned judge engine loader (``mistral`` when unpinned, as in v1)."""
+    loader = judge.get("loader", DEFAULT_JUDGE_LOADER)
+    if loader not in JUDGE_LOADERS:
+        raise WorkloadError(
+            f"judge.loader must be one of {', '.join(sorted(JUDGE_LOADERS))}"
+        )
+    return str(loader)
+
+
+def find_think_blocks(texts: Iterable[str]) -> list[str]:
+    """Every text that carries a reasoning marker (see :data:`THINK_MARKERS`)."""
+    return [t for t in texts if any(marker in str(t) for marker in THINK_MARKERS)]
+
+
+def assert_no_think_blocks(texts: Iterable[str], label: str) -> None:
+    """Fail closed when a non-thinking policy emitted a reasoning block."""
+    found = find_think_blocks(texts)
+    if found:
+        raise WorkloadError(
+            f"{label}: {len(found)} completion(s) contain a <think> block "
+            f"although thinking is disabled; first: {found[0][:120]!r}"
+        )
+
+
+def bind_chat_template_kwargs(tokenizer: Any, kwargs: Mapping[str, Any]) -> Any:
+    """Make every ``apply_chat_template`` call on ``tokenizer`` pass ``kwargs``.
+
+    The agent, the trainer's token path and the vLLM renderer all render
+    through ``tokenizer.apply_chat_template``; binding the pinned template
+    kwargs (e.g. ``enable_thinking=False``) on the instance keeps rollouts,
+    training rows and evaluation prompts identical. Explicit call-site
+    values win. No kwargs leaves the tokenizer untouched (the v1 path).
+    """
+    if not kwargs or tokenizer is None:
+        return tokenizer
+    original = getattr(tokenizer, "apply_chat_template", None)
+    if not callable(original) or getattr(original, "_flagship_bound", None):
+        return tokenizer
+    bound = dict(kwargs)
+
+    @functools.wraps(original)
+    def apply_chat_template(*args: Any, **call_kwargs: Any) -> Any:
+        for key, value in bound.items():
+            call_kwargs.setdefault(key, value)
+        return original(*args, **call_kwargs)
+
+    apply_chat_template._flagship_bound = bound  # type: ignore[attr-defined]
+    tokenizer.apply_chat_template = apply_chat_template
+    return tokenizer
 
 
 def validate_judge(judge: Mapping[str, Any], installed_rubric_revision: str) -> None:
@@ -212,6 +299,7 @@ def validate_judge(judge: Mapping[str, Any], installed_rubric_revision: str) -> 
     missing = [key for key in REQUIRED_JUDGE_KEYS if not judge.get(key)]
     if missing:
         raise WorkloadError("judge is missing: " + ", ".join(missing))
+    judge_loader(judge)
     if judge["rubric_revision"] != installed_rubric_revision:
         raise WorkloadError(
             f"installed judge rubric revision {installed_rubric_revision} does not "
@@ -626,6 +714,8 @@ def agent_config_kwargs(
         "torch_dtype": "bfloat16" if payload.get("bf16", True) else "float32",
         "attn_implementation": str(payload.get("attn_implementation", "sdpa")),
     }
+    if payload.get("trust_remote_code"):
+        kwargs["trust_remote_code"] = True
     if lora is not None:
         kwargs.update({"use_peft": True, "peft_config": lora_peft_config(lora)})
     if adapter_path:
@@ -715,6 +805,8 @@ async def run_training_loop(
     num_generations: int,
     guard: Any,
     clock: Callable[[], float] = time.monotonic,
+    *,
+    forbid_think_blocks: bool = False,
 ) -> dict[str, Any]:
     """On-policy multi-turn GSPO: sample groups, then one update, per step.
 
@@ -749,6 +841,17 @@ async def run_training_loop(
             chosen, num_generations=num_generations
         )
         check_groups(groups, chosen, num_generations)
+        if forbid_think_blocks:
+            assert_no_think_blocks(
+                (
+                    str(_turn_field(turn, "content") or "")
+                    for group in groups
+                    for trajectory in group.trajectories
+                    for turn in trajectory.turns
+                    if _turn_field(turn, "role") == "assistant"
+                ),
+                f"training step {step}",
+            )
         rewards = [_group_rewards(group) for group in groups]
         flat = [value for values in rewards for value in values]
         metrics = dict(await trainer.training_step(groups))
@@ -1018,6 +1121,8 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
     policy_revision = None if smoke else args.model_revision
     judge_model = args.smoke_model if smoke else str(judge["model"])
     judge_revision = None if smoke else str(judge["revision"])
+    # Smoke runs judge with the tiny smoke model, so they take the v1 loader.
+    loader = DEFAULT_JUDGE_LOADER if smoke else judge_loader(judge)
     model_path = deps.snapshot(policy_model, policy_revision)
     # Resolve the judge before any GPU phase so a bad pin fails fast; phase 4
     # loads this exact local snapshot.
@@ -1033,6 +1138,13 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         # HF attention kernel for the policy ("sdpa" default; "eager" avoids
         # SDPA's bf16 backward when diagnosing non-finite gradients).
         "attn_implementation": str(run_config.get("attn_implementation", "sdpa")),
+        # v2 knobs; absent from v1 configs, which keep the v1 behaviour.
+        "chat_template_kwargs": dict(run_config.get("chat_template_kwargs") or {}),
+        "trust_remote_code": bool(run_config.get("trust_remote_code", False)),
+        "forbid_think_blocks": bool(run_config.get("forbid_think_blocks", False)),
+        "vllm_language_model_only": (
+            run_config.get("runtime_profile", "flagship-v1") == "flagship-v2"
+        ),
     }
     evaluation_payload = {
         **common,
@@ -1073,9 +1185,13 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         raise WorkloadError(f"GSPO training aborted: {train_out['aborted']}")
 
     # Phase 3: final eval with the trained adapter (identical rollout/decoding).
-    final_out = deps.run_phase(
-        "rollout", {**evaluation_payload, "adapter_path": str(adapter_dir)}
-    )
+    final_payload = {**evaluation_payload, "adapter_path": str(adapter_dir)}
+    if run_config.get("merge_adapter_for_eval"):
+        # Hybrid Qwen3.5 adapters are silently ignored by vLLM LoRA
+        # (docs/PROOFS.md), so v2 evaluates merged weights instead.
+        final_payload["merge_adapter"] = True
+        final_payload["merged_dir"] = str(Path(args.scratch_dir) / "merged-policy")
+    final_out = deps.run_phase("rollout", final_payload)
     peaks.append(_phase_peak(final_out))
     final = {r["id"]: final_out["transcripts"][r["id"]] for r in eval_records}
     _write_jsonl(
@@ -1091,6 +1207,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
             "revision": judge_revision,
             "model_path": judge_path,
             "backend": backend,
+            "loader": loader,
             "groups": {
                 "baseline": judge_items(eval_records, baseline),
                 "final": judge_items(eval_records, final),
@@ -1146,6 +1263,8 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),
         "judge_backend": judge_out.get("backend"),
+        "judge_loader": loader,
+        "final_eval_weights": final_out.get("weights", "adapter"),
         "baseline_judge_findings": groups["baseline"].get("findings_summary"),
         "final_judge_findings": groups["final"].get("findings_summary"),
         "phase_peak_vram_mb": peaks,
@@ -1376,8 +1495,12 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
     # pinned model_revision, not a hub ID, so there is no revision to pass here.
     renderer.tokenizer = (
         AutoTokenizer.from_pretrained(  # nosec B615 - local pinned snapshot
-            str(payload["model_path"])
+            str(payload["model_path"]),
+            trust_remote_code=bool(payload.get("trust_remote_code", False)),
         )
+    )
+    bind_chat_template_kwargs(
+        renderer.tokenizer, payload.get("chat_template_kwargs") or {}
     )
     kwargs: dict[str, Any] = {
         "model": payload["model_path"],
@@ -1386,6 +1509,11 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         "gpu_memory_utilization": 0.85,
         "max_model_len": 6144,
     }
+    if payload.get("trust_remote_code"):
+        kwargs["trust_remote_code"] = True
+    if payload.get("vllm_language_model_only"):
+        # Composite (vision + text) checkpoints evaluated on text only.
+        kwargs["limit_mm_per_prompt"] = {"image": 0, "video": 0}
     if adapter:
         kwargs.update({"enable_lora": True, "max_lora_rank": int(payload["lora_r"])})
     llm = LLM(**kwargs)
@@ -1443,6 +1571,9 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         if not ready["done"]:
             await agent.initialize()
             disable_top_k(agent)
+            bind_chat_template_kwargs(
+                agent.tokenizer, payload.get("chat_template_kwargs") or {}
+            )
             ready["done"] = True
         replies = []
         for messages in conversations:
@@ -1453,11 +1584,41 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
     return generate
 
 
+def _eval_weights(payload: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
+    """Merge the adapter into full weights when the payload asks for it.
+
+    Returns the payload to evaluate (the merged directory as ``model_path``
+    and no ``adapter_path``) and which weights it uses: ``base``, ``adapter``
+    (LoRA applied by the engine, v1) or ``merged``. ``merge_adapter`` refuses
+    an adapter whose merged greedy probe is identical to the base model.
+    """
+    adapter = payload.get("adapter_path")
+    if not adapter:
+        return dict(payload), "base"
+    if not payload.get("merge_adapter"):
+        return dict(payload), "adapter"
+    from stateset_agents.training.merge_adapter import merge_adapter
+
+    merged = merge_adapter(
+        str(payload["model_path"]), Path(adapter), Path(payload["merged_dir"])
+    )
+    return (
+        {
+            **payload,
+            "model_path": str(merged),
+            "adapter_path": None,
+            "vllm_language_model_only": True,
+        },
+        "merged",
+    )
+
+
 def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
     """GPU phase: environment rollouts with the base policy or a LoRA adapter."""
     from stateset_agents.utils.reproducibility import set_all_seeds
 
     set_all_seeds(int(payload["seed"]))
+    payload, weights = _eval_weights(payload)
     backend = str(payload.get("backend", "auto"))
     generate: GenerateFn
     used = "hf"
@@ -1475,11 +1636,22 @@ def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
     scenarios = list(payload["scenarios"])
     environment = make_support_environment(scenarios, int(payload["max_turns"]))
     transcripts = asyncio.run(rollout_episodes(environment, scenarios, generate))
+    if payload.get("forbid_think_blocks"):
+        assert_no_think_blocks(
+            (
+                content
+                for value in transcripts.values()
+                for role, content in value
+                if role == "assistant"
+            ),
+            "evaluation rollout",
+        )
     return {
         "transcripts": {
             key: [list(p) for p in value] for key, value in transcripts.items()
         },
         "backend": used,
+        "weights": weights,
         "peak_vram_mb": _peak_vram_mb(),
     }
 
@@ -1520,6 +1692,9 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
     async def run() -> tuple[Any, dict[str, Any]]:
         await agent.initialize()
         disable_top_k(agent)
+        bind_chat_template_kwargs(
+            agent.tokenizer, payload.get("chat_template_kwargs") or {}
+        )
         checkpointing = enable_gradient_checkpointing(agent.model)
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
@@ -1532,7 +1707,12 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         # cosine schedule for exactly the planned optimizer steps.
         trainer._setup_scheduler(len(schedule))
         outcome = await run_training_loop(
-            trainer, scenarios, schedule, int(config["num_generations"]), guard
+            trainer,
+            scenarios,
+            schedule,
+            int(config["num_generations"]),
+            guard,
+            forbid_think_blocks=bool(payload.get("forbid_think_blocks", False)),
         )
         outcome["gradient_checkpointing"] = checkpointing
         outcome["reference_model"] = trainer.reference_model is not None
@@ -1567,17 +1747,24 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         # The pinned local snapshot resolved by deps.snapshot(); its directory
         # is the pinned revision, so no hub revision is passed with it.
         model, revision = str(payload["model_path"]), None
+    settings = dict(JUDGE_LOADERS[judge_loader(payload)])
     used = "hf"
     if backend in {"auto", "vllm"}:
         try:
-            generate = vllm_generate_fn(model, revision)
+            generate = vllm_generate_fn(model, revision, **settings)
             used = "vllm"
         except ImportError:
             if backend == "vllm":
                 raise
-            generate = hf_generate_fn(model, revision)
+            generate = hf_generate_fn(
+                model,
+                revision,
+                chat_template_kwargs=settings.get("chat_template_kwargs"),
+            )
     else:
-        generate = hf_generate_fn(model, revision)
+        generate = hf_generate_fn(
+            model, revision, chat_template_kwargs=settings.get("chat_template_kwargs")
+        )
     judge = SupportJudge(generate)
     names = list(payload["groups"])
     items: list[Any] = []
@@ -1610,6 +1797,7 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         "groups": groups,
         "rubric_revision": rubric_revision(),
         "backend": used,
+        "loader": judge_loader(payload),
         "peak_vram_mb": _peak_vram_mb(),
     }
 

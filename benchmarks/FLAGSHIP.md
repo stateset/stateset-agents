@@ -224,3 +224,105 @@ with a worst case of about $13.30 on one H100 at $3.99/h. Its config hash
 differs from the measured manifest, and `run_flagship_matrix.py` never accepts
 preflight evidence for publication. Use its measured step time to re-pin
 `max_steps` in `flagship_manifest.json`.
+
+## Flagship v2: Qwen3.5-9B policy, Gemma 4 31B judge
+
+v2 is a **separate protocol** (`stateset-flagship-multiturn-v2`) next to v1.
+The v1 manifests, config hashes, behaviour and evidence are unchanged. v2
+evidence goes under `benchmark_results/flagship_v2/` and is never mixed
+with v1. Until the judge is calibrated, v2 scores are not comparable to v1
+scores (see the risks below).
+
+| | v1 | v2 |
+| --- | --- | --- |
+| Policy | `Qwen/Qwen2.5-7B-Instruct` @ `a09a3545` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) @ `c2022362` (Apache-2.0, ungated) |
+| Judge | `mistralai/Mistral-Small-24B-Instruct-2501` @ `9527884b` | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) @ `842da379` (Apache-2.0, ungated) |
+| Dataset | `stateset/customer-support-multiturn-v1` @ `db0fd73c` | unchanged |
+| Rubric | v4 (`rubric_revision` `25fa6b2a`) | unchanged, with the same 0.05 self-disagreement gate |
+| Manifests | `flagship_manifest.json`, `flagship_preflight_manifest.json` | `flagship_v2_manifest.json`, `flagship_v2_preflight_manifest.json` |
+
+`model_parameter_count` is 8,953,803,264. That is the text decoder that is
+trained and evaluated (`model.language_model.*` plus `lm_head`), counted
+from the pinned safetensors headers. The full checkpoint has 9,653,104,368
+parameters, because it also holds a 456M-parameter vision tower and a
+243M-parameter MTP head. Neither is trained or used.
+
+What v2 changes, all switched on from the pinned config, so v1 configs
+(which do not have these keys) behave exactly as before:
+
+- **`runtime_profile: "flagship-v2"`.** The RunPod driver installs
+  `.[training,vllm,flagship-v2]`, which brings in Transformers >= 5.5,
+  vLLM >= 0.29 and `flash-linear-attention`. It also defaults to a 250 GB
+  container disk, for the ~19 GB policy, the ~62 GB judge, a merged policy
+  copy and caches. v1 still installs `.[training,vllm]` on 150 GB.
+- **`chat_template_kwargs: {"enable_thinking": false}`.** This is bound on
+  the policy tokenizer, so training rollouts, the trainer's token path and
+  both evaluations render the same non-thinking prompt. Qwen3.5 thinks by
+  default.
+- **`forbid_think_blocks: true`.** A `<think>` or `<|think|>` marker in any
+  training-rollout or evaluation completion fails the run instead of
+  scoring reasoning text.
+- **`lora_target_modules`.** These are the full-attention `q/k/v/o_proj`,
+  the GatedDeltaNet linear-attention `in_proj_qkv`, `in_proj_a`,
+  `in_proj_b`, `in_proj_z` and `out_proj`, and the MLP `gate/up/down_proj`.
+  The names were checked against the pinned checkpoint's weight map; 24 of
+  the 32 layers are linear attention. None of these names occur in the
+  vision tower.
+- **`merge_adapter_for_eval: true`.** vLLM silently ignores LoRA on hybrid
+  Qwen3.5 checkpoints (docs/PROOFS.md). For the final evaluation, the
+  adapter is merged into full weights with
+  `stateset_agents.training.merge_adapter`, which refuses an adapter whose
+  merged greedy probe matches the base model. vLLM then serves the merged
+  weights. The result records `final_eval_weights: "merged"`.
+- **`trust_remote_code: false`.** Both architectures are native in
+  Transformers 5.5+, so no remote code runs. The flag is plumbed through to
+  the agent, the tokenizer and vLLM in case a future pin needs it.
+- **`judge.loader: "gemma4"`.** The Gemma 4 judge loads text-only in vLLM
+  (no image slots), with `enable_thinking=False` and
+  `gpu_memory_utilization=0.92` for its ~62 GB of bf16 weights. The v1
+  Mistral path (`loader` absent or `"mistral"`) is unchanged.
+  `flagship_rejudge.py` reads `judge.loader` from `--manifest` (or
+  `--judge-loader`) and installs the v2 dependencies for it.
+
+### v2 preflight (one seed, paid, needs explicit approval)
+
+```bash
+# free: validate the manifest and print the seed plan
+python benchmarks/run_flagship_matrix.py \
+  benchmarks/flagship_v2_preflight_manifest.json --dry-run --preflight
+# paid: one H100 seed, capped at the manifest's $28 per-seed limit
+export RUNPOD_API_KEY=...            # never commit it
+export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=28
+make benchmark-flagship-run \
+  MANIFEST=benchmarks/flagship_v2_preflight_manifest.json \
+  OUTPUT_DIR=benchmark_results/flagship_v2/preflight EXTRA_ARGS=--preflight
+```
+
+**Worst-case cost.** The preflight keeps v1's 250-step config but sets
+`max_wall_clock_seconds` to 25,200. That gives a 24,600 s pod lifetime, so
+the worst case is **$27.27 at $3.99/h** for one H100 SECURE, under the $28
+`max_cost_usd_per_seed`. The driver's `--plan` re-prices it from the live
+catalog. The measured manifest allows 28,800 s per seed ($31.26 worst case,
+$32 cap, so at most **$93.77 for three seeds**). These limits are
+estimates, not measurements. A 9B hybrid policy with a 31B judge is slower
+than v1. Expected time is
+~35 min of setup and downloads, the training steps, ~10 min for the merge,
+and ~30 min for the judge. Re-pin `max_steps` and the wall-clock limit from
+the preflight's measured times before the measured matrix.
+
+### v2 risks
+
+- **Judge calibration.** Rubric v4 and the 0.05 gate were tuned against the
+  Mistral judge. Gemma 4's self-disagreement and its leniency are
+  unmeasured, and the preflight is the first measurement. Gemma 4 versus
+  Mistral scores on the same transcripts can be compared, at the cost of a
+  judge-only GPU run, with `flagship_rejudge.py --manifest
+  benchmarks/flagship_v2_manifest.json` on existing v1 transcripts.
+- **Memory.** The 31B bf16 judge leaves about 10 GB of an 80 GB GPU for KV
+  cache at `max_model_len` 8192. If vLLM refuses to start, the judge phase
+  fails closed.
+- **Dependencies.** vLLM >= 0.29 pulls its own torch build over the
+  container image's torch 2.7.1. The first v2 pod install is unverified.
+- **Merge probe.** A very small adapter whose greedy probe completion
+  matches the base model fails the final evaluation by design, instead of
+  reporting base-model scores as trained ones.
