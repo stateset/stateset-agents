@@ -64,7 +64,9 @@
     },
     "forbid_think_blocks": true,
     "trust_remote_code": false,
-    "merge_adapter_for_eval": true
+    "merge_adapter_for_eval": true,
+    "episode_weighting": "per_episode",
+    "disable_dropout": true
   },
   "judge": {
     "model": "google/gemma-4-31B-it",

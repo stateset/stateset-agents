@@ -4040,6 +4040,11 @@
               "name": "disable_dropout"
             },
             {
+              "default": "per_turn",
+              "kind": "KEYWORD_ONLY",
+              "name": "episode_weighting"
+            },
+            {
               "default": false,
               "kind": "KEYWORD_ONLY",
               "name": "trust_remote_code"

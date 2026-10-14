@@ -48,6 +48,8 @@ V2_ONLY_CONFIG_KEYS = {
     "forbid_think_blocks",
     "trust_remote_code",
     "merge_adapter_for_eval",
+    "episode_weighting",
+    "disable_dropout",
 }
 QWEN35_LINEAR_ATTENTION = {"in_proj_qkv", "in_proj_a", "in_proj_b", "in_proj_z"}
 #: Catalog price the manifest caps are sized for (H100 80GB SECURE).
@@ -93,6 +95,8 @@ def test_v2_config_is_v1_plus_the_v2_knobs(name: str) -> None:
     assert v2["forbid_think_blocks"] is True
     assert v2["merge_adapter_for_eval"] is True
     assert v2["trust_remote_code"] is False
+    assert v2["episode_weighting"] == "per_episode"
+    assert v2["disable_dropout"] is True
     changed = {k for k in v1 if v1[k] != v2[k]}
     assert changed <= {
         "lora_target_modules",

@@ -326,3 +326,21 @@ the preflight's measured times before the measured matrix.
 - **Merge probe.** A very small adapter whose greedy probe completion
   matches the base model fails the final evaluation by design, instead of
   reporting base-model scores as trained ones.
+
+### v2 GSPO fixes (opt-in, v2 manifests only)
+
+An audit of the multi-turn GSPO token path found two mismatches with the
+algorithm as published. Both are fixed behind config flags that only the v2
+manifests set, so v1 results stay reproducible.
+
+- **`episode_weighting: "per_episode"`.** Each assistant turn is one loss
+  row, and rows were averaged, so a 4-turn episode carried 4x the weight of
+  a 1-turn episode. With this flag, each row is weighted by 1/(turns in its
+  episode). Every episode then counts once, as in GSPO's average over
+  sequences (eq. 5). The sequence-level KL is weighted the same way.
+  (`TrainingConfig.episode_weighting`, default `"per_turn"`.)
+- **`disable_dropout: true`.** Rollouts are sampled in eval mode (no
+  dropout), but the loss pass used to run with LoRA dropout on. That made
+  the ratio at the first update differ from 1 by noise alone. This flag
+  zeroes dropout so the learner matches the sampling policy
+  (`TrainingConfig.disable_dropout`).

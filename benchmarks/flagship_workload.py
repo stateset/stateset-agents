@@ -125,6 +125,12 @@ JUDGE_LOADERS: dict[str, dict[str, Any]] = {
     },
 }
 DEFAULT_JUDGE_LOADER = "mistral"
+#: ``TrainingConfig`` fields a config may opt into (v2). ``episode_weighting``
+#: ``"per_episode"`` weights each assistant-turn row by 1/(turns in its
+#: episode) so every episode counts once (GSPO eq. 5); ``disable_dropout``
+#: makes the loss pass match the eval-mode policy that sampled the rollouts.
+V2_TRAINING_KEYS: tuple[str, ...] = ("episode_weighting", "disable_dropout")
+EPISODE_WEIGHTINGS: tuple[str, ...] = ("per_turn", "per_episode")
 #: Reasoning markers a non-thinking policy must never emit (Qwen3/3.5 style
 #: ``<think>`` blocks and Gemma 4's ``<|think|>`` channel marker).
 THINK_MARKERS: tuple[str, ...] = ("<think>", "</think>", "<|think|>")
@@ -237,7 +243,17 @@ def validate_config(config: Mapping[str, Any]) -> None:
         or not all(isinstance(key, str) and key for key in template_kwargs)
     ):
         raise WorkloadError("config.chat_template_kwargs must be an object")
-    for key in ("trust_remote_code", "forbid_think_blocks", "merge_adapter_for_eval"):
+    weighting = config.get("episode_weighting", "per_turn")
+    if weighting not in EPISODE_WEIGHTINGS:
+        raise WorkloadError(
+            f"config.episode_weighting must be one of {', '.join(EPISODE_WEIGHTINGS)}"
+        )
+    for key in (
+        "trust_remote_code",
+        "forbid_think_blocks",
+        "merge_adapter_for_eval",
+        "disable_dropout",
+    ):
         if key in config and not isinstance(config[key], bool):
             raise WorkloadError(f"config.{key} must be a boolean")
 
@@ -771,6 +787,9 @@ def training_config_kwargs(
         "save_steps": max_steps + 1,
         "eval_steps": max_steps + 1,
         "logging_steps": 1,
+        # v2 opt-ins; absent from v1 configs, so v1 keeps the trainer defaults
+        # (per-turn row averaging, dropout active in the loss pass).
+        **{key: config[key] for key in V2_TRAINING_KEYS if key in config},
     }
 
 

@@ -1182,3 +1182,27 @@ def test_phase_judge_uses_the_pinned_loader(
     )
     assert seen == [expected]
     assert out["loader"] == loader
+
+
+def test_v2_training_config_opts_into_gspo_fixes() -> None:
+    payload = {"model_path": "/snap", "output_dir": "/out", "seed": 1}
+    v2 = {**V2_CONFIG, "episode_weighting": "per_episode", "disable_dropout": True}
+    workload.validate_config(v2)
+    kwargs = workload.training_config_kwargs(payload, v2)
+    assert kwargs["episode_weighting"] == "per_episode"
+    assert kwargs["disable_dropout"] is True
+    from stateset_agents.training.config import TrainingConfig
+
+    config = TrainingConfig(**kwargs)
+    assert config.disable_dropout is True
+    assert config.episode_weighting == "per_episode"
+    # v1 keeps the trainer defaults.
+    v1 = workload.training_config_kwargs(payload, CONFIG)
+    assert "episode_weighting" not in v1 and "disable_dropout" not in v1
+
+
+def test_v2_training_config_rejects_bad_weighting() -> None:
+    with pytest.raises(workload.WorkloadError, match="episode_weighting"):
+        workload.validate_config({**V2_CONFIG, "episode_weighting": "per_token"})
+    with pytest.raises(workload.WorkloadError, match="disable_dropout"):
+        workload.validate_config({**V2_CONFIG, "disable_dropout": "yes"})

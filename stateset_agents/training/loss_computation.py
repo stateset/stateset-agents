@@ -480,6 +480,27 @@ class _WeightedMean:
         return self.total / self.weight if self.weight > 0 else default
 
 
+#: How the token path weights the per-assistant-turn rows of multi-turn
+#: episodes. ``per_turn`` (default) averages rows, so a k-turn episode counts
+#: k times; ``per_episode`` weights each row by 1/k so every episode counts
+#: once, matching GSPO's average over sequences (eq. 5).
+EPISODE_WEIGHTINGS: tuple[str, ...] = ("per_turn", "per_episode")
+
+
+def episode_row_weights(
+    episode_ids: list[int], weighting: str = "per_turn"
+) -> list[float] | None:
+    """Per-row weights for ``weighting`` (``None`` = rows weighted equally)."""
+    if weighting == "per_turn":
+        return None
+    if weighting != "per_episode":
+        raise ValueError(f"unknown episode_weighting {weighting!r}")
+    counts: dict[int, int] = {}
+    for episode in episode_ids:
+        counts[episode] = counts.get(episode, 0) + 1
+    return [1.0 / counts[episode] for episode in episode_ids]
+
+
 def _compute_token_path_loss(
     trajectory_groups: list[Any],
     rows_per_group: list[list[tuple[list[int], list[int], int]]],
@@ -541,6 +562,12 @@ def _compute_token_path_loss(
         if old_logprobs is not None:
             old_source = "sampler"
     chunk_objective = objective.with_(entropy_coef=entropy_coef)
+    weighting = str(getattr(config, "episode_weighting", "per_turn") or "per_turn")
+    if weighting not in EPISODE_WEIGHTINGS:
+        raise ValueError(
+            f"episode_weighting must be one of {', '.join(EPISODE_WEIGHTINGS)}, "
+            f"got {weighting!r}"
+        )
     n_groups = max(len(rows_per_group), 1)
     shares: list[Any] = []
     kls, ents, adv_log, n_rows = [], [], [], 0
@@ -569,8 +596,19 @@ def _compute_token_path_loss(
         row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
 
         width = max(len(p) + len(r) for p, r, _ in rows)
-        group_rows = float(len(rows))
-        group_tokens = float(sum(len(r) for _, r, _ in rows))
+        row_weights = episode_row_weights([ti for _, _, ti in rows], weighting)
+        if row_weights is None:
+            group_rows = float(len(rows))
+            group_tokens = float(sum(len(r) for _, r, _ in rows))
+            weight_tensor = None
+        else:
+            group_rows = float(sum(row_weights))
+            group_tokens = float(
+                sum(w * len(r) for w, (_, r, _) in zip(row_weights, rows, strict=True))
+            )
+            weight_tensor = torch.tensor(
+                row_weights, dtype=torch.float32, device=device
+            )
         kl_mean, ent_mean = _WeightedMean(), _WeightedMean()
         ratio_mean, clip_mean = _WeightedMean(), _WeightedMean()
         for start in range(0, len(rows), chunk):
@@ -599,6 +637,9 @@ def _compute_token_path_loss(
                 entropy=entropy,
                 total_rows=group_rows,
                 total_tokens=group_tokens,
+                row_weights=(
+                    None if weight_tensor is None else weight_tensor[start:stop]
+                ),
             )
             share = result.loss / n_groups
             if backward_fn is not None:
