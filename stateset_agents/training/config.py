@@ -78,6 +78,12 @@ class TrainingConfig:
     # turn, when the agent has generate_turns_batch and the environment
     # supports concurrent episodes. False forces one episode at a time.
     batched_rollouts: bool = True
+    # What MultiTurnGRPOTrainer does when a step's gradients are non-finite:
+    # "raise" (fail fast) or "skip" (log which parameters and loss terms were
+    # non-finite, discard that update, and abort after
+    # max_consecutive_nonfinite_skips consecutive skips).
+    nonfinite_grad_policy: str = "raise"
+    max_consecutive_nonfinite_skips: int = 3
     generation_batch_size: int = 4
     # Rollout/evaluation parallelism (requires environments that support clone()).
     rollout_concurrency: int = 1
@@ -239,6 +245,13 @@ class TrainingConfig:
     trust_remote_code: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
+        if self.nonfinite_grad_policy not in ("raise", "skip"):
+            raise ValueError(
+                "nonfinite_grad_policy must be 'raise' or 'skip', got "
+                f"{self.nonfinite_grad_policy!r}"
+            )
+        if self.max_consecutive_nonfinite_skips < 0:
+            raise ValueError("max_consecutive_nonfinite_skips must be >= 0")
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)

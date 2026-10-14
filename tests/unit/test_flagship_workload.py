@@ -226,6 +226,7 @@ def test_run_workload_produces_metrics_and_artifacts(tmp_path: Path) -> None:
     diagnostics = outcome["diagnostics"]
     assert diagnostics["baseline_rule_reward_mean"] == 0.5
     assert diagnostics["final_rule_reward_mean"] == 1.0
+    assert diagnostics["rule_reward"] == "FakeReward"
     assert diagnostics["final_parse_failure_rate"] == 0.01
     assert diagnostics["train_steps"] == 3 and diagnostics["train_episodes"] == 24
     assert diagnostics["train_unique_scenarios"] == 3
@@ -271,6 +272,8 @@ def test_run_workload_produces_metrics_and_artifacts(tmp_path: Path) -> None:
     judge_payload = phases.calls[3][1]
     assert judge_payload["model"] == "judge/model"
     assert judge_payload["revision"] == "d" * 40
+    # The judge loads the pinned local snapshot resolved before any GPU phase.
+    assert judge_payload["model_path"] == "/snapshots/" + "d" * 40
 
     artifacts = tmp_path / "artifacts"
     for relative in (
@@ -352,6 +355,79 @@ def test_fail_closed_before_any_phase(
     with pytest.raises(workload.WorkloadError, match=message):
         workload.run_workload(_args(tmp_path, **updates), _deps(phases, **deps_updates))
     assert phases.calls == []
+
+
+def test_phase_judge_loads_snapshot_and_records_findings(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from stateset_agents.evaluation import support_judge
+
+    loaded: list[tuple[str, Any]] = []
+
+    def fake_vllm(model: str, revision: Any) -> Any:
+        loaded.append((model, revision))
+        return lambda prompts: [
+            json.dumps({"checks": dict.fromkeys(support_judge.ALL_CHECKS, True)})
+            for _ in prompts
+        ]
+
+    monkeypatch.setattr(support_judge, "vllm_generate_fn", fake_vllm)
+    scenario = {
+        "policy_facts": ["Duties are the customer's responsibility."],
+        "expected_resolution": "Decline reimbursement of customs duties.",
+        "must_avoid": ["reimburse"],
+    }
+    out = workload.phase_judge(
+        {
+            "model": "org/judge",
+            "revision": "d" * 40,
+            "model_path": "/snapshots/" + "d" * 40,
+            "backend": "auto",
+            "groups": {
+                "baseline": [
+                    {
+                        "id": "s-1",
+                        "scenario": scenario,
+                        "transcript": [
+                            ["user", "Will you cover the duties?"],
+                            ["assistant", "Hi [Customer's Name], I'll reimburse you."],
+                        ],
+                    },
+                    {
+                        "id": "s-2",
+                        "scenario": scenario,
+                        "transcript": [
+                            ["user", "Will you cover the duties?"],
+                            ["assistant", "Sorry, duties are not covered by us."],
+                        ],
+                    },
+                ]
+            },
+        }
+    )
+    assert loaded == [("/snapshots/" + "d" * 40, None)]
+    group = out["groups"]["baseline"]
+    first, second = group["results"]
+    assert first["findings"]["must_avoid_hits"][0]["phrase"] == "reimburse"
+    assert first["findings"]["placeholders"][0]["text"] == "[Customer's Name]"
+    assert second["findings"] == {
+        "must_avoid_hits": [],
+        "placeholders": [],
+        "repeated_turns": [],
+        "long_turns": [],
+    }
+    # Verified findings force check values the judge answered differently.
+    assert first["forced"]["policy_no_must_avoid_phrase"] is False
+    assert first["forced"]["accuracy_no_placeholder"] is False
+    assert first["criteria"][0]["policy_compliance"] == pytest.approx(0.75)
+    assert second["score"] == pytest.approx(1.0)
+    assert group["summary"]["judge_overrides"] == 4.0
+    assert group["findings_summary"] == {
+        "must_avoid_hits": 1,
+        "placeholders": 1,
+        "repeated_turns": 0,
+    }
+    assert out["rubric_revision"] == support_judge.rubric_revision()
 
 
 def test_judge_phase_rubric_mismatch_fails(tmp_path: Path) -> None:
@@ -478,86 +554,37 @@ def test_flagship_agent_keeps_sampled_text_verbatim() -> None:
 
 
 # --------------------------------------------------------------------------- #
-# Reward: composite averaged over every assistant turn
+# Reward: conversation-level SupportConversationReward (v2)
 # --------------------------------------------------------------------------- #
 
 
-class RecordingComposite:
-    def __init__(self) -> None:
-        self.calls: list[tuple[list[tuple[str, str]], Any]] = []
+def test_training_reward_is_conversation_level_v2() -> None:
+    from stateset_agents.rewards import SupportConversationReward
 
-    async def compute_reward(self, turns: Any, context: Any = None) -> Any:
-        self.calls.append(([(t.role, t.content) for t in turns], context))
-        reply = turns[-1].content
-        return argparse.Namespace(
-            score=float(reply.count("!")), breakdown={"marks": float(len(reply))}
-        )
+    reward = workload.support_reward()
+    assert isinstance(reward, SupportConversationReward)
+    assert workload._default_reward_fn().name == "support_conversation_v2"
+    assert not hasattr(workload, "ConversationSupportReward")
 
 
-def test_conversation_reward_averages_each_assistant_turn() -> None:
-    from stateset_agents.core.trajectory import ConversationTurn
+def test_reward_component_means_average_breakdowns() -> None:
+    def trajectory(**breakdown: float) -> Any:
+        return argparse.Namespace(metadata={"reward_breakdown": breakdown})
 
-    composite = RecordingComposite()
-    reward = workload.ConversationSupportReward(composite)
-    turns = [
-        ConversationTurn(role="system", content="policy"),
-        ConversationTurn(role="user", content="u1"),
-        ConversationTurn(role="assistant", content="a!"),
-        ConversationTurn(role="user", content="u2"),
-        ConversationTurn(role="assistant", content="b!!!"),
+    groups = [
+        argparse.Namespace(
+            trajectories=[
+                trajectory(repetition_penalty_mean=0.2, placeholder_rate=0.0),
+                trajectory(repetition_penalty_mean=0.6, placeholder_rate=1.0),
+            ]
+        ),
+        argparse.Namespace(trajectories=[argparse.Namespace(metadata={})]),
     ]
-    context = {"must_acknowledge": ["refund"]}
-    result = asyncio.run(reward.compute_reward(turns, context))
-
-    assert result.score == pytest.approx((1 + 3) / 2)
-    assert result.breakdown["turn_0"] == 1.0 and result.breakdown["turn_1"] == 3.0
-    assert result.breakdown["assistant_turns"] == 2.0
-    assert result.breakdown["marks"] == pytest.approx((2 + 4) / 2)
-    # Each reply is scored alone, after the customer turns that preceded it,
-    # with the scenario context.
-    assert [call[0] for call in composite.calls] == [
-        [("user", "u1"), ("assistant", "a!")],
-        [("user", "u1"), ("user", "u2"), ("assistant", "b!!!")],
-    ]
-    assert all(call[1] is context for call in composite.calls)
-
-
-def test_conversation_reward_with_real_composite_credits_every_turn() -> None:
-    from stateset_agents.core.trajectory import ConversationTurn
-    from stateset_agents.data.customer_support_bench import SupportRewardComposite
-
-    context = {"must_acknowledge": ["refund"], "must_avoid": [], "intent": "refund"}
-    good = (
-        "I'm sorry to hear that. I can start your refund today; please share "
-        "order #1234 and you will get a confirmation within 2 business days."
-    )
-    turns = [
-        ConversationTurn(role="user", content="I want a refund"),
-        ConversationTurn(role="assistant", content=good),
-        ConversationTurn(role="user", content="ok"),
-        ConversationTurn(role="assistant", content="ok"),
-    ]
-    composite = SupportRewardComposite()
-    wrapped = asyncio.run(
-        workload.ConversationSupportReward(composite).compute_reward(turns, context)
-    )
-    singles = [
-        asyncio.run(composite.compute_reward(turns[:2], context)).score,
-        asyncio.run(
-            composite.compute_reward([turns[0], turns[2], turns[3]], context)
-        ).score,
-    ]
-    assert wrapped.score == pytest.approx(sum(singles) / 2)
-    assert singles[0] > singles[1]  # the weak second reply costs the episode
-
-
-def test_conversation_reward_without_assistant_turns_is_zero() -> None:
-    result = asyncio.run(
-        workload.ConversationSupportReward(RecordingComposite()).compute_reward(
-            [{"role": "user", "content": "hello"}], {}
-        )
-    )
-    assert result.score == 0.0
+    means = workload.reward_component_means(groups)
+    assert set(means) == set(workload.REWARD_COMPONENT_LOG_KEYS)
+    assert means["repetition_penalty_mean"] == pytest.approx(0.4)
+    assert means["placeholder_rate"] == pytest.approx(0.5)
+    assert means["must_avoid_rate"] is None
 
 
 # --------------------------------------------------------------------------- #
@@ -595,6 +622,7 @@ class FakeTurn:
 class FakeTrajectory:
     total_reward: float
     turns: list[FakeTurn]
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -632,6 +660,13 @@ class FakeTrainer:
                     trajectories=[
                         FakeTrajectory(
                             total_reward=self.rewards(step, index),
+                            metadata={
+                                "reward_breakdown": {
+                                    "repetition_penalty_mean": 0.25,
+                                    "placeholder_rate": float(index % 2),
+                                    "must_avoid_rate": 0.0,
+                                }
+                            },
                             turns=[
                                 FakeTurn("system", "p"),
                                 FakeTurn("user", "u"),
@@ -685,6 +720,11 @@ def test_training_loop_follows_schedule_on_policy() -> None:
     assert log["nonzero_advantage_fraction"][0] == pytest.approx(2 / 3)
     assert log["assistant_turns"] == [12, 12, 12]
     assert log["scenario_ids"][0] == [f"s{i}" for i in schedule[0]]
+    # Anti-hacking reward components are logged per step.
+    assert log["repetition_penalty_mean"] == [0.25, 0.25, 0.25]
+    assert log["placeholder_rate"][0] == pytest.approx(1 / 3)
+    assert log["must_avoid_rate"] == [0.0, 0.0, 0.0]
+    assert log["unresponsive_rate"] == [None, None, None]
 
 
 def test_zero_signal_guard_aborts_constant_reward_runs() -> None:

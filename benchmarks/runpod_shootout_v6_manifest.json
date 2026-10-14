@@ -12,7 +12,7 @@
     "container_disk_gb": 250,
     "timeout_seconds": 165600,
     "max_lifetime_seconds": 172800,
-    "max_cost_usd": 45.0
+    "max_cost_usd": 55.0
   },
   "extra_pip": [
     "trl==1.12.0"

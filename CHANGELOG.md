@@ -7,6 +7,50 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`SupportConversationReward` (support reward v2).** A conversation-level,
+  hack-resistant customer-support reward in
+  `stateset_agents.rewards.support_conversation_reward`: each assistant turn's
+  `SupportRewardComposite` score is scaled by a repetition penalty (difflib
+  similarity to earlier replies above tau=0.5; an identical reply scores 0),
+  an unfilled-placeholder penalty (x0.5, same detector as the support judge)
+  and a responsiveness penalty (x0.8 when a follow-up's new content words are
+  ignored); any `must_avoid` phrase zeroes the episode. The breakdown exposes
+  `repetition_penalty_mean`, `placeholder_rate`, `must_avoid_rate` and
+  `unresponsive_rate`. The flagship workload trains on it and logs those
+  components per step. On the H100 preflight transcripts the v1 turn-mean
+  reward rose 0.707 -> 0.899 under a hacked policy (repeated paragraphs);
+  v2 scores the same transcripts 0.550 (base) -> 0.455 (trained).
+- **`benchmarks/flagship_rejudge.py`.** Re-scores an existing flagship seed's
+  `transcripts/{baseline,final}.jsonl` with the installed judge and rubric (judge
+  phase only, no training): `--local` on a GPU host, or on one rented RunPod
+  GPU (cheapest 80 GB A100/H100 in the public catalog) with an explicit spend
+  ceiling, a harness-commit-published check, unconditional termination and
+  ledger accounting; `--plan` and `--dry-run` are free.
+
+### Changed
+
+- **Support judge rubric v4.** Placeholder and repetition checks are decided
+  exactly by the deterministic detectors (no longer LLM-judged), and the
+  subjective `conciseness_no_filler` check is dropped. On an H100 rejudge the
+  LLM flipped those two checks on 47% and 25% of items between criterion
+  orderings, driving v3 self-disagreement to 0.064-0.082. v3 is kept.
+- **Support judge rubric v3 (checklist).** `support_rubric_v3.md` replaces the
+  1-5 Likert scores with 21 yes/no checks (3-5 per criterion); a criterion's
+  score is the fraction of its checks that hold. Pass 2 reverses both the
+  criteria and the checks inside each criterion. Verified findings are now
+  applied after parsing: exact checks (`policy_no_must_avoid_phrase`,
+  `conciseness_reply_length` <= 120 words) take the detector's value and
+  veto checks (`accuracy_no_placeholder`, `conciseness_no_repetition`) are
+  forced false when the detector fires; `JudgeResult` records `checks`,
+  `forced` and the judge answers they `overrides`, and `summarize` adds
+  `check_flip_rate`, `forced_false_checks`, `judge_overrides` and per-criterion
+  disagreement. `JudgeResult.criteria` now holds per-criterion fractions.
+  Motivation: the v2 judge's two-pass self-disagreement was 0.072 on the H100
+  preflight (gate: <= 0.05), led by `empathy_tone` (pass 1 scored +0.38 points
+  higher on average) and `resolution`.
+
 ## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
 
 ### Performance

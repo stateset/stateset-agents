@@ -504,3 +504,60 @@ def test_build_adapter_rejects_cost_above_ceiling(tmp_path: Path) -> None:
     adapter = driver.build_adapter(args, outcome, manifest["config"], settings, 25.0)
     assert adapter["status"] == "failed"
     assert any("exceeded" in problem for problem in adapter["problems"])
+
+
+def test_poll_fails_fast_when_the_provider_exits_the_pod(tmp_path) -> None:
+    """A pod the provider stops must not leave the driver waiting out its lifetime."""
+    import benchmarks.flagship_runpod_driver as drv
+
+    class DeadSsh:
+        calls = 0
+
+        def download_dir(self, *_a, **_k):
+            raise OSError("connection refused")
+
+        def run(self, *_a, **_k):
+            DeadSsh.calls += 1
+            return 255, ""
+
+    statuses = iter(["RUNNING", "EXITED"])
+    with pytest.raises(drv.FlagshipDriverError, match="EXITED"):
+        drv.poll_until_exit(
+            DeadSsh(),
+            tmp_path,
+            deadline_s=3600,
+            poll_s=0,
+            pod_status=lambda: next(statuses),
+        )
+    assert DeadSsh.calls < 10
+
+
+def test_poll_without_status_callback_keeps_old_behavior(tmp_path) -> None:
+    import benchmarks.flagship_runpod_driver as drv
+
+    class DoneSsh:
+        def download_dir(self, *_a, **_k):
+            return None
+
+        def run(self, command, *_a, **_k):
+            return (0, "0\n") if "cat" in command else (0, "")
+
+    assert drv.poll_until_exit(DoneSsh(), tmp_path, deadline_s=60, poll_s=0) == 0
+
+
+def test_low_runpod_credit_fails_before_provisioning() -> None:
+    import benchmarks.flagship_runpod_driver as drv
+
+    class BrokeApi:
+        created = False
+
+        def account_balance(self) -> float:
+            return -0.05
+
+        def create_pod(self, **_kw):
+            BrokeApi.created = True
+            raise AssertionError("must not provision")
+
+    with pytest.raises(drv.FlagshipDriverError, match="top up"):
+        drv._require_credit(BrokeApi(), {"worst_case_cost_usd": 19.3})
+    assert not BrokeApi.created

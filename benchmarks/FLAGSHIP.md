@@ -78,7 +78,7 @@ python benchmarks/run_flagship_matrix.py benchmarks/flagship_manifest.json \
 ## RunPod manifest (`flagship_manifest.json`) and pending pins
 
 `benchmarks/flagship_manifest.json` is the real (non-example) v1 contract:
-Qwen2.5-7B-Instruct policy, Mistral-7B-Instruct-v0.3 cross-family judge, one
+Qwen2.5-7B-Instruct policy, Mistral-Small-24B-Instruct-2501 cross-family judge, one
 `NVIDIA H100 80GB HBM3` per seed, provider cost from the RunPod API. Each seed
 runs `flagship_runpod_driver.py`, which provisions one pod, runs
 `flagship_workload.py` on it (baseline eval -> multi-turn GSPO+LoRA -> final
@@ -141,14 +141,62 @@ draws, about half an epoch of the 500 train scenarios) take ~1-2 h; with setup
 one-seed `--preflight` first and re-pin `max_steps` from its measured step
 time before the measured matrix.
 
-**One revision is still the all-zero placeholder and blocks measured runs**
-(`run_flagship_matrix.py` and the driver both refuse them):
+**Both revisions are pinned.**
 
-- `dataset_revision` — pin the commit of `stateset/customer-support-multiturn-v1`
-  once it is published to the Hugging Face Hub.
+- `dataset_revision` is commit `db0fd73c` of
+  [`stateset/customer-support-multiturn-v1`](https://huggingface.co/datasets/stateset/customer-support-multiturn-v1)
+  (560 train / 240 eval; generator export sha256 `59ccd505...`; loading it at
+  that revision reproduces `build_support_dataset()` exactly).
 - `judge.rubric_revision` is pinned to `rubric_revision()` (the git blob SHA
-  of `stateset_agents/evaluation/rubrics/support_rubric_v1.md`); editing the
+  of `stateset_agents/evaluation/rubrics/support_rubric_v4.md`); editing the
   rubric changes it, and the workload refuses a mismatch.
+
+**Judge.** `mistralai/Mistral-Small-24B-Instruct-2501` (Apache-2.0, ungated,
+cross-family vs the Qwen policy) at commit `9527884b`. It replaced
+Mistral-7B-Instruct-v0.3 after the H100 preflight measured that judge as far
+too lenient (base-model mean 0.901, self-disagreement 0.08 against the 0.05
+gate; it scored policy_compliance 5 on replies that granted a must_avoid
+reimbursement). Rubric v2 adds hard caps with concrete anchors (forbidden
+commitments, unfilled placeholders, contradicted outcomes, redundant requests,
+repetition), and `support_judge.detect_findings` puts deterministic findings
+(must_avoid phrases present, template placeholders, near-verbatim repeated
+assistant turns) into both passes as verified facts and into every per-item
+judge record. The judge phase loads the local snapshot (HF-format shards only;
+the duplicate `consolidated.safetensors` is skipped) with vLLM at
+`gpu_memory_utilization=0.85` in its own process after the policy is freed;
+v1 stays in the package for history.
+
+**Rubric v3 (checklist).** The v2 judge measured self-disagreement 0.072 on
+the H100 preflight (baseline group; final 0.058): 1-5 Likert scores moved
+with criterion order, most for `empathy_tone` (pass 1, where it is listed
+fourth, averaged +0.38 points above pass 2, where it is second) and
+`resolution` (27% of items differed). v3 replaces each criterion's score
+with 3-5 yes/no checks (21 total); the criterion score is the fraction that
+hold and the item score the mean over criteria and passes. Pass 2 reverses
+the criteria and the checks inside each criterion. Verified findings are
+applied after parsing so the judge cannot contradict them: exact checks
+(`policy_no_must_avoid_phrase`, `conciseness_reply_length` <= 120 words) take
+the detector's value, and veto checks (`accuracy_no_placeholder`,
+`conciseness_no_repetition`) are forced false when the detector fires.
+Whether a must_avoid *mention* is a forbidden *commitment*
+(`policy_no_forbidden_commitment`) stays a judge decision: on the preflight,
+about a third of the 28 items with a must_avoid hit only mentioned the phrase
+in a correct explanation ("no carrier-declared
+weather emergency", "not returnable unless ..."). Each judge record keeps the
+final `checks`, the `forced` values and the judge answers they `overrides`.
+
+To measure a rubric on transcripts that already exist, without training:
+
+```bash
+# free: cheapest 80 GB A100/H100 in the catalog, worst case for 1.5 h
+python benchmarks/flagship_rejudge.py --input-dir RUN/artifacts/seed-42 \
+  --output-dir out/rejudge --plan
+# paid (one GPU, judge phase only); the harness commit must be pushed
+STATESET_REJUDGE_CONFIRM_MAX_COST_USD=5 python benchmarks/flagship_rejudge.py \
+  --input-dir RUN/artifacts/seed-42 --output-dir out/rejudge
+# or on a machine that already has an 80 GB GPU
+python benchmarks/flagship_rejudge.py --input-dir ... --output-dir ... --local
+```
 
 Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
 (the manifest command is fixed, so pass it through the environment):
@@ -158,7 +206,7 @@ Spending needs an explicit ceiling no larger than `max_cost_usd_per_seed`
 python benchmarks/flagship_runpod_driver.py <placeholder args> --plan
 # paid: the matrix runner invokes the driver once per seed
 export RUNPOD_API_KEY=...            # never commit it
-export HF_TOKEN=...                  # the Mistral judge is gated
+export HF_TOKEN=...                  # optional: the judge is ungated
 export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=25
 make benchmark-flagship-run MANIFEST=benchmarks/flagship_manifest.json \
   OUTPUT_DIR=benchmark_results/flagship_v1/preflight EXTRA_ARGS=--preflight

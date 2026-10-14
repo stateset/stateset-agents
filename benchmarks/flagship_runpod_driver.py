@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 import uuid
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -364,16 +364,34 @@ def _remaining(lifetime: int, started_at: float, stage: str) -> int:
     return remaining
 
 
+#: Provider states from which a pod never comes back on its own.
+_TERMINAL_POD_STATES = frozenset({"EXITED", "TERMINATED", "DEAD"})
+
+
 def poll_until_exit(
-    ssh: Any, artifact_dir: Path, *, deadline_s: int, poll_s: float
+    ssh: Any,
+    artifact_dir: Path,
+    *,
+    deadline_s: int,
+    poll_s: float,
+    pod_status: Callable[[], str | None] | None = None,
 ) -> int | None:
     """Sync logs every ``poll_s`` seconds until the exit marker appears.
 
     Returns the workload's exit code, or None when ``deadline_s`` elapses.
+    ``pod_status`` (the provider's view of the pod) is checked every poll: a
+    pod the provider stopped (e.g. "Exited by Runpod") raises immediately
+    instead of polling a dead host until the lifetime runs out.
     """
     deadline = time.monotonic() + max(1, int(deadline_s))
     started = time.monotonic()
     while True:
+        if pod_status is not None:
+            status = pod_status()
+            if status in _TERMINAL_POD_STATES:
+                raise FlagshipDriverError(
+                    f"provider reports the pod {status} before the workload finished"
+                )
         try:
             ssh.download_dir(f"{_REMOTE_ARTIFACTS}/logs", artifact_dir / "logs")
         except Exception as exc:  # noqa: BLE001 - transient scp failure, keep polling
@@ -396,6 +414,23 @@ def poll_until_exit(
         if time.monotonic() >= deadline:
             return None
         time.sleep(max(0.0, min(float(poll_s), deadline - time.monotonic())))
+
+
+def _require_credit(api: Any, plan: Mapping[str, Any]) -> None:
+    """Refuse to provision when the account cannot cover the worst case.
+
+    RunPod reports exhausted credit as an opaque HTTP 500 on pod creation; an
+    unreadable balance does not block the run.
+    """
+    reader = getattr(api, "account_balance", None)
+    balance = reader() if callable(reader) else None
+    worst = float(plan.get("worst_case_cost_usd") or 0.0)
+    if balance is not None and balance < worst:
+        raise FlagshipDriverError(
+            f"RunPod credit ${balance:.2f} is below this seed's worst case "
+            f"${worst:.2f}; top up the account before provisioning (RunPod "
+            "reports insufficient credit as an opaque HTTP 500)"
+        )
 
 
 def execute_seed(
@@ -431,6 +466,7 @@ def execute_seed(
     error: str | None = None
     status = "failed"
     commands = remote_commands(args, harness_revision, with_hf_token=bool(hf_token))
+    _require_credit(api, plan)
     try:
         pod = api.create_pod(
             name=f"stateset-flagship-s{args.seed}-{uuid.uuid4().hex[:8]}",
@@ -469,11 +505,19 @@ def execute_seed(
             ssh.upload_secret(hf_token, _REMOTE_HF_TOKEN)
         _run_checked(ssh, commands["setup"], "harness checkout and install")
         _run_checked(ssh, commands["launch"], "workload launch")
+
+        def provider_status() -> str | None:
+            try:
+                return str(api.get_pod(pod_id).get("desiredStatus") or "") or None
+            except Exception:  # noqa: BLE001 - an API hiccup is not a pod failure
+                return None
+
         remote_code = poll_until_exit(
             ssh,
             artifact_dir,
             deadline_s=_remaining(lifetime, started_at, "workload"),
             poll_s=poll_seconds,
+            pod_status=provider_status,
         )
         try:
             ssh.download_dir(_REMOTE_ARTIFACTS, artifact_dir)

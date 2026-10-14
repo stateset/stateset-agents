@@ -13,8 +13,8 @@ pinned inputs that ``run_flagship_matrix.py`` hands the driver. The run is:
 3. on-policy multi-turn GSPO + LoRA with ``MultiTurnGRPOTrainer``
    (``objective="gspo"``): every step samples ``num_generations`` full
    conversations per scheduled train scenario from the *current* policy in
-   that same environment, scores each episode with
-   :class:`ConversationSupportReward`, and optimizes the length-normalized
+   that same environment, scores each episode with :func:`support_reward`
+   (``SupportConversationReward``), and optimizes the length-normalized
    sequence ratio of every assistant turn against the episode's
    group-normalized advantage;
 4. final evaluation with the trained adapter: the identical environment
@@ -448,66 +448,57 @@ def _turn_field(turn: Any, name: str) -> Any:
     return turn.get(name) if isinstance(turn, Mapping) else getattr(turn, name, None)
 
 
-class ConversationSupportReward:
-    """Episode reward: ``SupportRewardComposite`` averaged over assistant turns.
+def support_reward() -> Any:
+    """The training reward: conversation-level ``SupportConversationReward``.
 
-    ``SupportRewardComposite`` grades the concatenation of every assistant
-    message it is given, so scoring a whole episode at once would credit an
-    early reply's keywords to the episode once and apply its 10-120 word
-    brand-voice window to all replies combined (a three-turn conversation is
-    penalized for being three turns long). This wrapper scores each assistant
-    reply on its own -- with the scenario context and the customer turns that
-    preceded it -- and returns the mean, so every turn earns its share of the
-    episode's reward. The judge stays the held-out evaluator.
+    v1 averaged ``SupportRewardComposite`` over assistant turns and was
+    reward-hacked on the H100 preflight (held-out rule reward 0.707 -> 0.899
+    while the judge fell 0.748 -> 0.605): the policy repeated one
+    policy-correct paragraph on every turn. v2 multiplies each turn's
+    composite score by repetition, placeholder and responsiveness penalties
+    and zeroes an episode on a ``must_avoid`` hit; see
+    :mod:`stateset_agents.rewards.support_conversation_reward`.
     """
+    from stateset_agents.rewards.support_conversation_reward import (
+        SupportConversationReward,
+    )
 
-    name = "support_composite_turn_mean"
+    return SupportConversationReward()
 
-    def __init__(self, composite: Any | None = None, weight: float = 1.0) -> None:
-        if composite is None:
-            from stateset_agents.data.customer_support_bench import (
-                SupportRewardComposite,
-            )
 
-            composite = SupportRewardComposite()
-        self.composite = composite
-        self.weight = float(weight)
+#: Train-log key -> reward breakdown key, averaged over a step's episodes so a
+#: drift toward a known hack (repeating, placeholders, ...) shows up in the log.
+REWARD_COMPONENT_LOG_KEYS: dict[str, str] = {
+    "base_reward_mean": "base_mean",
+    "repetition_penalty_mean": "repetition_penalty_mean",
+    "max_similarity_mean": "max_similarity_mean",
+    "placeholder_rate": "placeholder_rate",
+    "must_avoid_rate": "must_avoid_rate",
+    "unresponsive_rate": "unresponsive_rate",
+}
 
-    async def compute_reward(self, turns: Sequence[Any], context: Any = None) -> Any:
-        from stateset_agents.core.reward_base import RewardResult
-        from stateset_agents.core.trajectory import ConversationTurn
 
-        normalized = [
-            ConversationTurn(
-                role=str(_turn_field(t, "role")),
-                content=str(_turn_field(t, "content") or ""),
-            )
-            for t in turns
-        ]
-        scores: list[float] = []
-        sums: dict[str, float] = {}
-        for index, turn in enumerate(normalized):
-            if turn.role != "assistant":
-                continue
-            prefix = [t for t in normalized[:index] if t.role == "user"]
-            result = await self.composite.compute_reward(prefix + [turn], context)
-            scores.append(float(result.score))
-            for key, value in (getattr(result, "breakdown", None) or {}).items():
+def reward_component_means(groups: Sequence[Any]) -> dict[str, float | None]:
+    """Per-step mean of each :data:`REWARD_COMPONENT_LOG_KEYS` component.
+
+    Reads ``trajectory.metadata["reward_breakdown"]`` (set by the trainer);
+    a component no episode reported is ``None``.
+    """
+    sums = dict.fromkeys(REWARD_COMPONENT_LOG_KEYS, 0.0)
+    counts = dict.fromkeys(REWARD_COMPONENT_LOG_KEYS, 0)
+    for group in groups:
+        for trajectory in getattr(group, "trajectories", None) or ():
+            metadata = getattr(trajectory, "metadata", None) or {}
+            breakdown = metadata.get("reward_breakdown") or {}
+            for log_key, key in REWARD_COMPONENT_LOG_KEYS.items():
+                value = breakdown.get(key)
                 if _is_number(value):
-                    sums[key] = sums.get(key, 0.0) + float(value)
-        if not scores:
-            return RewardResult(score=0.0, breakdown={"no_assistant_turn": 1.0})
-        mean = sum(scores) / len(scores)
-        breakdown = {key: value / len(scores) for key, value in sums.items()}
-        breakdown.update(
-            {
-                "turn_mean": mean,
-                "turn_min": min(scores),
-                "assistant_turns": float(len(scores)),
-            }
-        )
-        breakdown.update({f"turn_{i}": s for i, s in enumerate(scores)})
-        return RewardResult(score=mean, breakdown=breakdown)
+                    sums[log_key] += float(value)
+                    counts[log_key] += 1
+    return {
+        key: (sums[key] / counts[key] if counts[key] else None)
+        for key in REWARD_COMPONENT_LOG_KEYS
+    }
 
 
 def rule_reward_mean(
@@ -617,8 +608,8 @@ def agent_config_kwargs(
     The model is the pinned local snapshot (its directory name is the pinned
     revision). ``system_prompt`` stays unset: the environment supplies the
     per-scenario system turn. Sampling is plain ancestral sampling at
-    ``temperature`` (``repetition_penalty=1``; top-k is disabled after load by
-    :func:`disable_top_k`), greedy when ``temperature == 0``.
+    ``temperature`` (``top_k=0``, ``repetition_penalty=1``), greedy when
+    ``temperature == 0``.
     """
     sampling = temperature > 0
     kwargs: dict[str, Any] = {
@@ -628,10 +619,12 @@ def agent_config_kwargs(
         "max_new_tokens": int(max_new_tokens),
         "temperature": float(temperature),
         "top_p": float(top_p) if sampling else 1.0,
+        # Disabled in the config itself, so a rebuilt generation config keeps it.
+        "top_k": 0,
         "do_sample": sampling,
         "repetition_penalty": 1.0,
         "torch_dtype": "bfloat16" if payload.get("bf16", True) else "float32",
-        "attn_implementation": "sdpa",
+        "attn_implementation": str(payload.get("attn_implementation", "sdpa")),
     }
     if lora is not None:
         kwargs.update({"use_peft": True, "peft_config": lora_peft_config(lora)})
@@ -678,6 +671,10 @@ def training_config_kwargs(
         # Rows per chunked forward on the token path.
         "generation_batch_size": int(config.get("train_forward_rows", 8)),
         "gradient_checkpointing": True,
+        # A rare non-finite update is discarded and logged with the offending
+        # parameters and loss terms (counted in the evidence); repeated ones abort.
+        "nonfinite_grad_policy": "skip",
+        "max_consecutive_nonfinite_skips": 3,
         "bf16": bool(config["bf16"]),
         "fp16": False,
         "seed": int(payload["seed"]),
@@ -741,6 +738,7 @@ async def run_training_loop(
             "learning_rate",
             "optimizer_step",
             "seconds",
+            *REWARD_COMPONENT_LOG_KEYS,
         )
     }
     aborted: str | None = None
@@ -787,15 +785,23 @@ async def run_training_loop(
             value = metrics.get(key)
             log[key].append(float(value) if _is_number(value) else None)
         log["optimizer_step"].append(bool(metrics.get("optimizer_step")))
+        components = reward_component_means(groups)
+        for key, value in components.items():
+            log[key].append(value)
         log["seconds"].append(round(clock() - started, 3))
         logger.info(
-            "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs",
+            "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs "
+            "repetition=%s placeholders=%s must_avoid=%s unresponsive=%s",
             step,
             len(schedule),
             mean,
             fraction,
             log["total_loss"][-1],
             log["seconds"][-1],
+            components["repetition_penalty_mean"],
+            components["placeholder_rate"],
+            components["must_avoid_rate"],
+            components["unresponsive_rate"],
         )
         guard.on_step_end(step, {"nonzero_advantage_fraction": fraction})
         if guard.should_abort:
@@ -808,6 +814,7 @@ async def run_training_loop(
         "train_log": log,
         "steps": len(log["step"]),
         "optimizer_steps": optimizer_steps,
+        "nonfinite_skips": int(getattr(trainer, "nonfinite_skips", 0)),
         "episodes": (
             len(log["step"]) * len(schedule[0]) * num_generations if schedule else 0
         ),
@@ -877,6 +884,12 @@ def _default_snapshot(model: str, revision: str | None) -> str:
         repo_id=model,
         revision=revision,
         allow_patterns=["*.json", "*.safetensors", "*.model", "*.txt", "*.jinja"],
+        # Mistral repos also ship a Mistral-format copy of the weights
+        # (consolidated.safetensors: +47 GB for the 24B judge) described by
+        # params.json. Only the HF-format config and shards are loaded, so
+        # both are skipped; tekken.json stays so vLLM can use the official
+        # mistral_common tokenizer.
+        ignore_patterns=["consolidated*.safetensors", "original/*", "params.json"],
     )
     if revision is not None and Path(path).name != revision:
         raise WorkloadError(
@@ -886,7 +899,7 @@ def _default_snapshot(model: str, revision: str | None) -> str:
 
 
 def _default_reward_fn() -> Any:
-    return ConversationSupportReward()
+    return support_reward()
 
 
 def _default_hardware() -> dict[str, Any]:
@@ -1006,6 +1019,9 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
     judge_model = args.smoke_model if smoke else str(judge["model"])
     judge_revision = None if smoke else str(judge["revision"])
     model_path = deps.snapshot(policy_model, policy_revision)
+    # Resolve the judge before any GPU phase so a bad pin fails fast; phase 4
+    # loads this exact local snapshot.
+    judge_path = deps.snapshot(judge_model, judge_revision)
     backend = "hf" if smoke else "auto"
     max_turns = int(run_config["max_turns"])
     common = {
@@ -1014,6 +1030,9 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "seed": int(args.seed),
         "lora_r": int(run_config["lora_r"]),
         "bf16": bool(run_config["bf16"]),
+        # HF attention kernel for the policy ("sdpa" default; "eager" avoids
+        # SDPA's bf16 backward when diagnosing non-finite gradients).
+        "attn_implementation": str(run_config.get("attn_implementation", "sdpa")),
     }
     evaluation_payload = {
         **common,
@@ -1070,6 +1089,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         {
             "model": judge_model,
             "revision": judge_revision,
+            "model_path": judge_path,
             "backend": backend,
             "groups": {
                 "baseline": judge_items(eval_records, baseline),
@@ -1117,13 +1137,17 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
             eval_records, baseline, reward_fn
         ),
         "final_rule_reward_mean": rule_reward_mean(eval_records, final, reward_fn),
+        "rule_reward": str(getattr(reward_fn, "name", type(reward_fn).__name__)),
         "training": "on-policy multi-turn GSPO (MultiTurnGRPOTrainer, objective=gspo)",
         "train_steps": train_out.get("steps"),
         "train_optimizer_steps": train_out.get("optimizer_steps"),
+        "train_nonfinite_skips": train_out.get("nonfinite_skips", 0),
         "train_episodes": train_out.get("episodes"),
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),
         "judge_backend": judge_out.get("backend"),
+        "baseline_judge_findings": groups["baseline"].get("findings_summary"),
+        "final_judge_findings": groups["final"].get("findings_summary"),
         "phase_peak_vram_mb": peaks,
         "workload_seconds": round(time.monotonic() - started, 3),
     }
@@ -1500,7 +1524,7 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
             environment=environment,
-            reward_fn=ConversationSupportReward(),
+            reward_fn=support_reward(),
             config=TrainingConfig(**training_config_kwargs(payload, config)),
         )
         await trainer.initialize()
@@ -1539,6 +1563,10 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
 
     backend = str(payload.get("backend", "auto"))
     model, revision = str(payload["model"]), payload.get("revision")
+    if payload.get("model_path"):
+        # The pinned local snapshot resolved by deps.snapshot(); its directory
+        # is the pinned revision, so no hub revision is passed with it.
+        model, revision = str(payload["model_path"]), None
     used = "hf"
     if backend in {"auto", "vllm"}:
         try:
@@ -1573,6 +1601,10 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         groups[name] = {
             "results": [asdict(result) for result in chosen],
             "summary": summarize(chosen),
+            "findings_summary": {
+                kind: sum(1 for result in chosen if result.findings.get(kind))
+                for kind in ("must_avoid_hits", "placeholders", "repeated_turns")
+            },
         }
     return {
         "groups": groups,
