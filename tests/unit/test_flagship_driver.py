@@ -543,3 +543,21 @@ def test_poll_without_status_callback_keeps_old_behavior(tmp_path) -> None:
             return (0, "0\n") if "cat" in command else (0, "")
 
     assert drv.poll_until_exit(DoneSsh(), tmp_path, deadline_s=60, poll_s=0) == 0
+
+
+def test_low_runpod_credit_fails_before_provisioning() -> None:
+    import benchmarks.flagship_runpod_driver as drv
+
+    class BrokeApi:
+        created = False
+
+        def account_balance(self) -> float:
+            return -0.05
+
+        def create_pod(self, **_kw):
+            BrokeApi.created = True
+            raise AssertionError("must not provision")
+
+    with pytest.raises(drv.FlagshipDriverError, match="top up"):
+        drv._require_credit(BrokeApi(), {"worst_case_cost_usd": 19.3})
+    assert not BrokeApi.created

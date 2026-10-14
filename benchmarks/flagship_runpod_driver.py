@@ -416,6 +416,23 @@ def poll_until_exit(
         time.sleep(max(0.0, min(float(poll_s), deadline - time.monotonic())))
 
 
+def _require_credit(api: Any, plan: Mapping[str, Any]) -> None:
+    """Refuse to provision when the account cannot cover the worst case.
+
+    RunPod reports exhausted credit as an opaque HTTP 500 on pod creation; an
+    unreadable balance does not block the run.
+    """
+    reader = getattr(api, "account_balance", None)
+    balance = reader() if callable(reader) else None
+    worst = float(plan.get("worst_case_cost_usd") or 0.0)
+    if balance is not None and balance < worst:
+        raise FlagshipDriverError(
+            f"RunPod credit ${balance:.2f} is below this seed's worst case "
+            f"${worst:.2f}; top up the account before provisioning (RunPod "
+            "reports insufficient credit as an opaque HTTP 500)"
+        )
+
+
 def execute_seed(
     args: argparse.Namespace,
     settings: Mapping[str, Any],
@@ -449,6 +466,7 @@ def execute_seed(
     error: str | None = None
     status = "failed"
     commands = remote_commands(args, harness_revision, with_hf_token=bool(hf_token))
+    _require_credit(api, plan)
     try:
         pod = api.create_pod(
             name=f"stateset-flagship-s{args.seed}-{uuid.uuid4().hex[:8]}",

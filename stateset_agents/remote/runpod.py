@@ -131,6 +131,28 @@ class RunPodApi:
         assert last is not None  # pragma: no cover - loop always sets it
         raise last
 
+    def account_balance(self) -> float | None:
+        """The account's prepaid credit in USD, or None if it cannot be read.
+
+        RunPod refuses to create pods when the balance is exhausted and reports
+        that as a generic HTTP 500, so callers check this first to fail with a
+        clear message instead.
+        """
+        import requests
+
+        try:
+            response = requests.post(
+                "https://api.runpod.io/graphql",
+                json={"query": "query { myself { clientBalance } }"},
+                headers=self._headers(),
+                timeout=30,
+            )
+            response.raise_for_status()
+            value = response.json()["data"]["myself"]["clientBalance"]
+            return float(value)
+        except Exception:  # noqa: BLE001 - unknown balance never blocks a run
+            return None
+
     def create_pod(
         self,
         *,
