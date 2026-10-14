@@ -545,9 +545,24 @@ def _remaining(lifetime: int, started_at: float, stage: str) -> int:
     return remaining
 
 
-def _poll_until_exit(ssh: Any, *, deadline_s: int, poll_s: float) -> int | None:
+_TERMINAL_POD_STATES = frozenset({"EXITED", "TERMINATED", "DEAD"})
+
+
+def _poll_until_exit(
+    ssh: Any,
+    *,
+    deadline_s: int,
+    poll_s: float,
+    pod_status: Callable[[], str | None] | None = None,
+) -> int | None:
     deadline = time.monotonic() + max(1, int(deadline_s))
     while True:
+        if pod_status is not None:
+            status = pod_status()
+            if status in _TERMINAL_POD_STATES:
+                raise RejudgeError(
+                    f"provider reports the pod {status} before the rejudge finished"
+                )
         _, tail = ssh.run(f"tail -n 1 {shlex.quote(_REMOTE_LOG)} 2>/dev/null")
         print(f"{datetime.now(timezone.utc):%H:%M:%SZ} | {tail.strip()[-160:]}")
         code, text = ssh.run(f"cat {shlex.quote(_REMOTE_EXIT)} 2>/dev/null")
@@ -638,10 +653,18 @@ def execute_remote(
                 f"{_REMOTE_INPUT}/transcripts/{group}.jsonl",
             )
         _run_checked(ssh, commands["launch"], "rejudge launch")
+
+        def provider_status() -> str | None:
+            try:
+                return str(api.get_pod(pod_id).get("desiredStatus") or "") or None
+            except Exception:  # noqa: BLE001 - an API hiccup is not a pod failure
+                return None
+
         remote_code = _poll_until_exit(
             ssh,
             deadline_s=_remaining(lifetime, started_at, "rejudge"),
             poll_s=poll_seconds,
+            pod_status=provider_status,
         )
         try:
             ssh.download_dir(_REMOTE_OUTPUT, output_dir)

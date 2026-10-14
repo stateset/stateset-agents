@@ -538,3 +538,17 @@ def test_main_local_mode_never_touches_runpod(
     )
     assert code == 0 and ForbiddenApi.created == 0 and len(seen) == 1
     assert json.loads(capsys.readouterr().out)["judge_self_disagreement"] == 0.01
+
+
+def test_rejudge_poll_fails_fast_when_the_provider_exits_the_pod() -> None:
+    import benchmarks.flagship_rejudge as rejudge
+
+    class DeadSsh:
+        def run(self, *_a, **_k):
+            return 255, ""
+
+    statuses = iter(["RUNNING", "EXITED"])
+    with pytest.raises(rejudge.RejudgeError, match="EXITED"):
+        rejudge._poll_until_exit(
+            DeadSsh(), deadline_s=3600, poll_s=0, pod_status=lambda: next(statuses)
+        )
