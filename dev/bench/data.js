@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792103209781,
+  "lastUpdate": 1792103851718,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -248,6 +248,68 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 3.571156556752344e-8",
             "extra": "mean: 272.98321138461387 nsec\nrounds: 186602"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "committer": {
+            "name": "stateset",
+            "username": "stateset"
+          },
+          "id": "5c944d61a9e32067218c3fdb04cb7f7192e34b64",
+          "message": "feat(flagship): v2 protocol (Qwen3.5-9B + Gemma 4 31B judge) + opt-in GSPO episode weighting",
+          "timestamp": "2026-10-14T03:32:41Z",
+          "url": "https://github.com/stateset/stateset-agents/pull/109/commits/5c944d61a9e32067218c3fdb04cb7f7192e34b64"
+        },
+        "date": 1792103850423,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 8424.207056211497,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000014485315389704976",
+            "extra": "mean: 118.70553434019182 usec\nrounds: 2053"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 9135.613015842097,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000013825222837660991",
+            "extra": "mean: 109.4617294171608 usec\nrounds: 2077"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 6700.250651399253,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001686514865904105",
+            "extra": "mean: 149.24814787207464 usec\nrounds: 3219"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 816.7755622770401,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00008710998492699127",
+            "extra": "mean: 1.2243265423027097 msec\nrounds: 721"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 161.9767078176464,
+            "unit": "iter/sec",
+            "range": "stddev: 0.006044064356188471",
+            "extra": "mean: 6.173727157893599 msec\nrounds: 133"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 2253563.310839981,
+            "unit": "iter/sec",
+            "range": "stddev: 3.416730477891607e-8",
+            "extra": "mean: 443.74169351703966 nsec\nrounds: 57419"
           }
         ]
       }
