@@ -428,3 +428,44 @@ def test_failed_publication_gate_is_retained(
     assert result == 1
     assert report["passed"] is False
     assert "below +0.0300" in report["failures"][0]
+
+
+def test_preflight_report_explains_passed_false(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Preflight-5 wrote passed=false with no failures and no reason."""
+    monkeypatch.setattr(runner, "git_commit", lambda _root: "e" * 40)
+    monkeypatch.setattr(
+        runner,
+        "run_seed",
+        lambda _manifest, seed, _output, _commit, _preflight: {
+            **run(seed, -0.114),
+            "preflight": True,
+        },
+    )
+    output = tmp_path / "preflight"
+    result = runner.main(
+        [str(write_manifest(tmp_path)), "--output-dir", str(output), "--preflight"]
+    )
+    report = json.loads((output / "report.json").read_text(encoding="utf-8"))
+    assert result == 0
+    assert report["passed"] is False
+    assert report["failures"] == []
+    assert report["completed"] is True
+    assert report["publication_gate"].startswith("not evaluated")
+    [seed] = report["seeds"]
+    assert seed["improvement"] == pytest.approx(-0.114)
+    assert "below the +0.0300" in report["warnings"][0]
+
+
+def test_preflight_summary_flags_self_disagreement_and_failed_runs() -> None:
+    high = run(42, 0.05)
+    high["metrics"]["judge_self_disagreement"] = 0.07
+    summary = runner.preflight_summary([high], [])
+    assert summary["completed"] is True
+    assert summary["warnings"] == [
+        f"seed 42: judge self-disagreement 0.0700 exceeds {runner.SELF_DISAGREEMENT_GATE}"
+    ]
+    failed = runner.preflight_summary([], ["seed 42: driver exited 1"])
+    assert failed["completed"] is False
+    assert failed["seeds"] == []

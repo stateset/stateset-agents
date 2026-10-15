@@ -523,6 +523,54 @@ def validate_matrix(
     }
 
 
+def preflight_summary(
+    runs: Sequence[Mapping[str, Any]], failures: Sequence[str]
+) -> dict[str, Any]:
+    """What a preflight report says instead of the publication gate.
+
+    A preflight never passes the publication gate (``passed`` stays false:
+    one seed cannot give a paired confidence interval, and preflight evidence
+    is unpublishable by design). The report therefore says why ``passed`` is
+    false, whether the run completed, the per-seed judge numbers, and
+    warnings for the signals the gate would reject.
+    """
+    seeds: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for run in runs:
+        metrics = run.get("metrics") or {}
+        baseline = float(metrics.get("baseline_score", 0.0))
+        final = float(metrics.get("final_score", 0.0))
+        disagreement = float(metrics.get("judge_self_disagreement", 0.0))
+        seed = run.get("seed")
+        seeds.append(
+            {
+                "seed": seed,
+                "baseline_score": baseline,
+                "final_score": final,
+                "improvement": final - baseline,
+                "judge_self_disagreement": disagreement,
+                "cost_usd": metrics.get("cost_usd"),
+                "wall_clock_seconds": run.get("wall_clock_seconds"),
+            }
+        )
+        if final - baseline < 0.03:
+            warnings.append(
+                f"seed {seed}: judge improvement {final - baseline:+.4f} is below "
+                "the +0.0300 the publication gate requires"
+            )
+        if disagreement > SELF_DISAGREEMENT_GATE:
+            warnings.append(
+                f"seed {seed}: judge self-disagreement {disagreement:.4f} exceeds "
+                f"{SELF_DISAGREEMENT_GATE}"
+            )
+    return {
+        "completed": not failures and bool(runs),
+        "publication_gate": "not evaluated: preflight evidence is never publishable",
+        "seeds": seeds,
+        "warnings": warnings,
+    }
+
+
 def run_seed(
     manifest: Mapping[str, Any],
     seed: int,
@@ -684,6 +732,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "preflight": args.preflight,
             "failures": failures,
         }
+        if args.preflight:
+            report.update(preflight_summary(runs, failures))
         if not failures and not args.preflight:
             try:
                 report.update(validate_matrix(runs, manifest))

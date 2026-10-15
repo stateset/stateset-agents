@@ -116,6 +116,9 @@ def _args(tmp_path: Path, **updates: Any) -> argparse.Namespace:
 
 
 class FakeReward:
+    def __init__(self, version: str | None = None) -> None:
+        self.version = version
+
     async def compute_reward(self, turns: Any, context: Any = None) -> Any:
         text = " ".join(turn.content for turn in turns if turn.role == "assistant")
         return argparse.Namespace(score=1.0 if "adapter" in text else 0.5)
@@ -1470,3 +1473,36 @@ def test_phase_rollout_reports_eval_think_rate_and_never_aborts(
         c for v in out["transcripts"].values() for r, c in v if r == "assistant"
     ]
     assert assistant == ["ok"]
+
+
+def test_reward_version_is_pinned_by_config() -> None:
+    from stateset_agents.rewards import (
+        SupportConversationReward,
+        SupportConversationRewardV3,
+    )
+
+    assert workload.DEFAULT_REWARD == "support_conversation_v2"
+    assert type(workload.support_reward()) is SupportConversationReward
+    v3 = workload.support_reward("support_conversation_v3")
+    assert isinstance(v3, SupportConversationRewardV3)
+    assert workload._default_reward_fn("support_conversation_v3").name == v3.name
+    with pytest.raises(workload.WorkloadError, match="unknown reward"):
+        workload.support_reward("support_conversation_v9")
+    config = _manifest_config("flagship_v2_manifest.json")
+    assert config["reward"] == "support_conversation_v3"
+    with pytest.raises(workload.WorkloadError, match="config.reward"):
+        workload.validate_config({**config, "reward": "support_conversation_v9"})
+    # v1 manifests keep reward v2.
+    assert "reward" not in _manifest_config("flagship_manifest.json")
+
+
+def test_v3_components_are_logged() -> None:
+    group = argparse.Namespace(
+        trajectories=[
+            argparse.Namespace(metadata={"reward_breakdown": {"long_reply_rate": 0.5}}),
+            argparse.Namespace(metadata={"reward_breakdown": {"long_reply_rate": 0.0}}),
+        ]
+    )
+    means = workload.reward_component_means([group])
+    assert means["long_reply_rate"] == 0.25
+    assert means["invented_detail_rate"] is None

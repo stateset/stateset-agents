@@ -285,6 +285,15 @@ What v2 changes, all switched on from the pinned config, so v1 configs
   History: preflight-3 failed at step 87 on an empty leading block, and
   preflight-4 at step 185 on a single stray mid-text tag, both under the
   earlier fail-closed check.
+- **`reward: "support_conversation_v3"`.** Both v2 manifests pin the
+  training reward by name (`flagship_workload.support_reward`). v1 manifests
+  have no `reward` key and keep `support_conversation_v2`. An unknown name
+  fails config validation. See "v2 preflight-5 findings and reward v3".
+- **`learning_rate: 1e-5`, `beta: 0.1`** (v1: 2e-5, 0.05). Preflight-5 moved
+  the policy far from its reference in 250 steps, into one template. Half the
+  step size and twice the KL weight slow that drift. They do not fix the
+  reward gaps by themselves (that is v3's job). Re-pin both from the next
+  preflight's KL and judge curves.
 - **`lora_target_modules`.** These are the full-attention `q/k/v/o_proj`,
   the GatedDeltaNet linear-attention `in_proj_qkv`, `in_proj_a`,
   `in_proj_b`, `in_proj_z` and `out_proj`, and the MLP `gate/up/down_proj`.
@@ -335,6 +344,73 @@ than v1. Expected time is
 ~35 min of setup and downloads, the training steps, ~10 min for the merge,
 and ~30 min for the judge. Re-pin `max_steps` and the wall-clock limit from
 the preflight's measured times before the measured matrix.
+
+### v2 preflight-5 findings and reward v3
+
+Preflight-5 (seed 42, pod terminated, $22.81 of the $32 cap, 20,583 s)
+completed every phase. But training made the policy **worse**: the Gemma 4
+judge scored the baseline 0.916 and the trained policy 0.803 (-0.113).
+Judge self-disagreement was 0.046, under the 0.05 gate. On the same eval
+transcripts the v2 rule reward went the other way, 0.636 -> 0.677, so the
+policy optimized the reward and not the rubric. Per-item, v2 agreed with
+the judge's base-versus-trained direction on 79 of 200 conversations
+(Spearman 0.01 against the judge across all 400 transcripts).
+
+The trained policy converged on one template: "Hello! Thank you for ...
+**Store Policy** ... **Next Step:** please reply with a clear photo ...",
+repeated on every turn. Judge check pass rates, baseline -> trained (per
+judge pass):
+
+| Check | Baseline | Trained | Behaviour |
+| --- | --- | --- | --- |
+| `empathy_not_formulaic` | 0.950 | 0.007 | 93% of replies open with a greeting (base 15%). 59% of conversations open every turn with the same words (base 1%) |
+| `conciseness_key_point_early` | 0.868 | 0.512 | Greeting + thanks + "I understand" before the answer |
+| `resolution_no_redundant_request` | 0.945 | 0.618 | The same photo or order-number request is repeated after the customer has answered or refused |
+| `accuracy_no_invented_details` | 0.760 | 0.515 | Made-up timeframes and channels ("photo review within 24 hours", "our support portal") |
+| `conciseness_reply_length` | 0.760 | 0.520 | 160 of 642 replies are over 120 words (base 64) |
+| `conciseness_no_repetition` | 1.000 | 0.945 | Whole sentences reused across turns |
+
+Policy accuracy rose (`accuracy_matches_policy` 0.843 -> 0.927). Nothing
+else moved by more than 0.06.
+
+Why v2 paid for this: its composite rewarded politeness keywords ("thank
+you", "please") and an order-reference bonus on every turn, and counted
+`must_acknowledge` terms only when said in the current turn. Restating
+"Order #34959", "Final Sale" and "thank you" each turn therefore scored.
+v2's repetition penalty compares whole turns, so a fixed opener with a
+reworded middle stays under its threshold. Nothing in v2 looked at length,
+invented specifics or repeated requests.
+
+`SupportConversationRewardV3` (`stateset_agents.rewards`) keeps v2 and adds
+one multiplier per regressed check (the class docstring has the
+thresholds): keyword bonuses neutralized, with `must_acknowledge` credited
+from any earlier assistant turn; a long-reply factor (> 120 words);
+formulaic-opener, boilerplate-lead, redundant-request and invented-detail
+factors; and a sentence-reuse penalty. Each adds a `<name>_rate` to the
+reward breakdown, and the trainer logs them per step. Regression cases from
+the preflight-5 transcripts are in
+`tests/fixtures/support_conversation_reward/preflight5_regressions.json`.
+
+**Offline re-score** of the 400 preflight-5 eval transcripts (no GPU):
+
+| Reward | Baseline | Trained | Per-item direction agrees with judge | Spearman vs judge |
+| --- | --- | --- | --- | --- |
+| v2 | 0.636 | 0.677 | 79/200 | 0.01 |
+| v3 | 0.625 | 0.281 | 161/200 | 0.65 |
+
+v3 barely changes the base policy's score (-0.011) and ranks the trained
+template far below it, as the judge does. It is still a rule proxy. The
+next preflight's judge score is the real test.
+
+**Preflight `report.json`.** Preflight-5's report read `"passed": false`
+with an empty `failures` list. That was expected but unexplained: a preflight
+never runs the publication gate (one seed has no paired confidence interval,
+and preflight evidence is unpublishable), so `passed` stays false. Preflight
+reports now also carry `completed` (every seed ran with no failures),
+`publication_gate: "not evaluated: ..."`, per-seed `seeds` (baseline,
+final, improvement, judge self-disagreement, cost, wall clock) and
+`warnings`. A warning is listed when a seed's judge improvement is below the
+gate's +0.03 or its self-disagreement is over 0.05.
 
 ### v2 risks
 

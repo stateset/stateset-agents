@@ -246,6 +246,10 @@ def validate_config(config: Mapping[str, Any]) -> None:
         or not all(isinstance(key, str) and key for key in template_kwargs)
     ):
         raise WorkloadError("config.chat_template_kwargs must be an object")
+    if config.get("reward", DEFAULT_REWARD) not in REWARD_VERSIONS:
+        raise WorkloadError(
+            f"config.reward must be one of {', '.join(REWARD_VERSIONS)}"
+        )
     weighting = config.get("episode_weighting", "per_turn")
     if weighting not in EPISODE_WEIGHTINGS:
         raise WorkloadError(
@@ -765,7 +769,16 @@ def _turn_field(turn: Any, name: str) -> Any:
     return turn.get(name) if isinstance(turn, Mapping) else getattr(turn, name, None)
 
 
-def support_reward() -> Any:
+#: Training rewards a manifest can pin with ``config.reward``. v1 manifests
+#: omit it and keep v2; flagship v2 manifests pin v3 (see FLAGSHIP.md).
+REWARD_VERSIONS: tuple[str, ...] = (
+    "support_conversation_v2",
+    "support_conversation_v3",
+)
+DEFAULT_REWARD = "support_conversation_v2"
+
+
+def support_reward(version: str = DEFAULT_REWARD) -> Any:
     """The training reward: conversation-level ``SupportConversationReward``.
 
     v1 averaged ``SupportRewardComposite`` over assistant turns and was
@@ -778,8 +791,17 @@ def support_reward() -> Any:
     """
     from stateset_agents.rewards.support_conversation_reward import (
         SupportConversationReward,
+        SupportConversationRewardV3,
     )
 
+    if version == "support_conversation_v3":
+        # v3 (flagship v2 preflight-5): also penalizes over-long replies,
+        # formulaic openers, boilerplate preambles, redundant requests,
+        # invented specifics and reused sentences, and stops paying for
+        # repeated politeness/order-reference/acknowledgement keywords.
+        return SupportConversationRewardV3()
+    if version != "support_conversation_v2":
+        raise WorkloadError(f"unknown reward {version!r}")
     return SupportConversationReward()
 
 
@@ -792,6 +814,13 @@ REWARD_COMPONENT_LOG_KEYS: dict[str, str] = {
     "placeholder_rate": "placeholder_rate",
     "must_avoid_rate": "must_avoid_rate",
     "unresponsive_rate": "unresponsive_rate",
+    # v3 only (None under v2)
+    "long_reply_rate": "long_reply_rate",
+    "formulaic_opener_rate": "formulaic_opener_rate",
+    "boilerplate_lead_rate": "boilerplate_lead_rate",
+    "redundant_request_rate": "redundant_request_rate",
+    "invented_detail_rate": "invented_detail_rate",
+    "sentence_reuse_rate": "sentence_reuse_rate",
 }
 
 
@@ -1268,8 +1297,8 @@ def _default_snapshot(model: str, revision: str | None) -> str:
     return str(path)
 
 
-def _default_reward_fn() -> Any:
-    return support_reward()
+def _default_reward_fn(version: str = DEFAULT_REWARD) -> Any:
+    return support_reward(version)
 
 
 def _default_hardware() -> dict[str, Any]:
@@ -1507,7 +1536,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "final_eval": final_out.get("think"),
         "eval_flag_rate": EVAL_THINK_FLAG_RATE,
     }
-    reward_fn = deps.reward_fn()
+    reward_fn = deps.reward_fn(str(run_config.get("reward", DEFAULT_REWARD)))
     metrics = {
         "baseline_score": _summary_number(baseline_summary, "mean_score", "baseline"),
         "final_score": _summary_number(final_summary, "mean_score", "final"),
@@ -1996,7 +2025,7 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
             environment=environment,
-            reward_fn=support_reward(),
+            reward_fn=support_reward(str(config.get("reward", DEFAULT_REWARD))),
             config=TrainingConfig(**training_config_kwargs(payload, config)),
         )
         await trainer.initialize()

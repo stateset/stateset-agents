@@ -59,6 +59,7 @@ V2_ONLY_CONFIG_KEYS = {
     "think_violation_window",
     "max_think_violation_rate",
     "max_think_violations",
+    "reward",
 }
 QWEN35_LINEAR_ATTENTION = {"in_proj_qkv", "in_proj_a", "in_proj_b", "in_proj_z"}
 #: Catalog price the manifest caps are sized for (H100 80GB SECURE).
@@ -106,11 +107,19 @@ def test_v2_config_is_v1_plus_the_v2_knobs(name: str) -> None:
     assert v2["trust_remote_code"] is False
     assert v2["episode_weighting"] == "per_episode"
     assert v2["disable_dropout"] is True
+    # Reward v3 plus a slower, more anchored update after preflight-5's
+    # judge regression (0.916 -> 0.803 while KL rose to ~0.12).
+    assert v2["reward"] == "support_conversation_v3"
+    assert v2["learning_rate"] == 1e-05 and v1["learning_rate"] == 2e-05
+    assert v2["beta"] == 0.1 and v1["beta"] == 0.05
+    assert "reward" not in v1
     changed = {k for k in v1 if v1[k] != v2[k]}
     assert changed <= {
         "lora_target_modules",
         "max_wall_clock_seconds",
         "max_cost_usd_per_seed",
+        "learning_rate",
+        "beta",
     }
     assert set(v2) - set(v1) == V2_ONLY_CONFIG_KEYS
 
