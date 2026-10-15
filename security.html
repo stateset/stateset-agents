@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Security &mdash; StateSet Agents 0.65.0 documentation</title>
+  <title>Security &mdash; StateSet Agents 0.66.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=93c5f479"></script>
+      <script src="_static/documentation_options.js?v=a5c2ae8b"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -178,21 +178,14 @@
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="core-concepts.html">Core Concepts</a></li>
-<li class="toctree-l1"><a class="reference internal" href="agents.html">Agents</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="agents.html#generation-fidelity">Generation fidelity</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="environments.html#conversationenvironment-system-prompt-and-episode-end">ConversationEnvironment system prompt and episode end</a></li>
-</ul>
-</li>
+<li class="toctree-l1"><a class="reference internal" href="agents.html">Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
 <li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
 <li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
 <li class="toctree-l1 current"><a class="current reference internal" href="#">Security</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="#secret-configuration">Secret configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#gateway-authentication">Gateway authentication</a></li>
-<li class="toctree-l2"><a class="reference internal" href="#gateway-isolation-settings">Gateway isolation settings</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#security-event-retention">Security event retention</a></li>
 <li class="toctree-l2"><a class="reference internal" href="#scanner-evidence-and-ci">Scanner evidence and CI</a></li>
 </ul>
@@ -268,17 +261,6 @@ are held in memory; <code class="docutils literal notranslate"><span class="pre"
 <li><p><cite>API_KEYS</cite></p></li>
 <li><p><cite>API_JWT_SECRET</cite> (required in production)</p></li>
 </ul>
-</section>
-<section id="gateway-isolation-settings">
-<h2>Gateway isolation settings<a class="headerlink" href="#gateway-isolation-settings" title="Link to this heading"></a></h2>
-<p>Agents and training-lab experiments are private to their creator (admins see
-all); training jobs write only under <code class="docutils literal notranslate"><span class="pre">API_TRAINING_OUTPUT_ROOT</span></code> and resume
-only from that root or from a job id the caller can access. Client-named
-models load real weights only with <code class="docutils literal notranslate"><span class="pre">API_ALLOW_EXTERNAL_MODELS=true</span></code> (in every
-environment), optionally limited by <code class="docutils literal notranslate"><span class="pre">API_MODEL_ALLOWLIST</span></code>, and only for the
-<code class="docutils literal notranslate"><span class="pre">trainer</span></code> or <code class="docutils literal notranslate"><span class="pre">admin</span></code> role. <code class="docutils literal notranslate"><span class="pre">/metrics</span></code> requires authentication unless
-<code class="docutils literal notranslate"><span class="pre">API_PUBLIC_METRICS=true</span></code>; training-lab WebSocket query-string credentials
-require <code class="docutils literal notranslate"><span class="pre">API_LAB_WS_QUERY_TOKEN=true</span></code>. See <code class="docutils literal notranslate"><span class="pre">SECURITY.md</span></code> for details.</p>
 </section>
 <section id="security-event-retention">
 <h2>Security event retention<a class="headerlink" href="#security-event-retention" title="Link to this heading"></a></h2>

@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Agents &mdash; StateSet Agents 0.65.0 documentation</title>
+  <title>Agents &mdash; StateSet Agents 0.66.1 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=93c5f479"></script>
+      <script src="_static/documentation_options.js?v=a5c2ae8b"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -178,21 +178,14 @@
 <p class="caption" role="heading"><span class="caption-text">User Guide</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="core-concepts.html">Core Concepts</a></li>
-<li class="toctree-l1 current"><a class="current reference internal" href="#">Agents</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="#generation-fidelity">Generation fidelity</a></li>
-</ul>
-</li>
-<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a><ul>
-<li class="toctree-l2"><a class="reference internal" href="environments.html#conversationenvironment-system-prompt-and-episode-end">ConversationEnvironment system prompt and episode end</a></li>
-</ul>
-</li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">Agents</a></li>
+<li class="toctree-l1"><a class="reference internal" href="environments.html">Environments</a></li>
 <li class="toctree-l1"><a class="reference internal" href="rewards.html">Rewards</a></li>
 <li class="toctree-l1"><a class="reference internal" href="training.html">Training</a></li>
 <li class="toctree-l1"><a class="reference internal" href="monitoring.html">Monitoring</a></li>
 <li class="toctree-l1"><a class="reference internal" href="security.html">Security</a><ul>
 <li class="toctree-l2"><a class="reference internal" href="security.html#secret-configuration">Secret configuration</a></li>
 <li class="toctree-l2"><a class="reference internal" href="security.html#gateway-authentication">Gateway authentication</a></li>
-<li class="toctree-l2"><a class="reference internal" href="security.html#gateway-isolation-settings">Gateway isolation settings</a></li>
 <li class="toctree-l2"><a class="reference internal" href="security.html#security-event-retention">Security event retention</a></li>
 <li class="toctree-l2"><a class="reference internal" href="security.html#scanner-evidence-and-ci">Scanner evidence and CI</a></li>
 </ul>
@@ -257,25 +250,6 @@
 <li><p><cite>stateset_agents.core.agent.MultiTurnAgent</cite></p></li>
 <li><p><cite>stateset_agents.core.agent.ToolAgent</cite></p></li>
 </ul>
-<section id="generation-fidelity">
-<h2>Generation fidelity<a class="headerlink" href="#generation-fidelity" title="Link to this heading"></a></h2>
-<p><code class="docutils literal notranslate"><span class="pre">MultiTurnAgent</span></code> returns exactly the text the model sampled:</p>
-<ul class="simple">
-<li><p><code class="docutils literal notranslate"><span class="pre">AgentConfig.stop_sequences</span></code> (default <code class="docutils literal notranslate"><span class="pre">[]</span></code>) lists explicit stop strings;
-text and recorded <code class="docutils literal notranslate"><span class="pre">token_ids</span></code> are truncated at the same token boundary.
-<code class="docutils literal notranslate"><span class="pre">LEGACY_STOP_SEQUENCES</span></code> restores the old <code class="docutils literal notranslate"><span class="pre">&quot;User:&quot;</span></code>/<code class="docutils literal notranslate"><span class="pre">&quot;System:&quot;</span></code>/blank
-line stops.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">AgentConfig.enable_persona_hints</span></code> (default <code class="docutils literal notranslate"><span class="pre">False</span></code>) appends canned
-sentences in <code class="docutils literal notranslate"><span class="pre">generate_response</span></code> only; rollout turns never get them.</p></li>
-<li><p><code class="docutils literal notranslate"><span class="pre">AgentConfig.top_k</span></code> accepts <code class="docutils literal notranslate"><span class="pre">0</span></code> or <code class="docutils literal notranslate"><span class="pre">None</span></code> to disable top-k filtering.</p></li>
-<li><p>System prompt precedence: a system message already in the conversation
-(for example the environment’s <code class="docutils literal notranslate"><span class="pre">get_initial_prompt</span></code> turn) wins; the
-agent’s <code class="docutils literal notranslate"><span class="pre">AgentConfig.system_prompt</span></code> is used only when the conversation has
-no system message.</p></li>
-</ul>
-<p>See <code class="docutils literal notranslate"><span class="pre">docs/OBJECTIVES.md</span></code> (“Rollout text is exactly what the policy
-sampled”) for how this ties into the token-path loss.</p>
-</section>
 </section>
 
 

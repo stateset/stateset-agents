@@ -20,18 +20,6 @@ Gateway auth is controlled via environment variables such as:
 - `API_KEYS`
 - `API_JWT_SECRET` (required in production)
 
-Gateway isolation settings
---------------------------
-
-Agents and training-lab experiments are private to their creator (admins see
-all); training jobs write only under ``API_TRAINING_OUTPUT_ROOT`` and resume
-only from that root or from a job id the caller can access. Client-named
-models load real weights only with ``API_ALLOW_EXTERNAL_MODELS=true`` (in every
-environment), optionally limited by ``API_MODEL_ALLOWLIST``, and only for the
-``trainer`` or ``admin`` role. ``/metrics`` requires authentication unless
-``API_PUBLIC_METRICS=true``; training-lab WebSocket query-string credentials
-require ``API_LAB_WS_QUERY_TOKEN=true``. See ``SECURITY.md`` for details.
-
 Security event retention
 ------------------------
 
