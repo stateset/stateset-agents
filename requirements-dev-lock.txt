@@ -651,7 +651,7 @@ wandb==0.28.1
     # via stateset-agents (pyproject.toml)
 wcmatch==8.5.2
     # via semgrep
-wheel==0.47.0
+wheel==0.48.0
     # via pip-tools
 wrapt==1.17.3
     # via
