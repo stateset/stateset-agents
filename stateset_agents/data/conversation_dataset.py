@@ -6,6 +6,7 @@ for training offline RL algorithms on conversation data.
 """
 
 import asyncio
+import dataclasses
 import json
 import logging
 import random
@@ -518,8 +519,9 @@ class ConversationDataset(TorchDataset):
         else:
             raise ValueError(f"Unknown normalization method: {method}")
 
-        # Apply normalization
+        # Apply normalization (raw totals stay available for raw-scale filters)
         for traj in self.trajectories:
+            traj.metadata.setdefault("raw_total_reward", float(traj.total_reward))
             traj.turn_rewards = [float(normalize(r)) for r in traj.turn_rewards]
             traj.total_reward = sum(traj.turn_rewards)
 
@@ -539,12 +541,30 @@ class ConversationDataset(TorchDataset):
         Returns:
             New ConversationDataset with filtered trajectories
         """
-        filtered = [t for t in self.trajectories if t.total_reward >= min_reward]
+        filtered = [
+            t
+            for t in self.trajectories
+            if t.metadata.get("raw_total_reward", t.total_reward) >= min_reward
+        ]
         logger.info(
             f"Filtered from {len(self.trajectories)} to {len(filtered)} "
             f"trajectories (min_reward={min_reward})"
         )
-        return ConversationDataset(filtered, self.config, self.embedding_cache)
+        return self._derive(filtered)
+
+    def _derive(self, trajectories: list[TrajectoryData]) -> "ConversationDataset":
+        """A subset sharing this dataset's already-processed trajectories.
+
+        Normalization and returns are not re-applied: re-running them mutated
+        the shared objects (changing the parent) and rescaled each subset by
+        its own statistics.
+        """
+        config = dataclasses.replace(
+            self.config, normalize_rewards=False, compute_returns=False
+        )
+        derived = ConversationDataset(trajectories, config, self.embedding_cache)
+        derived.config = self.config
+        return derived
 
     def filter_by_length(
         self,
@@ -560,7 +580,7 @@ class ConversationDataset(TorchDataset):
         if max_length is not None:
             filtered = [t for t in filtered if len(t.turns) <= max_length]
 
-        return ConversationDataset(filtered, self.config, self.embedding_cache)
+        return self._derive(filtered)
 
     def split(
         self,
@@ -572,17 +592,15 @@ class ConversationDataset(TorchDataset):
         trajectories = list(self.trajectories)
 
         if shuffle:
-            if seed is not None:
-                random.seed(seed)
-            random.shuffle(trajectories)
+            random.Random(seed).shuffle(trajectories)
 
         split_idx = int(len(trajectories) * train_ratio)
         train_trajectories = trajectories[:split_idx]
         val_trajectories = trajectories[split_idx:]
 
         return (
-            ConversationDataset(train_trajectories, self.config, self.embedding_cache),
-            ConversationDataset(val_trajectories, self.config, self.embedding_cache),
+            self._derive(train_trajectories),
+            self._derive(val_trajectories),
         )
 
     def to_offline_rl_format(self) -> dict[str, np.ndarray]:

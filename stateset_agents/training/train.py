@@ -11,7 +11,7 @@ from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
 
-from .config import TrainingConfig, TrainingProfile
+from .configuration import resolve_training_config as _build_training_config
 from .diagnostics import DiagnosticsMonitor
 from .trainer import MultiTurnGRPOTrainer
 
@@ -53,7 +53,9 @@ async def train(
     dataset: Any | None = None,
     dataset_path: str | None = None,
     uncertainty_weighted: bool = False,
-    **kwargs,
+    objective: str | None = None,
+    objective_overrides: dict[str, Any] | None = None,
+    **kwargs: Any,
 ) -> Agent:
     """
     High-level training function for agents
@@ -73,11 +75,40 @@ async def train(
         dataset_path: Path to JSONL dataset (loaded automatically if dataset is None)
         uncertainty_weighted: Wrap reward_fn with Bayesian uncertainty estimates
             to down-weight low-confidence rewards during training
-        **kwargs: Additional arguments
+        objective: Policy objective preset name (e.g. "dapo", "gspo", "cispo");
+            see ``stateset_agents.training.objectives.OBJECTIVES``
+        objective_overrides: Field overrides for the selected objective
+        **kwargs: ``TrainingConfig`` fields (e.g. ``learning_rate=1e-5``),
+            merged with ``config_overrides``. Unknown names raise ``TypeError``.
 
     Returns:
         Trained agent
     """
+
+    valid_modes = {mode.value for mode in TrainingMode}
+    if training_mode not in valid_modes:
+        raise ValueError(
+            f"training_mode must be one of {sorted(valid_modes)}, "
+            f"got {training_mode!r}"
+        )
+
+    extra_config = dict(kwargs)
+    agent_model = getattr(getattr(agent, "config", None), "model_name", None)
+    if (
+        isinstance(agent_model, str)
+        and "model_name" not in (config_overrides or {})
+        and "model_name" not in extra_config
+    ):
+        extra_config["model_name"] = agent_model
+    config = _build_training_config(
+        profile=profile,
+        num_episodes=num_episodes,
+        config_overrides=config_overrides,
+        resume_from_checkpoint=resume_from_checkpoint,
+        objective=objective,
+        objective_overrides=objective_overrides,
+        extra_config=extra_config,
+    )
 
     logger.info(f"Starting training with profile: {profile}")
 
@@ -89,17 +120,6 @@ async def train(
             training_mode = (
                 "multi_turn" if isinstance(agent, MultiTurnAgent) else "single_turn"
             )
-
-    # Create training configuration
-    merged_overrides = dict(config_overrides or {})
-    if resume_from_checkpoint is not None:
-        merged_overrides["resume_from_checkpoint"] = resume_from_checkpoint
-
-    config = TrainingConfig.from_profile(
-        profile=TrainingProfile(profile),
-        num_episodes=num_episodes,
-        **merged_overrides,
-    )
 
     # Set up reward function
     if reward_fn is None:

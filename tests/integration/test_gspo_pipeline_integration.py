@@ -71,6 +71,7 @@ async def test_pipeline_with_composite_reward_completes():
         normalize_weights=True,
     )
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=2,
         max_steps_per_episode=3,
         num_generations=1,
@@ -86,7 +87,12 @@ async def test_pipeline_with_composite_reward_completes():
     result = await trainer.train()
 
     assert result is agent
-    assert trainer.global_step >= 1
+    # The stub's loss is disconnected from its optimizer parameters. Running
+    # episodes must not fabricate optimizer or scheduler progress.
+    assert trainer.global_step == 0
+    assert trainer.optimizer.state_dict()["state"] == {}
+    assert trainer.lr_scheduler.last_epoch == 0
+    assert trainer.current_epoch == 1
 
 
 @pytest.mark.asyncio
@@ -148,6 +154,7 @@ async def test_checkpoint_path_resolution_and_directory_created(tmp_path):
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=1,
         max_steps_per_episode=2,
         num_generations=1,
@@ -175,6 +182,7 @@ async def test_pipeline_stable_across_multiple_episodes():
     env = ConversationEnvironment(scenarios=_customer_scenarios(3), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=3,
         max_steps_per_episode=2,
         num_generations=1,
@@ -234,6 +242,7 @@ async def test_training_config_bf16_false_runs_on_cpu_backend():
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
+        allow_sequence_fallback=True,
         num_episodes=1,
         max_steps_per_episode=2,
         num_generations=1,
@@ -330,7 +339,11 @@ async def test_trainer_initialize_is_idempotent():
     env = ConversationEnvironment(scenarios=_customer_scenarios(1), max_turns=2)
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
-        num_episodes=1, max_steps_per_episode=2, num_generations=1, bf16=False
+        allow_sequence_fallback=True,
+        num_episodes=1,
+        max_steps_per_episode=2,
+        num_generations=1,
+        bf16=False,
     )
     trainer = SingleTurnGRPOTrainer(
         agent=agent, environment=env, reward_fn=reward_fn, config=config

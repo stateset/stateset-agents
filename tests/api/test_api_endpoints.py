@@ -46,13 +46,13 @@ class TestAPIEndpoints:
 
     @pytest.mark.asyncio
     async def test_health_endpoint(self, async_client):
-        """Test the health check endpoint."""
+        """An app without lifespan startup has no registered dependency checks."""
         response = await async_client.get("/health")
 
-        assert response.status_code == 200
+        assert response.status_code == 503
         data = response.json()
         assert "status" in data
-        assert data["status"] == "healthy"
+        assert data["status"] == "unhealthy"
 
     @pytest.mark.asyncio
     async def test_root_endpoint(self, async_client):

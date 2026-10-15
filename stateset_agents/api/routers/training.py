@@ -5,9 +5,9 @@ API endpoints for training job management.
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from ..dependencies import (
@@ -49,6 +49,15 @@ class TrainingJobDetail(BaseModel):
     created_at: datetime = Field(..., description="Creation timestamp")
     started_at: datetime | None = Field(None, description="Start timestamp")
     completed_at: datetime | None = Field(None, description="Completion timestamp")
+    completion_scope: (
+        Literal[
+            "final_episode_reported", "partial_episode_progress", "no_episode_progress"
+        ]
+        | None
+    ) = Field(
+        None,
+        description="Episode progress observed when the trainer returned normally; not proof of optimizer updates or saved artifacts",
+    )
     progress: float = Field(0.0, ge=0.0, le=100.0, description="Progress percentage")
     current_episode: int = Field(0, description="Current training episode")
     total_episodes: int = Field(0, description="Total episodes")
@@ -73,7 +82,9 @@ class TrainingCancelResponse(BaseModel):
     """Response for training cancellation."""
 
     training_id: str = Field(..., description="Training job identifier")
-    status: str = Field(..., description="New status (cancelled)")
+    status: str = Field(
+        ..., description="Current job status after cancellation request"
+    )
     message: str = Field(..., description="Status message")
 
 
@@ -96,13 +107,22 @@ class TrainingCancelResponse(BaseModel):
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
         403: {"description": "Insufficient permissions", "model": ErrorResponse},
+        429: {
+            "description": "Training concurrency limit reached",
+            "model": ErrorResponse,
+        },
         500: {"description": "Internal server error", "model": ErrorResponse},
+        503: {
+            "description": "Training service is shutting down",
+            "model": ErrorResponse,
+        },
     },
 )
 async def start_training(
     request: TrainingRequest,
     svc: TrainingService = Depends(get_training_service),
     user: AuthenticatedUser = Depends(require_role("trainer")),
+    idempotency_key: str | None = Header(None, max_length=256),
 ) -> TrainingResponse:
     """
     Start a new training job.
@@ -131,12 +151,25 @@ async def start_training(
                 detail="environment_scenarios must contain at least one scenario",
             )
 
-        training_id = await svc.start_training(request, user_id=user.user_id)
+        if idempotency_key is not None:
+            training_id = await svc.start_training(
+                request, user_id=user.user_id, idempotency_key=idempotency_key
+            )
+        else:
+            training_id = await svc.start_training(request, user_id=user.user_id)
 
+        persisted = (
+            svc.get_training_status(training_id, user_id=user.user_id)
+            if svc.queue is not None
+            else None
+        )
+        accepted_status = (
+            persisted["status"] if isinstance(persisted, dict) else "running"
+        )
         return TrainingResponse(
             training_id=training_id,
-            status="running",
-            message="Training started successfully",
+            status=accepted_status,
+            message="Training request accepted",
             estimated_time=request.num_episodes * 30,  # Rough estimate: 30s per episode
         )
 
@@ -207,6 +240,7 @@ async def list_training_jobs(
             created_at=job.get("created_at", datetime.utcnow()),
             started_at=job.get("started_at"),
             completed_at=job.get("completed_at"),
+            completion_scope=job.get("completion_scope"),
             progress=job.get("progress", 0.0),
             current_episode=job.get("current_episode", 0),
             total_episodes=job.get("total_episodes", 0),
@@ -267,6 +301,7 @@ async def get_training_status(
         created_at=job.get("created_at", datetime.utcnow()),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
+        completion_scope=job.get("completion_scope"),
         progress=job.get("progress", 0.0),
         current_episode=job.get("current_episode", 0),
         total_episodes=job.get("total_episodes", 0),
@@ -282,7 +317,10 @@ async def get_training_status(
     summary="Cancel Training",
     description="Cancel a running training job.",
     responses={
-        200: {"description": "Training cancelled", "model": TrainingCancelResponse},
+        200: {
+            "description": "Cancellation requested or job already terminal",
+            "model": TrainingCancelResponse,
+        },
         401: {"description": "Authentication required", "model": ErrorResponse},
         403: {"description": "Insufficient permissions", "model": ErrorResponse},
         404: {"description": "Training job not found", "model": ErrorResponse},
@@ -296,7 +334,8 @@ async def cancel_training(
     """
     Cancel a running training job.
 
-    Requires the 'trainer' role. Only running jobs can be cancelled.
+    Requires the 'trainer' role. Active jobs receive a cancellation request;
+    terminal jobs retain their existing result.
 
     Args:
         training_id: The training job's unique identifier.
@@ -308,16 +347,20 @@ async def cancel_training(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    job = svc.get_training_status(training_id, user_id=user.user_id)
-
-    if not job:
-        raise TrainingJobNotFoundError(training_id)
-
     if not svc.cancel_training(training_id, user_id=user.user_id):
         raise TrainingJobNotFoundError(training_id)
 
+    # Status reads are snapshots: fetch the result after requesting cancellation.
+    job = svc.get_training_status(training_id, user_id=user.user_id)
+    if not job:
+        raise TrainingJobNotFoundError(training_id)
+    status = job["status"]
     return TrainingCancelResponse(
         training_id=training_id,
-        status="cancelled",
-        message="Training job cancelled successfully",
+        status=status,
+        message=(
+            "Cancellation requested; training is still stopping"
+            if status == "cancelling"
+            else f"Training job is already {status}"
+        ),
     )

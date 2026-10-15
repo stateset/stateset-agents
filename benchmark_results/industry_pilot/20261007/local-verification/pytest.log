@@ -1,0 +1,731 @@
+bringing up nodes...
+bringing up nodes...
+
+........................................................................ [  1%]
+........................................................................ [  2%]
+........................................................................ [  3%]
+........................................................................ [  4%]
+........................................................................ [  5%]
+........................................................................ [  7%]
+........................................................................ [  8%]
+........................................................................ [  9%]
+........................................................................ [ 10%]
+........................................................................ [ 11%]
+........................................................................ [ 12%]
+........................................................................ [ 14%]
+........................................................................ [ 15%]
+........................................................................ [ 16%]
+........................................................................ [ 17%]
+........................................................................ [ 18%]
+........................................................................ [ 20%]
+........................................................................ [ 21%]
+........................................................................ [ 22%]
+........................................................................ [ 23%]
+........................................................................ [ 24%]
+........................................................................ [ 25%]
+........................................................................ [ 27%]
+........................................................................ [ 28%]
+........................................................................ [ 29%]
+........................................................................ [ 30%]
+........................................................................ [ 31%]
+........................................................................ [ 32%]
+........................................................................ [ 34%]
+............................................s........................... [ 35%]
+........................................................................ [ 36%]
+........................................................................ [ 37%]
+........................................................................ [ 38%]
+........................................................................ [ 40%]
+........................................................................ [ 41%]
+........................................................................ [ 42%]
+........................................................................ [ 43%]
+........................................................................ [ 44%]
+........................................................................ [ 45%]
+........................................................................ [ 47%]
+........................................................................ [ 48%]
+........................................................................ [ 49%]
+........................................................................ [ 50%]
+........................................................................ [ 51%]
+........................................................................ [ 53%]
+........................................................................ [ 54%]
+....................................................................ssss [ 55%]
+ss.....s................................................................ [ 56%]
+........................................................................ [ 57%]
+........................................................................ [ 58%]
+........................................................................ [ 60%]
+........................................................................ [ 61%]
+........................................................................ [ 62%]
+.....................................ss..ss............................. [ 63%]
+........................................................................ [ 64%]
+........................................................................ [ 65%]
+........................................................................ [ 67%]
+........................................................................ [ 68%]
+........................................................................ [ 69%]
+........................................................................ [ 70%]
+........................................................................ [ 71%]
+........................................................................ [ 73%]
+........................................................................ [ 74%]
+........................................................................ [ 75%]
+........................................................................ [ 76%]
+........................................................................ [ 77%]
+........................................................................ [ 78%]
+........................................................................ [ 80%]
+........................................................................ [ 81%]
+........................................................................ [ 82%]
+........................................................................ [ 83%]
+........................................................................ [ 84%]
+.........s.............................................................. [ 86%]
+........................................................................ [ 87%]
+........................................................................ [ 88%]
+.............s.......................................................... [ 89%]
+........................................................................ [ 90%]
+........................................................................ [ 91%]
+........................................................................ [ 93%]
+........................................................................ [ 94%]
+........................................................................ [ 95%]
+........................................................................ [ 96%]
+.............s.s....................s................................... [ 97%]
+........................................................................ [ 98%]
+........................................................./home/dom/stateset-agents/.venv/lib/python3.12/site-packages/pytest_benchmark/logger.py:44: PytestBenchmarkWarning: Benchmarks are automatically disabled because xdist plugin is active. Benchmarks cannot be performed reliably in a parallelized environment.
+  warner(PytestBenchmarkWarning(text))
+......          [100%]
+=============================== warnings summary ===============================
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+tests/unit/test_intelligent_orchestrator.py:13
+  /tmp/stateset-industry-evaluation/tests/unit/test_intelligent_orchestrator.py:13: DeprecationWarning: stateset_agents.core.intelligent_orchestrator has moved to stateset_agents.experimental.intelligent_orchestrator; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.intelligent_orchestrator import (
+
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+tests/unit/test_multi_agent_coordination.py:8
+  /tmp/stateset-industry-evaluation/tests/unit/test_multi_agent_coordination.py:8: DeprecationWarning: stateset_agents.core.multi_agent_coordination has moved to stateset_agents.experimental.multi_agent_coordination; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.multi_agent_coordination import (
+
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+tests/unit/test_multimodal_processing.py:14
+  /tmp/stateset-industry-evaluation/tests/unit/test_multimodal_processing.py:14: DeprecationWarning: stateset_agents.core.multimodal_processing has moved to stateset_agents.experimental.multimodal_processing; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.multimodal_processing import (
+
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+tests/unit/test_new_features.py:45
+  /tmp/stateset-industry-evaluation/tests/unit/test_new_features.py:45: DeprecationWarning: stateset_agents.core.few_shot_adaptation has moved to stateset_agents.experimental.few_shot_adaptation; the old import path is deprecated and will be removed in a future release.
+    from stateset_agents.core.few_shot_adaptation import (
+
+tests/api/test_api_v1.py: 11 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/v1.py:315: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+tests/api/test_api_v1.py: 100 warnings
+tests/api/test_routers.py: 8 warnings
+tests/api/test_api_endpoints.py: 4 warnings
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/pydantic/main.py:263: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+
+tests/api/test_api_v1.py: 16 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/v1.py:397: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow(),
+
+tests/api/test_api_v1.py: 46 warnings
+tests/api/test_comprehensive_coverage.py: 1 warning
+tests/api/test_routers.py: 8 warnings
+tests/api/test_api_endpoints.py: 7 warnings
+tests/api/test_openai_compat_endpoint.py: 3 warnings
+tests/api/test_messages_endpoint.py: 3 warnings
+tests/api/test_training_lab_limits.py: 1 warning
+tests/api/test_training_lab_auth.py: 2 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/errors.py:370: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+tests/api/test_comprehensive_coverage.py::TestMetricsMiddleware::test_api_metrics_recording
+tests/api/test_comprehensive_coverage.py::TestMetricsMiddleware::test_api_metrics_rate_limit_tracking
+  /tmp/stateset-industry-evaluation/stateset_agents/api/middleware.py:639: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat(),
+
+tests/api/test_comprehensive_coverage.py: 1 warning
+tests/api/test_routers.py: 9 warnings
+tests/api/test_api_endpoints.py: 1 warning
+  /tmp/stateset-industry-evaluation/stateset_agents/api/errors.py:133: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+tests/api/test_comprehensive_coverage.py::TestAPIIntegration::test_health_endpoint
+tests/api/test_routers.py::TestMetricsEndpoints::test_health_check
+tests/api/test_api_endpoints.py::TestAPIEndpoints::test_health_endpoint
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/metrics.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    timestamp=datetime.utcnow(),
+
+tests/unit/test_intelligent_orchestrator.py::TestIntelligentOrchestrator::test_module_reexports_split_models
+  /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/importlib/__init__.py:90: DeprecationWarning: stateset_agents.core.intelligent_orchestrator_models has moved to stateset_agents.experimental.intelligent_orchestrator_models; the old import path is deprecated and will be removed in a future release.
+    return _bootstrap._gcd_import(name[level:], package, level)
+
+tests/api/test_persistence.py: 60 warnings
+  <string>:4: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+
+tests/api/test_persistence.py: 60 warnings
+  <string>:5: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+
+tests/api/test_persistence.py: 39 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:229: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.created_at = datetime.utcnow()
+
+tests/api/test_persistence.py: 39 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:230: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.updated_at = datetime.utcnow()
+
+tests/api/test_persistence.py::TestInMemoryRepository::test_update
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:243: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.updated_at = datetime.utcnow()
+
+tests/api/test_persistence.py::TestSQLiteRepository::test_create_and_get
+tests/api/test_persistence.py::TestSQLiteRepository::test_update
+tests/api/test_persistence.py::TestSQLiteRepository::test_delete
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:370: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.created_at = datetime.utcnow()
+
+tests/api/test_persistence.py::TestSQLiteRepository::test_create_and_get
+tests/api/test_persistence.py::TestSQLiteRepository::test_update
+tests/api/test_persistence.py::TestSQLiteRepository::test_delete
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_list
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+tests/api/test_persistence.py::TestSQLiteRepository::test_count
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:371: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.updated_at = datetime.utcnow()
+
+tests/api/test_persistence.py::TestSQLiteRepository::test_update
+  /tmp/stateset-industry-evaluation/stateset_agents/api/persistence.py:419: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    entity.updated_at = datetime.utcnow()
+
+tests/api/test_resilience.py: 13 warnings
+tests/api/test_grpo_handlers.py: 6 warnings
+  <string>:7: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+
+tests/api/test_routers.py::TestAgentEndpoints::test_create_agent_success
+tests/api/test_routers.py::TestAgentEndpoints::test_create_agent_with_system_prompt
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/agents.py:187: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created_at=datetime.utcnow(),
+
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+tests/api/test_routers.py::TestAgentEndpoints::test_list_agents
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/agents.py:251: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created_at=getattr(agent, "created_at", datetime.utcnow()),
+
+tests/api/test_routers.py::TestConversationEndpoints::test_conversation_success
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+  /tmp/stateset-industry-evaluation/stateset_agents/api/services/agent_service.py:56: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "created_at": datetime.utcnow(),
+
+tests/api/test_routers.py::TestConversationEndpoints::test_conversation_success
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_tracks_conversations
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+tests/unit/test_agent_service.py::test_agent_service_merges_full_history
+  /tmp/stateset-industry-evaluation/stateset_agents/api/services/agent_service.py:334: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    conversation["last_message_at"] = datetime.utcnow()
+
+tests/api/test_routers.py::TestMetricsEndpoints::test_health_check_components
+  /tmp/stateset-industry-evaluation/stateset_agents/api/routers/metrics.py:142: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    cached_response["timestamp"] = datetime.utcnow()
+
+tests/api/test_observability.py: 11 warnings
+  /tmp/stateset-industry-evaluation/stateset_agents/api/observability.py:49: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+tests/api/test_observability.py: 9 warnings
+tests/unit/test_distributed_rollouts.py: 18 warnings
+tests/unit/test_comprehensive.py: 70 warnings
+tests/unit/test_value_function_comprehensive.py: 29 warnings
+tests/unit/test_critical_fixes.py: 33 warnings
+tests/unit/test_glm5_2_config.py: 23 warnings
+tests/unit/test_reward_comprehensive.py: 23 warnings
+tests/unit/test_qwen3_8_config.py: 23 warnings
+tests/unit/test_async_rollouts.py: 9 warnings
+tests/unit/test_muse_glimmer_config.py: 23 warnings
+tests/unit/test_nemotron_3_5_config.py: 23 warnings
+tests/unit/test_tool_calling_bench.py: 7 warnings
+tests/unit/test_agent.py: 32 warnings
+tests/unit/test_async_runtime.py: 18 warnings
+tests/unit/test_enhanced_features.py: 27 warnings
+tests/unit/test_flywheel.py: 98 warnings
+tests/unit/test_gym_adapter.py: 17 warnings
+tests/unit/test_grpo_complete.py: 77 warnings
+tests/unit/test_policy_artifacts.py: 7 warnings
+tests/unit/test_customer_support_bench.py: 8 warnings
+tests/unit/test_product_use_execution.py: 41 warnings
+tests/unit/test_improvement_loop_benchmark.py: 4 warnings
+tests/unit/test_vapo_trainer_behavioral.py: 5 warnings
+tests/unit/test_distributed_accelerate.py: 5 warnings
+tests/unit/test_formal_numeric_refinement.py: 655 warnings
+tests/unit/test_gspo_scoring_consistency.py: 4 warnings
+tests/unit/test_inference_config.py: 8 warnings
+tests/api/test_distributed_rollouts.py: 20 warnings
+tests/api/test_messages_endpoint.py: 64 warnings
+tests/api/test_messages_utils.py: 2 warnings
+tests/unit/test_dapo_trainer_behavioral.py: 3 warnings
+tests/unit/test_sft_from_curated.py: 2 warnings
+tests/unit/test_security_monitor.py: 12 warnings
+tests/api/test_grpo_auth_regressions.py: 22 warnings
+tests/performance/test_benchmarks.py: 4 warnings
+tests/unit/test_checkpoint_agent_registration.py: 30 warnings
+tests/unit/test_model_revision_pinning.py: 6 warnings
+tests/unit/test_product_use_interactive.py: 6 warnings
+tests/unit/test_token_capture.py: 8 warnings
+tests/integration/test_default_agent_routing.py: 19 warnings
+tests/unit/test_agent_config_peft_path.py: 1 warning
+tests/unit/test_agent_real_streaming.py: 4 warnings
+tests/unit/test_symbolic_physics.py: 4 warnings
+tests/api/test_cache_key_isolation.py: 2 warnings
+tests/api/test_config_validation_startup.py: 7 warnings
+tests/integration/test_stub_training_loop.py: 20 warnings
+tests/unit/test_optional_backend_imports.py: 3 warnings
+tests/unit/test_trl_grpo_entrypoints.py: 3 warnings
+tests/api/test_grpo_service_auth_async.py: 8 warnings
+tests/unit/test_multimodal_environment.py: 3 warnings
+tests/unit/test_multiturn_agent_module_exports.py: 2 warnings
+tests/api/test_auth_config_reload.py: 4 warnings
+tests/api/test_auth_service_provider.py: 3 warnings
+tests/integration/test_stubbed_model_loading.py: 2 warnings
+tests/unit/test_formal_rollout_refinement.py: 1 warning
+  /tmp/stateset-industry-evaluation/stateset_agents/api/observability.py:120: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+tests/unit/test_mcp_server.py::TestCreateServer::test_create_server_builds_fastmcp_instance
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/pydantic_settings/sources/utils.py:47: IncompleteFieldDefinitionWarning: Field 'lifespan' has an incomplete definition: its annotation contains an unresolved forward reference, so settings sources may fail to correctly resolve its value. Call `model_rebuild()` on the model where the field is defined, once all the referenced types are defined.
+    warnings.warn(
+
+tests/unit/test_vapo_trainer_behavioral.py::test_train_step_single_optimizer_step_per_call
+  /tmp/stateset-industry-evaluation/stateset_agents/training/vapo_trainer.py:1017: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.actor_scheduler.step()
+
+tests/unit/test_vapo_trainer_behavioral.py::test_train_step_single_optimizer_step_per_call
+  /tmp/stateset-industry-evaluation/stateset_agents/training/vapo_trainer.py:1018: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.critic_scheduler.step()
+
+tests/api/test_training_service.py::TestTrainingServiceLifecycle::test_cancel_sets_status
+  /tmp/stateset-industry-evaluation/stateset_agents/api/services/training_service.py:198: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    self.training_jobs[training_id]["completed_at"] = datetime.utcnow()
+
+tests/api/test_grpo_handlers.py::test_grpo_handler_passes_context_updates
+tests/api/test_grpo_handlers.py::test_conversation_handler_allows_admin_access_to_other_users_conversation
+  /tmp/stateset-industry-evaluation/stateset_agents/api/grpo/state.py:378: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    conv.last_message_at = datetime.utcnow()
+
+tests/api/test_grpo_handlers.py::test_grpo_handler_passes_context_updates
+tests/api/test_grpo_handlers.py::test_conversation_handler_allows_admin_access_to_other_users_conversation
+  /tmp/stateset-industry-evaluation/stateset_agents/api/grpo/handlers.py:436: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat(),
+
+tests/api/test_grpo_handlers.py: 8 warnings
+tests/api/test_grpo_auth_regressions.py: 2 warnings
+tests/api/test_grpo_service_auth_async.py: 1 warning
+  <string>:8: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+
+tests/api/test_grpo_handlers.py: 7 warnings
+tests/api/test_grpo_auth_regressions.py: 2 warnings
+tests/api/test_grpo_service_auth_async.py: 1 warning
+  /tmp/stateset-industry-evaluation/stateset_agents/api/grpo/state.py:330: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    job.completed_at = datetime.utcnow()
+
+tests/unit/test_dapo_trainer_behavioral.py::test_num_gradient_updates_respected
+  /tmp/stateset-industry-evaluation/stateset_agents/training/dapo_trainer.py:828: UserWarning: Seems like `optimizer.step()` has been overridden after learning rate scheduler initialization. Please, make sure to call `optimizer.step()` before `lr_scheduler.step()`. See more details at https://pytorch.org/docs/stable/optim.html#how-to-adjust-learning-rate
+    self.scheduler.step()
+
+tests/api/test_grpo_auth_regressions.py::test_api_endpoints_derive_identity_from_api_key_for_owner_checks
+tests/api/test_grpo_auth_regressions.py::test_api_job_lookup_isolated_by_api_key_identity
+tests/api/test_grpo_service_auth_async.py::test_grpo_service_job_access_is_scoped_to_api_key_identity
+  /tmp/stateset-industry-evaluation/stateset_agents/api/grpo/state.py:328: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    job.started_at = datetime.utcnow()
+
+tests/api/test_grpo_auth_regressions.py::test_api_job_lookup_isolated_by_api_key_identity
+tests/api/test_grpo_service_auth_async.py::test_grpo_service_job_access_is_scoped_to_api_key_identity
+  /tmp/stateset-industry-evaluation/stateset_agents/api/grpo/service.py:87: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat(),
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+================================ tests coverage ================================
+_______________ coverage: platform linux, python 3.12.12-final-0 _______________
+
+Name                                                              Stmts   Miss   Cover   Missing
+------------------------------------------------------------------------------------------------
+stateset_agents/__init__.py                                          75     11  85.33%   249-255, 263-264, 296-297, 301-302, 311
+stateset_agents/__main__.py                                           1      1   0.00%   7
+stateset_agents/api/__init__.py                                      17      3  82.35%   43-45, 59
+stateset_agents/api/auth.py                                         132     11  91.67%   96-97, 116, 155, 279-296, 335-337
+stateset_agents/api/cache.py                                         85      1  98.82%   129
+stateset_agents/api/config.py                                       194     42  78.35%   34-37, 50-51, 53-54, 56-60, 70-84, 100, 118, 123-124, 127-130, 170-175, 208-211, 247, 253-254, 348-352
+stateset_agents/api/constants.py                                     68      0 100.00%
+stateset_agents/api/dependencies.py                                 143     33  76.92%   31, 67-68, 80-82, 151-175, 193, 202-203, 222-229, 247, 267-277
+stateset_agents/api/distributed_cache.py                            568    208  63.38%   39-43, 83, 86-89, 91-95, 115-118, 173, 202, 207, 212, 217, 222, 227, 232, 237, 306, 328-331, 347, 393, 454-493, 497-510, 514-515, 520, 523, 551-575, 579-594, 598-625, 629-630, 635, 638, 651-672, 688-701, 709-736, 741-743, 746-754, 759, 807-808, 814-820, 824-830, 845-851, 859, 883, 905-907, 954, 961, 1011, 1044
+stateset_agents/api/errors.py                                       215     56  73.95%   143, 166, 183, 197-202, 222, 229, 236, 258, 283, 292, 299-303, 326-332, 339-345, 378, 394, 419, 527-668
+stateset_agents/api/grpo/__init__.py                                 18      0 100.00%
+stateset_agents/api/grpo/auth.py                                     58      4  93.10%   42, 120, 127-128
+stateset_agents/api/grpo/config.py                                   66     16  75.76%   20-22, 76, 106-125
+stateset_agents/api/grpo/handlers.py                                224    119  46.88%   152-194, 212-228, 251-257, 297, 367, 376, 391-421, 459, 463-474, 489, 517-521, 531-577, 586-593, 604-637, 641-660, 664, 673
+stateset_agents/api/grpo/metrics.py                                  72     22  69.44%   73, 85-87, 95, 99, 107, 111, 115-132, 141, 179-181, 206
+stateset_agents/api/grpo/models.py                                  222     39  82.43%   27, 48-52, 105, 108, 114, 124-134, 142, 151, 236, 239, 264, 268, 270, 278, 282, 284, 291-295, 426-432, 535
+stateset_agents/api/grpo/rate_limiter.py                              2      0 100.00%
+stateset_agents/api/grpo/router_v1.py                                93     33  64.52%   71-95, 115, 132, 155-158, 178-180, 195-247, 311-316
+stateset_agents/api/grpo/service.py                                 256    150  41.41%   24-25, 69, 90, 99-101, 105-112, 121-126, 134-135, 139, 165-177, 183-383, 389, 452, 476-478, 526, 535-536, 576-598
+stateset_agents/api/grpo/service_routes.py                          176     95  46.02%   67-68, 96-97, 110-145, 166, 210-219, 239-242, 250-260, 272-294, 313-365, 448-488
+stateset_agents/api/grpo/state.py                                   213     41  80.75%   77-79, 84, 90-92, 123-127, 131-133, 137-139, 143-145, 158, 177-178, 204-210, 323, 333, 336, 342, 376, 387, 391, 395, 399, 403, 407, 416, 423
+stateset_agents/api/inference_metrics.py                            100     25  75.00%   29, 88-116, 127, 134, 141, 148-150, 161-166, 176, 181, 198, 201-203, 206, 252
+stateset_agents/api/logging_config.py                                79     47  40.51%   30-31, 55-58, 62-64, 68-87, 91-111, 128-156
+stateset_agents/api/main.py                                         157     84  46.50%   47, 56-168, 289-298, 309, 323
+stateset_agents/api/messages_models.py                               37      0 100.00%
+stateset_agents/api/messages_utils.py                               256    110  57.03%   21-35, 39-60, 77, 84-87, 105-107, 112-114, 132, 140, 152, 160, 194, 202-207, 218-220, 226-240, 249, 257-274, 282-284, 286, 289-299, 302, 318-322, 335, 397, 401-405
+stateset_agents/api/middleware.py                                   338     43  87.28%   71-72, 81-86, 90-95, 97-101, 112, 114, 138, 148-158, 183, 264, 289, 349-351, 354-355, 387-393, 453-454, 498, 502, 566, 649, 664, 672, 686, 693
+stateset_agents/api/models.py                                       242     83  65.70%   104-112, 118-126, 171-176, 182-186, 194-198, 245-263, 269-274, 280-288, 375-379, 385-394, 400-405, 411-417, 467-472
+stateset_agents/api/observability.py                                212    113  46.70%   58-60, 196-205, 209-210, 214-221, 225-227, 231, 236-237, 241, 260-262, 266, 270, 279-288, 292-295, 310-315, 333-384, 399-407, 412, 417, 434-467, 477-495
+stateset_agents/api/openai_models.py                                 29      0 100.00%
+stateset_agents/api/openapi.py                                       73     12  83.56%   294, 323, 327, 340-347, 462, 503, 544
+stateset_agents/api/persistence.py                                  352     35  90.06%   94, 180, 185, 190, 195, 205, 210, 323, 349, 474-475, 498-499, 544-557, 574, 587, 594, 601, 637-643
+stateset_agents/api/rate_limiter.py                                  71     13  81.69%   78, 147-152, 169, 172, 176-177, 188-191, 221
+stateset_agents/api/resilience.py                                   281     14  95.02%   195, 222, 225, 308-310, 449-451, 549-551, 583, 592
+stateset_agents/api/routers/__init__.py                               9      0 100.00%
+stateset_agents/api/routers/agents.py                               163     39  76.07%   50-58, 63, 66, 181, 194-197, 234, 302-304, 344-346, 421, 424, 435-437, 471-474, 513-519, 580-584
+stateset_agents/api/routers/distributed_rollouts.py                 127      6  95.28%   195, 199, 202, 263, 278-279
+stateset_agents/api/routers/messages.py                             101     14  86.14%   48, 120, 136, 167-171, 173-196, 198-202
+stateset_agents/api/routers/metrics.py                               95     27  71.58%   34, 187, 208, 238-298, 322-326, 359-361
+stateset_agents/api/routers/openai.py                               116     23  80.17%   51, 58, 106-113, 132-133, 140, 142, 200-204, 206-229, 231-235
+stateset_agents/api/routers/training.py                              74     11  85.14%   36, 126, 144, 147-150, 264, 316-319
+stateset_agents/api/routers/training_lab.py                         600    214  64.33%   469, 533, 538-543, 556, 600, 655, 748-751, 759, 762, 789, 791-796, 811, 816-822, 846-848, 855-860, 877-883, 889-897, 905, 923-944, 953-984, 1016-1018, 1029-1033, 1039-1046, 1055-1056, 1069-1095, 1109-1112, 1114, 1131-1158, 1173, 1254-1255, 1261-1264, 1277-1320, 1329-1375, 1383-1418, 1428-1440, 1448, 1469-1474, 1497-1510, 1513-1517, 1520-1527, 1530-1541, 1563-1612, 1632, 1642, 1653-1659, 1677
+stateset_agents/api/routers/v1.py                                   353     81  77.05%   123-124, 138-142, 195, 204-205, 212, 216, 220, 224, 226, 231, 237, 243-251, 259, 262, 267-285, 380, 482, 507, 533, 549, 554-555, 565, 578, 584, 594, 596, 602, 606, 610, 635-696, 700, 714, 778, 780
+stateset_agents/api/schemas.py                                       90     10  88.89%   43-47, 97, 103, 162, 164, 167
+stateset_agents/api/security.py                                     225     15  93.33%   99-100, 118-124, 166-168, 228, 279, 370, 373, 394
+stateset_agents/api/services/__init__.py                              4      0 100.00%
+stateset_agents/api/services/agent_service.py                       177     63  64.41%   48, 73-81, 104, 141-153, 210-222, 231-232, 247-261, 268, 275-279, 311-313, 327-329, 340, 342, 355-357, 364-375
+stateset_agents/api/services/auth_service.py                         12      0 100.00%
+stateset_agents/api/services/demo_engine.py                          43     24  44.19%   26-28, 48-49, 67-76, 90, 106-118, 122-125, 129, 141
+stateset_agents/api/services/inference_service.py                   395    135  65.82%   82, 94-103, 128, 135-139, 162, 230-232, 248-253, 257-259, 263-269, 283, 312-325, 338-393, 454-477, 525-576, 616, 643, 649-650, 656, 678-700, 729, 744-747, 750, 802
+stateset_agents/api/services/training_service.py                     79     27  65.82%   71-72, 78-123, 135-184
+stateset_agents/api/shutdown.py                                     144     75  47.92%   117-125, 129-143, 147-148, 152-159, 163-164, 173, 185-214, 218-240, 244-273, 277, 312
+stateset_agents/api/streaming.py                                    167     35  79.04%   174, 228-241, 259-260, 293, 305-306, 373-381, 391-392, 405-407, 412, 429-439, 458-465, 484, 497-504
+stateset_agents/api/versioning.py                                   227    105  53.74%   101, 105-109, 113-116, 217-279, 309-329, 342-358, 395-403, 420-460, 535, 578, 611, 620-621, 637-691
+stateset_agents/cli.py                                              423    194  54.14%   47, 51-53, 66, 89-102, 108-113, 122, 137, 145, 150-151, 155, 158, 162, 167, 170, 172, 180, 184, 188, 194, 205, 210-211, 219-220, 223, 226, 250, 271-272, 302-303, 313, 326-327, 410, 454-463, 471, 473, 476-490, 567-641, 652-686, 730-782, 809-818, 833-840
+stateset_agents/cli_advanced.py                                     214    190  11.21%   33-69, 88-141, 154-223, 235-297, 309-355, 364-385, 390
+stateset_agents/cli_benchmark.py                                     57     39  31.58%   38-58, 82-108, 130-143, 165-180
+stateset_agents/cli_chat.py                                         149    136   8.72%   94-290
+stateset_agents/cli_evaluate.py                                     131     87  33.59%   44, 46-48, 57-65, 78, 83-88, 93-106, 111-121, 131-147, 157-181, 186-192, 204-217, 224-236, 295-310
+stateset_agents/cli_flywheel.py                                      84     72  14.29%   26-34, 125-268
+stateset_agents/cli_improve.py                                      207     57  72.46%   40, 57-71, 89, 92-93, 259-289, 309-310, 314-334, 375, 381, 411, 418-419, 425, 431, 442, 596-599, 615-617
+stateset_agents/cli_industry.py                                      81      9  88.89%   45, 60-61, 72-73, 105-106, 130-131
+stateset_agents/cli_ingest.py                                        45     35  22.22%   71-117
+stateset_agents/cli_init.py                                          87     19  78.16%   210-217, 224, 234-237, 240-241, 243-244, 254, 266-268
+stateset_agents/cli_mcp.py                                           17      7  58.82%   48-55
+stateset_agents/cli_meta.py                                         167     67  59.88%   55, 74-77, 84, 106, 111, 115-124, 138, 201-225, 319-359
+stateset_agents/cli_remote.py                                       520    187  64.04%   53-55, 149, 184, 312-314, 369, 389, 481-496, 514-516, 520-522, 545-547, 752-761, 799, 849-850, 859-861, 871, 881-886, 888-889, 901-932, 966-974, 983-985, 1001-1008, 1036-1045, 1078-1080, 1088-1090, 1116-1117, 1126-1132, 1149-1150, 1174-1211, 1232-1281, 1320-1321, 1337-1339, 1352-1364, 1391-1392, 1402-1404
+stateset_agents/cli_research.py                                     119     61  48.74%   114-117, 127, 131, 137, 139, 141, 145, 172-173, 188-270, 325-378
+stateset_agents/cli_train.py                                        256     66  74.22%   95, 118-120, 136-141, 147-150, 194-195, 242-244, 406-409, 416-417, 447, 451, 453, 457, 459, 461, 463, 465, 467, 476-478, 493, 520-522, 538-564, 570-576, 579-588
+stateset_agents/config/__init__.py                                   53     12  77.36%   26-29, 34-35, 53, 58-61, 90, 113
+stateset_agents/config/validation.py                                125    125   0.00%   7-420
+stateset_agents/core/__init__.py                                     73     17  76.71%   21, 264-270, 278-279, 282, 291-298, 305, 311-312, 316-317, 326
+stateset_agents/core/adaptive_learning_controller.py                  5      5   0.00%   8-23
+stateset_agents/core/advanced_monitoring.py                         397    205  48.36%   26, 34-37, 97-103, 107, 112, 210, 213-214, 218, 223-288, 296-317, 338, 343-360, 368-381, 399-405, 409, 417, 421-469, 474-501, 509, 555-561, 565-569, 574, 625-632, 683-687, 717-722, 729, 742-743, 781-793, 831-840, 855-881
+stateset_agents/core/advanced_monitoring_models.py                   48      0 100.00%
+stateset_agents/core/advanced_monitoring_tracing.py                  79     28  64.56%   42, 46-57, 114-122, 135, 139-140, 146-152
+stateset_agents/core/agent.py                                       721    129  82.11%   82, 89-90, 110, 113-114, 117-118, 150, 236-237, 246, 250, 346-350, 359, 364, 372, 378, 389-392, 398-401, 403-406, 411, 414, 426, 437, 502-506, 510, 515, 519, 527, 531-532, 625-626, 647, 654, 664-670, 899-900, 916-921, 942, 945, 950, 965-972, 1009-1012, 1024-1032, 1068-1085, 1108, 1143, 1223, 1250-1251, 1279-1286, 1319, 1331-1336, 1357, 1371-1375, 1377, 1395, 1408, 1447-1448, 1461-1468, 1485-1507, 1547
+stateset_agents/core/agent_backends.py                              201     43  78.61%   37, 41, 45, 55, 65, 69, 73, 77, 81, 123, 128, 133, 178, 189, 199-202, 205, 258, 271-284, 290, 317, 340-344, 359, 362-365
+stateset_agents/core/agent_config.py                                 76      7  90.79%   106, 137, 144, 155, 162, 180, 196
+stateset_agents/core/agent_factories.py                              61     33  45.90%   26-29, 56, 81-89, 96-106, 113-123, 128-135
+stateset_agents/core/async_pool.py                                  417    170  59.23%   55, 132, 144, 158, 162, 177, 181-188, 195, 199-201, 205, 209-210, 266-269, 302, 308, 321-336, 342-346, 371-387, 402-407, 411-426, 430-437, 441-489, 493-522, 539, 569-570, 612-617, 634-640, 644-645, 667-668, 672-693, 708-718, 725-729, 736-747, 754-757
+stateset_agents/core/basic_rewards.py                               213     46  78.40%   74, 125, 225, 278-299, 318, 341, 348-351, 369, 414, 442-443, 450-482
+stateset_agents/core/checkpoint_io.py                                36      4  88.89%   41-42, 45, 101
+stateset_agents/core/computational_engine.py                        166     23  86.14%   57, 192-196, 272, 282-287, 293, 301-302, 314-317, 352-354, 362, 401, 413
+stateset_agents/core/conversation_environment.py                    108     11  89.81%   53, 106, 114, 160-166, 189
+stateset_agents/core/curriculum_learning.py                         205     28  86.34%   83, 92, 130, 168, 192, 195, 198, 220, 228-242, 275, 339, 354-355, 388-392, 471, 482
+stateset_agents/core/data_processing.py                             197    127  35.53%   56-89, 93-109, 115-175, 179-208, 220, 234-258, 299, 303, 348-359, 366, 373-391, 397-433, 448-468
+stateset_agents/core/domain_rewards.py                              115     47  59.13%   45, 82-84, 90, 101, 149-154, 187, 192, 195-196, 207-213, 222-257, 266-278, 287-324
+stateset_agents/core/enhanced/__init__.py                             6      0 100.00%
+stateset_agents/core/enhanced/advanced_evaluation.py                277    204  26.35%   78, 128, 143-144, 148, 247-269, 279-305, 312-355, 362-369, 381-382, 386, 393-412, 419-443, 448-481, 488-491, 501-529, 537-559, 564-590, 595-596, 609-612, 622-682, 689-740, 747-781, 790-811, 819-826, 834-863
+stateset_agents/core/enhanced/advanced_rl_algorithms.py             427    322  24.59%   49-52, 57-60, 67-83, 163-172, 183-219, 226-294, 299-319, 325-343, 349-424, 440-456, 460-468, 480-541, 552-581, 586-633, 637-655, 660-715, 729-732, 738, 745-752, 764-787, 791-801, 807-814, 820-836, 842-851, 859-860, 865-866, 871-872, 892-901, 907-910, 921-924, 931-939
+stateset_agents/core/enhanced/enhanced_agent.py                     198    139  29.80%   46-47, 73-75, 89-102, 106-116, 125-141, 145-171, 175-184, 191-193, 204-225, 229-238, 253-292, 313-326, 330-335, 344-391, 395-409, 414-420, 426-440, 444-447, 455-471, 479, 510-528, 541-588
+stateset_agents/core/enhanced_state_cache.py                        281    111  60.50%   18, 40-44, 202-203, 219-220, 232, 239-261, 283, 301-303, 306-308, 321-338, 342-346, 350, 354-367, 371-387, 391-401, 405-415, 419-421, 425-430, 434-446
+stateset_agents/core/enhanced_state_management.py                   284    119  58.10%   82, 110, 122, 142, 150, 164-166, 174-175, 184-186, 203, 207-225, 229-260, 264, 268-271, 275-294, 345, 358, 379-387, 395-397, 403-418, 445, 452, 456, 460, 480, 487-488, 492-498, 502-514, 541-542, 547-558, 586-589
+stateset_agents/core/environment.py                                  14      5  64.29%   23-27
+stateset_agents/core/environment_base.py                            176     41  76.70%   83-85, 109, 120, 123, 130, 133, 163, 168-176, 202-203, 225, 256-273, 288-291, 297-299
+stateset_agents/core/environment_presets.py                          89     26  70.79%   38-39, 46-47, 50-51, 54-55, 58-59, 70-71, 78-79, 82-83, 86-87, 90-91, 96, 112-115, 196
+stateset_agents/core/environments/multimodal_environment.py         102     29  71.57%   26, 34, 86, 115, 135, 149, 153, 164-188, 201, 210, 253-264
+stateset_agents/core/error_handling.py                              212     17  91.98%   312-313, 353, 359, 363, 367, 445-454, 463, 469, 480, 485
+stateset_agents/core/errors.py                                      107     17  84.11%   84, 117, 129, 168-169, 188-189, 196, 209, 222, 241-242, 255-256, 305-307
+stateset_agents/core/evaluation.py                                  132     31  76.52%   70, 100, 122, 155-156, 180-182, 194-205, 221, 248, 259, 270, 289-314
+stateset_agents/core/evaluation_metrics.py                           96     15  84.38%   147, 179-180, 183-184, 190-191, 251, 282, 336-341, 357
+stateset_agents/core/evaluation_models.py                            99     13  86.87%   15, 78-81, 111, 117, 143, 147-153, 160
+stateset_agents/core/few_shot_adaptation.py                           5      0 100.00%
+stateset_agents/core/function_calling.py                            229    108  52.84%   78-85, 148-149, 182-185, 189-190, 194, 198-201, 262, 269, 286, 309-312, 319-326, 354-359, 371-379, 383, 387-392, 403, 407-412, 437-468, 482, 491, 504, 508, 514-516, 531-532, 542-654
+stateset_agents/core/generation_mode.py                              26      4  84.62%   33-34, 41-42
+stateset_agents/core/gym/__init__.py                                  5      0 100.00%
+stateset_agents/core/gym/adapter.py                                 123     45  63.41%   92, 97, 126-130, 181-206, 215-227, 259-263, 265-270, 286-287, 301-302, 305
+stateset_agents/core/gym/agents.py                                   36     16  55.56%   55, 64-65, 69, 73, 101-126, 138, 147, 157
+stateset_agents/core/gym/mappers.py                                 153     55  64.05%   48, 61, 109-112, 140-143, 163, 207, 218-223, 240-241, 252-267, 278, 301-305, 309, 314, 317-318, 326-332, 339-382
+stateset_agents/core/gym/processors.py                               79     28  64.56%   36, 49, 71, 74, 78, 94, 124, 127, 131, 135, 189-222, 226
+stateset_agents/core/input_validation.py                            216     38  82.41%   111, 115-117, 320, 380, 421-422, 426, 562, 591, 608-614, 638-651, 699-737
+stateset_agents/core/intelligent_orchestrator.py                      5      0 100.00%
+stateset_agents/core/intelligent_orchestrator_logic.py                5      5   0.00%   8-23
+stateset_agents/core/intelligent_orchestrator_models.py               5      0 100.00%
+stateset_agents/core/long_term_planning.py                            5      5   0.00%   8-23
+stateset_agents/core/lora_targets.py                                 17      0 100.00%
+stateset_agents/core/memory.py                                      309     81  73.79%   204, 340-341, 352, 357, 367, 372, 377, 390, 399-418, 421, 424, 489-490, 493, 574-577, 602-628, 657, 670, 676, 726-729, 733, 751-752, 760, 775-782, 790, 826-834, 852-881
+stateset_agents/core/model_presets.py                                62      0 100.00%
+stateset_agents/core/multi_agent_coordination.py                      5      0 100.00%
+stateset_agents/core/multimodal_processing.py                         5      0 100.00%
+stateset_agents/core/multiturn_agent.py                             358    106  70.39%   116-117, 152, 168-179, 183-189, 193-196, 208, 217-221, 240-266, 306, 334, 341, 406, 432-440, 446-447, 450-451, 455, 457, 461, 478, 488, 528-529, 553-556, 561-562, 588-589, 603-624, 642-662, 666-667, 671, 675, 685, 711-712, 747, 750, 773
+stateset_agents/core/multiturn_analysis.py                           76     38  50.00%   15, 17, 25, 32, 69-71, 76-89, 97-106, 121, 130, 145-162
+stateset_agents/core/multiturn_context.py                            79      6  92.41%   93, 106, 110, 114, 118, 122
+stateset_agents/core/neural_architecture_search.py                    5      5   0.00%   8-23
+stateset_agents/core/performance_optimizer.py                       281    125  55.52%   54-61, 140, 159-160, 164, 184-185, 200-201, 206-218, 230, 238, 250, 256-277, 283-297, 302-319, 327, 345-382, 387-419, 431-432, 436-439, 443-448, 456-485, 559-581, 614, 628
+stateset_agents/core/reward.py                                        5      0 100.00%
+stateset_agents/core/reward_base.py                                 117     24  79.49%   118, 127-129, 137-151, 215, 223-226, 256-276
+stateset_agents/core/reward_factories.py                             60     43  28.33%   40-42, 50-86, 129, 158-174, 184-200
+stateset_agents/core/rust_accelerator.py                            127     86  32.28%   28-29, 64, 73, 78, 80, 114-136, 157-169, 195-224, 233-240, 261-279, 300-321, 340-353, 358-377, 392-395, 399-402, 406-408
+stateset_agents/core/structured_output.py                           168    101  39.88%   50-53, 91-94, 124, 133-134, 145, 160, 187, 236-240, 297-402, 413-428, 436-476, 489-518
+stateset_agents/core/task_environment.py                             82     11  86.59%   103-112, 124-129, 143, 145, 165
+stateset_agents/core/tool_agent.py                                  247     47  80.97%   73, 77, 85, 88-91, 122, 183, 187, 191, 218, 221-222, 245-249, 260, 275, 280-300, 335-336, 342, 366-367, 401, 403-405, 417-418, 428, 437-438
+stateset_agents/core/trajectory.py                                  235     69  70.64%   76-87, 153, 167, 176-185, 189-192, 237, 248, 253, 257-260, 270, 280, 290-298, 304, 342-343, 348-350, 379-382, 386-402, 422-423, 425, 429-432, 448-455, 472-480
+stateset_agents/core/transformers_compat.py                          24      2  91.67%   59-60
+stateset_agents/core/type_system.py                                 412    118  71.36%   257, 261, 269, 273, 281, 289, 294, 302-303, 308, 312-318, 330, 336, 344, 350, 360, 381-383, 386, 397, 402, 405, 415-419, 422-423, 431, 438-439, 446-450, 459-478, 513, 519-548, 569-571, 579-597, 603-639, 650, 670, 676-680, 685-690, 741-746
+stateset_agents/core/types.py                                       116     21  81.90%   63-64, 76, 80, 84-85, 90, 102-103, 112, 120, 128, 132, 142, 150, 154, 158, 166, 175, 179, 185
+stateset_agents/core/value_function.py                              169     51  69.82%   38-39, 45, 111-115, 181-182, 193-197, 202-203, 225-252, 341-345, 377-428
+stateset_agents/data/__init__.py                                     13      1  92.31%   62
+stateset_agents/data/conversation_dataset.py                        419    242  42.24%   21-23, 36-40, 50-51, 149, 169-188, 198-213, 233-260, 299, 310-312, 322-364, 383-414, 418-446, 451, 489, 500-519, 542-547, 555-563, 572-583, 596-643, 692, 699-700, 704-705, 723, 729-731, 743, 756-769, 779-784, 788-790, 794-798, 821-834, 839-843, 848, 861-878, 890-900, 904, 908-909, 912, 916
+stateset_agents/data/customer_support_bench.py                      139     25  82.01%   254, 276, 283, 425-445, 548-549, 569-570, 577
+stateset_agents/data/finetuning.py                                  148     15  89.86%   43, 49, 54, 59, 61, 69, 78, 92, 96, 105, 115-116, 132, 149, 216
+stateset_agents/data/gsm8k.py                                       119      7  94.12%   82, 86-87, 142-143, 153, 162
+stateset_agents/data/tool_calling_bench.py                           74      4  94.59%   224-225, 294, 309
+stateset_agents/data/trajectory_ingest.py                           159     13  91.82%   92-93, 100-101, 129, 134, 172, 179, 233, 244, 266, 377, 384
+stateset_agents/environments/__init__.py                              7      2  71.43%   9-10
+stateset_agents/environments/conversation_simulator.py              300    237  21.00%   94-97, 101-154, 171-180, 188-230, 238-269, 278-284, 293-303, 307-320, 324, 328-329, 358-384, 400-451, 469-539, 547-584, 594-629, 637-652, 656, 660-663, 680-719, 726-739, 755-765, 782, 798-801, 805-812, 827-843, 852-856, 863-869
+stateset_agents/environments/symbolic_physics.py                    108     33  69.44%   74-91, 108, 127-129, 134-135, 164-170, 190-191, 195, 200, 208
+stateset_agents/evaluation/__init__.py                               10      1  90.00%   23
+stateset_agents/evaluation/framework_protocol.py                     20      0 100.00%
+stateset_agents/evaluation/industry.py                              204     10  95.10%   45-46, 123, 127, 139, 146, 155, 193, 230, 234
+stateset_agents/evaluation/sim_to_real_metrics.py                   182    102  43.96%   16-17, 206, 216, 228, 245-264, 296-301, 318-365, 384-390, 409-429, 451-515, 519-521, 528-529
+stateset_agents/exceptions.py                                        11      0 100.00%
+stateset_agents/experimental/__init__.py                              0      0 100.00%
+stateset_agents/experimental/adaptive_learning_controller.py        262    190  27.48%   78-90, 104-111, 115-135, 139-143, 147-165, 169-178, 182, 188-199, 212-219, 223-236, 240-245, 249-257, 261-280, 287-292, 300-313, 317-332, 337-340, 345-348, 357-359, 365-383, 387-400, 407-429, 440-449, 462-531, 537-547, 553-597, 606-609
+stateset_agents/experimental/few_shot_adaptation.py                 252     96  61.90%   34-38, 45-46, 87, 92, 148-162, 183, 210-211, 227-235, 262-270, 279-290, 297, 315-333, 336, 359-366, 378-405, 414-425, 437-443, 446, 505, 525, 576-606, 648-665
+stateset_agents/experimental/intelligent_orchestrator.py            200     82  59.00%   125-131, 135-137, 141-147, 156-158, 173-261, 272-310, 317-351, 380-390, 442-448, 457, 470, 474, 558, 581
+stateset_agents/experimental/intelligent_orchestrator_logic.py       74     20  72.97%   47, 62-68, 125, 145-195, 237
+stateset_agents/experimental/intelligent_orchestrator_models.py      73      0 100.00%
+stateset_agents/experimental/long_term_planning.py                  221     40  81.90%   40, 57, 82-98, 102, 160, 179, 215, 239, 246, 258, 265-278, 323, 330, 342, 355, 363
+stateset_agents/experimental/multi_agent_coordination.py            271     44  83.76%   110, 117, 122, 141, 192, 226, 245, 249, 308, 344-352, 377, 384-385, 418, 452-453, 479-515, 526, 533-543, 571
+stateset_agents/experimental/multimodal_processing.py               447    290  35.12%   42-46, 58-72, 77-78, 84, 90-92, 197, 202, 207, 226, 228, 236-238, 242-295, 304-306, 321-335, 339-397, 406-408, 422-436, 440-496, 505-507, 514-516, 520-531, 535-583, 594-613, 617, 629-669, 681-707, 730-765, 772-815, 821-829, 833, 837, 875, 887-888, 893-894, 899-917
+stateset_agents/experimental/neural_architecture_search.py          352    257  26.99%   24-25, 94, 120, 145-168, 176-207, 219-261, 272-302, 306-313, 320-321, 331-356, 360-369, 373-396, 400-401, 410-416, 426-439, 448-458, 471-478, 493-545, 557-573, 589-627, 639-653, 664-672, 686-720, 732-760, 766-778, 785-791, 819-827, 834-837
+stateset_agents/flywheel.py                                         195     15  92.31%   134-135, 149, 156, 160, 164-165, 167, 218-220, 229, 328, 376-377
+stateset_agents/mcp_server.py                                       128     17  86.72%   52, 98, 116-117, 158-159, 196-197, 209-210, 237-238, 271-272, 278, 319-320
+stateset_agents/remote/__init__.py                                    4      0 100.00%
+stateset_agents/remote/artifacts.py                                 101     17  83.17%   55-71, 77, 80-81, 93, 107, 111-112, 122, 144, 153-154, 172-173
+stateset_agents/remote/canary.py                                    132     21  84.09%   46-47, 51-53, 57-60, 101-104, 109, 186-190, 211, 254
+stateset_agents/remote/chat_repl.py                                  76     29  61.84%   75-118, 164-178
+stateset_agents/remote/chat_session.py                              215     32  85.12%   56, 117-127, 132-137, 145, 156-163, 205-206, 275, 296, 319-323, 434-438, 447-448
+stateset_agents/remote/coreweave.py                                 321     75  76.64%   78-86, 90-91, 101-112, 115, 118, 129-130, 195, 226, 231-253, 295, 313, 354-356, 370, 382, 386, 394-395, 401, 406, 409, 433, 445, 475-477, 491, 493-494, 501, 507, 521, 524, 527, 530, 533, 546, 559-564, 569-572, 574, 586, 591, 603, 618, 637-638, 652
+stateset_agents/remote/deployment.py                                 46      4  91.30%   36, 39, 41, 44
+stateset_agents/remote/deployment_registry.py                        23     12  47.83%   14-16, 20-22, 26-28, 40, 45-49
+stateset_agents/remote/executor.py                                   60      0 100.00%
+stateset_agents/remote/fireworks.py                                 338     53  84.32%   157-159, 169-175, 262-264, 271, 273, 328-339, 364-365, 376-377, 397-398, 438, 444-445, 490, 504, 516, 583-584, 591-597, 700-701, 742, 761, 766-767, 782-783, 813-814, 861, 869, 872-873, 887, 915, 919, 922-923
+stateset_agents/remote/huggingface.py                               123     22  82.11%   40, 72-82, 88, 142-143, 157-158, 167-168, 174, 197-198, 214-220
+stateset_agents/remote/job.py                                       128      0 100.00%
+stateset_agents/remote/ledger.py                                     70      0 100.00%
+stateset_agents/remote/local.py                                      60      5  91.67%   96-97, 131-133
+stateset_agents/remote/modal.py                                     217     26  88.02%   48-49, 111, 154, 179-180, 274-275, 278-279, 293-302, 335, 339-340, 352-353, 388-390
+stateset_agents/remote/model_catalog.py                              57      1  98.25%   53
+stateset_agents/remote/model_evidence.py                             19      0 100.00%
+stateset_agents/remote/nebius.py                                    290     65  77.59%   74-77, 108-116, 120-121, 126, 129-130, 141, 147-152, 155, 158, 161-162, 165-170, 173-178, 181, 251, 282, 287-309, 347, 376, 378, 406, 420-421, 427, 432, 435, 458, 467-469, 502, 513, 518, 525, 539, 576, 592, 599
+stateset_agents/remote/prime.py                                      93     46  50.54%   32, 82-91, 94-120, 123-126, 133, 136, 139-159, 162-165
+stateset_agents/remote/registry.py                                   46      0 100.00%
+stateset_agents/remote/river.py                                     737     53  92.81%   85, 214-215, 226-246, 346-349, 470-473, 521, 568, 779, 830, 1127, 1296, 1369, 1406, 1437, 1449, 1522, 1585-1588, 1603-1611, 1626, 1631-1633, 1703-1704, 1706, 1735, 1827, 1835
+stateset_agents/remote/river_batches.py                             155     15  90.32%   191, 247-249, 280, 292, 303, 371-372, 394, 411-417, 442, 449, 459
+stateset_agents/remote/runpod.py                                    421     88  79.10%   132, 211-218, 224-233, 254-262, 265-270, 302, 307-330, 337, 357, 386-393, 402, 407-420, 535-537, 546, 551-552, 564, 582-583, 601, 626-639, 697, 850-855, 859-860, 880-887, 906-907, 951-956, 960, 985-986, 993-994, 1023-1024, 1037, 1046-1048
+stateset_agents/remote/serve_session.py                             422     53  87.44%   109-111, 115-118, 124-128, 166-167, 303-313, 318-323, 331, 368, 445-451, 456, 460-461, 682-686, 724, 782-783, 925-926, 993, 999-1000, 1014, 1039-1040, 1048-1049, 1052-1057, 1110-1111
+stateset_agents/remote/tinker.py                                    156     43  72.44%   42, 70-80, 82-88, 123-124, 126, 132-133, 143, 148-152, 160-163, 182-191, 196-197, 211, 227-230
+stateset_agents/remote/together.py                                   87     19  78.16%   60-76, 92-93, 101-102, 120, 129-131, 153-154
+stateset_agents/remote/worker.py                                     48     16  66.67%   23-24, 26, 61-80
+stateset_agents/rewards/__init__.py                                  18      2  88.89%   43-44
+stateset_agents/rewards/bayesian_reward_model.py                    291    126  56.70%   21-26, 37, 177-191, 195-200, 205-212, 220-237, 254-268, 272-274, 278-283, 297-308, 348-365, 434, 505, 514, 546, 556, 588-589, 626-656, 684-749, 753
+stateset_agents/rewards/kimi_k25_reward.py                          139    120  13.67%   42-48, 66-130, 157-163, 181-241, 269-275, 292-354, 382-388, 406-448, 469-509, 530-572
+stateset_agents/rewards/llm_judge.py                                340    182  46.47%   68, 79-83, 92-94, 113, 133, 143, 155, 160, 174, 181, 186, 196, 203, 386-387, 391-397, 401-409, 422, 427-455, 459-465, 477-486, 492-513, 520-521, 525-531, 537-568, 575-577, 581-622, 675-680, 703-746, 764-785, 804-830, 855-876
+stateset_agents/rewards/llm_judge_adapter.py                        112     91  18.75%   39-54, 78-79, 86-97, 127-130, 138-159, 162, 192-199, 202-215, 223-246, 283-324, 338-356
+stateset_agents/rewards/llm_reward.py                               226    181  19.91%   19-23, 162-189, 195-205, 221-295, 312-345, 353-396, 402-489, 494-495, 510-518, 522-566, 570-584, 590-602, 606, 617, 631-640, 648, 657, 666
+stateset_agents/rewards/multi_objective_components.py               268     83  69.03%   52, 54, 59-61, 66, 92-93, 112, 135-155, 200, 204, 214, 262, 266, 296-320, 383, 387, 435, 440, 462-472, 475-477, 483, 495-505, 511, 521-523, 532, 534-541, 563, 567, 572, 576, 581
+stateset_agents/rewards/multi_objective_reward.py                   154     52  66.23%   70, 81-82, 89-94, 98-99, 121-127, 133, 177-186, 213, 240-249, 269, 314-342, 351-358, 365-372, 380-410, 417-443
+stateset_agents/rewards/nsr_verifier.py                             187      3  98.40%   279, 312, 378
+stateset_agents/rewards/ruler_reward.py                              31      9  70.97%   43-62, 69, 78, 87, 96
+stateset_agents/rewards/symbolic_physics_reward.py                  283    126  55.48%   57, 65-73, 85-111, 123-143, 157-185, 198, 204-206, 209, 216-218, 236, 250, 256-257, 272, 287, 293-294, 328, 333-335, 339-341, 349-351, 374-381, 408-412, 422-423, 433-439, 453-454, 461-464, 503, 517-518
+stateset_agents/scaffolding/__init__.py                               2      0 100.00%
+stateset_agents/scaffolding/starter.py                               72      1  98.61%   902
+stateset_agents/testing/__init__.py                                   4      4   0.00%   7-11
+stateset_agents/testing/fixtures.py                                  79     79   0.00%   7-184
+stateset_agents/testing/hypothesis_strategies.py                     33     33   0.00%   8-112
+stateset_agents/testing/matchers.py                                  75     75   0.00%   7-132
+stateset_agents/tools/__init__.py                                     2      0 100.00%
+stateset_agents/tools/nsr.py                                         33      0 100.00%
+stateset_agents/training/__init__.py                                 73      4  94.52%   54-55, 113-114
+stateset_agents/training/_registry.py                                 3      0 100.00%
+stateset_agents/training/adapters/__init__.py                         4      0 100.00%
+stateset_agents/training/adapters/nemo_rl.py                        189     48  74.60%   104, 118, 121, 136, 138-141, 151-173, 178-190, 198, 202-203, 252, 301, 303, 305, 311, 318, 367, 369, 392, 395, 412-419
+stateset_agents/training/adapters/openrlhf.py                       199     50  74.87%   110, 119, 129, 133-134, 143, 147, 150, 173, 178-181, 185, 193, 205-227, 236, 265, 267, 273, 286, 288, 290, 297, 307, 313, 317, 375, 380, 382, 403, 409, 426-433
+stateset_agents/training/adapters/verl.py                           185     44  76.22%   94, 100, 104, 107, 130, 132-135, 144-166, 174, 178-179, 199, 215, 220, 228, 266, 272, 278, 282, 284, 329, 331, 348, 351, 368-375
+stateset_agents/training/advanced_training_models.py                138     14  89.86%   137-139, 147, 164, 169-176, 195, 230-236
+stateset_agents/training/advanced_training_orchestrator.py          452    203  55.09%   25-26, 32-33, 38, 120, 123, 129-130, 159, 223, 232-233, 253, 290-297, 300-304, 313, 325-328, 331-335, 342, 351-354, 357-360, 367, 377-382, 385-391, 412-469, 479-493, 504-567, 574-588, 603, 617-653, 663-675, 680-689, 740, 748-749, 778, 810-812, 840-869, 873-891, 924-947, 955, 957, 965
+stateset_agents/training/async_rollouts.py                          309     39  87.38%   57-59, 138, 142, 175, 183-184, 197, 199, 236, 269, 319, 345, 349-350, 354-355, 357, 392, 398, 400, 402, 414, 502, 504, 508, 512, 522, 525, 532, 534, 536, 538, 540, 551, 556, 559, 573
+stateset_agents/training/async_runtime.py                           155     10  93.55%   95, 99, 125, 127, 129, 148, 166-167, 228, 246
+stateset_agents/training/auto_research/__init__.py                   16      2  87.50%   99-100
+stateset_agents/training/auto_research/analysis.py                  245     18  92.65%   41-42, 180, 246, 269, 274-275, 321, 323, 347, 381-382, 420-427, 459
+stateset_agents/training/auto_research/checkpoint_manager.py        196     61  68.88%   66, 89, 114, 143-145, 182, 202, 217-218, 242-250, 253-254, 261-262, 277-339
+stateset_agents/training/auto_research/config.py                     92     12  86.96%   113, 115, 117, 119, 121, 123, 170-177, 183
+stateset_agents/training/auto_research/early_abort.py                53      0 100.00%
+stateset_agents/training/auto_research/experiment_loop.py           459    122  73.42%   103-120, 147-149, 183-184, 211-212, 228-229, 232-233, 258, 261-262, 287-288, 332-333, 356-358, 379-383, 423-438, 468, 476, 549, 584, 608, 626, 644-645, 648-678, 681-683, 717-739, 749-770, 819-820, 852, 856-865, 885, 898-901, 926-927, 930-931, 935, 945-952, 994, 998
+stateset_agents/training/auto_research/experiment_tracker.py        285     20  92.98%   41-42, 119, 122-123, 185, 189, 201-202, 262, 342-343, 394-395, 521-523, 561-562, 601
+stateset_agents/training/auto_research/llm_proposer.py              202     32  84.16%   93-97, 106-108, 128, 145, 155, 204, 213, 246-247, 263-264, 308-315, 320-325, 366, 399, 407, 413-418
+stateset_agents/training/auto_research/proposer.py                  325     78  76.00%   44, 53, 61-66, 176, 214-215, 245, 284-289, 292-303, 312-350, 354-369, 408, 467, 489-492, 498, 513, 550, 554, 582, 590-593
+stateset_agents/training/auto_research/search_spaces.py              36      2  94.44%   234, 285
+stateset_agents/training/backends.py                                276     51  81.52%   51-52, 85, 101, 107, 120, 153, 161, 167, 172, 176, 232, 236, 241, 244, 246, 248, 250, 267-268, 272, 314, 320, 328, 340, 352, 365, 390-403, 417, 422-423, 425, 428-429, 431, 442, 444, 451, 457, 471
+stateset_agents/training/base_trainer.py                            384    190  50.52%   54, 70-72, 77-88, 99-123, 130-143, 164, 174-177, 285, 290, 323, 327-334, 338, 344, 359-360, 362-363, 377-397, 410-413, 417-428, 444, 448-476, 480-494, 521-536, 540, 549-557, 583-606, 628-639, 643-646, 659-676, 685-688, 696-708, 712-736, 740-763, 772, 781
+stateset_agents/training/callbacks.py                                99     19  80.81%   41, 47, 57-62, 96-97, 154-165, 180-181, 200-201
+stateset_agents/training/checkpoint_io.py                             3      0 100.00%
+stateset_agents/training/config.py                                  265     70  73.58%   209, 240-253, 290, 309, 314, 323, 329, 335, 352, 354, 370, 374, 376, 378, 380, 382, 384, 386, 388, 392, 396, 399-405, 411, 500-550, 559-584, 592-615, 629-633
+stateset_agents/training/continual_learning.py                      370    139  62.43%   118-120, 167, 170, 179-183, 190, 196, 201-204, 255, 258, 262, 275, 282, 287-288, 314-315, 331, 370, 372, 382, 389, 391, 395, 397, 402, 411-414, 417-423, 431-460, 465-520, 525-542, 574-577, 583, 589, 593, 595-598, 604, 608-611, 623, 625, 629, 631-634
+stateset_agents/training/dapo_config.py                              47      5  89.36%   80-84
+stateset_agents/training/dapo_entrypoints.py                         79     67  15.19%   35-145, 155-176
+stateset_agents/training/dapo_trainer.py                            324    131  59.57%   71-72, 85-87, 92-93, 101-102, 110-111, 129-146, 156-159, 162-163, 214-215, 250, 255, 263, 267, 330-331, 339, 358-359, 372, 394-399, 403-430, 434-450, 455, 562-568, 575, 587-614, 622-630, 638-645, 668-740, 765-766
+stateset_agents/training/decision_transformer.py                    312    173  44.55%   32-37, 50, 109-127, 144-150, 154-155, 170-171, 222-245, 271-273, 375-426, 447-448, 478, 497, 521-554, 569-620, 637-680, 691-743, 764-804, 851-852
+stateset_agents/training/deepseek_r1_small_starter.py                 9      0 100.00%
+stateset_agents/training/deepseek_v4_starter.py                      49      7  85.71%   61, 80, 86, 96, 98, 100, 104
+stateset_agents/training/diagnostics.py                              29      8  72.41%   32-41
+stateset_agents/training/distributed.py                             209    102  51.20%   148-162, 175-181, 185-193, 205-281, 285-304, 309, 315, 331, 335, 369-377, 384-423, 427-431, 442-457, 463, 500-519
+stateset_agents/training/distributed_rollouts.py                    344     40  88.37%   86, 88, 92, 101, 103, 121, 184, 186, 256, 260, 275, 284, 311, 317, 373, 421, 437-439, 510, 521, 529, 533, 535, 542, 546, 552, 557, 563, 573, 578, 582, 585, 587, 590, 595, 601, 604, 608, 614
+stateset_agents/training/distributed_trainer.py                     310    194  37.42%   26-27, 33-34, 112, 149-181, 187-216, 220-237, 243-271, 275-348, 361-365, 372-386, 394, 400-402, 450, 455-458, 465-494, 499-520, 526-557, 561-563, 581-605, 619-645, 657-681, 692-715
+stateset_agents/training/domain_randomization.py                    227     75  66.96%   61-62, 66, 235, 242-244, 250-252, 288, 296-306, 370, 374, 419-421, 491, 540, 549-559, 594, 622-638, 642-672, 676-688, 692-695, 704-707
+stateset_agents/training/ema.py                                     167     70  58.08%   121-125, 135, 138, 150, 163, 166, 179, 186-194, 204-223, 228-235, 240-255, 272-278, 315-316, 320-321, 325-326, 372-373, 405
+stateset_agents/training/eval_ladder.py                             151     31  79.47%   68-69, 185, 232, 306-367
+stateset_agents/training/evaluation.py                              106     22  79.25%   57, 61, 69-73, 96, 105, 130-133, 146, 155-156, 167-169, 177-178, 202, 208
+stateset_agents/training/gemma4_small_starter.py                     25      2  92.00%   37, 39
+stateset_agents/training/gemma4_starter.py                           47      9  80.85%   40, 49, 54, 56, 62, 64, 74, 76, 78
+stateset_agents/training/gepo_trainer.py                            263     83  68.44%   85-87, 92-93, 163-168, 175, 178-185, 188-189, 256, 465-509, 549-550, 585-586, 683-695, 722-804
+stateset_agents/training/glm5_1_starter.py                           52     10  80.77%   51, 60, 65, 67, 73, 79, 89, 91, 93, 97
+stateset_agents/training/glm5_2_starter.py                           52     10  80.77%   51, 60, 65, 67, 73, 79, 89, 91, 93, 97
+stateset_agents/training/gpt_oss_starter.py                          43      6  86.05%   56, 70, 74, 78, 80, 82
+stateset_agents/training/gpu_verify_rl.py                            71      3  95.77%   180-187
+stateset_agents/training/granite4_micro_starter.py                    9      0 100.00%
+stateset_agents/training/gspo_config.py                              54      8  85.19%   90-104
+stateset_agents/training/gspo_entrypoints.py                        134     33  75.37%   136-152, 166-170, 195-200, 229, 233-236, 259, 284-308
+stateset_agents/training/gspo_generation.py                         233     90  61.37%   37-59, 114, 118-121, 146, 153-154, 158-161, 192-214, 225-227, 235, 254, 266-287, 296-299, 335, 352, 362, 376, 383, 401, 424, 429-439, 453, 478, 490, 502-505
+stateset_agents/training/gspo_token_trainer.py                      160     18  88.75%   85-91, 169-172, 301-306, 394-396, 451-453, 457-460, 468-470
+stateset_agents/training/gspo_trainer.py                            364     73  79.95%   76, 84-97, 108-109, 149-151, 173-186, 218-223, 237, 239, 251-257, 312-320, 332-334, 380, 399, 637-640, 802-852, 910
+stateset_agents/training/harvest.py                                 138     73  47.10%   70-96, 104-111, 198-200, 255-329, 333-362, 366-388
+stateset_agents/training/hpo/__init__.py                             25      2  92.00%   94-95
+stateset_agents/training/hpo/base.py                                131     30  77.10%   201, 215-216, 220-233, 241, 245, 249, 253, 294, 303, 318, 337, 341-342, 346-347, 351-352, 356-357
+stateset_agents/training/hpo/config.py                               58     12  79.31%   120, 126-131, 135, 224-235
+stateset_agents/training/hpo/grpo_hpo_trainer.py                    147     97  34.01%   112, 115, 140-176, 197, 214-254, 262-280, 297-332, 336-361, 372-391, 402-406, 414-437, 478-497
+stateset_agents/training/hpo/optuna_backend.py                      168    122  27.38%   34-42, 63-71, 76-77, 160-161, 166-175, 179-196, 200-203, 214-227, 248, 257, 264-335, 361-417, 425-431, 439-445, 453-459, 467-469
+stateset_agents/training/hpo/ray_tune_backend.py                    131    104  20.61%   34-39, 61-62, 70-77, 98-106, 110-123, 127, 133-143, 146-156, 159, 165, 170, 179-272
+stateset_agents/training/hpo/search_spaces.py                        57     26  54.39%   129, 166, 199, 250-271, 319-348, 353-379, 389, 417
+stateset_agents/training/hpo/wandb_backend.py                       121     95  21.49%   51-52, 59-66, 84-89, 92-124, 127-132, 145, 150, 158-251
+stateset_agents/training/industry.py                                128      4  96.88%   333, 392, 427, 433
+stateset_agents/training/kimi_k2_6_starter.py                        41      8  80.49%   43, 47, 49, 55, 59, 63, 65, 67
+stateset_agents/training/kimi_k3_starter.py                          41      8  80.49%   49, 53, 55, 61, 65, 69, 71, 73
+stateset_agents/training/kl_controllers.py                          135     94  30.37%   37-43, 50-51, 65, 69, 73, 84, 88-89, 115-119, 123-145, 162-165, 169-176, 194-198, 202-212, 234-238, 242-259, 279-287, 291-312, 324, 328-329, 352-401
+stateset_agents/training/lfm2_5_starter.py                            9      0 100.00%
+stateset_agents/training/lineage.py                                  69      0 100.00%
+stateset_agents/training/llama3_2_small_starter.py                    9      0 100.00%
+stateset_agents/training/loss_computation.py                        513     63  87.72%   41-45, 47, 129, 162, 223, 254, 263, 321, 344, 404, 460, 475-480, 482, 485-488, 494, 509-510, 528, 587, 591, 668, 670, 712-715, 723, 764, 775, 828, 830, 869, 886-888, 913-920, 952, 954, 987-988, 1015, 1031-1036, 1064-1067, 1073, 1100-1101
+stateset_agents/training/merge_adapter.py                            94     43  54.26%   95, 116-119, 153-161, 171-189, 193-200, 204-213
+stateset_agents/training/ministral3_starter.py                        9      0 100.00%
+stateset_agents/training/multi_turn_checkpointing.py                105     29  72.38%   30, 55-56, 63, 93-95, 116, 119-127, 129, 136-137, 142, 148-149, 152-153, 170-171, 175-176, 179
+stateset_agents/training/multi_turn_evaluation.py                   108     83  23.15%   22-25, 33-42, 62-86, 98-209
+stateset_agents/training/multi_turn_scenarios.py                    108     19  82.41%   20, 24, 28, 37, 59-60, 77, 85, 98, 105, 120, 139, 144, 149-154
+stateset_agents/training/multi_turn_trainer.py                      432    123  71.53%   152-153, 162-163, 180, 182-184, 192, 243, 257-265, 292, 296, 302-303, 317-340, 345, 349-350, 369, 406-408, 483, 486-487, 495-506, 515-520, 528-535, 542-545, 550-553, 556, 564-567, 571-572, 590-593, 613, 631, 640, 642-643, 650, 677-680, 704, 714, 716-717, 719, 742-773, 802, 813-816, 825-827, 854, 859-865, 874, 880-881, 884, 897-904, 918-919, 948-956, 976-977, 986-987
+stateset_agents/training/muse_glimmer_starter.py                     41      6  85.37%   50, 62, 66, 70, 72, 74
+stateset_agents/training/nemotron_3_5_starter.py                     43      7  83.72%   52, 63, 69, 73, 77, 79, 81
+stateset_agents/training/neural_reward_trainer.py                   276    169  38.77%   29-30, 65, 79, 96-97, 100, 103-109, 119-135, 229-240, 245-250, 254-268, 289, 321, 344-419, 423-443, 447-463, 467-483, 487, 512-520, 548-559, 574-606, 617-628, 637-651, 655-660, 664-671, 675, 686-700, 712-716, 723
+stateset_agents/training/objectives.py                              238     15  93.70%   132, 137, 153, 156, 200, 204, 235, 280, 283, 291, 301, 312, 319, 347, 463
+stateset_agents/training/offline_grpo_trainer.py                    333    195  41.44%   24-28, 41, 124-127, 141, 167-170, 184-185, 272-320, 340-437, 452-488, 495-516, 537-577, 590-611, 615-638, 655-697, 708-712, 720-726, 779-780
+stateset_agents/training/offline_rl_algorithms.py                   296     43  85.47%   29-33, 41, 134-137, 189-192, 279-280, 383-390, 438-441, 609-616, 624-632, 746-758, 769-777
+stateset_agents/training/offline_rl_bcq.py                          324    162  50.00%   31-35, 43, 145-149, 157-159, 167-168, 181-184, 201-214, 272-276, 302-305, 324-325, 434-450, 461-516, 524-539, 562-604, 608-618, 635-668, 676-684, 735-736, 757-762, 782-837, 841, 845
+stateset_agents/training/offline_rl_bear.py                         329    164  50.15%   33-38, 46, 176, 218-221, 239-240, 302-306, 324-336, 344-347, 472-477, 488-534, 547-592, 596-615, 638-674, 678-688, 705-723, 731-739, 790-791, 812-817, 837-892, 896, 900
+stateset_agents/training/olmo3_starter.py                             9      0 100.00%
+stateset_agents/training/phi4_mini_starter.py                         9      0 100.00%
+stateset_agents/training/policy_artifacts.py                         77      8  89.61%   47, 56, 58, 96, 109, 112, 125, 128
+stateset_agents/training/ppo_trainer.py                             275    161  41.45%   44-46, 73-75, 172, 188-190, 194-202, 224-248, 301, 340-343, 350, 376-382, 396-415, 430, 447, 477-494, 513-671, 688-723, 731-764, 788-820
+stateset_agents/training/preset_training.py                          47     40  14.89%   19-39, 55-69, 85-104
+stateset_agents/training/qwen3_5_small_starter.py                     9      0 100.00%
+stateset_agents/training/qwen3_5_starter.py                          41      8  80.49%   40, 44, 46, 52, 56, 60, 62, 64
+stateset_agents/training/qwen3_8_starter.py                          43      6  86.05%   72, 88, 92, 96, 98, 100
+stateset_agents/training/qwen3_coder_starter.py                      44      6  86.36%   55, 73, 77, 81, 83, 85
+stateset_agents/training/qwen3_small_starter.py                       9      0 100.00%
+stateset_agents/training/reward_calibration.py                      164     23  85.98%   35, 109, 114, 122, 142-152, 162-163, 302-311, 355, 376, 407-415
+stateset_agents/training/rl_losses.py                                66      1  98.48%   104
+stateset_agents/training/rlaif_trainer.py                           216    160  25.93%   44-59, 71-84, 187-192, 201-221, 234-249, 263-273, 292-309, 340-397, 410-415, 423-446, 463-512, 528-611, 628-663, 671-689, 693-717, 741-749
+stateset_agents/training/serving_artifacts.py                        53      1  98.11%   129
+stateset_agents/training/sft.py                                     417     21  94.96%   117, 136-137, 250-251, 350-356, 541, 574-576, 785, 852, 906-910, 1163, 1166
+stateset_agents/training/sim_to_real.py                             321    188  41.43%   31-35, 43, 162-165, 178-206, 214-216, 225-232, 274-288, 298-318, 327-343, 351-358, 432-462, 474-502, 511-563, 571-588, 611-626, 630-633, 662-663, 673-683, 703-745, 749-761, 765-769, 818-819
+stateset_agents/training/single_turn_checkpointing.py               109     32  70.64%   20-22, 57-58, 62, 89-91, 95-96, 114, 118-125, 127, 134-135, 140, 146-147, 150-151, 168-169, 173-174, 177
+stateset_agents/training/single_turn_state.py                       107     25  76.64%   19, 23, 27, 34, 42-43, 61-62, 72, 76-77, 81-82, 93, 103, 111-114, 117, 140, 142, 150, 152, 157
+stateset_agents/training/single_turn_trainer.py                     367     83  77.38%   151, 153-154, 161-164, 172-178, 192, 225, 237-240, 243, 258-268, 276, 278, 281-282, 298, 307-308, 324-334, 338-342, 355-360, 369-370, 469, 473, 481-482, 520, 538, 561-563, 596-628, 632, 650-651, 659, 672-676, 699, 733-738
+stateset_agents/training/small_model_specs.py                        28      2  92.86%   24, 28
+stateset_agents/training/smollm3_starter.py                           9      0 100.00%
+stateset_agents/training/starter_common.py                          195     28  85.64%   52, 58-67, 70, 86-87, 90, 99-109, 146-147, 163-164, 177, 235-236, 293-295, 341, 478, 487, 587
+stateset_agents/training/starter_factory.py                         118      0 100.00%
+stateset_agents/training/train.py                                   176    120  31.82%   87, 96, 106, 110, 114, 118, 127, 141-143, 153, 161-162, 174-185, 203-209, 212-233, 249-260, 272-310, 325-347, 358-360, 374-389, 406-458, 463-475
+stateset_agents/training/trainer.py                                  16      5  68.75%   59-69
+stateset_agents/training/trainer_runtime.py                          98     17  82.65%   217-266
+stateset_agents/training/trainer_utils.py                            62     17  72.58%   46, 74-85, 100-120
+stateset_agents/training/transformer_reward_model.py                380     57  85.00%   31-38, 65-68, 129-132, 161, 188, 191, 194, 197, 240, 348-351, 476, 495, 508-509, 516-521, 551, 557, 592, 616-620, 624-627, 644, 718, 756-757, 797, 803, 813-814, 876-878, 894-899
+stateset_agents/training/trl_grpo_config.py                          52     16  69.23%   59-98
+stateset_agents/training/trl_grpo_entrypoints.py                    176    137  22.16%   28-30, 82-178, 189-214, 237-396
+stateset_agents/training/trl_grpo_trainer.py                        354    196  44.63%   83, 108-123, 128-129, 137-138, 147, 155-156, 164-165, 174, 185-186, 203-227, 234-247, 259, 279, 281, 287-306, 311-313, 323, 339-383, 398-555, 567-584, 591, 598-605, 611-614, 661-670, 684-686, 716, 731, 733, 740, 786-787, 791-792
+stateset_agents/training/vapo_config.py                              42      0 100.00%
+stateset_agents/training/vapo_entrypoints.py                         60     49  18.33%   35-129
+stateset_agents/training/vapo_trainer.py                            399    106  73.43%   80-92, 98, 107, 115-116, 131, 137, 247-248, 294-313, 418-419, 425, 444-445, 465-471, 503, 563-572, 584-667, 702, 809-810, 830, 841, 1089-1114
+stateset_agents/training/vllm_backend.py                            470    130  72.34%   61-64, 141, 144, 147, 150, 153, 156-158, 180-182, 187-189, 237, 241-242, 287, 323-324, 347-351, 370-373, 404, 410, 419, 484-485, 523, 526, 568, 572, 586, 608, 656-712, 753-772, 776-777, 781, 785-795, 855-857, 874, 932, 962-971, 974, 977-986, 1005, 1007, 1010, 1028, 1033-1044
+stateset_agents/utils/__init__.py                                    45     27  40.00%   29-32, 35-40, 43-46, 49-52, 55-58, 61-64, 67-70, 73-76, 86
+stateset_agents/utils/alerts.py                                     328    328   0.00%   8-821
+stateset_agents/utils/cache.py                                       59     39  33.90%   25-33, 37-39, 43-47, 51-52, 56-63, 67-74, 78-80, 84-86, 96-98
+stateset_agents/utils/credentials.py                                  5      0 100.00%
+stateset_agents/utils/logging.py                                    243    243   0.00%   8-648
+stateset_agents/utils/monitoring.py                                 345    112  67.54%   28-30, 35, 54-64, 111, 136, 190, 254, 261-301, 311, 346-350, 364-371, 377-380, 386-389, 395-398, 533, 578-580, 585-591, 597, 601-603, 628-647, 688-694, 708, 713, 722, 730-736, 745, 802-803, 814-849, 855-858, 862-867, 871, 875-878, 882-885, 889, 905-908, 920-927
+stateset_agents/utils/observability.py                              319    319   0.00%   8-745
+stateset_agents/utils/performance_monitor.py                        175    117  33.14%   70-82, 86-108, 112-113, 117-120, 124-152, 156, 165, 171-176, 185-191, 197-203, 210, 215-238, 248-250, 254-280, 295-335, 341, 346, 351
+stateset_agents/utils/profiler.py                                   129    129   0.00%   8-271
+stateset_agents/utils/repo_hygiene.py                                73      6  91.78%   61, 88, 99, 128-131, 172
+stateset_agents/utils/reproducibility.py                             49     12  75.51%   88-98, 105-106
+stateset_agents/utils/security.py                                   227     91  59.91%   59-61, 66-68, 73-78, 85-102, 107-121, 126-136, 150, 214-222, 226-236, 240-245, 335-349, 353-404, 409, 419, 425-428, 432-434, 438, 452, 457, 462
+stateset_agents/utils/symbolic_math.py                              114     33  71.05%   46, 53, 56, 64, 68, 71, 75-76, 102-104, 115-117, 120-123, 128, 134-143, 146, 159, 168, 180
+stateset_agents/utils/wandb_config.py                                45      4  91.11%   17, 52, 94-95
+stateset_agents/utils/wandb_integration.py                          393    341  13.23%   48-58, 64-72, 83-94, 108-109, 116-120, 125-129, 143-173, 179-226, 236-261, 270-325, 329-375, 385-411, 415-442, 451-481, 485-507, 511-522, 526-568, 572-626, 630-683, 689-713, 717-753, 757-765, 777, 787-788, 798-799, 809-815
+stateset_agents/utils/wandb_logger.py                               229    170  25.76%   46-49, 51-52, 55, 58-59, 74, 97-99, 109-116, 119-120, 131-153, 157-185, 195-212, 221-236, 242-282, 288-303, 323-342, 348-372, 378-392, 396-415, 419-441, 451
+------------------------------------------------------------------------------------------------
+TOTAL                                                             53048  18494  65.14%
+Coverage XML written to file /tmp/stateset-industry-isolated-coverage.xml
+Required test coverage of 65% reached. Total coverage: 65.14%
+=========================== short test summary info ============================
+SKIPPED [1] tests/unit/test_inference_metrics.py:20: could not import 'prometheus_client': No module named 'prometheus_client'
+SKIPPED [1] tests/unit/test_river_submit_golden.py:749: regeneration is opt-in
+SKIPPED [7] tests/unit/test_objectives_trl_pin.py:163: bias correction only meaningful for token-level k3
+SKIPPED [1] tests/unit/test_hpo.py:325: Optuna not installed
+SKIPPED [1] tests/unit/test_hpo.py:340: Optuna not installed
+SKIPPED [1] tests/unit/test_hpo.py:447: Optuna not installed
+SKIPPED [1] tests/unit/test_hpo.py:506: Optuna not installed
+SKIPPED [1] tests/api/test_openai_compat_endpoint.py:311: prometheus_client not installed
+SKIPPED [1] tests/unit/test_data_package_lazy_exports.py:48: conversation_dataset.py declares no __all__
+SKIPPED [1] tests/unit/test_vapo_rust_gae_parity.py:45: could not import 'stateset_rl_core': No module named 'stateset_rl_core'
+SKIPPED [1] tests/unit/test_vapo_rust_gae_parity.py:94: could not import 'stateset_rl_core': No module named 'stateset_rl_core'
+SKIPPED [1] tests/unit/test_cli_import_time.py:30: sentence_transformers is not installed; nothing to guard against
+6094 passed, 18 skipped, 2104 warnings in 433.66s (0:07:13)

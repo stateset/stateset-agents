@@ -7,14 +7,13 @@ uses those value estimates as baselines for GRPO training.
 """
 
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from typing import Any, cast
 
 import numpy as np
-
-from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
 
 try:
     import torch
@@ -31,8 +30,6 @@ from .base_trainer import BaseTrainerConfig
 from .checkpoint_io import load_checkpoint_file
 
 logger = logging.getLogger(__name__)
-
-OFFLINE_DATA_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 
 def _require_torch():
@@ -337,44 +334,47 @@ class OfflineGRPOTrainer:
         Returns:
             Pre-training metrics
         """
-        dataset = dataset or self.dataset
+        dataset = self.dataset if dataset is None else dataset
         if dataset is None:
             raise ValueError("Dataset required for value pre-training")
 
-        num_steps = num_steps or (
-            self.config.pretrain_value_epochs
-            * len(dataset)
-            // self.config.pretrain_value_batch_size
-        )
-
-        logger.info(f"Pre-training value functions for {num_steps} steps")
-
-        # Initialize offline learner if not done
+        # Conversion failures must remain failures: random features do not
+        # preserve the state/action semantics of the logged conversations.
+        converter = getattr(dataset, "to_offline_rl_format", None)
+        if not callable(converter):
+            raise ValueError(
+                "Dataset must implement to_offline_rl_format with real state/action "
+                "features; configure ConversationDataset with an EmbeddingCache."
+            )
+        offline_data = self._validate_offline_data(converter())
+        batch_size = self.config.pretrain_value_batch_size
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("pretrain_value_batch_size must be positive")
+        if num_steps is None:
+            num_steps = self.config.pretrain_value_epochs * math.ceil(
+                len(offline_data["states"]) / batch_size
+            )
+        if type(num_steps) is not int or num_steps < 1:
+            raise ValueError("num_steps must be a positive integer")
+        self.value_pretrained = False
+        logger.info("Pre-training value functions for %s steps", num_steps)
         if self._offline_learner is None:
             self._init_offline_learner()
         offline_learner = self._offline_learner
         if offline_learner is None:
             raise RuntimeError("Offline learner could not be initialized")
 
-        # Convert dataset to offline RL format when supported.
-        to_offline_rl_format = getattr(dataset, "to_offline_rl_format", None)
-        if callable(to_offline_rl_format):
-            try:
-                offline_data = to_offline_rl_format()
-            except OFFLINE_DATA_EXCEPTIONS as e:
-                logger.warning(f"Could not convert to offline RL format: {e}")
-                offline_data = self._prepare_simplified_dataset(dataset)
-        else:
-            offline_data = self._prepare_simplified_dataset(dataset)
-
         # Train offline learner
         metrics: list[dict[str, float]] = []
+        value_losses: list[float] = []
         batch_size = self.config.pretrain_value_batch_size
         dataset_size = offline_data["states"].shape[0]
 
         for step in range(num_steps):
             # Sample batch
-            indices = np.random.choice(dataset_size, size=batch_size, replace=False)
+            indices = np.random.choice(
+                dataset_size, size=min(batch_size, dataset_size), replace=False
+            )
 
             batch_states = torch.FloatTensor(offline_data["states"][indices]).to(
                 self.device
@@ -404,25 +404,26 @@ class OfflineGRPOTrainer:
                 batch_next_states,
                 batch_dones,
             )
+            if not step_metrics or any(
+                not math.isfinite(float(value)) for value in step_metrics.values()
+            ):
+                raise ValueError("Offline learner must report finite measured metrics")
             metrics.append(step_metrics)
 
             # Also train our value networks
-            self._train_value_step(
+            value_loss = self._train_value_step(
                 batch_states,
                 batch_actions,
                 batch_rewards,
                 batch_next_states,
                 batch_dones,
             )
+            if not math.isfinite(value_loss):
+                raise ValueError("Value training returned a nonfinite loss")
+            value_losses.append(value_loss)
 
             if step % 100 == 0:
-                avg_loss = (
-                    np.mean(
-                        [m.get("total_loss", m.get("loss", 0)) for m in metrics[-100:]]
-                    )
-                    if metrics
-                    else 0
-                )
+                avg_loss = np.mean(value_losses[-100:])
                 logger.info(
                     f"Pre-training step {step}/{num_steps}: loss={avg_loss:.4f}"
                 )
@@ -430,13 +431,10 @@ class OfflineGRPOTrainer:
         self.value_pretrained = True
         logger.info("Value function pre-training complete")
 
-        last_metrics = metrics[-1] if metrics else {}
-        final_loss = float(
-            last_metrics.get("total_loss", last_metrics.get("loss", 0.0))
-        )
         return {
             "num_steps": float(num_steps),
-            "final_loss": final_loss,
+            "final_loss": value_losses[-1],
+            **{f"offline_{key}": float(value) for key, value in metrics[-1].items()},
         }
 
     def _train_value_step(
@@ -487,39 +485,39 @@ class OfflineGRPOTrainer:
 
         return float(value_loss.item())
 
-    def _prepare_simplified_dataset(
-        self,
-        dataset: Any,
-    ) -> dict[str, np.ndarray]:
-        """Prepare dataset without embeddings"""
-        states = []
-        actions = []
-        rewards = []
-        next_states = []
-        dones = []
-
-        for traj in dataset:
-            for i in range(len(traj.turns) - 1):
-                # Use random embeddings as placeholder
-                state = np.random.randn(self.config.state_dim)
-                action = np.random.randn(self.config.action_dim)
-                reward = traj.turn_rewards[i] if i < len(traj.turn_rewards) else 0.0
-                next_state = np.random.randn(self.config.state_dim)
-                done = i == len(traj.turns) - 2
-
-                states.append(state)
-                actions.append(action)
-                rewards.append(reward)
-                next_states.append(next_state)
-                dones.append(float(done))
-
-        return {
-            "states": np.array(states, dtype=np.float32),
-            "actions": np.array(actions, dtype=np.float32),
-            "rewards": np.array(rewards, dtype=np.float32),
-            "next_states": np.array(next_states, dtype=np.float32),
-            "dones": np.array(dones, dtype=np.float32),
+    def _validate_offline_data(self, data: Any) -> dict[str, np.ndarray]:
+        """Validate real transition features before any optimizer mutation."""
+        keys = {"states", "actions", "rewards", "next_states", "dones"}
+        if not isinstance(data, dict) or not keys.issubset(data):
+            raise ValueError(
+                "Offline data requires states, actions, rewards, next_states and dones"
+            )
+        arrays = {}
+        for key in keys:
+            raw = np.asarray(data[key])
+            if raw.dtype.kind not in "biuf":
+                raise ValueError(f"Offline {key} must contain numeric features")
+            with np.errstate(over="ignore", invalid="ignore"):
+                arrays[key] = raw.astype(np.float32)
+            if not np.isfinite(arrays[key]).all():
+                raise ValueError(f"Offline {key} must be finite")
+        states = arrays["states"]
+        if states.ndim != 2 or len(states) == 0:
+            raise ValueError("Offline states must be a nonempty matrix")
+        count = len(states)
+        shapes = {
+            "states": (count, self.config.state_dim),
+            "next_states": (count, self.config.state_dim),
+            "actions": (count, self.config.action_dim),
+            "rewards": (count,),
+            "dones": (count,),
         }
+        for key, shape in shapes.items():
+            if arrays[key].shape != shape:
+                raise ValueError(f"Offline {key} must have shape {shape}")
+        if not np.isin(arrays["dones"], [0, 1]).all():
+            raise ValueError("Offline dones must be zero or one")
+        return arrays
 
     async def train_step(
         self,

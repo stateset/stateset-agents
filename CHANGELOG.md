@@ -7,14 +7,230 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.0] - 2026-10-14 — Reliable training and durable workers
+
 ### Added
 
+- Add strict rollout contracts and explicit sequence/sampler fallback options,
+  shared pre-compute configuration validation, versioned native trainer state,
+  RNG restoration, batched Hugging Face groups and memory-conscious token scoring.
+- Add persistent SQLite/PostgreSQL training queues with independent workers,
+  idempotency, global capacity, cancellation and fenced leases. Default API
+  rewards use task outcomes; starter heuristics require explicit selection.
+- Add sampled multi-turn learning/reload evidence and clean installed-wheel
+  checks across package extras and minimum/latest/locked training dependencies.
+
+- `train()` accepts `objective` and `objective_overrides`, and applies any
+  other `TrainingConfig` field passed as a keyword (e.g. `learning_rate=1e-5`).
+  Unknown keywords, conflicting duplicate settings, unknown objectives and
+  unknown `training_mode` values now raise instead of being silently ignored.
+- Add `river-preflight` and a Python report API for local prerequisites and
+  opt-in live account model checks. Emit versioned JSON for CI, distinguish
+  unchecked access from denied access, bound SDK requests without retries,
+  and close clients without creating training sessions or sampling tokens.
+- Support immutable model revisions for industry preparation, tokenizer and
+  weight loading, adapter lineage, and paired evaluation. Add a reproducible
+  CUDA pilot harness for Qwen3.5 2B/4B with synthetic-data labeling, saved
+  adapter checks, reload-effect probes, and retained raw predictions.
+- Add paired industry reference evaluation through `industry eval-export`,
+  `industry evaluate`, and backend-independent Python prediction callbacks.
+  Evaluate every assistant turn, preserve typed tool arguments and failed
+  requests, bind reports to dataset/prediction hashes, and reject incomplete or
+  incomparable evidence. Configurable quality and resource gates count source
+  groups, detect per-case regressions, and refuse synthetic demonstrations.
+- Add `industry` CLI commands and Python APIs for nine sector recipes, synthetic
+  tool-calling examples, strict JSONL validation, grouped train/validation splits,
+  dataset fingerprints, and explicit-preview or CUDA SFT execution. Holdout data
+  remains separate for independent evaluation.
+- Added `APIConfig.training_max_concurrent_jobs` (default `1`) and
+  `API_TRAINING_MAX_CONCURRENT_JOBS` to bound active training jobs per API process.
+  Excess submissions receive HTTP 429; cancelling jobs retain their slot until
+  cleanup completes. The optional constructor argument is appended after all
+  existing arguments, preserving positional calls, and is recorded in the stable
+  v1 API contract.
 - Added a v0.5 private product-use transfer set with seed-varying support
   conversations and a dependent ingest-to-grade task. Both static and
   interactive evaluators verify its actual tool results and generated files.
 
 ### Fixed
 
+- Sequence-path GRPO now trains on assistant tokens only. Real tokenizers
+  return a `BatchEncoding` with an `assistant_masks` key, which the old check
+  (`dict` with `assistant_tokens_mask`) never matched, so prompts were silently
+  supervised. Templates without `{% generation %}` markers (Qwen3, Qwen3.5,
+  ChatML) now get assistant spans from prefix renders. Tokenizers without a
+  chat template fall back to role-tagged spans instead of crashing.
+- DAPO dynamic sampling no longer discards every group when no verifier is
+  set (the default): groups are scored before filtering, and without a
+  verifier only zero-signal groups (all rewards equal) are dropped. DAPO now
+  accumulates every group into one optimizer step per inner update, so its
+  token-level mean spans the whole batch as in the paper.
+- VAPO computes GAE in the shifted action frame used by its log-probs, values
+  and loss masks. The episode reward previously landed one token past the last
+  action, so policy advantages depended on a never-trained value. Value warmup
+  targets now use the same frame and discount.
+- PPO places the scalar episode reward on the last response action instead of
+  every response token, which inflated returns with length. Padding is now
+  excluded from the response mask (with left padding handled), no longer
+  bootstraps values, and is left out of advantage normalization.
+- Native GRPO inner updates snapshot old-policy log-probs under the same
+  autocast precision as the losses, so the first importance ratio is exactly 1.
+- Sequence-path GRPO skips trajectories whose replies were truncated away
+  instead of falling back to supervising the whole conversation, and its
+  entropy bonus now reads the logits that predict the supervised tokens.
+- GSPO and GSPO-token score responses against the untruncated rendered prompt.
+  Prompts longer than `max_prompt_length` previously leaked their tail into the
+  response mask (or, when very long, displaced the response entirely).
+- GSPO's cosine LR schedule is sized by optimizer steps (one per outer
+  iteration, not multiplied by `num_iterations`) and holds its final value past
+  the end instead of oscillating between full and zero learning rate.
+- With `rescore_old_log_probs=False`, GSPO's rollout-time old log-probs now
+  cover exactly the tokens it scores: a trailing EOS is dropped, and HF or vLLM
+  sampler log-probs are used only when the sampled ids round-trip to the scored
+  text (otherwise the rollout is rescored). The EOS term previously biased the
+  sequence ratio by about log p(EOS) / |y|, far outside GSPO's clip band.
+- Batched group generation stops each row independently. The stop-string
+  criterion read only row 0 and returned one flag for the whole batch, so one
+  sample emitting `\n\n` or `User:` truncated all of its siblings while stop
+  strings in other rows were ignored. Padding after a stop string is no longer
+  recorded as a sampled EOS when `pad_token_id == eos_token_id`.
+- Restoring a trainer checkpoint now syncs an attached rollout engine, which
+  otherwise kept serving pre-resume weights until the next optimizer step.
+- `CalibratedRewardFunction` normalizes against statistics frozen between
+  `calibration_interval` refreshes (identity before the first one) instead of
+  updating them on every call, which split ties and inverted rankings within
+  a group.
+- Over-long generation prompts are truncated from the left, keeping the latest
+  user turn and the assistant cue, and a warning is logged.
+- The per-token GRPO path honours `baseline_type="group_median"` and
+  `"global_mean"` (with the trainer's running reward mean) through the same
+  helper as the sequence path; it previously fell back to group normalization.
+- CQL bootstraps from next-state actions: dataset `next_actions` when passed to
+  `train_step`, otherwise a soft maximum over sampled actions. It previously
+  evaluated `Q(s', a_t)` with the current action. The CQL penalty now scales
+  `logsumexp(Q / tau)` by `tau`, as in CQL(H).
+- River/Tinker SFT datums are the single full render of each conversation,
+  weighted on assistant spans located in that render. Splicing separately
+  tokenized prefix renders corrupted every multi-turn row for Qwen3/Qwen3.5
+  (which add a `<think>` stub to the final assistant turn only). Tool-calling
+  fields and row `tools` are now kept instead of being stripped or dropping
+  the row. Assistant-span logic is shared in `stateset_agents.core.chat_masking`.
+- Local and industry SFT label assistant tokens only (system prompts, user
+  turns and tool results are context) and drop rows whose answer is truncated
+  away at `max_length`, instead of training on every token.
+- `ConversationDataset.split`, `filter_by_quality` and `filter_by_length` no
+  longer re-normalize the shared trajectories in place (which changed the
+  parent and rescaled each subset by its own statistics). `filter_by_quality`
+  compares raw total rewards, and `split` no longer reseeds the global RNG.
+- The Decision Transformer pairs each assistant action with the full
+  conversation before it and the return-to-go at its own turn; states and
+  returns were previously offset from their actions.
+- `build_rl_batch` uses the same pre-shifted label layout as the live
+  `build_group_rl_datums` path; its values were one position late.
+- TRL-backed GRPO now honours `TrainingConfig.objective`: `grpo`, `bnpo`,
+  `dapo`, `dr_grpo`, `cispo` and `gspo` map to TRL's `loss_type`, importance
+  level, clip range and reward scaling; presets or overrides TRL cannot express
+  raise. Settings the installed TRL no longer accepts (e.g. `max_prompt_length`
+  on TRL 1.12) are logged instead of dropped silently.
+
+- Publish cancelled synchronous River RL runs from validated committed state,
+  retain token reservations on resume, and record cancellation in the cost
+  ledger. Report or bookkeeping failures preserve the original interruption;
+  partially completed provider operations never advance committed progress.
+- Close executor-owned River clients after successful, failed, or interrupted
+  submissions while preserving caller ownership of injected clients. Reject
+  overlapping submissions on one executor, retain completed checkpoints when
+  cleanup fails, and make early failures and interruptions terminal in job state.
+- Check fresh River account model access before sessions or tokenizer/renderer
+  loading, keep SFT tokenizer caches separate per model, and avoid constructing
+  River clients during dry runs or completed RL resumes. Extend regression
+  coverage for empty streams and thread-backed rollout replies.
+
+- Size native GRPO learning-rate schedules for every configured token-path inner
+  update instead of dividing those updates by gradient accumulation. Keep final
+  partial windows in ordinary accumulation budgets, and align `TrainingConfig`
+  step/warmup estimates with the native trainers. Mixed fallback paths use the
+  token-path budget as an upper bound; only committed optimizer steps advance it.
+
+- Separate pending GRPO accumulation from token-path inner updates: flush the
+  pending window with its actual mean, clear its counter, and rebuild subsequent
+  losses against the frozen pre-flush policy. Multi-turn metrics count the flush
+  separately as `accumulation_flush_updates` and include it in total committed
+  `optimizer_updates`. Single-turn inner updates now retain the continual-learning
+  EWC penalty on every recomputed loss.
+
+- Average the final partial accumulation window over its actual batches in both
+  native GRPO trainers. Apply the correction after AMP unscaling and before
+  clipping, including when flushing restored gradients without another episode.
+  Initialize restored AMP scale state before that flush without advancing its
+  growth tracker or rescaling saved gradients.
+
+- Validate native GRPO scalar losses and optimizer gradients before updates.
+  Reject invalid clipping limits and non-finite gradient norms, clear rejected
+  accumulation windows, and let real AMP overflows reduce their scale without
+  advancing optimizer-step counters, learning-rate schedules, or rollout sync.
+  Multi-turn step metrics now report committed `optimizer_updates`, including
+  mixed successful/skipped inner updates; single-turn simulation or missing
+  gradients no longer fabricate optimizer progress.
+
+- Propagate single-turn GRPO loss and environment errors instead of silently
+  substituting heuristic progress. Bind legacy environment call signatures before
+  invocation so an internal `TypeError` cannot repeat a side effect. Discard
+  pending gradients on cancellation or failure, skip success finalization, and
+  drain an exposed tracking `finish_run` hook through repeated cancellation.
+  Use the packaged W&B logger's `log_metrics` interface while retaining support
+  for simple `log`-only trackers.
+
+- Stage and sync GRPO checkpoint artifacts before publication, retain the prior
+  checkpoint through replacement, and recover interrupted directory renames on
+  the next trainer access. Serialize cooperating reads and writes with a local
+  filesystem lock and verify new checkpoints' complete SHA-256 file inventories
+  before loading weights. Failed saves no longer overwrite a usable checkpoint
+  with partially written model or training state.
+
+- Share checkpoint state handling between single-turn and multi-turn GRPO:
+  restore pending gradients, AMP state, and sharded/tied model weights in both
+  trainers. Propagate single-turn artifact write failures without a saved
+  callback, and close the final accumulation window to prevent duplicate
+  optimizer updates after resuming a completed run.
+
+- Reject unconfirmed explicit checkpoint resumes in single-turn and multi-turn
+  GRPO before starting callbacks or rollouts, instead of silently starting a
+  fresh run after a missing or unusable checkpoint.
+- Restore multi-turn checkpoints from indexed PyTorch and safetensors shards,
+  including omitted tied weights in Hugging Face saves. Validate shard paths,
+  index coverage, shard contents, and tied values without loading all shards
+  into memory at once.
+- Persist multi-turn GRPO pending gradients and AMP scaler state for checkpoint
+  recovery. Validate accumulation compatibility before loading weights, reject
+  incomplete legacy windows, and fail explicitly on missing or incompatible
+  model, optimizer, or scheduler state in new checkpoints.
+- Prevent multi-turn GRPO cancellation, interrupts, and unexpected errors from
+  flushing pending gradients or running success finalization. Propagate final
+  checkpoint failures, close tracking through cancellation, and clear completed
+  accumulation windows so resumed runs cannot flush them twice.
+- Preserve observed API training progress when a trainer returns early or emits
+  no episode callbacks. Expose completion scope in job status and list responses
+  instead of unconditionally claiming 100% episode progress.
+- Stop native River runs after a configurable streak of confirmed skipped
+  optimizer updates (default five), preserving diagnostics and the sealed test
+  split. Bind the threshold to run/study plans and enforce it after recovery
+  and in study audits; unknown activity never counts as skipped updates.
+- Serialize native River validation writes with other callbacks and recovery,
+  and drain active writes when evaluators are cancelled during shutdown.
+- Close native River training and rollout iterators before releasing provider
+  resources when step persistence or trajectory validation fails; drain in-flight
+  iteration and cleanup through repeated caller cancellation without prefetching.
+- Distinguish River's completed batches from observed optimizer updates in
+  training-activity reports, preserve unknown activity after recovery, and keep
+  the held-out test split sealed when every completed batch is known to have
+  skipped the optimizer. Study audits recompute activity from the recorded
+  batches and require matching summaries before accepting RL evidence.
+- Report actual group-advantage signal in native GSPO trainers and avoid false
+  zero-signal aborts when metrics are missing. Reject invalid rewards, losses,
+  and gradients before advancing optimizer or scheduler state.
+- Average GSPO-token loss across processed prompt groups, including KL, and honor
+  `rescore_old_log_probs` with the same score-gap diagnostic as GSPO.
 - Made `SecureConfig` fail closed when encrypted secrets lack a configured key
   or the `cryptography` dependency; explicit plaintext storage remains available
   through `encrypt=False`.

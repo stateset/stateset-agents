@@ -335,7 +335,13 @@ async def get_training_service(request: Request):
 
     service = getattr(request.app.state, "training_service", None)
     if service is None:
-        service = TrainingService()
+        from .config import get_config
+
+        config = getattr(request.app.state, "config", None) or get_config()
+        service = TrainingService(
+            max_concurrent_jobs=getattr(config, "training_max_concurrent_jobs", 1),
+            queue_path=getattr(config, "training_queue_path", None),
+        )
         request.app.state.training_service = service
     return service
 

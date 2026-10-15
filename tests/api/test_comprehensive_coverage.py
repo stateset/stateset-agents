@@ -853,10 +853,9 @@ class TestAPIIntegration:
             yield client
 
     def test_health_endpoint(self, client):
-        """Test health endpoint returns healthy status."""
+        """Unstarted applications must not report unmeasured healthy status."""
         response = client.get("/health")
-        # Accept 200 or 404 depending on router configuration
-        assert response.status_code in (200, 404)
+        assert response.status_code == 503
 
     def test_root_endpoint(self, client):
         """Test root endpoint returns API info."""

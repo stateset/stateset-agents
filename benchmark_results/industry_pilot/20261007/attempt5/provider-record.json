@@ -1,0 +1,18 @@
+{
+  "authoritative_hourly_rate_usd": 1.09,
+  "authorized_total_ceiling_usd": 25,
+  "catalog_hourly_rate_usd": 1.09,
+  "catalog_maximum_compute_cost_usd": 1.09,
+  "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice",
+  "gpu": "NVIDIA L40S",
+  "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456",
+  "launcher_sha256": "e8f10070af55493d886ade101f4b48eeb435c88d0c3c4acf679a33a0b78d7cfc",
+  "manifest_sha256": "a701424416f20f19b313afda89aa829f9800bb049f323afef1bff8c4040826f6",
+  "maximum_lifetime_seconds": 3600,
+  "observed_lifetime_seconds": 611.8096308708191,
+  "pod_id": "t1x0rfjdp8z82q",
+  "provider_derived_compute_cost_estimate_usd": 0.18524236045810913,
+  "status": "completed",
+  "termination_confirmed": true,
+  "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268"
+}

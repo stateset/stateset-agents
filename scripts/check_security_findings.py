@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.security_exceptions import classify_pip_audit_findings
+from scripts.security_workflow_gate import validate_bandit_report
 
 
 def _load_json_lenient(text: str) -> Any:
@@ -37,23 +38,19 @@ def main() -> int:
 
     try:
         bandit_payload = _load_json_lenient(bandit_path.read_text())
+        bandit_summary = validate_bandit_report(bandit_payload)
     except Exception as exc:
         print(f"Bandit output parse failed: {exc}")
         return 1
 
-    bandit_results = []
-    if isinstance(bandit_payload, dict):
-        bandit_results = bandit_payload.get("results", [])
-    elif isinstance(bandit_payload, list):
-        bandit_results = bandit_payload
-
+    bandit_results = bandit_payload["results"]
     high_findings = [
         item
         for item in bandit_results
         if str(item.get("issue_severity", "")).upper() in {"MEDIUM", "HIGH", "CRITICAL"}
     ]
 
-    if high_findings:
+    if bandit_summary.blocked:
         for item in high_findings[:10]:
             print(
                 f"Bandit: {item.get('filename')}:{item.get('line_number')} "

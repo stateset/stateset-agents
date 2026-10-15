@@ -1,5 +1,79 @@
 # Policy objectives
 
+## Training contracts
+
+Native trainers call `TrainingConfig.validate_for_training()` before model or
+optimizer allocation. `validate()` retains advisory guidance. CLI, API and Python
+training share a torch-free configuration resolver; checkpoints retain the
+resolved configuration.
+
+Exact prompt and sampled token IDs are required by default. Legacy text-only
+trajectories require `allow_sequence_fallback=True`. Requesting sampler
+importance correction without sampler probabilities raises unless
+`allow_missing_sampler_logprobs=True`; this opt-in is reported as
+`old_logprobs_source="recompute_fallback"`. Metadata is validated without
+coercing malformed IDs or probabilities. Sequence compatibility reports its
+effective objective and fallback explicitly.
+
+Sequence objectives sum assistant-turn losses within each trajectory before
+averaging trajectories, so early termination cannot reweight other episodes.
+The Hugging Face fallback batches groups up to `generation_batch_size`, trims
+padding after EOS, and restores model mode and KV-cache settings on failure.
+Token scoring gathers selected logits before normalization, avoiding a full
+vocabulary log-softmax output.
+
+GSPO, GSPO-token, DAPO, GEPO, VAPO, PPO and the base trainer share versioned
+`TrainingRuntime` checkpoints. Publication stages a complete directory, syncs
+its inventory and replaces it atomically. Loading restores policy and critic
+weights, optimizers, schedulers, pending gradients, counters and Python/NumPy/
+Torch RNGs. Native single/multi-turn GRPO retain their asynchronous checkpoint
+API and share the same publication and RNG primitives. Legacy model exports
+are not silently treated as complete runtime checkpoints.
+
+Run a genuinely sampled multi-turn regression without downloads:
+
+```bash
+python -m stateset_agents.training.sampled_workflow \
+  --output /tmp/sampled-workflow --seeds 42 43 44
+```
+
+The tiny transformer receives supervised tool-syntax preparation shared by the
+baseline and candidate. Balanced decision labels leave policy learning to RL.
+Actions are sampled through unmodified Hugging Face generation and executed
+against an isolated ledger. Evidence retains paired held-out outcomes, case
+hashes, optimizer updates, reload checks and a bootstrap interval across seeds.
+This is synthetic mechanics evidence, not representative industry quality.
+Use reviewed cases and `stateset_agents.evaluation.agent_study` for that claim.
+
+`training-contracts.yml` checks installed wheels with minimal, API, workers and
+training extras; deliberate minimum/latest/locked dependency combinations; the
+sampled regression; and the PostgreSQL worker contract.
+
+For a representative native study on reviewed refund cases:
+
+```bash
+python -m stateset_agents.training.native_refund_study \
+  --cases reviewed-refund-cases.json --output outputs/refund-study \
+  --model Qwen/Qwen2.5-0.5B-Instruct \
+  --model-revision 7ae557604adf67be50417f59c2c2f167def9a775
+```
+
+The JSON contains `provenance` (`source="reviewed"`, a nonempty `reviewer`) and
+`train`, `validation`, `test` lists of refund-policy order facts. Each partition
+needs at least 32 independent cases, with no repeated IDs or content across
+partitions. The default six training seeds support an exact seed-level sign
+test; the final policy is selected exclusively on validation results. Raw test
+outcomes are retained before training and once after reloading the selected
+checkpoint. Failure to meet the quality gate exits nonzero. `--synthetic`
+exercises the same pipeline while always refusing a representative-quality claim.
+
+Shared runtime metrics separate rollout time from update time, count exact
+generated tokens and verified successful episodes where available, and report
+process peak VRAM on CUDA. Supplying a measured `compute_cost_per_hour` adds an
+estimated compute cost for those phases and successful episodes per dollar.
+These phase estimates exclude provisioning, storage and network charges; the
+provider ledger remains the source for whole-job accounting.
+
 `stateset_agents.training.objectives` is the single place where StateSet's
 policy-optimisation math lives. A `PolicyObjective` names one point in the
 space **advantage × ratio × clip × aggregation × KL**; two pure functions,
@@ -215,7 +289,18 @@ for its HF path and, on a fresh rollout batch, takes its old-policy log-probs
 from the current forward pass detached (`rescore_old_log_probs`, default),
 so the sequence ratio is exactly 1 and the narrow GSPO band gates only
 genuine drift; the gap between the sampler's log-probs and that pass is
-reported as `generation_log_prob_gap`.
+reported as `generation_log_prob_gap`. Both GSPO and GSPO-token honor this setting
+and store the diagnostic in step metrics and training history. GSPO-token's
+token log-probabilities retain gradients; only the old-policy scores and its
+sequence ratio are detached.
+
+Set `rescore_old_log_probs=False` when using the generator's original scores
+for importance correction, such as rollouts from a lagging policy. In this mode
+the score-gap diagnostic is zero because the selected old-policy scores are
+the generator's own scores; it does not mean the generator matches the current
+model. Same-pass rescoring assumes fresh rollouts and cannot verify that an
+external engine is synchronized. GSPO-token previously ignored the setting;
+its default now follows GSPO, while `False` retains generator-score behavior.
 
 ## Rollouts from an inference engine
 
@@ -263,7 +348,9 @@ engine reported at sampling time as `logp_old`, so the importance ratio
 differs numerically (TRL's vLLM importance-sampling correction); the loss
 dict reports `old_logprobs_source` (`recompute`, `sampler`, or `snapshot`
 when `num_gradient_updates` froze its own old log-probs, which takes
-precedence). Rollouts without sampler log-probs fall back to `"recompute"`.
+precedence). Missing requested sampler log-probs raise by default. Explicit
+`allow_missing_sampler_logprobs=True` permits recomputation and reports
+`"recompute_fallback"` in the loss metadata.
 Use `"sampler"` with `rollout_sync=False` for a deliberately asynchronous
 engine, and note that the engine's log-probs must be of the raw model
 distribution (temperature 1, no top-p) to match the training forward pass.
@@ -339,3 +426,19 @@ Known differences, on purpose:
 VAPO's value loss and positive-example LM loss, PPO's value loss, and
 enhanced GRPO's exact full-vocabulary KL remain in their trainers; the
 objective owns the policy term only.
+
+## Sampled workflow and representative studies
+
+`python -m stateset_agents.training.sampled_workflow --device cuda` runs three
+seeds through real sampling, tool execution, native GRPO updates and checkpoint
+reload. Retained CPU/CUDA results and provider accounting are in
+`benchmark_results/training_contracts/20261014/`. These synthetic mechanics
+checks passed; they do not establish representative domain quality.
+
+`python -m stateset_agents.training.native_refund_study --help` describes the
+pretrained-model study runner. It requires reviewed, disjoint train/validation/test
+cases, pins model and implementation identity, selects checkpoints on validation,
+and retains per-case test traces. Its six-seed default supports the quality gate.
+The retained one-seed synthetic pretrained diagnostic scored 0/8 before and after
+training and failed that gate. A reviewed dataset is still required for the
+representative study.

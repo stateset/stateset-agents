@@ -10,11 +10,13 @@ from __future__ import annotations
 import contextlib
 import inspect
 import logging
-from collections.abc import Callable
+import re
+from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
 
+from ..core.chat_masking import assistant_char_spans
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
@@ -123,7 +125,10 @@ def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] 
             prompt_ids, token_ids = md.get("prompt_token_ids"), md.get("token_ids")
             if not prompt_ids or not token_ids:
                 return None
-            rows.append(([int(x) for x in prompt_ids], [int(x) for x in token_ids], ti))
+            from .rollout_contract import SampledTurn
+
+            sampled = SampledTurn.from_metadata(md)
+            rows.append((list(sampled.prompt_token_ids), list(sampled.token_ids), ti))
             found = True
         if not found:
             return None
@@ -145,7 +150,51 @@ def _token_objective(config: Any) -> Any:
     )
 
 
-def _token_advantages(rewards: Any, config: Any, objective: Any) -> Any:
+def _legacy_group_advantages(
+    rewards: Any,
+    config: Any,
+    *,
+    global_reward_mean: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
+    normalize: bool | None = None,
+) -> Any:
+    """``group_median`` / ``global_mean`` baselines, shared by both GRPO paths.
+
+    ``global_mean`` subtracts the trainer's running mean (and reports this
+    group's mean to it); without trainer statistics it uses the group mean.
+    With ``advantage_normalization`` the centred advantages are scaled by their
+    population std, as on the sequence path.
+    """
+    torch = require_torch()
+    baseline_type = getattr(config, "baseline_type", "group_mean")
+    if baseline_type == "group_median":
+        baseline = rewards.median()
+    elif baseline_type == "global_mean" and global_reward_mean is not None:
+        if update_global_stats is not None:
+            update_global_stats(float(rewards.mean().item()), len(rewards))
+        baseline = torch.tensor(
+            global_reward_mean, dtype=rewards.dtype, device=rewards.device
+        )
+    else:
+        baseline = rewards.mean()
+    advantages = rewards - baseline
+    if normalize is None:
+        normalize = bool(getattr(config, "advantage_normalization", True))
+    if normalize and advantages.numel() > 1:
+        std = advantages.std(correction=0)
+        if torch.isfinite(std) and std > 0:
+            advantages = (advantages - advantages.mean()) / (std + 1e-8)
+    return advantages
+
+
+def _token_advantages(
+    rewards: Any,
+    config: Any,
+    objective: Any,
+    *,
+    global_reward_mean: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
+) -> Any:
     """Group advantages for the token path: the configured preset's estimator,
     or the legacy ``baseline_type``/``advantage_normalization`` switches."""
     torch = require_torch()
@@ -153,6 +202,13 @@ def _token_advantages(rewards: Any, config: Any, objective: Any) -> Any:
     if getattr(config, "objective", None) is not None:
         return objectives.compute_advantages(rewards, zeros, objective)
     baseline_type = getattr(config, "baseline_type", "group_mean")
+    if baseline_type in ("group_median", "global_mean"):
+        return _legacy_group_advantages(
+            rewards,
+            config,
+            global_reward_mean=global_reward_mean,
+            update_global_stats=update_global_stats,
+        )
     normalize = bool(getattr(config, "advantage_normalization", True))
     if baseline_type == "leave_one_out":
         kind = "leave_one_out"
@@ -299,6 +355,8 @@ def _compute_token_path_loss(
     beta: float = 0.0,
     reference_model: Any | None = None,
     old_logprobs: list[Any] | None = None,
+    global_reward_mean: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
 ) -> dict[str, Any]:
     """Batched per-token GRPO over stored token ids for every group.
 
@@ -329,6 +387,15 @@ def _compute_token_path_loss(
         old_logprobs = sampler_old_logprobs(trajectory_groups, device)
         if old_logprobs is not None:
             old_source = "sampler"
+        else:
+            from .rollout_contract import require_explicit_fallback
+
+            require_explicit_fallback(
+                config,
+                "allow_missing_sampler_logprobs",
+                "Rollouts lack sampler log probabilities",
+            )
+            old_source = "recompute_fallback"
     losses, kls, ents, adv_log, n_rows = [], [], [], [], 0
     ratio_means, clip_fracs = [], []
     for gi, (group, rows) in enumerate(
@@ -344,7 +411,13 @@ def _compute_token_path_loss(
             rewards = torch.clamp(
                 rewards, min=-float(reward_clip), max=float(reward_clip)
             )
-        advantages = _token_advantages(rewards, config, objective)
+        advantages = _token_advantages(
+            rewards,
+            config,
+            objective,
+            global_reward_mean=global_reward_mean,
+            update_global_stats=update_global_stats,
+        )
         adv_log.extend(advantages.detach().cpu().tolist())
         row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
 
@@ -365,7 +438,15 @@ def _compute_token_path_loss(
             logp_ref=logp_ref,
             entropy=entropy,
         )
-        losses.append(result.loss)
+        # A trajectory can contain several assistant turns. For sequence
+        # objectives, sum its turn losses before averaging trajectories; a
+        # mean over turns would change its weight when an episode ends early.
+        scale = (
+            len(rows) / len(group.trajectories)
+            if objective.aggregate in {"seq_mean", "seq_sum_const"}
+            else 1.0
+        )
+        losses.append(result.loss * scale)
         kls.append(result.metrics["kl"])
         ents.append(result.metrics["entropy"])
         ratio_means.append(result.metrics["ratio_mean"])
@@ -404,6 +485,13 @@ def _try_token_path(
         return None
     rows = [_token_rows_for_group(g) for g in groups]
     if any(r is None for r in rows):
+        from .rollout_contract import require_explicit_fallback
+
+        require_explicit_fallback(
+            config,
+            "allow_sequence_fallback",
+            "Rollouts lack exact sampled token metadata",
+        )
         return None
     return _compute_token_path_loss(
         groups, [r for r in rows if r], config, agent, **kwargs
@@ -437,7 +525,12 @@ def compute_grpo_loss(
         Dictionary containing loss tensors and metrics
     """
     token_result = _try_token_path(
-        trajectory_groups, config, agent, old_logprobs=old_logprobs
+        trajectory_groups,
+        config,
+        agent,
+        old_logprobs=old_logprobs,
+        global_reward_mean=global_reward_mean,
+        update_global_stats=update_global_stats,
     )
     if token_result is not None:
         return token_result
@@ -478,15 +571,13 @@ def compute_grpo_loss(
                 _grpo_objective(config).with_(advantage_eps=1e-8),
             )
             normalize_adv = False  # the preset already normalised (or not)
-        elif baseline_type == "group_median":
-            baseline = rewards.median()
-        elif baseline_type == "global_mean":
-            # Update running global mean baseline
-            with torch.no_grad():
-                batch_mean = rewards.mean().item()
-                update_global_stats(batch_mean, len(rewards))
-            baseline = torch.tensor(
-                global_reward_mean, dtype=torch.float32, device=device
+        elif baseline_type in ("group_median", "global_mean"):
+            baseline = rewards - _legacy_group_advantages(
+                rewards,
+                config,
+                global_reward_mean=global_reward_mean,
+                update_global_stats=update_global_stats,
+                normalize=False,  # normalized below with every other baseline
             )
         elif baseline_type == "leave_one_out":
             # RLOO baseline: r_i minus the mean of the other rewards. For a
@@ -539,6 +630,8 @@ def compute_grpo_loss(
 
     return {
         "path": "sequence",
+        "objective": _grpo_objective(config).name,
+        "fallback": "explicit_sequence_compatibility",
         "policy_loss": total_loss_tensor,
         "total_loss": total_loss_tensor,
         "mean_advantage": (
@@ -641,6 +734,8 @@ def _compute_group_policy_loss(
     ):
         try:
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
+            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
+                continue  # nothing to supervise (e.g. reply truncated away)
 
             # Forward pass to get log probabilities
             with torch.set_grad_enabled(True):
@@ -679,6 +774,13 @@ def _compute_group_policy_loss(
                         outputs.loss, token_count, advantage, old_log_prob, objective
                     )
                 elif clip_ratio > 0:
+                    from .rollout_contract import require_explicit_fallback
+
+                    require_explicit_fallback(
+                        config,
+                        "allow_sequence_fallback",
+                        "Rollouts lack old policy log probabilities",
+                    )
                     global _warned_missing_log_probs
                     if not _warned_missing_log_probs:
                         logger.warning(
@@ -699,8 +801,13 @@ def _compute_group_policy_loss(
                 # contributes gradient (encourages exploration) rather than
                 # being a dead no-grad metric.
                 if entropy_coef > 0 and torch.is_tensor(labels):
-                    response_mask = labels.ne(-100).to(dtype=outputs.logits.dtype)
-                    entropy_bonus = compute_entropy_bonus(outputs.logits, response_mask)
+                    # Logits at position t predict token t+1: shift like the NLL.
+                    response_mask = (
+                        labels[:, 1:].ne(-100).to(dtype=outputs.logits.dtype)
+                    )
+                    entropy_bonus = compute_entropy_bonus(
+                        outputs.logits[:, :-1], response_mask
+                    )
                     policy_loss = policy_loss - entropy_coef * entropy_bonus
                     entropy_sum += float(entropy_bonus.detach().item())
                     entropy_count += 1
@@ -797,6 +904,8 @@ def compute_enhanced_grpo_loss(
             zip(group.trajectories, advantages, strict=False)
         ):
             inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
+            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
+                continue  # nothing to supervise (e.g. reply truncated away)
 
             # Forward pass
             use_amp = getattr(config, "bf16", False) or getattr(config, "fp16", False)
@@ -902,7 +1011,10 @@ def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
     """Format trajectory into text for model input."""
     messages = _trajectory_to_messages(trajectory)
 
-    if hasattr(agent.tokenizer, "apply_chat_template"):
+    tokenizer = agent.tokenizer
+    if hasattr(tokenizer, "apply_chat_template") and not (
+        hasattr(tokenizer, "chat_template") and tokenizer.chat_template is None
+    ):
         # Use tokenizer's chat template
         rendered: object = agent.tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=False
@@ -964,6 +1076,145 @@ def _format_trajectory_with_spans(
     return "".join(parts), assistant_spans
 
 
+_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (TypeError, *LOSS_EXCEPTIONS)
+# Slow (non-Rust) tokenizers raise NotImplementedError for offset mappings.
+_OFFSET_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    NotImplementedError,
+    *_TEMPLATE_EXCEPTIONS,
+)
+_GENERATION_TAG = re.compile(r"\{%-?\s*generation\s*-?%\}")
+
+
+def _as_bool_mask(value: Any, like: Any, allow_empty: bool = False) -> Any | None:
+    """Coerce a tokenizer-produced mask to a bool tensor shaped like ``like``."""
+    torch = require_torch()
+    try:
+        mask = torch.as_tensor(value, dtype=torch.bool)
+    except (TypeError, ValueError, RuntimeError):
+        return None
+    if mask.dim() == 1:
+        mask = mask.unsqueeze(0)
+    if mask.shape != like.shape or not (allow_empty or bool(mask.any())):
+        return None
+    return mask
+
+
+def _chat_template_generation_mask(
+    tokenizer: Any, messages: list[dict[str, str]], max_length: int
+) -> tuple[Any, Any, Any] | None:
+    """Use HF ``return_assistant_tokens_mask`` when the template marks generations."""
+    try:
+        params = inspect.signature(tokenizer.apply_chat_template).parameters
+    except (TypeError, ValueError):
+        return None
+    if "return_dict" not in params or "return_assistant_tokens_mask" not in params:
+        return None
+    template = getattr(tokenizer, "chat_template", None)
+    if isinstance(template, str) and not _GENERATION_TAG.search(template):
+        return None  # HF would return an all-zero mask (and warn every call)
+    try:
+        out = tokenizer.apply_chat_template(
+            messages,
+            tokenize=True,
+            add_generation_prompt=False,
+            return_tensors="pt",
+            return_dict=True,
+            return_assistant_tokens_mask=True,
+            truncation=True,
+            max_length=max_length,
+            padding=True,
+        )
+    except _TEMPLATE_EXCEPTIONS:
+        return None
+    if not isinstance(out, Mapping) or "input_ids" not in out:
+        return None
+    raw_mask = out.get("assistant_masks")
+    if raw_mask is None:
+        raw_mask = out.get("assistant_tokens_mask")
+    input_ids = out["input_ids"]
+    if raw_mask is None or not hasattr(input_ids, "clone"):
+        return None
+    if input_ids.dim() == 1:
+        input_ids = input_ids.unsqueeze(0)
+    # With generation markers in the template, an all-zero mask means the
+    # replies were truncated away; without a readable template it is ambiguous.
+    marked = isinstance(template, str) and bool(_GENERATION_TAG.search(template))
+    mask = _as_bool_mask(raw_mask, input_ids, allow_empty=marked)
+    if mask is None:
+        return None
+    attention_mask = out.get("attention_mask")
+    if attention_mask is not None and attention_mask.dim() == 1:
+        attention_mask = attention_mask.unsqueeze(0)
+    return input_ids, attention_mask, mask
+
+
+def _render_chat(
+    tokenizer: Any, messages: list[dict[str, str]], add_generation_prompt: bool
+) -> str | None:
+    try:
+        rendered = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=add_generation_prompt
+        )
+    except _TEMPLATE_EXCEPTIONS:
+        return None
+    return rendered if isinstance(rendered, str) else None
+
+
+def _chat_template_prefix_mask(
+    tokenizer: Any, messages: list[dict[str, str]], max_length: int
+) -> tuple[Any, Any, Any] | None:
+    """Assistant spans anchored inside the full render (see
+    :func:`stateset_agents.core.chat_masking.assistant_char_spans`), mapped to
+    tokens with offsets. ``None`` when the template rewrites history.
+    """
+    located = assistant_char_spans(
+        lambda msgs, gen: _render_chat(tokenizer, msgs, add_generation_prompt=gen),
+        messages,
+    )
+    if located is None:
+        return None
+    full, spans = located
+    if not spans:
+        return None
+    try:
+        encoded = tokenizer(
+            full,
+            return_tensors="pt",
+            truncation=True,
+            max_length=max_length,
+            padding=True,
+            add_special_tokens=False,  # the template already rendered them
+            return_offsets_mapping=True,
+        )
+    except _OFFSET_EXCEPTIONS:
+        return None
+    if not isinstance(encoded, Mapping):
+        return None
+    input_ids = encoded.get("input_ids")
+    offsets = encoded.get("offset_mapping")
+    if input_ids is None or offsets is None or not hasattr(input_ids, "clone"):
+        return None
+    torch = require_torch()
+    offsets = torch.as_tensor(offsets)
+    if offsets.dim() == 2:
+        offsets = offsets.unsqueeze(0)
+    if input_ids.dim() == 1:
+        input_ids = input_ids.unsqueeze(0)
+    if offsets.shape[:2] != input_ids.shape:
+        return None
+    starts, ends = offsets[..., 0], offsets[..., 1]
+    mask = torch.zeros_like(input_ids, dtype=torch.bool)
+    for span_start, span_end in spans:
+        mask |= (starts < span_end) & (ends > span_start)
+    mask &= ends > starts
+    # An empty mask here means truncation removed every reply: supervise
+    # nothing rather than falling back to the full conversation.
+    attention_mask = encoded.get("attention_mask")
+    if attention_mask is not None and attention_mask.dim() == 1:
+        attention_mask = attention_mask.unsqueeze(0)
+    return input_ids, attention_mask, mask
+
+
 def _prepare_inputs_and_labels(
     trajectory: Any, agent: Any, config: Any
 ) -> tuple[dict[str, Any], Any]:
@@ -976,72 +1227,35 @@ def _prepare_inputs_and_labels(
     tokenizer = agent.tokenizer
     device = agent.model.device
 
-    # Best-effort: use chat-template assistant token masking when supported.
-    use_chat_template = hasattr(tokenizer, "apply_chat_template")
+    # Assistant-only masking for chat-template tokenizers: prefer the template's
+    # own ``{% generation %}`` mask, then derive spans by rendering prefixes.
+    use_chat_template = hasattr(tokenizer, "apply_chat_template") and not (
+        # HF tokenizers expose apply_chat_template even with no template set.
+        hasattr(tokenizer, "chat_template")
+        and tokenizer.chat_template is None
+    )
     if use_chat_template:
-        try:
-            params = inspect.signature(tokenizer.apply_chat_template).parameters
-            supports_mask = (
-                "return_dict" in params and "return_assistant_tokens_mask" in params
+        messages = _trajectory_to_messages(trajectory)
+        encoded = _chat_template_generation_mask(tokenizer, messages, max_length)
+        if encoded is None:
+            encoded = _chat_template_prefix_mask(tokenizer, messages, max_length)
+        if encoded is not None:
+            input_ids, attention_mask, assistant_mask = encoded
+            labels = input_ids.clone().masked_fill(~assistant_mask, -100)
+            inputs: dict[str, Any] = {"input_ids": input_ids}
+            if attention_mask is not None:
+                labels = labels.masked_fill(attention_mask.eq(0), -100)
+                inputs["attention_mask"] = attention_mask
+            inputs = {k: v.to(device) for k, v in inputs.items()}
+            return inputs, labels.to(device)
+
+        global _warned_missing_assistant_mask
+        if not _warned_missing_assistant_mask:
+            logger.warning(
+                "Could not derive assistant token masks from the chat template; "
+                "loss will include non-assistant tokens."
             )
-        except (TypeError, ValueError):
-            supports_mask = False
-
-        if supports_mask:
-            messages = _trajectory_to_messages(trajectory)
-            try:
-                out = tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=True,
-                    add_generation_prompt=False,
-                    return_tensors="pt",
-                    return_dict=True,
-                    return_assistant_tokens_mask=True,
-                    truncation=True,
-                    max_length=max_length,
-                    padding=True,
-                )
-                if isinstance(out, dict) and "input_ids" in out:
-                    input_ids = out["input_ids"]
-                    attention_mask = out.get("attention_mask")
-                    assistant_mask = out.get("assistant_tokens_mask")
-
-                    labels = (
-                        input_ids.clone() if hasattr(input_ids, "clone") else input_ids
-                    )
-                    if assistant_mask is not None and hasattr(labels, "masked_fill"):
-                        mask = assistant_mask
-                        if hasattr(mask, "dim") and mask.dim() == 1:
-                            mask = mask.unsqueeze(0)
-                        labels = labels.masked_fill(~mask.bool(), -100)
-                    if attention_mask is not None and hasattr(labels, "masked_fill"):
-                        labels = labels.masked_fill(attention_mask.eq(0), -100)
-
-                    inputs: dict[str, Any] = {"input_ids": input_ids}
-                    if attention_mask is not None:
-                        inputs["attention_mask"] = attention_mask
-
-                    inputs = {
-                        k: v.to(device) if hasattr(v, "to") else v
-                        for k, v in inputs.items()
-                    }
-                    if hasattr(labels, "to"):
-                        labels = labels.to(device)
-                    return inputs, labels
-            except TypeError:
-                # Tokenizer does not accept one of the requested kwargs.
-                pass
-            except LOSS_EXCEPTIONS:
-                # Any other failure: fall back to plain tokenization.
-                pass
-        else:
-            global _warned_missing_assistant_mask
-            if not _warned_missing_assistant_mask:
-                logger.warning(
-                    "Tokenizer chat template does not expose assistant token masks; "
-                    "loss will include non-assistant tokens."
-                )
-                _warned_missing_assistant_mask = True
+            _warned_missing_assistant_mask = True
 
     if not use_chat_template:
         # Try assistant-only masking with offsets for non-chat-template tokenizers.

@@ -19,7 +19,7 @@ from stateset_agents.core.generation_mode import inference_mode
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
 from .trajectory import ConversationTurn
-from .transformers_compat import load_generation_model
+from .transformers_compat import generation_compat_kwargs, load_generation_model
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
@@ -238,17 +238,21 @@ class StopOnSpecialTokens(StoppingCriteria):
             if token_ids:
                 self.stop_token_ids.append(token_ids)
 
-    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> bool:
-        # Check if any stop token was generated
+    def ends_with_stop(self, sequence: list[int]) -> bool:
+        """Whether ``sequence`` ends with one of the stop strings' token ids."""
+        return any(
+            len(stop_ids) <= len(sequence) and sequence[-len(stop_ids) :] == stop_ids
+            for stop_ids in self.stop_token_ids
+        )
+
+    def __call__(self, input_ids: Any, scores: Any, **kwargs: Any) -> Any:
+        # One flag per row: HF ORs criteria into a per-sequence done mask, so a
+        # scalar would stop (or keep running) every row of a batched group.
         if torch is not None and hasattr(input_ids, "tolist"):
-            sequence = input_ids[0].tolist()
-        else:
-            sequence = list(input_ids[0]) if input_ids else []
-        for stop_ids in self.stop_token_ids:
-            stop_len = len(stop_ids)
-            if stop_len <= len(sequence) and sequence[-stop_len:] == stop_ids:
-                return True
-        return False
+            done = [self.ends_with_stop(row) for row in input_ids.tolist()]
+            return torch.tensor(done, dtype=torch.bool, device=input_ids.device)
+        rows = [list(row) for row in input_ids] if input_ids else []
+        return [self.ends_with_stop(row) for row in rows]
 
 
 def _apply_persona_keyword_hints(response: str, messages: list[dict[str, Any]]) -> str:
@@ -541,6 +545,7 @@ class Agent:
             repetition_penalty=self.config.repetition_penalty,
             pad_token_id=_safe_token_id(getattr(self.tokenizer, "pad_token_id", None)),
             eos_token_id=_safe_token_id(getattr(self.tokenizer, "eos_token_id", None)),
+            **generation_compat_kwargs(self.model),
         )
 
 
@@ -885,12 +890,7 @@ class MultiTurnAgent(Agent):
         ):
             return await sequential_fallback()
 
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._effective_max_input_length(),
-        )
+        inputs = self._tokenize_prompt(prompt)
         model_device = None
         if hasattr(self.model, "parameters"):
             try:
@@ -899,12 +899,14 @@ class MultiTurnAgent(Agent):
                 model_device = None
         if model_device and hasattr(inputs, "to"):
             inputs = inputs.to(model_device)
+        stopping_criteria = self._build_stopping_criteria()
+        stopper = stopping_criteria[0]
         try:
             with inference_mode(self.model), torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
                     generation_config=self.generation_config,
-                    stopping_criteria=self._build_stopping_criteria(),
+                    stopping_criteria=stopping_criteria,
                     return_dict_in_generate=True,
                     output_scores=True,
                     output_logits=True,
@@ -939,6 +941,11 @@ class MultiTurnAgent(Agent):
                 hits = (response_tokens == int(eos_id)).nonzero()
                 if hits.numel():
                     length = int(hits[0].item()) + 1
+                    # A row stopped by a stop string is padded afterwards; with
+                    # pad == eos that first pad is not a sampled EOS.
+                    head = [int(t) for t in response_tokens[: length - 1]]
+                    if pad_id == eos_id and stopper.ends_with_stop(head):
+                        length -= 1
             if pad_id is not None and pad_id != eos_id:
                 while length and int(response_tokens[length - 1]) == int(pad_id):
                     length -= 1
@@ -1179,12 +1186,7 @@ class MultiTurnAgent(Agent):
             )
 
         # Tokenize input
-        inputs = self.tokenizer(
-            prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self._effective_max_input_length(),
-        )
+        inputs = self._tokenize_prompt(prompt)
 
         # Move inputs to model device when available
         model_device = None
@@ -1268,6 +1270,40 @@ class MultiTurnAgent(Agent):
                 response = response.split(phrase)[0].strip()
 
         return response
+
+    def _tokenize_prompt(self, prompt: str) -> Any:
+        """Tokenize a generation prompt, keeping its end when it is too long.
+
+        The end holds the latest user turn and the assistant cue; right
+        truncation (the tokenizer default) dropped them, so the model continued
+        mid-history.
+        """
+        max_length = self._effective_max_input_length()
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Tokenizer must be available to tokenize prompts")
+        original_side = getattr(tokenizer, "truncation_side", None)
+        if original_side is not None:
+            tokenizer.truncation_side = "left"
+        try:
+            inputs = tokenizer(
+                prompt, return_tensors="pt", truncation=True, max_length=max_length
+            )
+        finally:
+            if original_side is not None:
+                tokenizer.truncation_side = original_side
+        ids: Any = inputs.get("input_ids") if hasattr(inputs, "get") else None
+        if (
+            torch is not None
+            and torch.is_tensor(ids)
+            and ids.dim() > 0
+            and int(ids.shape[-1]) >= max_length
+        ):
+            logger.warning(
+                "Prompt reached the %d-token input limit; earliest context dropped.",
+                max_length,
+            )
+        return inputs
 
     def _effective_max_input_length(self) -> int:
         """Compute a safe max_length for tokenization to avoid negative lengths."""
@@ -1358,12 +1394,7 @@ class MultiTurnAgent(Agent):
                 )
 
             # Tokenize input
-            inputs = self.tokenizer(
-                prompt,
-                return_tensors="pt",
-                truncation=True,
-                max_length=self._effective_max_input_length(),
-            )
+            inputs = self._tokenize_prompt(prompt)
 
             model_device = None
             if hasattr(self.model, "parameters"):

@@ -28,6 +28,7 @@ import torch.nn.functional as F
 
 from . import objectives, rl_losses
 from .config import TrainingConfig
+from .runtime_state import TrainingRuntime, validate_training_config
 
 # Configure logging
 logging.basicConfig(
@@ -248,7 +249,7 @@ def compute_gae(
     return advantages, returns
 
 
-class PPOTrainer:
+class PPOTrainer(TrainingRuntime):
     """
     Proximal Policy Optimization (PPO) Trainer
 
@@ -276,6 +277,7 @@ class PPOTrainer:
         # Ensure transformers is loaded
         _load_transformers_ppo()
 
+        validate_training_config(config)
         self.config = config
         # PPO clipped surrogate as one declarative PolicyObjective; the KL
         # penalty is added separately in train_step (adaptive coefficient).
@@ -493,6 +495,52 @@ class PPOTrainer:
 
         return loss.mean()
 
+    @staticmethod
+    def build_response_mask(
+        attention_mask: torch.Tensor,
+        prompt_lengths: torch.Tensor,
+        padding_side: str = "right",
+    ) -> torch.Tensor:
+        """1.0 on completion tokens of each row; prompt and padding are 0."""
+        response_mask = torch.zeros_like(attention_mask, dtype=torch.float)
+        seq_len = attention_mask.shape[1]
+        for i, prompt_len in enumerate(prompt_lengths.tolist()):
+            pad = (
+                seq_len - int(attention_mask[i].sum()) if padding_side == "left" else 0
+            )
+            response_mask[i, pad + int(prompt_len) :] = 1.0
+        return response_mask * attention_mask.to(response_mask.dtype)
+
+    def compute_episode_advantages(
+        self,
+        rewards: torch.Tensor,
+        action_mask: torch.Tensor,
+        old_values: torch.Tensor,
+    ) -> tuple[torch.Tensor, torch.Tensor]:
+        """GAE for one scalar reward per episode, in the shifted action frame.
+
+        The reward sits on each row's last response action (broadcasting it to
+        every token would inflate returns with response length). Values outside
+        the mask are zeroed so padding after a response neither bootstraps nor
+        earns reward, and advantages are normalized over response actions only.
+        """
+        idx = torch.arange(action_mask.shape[1], device=action_mask.device)
+        last = torch.where(action_mask > 0, idx, -1).max(dim=1).values
+        token_rewards = torch.zeros_like(action_mask)
+        rows = torch.nonzero(last >= 0).flatten()
+        token_rewards[rows, last[rows]] = rewards.to(token_rewards.dtype)[rows]
+
+        advantages, returns = compute_gae(
+            token_rewards,
+            old_values * action_mask,
+            gamma=self.config.gamma,
+            gae_lambda=self.config.gae_lambda,
+        )
+        valid = advantages[action_mask > 0]
+        if valid.numel() > 1:
+            advantages = (advantages - valid.mean()) / (valid.std() + 1e-8)
+        return advantages * action_mask, returns
+
     async def train_step(
         self,
         prompts: list[str],
@@ -537,9 +585,11 @@ class PPOTrainer:
         )
         prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
 
-        response_mask = torch.zeros_like(input_ids, dtype=torch.float)
-        for i, prompt_len in enumerate(prompt_lengths):
-            response_mask[i, prompt_len:] = 1.0
+        response_mask = self.build_response_mask(
+            attention_mask,
+            prompt_lengths,
+            getattr(self.tokenizer, "padding_side", "right"),
+        )
 
         # Get initial values and log probs (for old policy)
         with torch.no_grad():
@@ -547,20 +597,10 @@ class PPOTrainer:
             hidden_states = self.get_hidden_states(input_ids, attention_mask)
             old_values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
 
-        # Convert rewards to tensor and broadcast to tokens
-        rewards_tensor = torch.tensor(rewards, device=self.device).unsqueeze(1)
-        token_rewards = response_mask[:, 1:] * rewards_tensor
-
-        # Compute GAE
-        advantages, returns = compute_gae(
-            token_rewards,
-            old_values,
-            gamma=self.config.gamma,
-            gae_lambda=self.config.gae_lambda,
+        rewards_tensor = torch.tensor(rewards, device=self.device, dtype=torch.float)
+        advantages, returns = self.compute_episode_advantages(
+            rewards_tensor, response_mask[:, 1:], old_values
         )
-
-        # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # PPO epochs
         total_policy_loss = 0.0
@@ -727,40 +767,12 @@ class PPOTrainer:
         }
 
     def save_checkpoint(self, path: str | None = None) -> str:
-        """Save model checkpoint."""
+        """Publish policy and critic state through the shared runtime."""
         if path is None:
             path = os.path.join(
-                self.config.output_dir,
-                f"ppo-checkpoint-{self.global_step}",
+                self.config.output_dir, f"ppo-checkpoint-{self.global_step}"
             )
-
-        os.makedirs(path, exist_ok=True)
-
-        # Save model
-        self.model.save_pretrained(path)
-        self.tokenizer.save_pretrained(path)
-
-        # Save value head
-        torch.save(
-            self.value_head.state_dict(),
-            os.path.join(path, "value_head.pt"),
-        )
-
-        # Save training state
-        torch.save(
-            {
-                "policy_optimizer": self.policy_optimizer.state_dict(),
-                "value_optimizer": self.value_optimizer.state_dict(),
-                "policy_scheduler": self.policy_scheduler.state_dict(),
-                "value_scheduler": self.value_scheduler.state_dict(),
-                "global_step": self.global_step,
-                "metrics_history": self.metrics_history,
-                "config": self.config,
-            },
-            os.path.join(path, "training_state.pt"),
-        )
-
-        logger.info(f"Checkpoint saved to {path}")
+        self.save_runtime_checkpoint(path)
         return path
 
 
@@ -785,27 +797,31 @@ async def train_ppo(
     Returns:
         Training results
     """
+    # Create config
+    config = PPOConfig(
+        model_name=model_name,
+        num_episodes=num_episodes,
+        **kwargs,
+    )
+    config.validate_for_training()
+
     _load_transformers_ppo()
 
     if AutoModelForCausalLM is None or AutoTokenizer is None:
         raise ImportError("transformers is required for PPO training")
 
     # Load model and tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(model_name)
+    tokenizer = AutoTokenizer.from_pretrained(
+        model_name, revision=config.model_revision
+    )
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
+        revision=config.model_revision,
         torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
         device_map="auto" if torch.cuda.is_available() else None,
-    )
-
-    # Create config
-    config = PPOConfig(
-        model_name=model_name,
-        num_episodes=num_episodes,
-        **kwargs,
     )
 
     # Create trainer

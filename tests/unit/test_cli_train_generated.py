@@ -27,10 +27,27 @@ CLI_PRESETS: dict[str, ModelPreset] = {
 }
 
 EXPECTED_COMMANDS = {
+    "granite-4-micro",
+    "llama-3-2-1b",
+    "llama-3-2-3b",
+    "qwen3-4b-instruct",
+    "olmo-3-7b",
+    "deepseek-r1-1-5b",
+    "deepseek-r1-7b",
+    "qwen3-5-2b",
+    "qwen3-5-4b",
+    "qwen3-5-9b",
+    "smollm3-3b",
+    "phi-4-mini",
+    "ministral-3-3b",
+    "ministral-3-8b",
+    "lfm2-5-2-6b",
     "qwen3-5-0-8b",
     "kimi-k2-6",
     "kimi-k3",
     "gemma-4-31b",
+    "gemma-4-e2b",
+    "gemma-4-e4b",
     "muse-glimmer",
     "nemotron-3-5",
     "qwen3-8-27b",
@@ -133,8 +150,8 @@ def test_preset_symbol_names_exist_on_starter(command: str) -> None:
 
 
 @pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
-def test_preset_model_id_matches_starter_base_model(command: str) -> None:
+def test_preset_model_id_is_supported_by_starter(command: str) -> None:
     preset = CLI_PRESETS[command]
     starter = _import_starter(preset)
-    base_model = getattr(starter, f"{preset.cli_symbol_prefix}_BASE_MODEL")
-    assert base_model == preset.model_id
+    variants = getattr(starter, f"{preset.cli_symbol_prefix}_SUPPORTED_VARIANTS")
+    assert preset.model_id in variants

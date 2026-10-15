@@ -1,0 +1,100 @@
+name: Training contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {python: '3.10', extra: minimal, dependencies: latest}
+          - {python: '3.13', extra: minimal, dependencies: latest}
+          - {python: '3.12', extra: api, dependencies: latest}
+          - {python: '3.12', extra: workers, dependencies: latest}
+          - {python: '3.10', extra: training, dependencies: minimum}
+          - {python: '3.12', extra: training, dependencies: latest}
+          - {python: '3.12', extra: training, dependencies: locked}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install build
+      - run: python -m build --wheel --outdir /tmp/wheels
+      - name: Install wheel in a clean environment
+        env:
+          EXTRA: ${{ matrix.extra }}
+          DEPENDENCIES: ${{ matrix.dependencies }}
+        run: |
+          python -m venv /tmp/wheel-env
+          /tmp/wheel-env/bin/pip install --upgrade pip
+          wheel=$(find /tmp/wheels -name '*.whl' -print -quit)
+          if [ "$DEPENDENCIES" = locked ]; then
+            /tmp/wheel-env/bin/pip install -r requirements-dev-lock.txt
+            /tmp/wheel-env/bin/pip install --no-deps "$wheel"
+          elif [ "$DEPENDENCIES" = minimum ]; then
+            /tmp/wheel-env/bin/pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+            /tmp/wheel-env/bin/pip install "$wheel[$EXTRA]" transformers==4.57.1 peft==0.18.0 trl==0.14.0
+          elif [ "$EXTRA" = minimal ]; then
+            /tmp/wheel-env/bin/pip install "$wheel"
+          else
+            /tmp/wheel-env/bin/pip install "$wheel[$EXTRA]"
+          fi
+          /tmp/wheel-env/bin/pip check
+          cp scripts/verify_installed_wheel.py /tmp/verify_installed_wheel.py
+          cd /tmp
+          /tmp/wheel-env/bin/python verify_installed_wheel.py --extra "$EXTRA"
+
+  sampled-workflow:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HF_HUB_OFFLINE: '1'
+      TRANSFORMERS_OFFLINE: '1'
+      OMP_NUM_THREADS: '1'
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-dev-lock.txt
+      - run: pip install -e . --no-deps
+      - run: python -m stateset_agents.training.sampled_workflow --output /tmp/sampled-workflow --seeds 42 43 44
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sampled-workflow
+          path: /tmp/sampled-workflow
+
+  durable-workers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: test-only-password
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      STATESET_TEST_QUEUE_DSN: postgresql://postgres:test-only-password@localhost:5432/postgres
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements-dev-lock.txt
+      - run: pip install -e '.[workers]' --no-deps
+      - run: pip install 'psycopg[binary]==3.3.6'
+      - run: pytest -n 0 -o addopts='' tests/unit/test_training_queue.py tests/unit/test_runtime_state.py tests/unit/test_training_contracts.py

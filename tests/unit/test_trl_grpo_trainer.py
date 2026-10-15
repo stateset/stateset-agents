@@ -9,35 +9,19 @@ Covers:
 - Training workflow
 """
 
-# Mock the external dependencies before importing
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import torch
 
-from tests import _module_stubs
-
-
-# Create mock modules with __spec__ attribute
-class MockModule(MagicMock):
-    __spec__ = MagicMock()
-
-
-# Scoped to this file: tests/conftest.py hides these while other files run.
-_module_stubs.install_import_stub("trl", MockModule())
-_module_stubs.install_import_stub("trl.core", MockModule())
-_module_stubs.install_import_stub("peft", MockModule())
-_module_stubs.install_import_stub("vllm", MockModule())
-
-# These imports must come after the sys.modules stubs above.
-from stateset_agents.core.agent import AgentConfig, MultiTurnAgent  # noqa: E402
-from stateset_agents.core.environment import ConversationEnvironment  # noqa: E402
-from stateset_agents.core.trajectory import (  # noqa: E402
+from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.trajectory import (
     ConversationTurn,
     MultiTurnTrajectory,
 )
-from stateset_agents.training.config import TrainingConfig  # noqa: E402
-from stateset_agents.training.trl_grpo_trainer import (  # noqa: E402
+from stateset_agents.training.config import TrainingConfig
+from stateset_agents.training.trl_grpo_trainer import (
     ModelManager,
     TrajectoryGenerator,
     TRLGRPOConfig,

@@ -1,0 +1,598 @@
+{
+  "kind": "stateset-industry-predictions",
+  "model": {
+    "adapter": {
+      "id": "/workspace/industry-pilot-output/qwen3.5-2b/prepared/adapter",
+      "sha256": "89684fef6d982c39d9df3b309c2f06187913816538a157d4d1d44fd211239505"
+    },
+    "base_model": "Qwen/Qwen3.5-2B",
+    "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc"
+  },
+  "predictions": [
+    {
+      "case_id": "185792faf605e3773b71b8beb9a299e3b59d7d29d19beb099b472734c79754bb",
+      "cost_usd": null,
+      "elapsed_seconds": 1.9305448569357395,
+      "error": null,
+      "generated_tokens": 33,
+      "raw_response": "Your order PILOT-0060 is currently in \"pending review\" status. Is there anything else you need help with regarding this order?\n",
+      "response": {
+        "content": "Your order PILOT-0060 is currently in \"pending review\" status. Is there anything else you need help with regarding this order?",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "1e36138db3f90ce580f8907368ca85e50acc2d48f7ccf2d80337a023a1ef8eed",
+      "cost_usd": null,
+      "elapsed_seconds": 2.0048702135682106,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0025\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0025"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "2570dc7dc401fded6eb5aa0cfe950aae28e60c97899c678f93b6d9114a24b1cb",
+      "cost_usd": null,
+      "elapsed_seconds": 1.6037631630897522,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0063\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0063"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "2eb96c377fe5211a6d41c30fcdc98016a79422266e667acd750143d513fe669f",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7420019805431366,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0063 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0063 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "2f77f987abcf25c55a2ee8392dfee0b33e0e02fa62ded7a6a4e073842537ffeb",
+      "cost_usd": null,
+      "elapsed_seconds": 1.309281699359417,
+      "error": null,
+      "generated_tokens": 28,
+      "raw_response": "The order PILOT-0002 is currently awaiting information. Please provide the missing details required to update the status.\n",
+      "response": {
+        "content": "The order PILOT-0002 is currently awaiting information. Please provide the missing details required to update the status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "308929620229f3c0776da411eab634440331040f8552280080286ffc5c48333d",
+      "cost_usd": null,
+      "elapsed_seconds": 1.3624543361365795,
+      "error": null,
+      "generated_tokens": 29,
+      "raw_response": "The order PILOT-0006 is currently awaiting information. Please provide the missing details required to update the order status.\n",
+      "response": {
+        "content": "The order PILOT-0006 is currently awaiting information. Please provide the missing details required to update the order status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "349317ae9cbdc0866aed60fc3821551ce7e210de3da6ef7b5c4e28556fc689bf",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5923669040203094,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0059\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0059"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "36bbcca2cf66868bacde4566f7618b52a2b81d6d52026b9edaf625dd1d1a2417",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9605512619018555,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0013 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0013 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "3dcc31adf8b29882f8d3a8260769dbf668c82799ceacb577763dc65fc50904fe",
+      "cost_usd": null,
+      "elapsed_seconds": 1.595488402992487,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0057\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0057"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "5a014572750cb72bc5c9ed9fa8bd1ad5d7b231d6212ab610d43648f70b8f37c0",
+      "cost_usd": null,
+      "elapsed_seconds": 1.599907174706459,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0009\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0009"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "7051f6749ba0a5e2b956af0cee7b8a88372a879f457bf3c19bd509d0f4d0583b",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5705434158444405,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0013\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0013"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "741780fbb6b5fbf807772fd21f8468ef717a32182e1da8ac16386eb414d2f1dc",
+      "cost_usd": null,
+      "elapsed_seconds": 1.615744262933731,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0006\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0006"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "746187d30732fbda809bdd33b0bfb4d15ff1ed20eb42bdaa1e0fcd3812cd75e9",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7469539232552052,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0059 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0059 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "74a9781b3fe57160705272b00c5c0ff7f65b40d6c2942fc53bf29743467f28f8",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5875615775585175,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0047\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0047"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "764d523a5ef60adb8510a6536279c12ffbe383efad54718787a3b7edfc2f61a3",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9656266421079636,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0017 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0017 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "888137d4bc3957a9ee860cbae126a05c6d9f32989635af3f5b40eda6df9f1307",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9527561813592911,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0009 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0009 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "89ddc2f03d0215079ce27b8d2242737f739cbccec41b5a0e89f058435aa1ece0",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7360415942966938,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0031 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0031 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "8abe8524ecddbd953630efc883570fd259becdd01803df4f487548808456f1f4",
+      "cost_usd": null,
+      "elapsed_seconds": 1.592208307236433,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0002\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0002"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a93a5edcc6119f7c1c24c7ec8af011beb9e5f1fe934eff2a8d898eb862ecdde9",
+      "cost_usd": null,
+      "elapsed_seconds": 1.6061862856149673,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0041\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0041"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "a9a9994666bd901e98b40486bbeceadbc07c83f179f244e93cad56c59c8b9d55",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9565111137926579,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0057 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0057 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "ac6726713d67592f5e953428bfb82e2cc7759dc53b49089daa2f8ce18103d22c",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5881787091493607,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0011\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0011"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "b425555e2c731cc49c3292b959f40b0f9bc2d456ee31870b07da5c9bad88e22a",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5861199162900448,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0060\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0060"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "b8badb84fe35f7e06b94becefdcaf410f28c0cf456e1c72731e0279cb005cbef",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7427272647619247,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0043 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0043 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "b8bd31ed03225ed4191c7b8849baa8866d2def6297275f5fec4ec151b6f38908",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7371992655098438,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0047 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0047 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "bbb5c34e5909e35a06c10b5e7441ac0722e8461d54ca7b01fbda61486cafd248",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5992427095770836,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0017\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0017"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "c47cc23e855c95b957fe4dacfacaecd395e7ffee491cc720eb345e5f60eb4e59",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9490604810416698,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0041 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0041 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "c57122753b7840d1f430b0a58f8fc1419be239a1d62b56a562c36a57ed62de71",
+      "cost_usd": null,
+      "elapsed_seconds": 1.566215842962265,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0001\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0001"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "c93fb9654291b49a7f88046a983f56af873b799a81f3389bd0ad67df21d78cad",
+      "cost_usd": null,
+      "elapsed_seconds": 0.9482699334621429,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0025 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0025 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "d31b13f017ac907c756f6c3067314c1e82a8ec3966d7a783fc78effaef7ada04",
+      "cost_usd": null,
+      "elapsed_seconds": 0.7362356521189213,
+      "error": null,
+      "generated_tokens": 15,
+      "raw_response": "Your order PILOT-0011 is resolved.\n",
+      "response": {
+        "content": "Your order PILOT-0011 is resolved.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "de8a5cbdc1029f46154f18b775e4be3f33c39a503b002be16d89d368cd7bc18a",
+      "cost_usd": null,
+      "elapsed_seconds": 0.937813863158226,
+      "error": null,
+      "generated_tokens": 20,
+      "raw_response": "Your order PILOT-0001 is in \"review complete\" status.\n",
+      "response": {
+        "content": "Your order PILOT-0001 is in \"review complete\" status.",
+        "role": "assistant"
+      }
+    },
+    {
+      "case_id": "df34f6cd040fd75fcd339359300a15052b29b0616e566b4eb86e9cca5ea079d0",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5680893957614899,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0043\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0043"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    },
+    {
+      "case_id": "dfb32710d5042feed671b80bc75aea1d5a3fe1887fb807a58b2dd89d8f0402b3",
+      "cost_usd": null,
+      "elapsed_seconds": 1.5677665919065475,
+      "error": null,
+      "generated_tokens": 35,
+      "raw_response": "<tool_call>\n<function=get_order>\n<parameter=record_id>\nPILOT-0031\n</parameter>\n</function>\n</tool_call>\n",
+      "response": {
+        "content": null,
+        "role": "assistant",
+        "tool_calls": [
+          {
+            "function": {
+              "arguments": {
+                "record_id": "PILOT-0031"
+              },
+              "name": "get_order"
+            },
+            "id": "pilot-call-0",
+            "type": "function"
+          }
+        ]
+      }
+    }
+  ],
+  "schema_version": 1,
+  "settings": {
+    "do_sample": false,
+    "enable_thinking": false,
+    "max_new_tokens": 96,
+    "seed": 42
+  },
+  "suite_sha256": "f064966a9e74e43015571803d9746d8c487b79413358e4b7a921607d2b9b9bef",
+  "variant": "candidate"
+}

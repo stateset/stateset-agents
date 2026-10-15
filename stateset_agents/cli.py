@@ -790,6 +790,7 @@ def starter(
 from stateset_agents import cli_benchmark  # noqa: E402, F401 — benchmark sub-app
 from stateset_agents import cli_chat  # noqa: E402, F401 — chat
 from stateset_agents import cli_flywheel  # noqa: E402, F401 — autonomous loop
+from stateset_agents import cli_industry  # noqa: E402, F401 — industry fine-tuning
 from stateset_agents import cli_ingest  # noqa: E402, F401 — ingest third-party logs
 from stateset_agents import cli_mcp  # noqa: E402, F401 — run the MCP server
 from stateset_agents import cli_remote  # noqa: E402, F401 — train-remote

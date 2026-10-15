@@ -348,15 +348,21 @@ def test_sampler_source_corrects_for_a_stale_engine():
     assert ignored["ratio_mean"] == pytest.approx(1.0)
 
 
-def test_sampler_source_falls_back_to_recompute_without_sampler_logprobs():
+def test_sampler_source_requires_explicit_recompute_fallback():
     model = _tiny_model()
     agent = _agent(model)
     group = _group()
     first = [t for t in group.trajectories[0].turns if t.role == "assistant"][0]
     del first.metadata["sampler_log_probs"]
-    out = _run([group], _config(old_logprobs_source="sampler"), agent)
+    with pytest.raises(ValueError, match="allow_missing_sampler_logprobs"):
+        _run([group], _config(old_logprobs_source="sampler"), agent)
+    out = _run(
+        [group],
+        _config(old_logprobs_source="sampler", allow_missing_sampler_logprobs=True),
+        agent,
+    )
     assert out["path"] == "token"
-    assert out["old_logprobs_source"] == "recompute"
+    assert out["old_logprobs_source"] == "recompute_fallback"
     assert out["off_policy"] is False
 
 

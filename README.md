@@ -4,6 +4,12 @@
 
 **The RL improvement control plane for deployed AI agents.**
 
+> **Renaming to TraceForge RL (Phase 1, non-breaking):** the new
+> `import traceforge_rl` package and `traceforge-rl` CLI are available
+> alongside `stateset_agents` / `stateset-agents`, which keep working
+> unchanged. See the phased plan and deprecation timeline in
+> [docs/RENAME_TRACEFORGE.md](docs/RENAME_TRACEFORGE.md).
+
 [![PyPI version](https://img.shields.io/pypi/v/stateset-agents.svg)](https://pypi.org/project/stateset-agents/)
 [![CI](https://github.com/stateset/stateset-agents/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/stateset/stateset-agents/actions/workflows/ci.yml)
 [![Security](https://github.com/stateset/stateset-agents/actions/workflows/security.yml/badge.svg?branch=master)](https://github.com/stateset/stateset-agents/actions/workflows/security.yml)
@@ -68,13 +74,16 @@ measurable.
 
 ### Current verification status
 
-The `v0.54.0` release tree completed its Linux Python 3.10 suite on
-**2026-09-09** with **5,496 passed, 18 skipped, and 63.68% coverage**, while
-its release pull request passed the complete Linux Python 3.10–3.13 and
-Windows Python 3.10/3.13 matrices plus CodeQL, dependency and secret scanning,
-package-readiness, docs, Helm, npm-client, benchmark, and security gates. The
-tag-built wheel and source distribution passed isolated-install and attestation
-checks and are live on PyPI. See the retained
+The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
+**2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
+checks passed lint, typing, API compatibility, governance, security scanning,
+distribution metadata, and isolated wheel installation. The
+[tag publication workflow](https://github.com/stateset/stateset-agents/actions/runs/37660763697)
+published Python distributions, documentation, and the GitHub release; npm's
+initial publication remains blocked. The broader Linux Python 3.10–3.13 and
+Windows Python 3.10/3.13 matrix evidence remains historical (`v0.54.0`), and
+should not be read as certification of every newer checkpoint or platform.
+See the retained
 [proof ledger](docs/PROOFS.md) for the evidence behind individual training,
 serving, and provider claims.
 
@@ -121,7 +130,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.56.0`, published from the
+- **Current Python release:** `stateset-agents==0.66.0`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -428,7 +437,14 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.56.0 (latest release; publication triggered by tag):**
+**v0.66.0 (latest release; publication triggered by tag):**
+
+- Add strict rollout contracts, shared trainer checkpoints, outcome rewards, and validation before compute allocation.
+- Run training through durable SQLite/PostgreSQL queues and independent workers, with idempotency and fenced leases.
+- Add sampled CPU/GPU regressions, reviewed-case studies, installed-wheel compatibility checks, and rollout performance metrics.
+- Synthetic CPU/GPU checks pass. The pretrained synthetic refund diagnostic showed no lift; representative quality still requires reviewed cases.
+
+**v0.56.0:**
 
 - Added TLA+ models for rollout admission, policy publication, and
   auto-research checkpoint recovery, checked in CI.
@@ -1301,8 +1317,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.56.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.56.0"
+pip install "stateset-agents==0.66.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.66.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1380,6 +1396,14 @@ wired up:
 
 | Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
+| `ibm-granite/granite-4.0-micro` | `stateset-agents granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `allenai/Olmo-3-7B-Instruct` | `stateset-agents olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `google/functiongemma-270m-it` | `python -m stateset_agents.training.sft --base-model google/functiongemma-270m-it ...` | | Tool-calling SFT only; [guide](examples/README.md#additional-small-models-and-functiongemma) |
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
@@ -1389,6 +1413,16 @@ wired up:
 | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
 | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
 | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
+| `google/gemma-4-E2B-it` | `stateset-agents gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
+| `google/gemma-4-E4B-it` | `stateset-agents gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
+| `Qwen/Qwen3.5-2B` | `stateset-agents qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-4B` | `stateset-agents qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-9B` | `stateset-agents qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `microsoft/Phi-4-mini-instruct` | `stateset-agents phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `LiquidAI/LFM2.5-2.6B` | `stateset-agents lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
 | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
@@ -2096,7 +2130,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.56.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.66.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
@@ -2132,6 +2166,25 @@ Key docs:
 - Public API docs: https://docs.stateset.com
 
 ---
+
+## Industry fine-tuning
+
+Create task-specific training data for financial services, retail, travel,
+healthcare, services, media, telecommunications, technology, and the public sector:
+
+```bash
+stateset-agents industry init retail ./retail-source
+stateset-agents industry prepare retail ./retail-source/examples.jsonl ./retail-run
+stateset-agents industry train ./retail-run --dry-run
+```
+
+The starters contain synthetic format demonstrations. Replace them with reviewed
+conversations; preparation validates tool calls, groups related cases, and records
+dataset hashes. Paired evaluation checks base-versus-adapter reference and tool
+agreement, retains per-case regressions, and gates on independent source groups
+and optional latency/cost limits. Synthetic starter data cannot pass this gate.
+See [Industry fine-tuning](docs/INDUSTRY_FINETUNING.md) for training, prediction
+callbacks, CLI evaluation, and the distinction from autonomous task success.
 
 ## Contributing
 

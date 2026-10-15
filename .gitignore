@@ -94,6 +94,7 @@ celerybeat-schedule
 # Environments
 .env
 .venv
+.venv-river-contract/
 env/
 venv/
 ENV/
@@ -173,6 +174,15 @@ benchmark_results/*
 !benchmark_results/whitepaper_v1/**
 !benchmark_results/SCHEMA.md
 !benchmark_results/README.md
+!benchmark_results/training_contracts/
+!benchmark_results/training_contracts/**/
+!benchmark_results/training_contracts/**/*.json
+!benchmark_results/industry_pilot/
+!benchmark_results/industry_pilot/**
+benchmark_results/industry_pilot/**/*.safetensors
+benchmark_results/industry_pilot/**/*.pt
+benchmark_results/industry_pilot/**/*.pth
+benchmark_results/industry_pilot/**/*.bin
 !benchmark_results/benchmark_summary.json
 !benchmark_results/framework_comparison/
 benchmark_results/framework_comparison/*
@@ -291,8 +301,10 @@ id_ed25519.pub
 *.keras
 *.gguf
 *.jsonl
+!benchmark_results/industry_pilot/**/*.jsonl
 # Allow checked-in sample/eval datasets — these are tiny + documented
 !examples/sample_eval_set.jsonl
+!examples/data/functiongemma_commerce.jsonl
 *.npz
 *.npy
 *.pkl

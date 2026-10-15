@@ -382,6 +382,7 @@ def build_gspo_overrides(config: Any) -> dict[str, Any]:
     """
     overrides = {
         "model_name": config.model_name,
+        "trust_remote_code": config.trust_remote_code,
         "report_to": config.report_to,
         "wandb_project": config.wandb_project,
         "wandb_entity": config.wandb_entity,
@@ -431,7 +432,7 @@ def build_gspo_config(
     gspo_overrides_fn: Callable[[Any], dict[str, Any]],
 ):
     """Create the GSPOConfig used for starter post-training."""
-    from stateset_agents.training.gspo_trainer import GSPOConfig
+    from stateset_agents.training.gspo_config import GSPOConfig
 
     resolved_base = base_config or get_config_for_task_fn(
         config.task, model_name=config.model_name
@@ -543,7 +544,11 @@ async def run_starter_config(
 
     logger.info("Initializing %s agent", display_name)
     agent = MultiTurnAgent(agent_config)
-    await agent.initialize()
+    # The GSPO model manager loads and attaches the trainable model/tokenizer.
+    # Loading here first briefly holds two copies and defeats QLoRA's memory
+    # savings by downloading an unquantized model before the quantized one.
+    if agent_config.use_stub_model or config.model_name.startswith("stub://"):
+        await agent.initialize()
 
     env_config = CONVERSATION_CONFIGS.get(
         config.task, CONVERSATION_CONFIGS["customer_service"]

@@ -172,10 +172,26 @@ class Environment(ABC):
                 logger.warning("Unexpected reward result type: %s", type(result))
                 return 0.5
             except ENVIRONMENT_EXCEPTIONS as e:
+                if getattr(self.reward_fn, "fail_on_error", False):
+                    raise
                 logger.warning("Failed to compute reward from reward_fn: %s", e)
                 return 0.5
 
         return 0.5
+
+    def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
+        """Expose public context while retaining evaluator references privately."""
+        context = dict(state.context)
+        private = {"expected_response", "expected_tool_calls"}
+        for key in private:
+            context.pop(key, None)
+        if isinstance(context.get("scenario"), dict):
+            context["scenario"] = {
+                key: value
+                for key, value in context["scenario"].items()
+                if key not in private
+            }
+        return context
 
     async def run_episode(
         self,
@@ -200,6 +216,8 @@ class Environment(ABC):
         try:
             initial_prompt = await self.get_initial_prompt(scenario)
         except ENVIRONMENT_EXCEPTIONS:
+            if getattr(self.reward_fn, "fail_on_error", False):
+                raise
             pass
         if initial_prompt:
             turns.append(
@@ -209,10 +227,20 @@ class Environment(ABC):
                     metadata={"scenario": scenario},
                 )
             )
+        for message in state.context.get("messages", []):
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                turns.append(
+                    ConversationTurn(
+                        role=message.get("role", "user"), content=message["content"]
+                    )
+                )
 
         for _ in range(max_turns):
             history = [{"role": t.role, "content": t.content} for t in turns]
-            agent_response = await agent_fn(history, state.context)
+            # Evaluator references are private. The environment retains them
+            # for scoring; only public scenario fields reach the policy.
+            policy_context = self.observation_context(state)
+            agent_response = await agent_fn(history, policy_context)
             agent_turn = (
                 agent_response
                 if isinstance(agent_response, ConversationTurn)
@@ -276,6 +304,15 @@ class Environment(ABC):
             turn_rewards.append(float(step_reward))
             if isinstance(env_response, ConversationTurn):
                 turns.append(env_response)
+            for message in info.get("messages", []):
+                if isinstance(message, dict) and isinstance(
+                    message.get("content"), str
+                ):
+                    turns.append(
+                        ConversationTurn(
+                            role=message.get("role", "user"), content=message["content"]
+                        )
+                    )
             state = new_state
             if done or state.status != EpisodeStatus.ONGOING:
                 break
@@ -296,6 +333,8 @@ class Environment(ABC):
                     else:
                         turn_rewards.append(final_value)
             except ENVIRONMENT_EXCEPTIONS:
+                if getattr(self.reward_fn, "fail_on_error", False):
+                    raise
                 pass
 
         return MultiTurnTrajectory(

@@ -1,0 +1,179 @@
+{"plan": {"gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "4a98896ddadf25f1731a08ec9970c2c5c32f6d6c82a1e61aae741a32fd465d6d"}}
+{"pod_created": "184wrlwrmfx68b", "actual_hourly_rate_usd": 0.49}
+{"ssh_ready": true, "watchdog_seconds": 3205}
+util in /usr/local/lib/python3.12/dist-packages (from peft==0.20.0) (7.2.2)
+Requirement already satisfied: torch>=1.13.0 in /usr/local/lib/python3.12/dist-packages (from peft==0.20.0) (2.8.0+cu129)
+Requirement already satisfied: filelock in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (3.32.3)
+Collecting pyarrow>=21.0.0 (from datasets==5.0.1)
+  Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (3.0 kB)
+Collecting dill<0.4.2,>=0.3.0 (from datasets==5.0.1)
+  Downloading dill-0.4.1-py3-none-any.whl.metadata (10 kB)
+Collecting pandas (from datasets==5.0.1)
+  Downloading pandas-3.0.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+Requirement already satisfied: requests>=2.32.2 in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (2.34.2)
+Requirement already satisfied: httpx<1.0.0 in /usr/local/lib/python3.12/dist-packages (from datasets==5.0.1) (0.28.1)
+Collecting xxhash (from datasets==5.0.1)
+  Downloading xxhash-4.0.1-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (17 kB)
+Collecting multiprocess<0.70.20 (from datasets==5.0.1)
+  Downloading multiprocess-0.70.19-py312-none-any.whl.metadata (7.5 kB)
+Collecting fsspec<=2026.6.0,>=2023.1.0 (from fsspec[http]<=2026.6.0,>=2023.1.0->datasets==5.0.1)
+  Downloading fsspec-2026.6.0-py3-none-any.whl.metadata (10 kB)
+
+s, datasets, peft
+  Attempting uninstall: fsspec
+    Found existing installation: fsspec 2026.7.0
+    Uninstalling fsspec-2026.7.0:
+      Successfully uninstalled fsspec-2026.7.0
+
+Successfully installed accelerate-1.14.0 aiohappyeyeballs-2.7.1 aiohttp-3.14.4 aiosignal-1.4.0 annotated-doc-0.0.5 annotated-types-0.8.0 cachetools-7.2.1 click-8.5.0 datasets-5.0.1 dill-0.4.1 frozenlist-1.8.0 fsspec-2026.6.0 hf-xet-1.7.0 huggingface-hub-1.33.0 markdown-it-py-4.2.0 mdurl-0.1.2 multidict-6.9.1 multiprocess-0.70.19 pandas-3.0.6 peft-0.20.0 propcache-0.5.4 pyarrow-25.0.1 pydantic-2.13.5 pydantic-core-2.46.5 regex-2026.9.29 rich-15.0.0 safetensors-0.8.0 shellingham-1.5.4 stateset-agents-0.58.0 tokenizers-0.22.2 tqdm-4.70.1 transformers-5.14.1 typer-0.27.3 typing-inspection-0.4.4 xxhash-4.0.1 yarl-1.25.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Starting qwen3.5-2b on retail
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+mers-5.14.1 typer-0.27.3 typing-inspection-0.4.4 xxhash-4.0.1 yarl-1.25.1
+WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Starting qwen3.5-2b on retail
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights:  17%|█▋        | 53/320 [00:00<00:00, 463.22it/s]
+Loading weights:  43%|████▎     | 137/320 [00:00<00:00, 647.65it/s]
+Loading weights:  64%|██████▍   | 204/320 [00:00<00:00, 630.36it/s]
+Loading weights:  85%|████████▍ | 271/320 [00:00<00:00, 642.82it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 652.86it/s]
+
+and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+Starting qwen3.5-2b on retail
+Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights:  17%|█▋        | 53/320 [00:00<00:00, 463.22it/s]
+Loading weights:  43%|████▎     | 137/320 [00:00<00:00, 647.65it/s]
+Loading weights:  64%|██████▍   | 204/320 [00:00<00:00, 630.36it/s]
+Loading weights:  85%|████████▍ | 271/320 [00:00<00:00, 642.82it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 652.86it/s]
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 7810.99it/s]
+
+ads.
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+[transformers] The fast path is not available because one of the required library is not installed. Falling back to torch implementation. To install follow https://github.com/fla-org/flash-linear-attention#installation and https://github.com/Dao-AILab/causal-conv1d
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights:  17%|█▋        | 53/320 [00:00<00:00, 463.22it/s]
+Loading weights:  43%|████▎     | 137/320 [00:00<00:00, 647.65it/s]
+Loading weights:  64%|██████▍   | 204/320 [00:00<00:00, 630.36it/s]
+Loading weights:  85%|████████▍ | 271/320 [00:00<00:00, 642.82it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 652.86it/s]
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 7810.99it/s]
+trainable params: 16,819,200 || all params: 1,898,644,288 || trainable%: 0.8859
+
+Map:   0%|          | 0/48 [00:00<?, ? examples/s]
+Map: 100%|██████████| 48/48 [00:00<00:00, 731.98 examples/s]
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+  0%|          | 0/6 [00:00<?, ?it/s]
+ 17%|█▋        | 1/6 [00:06<00:33,  6.67s/it]
+ 33%|███▎      | 2/6 [00:12<00:24,  6.17s/it]
+]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 652.86it/s]
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 7810.99it/s]
+trainable params: 16,819,200 || all params: 1,898,644,288 || trainable%: 0.8859
+
+Map:   0%|          | 0/48 [00:00<?, ? examples/s]
+Map: 100%|██████████| 48/48 [00:00<00:00, 731.98 examples/s]
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+  0%|          | 0/6 [00:00<?, ?it/s]
+ 17%|█▋        | 1/6 [00:06<00:33,  6.67s/it]
+ 33%|███▎      | 2/6 [00:12<00:24,  6.17s/it]
+ 50%|█████     | 3/6 [00:18<00:17,  5.94s/it]
+ 67%|██████▋   | 4/6 [00:24<00:12,  6.20s/it]
+ 83%|████████▎ | 5/6 [00:30<00:06,  6.00s/it]
+100%|██████████| 6/6 [00:36<00:00,  5.88s/it]
+                                             
+{'train_runtime': '36.96', 'train_samples_per_second': '1.299', 'train_steps_per_second': '0.162', 'train_loss': '1.743', 'epoch': '1'}
+
+100%|██████████| 6/6 [00:36<00:00,  5.88s/it]
+100%|██████████| 6/6 [00:36<00:00,  6.16s/it]
+
+Loading weights:   0%|          | 0/320 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 320/320 [00:00<00:00, 5244.13it/s]
+
+alid_responses": 0, "mean_cost_usd": null, "mean_latency_seconds": 1.2986963413422927, "text_case_match_rate": 0.0, "text_cases": 16, "tool_cases": 16, "tool_exact_match_rate": 1.0}, "industry": "retail", "loaded_model_config_revision": null, "max_training_tokens": 431, "model": "Qwen/Qwen3.5-2B", "optimizer_steps": 6, "peak_training_allocated_gib": 8.246495723724365, "quality_certified": false, "quality_gate": {"passed": false, "reasons": ["synthetic_data: replace demonstrations with reviewed data", "insufficient_groups", "candidate_below_reference_match_floor"]}, "reloaded_adapter_max_abs_logit_delta": 0.75, "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc", "seed": 42, "source_config_revision": "15852e8c16360a2fea060d615a32b45270f8a8fc", "status": "training_and_reload_verified", "synthetic": true, "total_model_seconds": 137.4571686834097, "training_plan": {"base_model": "Qwen/Qwen3.5-2B", "industry": "retail", "max_length": 1024, "method": "bf16_lora", "model_revision": "15852e8c16360a2fea060d615a32b45270f8a8fc", "num_epochs": 1, "output_dir": "/workspace/industry-pilot-output/qwen3.5-2b/prepared/adapter", "split_seed": 42, "status": "trained", "synthetic_rows": 64, "train_rows": 48, "training_seed": 42, "validation_rows": 16, "validation_status": "held_out_not_evaluated"}, "training_seconds_including_load_and_save": 45.38049119710922}
+Starting qwen3.5-4b on technology
+
+seconds": 137.4571686834097, "training_plan": {"base_model": "Qwen/Qwen3.5-2B", "industry": "retail", "max_length": 1024, "method": "bf16_lora", "model_revision": "15852e8c16360a2fea060d615a32b45270f8a8fc", "num_epochs": 1, "output_dir": "/workspace/industry-pilot-output/qwen3.5-2b/prepared/adapter", "split_seed": 42, "status": "trained", "synthetic_rows": 64, "train_rows": 48, "training_seed": 42, "validation_rows": 16, "validation_status": "held_out_not_evaluated"}, "training_seconds_including_load_and_save": 45.38049119710922}
+Starting qwen3.5-4b on technology
+
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]
+Fetching 2 files:  50%|█████     | 1/2 [00:04<00:04,  4.69s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:07<00:00,  3.39s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:07<00:00,  3.59s/it]
+
+Loading weights:   0%|          | 0/426 [00:00<?, ?it/s]
+Loading weights:  13%|█▎        | 56/426 [00:00<00:00, 521.04it/s]
+Loading weights:  26%|██▌       | 109/426 [00:00<00:00, 479.24it/s]
+Loading weights:  40%|████      | 171/426 [00:00<00:00, 538.37it/s]
+Loading weights:  53%|█████▎    | 226/426 [00:00<00:00, 464.17it/s]
+Loading weights:  72%|███████▏  | 305/426 [00:00<00:00, 552.55it/s]
+Loading weights: 100%|██████████| 426/426 [00:00<00:00, 663.08it/s]
+
+les:  50%|█████     | 1/2 [00:04<00:04,  4.69s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:07<00:00,  3.39s/it]
+Fetching 2 files: 100%|██████████| 2/2 [00:07<00:00,  3.59s/it]
+
+Loading weights:   0%|          | 0/426 [00:00<?, ?it/s]
+Loading weights:  13%|█▎        | 56/426 [00:00<00:00, 521.04it/s]
+Loading weights:  26%|██▌       | 109/426 [00:00<00:00, 479.24it/s]
+Loading weights:  40%|████      | 171/426 [00:00<00:00, 538.37it/s]
+Loading weights:  53%|█████▎    | 226/426 [00:00<00:00, 464.17it/s]
+Loading weights:  72%|███████▏  | 305/426 [00:00<00:00, 552.55it/s]
+Loading weights: 100%|██████████| 426/426 [00:00<00:00, 663.08it/s]
+
+Fetching 2 files:   0%|          | 0/2 [00:00<?, ?it/s]
+Fetching 2 files: 100%|██████████| 2/2 [00:00<00:00, 870.19it/s]
+
+Loading weights:   0%|          | 0/426 [00:00<?, ?it/s]
+Loading weights: 100%|██████████| 426/426 [00:00<00:00, 9156.18it/s]
+trainable params: 32,464,896 || all params: 4,238,216,192 || trainable%: 0.7660
+
+Map:   0%|          | 0/48 [00:00<?, ? examples/s]
+Map: 100%|██████████| 48/48 [00:00<00:00, 1006.97 examples/s]
+[transformers] warmup_ratio is deprecated and will be removed in v5.2. Use `warmup_steps` instead.
+
+  0%|          | 0/6 [00:00<?, ?it/s]
+{"status": "failed", "pod_id": "184wrlwrmfx68b", "termination_confirmed": true, "authoritative_hourly_rate_usd": 0.49, "observed_lifetime_seconds": 699.9940052032471, "provider_derived_compute_cost_estimate_usd": 0.09527696181933086, "cost_scope": "compute estimate from provider rate and observed lifetime; not an invoice", "gpu": "NVIDIA A40", "catalog_hourly_rate_usd": 0.49, "maximum_lifetime_seconds": 3600, "catalog_maximum_compute_cost_usd": 0.49, "authorized_total_ceiling_usd": 25, "wheel_sha256": "078ce9f745205323e4be32140c34bbadf08659ae33d3e6c352f89728a12e1268", "harness_sha256": "25f9f814deaef05d006ea841faec06f029cab2dc9a47dad35d4e4c495844f456", "manifest_sha256": "4a98896ddadf25f1731a08ec9970c2c5c32f6d6c82a1e61aae741a32fd465d6d"}
+Traceback (most recent call last):
+  File "/tmp/stateset-industry-pilot-launch.py", line 172, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/tmp/stateset-industry-pilot-launch.py", line 132, in main
+    _, tail = ssh.run('tail -c 1400 /workspace/pilot.log')
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/tmp/stateset-industry-evaluation/stateset_agents/remote/runpod.py", line 407, in run
+    result = subprocess.run(
+             ^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 550, in run
+    stdout, stderr = process.communicate(input, timeout=timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 1209, in communicate
+    stdout, stderr = self._communicate(input, endtime, timeout)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 2153, in _communicate
+    stdout = self._translate_newlines(stdout,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/subprocess.py", line 1086, in _translate_newlines
+    data = data.decode(encoding, errors)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x88 in position 0: invalid start byte

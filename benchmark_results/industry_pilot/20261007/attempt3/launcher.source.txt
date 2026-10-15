@@ -1,0 +1,172 @@
+"""Bounded RunPod launcher for the explicitly authorized $25 industry pilot."""
+import argparse
+import hashlib
+import json
+import os
+import shlex
+import sys
+import threading
+import time
+import tomllib
+from pathlib import Path
+
+ROOT = Path('/tmp/stateset-industry-evaluation')
+sys.path.insert(0, str(ROOT))
+from benchmarks.runpod_backend_conformance import (
+    _arm_self_destruct, _positive_price, _public_key, _run_checked,
+    _wait_for_ssh, fetch_catalog,
+)
+from stateset_agents.remote.runpod import RunPodApi, SshTransport
+from stateset_agents.remote.ledger import check_budget
+
+
+def digest(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def save(path, value):
+    path.write_text(json.dumps(value, indent=2, sort_keys=True) + '\n')
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--manifest', type=Path, required=True)
+    parser.add_argument('--wheel', type=Path, required=True)
+    parser.add_argument('--output', type=Path, required=True)
+    args = parser.parse_args()
+    manifest = json.loads(args.manifest.read_text())
+    execution = manifest['execution']
+    if execution['max_cost_usd'] > 25 or execution['max_lifetime_seconds'] > 3600:
+        raise ValueError('Pilot exceeds the authorized budget or one-hour lifetime')
+    catalog = fetch_catalog()
+    gpu = next(row for row in catalog if row['id'] == execution['gpu_name'])
+    if not gpu['secureCloud']:
+        raise RuntimeError('GPU is not available in secure cloud')
+    rate = _positive_price(gpu['securePrice'], 'securePrice')
+    check_budget(rate, execution['max_lifetime_seconds'], execution['max_cost_usd'])
+    plan = {'gpu': gpu['id'], 'catalog_hourly_rate_usd': rate,
+            'maximum_lifetime_seconds': execution['max_lifetime_seconds'],
+            'catalog_maximum_compute_cost_usd': rate * execution['max_lifetime_seconds']/3600,
+            'authorized_total_ceiling_usd': 25, 'wheel_sha256': digest(args.wheel),
+            'harness_sha256': digest(ROOT/'benchmarks/industry_pilot.py'),
+            'manifest_sha256': digest(args.manifest), 'launcher_sha256': digest(__file__)}
+    print(json.dumps({'plan': plan}), flush=True)
+    if not args.execute:
+        return 0
+    args.output.mkdir(parents=True, exist_ok=False)
+    save(args.output/'plan.json', plan)
+    config = tomllib.loads((Path.home()/'.runpod/config.toml').read_text())
+    key = os.environ.get('RUNPOD_API_KEY') or config.get('credentials', {}).get('api_key') or config.get('default', {}).get('api_key')
+    if not key:
+        raise RuntimeError('RunPod credentials unavailable')
+    api = RunPodApi(key)
+    public_key, private_path = _public_key(None)
+    ssh = SshTransport(key_path=private_path)
+    pod_id = None
+    timer = None
+    actual_rate = None
+    started = time.time()
+    status = 'failed'
+    terminated = False
+    ssh_ready = False
+    try:
+        pod = api.create_pod(
+            name='stateset-industry-pilot-20261007',
+            image=execution['container_image'], gpu_type_id=gpu['id'], gpu_count=1,
+            ports=['22/tcp'], env={'PUBLIC_KEY': public_key, 'SSH_PUBLIC_KEY': public_key},
+            container_disk_gb=60, cloud_type='SECURE',
+        )
+        pod_id = pod['id']
+        started = time.time()
+        save(args.output/'lease.json', {'pod_id': pod_id, 'created_at': started, 'max_lifetime_seconds': 3600})
+
+        def expire():
+            for attempt in range(5):
+                try:
+                    api.terminate_pod(pod_id)
+                    return
+                except Exception:
+                    time.sleep(5)
+        timer = threading.Timer(3600, expire)
+        timer.daemon = True
+        timer.start()
+        actual_rate = _positive_price(pod.get('costPerHr') or api.get_pod(pod_id).get('costPerHr'), 'costPerHr')
+        # Keep ample margin for disk billing and teardown, well below the $25 authorization.
+        check_budget(actual_rate, 3600, min(5.0, execution['max_cost_usd']))
+        print(json.dumps({'pod_created': pod_id, 'actual_hourly_rate_usd': actual_rate}), flush=True)
+        host, port, _ = _wait_for_ssh(api, pod_id, timeout_s=600)
+        ssh.wait_until_reachable(host, port, 120)
+        ssh_ready = True
+        remaining = 3600 - int(time.time() - started)
+        _arm_self_destruct(ssh, api, pod_id, remaining)
+        print(json.dumps({'ssh_ready': True, 'watchdog_seconds': remaining}), flush=True)
+        ssh.upload(args.wheel, '/workspace/'+args.wheel.name)
+        ssh.upload(ROOT/'benchmarks/industry_pilot.py', '/workspace/industry_pilot.py')
+        ssh.upload(args.manifest, '/workspace/industry-pilot-manifest.json')
+        bootstrap = args.output/'run-pilot.sh'
+        wheel = shlex.quote('/workspace/'+args.wheel.name)
+        commands = (
+            'set -e\n'
+            'export TOKENIZERS_PARALLELISM=false\n'
+            'export HF_HOME=/workspace/hf-cache\n'
+            'export HF_HUB_DISABLE_TELEMETRY=1\n'
+            'python -m pip install ' + wheel + ' transformers==5.14.1 peft==0.20.0 accelerate==1.14.0 datasets==5.0.1\n'
+            'python -m pip freeze > /workspace/requirements-observed.txt\n'
+            'nvidia-smi > /workspace/nvidia-smi.txt\n'
+            'python -u /workspace/industry_pilot.py /workspace/industry-pilot-manifest.json /workspace/industry-pilot-output\n'
+        )
+        bootstrap.write_text('#!/bin/bash\nset +e\ntimeout --signal=TERM --kill-after=30s 2700 bash -c '+shlex.quote(commands)+' > /workspace/pilot.log 2>&1\nstatus=$?\nprintf "%s\\n" "$status" > /workspace/pilot.exit\n')
+        ssh.upload(bootstrap, '/workspace/run-pilot.sh')
+        _run_checked(ssh, 'nohup bash /workspace/run-pilot.sh >/workspace/bootstrap.log 2>&1 < /dev/null &', 'pilot launch')
+        last_tail = ''
+        while time.time() - started < 3300:
+            code, result = ssh.run('if test -f /workspace/pilot.exit; then cat /workspace/pilot.exit; else printf RUNNING; fi')
+            if code:
+                raise RuntimeError('Lost SSH while monitoring pilot')
+            if result.strip() != 'RUNNING':
+                exit_code = int(result.strip())
+                print(json.dumps({'remote_exit_code': exit_code}), flush=True)
+                status = 'completed' if exit_code == 0 else 'failed'
+                break
+            _, tail = ssh.run('tail -n 8 /workspace/pilot.log')
+            if tail != last_tail:
+                print(tail, flush=True)
+                last_tail = tail
+            time.sleep(20)
+        else:
+            raise TimeoutError('Pilot exceeded the local monitoring deadline')
+    finally:
+        if pod_id and ssh_ready:
+            try:
+                _run_checked(ssh, 'mkdir -p /workspace/pilot-retained; cp /workspace/pilot.log /workspace/requirements-observed.txt /workspace/nvidia-smi.txt /workspace/industry-pilot-manifest.json /workspace/industry_pilot.py /workspace/pilot-retained/ 2>/dev/null; if test -d /workspace/industry-pilot-output; then cp -a /workspace/industry-pilot-output /workspace/pilot-retained/; fi', 'artifact staging')
+                ssh.download_dir('/workspace/pilot-retained', args.output/'artifacts')
+            except Exception as exc:
+                print(json.dumps({'artifact_download_error': str(exc)}), flush=True)
+                status = 'failed'
+        if pod_id:
+            for attempt in range(5):
+                try:
+                    api.terminate_pod(pod_id)
+                    terminated = True
+                    break
+                except Exception as exc:
+                    print(json.dumps({'termination_attempt': attempt+1, 'error_type': type(exc).__name__}), flush=True)
+                    time.sleep(5)
+            if terminated:
+                (args.output/'lease.json').unlink(missing_ok=True)
+                if timer:
+                    timer.cancel()
+        seconds = time.time() - started
+        record = {'status': status, 'pod_id': pod_id, 'termination_confirmed': terminated,
+                  'authoritative_hourly_rate_usd': actual_rate, 'observed_lifetime_seconds': seconds,
+                  'provider_derived_compute_cost_estimate_usd': actual_rate*seconds/3600 if actual_rate else None,
+                  'cost_scope': 'compute estimate from provider rate and observed lifetime; not an invoice',
+                  **plan}
+        save(args.output/'provider-record.json', record)
+        print(json.dumps(record), flush=True)
+    return 0 if status == 'completed' and terminated else 1
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

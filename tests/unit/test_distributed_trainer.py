@@ -511,7 +511,9 @@ class TestDistributedGRPOLoss:
             environment=MagicMock(),
             reward_function=MagicMock(),
             training_config=TrainingConfig(
-                num_generations=2, advantage_normalization=False
+                allow_sequence_fallback=True,
+                num_generations=2,
+                advantage_normalization=False,
             ),
             distributed_config=DistributedConfig(backend="gloo"),
         )

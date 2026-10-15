@@ -385,3 +385,82 @@ async def test_vapo_multi_update_cadence_matches_dapo(vapo_trainer_tiny, monkeyp
     assert len(actor_steps) == 3
     assert len(critic_steps) == 3
     assert t.global_step == before + 1
+
+
+def _stub_group(trainer, monkeypatch, lengths=((4, 3), (4, 5))):
+    """Right-padded groups: (prompt_length, sequence_length) per response."""
+    torch.manual_seed(3)
+
+    async def fake_generate(prompt):
+        out = []
+        for i, (p, n) in enumerate(lengths):
+            ids = torch.randint(0, 200, (p + n,))
+            mask = torch.zeros(p + n)
+            mask[p:] = 1.0
+            out.append(
+                {
+                    "response": f"r{i}",
+                    "input_ids": ids,
+                    "attention_mask": torch.ones(p + n, dtype=torch.long),
+                    "response_mask": mask,
+                    "prompt_length": p,
+                    "sequence_length": n,
+                }
+            )
+        return out
+
+    monkeypatch.setattr(trainer, "generate_group_responses", fake_generate)
+
+
+@pytest.mark.asyncio
+async def test_gae_runs_in_the_action_frame(vapo_trainer_tiny, monkeypatch):
+    """Log-probs/values/masks use the shifted frame (column t = action emitting
+    token t+1). GAE must too: the reward and terminal flag belong on the last
+    *action* column, and values must be those of the acting states, so the
+    never-trained value of the post-terminal state cannot leak into advantages."""
+    trainer = vapo_trainer_tiny
+    _stub_group(trainer, monkeypatch)
+    trainer.reward_fn = lambda prompt, response: 1.0 if response == "r0" else 0.0
+    captured = {}
+    original = trainer.gae_computer.compute_decoupled_gae
+
+    def spy(rewards, values, dones, lengths):
+        captured.update(rewards=rewards, values=values, dones=dones)
+        return original(rewards, values, dones, lengths)
+
+    monkeypatch.setattr(trainer.gae_computer, "compute_decoupled_gae", spy)
+    await trainer.train_step(["q"])
+
+    rewards, dones = captured["rewards"], captured["dones"]
+    max_len = 4 + 5
+    assert rewards.shape == (2, max_len - 1)
+    # Response 0: tokens 4..6, last action column = 5. Response 1: 4..8 -> 7.
+    assert rewards[0].nonzero().flatten().tolist() == [5]
+    assert rewards[0, 5].item() == 1.0
+    assert dones[0].nonzero().flatten().tolist() == [5]
+    assert dones[1].nonzero().flatten().tolist() == [7]
+    assert captured["values"].shape == (2, max_len - 1)
+
+
+def test_terminal_action_advantage_is_reward_minus_value(vapo_trainer_tiny):
+    """gamma=lambda=1 sanity check in the action frame: A(last) = r - V(last)."""
+    gae = vapo_trainer_tiny.gae_computer
+    rewards = torch.tensor([[0.0, 0.0, 1.0, 0.0]])
+    values = torch.tensor([[0.1, 0.2, 0.3, 99.0]])  # col 3 is post-terminal pad
+    dones = torch.tensor([[0.0, 0.0, 1.0, 0.0]])
+    gae.gamma = 1.0
+    adv, _ = gae.compute_gae(rewards, values, dones, lambda_value=1.0)
+    assert adv[0, 2].item() == pytest.approx(0.7)
+    assert adv[0, 0].item() == pytest.approx(0.9)
+
+
+def test_value_warmup_targets_are_discounted_returns_per_action(vapo_trainer_tiny):
+    t = vapo_trainer_tiny
+    t.gae_computer.gamma = 0.5
+    response_mask = torch.tensor([[0.0, 0.0, 1.0, 1.0, 1.0, 0.0]])
+    targets, action_mask = t.monte_carlo_value_targets(
+        torch.tensor([2.0]), response_mask
+    )
+    # Actions at columns 1..3 emit tokens 2..4; the reward lands on column 3.
+    assert action_mask.tolist() == [[0.0, 1.0, 1.0, 1.0, 0.0]]
+    assert targets.tolist() == [[0.0, 0.5, 1.0, 2.0, 0.0]]

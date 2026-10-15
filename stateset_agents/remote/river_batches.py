@@ -7,34 +7,13 @@ that has to be right is not the RPC plumbing — it is the shape of the batch.
 This module is that part, deliberately isolated: no ``river_client`` import,
 no network, no state. Everything here is testable on a laptop.
 
-.. warning::
+The wire alignment is explicit: SFT targets are next-token IDs supplied by
+our caller-side shift; RL logprobs and advantages start at ``prompt_len - 1``
+and end with a zero slot. These contracts match River's 0.11 documentation.
+Historical live runs and their limits are recorded in ``docs/PROOFS.md``;
+offline batch tests do not substitute for a fresh provider learning check.
 
-   **UNVERIFIED AGAINST THE LIVE SERVICE.** Everything below was derived from
-   River's public documentation. We hold no River API key and ``river-client``
-   is not installable from PyPI here, so not one byte of this has been checked
-   against a real ``forward_backward`` call.
-
-   The single most consequential guess is the **target shift**. River's SFT
-   datum is documented as ``{"input_ids", "target_tokens", "weights"}`` without
-   stating who performs the causal shift. We assume **the caller does**, and
-   emit, for a tokenized conversation ``t[0..n-1]``::
-
-       input_ids     = t[0 : n-1]     # every token but the last
-       target_tokens = t[1 : n]       # each position's next-token target
-       weights       = w[1 : n]       # weight of the *target*, not the input
-
-   All three lists therefore have length ``n - 1`` and are index-aligned:
-   ``target_tokens[i]`` is what the model should predict after consuming
-   ``input_ids[0..i]``, and ``weights[i]`` scales that position's loss.
-
-   If River instead shifts internally, the symptom is unmistakable and cheap
-   to detect on the first real run: loss will be high and flat, and sampled
-   continuations will look off-by-one (the model predicting the token it was
-   just given). The fix is one line — pass ``t[0:n]`` as both ``input_ids``
-   and, shifted, as targets — so this assumption is isolated in
-   :func:`_shift_for_causal_lm` and nowhere else.
-
-The second assumption is **prefix-stable tokenization**: we locate the
+An assumption is **prefix-stable tokenization**: we locate the
 assistant spans by tokenizing successively longer chat-template renderings and
 diffing their lengths. That is exact for BPE/SentencePiece tokenizers in
 practice, but a tokenizer that re-segments across a boundary would shift a span
@@ -44,8 +23,11 @@ by a token or two. Weights, not correctness of the ids, are what would suffer.
 from __future__ import annotations
 
 import logging
+import math
 from collections.abc import Sequence
 from typing import Any
+
+from stateset_agents.core.chat_masking import assistant_token_mask
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +47,9 @@ __all__ = [
 MIN_LORA_RANK = 1
 MAX_LORA_RANK = 32
 
-#: Base models named in River's docs. This is *not* an allowlist: River scopes
-#: model access per account via ``client.get_capabilities()``, so a name absent
+#: Example models from River's docs and dated account canaries. This is not an
+#: allowlist: River scopes access per account via ``client.get_capabilities()``,
+#: so a name absent
 #: here may still be perfectly valid for the caller — see
 #: :func:`validate_base_model`.
 DOCUMENTED_BASE_MODELS: tuple[str, ...] = (
@@ -79,6 +62,9 @@ DOCUMENTED_BASE_MODELS: tuple[str, ...] = (
     "Qwen/Qwen3.5-122B-A10B-FP8",
     "Qwen/Qwen3.5-397B-A17B-FP8",
     "Qwen/Qwen3.6-35B-A3B-FP8",
+    "Qwen/Qwen3.8-27B-FP8",
+    "deepseek-ai/DeepSeek-V4.1-Flash",
+    "zai-org/GLM-5.3-Flash",
 )
 
 #: Weight given to tokens the model is being taught to produce.
@@ -131,7 +117,7 @@ def validate_base_model(name: str, allowed: Sequence[str] | None = None) -> str:
         source = (
             "your account's capabilities"
             if allowed is not None
-            else "River's documented base models"
+            else "the River model reference catalog"
         )
         logger.warning(
             "base model %r is not in %s (%s). Proceeding anyway — River "
@@ -178,6 +164,9 @@ def _encode(tokenizer: Any, text: str) -> list[int]:
     return [int(i) for i in ids]
 
 
+_TOOL_FIELDS = ("tool_calls", "tool_call_id", "name")
+
+
 def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
     """Extract a usable ``messages`` list from a dataset row, or None."""
     if not isinstance(row, dict):
@@ -190,10 +179,23 @@ def _valid_messages(row: Any) -> list[dict[str, Any]] | None:
         if not isinstance(message, dict):
             return None
         role, content = message.get("role"), message.get("content")
-        if not isinstance(role, str) or not isinstance(content, str):
+        tool_calls = message.get("tool_calls")
+        if not isinstance(role, str):
             return None
-        clean.append({"role": role, "content": content})
-    if not any(m["role"] == "assistant" and m["content"] for m in clean):
+        if not isinstance(content, str) and not (content is None and tool_calls):
+            return None
+        # Keep tool-calling fields: dropping them erased the calls from training.
+        clean.append(
+            {
+                "role": role,
+                "content": content,
+                **{key: message[key] for key in _TOOL_FIELDS if key in message},
+            }
+        )
+    if not any(
+        m["role"] == "assistant" and (m["content"] or m.get("tool_calls"))
+        for m in clean
+    ):
         # Nothing to train on: every token would have weight 0.
         return None
     return clean
@@ -242,7 +244,11 @@ def build_sft_batch(
             continue
         try:
             datum = _build_sft_datum(
-                messages, tokenizer, max_length, shift_targets=shift_targets
+                messages,
+                tokenizer,
+                max_length,
+                shift_targets=shift_targets,
+                tools=row.get("tools"),
             )
         except Exception as exc:  # noqa: BLE001 - one bad row must not fail the job
             logger.warning("river: skipping row %d — %s", index, exc)
@@ -258,41 +264,30 @@ def _build_sft_datum(
     max_length: int,
     *,
     shift_targets: bool = True,
+    tools: Any | None = None,
 ) -> dict[str, Any] | None:
-    """One row -> one River SFT datum, or None when nothing is trainable."""
-    ids: list[int] = []
-    weights: list[float] = []
+    """One row -> one River SFT datum, or None when nothing is trainable.
 
-    for i, message in enumerate(messages):
-        if message["role"] != "assistant" or not message["content"]:
-            continue
-
-        # Everything up to and including the generation prefix is prompt.
-        prefix_ids = _encode(
-            tokenizer,
-            _render(tokenizer, messages[:i], add_generation_prompt=True),
+    The datum is the single full render of the conversation, tokenized once,
+    weighted on assistant spans located in that render. Splicing separately
+    tokenized prefix renders corrupted rows for templates that rewrite earlier
+    turns (Qwen3/Qwen3.5 add a ``<think>`` stub to the final assistant turn).
+    """
+    last_assistant = max(i for i, m in enumerate(messages) if m["role"] == "assistant")
+    # Any trailing messages after the final assistant turn are prompt-only and
+    # deliberately dropped: they carry no loss and only consume context.
+    masked = assistant_token_mask(
+        tokenizer, messages[: last_assistant + 1], tools=tools
+    )
+    if masked is None:
+        raise ValueError(
+            "chat template rewrites earlier turns; cannot locate assistant tokens"
         )
-        through_ids = _encode(tokenizer, _render(tokenizer, messages[: i + 1]))
-
-        if len(through_ids) <= len(prefix_ids):
-            # Tokenizer did not grow across the assistant turn — nothing we
-            # can honestly attribute to the completion.
-            continue
-
-        # Extend the running sequence to the prompt prefix (weight 0) …
-        while len(ids) < len(prefix_ids):
-            ids.append(prefix_ids[len(ids)])
-            weights.append(_PROMPT_WEIGHT)
-        # … then to the end of the assistant turn (weight 1).
-        while len(ids) < len(through_ids):
-            ids.append(through_ids[len(ids)])
-            weights.append(_COMPLETION_WEIGHT)
-
+    ids, assistant = masked
+    weights = [_COMPLETION_WEIGHT if a else _PROMPT_WEIGHT for a in assistant]
     if not ids:
         return None
 
-    # Any trailing messages after the final assistant turn are prompt-only and
-    # deliberately dropped: they carry no loss and only consume context.
     ids = ids[:max_length]
     weights = weights[:max_length]
 
@@ -342,9 +337,11 @@ def build_rl_batch(
     explicit per-token sequence. When omitted, each trajectory's ``reward``
     is used as its scalar advantage.
 
-    Prompt tokens get advantage ``0.0`` — River documents 0.0 as excluding a
-    token from the loss — and ``attention_mask`` is all ones, since we emit
-    unpadded per-datum sequences.
+    Values use the same pre-shifted layout as :func:`build_group_rl_datums`:
+    entry ``t`` belongs to the token predicted at ``t + 1``. Prompt positions
+    get advantage ``0.0`` — River documents 0.0 as excluding a token from the
+    loss — and ``attention_mask`` is all ones, since we emit unpadded
+    per-datum sequences.
     """
     if len(old_logprobs) != len(trajectories):
         raise ValueError(
@@ -396,10 +393,15 @@ def build_rl_batch(
                     f"advantages for {len(completion_ids)} completion tokens"
                 )
 
+        if not prompt_ids:
+            raise ValueError(f"trajectory {index}: prompt must be non-empty")
         ids = (prompt_ids + completion_ids)[:max_length]
-        # Prompt positions carry no credit; completion positions carry theirs.
-        per_token_lp = [0.0] * len(prompt_ids) + logprobs
-        per_token_adv = [0.0] * len(prompt_ids) + completion_advantages
+        # Same pre-shifted layout as build_group_rl_datums (the live path):
+        # position t carries the values for the token predicted at t + 1, so
+        # completion entries start at prompt_len - 1 and end with a 0.0.
+        pad = [0.0] * (len(prompt_ids) - 1)
+        per_token_lp = pad + logprobs + [0.0]
+        per_token_adv = pad + completion_advantages + [0.0]
 
         datum: dict[str, Any] = {
             "input_ids": ids,
@@ -440,6 +442,15 @@ def build_group_rl_datums(
         raise ValueError(f"got {len(samples)} samples but {len(rewards)} rewards")
     if not samples:
         return []
+    if not all(math.isfinite(r) for r in rewards):
+        raise ValueError("RL rewards must be finite")
+    for sample in samples:
+        if sample.get("token_data_is_exact") is False:
+            raise ValueError("RL training requires exact sampled token data")
+        if len(sample["tokens"]) != len(sample["logprobs"]):
+            raise ValueError("sample tokens and logprobs must align")
+        if any(not math.isfinite(p) or p > 1e-6 for p in sample["logprobs"]):
+            raise ValueError("RL logprobs must be finite and nonpositive")
     mean_reward = sum(rewards) / len(rewards)
     if all(r == rewards[0] for r in rewards):
         return []

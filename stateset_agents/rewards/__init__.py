@@ -28,6 +28,7 @@ from .ruler_reward import RulerRewardFunction
 from .ruler_reward import RulerRewardFunction as LLMRewardFunction
 from .ruler_reward import create_customer_service_ruler, create_general_ruler
 from .symbolic_physics_reward import SymbolicPhysicsRewardFunction, SymbolicRewardConfig
+from .task_outcome import TaskOutcomeReward
 
 # LLM-as-Judge for RLAIF
 try:
@@ -56,6 +57,7 @@ from .llm_judge_adapter import (
 from .nsr_verifier import NSROutcomeReporter, NSRVerifierConfig, NSRVerifierReward
 
 __all__ = [
+    "TaskOutcomeReward",
     "LLMRewardFunction",
     "RewardResult",
     "MultiObjectiveRewardFunction",

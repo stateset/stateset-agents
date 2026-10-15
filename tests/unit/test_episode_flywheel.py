@@ -259,6 +259,8 @@ class TestEpisodeRlDatums:
                 "logprobs": [-0.2, -0.3],
             },
         ]
+        for turn in branch:
+            turn["token_data_is_exact"] = True
         datums = _episode_rl_datums(branch, advantage=0.5)
         assert len(datums) == 2
         d2 = datums[1]
@@ -268,11 +270,12 @@ class TestEpisodeRlDatums:
         assert d2["advantages"][6] == 0.0
         assert d2["old_logprobs"][4:6] == [-0.2, -0.3]
 
-    def test_incomplete_turns_are_skipped(self):
+    def test_incomplete_turns_are_rejected(self):
         from stateset_agents.remote.river import _episode_rl_datums
 
         branch = [{"prompt_ids": [], "tokens": [10], "logprobs": [-0.1]}]
-        assert _episode_rl_datums(branch, 0.5) == []
+        with pytest.raises(ValueError):
+            _episode_rl_datums(branch, 0.5)
 
 
 class TestToolCalls:

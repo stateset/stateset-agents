@@ -234,6 +234,7 @@ class TestGRPOTrainer:
 
         # Create training config
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             num_episodes=10,
             learning_rate=1e-5,
             per_device_train_batch_size=1,
@@ -263,7 +264,9 @@ class TestGRPOTrainer:
         reward_fn = create_customer_service_reward()
 
         # Test group_mean baseline
-        train_config = TrainingConfig(baseline_type="group_mean")
+        train_config = TrainingConfig(
+            allow_sequence_fallback=True, baseline_type="group_mean"
+        )
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
 
         trajectory = MultiTurnTrajectory()
@@ -301,7 +304,7 @@ class TestGRPOTrainer:
         env = ConversationEnvironment(scenarios=scenarios, max_turns=2)
         reward_fn = create_customer_service_reward()
 
-        train_config = TrainingConfig(num_generations=2)
+        train_config = TrainingConfig(allow_sequence_fallback=True, num_generations=2)
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
 
         await trainer.initialize()
@@ -327,6 +330,7 @@ class TestGRPOTrainer:
 
         # Enable reference model and KL penalty
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             beta=0.1,  # KL penalty coefficient
             use_reference_model=True,
         )
@@ -352,8 +356,8 @@ class TestGRPOTrainer:
         assert "kl_penalty" in loss_dict
 
     @pytest.mark.asyncio
-    async def test_training_step(self):
-        """Test a single training step"""
+    async def test_stub_training_step_does_not_claim_optimizer_updates(self):
+        """A stub loss without model gradients must not count as learning."""
         config = AgentConfig(model_name="gpt2", use_stub_model=True)
         agent = MultiTurnAgent(config)
         await agent.initialize()
@@ -364,6 +368,7 @@ class TestGRPOTrainer:
         reward_fn = create_customer_service_reward()
 
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             learning_rate=1e-5,
             clip_ratio=0.2,
             gradient_accumulation_steps=1,
@@ -379,13 +384,20 @@ class TestGRPOTrainer:
 
         group = TrajectoryGroup(scenario_id="test", trajectories=[trajectory])
 
-        # Execute training step
+        before = [p.detach().clone() for p in agent.model.parameters()]
+        # The stub response loss is not connected to optimizer parameters.
         metrics = await trainer.training_step([group])
 
         assert "total_loss" in metrics
         assert "learning_rate" in metrics
         assert "global_step" in metrics
-        assert trainer.global_step == 1
+        assert trainer.global_step == 0
+        assert metrics["optimizer_updates"] == 0
+        assert metrics["optimizer_step"] is False
+        assert all(
+            torch.equal(old, new.detach())
+            for old, new in zip(before, agent.model.parameters(), strict=True)
+        )
 
 
 class TestPolicyGradientComputation:
@@ -403,7 +415,9 @@ class TestPolicyGradientComputation:
         )
         reward_fn = create_customer_service_reward()
 
-        train_config = TrainingConfig()
+        train_config = TrainingConfig(
+            allow_sequence_fallback=True,
+        )
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
         await trainer.initialize()
 
@@ -436,7 +450,7 @@ class TestPolicyGradientComputation:
         reward_fn = create_customer_service_reward()
 
         # Set explicit clip ratio
-        train_config = TrainingConfig(clip_ratio=0.2)
+        train_config = TrainingConfig(allow_sequence_fallback=True, clip_ratio=0.2)
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
         await trainer.initialize()
 
@@ -483,6 +497,7 @@ class TestIntegration:
 
         # Create training config
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             num_episodes=2,  # Small for testing
             num_generations=2,
             learning_rate=1e-5,
@@ -509,12 +524,19 @@ class TestIntegration:
         assert "policy_loss" in loss_dict
         assert "total_loss" in loss_dict
 
-        # Execute training step
+        before = [p.detach().clone() for p in agent.model.parameters()]
+        # Exercise the pipeline without mistaking stub execution for learning.
         metrics = await trainer.training_step(trajectory_groups)
 
         assert "total_loss" in metrics
         assert "learning_rate" in metrics
-        assert trainer.global_step == 1
+        assert trainer.global_step == 0
+        assert metrics["optimizer_updates"] == 0
+        assert metrics["optimizer_step"] is False
+        assert all(
+            torch.equal(old, new.detach())
+            for old, new in zip(before, agent.model.parameters(), strict=True)
+        )
 
     @pytest.mark.asyncio
     async def test_engine_with_real_agent(self):

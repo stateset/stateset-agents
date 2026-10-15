@@ -119,6 +119,7 @@ class FakeLoraConfig:
     train_attn: bool = True
     train_mlp: bool = True
     train_unembed: bool = False
+    seed: int | None = None
 
 
 @dataclass
@@ -134,6 +135,8 @@ class FakeSample:
     tokens: list[int] = field(default_factory=lambda: [11, 12])
     logprobs: list[float] = field(default_factory=lambda: [-0.5, -0.25])
     prompt_token_ids: list[int] = field(default_factory=lambda: [7, 8, 9])
+    token_data_is_exact: bool = True
+    stop_reason: str = "stop"
 
 
 class RecordingModel:
@@ -169,6 +172,7 @@ class RecordingModel:
                 "top_p": top_p,
                 "max_tokens": max_tokens,
                 "stop": stop,
+                **kwargs,
             }
         )
         count = len(prompts) if prompts is not None else len(prompt_token_ids)
@@ -181,9 +185,14 @@ class RecordingModel:
             groups.append(group)
         return groups
 
-    def forward_backward(self, batch, loss_fn="cross_entropy"):
+    def forward_backward(self, batch, loss_fn="cross_entropy", **kwargs):
         self._calls.append(
-            {"call": "forward_backward", "batch_size": len(batch), "loss_fn": loss_fn}
+            {
+                "call": "forward_backward",
+                "batch_size": len(batch),
+                "loss_fn": loss_fn,
+                **({"datums": batch, **kwargs} if kwargs else {}),
+            }
         )
         return {"loss": 0.5, "num_tokens": sum(len(d["input_ids"]) for d in batch)}
 
@@ -246,6 +255,10 @@ class RecordingClient:
         self.calls: list[dict[str, Any]] = []
         self._texts = list(texts)
         self._model_cls = model_cls or TrainStepModel
+
+    def get_capabilities(self):
+        self.calls.append({"call": "get_capabilities"})
+        return ["Qwen/Qwen3.5-9B"]
 
     def session(self, project=None):
         self.calls.append({"call": "session", "project": project})
@@ -685,8 +698,13 @@ def _ledger_lines(path: Path) -> list[dict[str, Any]]:
 def _artifacts(root: Path, ledger: Path) -> dict[str, str]:
     out = {}
     for path in sorted(root.rglob("*")):
-        if path.is_file() and path != ledger:
-            out[path.relative_to(root).as_posix()] = path.read_text()
+        if path.is_file() and path != ledger and path.name != ".rl.lock":
+            value = path.read_text()
+            if path.name == "stateset_manifest.json":
+                payload = json.loads(value)
+                payload["created_at"] = TIMESTAMP
+                value = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+            out[path.relative_to(root).as_posix()] = value
     return out
 
 
@@ -799,7 +817,9 @@ class TestTheGoldenSaysWhatWeThinkItSays:
             assert "insufficient_funds" in raised and "river.ai" in raised, name
 
     def test_rl_trains_on_the_whole_group_with_the_configured_loss(self, golden):
-        steps = [c for c in golden["rl"]["sdk_calls"] if c["call"] == "train_step"]
+        steps = [
+            c for c in golden["rl"]["sdk_calls"] if c["call"] == "forward_backward"
+        ]
         assert [s["loss_fn"] for s in steps] == ["cispo", "cispo"]
         assert all(len(s["datums"]) == 2 for s in steps)
 
@@ -810,7 +830,9 @@ class TestTheGoldenSaysWhatWeThinkItSays:
 
     def test_episode_rl_broadcasts_one_advantage_across_a_turn(self, golden):
         steps = [
-            c for c in golden["episode_rl"]["sdk_calls"] if c["call"] == "train_step"
+            c
+            for c in golden["episode_rl"]["sdk_calls"]
+            if c["call"] == "forward_backward"
         ]
         assert steps, "episode RL never trained"
         datum = steps[0]["datums"][0]
@@ -828,13 +850,16 @@ class TestTheGoldenSaysWhatWeThinkItSays:
             assert samples[0]["temperature"] == 0.0, f"{name} eval was not greedy"
             assert samples[0]["num_samples"] == 1, name
 
-    def test_checkpoints_are_saved_for_inference_only(self, golden):
+    def test_rl_saves_optimizer_state_and_selected_inference_weights(self, golden):
         for name in ("sft", "rl", "episode_rl"):
             saves = [
                 c for c in golden[name]["sdk_calls"] if c["call"] == "save_weights"
             ]
-            assert len(saves) == 1, name
             assert saves[0]["mode"] == "inference", name
+            if name == "sft":
+                assert len(saves) == 1
+            else:
+                assert any(s["mode"] == "training" for s in saves)
 
     def test_harvest_writes_the_pod_contract_artifacts(self, golden):
         for name in ("harvest", "episode_harvest"):

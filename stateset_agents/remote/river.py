@@ -34,8 +34,12 @@ from __future__ import annotations
 import contextlib
 import json
 import logging
+import math
 import os
+import random
+import threading
 import time
+from asyncio import CancelledError
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -50,11 +54,46 @@ from stateset_agents.remote.river_batches import (
     validate_base_model,
     validate_lora_rank,
 )
+from stateset_agents.remote.river_rl import (
+    RiverRLConfig,
+    RLScore,
+    RLScorer,
+    atomic_json,
+    exclusive_run,
+    retain_group,
+    sample_record,
+    score_text,
+    validate_record,
+    validate_task,
+)
+from stateset_agents.remote.river_runtime import require_model_access
 
 __all__ = ["CHECKPOINT_POINTER_NAME", "RiverExecutor"]
 
 #: Environment variable holding the River API key (``rv_...``).
 RIVER_API_KEY_ENV = "RIVER_API_KEY"
+
+
+def _sft_options(spec: RemoteJobSpec) -> dict[str, Any]:
+    """Validate reproducibility options before constructing a River client."""
+    options = {"seed": 0, "shuffle": True}
+    supplied = spec.harvest or {}
+    unknown = supplied.keys() - options.keys()
+    if unknown:
+        raise RemoteExecutionError(
+            f"Unknown River SFT options: {sorted(unknown)}", provider="river"
+        )
+    options.update(supplied)
+    if type(options["seed"]) is not int or options["seed"] < 0:
+        raise RemoteExecutionError(
+            "River SFT seed must be a nonnegative integer", provider="river"
+        )
+    if type(options["shuffle"]) is not bool:
+        raise RemoteExecutionError(
+            "River SFT shuffle must be boolean", provider="river"
+        )
+    return options
+
 
 #: When set (any non-empty value), executor progress lines are ALSO printed
 #: to stderr as they happen. The job log is only rendered after the job
@@ -124,7 +163,9 @@ class _RlMode:
     #: (model) -> {"passed", "total", "results"}, or None with no eval set.
     greedy_eval: Callable[[Any], dict[str, Any] | None]
     #: (model) -> (datums to train on, per-group mean rewards).
-    collect_round: Callable[[Any], tuple[list[dict[str, Any]], list[float]]]
+    collect_round: Callable[
+        [Any, int], tuple[list[dict[str, Any]], list[float], list[dict[str, Any]]]
+    ]
     #: How a round with nothing to learn from is described in the log.
     zero_variance_note: str
     #: Log line and wrapped-error text when the run fails.
@@ -160,7 +201,9 @@ class RiverExecutor(RemoteExecutor):
     ``client`` is the seam: pass any object implementing River's surface and
     nothing here touches the network or the SDK. Left as ``None``, the real
     ``river_client`` is imported lazily at submit time, so merely listing
-    providers never requires the SDK.
+    providers never requires the SDK. Internally created clients are closed
+    after each submission; injected clients remain owned by the caller. Use
+    a separate executor for each concurrent submission.
     """
 
     name = "river"
@@ -178,12 +221,21 @@ class RiverExecutor(RemoteExecutor):
         *,
         tokenizer: Any = None,
         ledger_path: Path | None = None,
+        rl_scorer: RLScorer | None = None,
+        rl_scorer_id: str | None = None,
     ) -> None:
         self._client = client
+        self._owns_client = client is None
+        self._submit_lock = threading.Lock()
         self._tokenizer = tokenizer
+        self._tokenizers: dict[str, Any] = {}
         self.ledger_path = ledger_path
         self._jobs: dict[str, _RiverJob] = {}
         self._counter = 0
+        if rl_scorer is not None and not rl_scorer_id:
+            raise ValueError("A custom rl_scorer requires a versioned rl_scorer_id")
+        self._rl_scorer = rl_scorer
+        self._rl_scorer_id = rl_scorer_id or "stateset-checks-v2"
 
     # -- SDK seam ----------------------------------------------------------
 
@@ -223,6 +275,8 @@ class RiverExecutor(RemoteExecutor):
         """
         if self._tokenizer is not None:
             return self._tokenizer
+        if base_model in self._tokenizers:
+            return self._tokenizers[base_model]
         try:
             from transformers import AutoTokenizer
         except ImportError as exc:
@@ -236,14 +290,26 @@ class RiverExecutor(RemoteExecutor):
             # base_model is the caller's own model id, not attacker input;
             # pinning a revision would break arbitrary user-chosen models
             # (same rationale as training/sft.py).
-            self._tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
+            tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
         except Exception as exc:  # noqa: BLE001 - hub/network/auth all land here
             raise RemoteExecutionError.wrap(
                 exc,
                 f"could not load a tokenizer for {base_model!r}",
                 provider=self.name,
             ) from exc
-        return self._tokenizer
+        self._tokenizers[base_model] = tokenizer
+        return tokenizer
+
+    def _checked_client(self, spec: RemoteJobSpec, job: _RiverJob) -> Any:
+        """Reject unavailable models before a session or tokenizer is created."""
+        try:
+            client = self._get_client()
+            require_model_access(client, spec.base_model)
+        except Exception:
+            job.status = JobStatus.FAILED
+            raise
+        job.logs.append(f"River account advertises model access: {spec.base_model}")
+        return client
 
     # -- submit ------------------------------------------------------------
 
@@ -289,6 +355,19 @@ class RiverExecutor(RemoteExecutor):
         return None
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        """Run synchronously, releasing owned clients on every exit path."""
+        if not self._submit_lock.acquire(blocking=False):
+            raise RemoteExecutionError(
+                "RiverExecutor already has an active submission; use a separate "
+                "executor for concurrent jobs",
+                provider=self.name,
+            )
+        try:
+            return self._submit_with_cleanup(spec)
+        finally:
+            self._submit_lock.release()
+
+    def _submit_with_cleanup(self, spec: RemoteJobSpec) -> JobHandle:
         self.validate_spec(spec)
         self._counter += 1
         job_id = f"river-{self._counter}"
@@ -300,6 +379,48 @@ class RiverExecutor(RemoteExecutor):
         job = _RiverJob(spec=spec, status=JobStatus.PENDING, logs=logs)
         self._jobs[job_id] = job
 
+        failed = False
+        try:
+            return self._submit_job(handle, job, spec)
+        except BaseException as exc:
+            failed = True
+            if not job.status.is_terminal:
+                job.status = (
+                    JobStatus.CANCELLED
+                    if isinstance(exc, (KeyboardInterrupt, CancelledError))
+                    else JobStatus.FAILED
+                )
+            raise
+        finally:
+            if self._owns_client and self._client is not None:
+                # Detach before closing: even a partially closed client must
+                # never be reused by a subsequent submission.
+                client, self._client = self._client, None
+                try:
+                    client.close()
+                except Exception as exc:
+                    message = (
+                        f"River client cleanup failed ({type(exc).__name__}) "
+                        f"for {job_id}; inspect the retained job status and "
+                        "artifacts before resubmitting"
+                    )
+                    # SDK exception text can contain credentials. Keep the
+                    # cleanup diagnostic without masking a training failure.
+                    logs.append(message)
+                    logger.warning(message)
+                    if not failed:
+                        raise RemoteExecutionError(
+                            message,
+                            provider=self.name,
+                            job_id=job_id,
+                            stage="client_cleanup",
+                        ) from exc
+
+    def _submit_job(
+        self, handle: JobHandle, job: _RiverJob, spec: RemoteJobSpec
+    ) -> JobHandle:
+        logs = job.logs
+        job_id = handle.job_id
         ignored = [f for f in _IGNORED_SPEC_FIELDS if _is_set(spec, f)]
         if ignored:
             logs.append(
@@ -316,7 +437,8 @@ class RiverExecutor(RemoteExecutor):
         if spec.job_kind == "rl":
             return self._submit_rl(handle, job, spec)
 
-        client = self._get_client()
+        _sft_options(spec)
+        client = None if spec.dry_run else self._checked_client(spec, job)
         tokenizer = self._get_tokenizer(spec.base_model)
 
         from stateset_agents.training.sft import load_chat_dataset
@@ -374,122 +496,11 @@ class RiverExecutor(RemoteExecutor):
         spec: RemoteJobSpec,
         mode: _RlMode,
     ) -> JobHandle:
-        """Rounds of sample -> grade -> group-relative advantages -> train.
+        """Drive a durable RL run shared by single-turn and episode collectors."""
+        from stateset_agents.remote.river_rl_runner import run_rl
 
-        The loop is identical for single-turn and multi-turn RL; ``mode``
-        supplies the four things that are not — how to sample and grade a
-        round into datums, how to score the greedy eval, what the dry-run
-        report says, and what to call the run when it fails.
-        """
-        import time as _time
-
-        logs = job.logs
-        knobs = spec.harvest or {}
-        rounds = int(knobs.get("rounds", 4))
-        loss_fn = str(knobs.get("loss_fn", "cispo"))
-        output_dir = Path(spec.output_dir)
-        output_dir.mkdir(parents=True, exist_ok=True)
-
-        if spec.dry_run:
-            (output_dir / "rl_report.json").write_text(json.dumps(mode.dry_run_report))
-            job.status = JobStatus.SUCCEEDED
-            return handle
-
-        client = self._get_client()
-        started = _time.monotonic()
-        job.status = JobStatus.RUNNING
-        round_evals: list[dict[str, Any]] = []
-        try:
-            with _open_session(
-                client, project=Path(spec.output_dir).name or None
-            ) as session:
-                model = session.create_model(
-                    base_model=spec.base_model,
-                    lora=_river_module(client).LoraConfig(rank=spec.lora_r),
-                    checkpoint=_inference_checkpoint(client, mode.checkpoint),
-                )
-
-                before = mode.greedy_eval(model)
-                if before:
-                    round_evals.append(
-                        {
-                            "round": 0,
-                            "passed": before["passed"],
-                            "total": before["total"],
-                        }
-                    )
-                    logs.append(
-                        f"round 0 (before): {before['passed']}/{before['total']}"
-                    )
-
-                for rnd in range(1, rounds + 1):
-                    data, mean_rewards = mode.collect_round(model)
-                    if not data:
-                        logs.append(
-                            f"round {rnd}: {mode.zero_variance_note} — "
-                            "nothing to train on this round"
-                        )
-                        continue
-                    fb, _opt = model.train_step(
-                        data, lr=spec.learning_rate, loss_fn=loss_fn
-                    )
-                    job.steps += 1
-                    loss = _extract(fb, "loss_mean", "loss")
-                    if loss is not None:
-                        job.final_loss = float(loss)
-                    after = mode.greedy_eval(model)
-                    entry: dict[str, Any] = {
-                        "round": rnd,
-                        "datums": len(data),
-                        "mean_reward": round(sum(mean_rewards) / len(mean_rewards), 4),
-                    }
-                    if after:
-                        entry["passed"] = after["passed"]
-                        entry["total"] = after["total"]
-                    round_evals.append(entry)
-                    logs.append(
-                        f"round {rnd}: {len(data)} datums, mean reward "
-                        f"{entry['mean_reward']}"
-                        + (
-                            f", eval {entry['passed']}/{entry['total']}"
-                            if "passed" in entry
-                            else ""
-                        )
-                    )
-
-                name = Path(spec.output_dir).name or "rl_adapter"
-                uri = model.save_weights(name, mode="inference")
-                job.checkpoint_uri = _as_uri(uri)
-                logs.append(f"saved River checkpoint: {job.checkpoint_uri}")
-                final = mode.greedy_eval(model)
-                if final:
-                    (output_dir / "eval_results.json").write_text(
-                        json.dumps(final["results"], indent=2)
-                    )
-        except RemoteExecutionError:
-            job.status = JobStatus.FAILED
-            job.duration_s = _time.monotonic() - started
-            self._record_cost(handle.job_id, job)
-            raise
-        except Exception as exc:  # noqa: BLE001 - unknown SDK exception surface
-            job.status = JobStatus.FAILED
-            job.duration_s = _time.monotonic() - started
-            logs.append(f"{mode.failure_label}: {exc}")
-            self._record_cost(handle.job_id, job)
-            account = self._account_error(exc)
-            if account is not None:
-                raise account from exc
-            raise RemoteExecutionError.wrap(
-                exc, mode.failure_label, provider=self.name
-            ) from exc
-
-        (output_dir / "rl_report.json").write_text(
-            json.dumps({"rounds": round_evals, "loss_fn": loss_fn}, indent=2)
-        )
-        job.duration_s = _time.monotonic() - started
-        job.status = JobStatus.SUCCEEDED
-        self._record_cost(handle.job_id, job)
-        return handle
+        with exclusive_run(Path(spec.output_dir)):
+            return run_rl(self, handle, job, spec, mode)
 
     def _submit_episode_rl(
         self,
@@ -511,7 +522,8 @@ class RiverExecutor(RemoteExecutor):
         episode eval brackets every round.
         """
         knobs = spec.harvest or {}
-        branches = int(knobs.get("best_of", 8))
+        config = RiverRLConfig.from_knobs(knobs)
+        branches = config.best_of
         eval_scripts = [
             e for e in (spec.eval_prompts or []) if isinstance(e, dict) and "turns" in e
         ]
@@ -530,13 +542,13 @@ class RiverExecutor(RemoteExecutor):
             )
             results = []
             for script, bouts in zip(eval_scripts, outs, strict=True):
-                passed_ep, detail = _score_episode(script, bouts[0])
+                scored = self._score_rl(script, bouts[0])
                 results.append(
                     {
                         "prompt": " / ".join(script["turns"]),
                         "finetuned": " ||| ".join(bouts[0]),
-                        "passed": passed_ep,
-                        "detail": detail,
+                        "passed": scored.passed,
+                        "detail": scored.components,
                     }
                 )
             return {
@@ -545,38 +557,62 @@ class RiverExecutor(RemoteExecutor):
                 "results": results,
             }
 
-        def collect_round(model: Any) -> tuple[list[dict[str, Any]], list[float]]:
+        def collect_round(
+            model: Any, rnd: int
+        ) -> tuple[list[dict[str, Any]], list[float], list[dict[str, Any]]]:
             episodes = _rollout_episodes(
                 model,
                 spec.base_model,
                 scripts,
                 branches=branches,
-                temperature=float(knobs.get("temperature", 0.9)),
-                top_p=float(knobs.get("top_p", 0.95)),
-                max_tokens=int(knobs.get("max_new_tokens", 300)),
+                temperature=config.temperature,
+                top_p=config.top_p,
+                max_tokens=config.max_new_tokens,
                 capture=True,
+                seed=config.seed + rnd,
             )
             data: list[dict[str, Any]] = []
             mean_rewards: list[float] = []
+            audit: list[dict[str, Any]] = []
             for script, branch_records in zip(scripts, episodes, strict=True):
-                rewards = [
-                    _graded_episode_reward(script, [t["text"] for t in records])
-                    for records in branch_records
+                flat = [t for branch in branch_records for t in branch]
+                record: dict[str, Any] = {
+                    "task": script,
+                    "records": flat,
+                    "skip_reason": None,
+                }
+                audit.append(record)
+                if not retain_group(flat, config):
+                    record["skip_reason"] = "truncated"
+                    continue
+                scores = [
+                    self._score_rl(script, [t["text"] for t in turns])
+                    for turns in branch_records
+                ]
+                rewards = [s.reward for s in scores]
+                record["rewards"] = rewards
+                record["scores"] = [
+                    {"passed": s.passed, "components": s.components} for s in scores
                 ]
                 mean_rewards.append(sum(rewards) / len(rewards))
                 if all(r == rewards[0] for r in rewards):
+                    record["skip_reason"] = "zero_variance"
                     continue
                 mean = sum(rewards) / len(rewards)
                 for records, reward in zip(branch_records, rewards, strict=True):
                     data.extend(_episode_rl_datums(records, reward - mean))
-            return data, mean_rewards
+            return data, mean_rewards, audit
 
         return self._run_rl_rounds(
             handle,
             job,
             spec,
             _RlMode(
-                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                checkpoint=_checkpoint_from_pointer(
+                    knobs.get("adapter_dir"),
+                    base_model=spec.base_model,
+                    lora_rank=spec.lora_r if spec.job_kind == "rl" else None,
+                ),
                 dry_run_report={
                     "rounds": int(knobs.get("rounds", 4)),
                     "episodes": len(scripts),
@@ -603,9 +639,34 @@ class RiverExecutor(RemoteExecutor):
         from the echoed tokenization, and the datum layout is their
         pre-shifted RL contract (see ``build_group_rl_datums``).
         """
-        from stateset_agents.training.sft import evaluate_checks, normalize_eval_prompts
+        from stateset_agents.training.sft import normalize_eval_prompts
 
         raw_prompts = json.loads(Path(spec.dataset).read_text())
+        if not isinstance(raw_prompts, list) or not raw_prompts:
+            raise ValueError("River RL dataset must be a nonempty JSON list")
+        config = RiverRLConfig.from_knobs(spec.harvest)
+        if spec.max_cost_usd is not None:
+            raise ValueError(
+                "River cannot enforce a dollar ceiling; use max_generated_tokens"
+            )
+        if not all(isinstance(p, dict) for p in raw_prompts):
+            raise ValueError("River RL tasks must be objects with explicit scoring")
+        episode_mode = "turns" in raw_prompts[0]
+        for task in raw_prompts + list(spec.eval_prompts or []):
+            if not isinstance(task, dict) or ("turns" in task) != episode_mode:
+                raise ValueError("Do not mix single-turn and episode RL tasks")
+            validate_task(task, custom_scorer=self._rl_scorer is not None)
+        train_keys = {
+            json.dumps(p.get("turns", p.get("prompt")), sort_keys=True)
+            for p in raw_prompts
+        }
+        eval_keys = {
+            json.dumps(p.get("turns", p.get("prompt")), sort_keys=True)
+            for p in (spec.eval_prompts or [])
+            if isinstance(p, dict)
+        }
+        if train_keys & eval_keys:
+            raise ValueError("RL training and validation prompts must be disjoint")
         if (
             raw_prompts
             and isinstance(raw_prompts[0], dict)
@@ -615,26 +676,7 @@ class RiverExecutor(RemoteExecutor):
         prompts = normalize_eval_prompts(raw_prompts)
         eval_specs = normalize_eval_prompts(list(spec.eval_prompts or []))
         knobs = spec.harvest or {}
-        num_samples = int(knobs.get("best_of", 8))
-
-        def graded_reward(pspec: dict[str, Any], text: str) -> float:
-            """Partial credit + a completeness bonus + a violation penalty.
-
-            v1 was the bare expect-fraction minus the forbid penalty, and it
-            Goodharted live: mean reward climbed 0.67 -> 0.84 across rounds
-            while the all-or-nothing greedy eval FELL 6/12 -> 4/12 — the
-            model learned to resolve one issue confidently and drop the
-            rest, because 2-of-3 tokens at lower difficulty out-earned
-            occasional full passes. The +1.0 completeness bonus makes the
-            full pass strictly dominant again.
-            """
-            checked = evaluate_checks(
-                text, pspec.get("expect", []), pspec.get("forbid", [])
-            )
-            expect = pspec.get("expect", [])
-            frac = len(checked["expect_hits"]) / len(expect) if expect else 1.0
-            bonus = 1.0 if checked["passed"] else 0.0
-            return frac + bonus - (1.0 if checked["forbid_hits"] else 0.0)
+        num_samples = config.best_of
 
         eval_texts = [e["prompt"] for e in eval_specs]
 
@@ -651,52 +693,72 @@ class RiverExecutor(RemoteExecutor):
             )
             results = []
             for espec, completions in zip(eval_specs, outs, strict=True):
-                checked = evaluate_checks(
-                    completions[0],
-                    espec.get("expect", []),
-                    espec.get("forbid", []),
-                )
+                scored = self._score_rl(espec, completions[0])
                 results.append(
                     {
                         "prompt": espec["prompt"],
                         "finetuned": completions[0],
-                        "checks": checked,
+                        "checks": {"passed": scored.passed},
+                        "reward": scored.reward,
+                        "components": scored.components,
                     }
                 )
             passed = sum(1 for r in results if r["checks"]["passed"])
             return {"passed": passed, "total": len(results), "results": results}
 
-        def collect_round(model: Any) -> tuple[list[dict[str, Any]], list[float]]:
+        def collect_round(
+            model: Any, rnd: int
+        ) -> tuple[list[dict[str, Any]], list[float], list[dict[str, Any]]]:
             groups, prompt_ids_per = _rl_sample_groups(
                 model,
                 spec.base_model,
                 [p["prompt"] for p in prompts],
                 num_samples=num_samples,
-                temperature=float(knobs.get("temperature", 0.9)),
-                top_p=float(knobs.get("top_p", 0.95)),
-                max_tokens=int(knobs.get("max_new_tokens", 300)),
+                temperature=config.temperature,
+                top_p=config.top_p,
+                max_tokens=config.max_new_tokens,
+                seed=config.seed + rnd,
             )
             data: list[dict[str, Any]] = []
             mean_rewards: list[float] = []
+            audit: list[dict[str, Any]] = []
             for pspec, group, prompt_ids in zip(
                 prompts, groups, prompt_ids_per, strict=True
             ):
-                rewards = [
-                    graded_reward(pspec, str(getattr(s_, "text", ""))) for s_ in group
+                if len(group) != num_samples:
+                    raise ValueError("River returned an incomplete RL sample group")
+                samples = [sample_record(s, prompt_ids) for s in group]
+                record: dict[str, Any] = {
+                    "task": pspec,
+                    "records": samples,
+                    "skip_reason": None,
+                }
+                audit.append(record)
+                if not retain_group(samples, config):
+                    record["skip_reason"] = "truncated"
+                    continue
+                scores = [self._score_rl(pspec, s["text"]) for s in samples]
+                rewards = [s.reward for s in scores]
+                record["rewards"] = rewards
+                record["scores"] = [
+                    {"passed": s.passed, "components": s.components} for s in scores
                 ]
                 mean_rewards.append(sum(rewards) / len(rewards))
-                samples = [
-                    {"tokens": s_.tokens, "logprobs": s_.logprobs} for s_ in group
-                ]
+                if all(r == rewards[0] for r in rewards):
+                    record["skip_reason"] = "zero_variance"
                 data.extend(build_group_rl_datums(prompt_ids, samples, rewards))
-            return data, mean_rewards
+            return data, mean_rewards, audit
 
         return self._run_rl_rounds(
             handle,
             job,
             spec,
             _RlMode(
-                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                checkpoint=_checkpoint_from_pointer(
+                    knobs.get("adapter_dir"),
+                    base_model=spec.base_model,
+                    lora_rank=spec.lora_r if spec.job_kind == "rl" else None,
+                ),
                 dry_run_report={
                     "rounds": int(knobs.get("rounds", 4)),
                     "prompts": len(prompts),
@@ -708,6 +770,18 @@ class RiverExecutor(RemoteExecutor):
                 failure_label="River RL run failed",
             ),
         )
+
+    def _score_rl(self, task: dict[str, Any], replies: str | list[str]) -> RLScore:
+        """Use the same explicit verifier for learning and validation."""
+        if self._rl_scorer is not None:
+            score = self._rl_scorer(task, replies)
+            if not isinstance(score, RLScore):
+                raise ValueError("Custom River RL scorer must return RLScore")
+            return score
+        if isinstance(replies, str):
+            return score_text(task, replies)
+        passed, detail = _score_episode(task, replies)
+        return RLScore(_graded_episode_reward(task, replies), passed, detail)
 
     # -- harvest: one retry loop, two modes --------------------------------
 
@@ -742,7 +816,7 @@ class RiverExecutor(RemoteExecutor):
             job.status = JobStatus.SUCCEEDED
             return handle
 
-        client = self._get_client()
+        client = self._checked_client(spec, job)
         started = _time.monotonic()
         job.status = JobStatus.RUNNING
         transient = self._transient_exceptions(client)
@@ -887,7 +961,11 @@ class RiverExecutor(RemoteExecutor):
             job,
             spec,
             _HarvestMode(
-                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                checkpoint=_checkpoint_from_pointer(
+                    knobs.get("adapter_dir"),
+                    base_model=spec.base_model,
+                    lora_rank=spec.lora_r if spec.job_kind == "rl" else None,
+                ),
                 summary={
                     "base_model": spec.base_model,
                     "adapter_dir": knobs.get("adapter_dir"),
@@ -1006,7 +1084,11 @@ class RiverExecutor(RemoteExecutor):
             job,
             spec,
             _HarvestMode(
-                checkpoint=_checkpoint_from_pointer(knobs.get("adapter_dir")),
+                checkpoint=_checkpoint_from_pointer(
+                    knobs.get("adapter_dir"),
+                    base_model=spec.base_model,
+                    lora_rank=spec.lora_r if spec.job_kind == "rl" else None,
+                ),
                 summary={
                     "base_model": spec.base_model,
                     "adapter_dir": knobs.get("adapter_dir"),
@@ -1090,11 +1172,14 @@ class RiverExecutor(RemoteExecutor):
         """The training loop River expects the caller to own."""
         logs = job.logs
         river = _river_module(client)
+        options = _sft_options(spec)
+        rng = random.Random(options["seed"])
         lora = river.LoraConfig(
             rank=spec.lora_r,
             train_attn=True,
             train_mlp=True,
             train_unembed=False,
+            seed=options["seed"],
         )
         with _open_session(
             client, project=Path(spec.output_dir).name or None
@@ -1108,8 +1193,11 @@ class RiverExecutor(RemoteExecutor):
             size = max(1, spec.per_device_batch_size)
             tokens = 0
             for epoch in range(spec.num_epochs):
+                epoch_data = list(data)
+                if options["shuffle"]:
+                    rng.shuffle(epoch_data)
                 for start in range(0, len(data), size):
-                    chunk = data[start : start + size]
+                    chunk = epoch_data[start : start + size]
                     if hasattr(model, "train_step"):
                         # The SDK's preferred complete step: forward+backward
                         # and the optimizer step pipelined server-side.
@@ -1118,11 +1206,14 @@ class RiverExecutor(RemoteExecutor):
                         )
                     else:
                         result = model.forward_backward(chunk, loss_fn=self.SFT_LOSS_FN)
-                        model.optim_step(lr=spec.learning_rate)
-                    job.steps += 1
                     loss = _extract(result, "loss_mean", "loss")
                     if loss is not None:
                         job.final_loss = float(loss)
+                        if not math.isfinite(job.final_loss):
+                            raise ValueError("River SFT returned a nonfinite loss")
+                    if not hasattr(model, "train_step"):
+                        model.optim_step(lr=spec.learning_rate)
+                    job.steps += 1
                     if job.steps % 10 == 0:
                         _verbose_log(
                             f"step {job.steps}"
@@ -1297,6 +1388,12 @@ class RiverExecutor(RemoteExecutor):
                 f"job {handle.job_id} is not finished successfully; nothing to fetch",
                 provider=self.name,
             )
+        return self._write_checkpoint_artifacts(job, dest)
+
+    def _write_checkpoint_artifacts(
+        self, job: _RiverJob, dest: Path | None = None
+    ) -> Path:
+        """Publish a committed checkpoint, including during a recoverable RL run."""
         spec = job.spec
         output_dir = Path(dest) if dest is not None else Path(spec.output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -1323,9 +1420,9 @@ class RiverExecutor(RemoteExecutor):
                 "load it."
             ),
         }
-        (output_dir / CHECKPOINT_POINTER_NAME).write_text(
-            json.dumps(pointer, indent=2, sort_keys=True) + "\n", encoding="utf-8"
-        )
+        if spec.job_kind == "sft":
+            pointer["sft_options"] = _sft_options(spec)
+        atomic_json(output_dir / CHECKPOINT_POINTER_NAME, pointer)
 
         from stateset_agents.training.lineage import (
             AdapterManifest,
@@ -1350,6 +1447,7 @@ class RiverExecutor(RemoteExecutor):
                     "per_device_batch_size": spec.per_device_batch_size,
                     "river_checkpoint": job.checkpoint_uri,
                     "steps": job.steps,
+                    **(_sft_options(spec) if spec.job_kind == "sft" else {}),
                 },
                 parent_adapter=spec.parent_adapter,
                 package_version=spec.package_version,
@@ -1423,32 +1521,87 @@ def _inference_checkpoint(client: Any, uri: str | None) -> Any:
     return checkpoint_cls(path=uri, step=0, checkpoint_type="inference")
 
 
-def _checkpoint_from_pointer(adapter_dir: str | None) -> str | None:
-    """Resolve a flywheel adapter reference to a ``river://`` URI.
+def _checkpoint_from_pointer(
+    adapter_dir: str | Path | None,
+    *,
+    base_model: str | None = None,
+    lora_rank: int | None = None,
+) -> str | None:
+    """Resolve and validate a River URI or local pointer before provider work.
 
-    Between generations the flywheel passes the previous training job's
-    output directory — which for River is a POINTER directory holding
-    ``river_checkpoint.json``, not weights. A bare ``river://`` string and
-    ``None`` (start from base) pass through unchanged.
+    Legacy pointers without model/LoRA metadata remain supported. When present,
+    metadata must agree with the requested model and training rank. This checks
+    local claims only; a URI does not prove remote checkpoint compatibility.
     """
-    if not adapter_dir:
+    if adapter_dir is None:
         return None
+
+    def checked_uri(value: Any) -> str:
+        if (
+            not isinstance(value, str)
+            or not value.startswith("river://")
+            or len(value) <= len("river://")
+            or any(c.isspace() or ord(c) < 32 or ord(c) == 127 for c in value)
+        ):
+            raise RemoteExecutionError(
+                "Checkpoint must be a nonempty river:// URI without whitespace or control characters",
+                provider="river",
+            )
+        return value
+
+    if not isinstance(adapter_dir, (str, Path)) or not str(adapter_dir).strip():
+        raise RemoteExecutionError(
+            "Checkpoint reference must be a River URI or pointer directory",
+            provider="river",
+        )
     if str(adapter_dir).startswith("river://"):
-        return str(adapter_dir)
+        return checked_uri(str(adapter_dir))
+
+    def unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+        result: dict[str, Any] = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError("Duplicate checkpoint pointer field")
+            result[key] = value
+        return result
+
     pointer = Path(adapter_dir) / CHECKPOINT_POINTER_NAME
     try:
-        data = json.loads(pointer.read_text())
+        data = json.loads(pointer.read_text(), object_pairs_hook=unique_object)
     except (OSError, ValueError) as exc:
         raise RemoteExecutionError(
             f"{adapter_dir!r} is not a River checkpoint pointer directory "
-            f"(no readable {CHECKPOINT_POINTER_NAME}): {exc}",
+            f"(no readable, unambiguous {CHECKPOINT_POINTER_NAME})",
             provider="river",
         ) from exc
-    checkpoint = data.get("checkpoint")
-    if not isinstance(checkpoint, str) or not checkpoint:
+    if not isinstance(data, dict):
         raise RemoteExecutionError(
-            f"{pointer} has no 'checkpoint' field", provider="river"
+            "Checkpoint pointer must be an object", provider="river"
         )
+    checkpoint = checked_uri(data.get("checkpoint"))
+    if "provider" in data and data["provider"] != "river":
+        raise RemoteExecutionError(
+            "Checkpoint pointer provider is not River", provider="river"
+        )
+    if "base_model" in data and (
+        not isinstance(data["base_model"], str)
+        or not data["base_model"].strip()
+        or (base_model is not None and data["base_model"] != base_model)
+    ):
+        raise RemoteExecutionError(
+            "Checkpoint pointer base model differs from request", provider="river"
+        )
+    if "lora" in data:
+        lora = data["lora"]
+        if (
+            not isinstance(lora, dict)
+            or type(lora.get("rank")) is not int
+            or lora["rank"] < 1
+            or (lora_rank is not None and lora["rank"] != lora_rank)
+        ):
+            raise RemoteExecutionError(
+                "Checkpoint pointer LoRA rank differs from request", provider="river"
+            )
     return checkpoint
 
 
@@ -1487,6 +1640,7 @@ def _rl_sample_groups(
     temperature: float,
     top_p: float,
     max_tokens: int,
+    seed: int = 0,
 ) -> tuple[list[list[Any]], list[list[int]]]:
     """Sample groups for RL with CLIENT-side prompt token ids.
 
@@ -1513,6 +1667,8 @@ def _rl_sample_groups(
             temperature=temperature,
             top_p=top_p,
             max_tokens=max_tokens,
+            seed=seed,
+            top_k=-1,
         )
         prompt_ids = [
             [int(t) for t in (getattr(g[0], "prompt_token_ids", None) or [])]
@@ -1540,6 +1696,8 @@ def _rl_sample_groups(
         top_p=top_p,
         max_tokens=max_tokens,
         stop=list(renderer.get_stop_strings()) or None,
+        seed=seed,
+        top_k=-1,
     )
     return groups, prompt_ids
 
@@ -1669,11 +1827,10 @@ def _episode_rl_datums(
     """
     datums: list[dict[str, Any]] = []
     for turn in branch_turns:
+        validate_record(turn)
         prompt_ids = turn.get("prompt_ids") or []
         tokens = turn.get("tokens") or []
         logprobs = turn.get("logprobs") or []
-        if not prompt_ids or not tokens or len(tokens) != len(logprobs):
-            continue
         pad = [0.0] * (len(prompt_ids) - 1)
         datums.append(
             {
@@ -1795,6 +1952,7 @@ def _rollout_episodes(
     top_p: float,
     max_tokens: int,
     capture: bool = False,
+    seed: int | None = None,
 ) -> list[list[list[Any]]]:
     """Roll ``branches`` independent episodes per script, batched per turn.
 
@@ -1842,6 +2000,7 @@ def _rollout_episodes(
                 top_p=top_p,
                 max_tokens=max_tokens,
                 stop=stops,
+                **({"seed": seed + turn, "top_k": -1} if seed is not None else {}),
             )
         else:
             prompt_ids = [[] for _ in prompts]
@@ -1852,23 +2011,20 @@ def _rollout_episodes(
                 top_p=top_p,
                 max_tokens=max_tokens,
                 stop=stops,
+                **({"seed": seed + turn, "top_k": -1} if seed is not None else {}),
             )
         for (si, bi), group, ids in zip(flat, groups, prompt_ids, strict=True):
+            if len(group) != 1:
+                raise ValueError("River returned an incomplete episode sample group")
             sample = group[0]
             text = str(getattr(sample, "text", "")).strip()
             histories[si][bi].append({"role": "assistant", "content": text})
             if capture:
                 replies[si][bi].append(
-                    {
-                        "text": text,
-                        "prompt_ids": ids
-                        or [
-                            int(t)
-                            for t in (getattr(sample, "prompt_token_ids", None) or [])
-                        ],
-                        "tokens": [int(t) for t in getattr(sample, "tokens", [])],
-                        "logprobs": [float(x) for x in getattr(sample, "logprobs", [])],
-                    }
+                    sample_record(
+                        sample,
+                        ids or list(getattr(sample, "prompt_token_ids", None) or []),
+                    )
                 )
             else:
                 replies[si][bi].append(text)

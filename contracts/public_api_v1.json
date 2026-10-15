@@ -4003,6 +4003,21 @@
               "default": "recompute",
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "old_logprobs_source"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_sequence_fallback"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_missing_sampler_logprobs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_cost_per_hour"
             }
           ]
         }
@@ -4510,6 +4525,16 @@
               "name": "uncertainty_weighted"
             },
             {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "objective_overrides"
+            },
+            {
               "kind": "VAR_KEYWORD",
               "name": "kwargs"
             }
@@ -4590,6 +4615,16 @@
               "default": false,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "enable_training_lab"
+            },
+            {
+              "default": 1,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_max_concurrent_jobs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_queue_path"
             }
           ]
         }

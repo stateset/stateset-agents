@@ -133,11 +133,11 @@ class AgentConfig:
                 ["0.9 (recommended)", "0.95", "1.0 (disabled)"],
             )
 
-        if not isinstance(self.top_k, int) or self.top_k < 1:
+        if type(self.top_k) is not int or self.top_k < 0:
             raise ConfigValidationError(
                 "top_k",
                 self.top_k,
-                "must be a positive integer >= 1",
+                "must be a nonnegative integer (0 disables top-k filtering)",
                 ["50 (recommended)", "40", "100"],
             )
         if self.top_k > 1000:

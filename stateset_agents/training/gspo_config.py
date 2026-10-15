@@ -19,6 +19,7 @@ class GSPOConfig(TrainingConfig):
     """Configuration for GSPO training."""
 
     num_generations: int = 4
+    trust_remote_code: bool = True
     beta: float = 0.0
 
     clip_range_left: float = 3e-4

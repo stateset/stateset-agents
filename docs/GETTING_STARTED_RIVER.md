@@ -2,10 +2,10 @@
 
 Fine-tune, self-improve, and RL-train language models through
 [River](https://river.ai)'s remote-autograd service using `stateset-agents`
-— no GPUs to rent, no SSH, no disks to size. Everything below is written
-from runs that actually happened (20+ live training campaigns; see
-[`PROOFS.md`](PROOFS.md)), including the failure modes and what they look
-like when they bite you.
+— no GPUs to rent, no SSH, no disks to size. Historical measurements below
+come from live campaigns documented in [`PROOFS.md`](PROOFS.md). The revised
+RL recovery driver and stateful commerce comparison workflow have local test
+coverage; they still require fresh live validation.
 
 ## 1. Setup (five minutes)
 
@@ -14,7 +14,7 @@ River's SDK requires **Python ≥ 3.12** (stateset-agents itself supports
 
 ```bash
 uv venv --python 3.12 .river-venv
-uv pip install --python .river-venv/bin/python river-client stateset-agents jinja2
+uv pip install --python .river-venv/bin/python 'stateset-agents[river]'
 export RIVER_API_KEY=rv_...        # from the River console
 ```
 
@@ -116,7 +116,8 @@ result: 8/12 → 12/12 on conversations requiring context carryover.
 ## 5. RL, when imitation isn't enough
 
 ```bash
-... flywheel --provider river --algorithm cispo --rounds 4 --best-of 8 ...
+... flywheel --provider river --algorithm cispo --rounds 4 --best-of 8 \
+  --seed 42 --learning-rate 1e-5 --normalization token ...
 ```
 
 Every sample is graded (expected-token fraction + a completeness bonus −
@@ -132,12 +133,26 @@ sampler's own logprobs. Two hard-won warnings baked into the defaults:
   skipped as gradient-free. If most groups are zero-variance, your task is
   too easy or too hard for the current model.
 
+The RL driver retains the best validation checkpoint, saves resumable optimizer
+state after each round, and records exact rollouts and reward components.
+`--repeats` runs independent seeds; `--resume` restores one run from its output
+directory. Judge-only tasks require `min_judge_score`; failed judges abort RL.
+Use `--max-generated-tokens` to cap generated tokens, including validation and
+retry reservations. RL rejects `--max-cost` because dollar pricing is unknown.
+
+For executed tool outcomes, see `examples/river_refund_rl.py` and the configuration,
+recovery, and benchmark contracts in [`RIVER_PROVIDER.md`](RIVER_PROVIDER.md).
+Its per-case test artifacts support offline comparison with
+`stateset-agents benchmark compare-agents`. Compare matched base/SFT/RL runs
+across at least three seeds; `--strict` fails when improvement or safety gates
+are not met. Keep each experiment in its own output directory.
+
 ## 6. When things go wrong (they did for us — here's what it looks like)
 
 | symptom | meaning | what happens |
 |---|---|---|
 | `ALREADY_EXISTS ... use a fresh model_seq_id` | a slow create raced a client retry | auto-retried with a fresh session (3 attempts, backoff) |
-| `NOT_FOUND - Request not found` mid-training | their pool lost an in-flight request | auto-retried; training restarts from scratch (sessions aren't durable) |
+| `NOT_FOUND - Request not found` mid-training | their pool lost an in-flight request | SFT restarts; RL restores its last committed optimizer checkpoint in a fresh session |
 | steps crawling (~12s/step vs ~3s) | pool under load | it finishes; watch with `STATESET_RIVER_VERBOSE=1` |
 | `No route to host` / health check hangs | full outage (we've seen one, ~12h) | job fails cleanly after retries; checkpoints already saved are safe — resume later |
 | first checkpoint sample times out at 5 min | replica cold start | wait; use a longer `timeout` |

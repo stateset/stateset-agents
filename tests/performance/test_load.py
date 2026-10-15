@@ -449,7 +449,13 @@ class TestResiliencePerformance:
         print(f"  Without breaker: {without_breaker * 1000:.2f} ms for 1000 calls")
         print(f"  Overhead: {overhead_percent:.1f}%")
 
-        assert overhead_percent < 100, "Circuit breaker overhead should be < 100%"
+        # The baseline is an empty coroutine (~0.1-0.2 us per call), so any
+        # relative bound only measures scheduler noise. Bound the absolute cost:
+        # protecting a real network call must stay in the microsecond range.
+        per_call_overhead_us = (with_breaker - without_breaker) / 1000 * 1e6
+        assert (
+            per_call_overhead_us < 50
+        ), f"Circuit breaker adds {per_call_overhead_us:.1f} us per call"
 
     @pytest.mark.asyncio
     async def test_bulkhead_performance(self):
