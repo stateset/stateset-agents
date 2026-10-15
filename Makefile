@@ -25,7 +25,7 @@ install-locked: ## Install from requirements-dev-lock.txt (reproducible, what CI
 lock: ## Regenerate requirements-lock.txt and requirements-dev-lock.txt from pyproject.toml
 	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found. Run: pip install pip-tools" >&2; exit 1; }
 	pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml
-	pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml
+	pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --extra=mcp --output-file=requirements-dev-lock.txt pyproject.toml
 	@echo "Lock files regenerated. Commit both requirements-lock.txt and requirements-dev-lock.txt."
 
 lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
@@ -33,7 +33,7 @@ lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
 	@cp requirements-lock.txt requirements-lock.txt.bak
 	@cp requirements-dev-lock.txt requirements-dev-lock.txt.bak
 	@pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml >/dev/null
-	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
+	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --extra=mcp --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
 	@if ! $(PYTHON_BIN) scripts/check_lockfile_bodies.py \
 	    requirements-lock.txt.bak requirements-lock.txt \
 	    requirements-dev-lock.txt.bak requirements-dev-lock.txt; then \

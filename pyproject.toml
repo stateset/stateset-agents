@@ -91,13 +91,11 @@ dev = [
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "pip-audit>=2.10.1,<3.0.0",
-    # Floor raised deliberately: semgrep pulls the MCP SDK transitively, and
-    # every release before 1.173.0 resolves it to mcp 1.23.3, which carries
-    # SFTY-20260716-62811 (improper access control from insufficient session
-    # validation). 1.173.0 requires mcp==1.29.0. This is a dev-only tool and
-    # never ships in the wheel, but a vulnerable pin in our own lock file is
-    # not something to wave through.
-    "semgrep>=1.173.0",
+    # semgrep lives in the dedicated [semgrep] extra — not here — because
+    # every published release through 1.181.0 still pins mcp==1.29.0, which
+    # is vulnerable to CVE-2026-59951 / GHSA-84m7-p3x7-pcfv. Locking it into
+    # [dev] would force that vulnerable pin into requirements-dev-lock.txt.
+    # CI installs semgrep separately in .github/workflows/security.yml.
     "pip-tools>=7.0.0",
     "torch>=2.0.0",
     "transformers>=4.57.1",
@@ -214,10 +212,20 @@ mcp = [
     # exposes the improve/ingest/grade loop as MCP tools for any MCP client
     # (Claude Code/Desktop, other agents). Not a core dependency: only
     # installed when the `mcp` extra is requested.
+    # Floor 1.30.0: CVE-2026-59951 / GHSA-84m7-p3x7-pcfv (unbounded session
+    # accumulation in StreamableHTTP) is fixed in 1.30.0; do not drop below.
     # Pinned <2: mcp 2.0.0 removed mcp.server.fastmcp.FastMCP (renamed/
     # restructured under mcp.server.mcpserver) — stick to the 1.x FastMCP
     # API this server is written against until that migration is done.
-    "mcp>=1.25.0,<2",
+    "mcp>=1.30.0,<2",
+]
+semgrep = [
+    # Dev-only SAST tool. Not compiled into requirements-dev-lock.txt: every
+    # published semgrep release through 1.181.0 pins mcp==1.29.0, which is
+    # vulnerable to CVE-2026-59951. Re-add to the locked [dev] extra only
+    # after upstream allows mcp>=1.30. Install via `pip install -e ".[semgrep]"`
+    # or the security workflow's direct semgrep install.
+    "semgrep>=1.173.0",
 ]
 remote = [
     # `stateset-agents train-remote` runs the SFT job from `improve` on
