@@ -242,6 +242,7 @@ def aggregate(
     *,
     total_rows: float | None = None,
     total_tokens: float | None = None,
+    row_weights: Any | None = None,
 ) -> Any:
     """Reduce a per-token loss ``[N, T]`` (or ``[N, 1]``) to a scalar.
 
@@ -250,9 +251,24 @@ def aggregate(
     share of the loss over the whole batch (summing the shares of disjoint
     row slices gives exactly the full-batch value). ``None`` uses the slice's
     own counts.
+
+    ``row_weights`` (``[N]``) scales each row's contribution, e.g. ``1/k``
+    for the ``k`` turn rows of one multi-turn episode so every episode counts
+    once (GSPO eq. 5 averages over sequences = episodes). Callers then pass
+    the summed weights as ``total_rows`` (and weighted token counts as
+    ``total_tokens``); without ``total_rows`` the weights' sum is used.
     """
     torch = _t()
     per_token = per_token * torch.ones_like(mask)  # broadcast [N,1] -> [N,T]
+    if row_weights is not None:
+        weights = torch.as_tensor(row_weights).to(per_token).detach()
+        if weights.shape != per_token.shape[:1]:
+            raise ValueError("row_weights must be [N]")
+        per_token = per_token * weights.unsqueeze(-1)
+        if total_rows is None:
+            total_rows = float(weights.sum().item())
+        if total_tokens is None:
+            total_tokens = float((weights * mask.to(weights).sum(-1)).sum().item())
     if objective.aggregate == "seq_mean":
         if total_rows is None:
             return rl_losses.masked_mean(per_token, mask, mode="seq")
@@ -289,6 +305,7 @@ def policy_loss(
     entropy: Any | None = None,
     total_rows: float | None = None,
     total_tokens: float | None = None,
+    row_weights: Any | None = None,
 ) -> PolicyLossResult:
     """Evaluate ``objective`` on one batch.
 
@@ -306,6 +323,9 @@ def policy_loss(
     this is exact for every preset except ``group_expectation`` (which
     couples rows through its group statistic). The returned metrics other
     than ``policy_loss`` stay slice-local means.
+
+    ``row_weights`` (``[N]``, optional) weights each row in the aggregation
+    and the sequence KL (see :func:`aggregate`); ``None`` weights rows equally.
     """
     torch = _t()
     if logp_cur.dim() != 2:
@@ -353,17 +373,32 @@ def policy_loss(
             cur_seq = (logp_cur * mask).sum(-1) / lengths
             ref = logp_ref.detach().to(logp_cur.dtype)
             ref_seq = ((ref * mask).sum(-1) if ref.dim() == 2 else ref) / lengths
-            if total_rows is None:
+            if total_rows is None and row_weights is None:
                 kl_seq_term = rl_losses.k3_kl(cur_seq, ref_seq)
                 kl_value = float(kl_seq_term.detach().item())
+            elif row_weights is not None:
+                w = torch.as_tensor(row_weights).to(cur_seq).detach()
+                r = ref_seq.detach() - cur_seq
+                k3_rows = torch.exp(r) - r - 1.0
+                denom = (
+                    float(w.sum().item()) if total_rows is None else float(total_rows)
+                )
+                kl_seq_term = (k3_rows * w).sum() / max(denom, 1e-12)
+                kl_value = float(k3_rows.detach().mean().item())
             else:
+                assert total_rows is not None  # narrowed by the branches above
                 r = ref_seq.detach() - cur_seq
                 k3_rows = torch.exp(r) - r - 1.0
                 kl_seq_term = k3_rows.sum() / max(float(total_rows), 1.0)
                 kl_value = float(k3_rows.detach().mean().item())
 
     policy = aggregate(
-        objective, per_token, mask, total_rows=total_rows, total_tokens=total_tokens
+        objective,
+        per_token,
+        mask,
+        total_rows=total_rows,
+        total_tokens=total_tokens,
+        row_weights=row_weights,
     )
     loss = policy
     if kl_seq_term is not None:

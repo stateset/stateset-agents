@@ -59,6 +59,7 @@ if str(_BENCHMARKS) not in sys.path:
 import flagship_workload as workload  # noqa: E402
 from flagship_runpod_driver import (  # noqa: E402
     DEFAULT_IMAGE,
+    RUNTIME_PROFILES,
     FlagshipDriverError,
     resolve_harness_revision,
 )
@@ -200,7 +201,14 @@ def resolve_pins(args: argparse.Namespace) -> dict[str, Any]:
         "judge_revision": args.judge_revision or judge.get("revision"),
         "dataset_revision": args.dataset_revision or manifest.get("dataset_revision"),
         "dataset_source": args.dataset_source or manifest.get("dataset"),
+        "judge_loader": getattr(args, "judge_loader", None)
+        or judge.get("loader")
+        or workload.DEFAULT_JUDGE_LOADER,
     }
+    if pins["judge_loader"] not in workload.JUDGE_LOADERS:
+        raise RejudgeError(
+            "judge_loader must be one of " + ", ".join(sorted(workload.JUDGE_LOADERS))
+        )
     for key in ("judge_model", "judge_revision", "dataset_revision"):
         if not isinstance(pins[key], str) or not pins[key]:
             raise RejudgeError(f"{key} is required (flag or --manifest)")
@@ -320,6 +328,7 @@ def run_local(
             "revision": pins["judge_revision"],
             "model_path": judge_path,
             "backend": args.backend,
+            "loader": pins.get("judge_loader", workload.DEFAULT_JUDGE_LOADER),
             "groups": {
                 name: workload.judge_items(records, transcripts[name])
                 for name in GROUPS
@@ -337,6 +346,7 @@ def run_local(
             "framework_version": str(__version__),
             "judge_model": pins["judge_model"],
             "judge_revision": pins["judge_revision"],
+            "judge_loader": pins.get("judge_loader", workload.DEFAULT_JUDGE_LOADER),
             "dataset_source": source,
             "dataset_revision": pins["dataset_revision"],
             "eval_examples": len(records),
@@ -498,7 +508,18 @@ def local_argv(pins: Mapping[str, Any]) -> list[str]:
     ]
     if pins.get("dataset_source"):
         argv += ["--dataset-source", str(pins["dataset_source"])]
+    loader = pins.get("judge_loader", workload.DEFAULT_JUDGE_LOADER)
+    if loader != workload.DEFAULT_JUDGE_LOADER:
+        argv += ["--judge-loader", str(loader)]
     return argv
+
+
+#: pip extras per judge loader: the Gemma 4 judge needs the flagship-v2
+#: dependency path (Transformers >= 5.5, vLLM >= 0.29).
+JUDGE_LOADER_EXTRAS: dict[str, str] = {
+    "mistral": "training,vllm",
+    "gemma4": "training,vllm,flagship-v2",
+}
 
 
 def remote_commands(
@@ -506,11 +527,22 @@ def remote_commands(
 ) -> dict[str, str]:
     """Setup and detached-launch shell commands (pure; no secrets inline)."""
     repo = shlex.quote(_REMOTE_REPOSITORY)
+    loader = str(pins.get("judge_loader", "mistral"))
+    # The Gemma 4 judge needs the v2 stack, CUDA 12.9 builds included.
+    profile = RUNTIME_PROFILES["flagship-v2" if loader == "gemma4" else "flagship-v1"]
     setup = " && ".join(
         [
             f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
             f"git -C {repo} checkout --detach {shlex.quote(harness_revision)}",
-            f"python -m pip install --quiet -e {repo}'[training,vllm]'",
+            *profile.get("pre_install", []),
+            "python -m pip install --quiet -e "
+            f"{repo}'[{JUDGE_LOADER_EXTRAS[str(pins.get('judge_loader', 'mistral'))]}]'",
+            # The judge-only pod needs no Qwen3.5 training kernels.
+            *(
+                step
+                for step in profile.get("post_install", [])
+                if "causal-conv1d" not in step
+            ),
             f"mkdir -p {shlex.quote(_REMOTE_INPUT + '/transcripts')} "
             f"{shlex.quote(_REMOTE_OUTPUT)}",
         ]
@@ -770,6 +802,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--judge-model")
     parser.add_argument("--judge-revision")
+    parser.add_argument(
+        "--judge-loader",
+        choices=sorted(workload.JUDGE_LOADERS),
+        default=None,
+        help="judge engine loader (default: the manifest's judge.loader or mistral)",
+    )
     parser.add_argument("--dataset-revision")
     parser.add_argument("--dataset-source")
     parser.add_argument("--local", action="store_true", help="judge on this machine")

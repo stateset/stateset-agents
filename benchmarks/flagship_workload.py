@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import collections
 import functools
 import hashlib
 import inspect
@@ -42,11 +43,13 @@ import logging
 import math
 import os
 import random
+import re
 import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Awaitable, Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -107,6 +110,33 @@ DEFAULT_LORA_TARGET_MODULES: tuple[str, ...] = (
     "down_proj",
 )
 REQUIRED_JUDGE_KEYS: tuple[str, ...] = ("model", "revision", "rubric_revision")
+#: Runtime profiles a config may pin (``config.runtime_profile``). A missing
+#: key is the v1 profile, so v1 manifests and their config hashes are unchanged.
+RUNTIME_PROFILES: tuple[str, ...] = ("flagship-v1", "flagship-v2")
+#: Judge engine loaders (``judge.loader``). ``mistral`` is the v1 path: plain
+#: vLLM ``LLM.chat`` with the HF-format Mistral snapshot (mistral_common's
+#: tekken.json kept, consolidated weights skipped by ``_default_snapshot``).
+#: ``gemma4`` loads ``Gemma4ForConditionalGeneration`` text-only (no image
+#: slots, so vLLM does not reserve vision-encoder memory), with thinking off
+#: and a higher memory fraction for the ~62 GB of bf16 31B weights.
+JUDGE_LOADERS: dict[str, dict[str, Any]] = {
+    "mistral": {},
+    "gemma4": {
+        "gpu_memory_utilization": 0.92,
+        "llm_kwargs": {"limit_mm_per_prompt": {"image": 0}},
+        "chat_template_kwargs": {"enable_thinking": False},
+    },
+}
+DEFAULT_JUDGE_LOADER = "mistral"
+#: ``TrainingConfig`` fields a config may opt into (v2). ``episode_weighting``
+#: ``"per_episode"`` weights each assistant-turn row by 1/(turns in its
+#: episode) so every episode counts once (GSPO eq. 5); ``disable_dropout``
+#: makes the loss pass match the eval-mode policy that sampled the rollouts.
+V2_TRAINING_KEYS: tuple[str, ...] = ("episode_weighting", "disable_dropout")
+EPISODE_WEIGHTINGS: tuple[str, ...] = ("per_turn", "per_episode")
+#: Reasoning markers a non-thinking policy must never emit (Qwen3/3.5 style
+#: ``<think>`` blocks and Gemma 4's ``<|think|>`` channel marker).
+THINK_MARKERS: tuple[str, ...] = ("<think>", "</think>", "<|think|>")
 SYSTEM_PROMPT = (
     "You are a customer-support agent for an online store. Follow the store "
     "policy exactly: never promise anything the policy does not allow, never "
@@ -205,6 +235,296 @@ def validate_config(config: Mapping[str, Any]) -> None:
         or not all(isinstance(t, str) and t for t in targets)
     ):
         raise WorkloadError("config.lora_target_modules must be a non-empty list")
+    profile = config.get("runtime_profile", "flagship-v1")
+    if profile not in RUNTIME_PROFILES:
+        raise WorkloadError(
+            f"config.runtime_profile must be one of {', '.join(RUNTIME_PROFILES)}"
+        )
+    template_kwargs = config.get("chat_template_kwargs")
+    if template_kwargs is not None and (
+        not isinstance(template_kwargs, Mapping)
+        or not all(isinstance(key, str) and key for key in template_kwargs)
+    ):
+        raise WorkloadError("config.chat_template_kwargs must be an object")
+    if config.get("reward", DEFAULT_REWARD) not in REWARD_VERSIONS:
+        raise WorkloadError(
+            f"config.reward must be one of {', '.join(REWARD_VERSIONS)}"
+        )
+    weighting = config.get("episode_weighting", "per_turn")
+    if weighting not in EPISODE_WEIGHTINGS:
+        raise WorkloadError(
+            f"config.episode_weighting must be one of {', '.join(EPISODE_WEIGHTINGS)}"
+        )
+    for key in (
+        "trust_remote_code",
+        "forbid_think_blocks",
+        "merge_adapter_for_eval",
+        "disable_dropout",
+    ):
+        if key in config and not isinstance(config[key], bool):
+            raise WorkloadError(f"config.{key} must be a boolean")
+    for key in ("think_violation_window", "max_think_violations"):
+        value = config.get(key, THINK_GUARD_DEFAULTS[key])
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise WorkloadError(f"config.{key} must be a positive integer")
+    rate = config.get("max_think_violation_rate", 0.05)
+    if (
+        isinstance(rate, bool)
+        or not isinstance(rate, (int, float))
+        or not 0 < rate <= 1
+    ):
+        raise WorkloadError("config.max_think_violation_rate must be in (0, 1]")
+
+
+def judge_loader(judge: Mapping[str, Any]) -> str:
+    """The pinned judge engine loader (``mistral`` when unpinned, as in v1)."""
+    loader = judge.get("loader", DEFAULT_JUDGE_LOADER)
+    if loader not in JUDGE_LOADERS:
+        raise WorkloadError(
+            f"judge.loader must be one of {', '.join(sorted(JUDGE_LOADERS))}"
+        )
+    return str(loader)
+
+
+def find_think_blocks(texts: Iterable[str]) -> list[str]:
+    """Every text that carries a reasoning marker (see :data:`THINK_MARKERS`)."""
+    return [t for t in texts if any(marker in str(t) for marker in THINK_MARKERS)]
+
+
+#: A leading reasoning block with only whitespace inside, e.g. the
+#: ``<think>\n\n</think>\n\n`` that Qwen3/3.5's ``enable_thinking=False``
+#: template writes into the prompt and that a policy can learn to repeat.
+EMPTY_THINK_PREFIX = re.compile(r"\A\s*(?:<think>\s*</think>\s*)+")
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+#: Training-time think guard defaults (overridable per manifest config).
+#: A completion with reasoning content or a marker anywhere but an empty
+#: leading block is a *violation*: its episode reward is zeroed and counted.
+#: The run aborts only when violations exceed the rolling-window rate (share
+#: of assistant turns over the last ``think_violation_window`` steps) or the
+#: absolute cap; preflight-4 died on 1 stray tag in ~24k turns.
+THINK_GUARD_DEFAULTS: dict[str, Any] = {
+    "think_violation_window": 10,
+    "max_think_violation_rate": 0.05,
+    "max_think_violations": 250,
+}
+#: Evaluations never abort on think markers; a violation rate above this is
+#: flagged in the report (``think_flags``).
+EVAL_THINK_FLAG_RATE = 0.01
+
+
+def strip_empty_think_blocks(text: str) -> tuple[str, bool]:
+    """Drop leading whitespace-only ``<think></think>`` blocks from a reply.
+
+    Returns ``(text, stripped)``. Only empty blocks at the very start are
+    removed; anything else is left for :func:`sanitize_think`.
+    """
+    match = EMPTY_THINK_PREFIX.match(text)
+    if match is None:
+        return text, False
+    return text[match.end() :], True
+
+
+def sanitize_think(text: str) -> tuple[str, str | None]:
+    """Remove reasoning markers and content from a non-thinking reply.
+
+    Returns ``(clean_text, kind)`` where ``kind`` is ``None`` (no marker),
+    ``"empty"`` (only leading empty blocks, benign) or ``"violation"``
+    (reasoning content, or a marker anywhere else). For a violation, complete
+    ``<think>...</think>`` blocks are removed; a lone ``</think>`` keeps the
+    text after it (the reasoning came first) unless that is empty; an
+    unclosed ``<think>`` keeps the text before it unless that is empty; any
+    remaining marker is deleted. Best effort: a violating episode's reward is
+    zeroed anyway, the cleaning only keeps markers out of history,
+    transcripts and the judge.
+    """
+    clean, empty = strip_empty_think_blocks(str(text))
+    if not any(marker in clean for marker in THINK_MARKERS):
+        return clean, ("empty" if empty else None)
+    clean = _THINK_BLOCK.sub(" ", clean)
+    if "</think>" in clean:
+        before, _, after = clean.rpartition("</think>")
+        clean = after if after.strip() else before
+    if "<think>" in clean:
+        before, _, after = clean.partition("<think>")
+        clean = before if before.strip() else after
+    for marker in THINK_MARKERS:
+        clean = clean.replace(marker, "")
+    return re.sub(r"[ \t]{2,}", " ", clean).strip(), "violation"
+
+
+@dataclass
+class ThinkStats:
+    """Think-marker counts for the replies one agent finalized."""
+
+    replies: int = 0
+    empty_stripped: int = 0
+    violations: int = 0
+    pending: list[str | None] = field(default_factory=list, repr=False)
+
+    def record(self, kind: str | None) -> None:
+        self.replies += 1
+        if kind == "empty":
+            self.empty_stripped += 1
+        elif kind == "violation":
+            self.violations += 1
+        self.pending.append(kind)
+
+    def summary(self, flag_rate: float | None = None) -> dict[str, Any]:
+        rate = self.violations / self.replies if self.replies else 0.0
+        out: dict[str, Any] = {
+            "replies": self.replies,
+            "empty_stripped": self.empty_stripped,
+            "violations": self.violations,
+            "violation_rate": rate,
+        }
+        if flag_rate is not None:
+            out["flagged"] = rate > flag_rate
+        return out
+
+
+def install_think_guard(agent: Any) -> ThinkStats:
+    """Sanitize think markers in every reply ``agent`` finalizes.
+
+    ``_finalize_response`` is the single point where the agent turns sampled
+    text into turn content and history, for training rollouts
+    (``generate_turn(s)``/``generate_turns_batch``), the vLLM eval renderer
+    and HF ``generate_response`` alike, so the reward, the environment, the
+    next-turn prompt, the transcripts and the judge all see the cleaned text.
+    The rollout APIs are wrapped too, so each returned turn carries
+    ``metadata["think"]`` (``"empty"``/``"violation"``) for the training
+    loop. Recorded ``token_ids``/``sampler_log_probs`` stay exactly as
+    sampled (as with ``AgentConfig.enable_reasoning``), so GSPO ratios are
+    computed on the real sampled sequence. Idempotent per agent.
+    """
+    existing = getattr(agent, "_flagship_think_stats", None)
+    if isinstance(existing, ThinkStats):
+        return existing
+    stats = ThinkStats()
+    original = agent._finalize_response
+
+    @functools.wraps(original)
+    def finalize(response: str, *args: Any, **kwargs: Any) -> Any:
+        text, kind = sanitize_think(str(response))
+        stats.record(kind)
+        return original(text, *args, **kwargs)
+
+    agent._finalize_response = finalize
+
+    def tag(turns: list[Any]) -> None:
+        # The finalize calls of one rollout call run without an await between
+        # them, so the newest len(turns) entries belong to these turns.
+        kinds = stats.pending[-len(turns) :] if turns else []
+        stats.pending.clear()
+        if len(kinds) != len(turns):
+            logger.warning("think guard: %d turns, %d replies", len(turns), len(kinds))
+            return
+        for turn, kind in zip(turns, kinds, strict=True):
+            metadata = getattr(turn, "metadata", None)
+            if kind and isinstance(metadata, dict):
+                metadata["think"] = kind
+
+    for name in ("generate_turn", "generate_turns", "generate_turns_batch"):
+        method = getattr(agent, name, None)
+        if not inspect.iscoroutinefunction(method):
+            continue
+
+        def wrap(method: Any, single: bool) -> Any:
+            @functools.wraps(method)
+            async def call(*args: Any, **kwargs: Any) -> Any:
+                result = await method(*args, **kwargs)
+                tag([result] if single else list(result))
+                return result
+
+            return call
+
+        setattr(agent, name, wrap(method, name == "generate_turn"))
+    agent._flagship_think_stats = stats
+    return stats
+
+
+def think_guard_limits(config: Mapping[str, Any]) -> dict[str, Any]:
+    """The configured training think-guard limits (see THINK_GUARD_DEFAULTS)."""
+    return {key: config.get(key, value) for key, value in THINK_GUARD_DEFAULTS.items()}
+
+
+def apply_think_guard(groups: Sequence[Any]) -> dict[str, int]:
+    """Zero the reward of every episode with a think violation; count them.
+
+    A turn violates when the think guard tagged it, or when its content still
+    carries a marker (then the content is sanitized here). Runs before the
+    update, so the zeroed rewards feed the group advantages, like a
+    ``must_avoid`` hit.
+    """
+    counts = {"turns": 0, "violations": 0, "empty_stripped": 0, "episodes": 0}
+    for group in groups:
+        for trajectory in group.trajectories:
+            violated = False
+            for turn in trajectory.turns:
+                if _turn_field(turn, "role") != "assistant":
+                    continue
+                counts["turns"] += 1
+                metadata = _turn_field(turn, "metadata") or {}
+                kind = metadata.get("think") if isinstance(metadata, Mapping) else None
+                content = str(_turn_field(turn, "content") or "")
+                if any(marker in content for marker in THINK_MARKERS):
+                    clean, found = sanitize_think(content)
+                    kind = "violation" if found == "violation" else kind or found
+                    if isinstance(turn, dict):
+                        turn["content"] = clean
+                    else:
+                        turn.content = clean
+                if kind == "violation":
+                    counts["violations"] += 1
+                    violated = True
+                elif kind == "empty":
+                    counts["empty_stripped"] += 1
+            if violated:
+                counts["episodes"] += 1
+                trajectory.total_reward = 0.0
+                metadata = getattr(trajectory, "metadata", None)
+                if isinstance(metadata, dict):
+                    breakdown = metadata.setdefault("reward_breakdown", {})
+                    if isinstance(breakdown, dict):
+                        breakdown["think_violation"] = 1.0
+    return counts
+
+
+def assert_no_think_blocks(texts: Iterable[str], label: str) -> None:
+    """Fail closed when a non-thinking policy emitted a reasoning block."""
+    found = find_think_blocks(texts)
+    if found:
+        raise WorkloadError(
+            f"{label}: {len(found)} completion(s) contain a <think> block "
+            f"although thinking is disabled; first: {found[0][:120]!r}"
+        )
+
+
+def bind_chat_template_kwargs(tokenizer: Any, kwargs: Mapping[str, Any]) -> Any:
+    """Make every ``apply_chat_template`` call on ``tokenizer`` pass ``kwargs``.
+
+    The agent, the trainer's token path and the vLLM renderer all render
+    through ``tokenizer.apply_chat_template``; binding the pinned template
+    kwargs (e.g. ``enable_thinking=False``) on the instance keeps rollouts,
+    training rows and evaluation prompts identical. Explicit call-site
+    values win. No kwargs leaves the tokenizer untouched (the v1 path).
+    """
+    if not kwargs or tokenizer is None:
+        return tokenizer
+    original = getattr(tokenizer, "apply_chat_template", None)
+    if not callable(original) or getattr(original, "_flagship_bound", None):
+        return tokenizer
+    bound = dict(kwargs)
+
+    @functools.wraps(original)
+    def apply_chat_template(*args: Any, **call_kwargs: Any) -> Any:
+        for key, value in bound.items():
+            call_kwargs.setdefault(key, value)
+        return original(*args, **call_kwargs)
+
+    apply_chat_template._flagship_bound = bound  # type: ignore[attr-defined]
+    tokenizer.apply_chat_template = apply_chat_template
+    return tokenizer
 
 
 def validate_judge(judge: Mapping[str, Any], installed_rubric_revision: str) -> None:
@@ -212,6 +532,7 @@ def validate_judge(judge: Mapping[str, Any], installed_rubric_revision: str) -> 
     missing = [key for key in REQUIRED_JUDGE_KEYS if not judge.get(key)]
     if missing:
         raise WorkloadError("judge is missing: " + ", ".join(missing))
+    judge_loader(judge)
     if judge["rubric_revision"] != installed_rubric_revision:
         raise WorkloadError(
             f"installed judge rubric revision {installed_rubric_revision} does not "
@@ -448,7 +769,16 @@ def _turn_field(turn: Any, name: str) -> Any:
     return turn.get(name) if isinstance(turn, Mapping) else getattr(turn, name, None)
 
 
-def support_reward() -> Any:
+#: Training rewards a manifest can pin with ``config.reward``. v1 manifests
+#: omit it and keep v2; flagship v2 manifests pin v3 (see FLAGSHIP.md).
+REWARD_VERSIONS: tuple[str, ...] = (
+    "support_conversation_v2",
+    "support_conversation_v3",
+)
+DEFAULT_REWARD = "support_conversation_v2"
+
+
+def support_reward(version: str = DEFAULT_REWARD) -> Any:
     """The training reward: conversation-level ``SupportConversationReward``.
 
     v1 averaged ``SupportRewardComposite`` over assistant turns and was
@@ -461,8 +791,17 @@ def support_reward() -> Any:
     """
     from stateset_agents.rewards.support_conversation_reward import (
         SupportConversationReward,
+        SupportConversationRewardV3,
     )
 
+    if version == "support_conversation_v3":
+        # v3 (flagship v2 preflight-5): also penalizes over-long replies,
+        # formulaic openers, boilerplate preambles, redundant requests,
+        # invented specifics and reused sentences, and stops paying for
+        # repeated politeness/order-reference/acknowledgement keywords.
+        return SupportConversationRewardV3()
+    if version != "support_conversation_v2":
+        raise WorkloadError(f"unknown reward {version!r}")
     return SupportConversationReward()
 
 
@@ -475,6 +814,13 @@ REWARD_COMPONENT_LOG_KEYS: dict[str, str] = {
     "placeholder_rate": "placeholder_rate",
     "must_avoid_rate": "must_avoid_rate",
     "unresponsive_rate": "unresponsive_rate",
+    # v3 only (None under v2)
+    "long_reply_rate": "long_reply_rate",
+    "formulaic_opener_rate": "formulaic_opener_rate",
+    "boilerplate_lead_rate": "boilerplate_lead_rate",
+    "redundant_request_rate": "redundant_request_rate",
+    "invented_detail_rate": "invented_detail_rate",
+    "sentence_reuse_rate": "sentence_reuse_rate",
 }
 
 
@@ -626,6 +972,8 @@ def agent_config_kwargs(
         "torch_dtype": "bfloat16" if payload.get("bf16", True) else "float32",
         "attn_implementation": str(payload.get("attn_implementation", "sdpa")),
     }
+    if payload.get("trust_remote_code"):
+        kwargs["trust_remote_code"] = True
     if lora is not None:
         kwargs.update({"use_peft": True, "peft_config": lora_peft_config(lora)})
     if adapter_path:
@@ -681,6 +1029,9 @@ def training_config_kwargs(
         "save_steps": max_steps + 1,
         "eval_steps": max_steps + 1,
         "logging_steps": 1,
+        # v2 opt-ins; absent from v1 configs, so v1 keeps the trainer defaults
+        # (per-turn row averaging, dropout active in the loss pass).
+        **{key: config[key] for key in V2_TRAINING_KEYS if key in config},
     }
 
 
@@ -715,6 +1066,9 @@ async def run_training_loop(
     num_generations: int,
     guard: Any,
     clock: Callable[[], float] = time.monotonic,
+    *,
+    forbid_think_blocks: bool = False,
+    think_limits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """On-policy multi-turn GSPO: sample groups, then one update, per step.
 
@@ -738,10 +1092,20 @@ async def run_training_loop(
             "learning_rate",
             "optimizer_step",
             "seconds",
+            "empty_think_stripped",
+            "think_violations",
+            "think_violation_episodes",
+            "think_violation_rate_window",
             *REWARD_COMPONENT_LOG_KEYS,
         )
     }
     aborted: str | None = None
+
+    limits = {**THINK_GUARD_DEFAULTS, **dict(think_limits or {})}
+    window: collections.deque[tuple[int, int]] = collections.deque(
+        maxlen=int(limits["think_violation_window"])
+    )
+    think_totals = {"violations": 0, "episodes": 0, "empty_stripped": 0}
     for step, batch in enumerate(schedule, start=1):
         started = clock()
         chosen = [dict(scenarios[index]) for index in batch]
@@ -749,6 +1113,29 @@ async def run_training_loop(
             chosen, num_generations=num_generations
         )
         check_groups(groups, chosen, num_generations)
+        think = {"turns": 0, "violations": 0, "empty_stripped": 0, "episodes": 0}
+        window_rate = 0.0
+        if forbid_think_blocks:
+            think = apply_think_guard(groups)
+            for key in think_totals:
+                think_totals[key] += think[key]
+            window.append((think["violations"], think["turns"]))
+            seen = sum(turns for _, turns in window)
+            window_rate = sum(v for v, _ in window) / seen if seen else 0.0
+            if window_rate > float(limits["max_think_violation_rate"]):
+                aborted = (
+                    f"think violations at step {step}: rate {window_rate:.3f} over "
+                    f"the last {len(window)} steps exceeds "
+                    f"{limits['max_think_violation_rate']}"
+                )
+            elif think_totals["violations"] > int(limits["max_think_violations"]):
+                aborted = (
+                    f"think violations at step {step}: {think_totals['violations']} "
+                    f"total exceeds {limits['max_think_violations']}"
+                )
+            if aborted is not None:
+                logger.error("%s", aborted)
+                break
         rewards = [_group_rewards(group) for group in groups]
         flat = [value for values in rewards for value in values]
         metrics = dict(await trainer.training_step(groups))
@@ -789,9 +1176,14 @@ async def run_training_loop(
         for key, value in components.items():
             log[key].append(value)
         log["seconds"].append(round(clock() - started, 3))
+        log["empty_think_stripped"].append(think["empty_stripped"])
+        log["think_violations"].append(think["violations"])
+        log["think_violation_episodes"].append(think["episodes"])
+        log["think_violation_rate_window"].append(round(window_rate, 6))
         logger.info(
             "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs "
-            "repetition=%s placeholders=%s must_avoid=%s unresponsive=%s",
+            "repetition=%s placeholders=%s must_avoid=%s unresponsive=%s "
+            "empty_think_stripped=%d think_violations=%d think_rate_window=%.4f",
             step,
             len(schedule),
             mean,
@@ -802,6 +1194,9 @@ async def run_training_loop(
             components["placeholder_rate"],
             components["must_avoid_rate"],
             components["unresponsive_rate"],
+            log["empty_think_stripped"][-1],
+            log["think_violations"][-1],
+            window_rate,
         )
         guard.on_step_end(step, {"nonzero_advantage_fraction": fraction})
         if guard.should_abort:
@@ -815,6 +1210,10 @@ async def run_training_loop(
         "steps": len(log["step"]),
         "optimizer_steps": optimizer_steps,
         "nonfinite_skips": int(getattr(trainer, "nonfinite_skips", 0)),
+        "empty_think_stripped": think_totals["empty_stripped"],
+        "think_violations": think_totals["violations"],
+        "think_violation_episodes": think_totals["episodes"],
+        "think_limits": limits if forbid_think_blocks else None,
         "episodes": (
             len(log["step"]) * len(schedule[0]) * num_generations if schedule else 0
         ),
@@ -898,8 +1297,8 @@ def _default_snapshot(model: str, revision: str | None) -> str:
     return str(path)
 
 
-def _default_reward_fn() -> Any:
-    return support_reward()
+def _default_reward_fn(version: str = DEFAULT_REWARD) -> Any:
+    return support_reward(version)
 
 
 def _default_hardware() -> dict[str, Any]:
@@ -1018,6 +1417,8 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
     policy_revision = None if smoke else args.model_revision
     judge_model = args.smoke_model if smoke else str(judge["model"])
     judge_revision = None if smoke else str(judge["revision"])
+    # Smoke runs judge with the tiny smoke model, so they take the v1 loader.
+    loader = DEFAULT_JUDGE_LOADER if smoke else judge_loader(judge)
     model_path = deps.snapshot(policy_model, policy_revision)
     # Resolve the judge before any GPU phase so a bad pin fails fast; phase 4
     # loads this exact local snapshot.
@@ -1033,6 +1434,13 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         # HF attention kernel for the policy ("sdpa" default; "eager" avoids
         # SDPA's bf16 backward when diagnosing non-finite gradients).
         "attn_implementation": str(run_config.get("attn_implementation", "sdpa")),
+        # v2 knobs; absent from v1 configs, which keep the v1 behaviour.
+        "chat_template_kwargs": dict(run_config.get("chat_template_kwargs") or {}),
+        "trust_remote_code": bool(run_config.get("trust_remote_code", False)),
+        "forbid_think_blocks": bool(run_config.get("forbid_think_blocks", False)),
+        "vllm_language_model_only": (
+            run_config.get("runtime_profile", "flagship-v1") == "flagship-v2"
+        ),
     }
     evaluation_payload = {
         **common,
@@ -1073,9 +1481,13 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         raise WorkloadError(f"GSPO training aborted: {train_out['aborted']}")
 
     # Phase 3: final eval with the trained adapter (identical rollout/decoding).
-    final_out = deps.run_phase(
-        "rollout", {**evaluation_payload, "adapter_path": str(adapter_dir)}
-    )
+    final_payload = {**evaluation_payload, "adapter_path": str(adapter_dir)}
+    if run_config.get("merge_adapter_for_eval"):
+        # Hybrid Qwen3.5 adapters are silently ignored by vLLM LoRA
+        # (docs/PROOFS.md), so v2 evaluates merged weights instead.
+        final_payload["merge_adapter"] = True
+        final_payload["merged_dir"] = str(Path(args.scratch_dir) / "merged-policy")
+    final_out = deps.run_phase("rollout", final_payload)
     peaks.append(_phase_peak(final_out))
     final = {r["id"]: final_out["transcripts"][r["id"]] for r in eval_records}
     _write_jsonl(
@@ -1091,6 +1503,7 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
             "revision": judge_revision,
             "model_path": judge_path,
             "backend": backend,
+            "loader": loader,
             "groups": {
                 "baseline": judge_items(eval_records, baseline),
                 "final": judge_items(eval_records, final),
@@ -1112,7 +1525,18 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         if int(_summary_number(summary, "n", label)) != len(eval_records):
             raise WorkloadError(f"judge scored the wrong number of {label} items")
 
-    reward_fn = deps.reward_fn()
+    think_markers: dict[str, Any] = {
+        "baseline_eval": baseline_out.get("think"),
+        "train": {
+            "empty_stripped": int(train_out.get("empty_think_stripped", 0)),
+            "violations": int(train_out.get("think_violations", 0)),
+            "violation_episodes": int(train_out.get("think_violation_episodes", 0)),
+            "limits": train_out.get("think_limits"),
+        },
+        "final_eval": final_out.get("think"),
+        "eval_flag_rate": EVAL_THINK_FLAG_RATE,
+    }
+    reward_fn = deps.reward_fn(str(run_config.get("reward", DEFAULT_REWARD)))
     metrics = {
         "baseline_score": _summary_number(baseline_summary, "mean_score", "baseline"),
         "final_score": _summary_number(final_summary, "mean_score", "final"),
@@ -1142,10 +1566,21 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "train_steps": train_out.get("steps"),
         "train_optimizer_steps": train_out.get("optimizer_steps"),
         "train_nonfinite_skips": train_out.get("nonfinite_skips", 0),
+        # v2 (forbid_think_blocks): think markers sanitized from replies.
+        # Training zeroes violating episodes and aborts only past the limits;
+        # evaluations never abort and are flagged above EVAL_THINK_FLAG_RATE.
+        "think_markers": think_markers,
+        "think_flags": [
+            name
+            for name, value in think_markers.items()
+            if isinstance(value, Mapping) and value.get("flagged")
+        ],
         "train_episodes": train_out.get("episodes"),
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),
         "judge_backend": judge_out.get("backend"),
+        "judge_loader": loader,
+        "final_eval_weights": final_out.get("weights", "adapter"),
         "baseline_judge_findings": groups["baseline"].get("findings_summary"),
         "final_judge_findings": groups["final"].get("findings_summary"),
         "phase_peak_vram_mb": peaks,
@@ -1372,12 +1807,21 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         ),
         memory_window=0,
     )
+    think_stats = (
+        install_think_guard(renderer)
+        if payload.get("forbid_think_blocks")
+        else ThinkStats()
+    )
     # model_path is the local snapshot directory deps.snapshot() resolved at the
     # pinned model_revision, not a hub ID, so there is no revision to pass here.
     renderer.tokenizer = (
         AutoTokenizer.from_pretrained(  # nosec B615 - local pinned snapshot
-            str(payload["model_path"])
+            str(payload["model_path"]),
+            trust_remote_code=bool(payload.get("trust_remote_code", False)),
         )
+    )
+    bind_chat_template_kwargs(
+        renderer.tokenizer, payload.get("chat_template_kwargs") or {}
     )
     kwargs: dict[str, Any] = {
         "model": payload["model_path"],
@@ -1386,6 +1830,11 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         "gpu_memory_utilization": 0.85,
         "max_model_len": 6144,
     }
+    if payload.get("trust_remote_code"):
+        kwargs["trust_remote_code"] = True
+    if payload.get("vllm_language_model_only"):
+        # Composite (vision + text) checkpoints evaluated on text only.
+        kwargs["limit_mm_per_prompt"] = {"image": 0, "video": 0}
     if adapter:
         kwargs.update({"enable_lora": True, "max_lora_rank": int(payload["lora_r"])})
     llm = LLM(**kwargs)
@@ -1419,6 +1868,7 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
             for output, (_, messages) in zip(outputs, rendered, strict=True)
         ]
 
+    generate.think_stats = think_stats  # type: ignore[attr-defined]
     return generate
 
 
@@ -1437,12 +1887,20 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         ),
         memory_window=0,
     )
+    think_stats = (
+        install_think_guard(agent)
+        if payload.get("forbid_think_blocks")
+        else ThinkStats()
+    )
     ready = {"done": False}
 
     async def generate(conversations: Sequence[Messages]) -> list[str]:
         if not ready["done"]:
             await agent.initialize()
             disable_top_k(agent)
+            bind_chat_template_kwargs(
+                agent.tokenizer, payload.get("chat_template_kwargs") or {}
+            )
             ready["done"] = True
         replies = []
         for messages in conversations:
@@ -1450,7 +1908,37 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
             replies.append(await agent.generate_response(list(messages)))
         return replies
 
+    generate.think_stats = think_stats  # type: ignore[attr-defined]
     return generate
+
+
+def _eval_weights(payload: Mapping[str, Any]) -> tuple[dict[str, Any], str]:
+    """Merge the adapter into full weights when the payload asks for it.
+
+    Returns the payload to evaluate (the merged directory as ``model_path``
+    and no ``adapter_path``) and which weights it uses: ``base``, ``adapter``
+    (LoRA applied by the engine, v1) or ``merged``. ``merge_adapter`` refuses
+    an adapter whose merged greedy probe is identical to the base model.
+    """
+    adapter = payload.get("adapter_path")
+    if not adapter:
+        return dict(payload), "base"
+    if not payload.get("merge_adapter"):
+        return dict(payload), "adapter"
+    from stateset_agents.training.merge_adapter import merge_adapter
+
+    merged = merge_adapter(
+        str(payload["model_path"]), Path(adapter), Path(payload["merged_dir"])
+    )
+    return (
+        {
+            **payload,
+            "model_path": str(merged),
+            "adapter_path": None,
+            "vllm_language_model_only": True,
+        },
+        "merged",
+    )
 
 
 def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
@@ -1458,6 +1946,7 @@ def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
     from stateset_agents.utils.reproducibility import set_all_seeds
 
     set_all_seeds(int(payload["seed"]))
+    payload, weights = _eval_weights(payload)
     backend = str(payload.get("backend", "auto"))
     generate: GenerateFn
     used = "hf"
@@ -1480,6 +1969,13 @@ def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
             key: [list(p) for p in value] for key, value in transcripts.items()
         },
         "backend": used,
+        "weights": weights,
+        # Evaluations never abort on think markers: replies are sanitized
+        # and counted, and a violation rate above EVAL_THINK_FLAG_RATE is
+        # flagged in the report.
+        "think": getattr(generate, "think_stats", ThinkStats()).summary(
+            EVAL_THINK_FLAG_RATE
+        ),
         "peak_vram_mb": _peak_vram_mb(),
     }
 
@@ -1514,17 +2010,22 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         ),
         memory_window=0,
     )
+    if payload.get("forbid_think_blocks"):
+        install_think_guard(agent)
     guard = ZeroSignalGuard(max_zero_steps=int(config.get("zero_signal_steps", 10)))
     schedule = [list(batch) for batch in payload["schedule"]]
 
     async def run() -> tuple[Any, dict[str, Any]]:
         await agent.initialize()
         disable_top_k(agent)
+        bind_chat_template_kwargs(
+            agent.tokenizer, payload.get("chat_template_kwargs") or {}
+        )
         checkpointing = enable_gradient_checkpointing(agent.model)
         trainer = MultiTurnGRPOTrainer(
             agent=agent,
             environment=environment,
-            reward_fn=support_reward(),
+            reward_fn=support_reward(str(config.get("reward", DEFAULT_REWARD))),
             config=TrainingConfig(**training_config_kwargs(payload, config)),
         )
         await trainer.initialize()
@@ -1532,7 +2033,13 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         # cosine schedule for exactly the planned optimizer steps.
         trainer._setup_scheduler(len(schedule))
         outcome = await run_training_loop(
-            trainer, scenarios, schedule, int(config["num_generations"]), guard
+            trainer,
+            scenarios,
+            schedule,
+            int(config["num_generations"]),
+            guard,
+            forbid_think_blocks=bool(payload.get("forbid_think_blocks", False)),
+            think_limits=think_guard_limits(config),
         )
         outcome["gradient_checkpointing"] = checkpointing
         outcome["reference_model"] = trainer.reference_model is not None
@@ -1567,17 +2074,24 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         # The pinned local snapshot resolved by deps.snapshot(); its directory
         # is the pinned revision, so no hub revision is passed with it.
         model, revision = str(payload["model_path"]), None
+    settings = dict(JUDGE_LOADERS[judge_loader(payload)])
     used = "hf"
     if backend in {"auto", "vllm"}:
         try:
-            generate = vllm_generate_fn(model, revision)
+            generate = vllm_generate_fn(model, revision, **settings)
             used = "vllm"
         except ImportError:
             if backend == "vllm":
                 raise
-            generate = hf_generate_fn(model, revision)
+            generate = hf_generate_fn(
+                model,
+                revision,
+                chat_template_kwargs=settings.get("chat_template_kwargs"),
+            )
     else:
-        generate = hf_generate_fn(model, revision)
+        generate = hf_generate_fn(
+            model, revision, chat_template_kwargs=settings.get("chat_template_kwargs")
+        )
     judge = SupportJudge(generate)
     names = list(payload["groups"])
     items: list[Any] = []
@@ -1610,6 +2124,7 @@ def phase_judge(payload: Mapping[str, Any]) -> dict[str, Any]:
         "groups": groups,
         "rubric_revision": rubric_revision(),
         "backend": used,
+        "loader": judge_loader(payload),
         "peak_vram_mb": _peak_vram_mb(),
     }
 

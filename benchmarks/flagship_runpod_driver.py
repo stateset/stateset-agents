@@ -87,6 +87,79 @@ DEFAULT_GPU = "NVIDIA H100 80GB HBM3"
 DEFAULT_TIER = "SECURE"
 DEFAULT_IMAGE = "runpod/pytorch:1.1.0-cu1290-torch271-ubuntu2204"
 DEFAULT_DISK_GB = 150
+#: Per-profile pod setup, keyed by ``config.runtime_profile`` (absent = v1).
+#: v2 adds the ``flagship-v2`` extra (Transformers >= 5.5, vLLM >= 0.29,
+#: flash-linear-attention) and more disk: the Qwen3.5-9B snapshot (~19 GB),
+#: the Gemma 4 31B judge (~62 GB), a merged policy copy for the final eval
+#: (~19 GB), pip caches and artifacts. Its estimate (unmeasured until the v2
+#: preflight): ~35 min of setup and downloads, slower training steps than
+#: v1 (9B policy, hybrid linear attention), ~10 min to merge the adapter and
+#: a ~30 min 31B judge phase.
+#:
+#: The first v2 preflight (2026-10-14) died at the first vLLM engine start:
+#: PyPI's vLLM >= 0.29 pins torch 2.13.0, whose PyPI build targets CUDA 13,
+#: and RunPod's H100 hosts run a CUDA 12.9 driver ("NVIDIA driver on your
+#: system is too old (found version 12090)"). v2 therefore installs the
+#: CUDA 12.9 builds first (torch from the PyTorch cu129 index, vLLM's
+#: +cu129 release wheel pinned by sha256); the editable install then sees
+#: them as satisfying its pins, and a CUDA check fails the setup before any
+#: model download if the driver still cannot run them.
+V2_TORCH_INDEX = "https://download.pytorch.org/whl/cu129"
+V2_TORCH_STACK: tuple[str, ...] = (
+    "torch==2.13.0+cu129",
+    "torchvision==0.28.0+cu129",
+    "torchaudio==2.11.0+cu129",
+    # vLLM's multimodal stack imports torchcodec at engine import; the PyPI
+    # wheel needs libnvrtc.so.13 (second v2 preflight, 2026-10-14).
+    "torchcodec==0.16.0+cu129",
+)
+V2_VLLM_WHEEL = (
+    "vllm @ https://github.com/vllm-project/vllm/releases/download/v0.31.0/"
+    "vllm-0.31.0%2Bcu129-cp38-abi3-manylinux_2_28_x86_64.whl"
+    "#sha256=5176ab746f4e736c4a354a11d0620abf0a941de287cad937ac34039293ca6f5f"
+)
+#: Fails setup unless torch is a CUDA 12.x build that initializes the GPU
+#: and vLLM's engine entrypoint (which loads torchcodec's native libraries)
+#: imports cleanly, so a CUDA-13-only wheel fails before any model download.
+CUDA_CHECK = (
+    "import torch; v = torch.version.cuda or ''; "
+    "assert v.startswith('12.'), 'torch CUDA ' + v + ' != 12.x'; "
+    "torch.cuda.init(); import torchcodec, vllm.entrypoints.llm; "
+    "print('torch', torch.__version__, 'cuda', v, torch.cuda.get_device_name(0))"
+)
+#: Optional fast kernels for Qwen3.5's GatedDeltaNet short convolution. The
+#: third v2 preflight logged Transformers' "causal_conv1d ... falling back to
+#: its reference PyTorch implementation" (~74 s per GSPO step). No prebuilt
+#: wheel targets torch 2.13, so this compiles against the installed torch;
+#: it is bounded and non-fatal, so a failed build keeps the slower fallback
+#: instead of failing a paid run.
+CAUSAL_CONV1D_TIMEOUT_SECONDS = 900
+#: A build that installs but does not import is uninstalled again, so
+#: Transformers (which checks package metadata) does not pick a broken kernel.
+CAUSAL_CONV1D_INSTALL = (
+    f"(timeout {CAUSAL_CONV1D_TIMEOUT_SECONDS} env MAX_JOBS=8 "
+    "python -m pip install --quiet --no-build-isolation causal-conv1d==1.7.0 "
+    "&& python -c 'import causal_conv1d' "
+    "|| { python -m pip uninstall --quiet -y causal-conv1d; "
+    "echo 'causal-conv1d unavailable; using the PyTorch fallback'; })"
+)
+RUNTIME_PROFILES: dict[str, dict[str, Any]] = {
+    "flagship-v1": {"extras": "training,vllm", "disk_gb": DEFAULT_DISK_GB},
+    "flagship-v2": {
+        "extras": "training,vllm,flagship-v2",
+        "disk_gb": 250,
+        "pre_install": [
+            "python -m pip install --quiet --extra-index-url "
+            + V2_TORCH_INDEX
+            + " "
+            + " ".join(shlex.quote(spec) for spec in (*V2_TORCH_STACK, V2_VLLM_WHEEL))
+        ],
+        "post_install": [
+            "python -c " + shlex.quote(CUDA_CHECK),
+            CAUSAL_CONV1D_INSTALL,
+        ],
+    },
+}
 DEFAULT_POLL_SECONDS = 120.0
 #: Seconds of the external wall-clock budget kept for local provisioning,
 #: artifact download, and termination; the pod lifetime gets the rest.
@@ -185,6 +258,22 @@ def resolve_spend_ceiling(
     return ceiling
 
 
+def runtime_profile(args: argparse.Namespace) -> dict[str, Any]:
+    """The pinned config's runtime profile (v1 when the config has none)."""
+    try:
+        config = json.loads(str(args.config_json))
+    except ValueError as exc:
+        raise FlagshipDriverError("config is not valid JSON") from exc
+    name = (
+        config.get("runtime_profile", "flagship-v1")
+        if isinstance(config, dict)
+        else "flagship-v1"
+    )
+    if name not in RUNTIME_PROFILES:
+        raise FlagshipDriverError(f"unknown config.runtime_profile {name!r}")
+    return {"name": name, **RUNTIME_PROFILES[name]}
+
+
 def execution_settings(
     args: argparse.Namespace, config: Mapping[str, Any], environ: Mapping[str, str]
 ) -> dict[str, Any]:
@@ -203,7 +292,11 @@ def execution_settings(
         "gpu_name": args.gpu or environ.get(ENV_GPU, "").strip() or DEFAULT_GPU,
         "gpu_count": 1,
         "container_image": args.container_image,
-        "container_disk_gb": int(args.container_disk_gb),
+        "container_disk_gb": int(
+            args.container_disk_gb
+            if args.container_disk_gb is not None
+            else runtime_profile(args)["disk_gb"]
+        ),
         "max_lifetime_seconds": lifetime,
     }
 
@@ -318,11 +411,15 @@ def remote_commands(
 ) -> dict[str, str]:
     """Setup and detached-launch shell commands (pure; no secrets inline)."""
     repo = shlex.quote(_REMOTE_REPOSITORY)
+    profile = runtime_profile(args)
+    extras = profile["extras"]
     setup = " && ".join(
         [
             f"git clone --filter=blob:none {shlex.quote(_REPOSITORY_URL)} {repo}",
             f"git -C {repo} checkout --detach {shlex.quote(harness_revision)}",
-            f"python -m pip install --quiet -e {repo}'[training,vllm]'",
+            *profile.get("pre_install", []),
+            f"python -m pip install --quiet -e {repo}'[{extras}]'",
+            *profile.get("post_install", []),
             "python -c "
             + shlex.quote(
                 "import sys, stateset_agents as s; "
@@ -779,7 +876,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--gpu", default=None, help=f"default ${ENV_GPU} or H100")
     parser.add_argument("--provider-tier", default=DEFAULT_TIER)
     parser.add_argument("--container-image", default=DEFAULT_IMAGE)
-    parser.add_argument("--container-disk-gb", type=int, default=DEFAULT_DISK_GB)
+    parser.add_argument(
+        "--container-disk-gb",
+        type=int,
+        default=None,
+        help="default: the runtime profile's disk (v1 150 GB, v2 250 GB)",
+    )
     parser.add_argument("--harness-revision", default=None)
     parser.add_argument("--ssh-public-key", type=Path)
     parser.add_argument("--poll-seconds", type=float, default=DEFAULT_POLL_SECONDS)

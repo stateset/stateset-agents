@@ -224,3 +224,225 @@ with a worst case of about $13.30 on one H100 at $3.99/h. Its config hash
 differs from the measured manifest, and `run_flagship_matrix.py` never accepts
 preflight evidence for publication. Use its measured step time to re-pin
 `max_steps` in `flagship_manifest.json`.
+
+## Flagship v2: Qwen3.5-9B policy, Gemma 4 31B judge
+
+v2 is a **separate protocol** (`stateset-flagship-multiturn-v2`) next to v1.
+The v1 manifests, config hashes, behaviour and evidence are unchanged. v2
+evidence goes under `benchmark_results/flagship_v2/` and is never mixed
+with v1. Until the judge is calibrated, v2 scores are not comparable to v1
+scores (see the risks below).
+
+| | v1 | v2 |
+| --- | --- | --- |
+| Policy | `Qwen/Qwen2.5-7B-Instruct` @ `a09a3545` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) @ `c2022362` (Apache-2.0, ungated) |
+| Judge | `mistralai/Mistral-Small-24B-Instruct-2501` @ `9527884b` | [`google/gemma-4-31B-it`](https://huggingface.co/google/gemma-4-31B-it) @ `842da379` (Apache-2.0, ungated) |
+| Dataset | `stateset/customer-support-multiturn-v1` @ `db0fd73c` | unchanged |
+| Rubric | v4 (`rubric_revision` `25fa6b2a`) | unchanged, with the same 0.05 self-disagreement gate |
+| Manifests | `flagship_manifest.json`, `flagship_preflight_manifest.json` | `flagship_v2_manifest.json`, `flagship_v2_preflight_manifest.json` |
+
+`model_parameter_count` is 8,953,803,264. That is the text decoder that is
+trained and evaluated (`model.language_model.*` plus `lm_head`), counted
+from the pinned safetensors headers. The full checkpoint has 9,653,104,368
+parameters, because it also holds a 456M-parameter vision tower and a
+243M-parameter MTP head. Neither is trained or used.
+
+What v2 changes, all switched on from the pinned config, so v1 configs
+(which do not have these keys) behave exactly as before:
+
+- **`runtime_profile: "flagship-v2"`.** The RunPod driver installs
+  `.[training,vllm,flagship-v2]`, which brings in Transformers >= 5.5,
+  vLLM >= 0.29 and `flash-linear-attention`. It also defaults to a 250 GB
+  container disk, for the ~19 GB policy, the ~62 GB judge, a merged policy
+  copy and caches. v1 still installs `.[training,vllm]` on 150 GB.
+- **`chat_template_kwargs: {"enable_thinking": false}`.** This is bound on
+  the policy tokenizer, so training rollouts, the trainer's token path and
+  both evaluations render the same non-thinking prompt. Qwen3.5 thinks by
+  default.
+- **`forbid_think_blocks: true`.** Turns on the think-marker guard. Every
+  policy reply passes through the agent's `_finalize_response`, which
+  removes `<think>`/`</think>`/`<|think|>` markers and reasoning content
+  before the text reaches the reward, the environment's next-turn history,
+  the transcripts and the judge. The turn's sampled `token_ids` and
+  log-probs stay as sampled, so GSPO ratios are exact.
+  - *Benign:* whitespace-only blocks at the very start
+    (`<think>\n\n</think>\n\n`, the block Qwen3.5's non-thinking template
+    writes into the prompt) are stripped and counted (`empty_think_stripped`).
+  - *Violation:* reasoning content, or any marker after the start. In
+    training the whole episode's reward is set to 0 before the update (like
+    a `must_avoid` hit) and counted per step (`think_violations`,
+    `think_violation_episodes`, `think_violation_rate_window`) and in total.
+    The run aborts only when the violation share of assistant turns over
+    the last `think_violation_window` = 10 steps exceeds
+    `max_think_violation_rate` = 0.05, or the total exceeds
+    `max_think_violations` = 250 (~1% of a 250-step run's ~30k turns).
+    These defaults are pinned in both v2 manifests.
+  - *Evaluations* (baseline and final) never abort: replies are sanitized
+    and counted, `diagnostics.think_markers` reports replies, empty strips,
+    violations and the violation rate for each eval, and an eval above 1%
+    is listed in `diagnostics.think_flags`.
+
+  History: preflight-3 failed at step 87 on an empty leading block, and
+  preflight-4 at step 185 on a single stray mid-text tag, both under the
+  earlier fail-closed check.
+- **`reward: "support_conversation_v3"`.** Both v2 manifests pin the
+  training reward by name (`flagship_workload.support_reward`). v1 manifests
+  have no `reward` key and keep `support_conversation_v2`. An unknown name
+  fails config validation. See "v2 preflight-5 findings and reward v3".
+- **`learning_rate: 1e-5`, `beta: 0.1`** (v1: 2e-5, 0.05). Preflight-5 moved
+  the policy far from its reference in 250 steps, into one template. Half the
+  step size and twice the KL weight slow that drift. They do not fix the
+  reward gaps by themselves (that is v3's job). Re-pin both from the next
+  preflight's KL and judge curves.
+- **`lora_target_modules`.** These are the full-attention `q/k/v/o_proj`,
+  the GatedDeltaNet linear-attention `in_proj_qkv`, `in_proj_a`,
+  `in_proj_b`, `in_proj_z` and `out_proj`, and the MLP `gate/up/down_proj`.
+  The names were checked against the pinned checkpoint's weight map; 24 of
+  the 32 layers are linear attention. None of these names occur in the
+  vision tower.
+- **`merge_adapter_for_eval: true`.** vLLM silently ignores LoRA on hybrid
+  Qwen3.5 checkpoints (docs/PROOFS.md). For the final evaluation, the
+  adapter is merged into full weights with
+  `stateset_agents.training.merge_adapter`, which refuses an adapter whose
+  merged greedy probe matches the base model. vLLM then serves the merged
+  weights. The result records `final_eval_weights: "merged"`.
+- **`trust_remote_code: false`.** Both architectures are native in
+  Transformers 5.5+, so no remote code runs. The flag is plumbed through to
+  the agent, the tokenizer and vLLM in case a future pin needs it.
+- **`judge.loader: "gemma4"`.** The Gemma 4 judge loads text-only in vLLM
+  (no image slots), with `enable_thinking=False` and
+  `gpu_memory_utilization=0.92` for its ~62 GB of bf16 weights. The v1
+  Mistral path (`loader` absent or `"mistral"`) is unchanged.
+  `flagship_rejudge.py` reads `judge.loader` from `--manifest` (or
+  `--judge-loader`) and installs the v2 dependencies for it.
+
+### v2 preflight (one seed, paid, needs explicit approval)
+
+```bash
+# free: validate the manifest and print the seed plan
+python benchmarks/run_flagship_matrix.py \
+  benchmarks/flagship_v2_preflight_manifest.json --dry-run --preflight
+# paid: one H100 seed, capped at the manifest's $32 per-seed limit
+export RUNPOD_API_KEY=...            # never commit it
+export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=32
+make benchmark-flagship-run \
+  MANIFEST=benchmarks/flagship_v2_preflight_manifest.json \
+  OUTPUT_DIR=benchmark_results/flagship_v2/preflight EXTRA_ARGS=--preflight
+```
+
+**Worst-case cost.** The preflight keeps v1's 250-step config and, like
+the measured manifest, sets `max_wall_clock_seconds` to 28,800. That gives
+a 28,200 s pod lifetime, so the worst case is **$31.26 at $3.99/h** for one
+H100 SECURE, under the $32 `max_cost_usd_per_seed`. The driver's `--plan`
+re-prices it from the live catalog. The limit was 25,200 s ($27.27) until
+preflight-3 measured ~78 s per step: 250 steps plus the merge, final eval
+and judge would have left only ~30-40 min of a 24,600 s lifetime. The
+measured manifest also allows 28,800 s per seed ($31.26 worst case, $32
+cap, so at most **$93.77 for three seeds**). These limits are
+estimates, not measurements. A 9B hybrid policy with a 31B judge is slower
+than v1. Expected time is
+~35 min of setup and downloads, the training steps, ~10 min for the merge,
+and ~30 min for the judge. Re-pin `max_steps` and the wall-clock limit from
+the preflight's measured times before the measured matrix.
+
+### v2 preflight-5 findings and reward v3
+
+Preflight-5 (seed 42, pod terminated, $22.81 of the $32 cap, 20,583 s)
+completed every phase. But training made the policy **worse**: the Gemma 4
+judge scored the baseline 0.916 and the trained policy 0.803 (-0.113).
+Judge self-disagreement was 0.046, under the 0.05 gate. On the same eval
+transcripts the v2 rule reward went the other way, 0.636 -> 0.677, so the
+policy optimized the reward and not the rubric. Per-item, v2 agreed with
+the judge's base-versus-trained direction on 79 of 200 conversations
+(Spearman 0.01 against the judge across all 400 transcripts).
+
+The trained policy converged on one template: "Hello! Thank you for ...
+**Store Policy** ... **Next Step:** please reply with a clear photo ...",
+repeated on every turn. Judge check pass rates, baseline -> trained (per
+judge pass):
+
+| Check | Baseline | Trained | Behaviour |
+| --- | --- | --- | --- |
+| `empathy_not_formulaic` | 0.950 | 0.007 | 93% of replies open with a greeting (base 15%). 59% of conversations open every turn with the same words (base 1%) |
+| `conciseness_key_point_early` | 0.868 | 0.512 | Greeting + thanks + "I understand" before the answer |
+| `resolution_no_redundant_request` | 0.945 | 0.618 | The same photo or order-number request is repeated after the customer has answered or refused |
+| `accuracy_no_invented_details` | 0.760 | 0.515 | Made-up timeframes and channels ("photo review within 24 hours", "our support portal") |
+| `conciseness_reply_length` | 0.760 | 0.520 | 160 of 642 replies are over 120 words (base 64) |
+| `conciseness_no_repetition` | 1.000 | 0.945 | Whole sentences reused across turns |
+
+Policy accuracy rose (`accuracy_matches_policy` 0.843 -> 0.927). Nothing
+else moved by more than 0.06.
+
+Why v2 paid for this: its composite rewarded politeness keywords ("thank
+you", "please") and an order-reference bonus on every turn, and counted
+`must_acknowledge` terms only when said in the current turn. Restating
+"Order #34959", "Final Sale" and "thank you" each turn therefore scored.
+v2's repetition penalty compares whole turns, so a fixed opener with a
+reworded middle stays under its threshold. Nothing in v2 looked at length,
+invented specifics or repeated requests.
+
+`SupportConversationRewardV3` (`stateset_agents.rewards`) keeps v2 and adds
+one multiplier per regressed check (the class docstring has the
+thresholds): keyword bonuses neutralized, with `must_acknowledge` credited
+from any earlier assistant turn; a long-reply factor (> 120 words);
+formulaic-opener, boilerplate-lead, redundant-request and invented-detail
+factors; and a sentence-reuse penalty. Each adds a `<name>_rate` to the
+reward breakdown, and the trainer logs them per step. Regression cases from
+the preflight-5 transcripts are in
+`tests/fixtures/support_conversation_reward/preflight5_regressions.json`.
+
+**Offline re-score** of the 400 preflight-5 eval transcripts (no GPU):
+
+| Reward | Baseline | Trained | Per-item direction agrees with judge | Spearman vs judge |
+| --- | --- | --- | --- | --- |
+| v2 | 0.636 | 0.677 | 79/200 | 0.01 |
+| v3 | 0.625 | 0.281 | 161/200 | 0.65 |
+
+v3 barely changes the base policy's score (-0.011) and ranks the trained
+template far below it, as the judge does. It is still a rule proxy. The
+next preflight's judge score is the real test.
+
+**Preflight `report.json`.** Preflight-5's report read `"passed": false`
+with an empty `failures` list. That was expected but unexplained: a preflight
+never runs the publication gate (one seed has no paired confidence interval,
+and preflight evidence is unpublishable), so `passed` stays false. Preflight
+reports now also carry `completed` (every seed ran with no failures),
+`publication_gate: "not evaluated: ..."`, per-seed `seeds` (baseline,
+final, improvement, judge self-disagreement, cost, wall clock) and
+`warnings`. A warning is listed when a seed's judge improvement is below the
+gate's +0.03 or its self-disagreement is over 0.05.
+
+### v2 risks
+
+- **Judge calibration.** Rubric v4 and the 0.05 gate were tuned against the
+  Mistral judge. Gemma 4's self-disagreement and its leniency are
+  unmeasured, and the preflight is the first measurement. Gemma 4 versus
+  Mistral scores on the same transcripts can be compared, at the cost of a
+  judge-only GPU run, with `flagship_rejudge.py --manifest
+  benchmarks/flagship_v2_manifest.json` on existing v1 transcripts.
+- **Memory.** The 31B bf16 judge leaves about 10 GB of an 80 GB GPU for KV
+  cache at `max_model_len` 8192. If vLLM refuses to start, the judge phase
+  fails closed.
+- **Dependencies.** vLLM >= 0.29 pulls its own torch build over the
+  container image's torch 2.7.1. The first v2 pod install is unverified.
+- **Merge probe.** A very small adapter whose greedy probe completion
+  matches the base model fails the final evaluation by design, instead of
+  reporting base-model scores as trained ones.
+
+### v2 GSPO fixes (opt-in, v2 manifests only)
+
+An audit of the multi-turn GSPO token path found two mismatches with the
+algorithm as published. Both are fixed behind config flags that only the v2
+manifests set, so v1 results stay reproducible.
+
+- **`episode_weighting: "per_episode"`.** Each assistant turn is one loss
+  row, and rows were averaged, so a 4-turn episode carried 4x the weight of
+  a 1-turn episode. With this flag, each row is weighted by 1/(turns in its
+  episode). Every episode then counts once, as in GSPO's average over
+  sequences (eq. 5). The sequence-level KL is weighted the same way.
+  (`TrainingConfig.episode_weighting`, default `"per_turn"`.)
+- **`disable_dropout: true`.** Rollouts are sampled in eval mode (no
+  dropout), but the loss pass used to run with LoRA dropout on. That made
+  the ratio at the first update differ from 1 by noise alone. This flag
+  zeroes dropout so the learner matches the sampling policy
+  (`TrainingConfig.disable_dropout`).

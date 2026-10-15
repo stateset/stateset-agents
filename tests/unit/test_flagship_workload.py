@@ -116,6 +116,9 @@ def _args(tmp_path: Path, **updates: Any) -> argparse.Namespace:
 
 
 class FakeReward:
+    def __init__(self, version: str | None = None) -> None:
+        self.version = version
+
     async def compute_reward(self, turns: Any, context: Any = None) -> Any:
         text = " ".join(turn.content for turn in turns if turn.role == "assistant")
         return argparse.Namespace(score=1.0 if "adapter" in text else 0.5)
@@ -868,3 +871,638 @@ def test_pinned_manifest_config_is_valid_for_the_workload() -> None:
     assert config["max_wall_clock_seconds"] / 3600 * 3.99 <= (
         config["max_cost_usd_per_seed"]
     )
+
+
+# --------------------------------------------------------------------------- #
+# Flagship v2 (Qwen3.5 policy, Gemma 4 judge): config-driven, v1 unchanged
+# --------------------------------------------------------------------------- #
+
+V2_CONFIG = {
+    **CONFIG,
+    "runtime_profile": "flagship-v2",
+    "chat_template_kwargs": {"enable_thinking": False},
+    "forbid_think_blocks": True,
+    "trust_remote_code": False,
+    "merge_adapter_for_eval": True,
+}
+V2_JUDGE = {**JUDGE, "loader": "gemma4"}
+
+
+def _v2_args(tmp_path: Path) -> argparse.Namespace:
+    return _args(
+        tmp_path,
+        config_json=workload.canonical_json(V2_CONFIG),
+        config_sha256=_sha(V2_CONFIG),
+        judge_json=workload.canonical_json(V2_JUDGE),
+        judge_sha256=_sha(V2_JUDGE),
+    )
+
+
+def test_v2_config_and_judge_validate() -> None:
+    workload.validate_config(V2_CONFIG)
+    workload.validate_judge(V2_JUDGE, RUBRIC)
+    assert workload.judge_loader(V2_JUDGE) == "gemma4"
+    assert workload.judge_loader(JUDGE) == "mistral"
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"runtime_profile": "flagship-v9"}, "runtime_profile"),
+        ({"chat_template_kwargs": ["enable_thinking"]}, "chat_template_kwargs"),
+        ({"forbid_think_blocks": "yes"}, "forbid_think_blocks"),
+        ({"trust_remote_code": 1}, "trust_remote_code"),
+        ({"merge_adapter_for_eval": None}, "merge_adapter_for_eval"),
+    ],
+)
+def test_v2_config_rejects_bad_knobs(updates: dict[str, Any], message: str) -> None:
+    with pytest.raises(workload.WorkloadError, match=message):
+        workload.validate_config({**V2_CONFIG, **updates})
+
+
+def test_unknown_judge_loader_fails_closed() -> None:
+    with pytest.raises(workload.WorkloadError, match="judge.loader"):
+        workload.validate_judge({**JUDGE, "loader": "llama"}, RUBRIC)
+
+
+class TemplateTokenizer:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def apply_chat_template(
+        self,
+        conversation: Any,
+        tokenize: bool = True,
+        add_generation_prompt: bool = False,
+        **kwargs: Any,
+    ) -> str:
+        self.calls.append(
+            {"tokenize": tokenize, "add_generation_prompt": add_generation_prompt}
+            | kwargs
+        )
+        return "rendered"
+
+
+def test_bind_chat_template_kwargs_reaches_every_render() -> None:
+    import inspect
+
+    tokenizer = TemplateTokenizer()
+    workload.bind_chat_template_kwargs(tokenizer, {"enable_thinking": False})
+    # Binding twice must not stack wrappers.
+    workload.bind_chat_template_kwargs(tokenizer, {"enable_thinking": False})
+    tokenizer.apply_chat_template([], tokenize=False, add_generation_prompt=True)
+    tokenizer.apply_chat_template([], enable_thinking=True)
+    assert tokenizer.calls[0]["enable_thinking"] is False
+    assert tokenizer.calls[0]["add_generation_prompt"] is True
+    # An explicit call-site value wins over the pinned default.
+    assert tokenizer.calls[1]["enable_thinking"] is True
+    # Signature introspection (the trainer's token path) still sees the
+    # original parameters through functools.wraps.
+    params = inspect.signature(tokenizer.apply_chat_template).parameters
+    assert "add_generation_prompt" in params
+
+
+def test_bind_chat_template_kwargs_is_a_no_op_for_v1() -> None:
+    tokenizer = TemplateTokenizer()
+    original = tokenizer.apply_chat_template
+    assert workload.bind_chat_template_kwargs(tokenizer, {}) is tokenizer
+    assert tokenizer.apply_chat_template == original
+    assert workload.bind_chat_template_kwargs(None, {"enable_thinking": False}) is None
+
+
+def test_qwen35_template_renders_no_thinking_with_bound_kwargs() -> None:
+    """The real Qwen3.5 template branch: enable_thinking=False closes the block."""
+    jinja2 = pytest.importorskip("jinja2")
+    template = jinja2.Environment().from_string(
+        "{%- if add_generation_prompt %}<|im_start|>assistant\n"
+        "{%- if enable_thinking is defined and enable_thinking is false %}"
+        "<think>\n\n</think>\n\n{%- else %}<think>\n{%- endif %}{%- endif %}"
+    )
+
+    class Rendering:
+        def apply_chat_template(self, conversation: Any, **kwargs: Any) -> str:
+            return template.render(messages=conversation, **kwargs)
+
+    tokenizer = workload.bind_chat_template_kwargs(
+        Rendering(), {"enable_thinking": False}
+    )
+    rendered = tokenizer.apply_chat_template([], add_generation_prompt=True)
+    assert rendered.endswith("</think>")
+    # Unbound, the template leaves the think block open for the model.
+    assert (
+        Rendering()
+        .apply_chat_template([], add_generation_prompt=True)
+        .endswith("<think>")
+    )
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["<think>plan</think>Hi", "Sure.</think>", "<|think|>reasoning"],
+)
+def test_think_blocks_fail_closed(text: str) -> None:
+    assert workload.find_think_blocks(["clean reply", text]) == [text]
+    with pytest.raises(workload.WorkloadError, match="think"):
+        workload.assert_no_think_blocks(["clean reply", text], "eval")
+    workload.assert_no_think_blocks(["We think this is fine."], "eval")
+
+
+def test_v2_lora_targets_come_from_the_config() -> None:
+    targets = ["q_proj", "in_proj_qkv", "in_proj_a", "in_proj_b", "out_proj"]
+    assert (
+        workload.lora_peft_config({**V2_CONFIG, "lora_target_modules": targets})[
+            "target_modules"
+        ]
+        == targets
+    )
+    # v1 default is unchanged.
+    assert workload.lora_peft_config(CONFIG)["target_modules"] == list(
+        workload.DEFAULT_LORA_TARGET_MODULES
+    )
+    assert "in_proj_qkv" not in workload.DEFAULT_LORA_TARGET_MODULES
+
+
+def test_trust_remote_code_is_opt_in() -> None:
+    payload = {"model_path": "/snap", "bf16": True}
+    kwargs = workload.agent_config_kwargs(payload, temperature=0.0, max_new_tokens=8)
+    assert "trust_remote_code" not in kwargs
+    kwargs = workload.agent_config_kwargs(
+        {**payload, "trust_remote_code": True}, temperature=0.0, max_new_tokens=8
+    )
+    assert kwargs["trust_remote_code"] is True
+
+
+def test_v2_workload_wires_template_think_guard_merge_and_judge_loader(
+    tmp_path: Path,
+) -> None:
+    phases = FakePhases()
+    outcome = workload.run_workload(_v2_args(tmp_path), _deps(phases))
+    rollouts = [p for name, p in phases.calls if name == "rollout"]
+    train = next(p for name, p in phases.calls if name == "train")
+    judge = next(p for name, p in phases.calls if name == "judge")
+    for payload in [*rollouts, train]:
+        assert payload["chat_template_kwargs"] == {"enable_thinking": False}
+        assert payload["forbid_think_blocks"] is True
+        assert payload["trust_remote_code"] is False
+        assert payload["vllm_language_model_only"] is True
+    assert "merge_adapter" not in rollouts[0]
+    assert rollouts[1]["merge_adapter"] is True
+    assert rollouts[1]["merged_dir"].endswith("merged-policy")
+    assert judge["loader"] == "gemma4"
+    assert outcome["diagnostics"]["judge_loader"] == "gemma4"
+
+
+def test_v1_workload_payloads_keep_v1_behaviour(tmp_path: Path) -> None:
+    phases = FakePhases()
+    outcome = workload.run_workload(_args(tmp_path), _deps(phases))
+    rollouts = [p for name, p in phases.calls if name == "rollout"]
+    judge = next(p for name, p in phases.calls if name == "judge")
+    for payload in rollouts:
+        assert payload["chat_template_kwargs"] == {}
+        assert payload["forbid_think_blocks"] is False
+        assert payload["vllm_language_model_only"] is False
+    assert "merge_adapter" not in rollouts[1]
+    assert judge["loader"] == "mistral"
+    assert outcome["diagnostics"]["final_eval_weights"] == "adapter"
+
+
+def test_eval_weights_base_adapter_and_merged(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from stateset_agents.training import merge_adapter as merge_module
+
+    merged_calls: list[tuple[str, Path, Path]] = []
+
+    def fake_merge(base: str, adapter: Path, output: Path, **_: Any) -> Path:
+        merged_calls.append((base, adapter, output))
+        return output
+
+    monkeypatch.setattr(merge_module, "merge_adapter", fake_merge)
+    base = {"model_path": "/snap", "adapter_path": None}
+    assert workload._eval_weights(base) == (base, "base")
+    adapter = {**base, "adapter_path": str(tmp_path / "adapter")}
+    assert workload._eval_weights(adapter)[1] == "adapter"
+    merged_payload, weights = workload._eval_weights(
+        {**adapter, "merge_adapter": True, "merged_dir": str(tmp_path / "merged")}
+    )
+    assert weights == "merged"
+    assert merged_payload["model_path"] == str(tmp_path / "merged")
+    assert merged_payload["adapter_path"] is None
+    assert merged_payload["vllm_language_model_only"] is True
+    assert merged_calls == [("/snap", tmp_path / "adapter", tmp_path / "merged")]
+
+
+@pytest.mark.parametrize(
+    ("loader", "expected"),
+    [
+        ("mistral", {}),
+        (
+            "gemma4",
+            {
+                "gpu_memory_utilization": 0.92,
+                "llm_kwargs": {"limit_mm_per_prompt": {"image": 0}},
+                "chat_template_kwargs": {"enable_thinking": False},
+            },
+        ),
+    ],
+)
+def test_phase_judge_uses_the_pinned_loader(
+    monkeypatch: pytest.MonkeyPatch, loader: str, expected: dict[str, Any]
+) -> None:
+    from stateset_agents.evaluation import support_judge
+
+    seen: list[dict[str, Any]] = []
+
+    def fake_vllm(model: str, revision: Any, **kwargs: Any) -> Any:
+        seen.append(kwargs)
+        return lambda prompts: []
+
+    monkeypatch.setattr(support_judge, "vllm_generate_fn", fake_vllm)
+    out = workload.phase_judge(
+        {"model": "m", "model_path": "/snap", "loader": loader, "groups": {}}
+    )
+    assert seen == [expected]
+    assert out["loader"] == loader
+
+
+def test_v2_training_config_opts_into_gspo_fixes() -> None:
+    payload = {"model_path": "/snap", "output_dir": "/out", "seed": 1}
+    v2 = {**V2_CONFIG, "episode_weighting": "per_episode", "disable_dropout": True}
+    workload.validate_config(v2)
+    kwargs = workload.training_config_kwargs(payload, v2)
+    assert kwargs["episode_weighting"] == "per_episode"
+    assert kwargs["disable_dropout"] is True
+    from stateset_agents.training.config import TrainingConfig
+
+    config = TrainingConfig(**kwargs)
+    assert config.disable_dropout is True
+    assert config.episode_weighting == "per_episode"
+    # v1 keeps the trainer defaults.
+    v1 = workload.training_config_kwargs(payload, CONFIG)
+    assert "episode_weighting" not in v1 and "disable_dropout" not in v1
+
+
+def test_v2_training_config_rejects_bad_weighting() -> None:
+    with pytest.raises(workload.WorkloadError, match="episode_weighting"):
+        workload.validate_config({**V2_CONFIG, "episode_weighting": "per_token"})
+    with pytest.raises(workload.WorkloadError, match="disable_dropout"):
+        workload.validate_config({**V2_CONFIG, "disable_dropout": "yes"})
+
+
+# --- Think-marker guard (preflight-3 step 87, preflight-4 step 185) -------
+
+QWEN_EMPTY_THINK = "<think>\n\n</think>\n\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (QWEN_EMPTY_THINK + "Happy to help.", "Happy to help."),
+        ("<think></think>Hi", "Hi"),
+        ("  <think> \n</think>\n<think>\n</think>\nHi", "Hi"),
+    ],
+)
+def test_leading_empty_think_blocks_are_benign(text: str, expected: str) -> None:
+    assert workload.sanitize_think(text) == (expected, "empty")
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        # non-empty block at the start
+        ("<think>check the order first</think>\n\nHappy to help.", "Happy to help."),
+        # empty prefix, then real reasoning
+        (QWEN_EMPTY_THINK + "<think>plan</think>Hi", "Hi"),
+        # mid-text block (the preflight-4 shape), even an empty one
+        (
+            "Hello, thank you for reaching out. <think>refund?</think> I can help.",
+            "Hello, thank you for reaching out. I can help.",
+        ),
+        ("Sure. " + QWEN_EMPTY_THINK + "Anything else?", "Sure. \n\nAnything else?"),
+        # lone closing tag: the reasoning came first
+        ("they want a refund</think>Happy to help.", "Happy to help."),
+        # lone closing tag at the end: keep the answer before it
+        ("Happy to help.</think>", "Happy to help."),
+        # unclosed opening tag: the reasoning runs to the end
+        ("Happy to help. <think>maybe check", "Happy to help."),
+        ("<|think|>Hi", "Hi"),
+    ],
+)
+def test_think_violations_are_sanitized(text: str, expected: str) -> None:
+    clean, kind = workload.sanitize_think(text)
+    assert kind == "violation"
+    assert clean == expected
+    assert workload.find_think_blocks([clean]) == []
+
+
+def test_clean_reply_is_untouched() -> None:
+    assert workload.sanitize_think("We think so.") == ("We think so.", None)
+
+
+class _ThinkBackend:
+    def __init__(self, *responses: str) -> None:
+        self.responses = list(responses)
+
+    async def generate_with_logprobs(self, prompts: Any, **kwargs: Any) -> Any:
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                prompt=p,
+                response=self.responses[i % len(self.responses)],
+                prompt_token_ids=[11, 12, 13],
+                response_token_ids=[90, 91, 92, 21, 22],
+                token_logprobs=[-0.1, -0.1, -0.1, -0.5, -1.5],
+            )
+            for i, p in enumerate(prompts)
+        ]
+
+
+def _guarded_stub_agent(*responses: str) -> tuple[Any, Any]:
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://x", use_stub_model=True, stub_responses=["ok"])
+    )
+    asyncio.run(agent.initialize())
+    agent.set_rollout_backend(_ThinkBackend(*responses))
+    return agent, workload.install_think_guard(agent)
+
+
+def test_rollout_turns_are_sanitized_tagged_and_keep_sampled_tokens() -> None:
+    agent, stats = _guarded_stub_agent(
+        QWEN_EMPTY_THINK + "Happy to help.",
+        "Hello, thanks. <think>x</think> Done.",
+        "Plain.",
+    )
+    turns = asyncio.run(
+        agent.generate_turns_batch(
+            [[{"role": "user", "content": f"q{i}"}] for i in range(3)]
+        )
+    )
+    # Environment history, reward and transcripts read the cleaned text.
+    assert [t.content for t in turns] == [
+        "Happy to help.",
+        "Hello, thanks. Done.",
+        "Plain.",
+    ]
+    assert [t.metadata.get("think") for t in turns] == ["empty", "violation", None]
+    # The GSPO ratio is computed on the exact sampled sequence.
+    assert turns[1].metadata["token_ids"] == [90, 91, 92, 21, 22]
+    assert turns[1].metadata["sampler_log_probs"] == [-0.1, -0.1, -0.1, -0.5, -1.5]
+    assert (stats.replies, stats.empty_stripped, stats.violations) == (3, 1, 1)
+    assert stats.pending == []
+    turn = asyncio.run(agent.generate_turn([{"role": "user", "content": "hi"}]))
+    assert turn.metadata.get("think") == "empty"
+    assert workload.install_think_guard(agent) is stats
+
+
+def test_eval_paths_sanitize_through_finalize() -> None:
+    """vLLM eval calls _finalize_response, HF eval calls generate_response."""
+    agent, stats = _guarded_stub_agent("unused")
+    assert agent._finalize_response("Hi <think>x</think>there", []) == "Hi there"
+    summary = stats.summary(workload.EVAL_THINK_FLAG_RATE)
+    assert summary == {
+        "replies": 1,
+        "empty_stripped": 0,
+        "violations": 1,
+        "violation_rate": 1.0,
+        "flagged": True,
+    }
+
+
+@dataclass
+class GuardTurn:
+    role: str
+    content: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class ThinkTrainer(FakeTrainer):
+    """Episode ``index`` of a group gets reward 1; ``bad`` decides violations."""
+
+    def __init__(self, bad: Any, **kwargs: Any) -> None:
+        super().__init__(lambda step, index: 1.0, **kwargs)
+        self.bad = bad
+        self.seen_rewards: list[list[list[float]]] = []
+
+    async def generate_trajectories(
+        self, scenarios: Any, num_generations: int | None = None
+    ) -> list[FakeGroup]:
+        groups = await super().generate_trajectories(scenarios, num_generations)
+        step = len(self.generated)
+        for g, group in enumerate(groups):
+            for e, trajectory in enumerate(group.trajectories):
+                trajectory.metadata = {"reward_breakdown": {"must_avoid_rate": 0.0}}
+                kind = self.bad(step, g, e)
+                trajectory.turns = [
+                    GuardTurn("user", "u"),
+                    GuardTurn(
+                        "assistant",
+                        "ok" if kind != "raw" else "ok <think>x</think> fine",
+                        {"think": kind} if kind in ("violation", "empty") else {},
+                    ),
+                    GuardTurn("user", "u"),
+                    GuardTurn("assistant", "b"),
+                ]
+        return groups
+
+    async def training_step(self, groups: Any) -> dict[str, Any]:
+        self.seen_rewards.append(
+            [[t.total_reward for t in group.trajectories] for group in groups]
+        )
+        return await super().training_step(groups)
+
+
+def _guard_loop(trainer: ThinkTrainer, steps: int, **limits: Any) -> Any:
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    scenarios = [{"id": f"s{i}"} for i in range(4)]
+    schedule = workload.training_schedule(4, 2, steps, seed=7)
+    return asyncio.run(
+        workload.run_training_loop(
+            trainer,
+            scenarios,
+            schedule,
+            3,
+            ZeroSignalGuard(max_zero_steps=100),
+            forbid_think_blocks=True,
+            think_limits=limits or None,
+        )
+    )
+
+
+def test_one_stray_tag_zeroes_its_episode_and_training_continues() -> None:
+    # 2 groups x 3 episodes x 2 assistant turns = 12 turns per step.
+    trainer = ThinkTrainer(
+        lambda step, g, e: "violation" if (step, g, e) == (2, 0, 1) else None
+    )
+    result = _guard_loop(trainer, 4)
+    assert result["aborted"] is None
+    assert result["steps"] == 4
+    assert trainer.seen_rewards[1][0] == [1.0, 0.0, 1.0]  # zeroed before the update
+    assert trainer.seen_rewards[0][0] == [1.0, 1.0, 1.0]
+    log = result["train_log"]
+    assert log["think_violations"] == [0, 1, 0, 0]
+    assert log["think_violation_episodes"] == [0, 1, 0, 0]
+    assert log["think_violation_rate_window"][1] == pytest.approx(1 / 24, abs=1e-6)
+    assert result["think_violations"] == 1
+    assert result["think_violation_episodes"] == 1
+    assert result["think_limits"] == workload.THINK_GUARD_DEFAULTS
+
+
+def test_unsanitized_marker_in_content_is_caught_and_cleaned() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "raw" if (g, e) == (1, 2) else None)
+    result = _guard_loop(trainer, 1, max_think_violation_rate=0.1)
+    assert trainer.seen_rewards[0][1] == [1.0, 1.0, 0.0]
+    assert result["think_violations"] == 1
+
+
+def test_empty_blocks_are_counted_not_penalized() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "empty" if e == 0 else None)
+    result = _guard_loop(trainer, 3)
+    assert result["train_log"]["empty_think_stripped"] == [2, 2, 2]
+    assert result["empty_think_stripped"] == 6
+    assert result["think_violations"] == 0
+    assert all(r == [1.0, 1.0, 1.0] for step in trainer.seen_rewards for r in step)
+
+
+def test_rolling_window_rate_aborts() -> None:
+    # 1 violating turn per step = 1/12 > 5% -> abort at step 1, before the update.
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(trainer, 5)
+    assert result["aborted"].startswith("think violations at step 1: rate 0.083")
+    assert trainer.trained == []
+    # A looser rate tolerates it; the window then averages over 10 steps.
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(trainer, 5, max_think_violation_rate=0.1)
+    assert result["aborted"] is None
+    assert result["think_violations"] == 5
+
+
+def test_total_cap_aborts() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(
+        trainer, 5, max_think_violation_rate=1.0, max_think_violations=3
+    )
+    assert result["aborted"] == "think violations at step 4: 4 total exceeds 3"
+    assert len(trainer.trained) == 3
+
+
+def test_guard_is_off_without_forbid_think_blocks() -> None:
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    trainer = ThinkTrainer(lambda step, g, e: "violation")
+    scenarios = [{"id": f"s{i}"} for i in range(4)]
+    result = asyncio.run(
+        workload.run_training_loop(
+            trainer,
+            scenarios,
+            workload.training_schedule(4, 2, 2, seed=7),
+            3,
+            ZeroSignalGuard(max_zero_steps=100),
+        )
+    )
+    assert result["aborted"] is None
+    assert result["think_violations"] == 0
+    assert result["train_log"]["think_violations"] == [0, 0]
+    assert all(r == [1.0, 1.0, 1.0] for step in trainer.seen_rewards for r in step)
+
+
+def _manifest_config(name: str) -> dict[str, Any]:
+    manifest = json.loads((BENCHMARKS / name).read_text(encoding="utf-8"))
+    return dict(manifest["config"])
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("think_violation_window", 0),
+        ("max_think_violations", 1.5),
+        ("max_think_violation_rate", 0),
+        ("max_think_violation_rate", 1.5),
+        ("max_think_violation_rate", True),
+    ],
+)
+def test_think_limits_are_validated(key: str, value: Any) -> None:
+    config = dict(_manifest_config("flagship_v2_manifest.json"))
+    config[key] = value
+    with pytest.raises(workload.WorkloadError, match=key):
+        workload.validate_config(config)
+
+
+def test_v2_manifests_pin_the_think_limits() -> None:
+    for name in ("flagship_v2_manifest.json", "flagship_v2_preflight_manifest.json"):
+        config = _manifest_config(name)
+        workload.validate_config(config)
+        assert workload.think_guard_limits(config) == workload.THINK_GUARD_DEFAULTS
+        assert all(key in config for key in workload.THINK_GUARD_DEFAULTS)
+
+
+def test_phase_rollout_reports_eval_think_rate_and_never_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = workload.ThinkStats()
+
+    def fake_generate(payload: Any) -> Any:
+        def generate(conversations: Any) -> list[str]:
+            replies = []
+            for _ in conversations:
+                clean, kind = workload.sanitize_think("<think>hm</think>ok")
+                stats.record(kind)
+                replies.append(clean)
+            return replies
+
+        generate.think_stats = stats  # type: ignore[attr-defined]
+        return generate
+
+    monkeypatch.setattr(workload, "_hf_policy_generate", fake_generate)
+    payload = {
+        "seed": 1,
+        "backend": "hf",
+        "max_turns": 1,
+        "model_path": "/snap",
+        "adapter_path": None,
+        "forbid_think_blocks": True,
+        "scenarios": [workload.scenario_record(_scenarios("eval", 1)[0])["scenario"]],
+    }
+    out = workload.phase_rollout(payload)
+    assert out["think"]["violations"] == 1
+    assert out["think"]["flagged"] is True
+    assistant = [
+        c for v in out["transcripts"].values() for r, c in v if r == "assistant"
+    ]
+    assert assistant == ["ok"]
+
+
+def test_reward_version_is_pinned_by_config() -> None:
+    from stateset_agents.rewards import (
+        SupportConversationReward,
+        SupportConversationRewardV3,
+    )
+
+    assert workload.DEFAULT_REWARD == "support_conversation_v2"
+    assert type(workload.support_reward()) is SupportConversationReward
+    v3 = workload.support_reward("support_conversation_v3")
+    assert isinstance(v3, SupportConversationRewardV3)
+    assert workload._default_reward_fn("support_conversation_v3").name == v3.name
+    with pytest.raises(workload.WorkloadError, match="unknown reward"):
+        workload.support_reward("support_conversation_v9")
+    config = _manifest_config("flagship_v2_manifest.json")
+    assert config["reward"] == "support_conversation_v3"
+    with pytest.raises(workload.WorkloadError, match="config.reward"):
+        workload.validate_config({**config, "reward": "support_conversation_v9"})
+    # v1 manifests keep reward v2.
+    assert "reward" not in _manifest_config("flagship_manifest.json")
+
+
+def test_v3_components_are_logged() -> None:
+    group = argparse.Namespace(
+        trajectories=[
+            argparse.Namespace(metadata={"reward_breakdown": {"long_reply_rate": 0.5}}),
+            argparse.Namespace(metadata={"reward_breakdown": {"long_reply_rate": 0.0}}),
+        ]
+    )
+    means = workload.reward_component_means([group])
+    assert means["long_reply_rate"] == 0.25
+    assert means["invented_detail_rate"] is None

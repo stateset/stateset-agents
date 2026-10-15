@@ -239,6 +239,11 @@ class TrainingConfig:
     # learner's forward pass agree (TRL's ``disable_dropout``). Keyword-only
     # so subclasses keep their positional arguments.
     disable_dropout: bool = field(default=False, kw_only=True)
+    # Multi-turn token path: ``"per_turn"`` (default) averages assistant-turn
+    # rows, so a k-turn episode carries k times the weight of a one-turn
+    # episode; ``"per_episode"`` weights each row by 1/k so every episode
+    # counts once (GSPO eq. 5 averages over sequences). Keyword-only.
+    episode_weighting: str = field(default="per_turn", kw_only=True)
     # Run Python shipped inside the model's Hugging Face repo when loading it.
     # Off by default: only enable for a repo you trust whose architecture is
     # not native to transformers (curated presets opt in explicitly).

@@ -56,6 +56,11 @@ ANCHORED_FILES: list[tuple[str, str]] = [
     # protocol manifests (shootout v4/v5/v5.1) keep the version they pinned.
     ("benchmarks/flagship_manifest.json", '"framework_version": "{v}"'),
     ("benchmarks/flagship_preflight_manifest.json", '"framework_version": "{v}"'),
+    ("benchmarks/flagship_v2_manifest.json", '"framework_version": "{v}"'),
+    (
+        "benchmarks/flagship_v2_preflight_manifest.json",
+        '"framework_version": "{v}"',
+    ),
     ("benchmarks/distributed_async_manifest.json", '"framework_version": "{v}"'),
     (
         "benchmarks/distributed_async_local_manifest.json",

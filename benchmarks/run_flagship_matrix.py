@@ -39,6 +39,13 @@ REQUIRED_PLACEHOLDERS = {
 }
 SECRET_FRAGMENTS = ("api_key", "token", "password", "credential", "secret")
 T_CRITICAL_95_DF2 = 4.303
+#: Judge engine loaders and runtime profiles the workload implements
+#: (``flagship_workload.JUDGE_LOADERS`` / ``RUNTIME_PROFILES``); absent keys
+#: mean the v1 Mistral judge and v1 dependencies.
+JUDGE_LOADERS: tuple[str, ...] = ("gemma4", "mistral")
+RUNTIME_PROFILES: tuple[str, ...] = ("flagship-v1", "flagship-v2")
+#: The publication gate's ceiling on judge self-disagreement (every protocol).
+SELF_DISAGREEMENT_GATE = 0.05
 
 
 def canonical_json(value: Mapping[str, Any]) -> str:
@@ -149,6 +156,17 @@ def load_manifest(path: Path) -> dict[str, Any]:
     _text(judge, "model", "manifest.judge")
     _hex(judge, "revision", "manifest.judge", 40)
     _hex(judge, "rubric_revision", "manifest.judge", 40)
+    loader = judge.get("loader", "mistral")
+    if loader not in JUDGE_LOADERS:
+        raise FlagshipError(
+            "manifest.judge.loader must be one of " + ", ".join(JUDGE_LOADERS)
+        )
+    profile = config.get("runtime_profile", "flagship-v1")
+    if profile not in RUNTIME_PROFILES:
+        raise FlagshipError(
+            "manifest.config.runtime_profile must be one of "
+            + ", ".join(RUNTIME_PROFILES)
+        )
 
     hardware = raw.get("hardware")
     if not isinstance(hardware, Mapping):
@@ -483,8 +501,13 @@ def validate_matrix(
         raise FlagshipError(
             f"final-score standard deviation {final_std:.4f} exceeds 0.10"
         )
-    if any(float(run["metrics"]["judge_self_disagreement"]) > 0.05 for run in runs):
-        raise FlagshipError("judge self-disagreement exceeded 0.05")
+    if any(
+        float(run["metrics"]["judge_self_disagreement"]) > SELF_DISAGREEMENT_GATE
+        for run in runs
+    ):
+        raise FlagshipError(
+            f"judge self-disagreement exceeded {SELF_DISAGREEMENT_GATE}"
+        )
     return {
         "passed": True,
         "seed_count": len(runs),
@@ -497,6 +520,54 @@ def validate_matrix(
         "total_wall_clock_seconds": sum(
             float(run["wall_clock_seconds"]) for run in runs
         ),
+    }
+
+
+def preflight_summary(
+    runs: Sequence[Mapping[str, Any]], failures: Sequence[str]
+) -> dict[str, Any]:
+    """What a preflight report says instead of the publication gate.
+
+    A preflight never passes the publication gate (``passed`` stays false:
+    one seed cannot give a paired confidence interval, and preflight evidence
+    is unpublishable by design). The report therefore says why ``passed`` is
+    false, whether the run completed, the per-seed judge numbers, and
+    warnings for the signals the gate would reject.
+    """
+    seeds: list[dict[str, Any]] = []
+    warnings: list[str] = []
+    for run in runs:
+        metrics = run.get("metrics") or {}
+        baseline = float(metrics.get("baseline_score", 0.0))
+        final = float(metrics.get("final_score", 0.0))
+        disagreement = float(metrics.get("judge_self_disagreement", 0.0))
+        seed = run.get("seed")
+        seeds.append(
+            {
+                "seed": seed,
+                "baseline_score": baseline,
+                "final_score": final,
+                "improvement": final - baseline,
+                "judge_self_disagreement": disagreement,
+                "cost_usd": metrics.get("cost_usd"),
+                "wall_clock_seconds": run.get("wall_clock_seconds"),
+            }
+        )
+        if final - baseline < 0.03:
+            warnings.append(
+                f"seed {seed}: judge improvement {final - baseline:+.4f} is below "
+                "the +0.0300 the publication gate requires"
+            )
+        if disagreement > SELF_DISAGREEMENT_GATE:
+            warnings.append(
+                f"seed {seed}: judge self-disagreement {disagreement:.4f} exceeds "
+                f"{SELF_DISAGREEMENT_GATE}"
+            )
+    return {
+        "completed": not failures and bool(runs),
+        "publication_gate": "not evaluated: preflight evidence is never publishable",
+        "seeds": seeds,
+        "warnings": warnings,
     }
 
 
@@ -661,6 +732,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             "preflight": args.preflight,
             "failures": failures,
         }
+        if args.preflight:
+            report.update(preflight_summary(runs, failures))
         if not failures and not args.preflight:
             try:
                 report.update(validate_matrix(runs, manifest))
