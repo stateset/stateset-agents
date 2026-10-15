@@ -112,7 +112,7 @@ dev = [
     "gymnasium>=0.28.0",
     "fastapi>=0.110.0",
     "uvicorn>=0.23.0",
-    "httpx>=0.25.0,<0.28.0",
+    "httpx>=0.25.0,<0.29.0",
     "requests>=2.31.0",
     "redis>=4.5.0",
     "PyJWT>=2.15.0,<3.0.0",
@@ -160,7 +160,7 @@ api = [
     "fastapi>=0.110.0",
     "uvicorn>=0.23.0",
     # Starlette/FastAPI's TestClient is not compatible with httpx>=0.28 yet.
-    "httpx>=0.25.0,<0.28.0",
+    "httpx>=0.25.0,<0.29.0",
     # Used by performance monitoring endpoints.
     "psutil>=5.9.0",
     # Used by alerting integrations.
