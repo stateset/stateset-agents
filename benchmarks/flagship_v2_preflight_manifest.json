@@ -20,8 +20,8 @@
   "config": {
     "num_train_examples": 500,
     "num_eval_examples": 200,
-    "max_wall_clock_seconds": 25200,
-    "max_cost_usd_per_seed": 28.0,
+    "max_wall_clock_seconds": 28800,
+    "max_cost_usd_per_seed": 32.0,
     "temperature": 0.0,
     "max_turns": 4,
     "use_lora": true,

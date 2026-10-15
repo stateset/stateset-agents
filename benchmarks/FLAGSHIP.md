@@ -300,20 +300,23 @@ What v2 changes, all switched on from the pinned config, so v1 configs
 # free: validate the manifest and print the seed plan
 python benchmarks/run_flagship_matrix.py \
   benchmarks/flagship_v2_preflight_manifest.json --dry-run --preflight
-# paid: one H100 seed, capped at the manifest's $28 per-seed limit
+# paid: one H100 seed, capped at the manifest's $32 per-seed limit
 export RUNPOD_API_KEY=...            # never commit it
-export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=28
+export STATESET_FLAGSHIP_CONFIRM_MAX_COST_USD=32
 make benchmark-flagship-run \
   MANIFEST=benchmarks/flagship_v2_preflight_manifest.json \
   OUTPUT_DIR=benchmark_results/flagship_v2/preflight EXTRA_ARGS=--preflight
 ```
 
-**Worst-case cost.** The preflight keeps v1's 250-step config but sets
-`max_wall_clock_seconds` to 25,200. That gives a 24,600 s pod lifetime, so
-the worst case is **$27.27 at $3.99/h** for one H100 SECURE, under the $28
-`max_cost_usd_per_seed`. The driver's `--plan` re-prices it from the live
-catalog. The measured manifest allows 28,800 s per seed ($31.26 worst case,
-$32 cap, so at most **$93.77 for three seeds**). These limits are
+**Worst-case cost.** The preflight keeps v1's 250-step config and, like
+the measured manifest, sets `max_wall_clock_seconds` to 28,800. That gives
+a 28,200 s pod lifetime, so the worst case is **$31.26 at $3.99/h** for one
+H100 SECURE, under the $32 `max_cost_usd_per_seed`. The driver's `--plan`
+re-prices it from the live catalog. The limit was 25,200 s ($27.27) until
+preflight-3 measured ~78 s per step: 250 steps plus the merge, final eval
+and judge would have left only ~30-40 min of a 24,600 s lifetime. The
+measured manifest also allows 28,800 s per seed ($31.26 worst case, $32
+cap, so at most **$93.77 for three seeds**). These limits are
 estimates, not measurements. A 9B hybrid policy with a 31B judge is slower
 than v1. Expected time is
 ~35 min of setup and downloads, the training steps, ~10 min for the merge,

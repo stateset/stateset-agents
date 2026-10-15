@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import importlib.util
 import json
+import math
 import os
 import subprocess
 import sys
@@ -129,8 +130,9 @@ def test_v2_worst_case_fits_the_per_seed_cap(name: str) -> None:
 def test_v2_preflight_worst_case_is_documented() -> None:
     config = _manifest("flagship_v2_preflight_manifest.json")["config"]
     lifetime = config["max_wall_clock_seconds"] - driver.LOCAL_HEADROOM_SECONDS
-    worst = round(lifetime / 3600 * H100_PRICE, 2)
-    assert worst == 27.27
+    # Rounded up to the cent: the documented figure is a ceiling.
+    worst = math.ceil(lifetime / 3600 * H100_PRICE * 100) / 100
+    assert worst == 31.26
     doc = (BENCHMARKS / "FLAGSHIP.md").read_text(encoding="utf-8")
     assert f"${worst}" in doc
     assert "flagship_v2_preflight_manifest.json" in doc
@@ -241,7 +243,7 @@ def test_driver_plan_prices_v2_under_the_cap() -> None:
         }
     ]
     plan = driver.build_plan(settings, catalog, config["max_cost_usd_per_seed"])
-    assert plan["worst_case_cost_usd"] == pytest.approx(27.27, abs=0.01)
+    assert plan["worst_case_cost_usd"] == pytest.approx(31.26, abs=0.01)
     assert plan["provisions_hardware"] is False
 
 
