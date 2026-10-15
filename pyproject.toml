@@ -159,7 +159,7 @@ qwen38next = [
 api = [
     "fastapi>=0.110.0",
     "uvicorn>=0.23.0",
-    # Starlette/FastAPI's TestClient is not compatible with httpx>=0.28 yet.
+    # httpx>=0.28 is fine: API tests use ASGITransport/SyncASGIClient; FastAPI TestClient also works on 0.28.x.
     "httpx>=0.25.0,<0.29.0",
     # Used by performance monitoring endpoints.
     "psutil>=5.9.0",
