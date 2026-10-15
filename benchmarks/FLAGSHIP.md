@@ -259,19 +259,32 @@ What v2 changes, all switched on from the pinned config, so v1 configs
   the policy tokenizer, so training rollouts, the trainer's token path and
   both evaluations render the same non-thinking prompt. Qwen3.5 thinks by
   default.
-- **`forbid_think_blocks: true`.** A `<think>` or `<|think|>` marker in any
-  training-rollout or evaluation completion fails the run instead of
-  scoring reasoning text.
-  One case is normalized first: a reply that *starts* with whitespace-only
-  blocks (`<think>\n\n</think>\n\n`, the block Qwen3.5's non-thinking
-  template writes into the prompt) has them removed in the agent's
-  `_finalize_response`. Reward, environment, next-turn history, transcripts
-  and the judge all see the stripped text; the turn's sampled `token_ids`
-  and log-probs are kept as sampled, so GSPO ratios stay exact. Each step
-  logs `empty_think_stripped`, and the report records the totals for the
-  baseline eval, training and the final eval. Reasoning content, or a block
-  anywhere after the start, still fails the run. (Preflight-3 stopped at
-  step 87 on exactly this empty prefix.)
+- **`forbid_think_blocks: true`.** Turns on the think-marker guard. Every
+  policy reply passes through the agent's `_finalize_response`, which
+  removes `<think>`/`</think>`/`<|think|>` markers and reasoning content
+  before the text reaches the reward, the environment's next-turn history,
+  the transcripts and the judge. The turn's sampled `token_ids` and
+  log-probs stay as sampled, so GSPO ratios are exact.
+  - *Benign:* whitespace-only blocks at the very start
+    (`<think>\n\n</think>\n\n`, the block Qwen3.5's non-thinking template
+    writes into the prompt) are stripped and counted (`empty_think_stripped`).
+  - *Violation:* reasoning content, or any marker after the start. In
+    training the whole episode's reward is set to 0 before the update (like
+    a `must_avoid` hit) and counted per step (`think_violations`,
+    `think_violation_episodes`, `think_violation_rate_window`) and in total.
+    The run aborts only when the violation share of assistant turns over
+    the last `think_violation_window` = 10 steps exceeds
+    `max_think_violation_rate` = 0.05, or the total exceeds
+    `max_think_violations` = 250 (~1% of a 250-step run's ~30k turns).
+    These defaults are pinned in both v2 manifests.
+  - *Evaluations* (baseline and final) never abort: replies are sanitized
+    and counted, `diagnostics.think_markers` reports replies, empty strips,
+    violations and the violation rate for each eval, and an eval above 1%
+    is listed in `diagnostics.think_flags`.
+
+  History: preflight-3 failed at step 87 on an empty leading block, and
+  preflight-4 at step 185 on a single stray mid-text tag, both under the
+  earlier fail-closed check.
 - **`lora_target_modules`.** These are the full-attention `q/k/v/o_proj`,
   the GatedDeltaNet linear-attention `in_proj_qkv`, `in_proj_a`,
   `in_proj_b`, `in_proj_z` and `out_proj`, and the MLP `gate/up/down_proj`.

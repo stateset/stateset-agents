@@ -63,6 +63,9 @@
       "enable_thinking": false
     },
     "forbid_think_blocks": true,
+    "max_think_violation_rate": 0.05,
+    "max_think_violations": 250,
+    "think_violation_window": 10,
     "trust_remote_code": false,
     "merge_adapter_for_eval": true,
     "episode_weighting": "per_episode",

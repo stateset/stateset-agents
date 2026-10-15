@@ -1004,46 +1004,6 @@ def test_think_blocks_fail_closed(text: str) -> None:
     workload.assert_no_think_blocks(["We think this is fine."], "eval")
 
 
-class ThinkingTrainer(FakeTrainer):
-    async def generate_trajectories(
-        self, scenarios: Any, num_generations: int | None = None
-    ) -> list[FakeGroup]:
-        groups = await super().generate_trajectories(scenarios, num_generations)
-        groups[0].trajectories[0].turns[2] = FakeTurn("assistant", "<think>x</think>")
-        return groups
-
-
-def test_training_loop_rejects_think_blocks_only_when_forbidden() -> None:
-    from stateset_agents.training.callbacks import ZeroSignalGuard
-
-    scenarios = [{"id": f"s{i}"} for i in range(4)]
-    schedule = workload.training_schedule(4, 2, 1, seed=7)
-    trainer = ThinkingTrainer(lambda step, index: float(index))
-    with pytest.raises(workload.WorkloadError, match="training step 1"):
-        asyncio.run(
-            workload.run_training_loop(
-                trainer,
-                scenarios,
-                schedule,
-                3,
-                ZeroSignalGuard(max_zero_steps=10),
-                forbid_think_blocks=True,
-            )
-        )
-    assert trainer.trained == []
-    # v1 (flag off) does not inspect the text.
-    result = asyncio.run(
-        workload.run_training_loop(
-            ThinkingTrainer(lambda step, index: float(index)),
-            scenarios,
-            schedule,
-            3,
-            ZeroSignalGuard(max_zero_steps=10),
-        )
-    )
-    assert result["steps"] == 1
-
-
 def test_v2_lora_targets_come_from_the_config() -> None:
     targets = ["q_proj", "in_proj_qkv", "in_proj_a", "in_proj_b", "out_proj"]
     assert (
@@ -1129,28 +1089,6 @@ def test_eval_weights_base_adapter_and_merged(
     assert merged_calls == [("/snap", tmp_path / "adapter", tmp_path / "merged")]
 
 
-def test_phase_rollout_rejects_think_blocks_in_eval(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        workload,
-        "_hf_policy_generate",
-        lambda payload: lambda conversations: ["<think>hm</think>ok"]
-        * len(conversations),
-    )
-    payload = {
-        "seed": 1,
-        "backend": "hf",
-        "max_turns": 1,
-        "model_path": "/snap",
-        "adapter_path": None,
-        "forbid_think_blocks": True,
-        "scenarios": [workload.scenario_record(_scenarios("eval", 1)[0])["scenario"]],
-    }
-    with pytest.raises(workload.WorkloadError, match="evaluation rollout"):
-        workload.phase_rollout(payload)
-
-
 @pytest.mark.parametrize(
     ("loader", "expected"),
     [
@@ -1208,7 +1146,7 @@ def test_v2_training_config_rejects_bad_weighting() -> None:
         workload.validate_config({**V2_CONFIG, "disable_dropout": "yes"})
 
 
-# --- Empty <think></think> blocks (preflight-3 failure at step 87) ---------
+# --- Think-marker guard (preflight-3 step 87, preflight-4 step 185) -------
 
 QWEN_EMPTY_THINK = "<think>\n\n</think>\n\n"
 
@@ -1221,44 +1159,46 @@ QWEN_EMPTY_THINK = "<think>\n\n</think>\n\n"
         ("  <think> \n</think>\n<think>\n</think>\nHi", "Hi"),
     ],
 )
-def test_leading_empty_think_blocks_are_stripped(text: str, expected: str) -> None:
-    assert workload.strip_empty_think_blocks(text) == (expected, True)
-    workload.assert_no_think_blocks([expected], "eval")
+def test_leading_empty_think_blocks_are_benign(text: str, expected: str) -> None:
+    assert workload.sanitize_think(text) == (expected, "empty")
 
 
 @pytest.mark.parametrize(
-    "text",
+    ("text", "expected"),
     [
-        "<think>check the order first</think>\n\nHappy to help.",
-        "<think>\n\n</think>\n\n<think>plan</think>Hi",
+        # non-empty block at the start
+        ("<think>check the order first</think>\n\nHappy to help.", "Happy to help."),
+        # empty prefix, then real reasoning
+        (QWEN_EMPTY_THINK + "<think>plan</think>Hi", "Hi"),
+        # mid-text block (the preflight-4 shape), even an empty one
+        (
+            "Hello, thank you for reaching out. <think>refund?</think> I can help.",
+            "Hello, thank you for reaching out. I can help.",
+        ),
+        ("Sure. " + QWEN_EMPTY_THINK + "Anything else?", "Sure. \n\nAnything else?"),
+        # lone closing tag: the reasoning came first
+        ("they want a refund</think>Happy to help.", "Happy to help."),
+        # lone closing tag at the end: keep the answer before it
+        ("Happy to help.</think>", "Happy to help."),
+        # unclosed opening tag: the reasoning runs to the end
+        ("Happy to help. <think>maybe check", "Happy to help."),
+        ("<|think|>Hi", "Hi"),
     ],
 )
-def test_non_empty_think_content_still_fails_closed(text: str) -> None:
-    stripped, _ = workload.strip_empty_think_blocks(text)
-    with pytest.raises(workload.WorkloadError, match="think"):
-        workload.assert_no_think_blocks([stripped], "eval")
-
-
-@pytest.mark.parametrize(
-    "text",
-    [
-        "Sure. " + QWEN_EMPTY_THINK + "Anything else?",
-        "Hi\n<think></think>",
-    ],
-)
-def test_mid_text_empty_think_block_is_not_stripped(text: str) -> None:
-    assert workload.strip_empty_think_blocks(text) == (text, False)
-    with pytest.raises(workload.WorkloadError, match="think"):
-        workload.assert_no_think_blocks([text], "eval")
+def test_think_violations_are_sanitized(text: str, expected: str) -> None:
+    clean, kind = workload.sanitize_think(text)
+    assert kind == "violation"
+    assert clean == expected
+    assert workload.find_think_blocks([clean]) == []
 
 
 def test_clean_reply_is_untouched() -> None:
-    assert workload.strip_empty_think_blocks("We think so.") == ("We think so.", False)
+    assert workload.sanitize_think("We think so.") == ("We think so.", None)
 
 
 class _ThinkBackend:
-    def __init__(self, response: str) -> None:
-        self.response = response
+    def __init__(self, *responses: str) -> None:
+        self.responses = list(responses)
 
     async def generate_with_logprobs(self, prompts: Any, **kwargs: Any) -> Any:
         from types import SimpleNamespace
@@ -1266,95 +1206,267 @@ class _ThinkBackend:
         return [
             SimpleNamespace(
                 prompt=p,
-                response=self.response,
+                response=self.responses[i % len(self.responses)],
                 prompt_token_ids=[11, 12, 13],
                 response_token_ids=[90, 91, 92, 21, 22],
                 token_logprobs=[-0.1, -0.1, -0.1, -0.5, -1.5],
             )
-            for p in prompts
+            for i, p in enumerate(prompts)
         ]
 
 
-def _normalized_stub_agent(response: str) -> tuple[Any, dict[str, int]]:
+def _guarded_stub_agent(*responses: str) -> tuple[Any, Any]:
     from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 
     agent = MultiTurnAgent(
         AgentConfig(model_name="stub://x", use_stub_model=True, stub_responses=["ok"])
     )
     asyncio.run(agent.initialize())
-    agent.set_rollout_backend(_ThinkBackend(response))
-    return agent, workload.install_empty_think_normalizer(agent)
+    agent.set_rollout_backend(_ThinkBackend(*responses))
+    return agent, workload.install_think_guard(agent)
 
 
-def test_rollout_turn_text_is_normalized_but_tokens_stay_as_sampled() -> None:
-    agent, counter = _normalized_stub_agent(QWEN_EMPTY_THINK + "Happy to help.")
+def test_rollout_turns_are_sanitized_tagged_and_keep_sampled_tokens() -> None:
+    agent, stats = _guarded_stub_agent(
+        QWEN_EMPTY_THINK + "Happy to help.",
+        "Hello, thanks. <think>x</think> Done.",
+        "Plain.",
+    )
     turns = asyncio.run(
         agent.generate_turns_batch(
-            [[{"role": "user", "content": "hi"}], [{"role": "user", "content": "yo"}]]
+            [[{"role": "user", "content": f"q{i}"}] for i in range(3)]
         )
     )
-    # Reward, environment, history and transcripts all read the stripped text.
-    assert [t.content for t in turns] == ["Happy to help.", "Happy to help."]
-    assert agent.conversation_history[-1]["content"] == "Happy to help."
+    # Environment history, reward and transcripts read the cleaned text.
+    assert [t.content for t in turns] == [
+        "Happy to help.",
+        "Hello, thanks. Done.",
+        "Plain.",
+    ]
+    assert [t.metadata.get("think") for t in turns] == ["empty", "violation", None]
     # The GSPO ratio is computed on the exact sampled sequence.
-    assert turns[0].metadata["token_ids"] == [90, 91, 92, 21, 22]
-    assert turns[0].metadata["sampler_log_probs"] == [-0.1, -0.1, -0.1, -0.5, -1.5]
-    assert counter == {"stripped": 2}
-    # Installing twice keeps one wrapper and one counter.
-    assert workload.install_empty_think_normalizer(agent) is counter
-
-
-def test_rollout_with_reasoning_content_is_left_for_the_guard() -> None:
-    agent, counter = _normalized_stub_agent("<think>plan</think>Hi")
+    assert turns[1].metadata["token_ids"] == [90, 91, 92, 21, 22]
+    assert turns[1].metadata["sampler_log_probs"] == [-0.1, -0.1, -0.1, -0.5, -1.5]
+    assert (stats.replies, stats.empty_stripped, stats.violations) == (3, 1, 1)
+    assert stats.pending == []
     turn = asyncio.run(agent.generate_turn([{"role": "user", "content": "hi"}]))
-    assert turn.content == "<think>plan</think>Hi"
-    assert counter == {"stripped": 0}
-    with pytest.raises(workload.WorkloadError, match="think"):
-        workload.assert_no_think_blocks([turn.content], "training step 1")
+    assert turn.metadata.get("think") == "empty"
+    assert workload.install_think_guard(agent) is stats
 
 
-class EmptyThinkTrainer(FakeTrainer):
-    """Simulates the normalizer having stripped two replies per step."""
+def test_eval_paths_sanitize_through_finalize() -> None:
+    """vLLM eval calls _finalize_response, HF eval calls generate_response."""
+    agent, stats = _guarded_stub_agent("unused")
+    assert agent._finalize_response("Hi <think>x</think>there", []) == "Hi there"
+    summary = stats.summary(workload.EVAL_THINK_FLAG_RATE)
+    assert summary == {
+        "replies": 1,
+        "empty_stripped": 0,
+        "violations": 1,
+        "violation_rate": 1.0,
+        "flagged": True,
+    }
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        super().__init__(*args, **kwargs)
-        self.counter = {"stripped": 0}
+
+@dataclass
+class GuardTurn:
+    role: str
+    content: str
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+class ThinkTrainer(FakeTrainer):
+    """Episode ``index`` of a group gets reward 1; ``bad`` decides violations."""
+
+    def __init__(self, bad: Any, **kwargs: Any) -> None:
+        super().__init__(lambda step, index: 1.0, **kwargs)
+        self.bad = bad
+        self.seen_rewards: list[list[list[float]]] = []
 
     async def generate_trajectories(
         self, scenarios: Any, num_generations: int | None = None
     ) -> list[FakeGroup]:
-        self.counter["stripped"] += 2
-        return await super().generate_trajectories(scenarios, num_generations)
+        groups = await super().generate_trajectories(scenarios, num_generations)
+        step = len(self.generated)
+        for g, group in enumerate(groups):
+            for e, trajectory in enumerate(group.trajectories):
+                trajectory.metadata = {"reward_breakdown": {"must_avoid_rate": 0.0}}
+                kind = self.bad(step, g, e)
+                trajectory.turns = [
+                    GuardTurn("user", "u"),
+                    GuardTurn(
+                        "assistant",
+                        "ok" if kind != "raw" else "ok <think>x</think> fine",
+                        {"think": kind} if kind in ("violation", "empty") else {},
+                    ),
+                    GuardTurn("user", "u"),
+                    GuardTurn("assistant", "b"),
+                ]
+        return groups
+
+    async def training_step(self, groups: Any) -> dict[str, Any]:
+        self.seen_rewards.append(
+            [[t.total_reward for t in group.trajectories] for group in groups]
+        )
+        return await super().training_step(groups)
 
 
-def test_training_loop_logs_stripped_empty_think_blocks() -> None:
+def _guard_loop(trainer: ThinkTrainer, steps: int, **limits: Any) -> Any:
     from stateset_agents.training.callbacks import ZeroSignalGuard
 
     scenarios = [{"id": f"s{i}"} for i in range(4)]
-    schedule = workload.training_schedule(4, 2, 3, seed=7)
-    trainer = EmptyThinkTrainer(lambda step, index: float(index))
-    result = asyncio.run(
+    schedule = workload.training_schedule(4, 2, steps, seed=7)
+    return asyncio.run(
         workload.run_training_loop(
             trainer,
             scenarios,
             schedule,
             3,
-            ZeroSignalGuard(max_zero_steps=10),
+            ZeroSignalGuard(max_zero_steps=100),
             forbid_think_blocks=True,
-            empty_think_counter=trainer.counter,
+            think_limits=limits or None,
         )
     )
+
+
+def test_one_stray_tag_zeroes_its_episode_and_training_continues() -> None:
+    # 2 groups x 3 episodes x 2 assistant turns = 12 turns per step.
+    trainer = ThinkTrainer(
+        lambda step, g, e: "violation" if (step, g, e) == (2, 0, 1) else None
+    )
+    result = _guard_loop(trainer, 4)
+    assert result["aborted"] is None
+    assert result["steps"] == 4
+    assert trainer.seen_rewards[1][0] == [1.0, 0.0, 1.0]  # zeroed before the update
+    assert trainer.seen_rewards[0][0] == [1.0, 1.0, 1.0]
+    log = result["train_log"]
+    assert log["think_violations"] == [0, 1, 0, 0]
+    assert log["think_violation_episodes"] == [0, 1, 0, 0]
+    assert log["think_violation_rate_window"][1] == pytest.approx(1 / 24, abs=1e-6)
+    assert result["think_violations"] == 1
+    assert result["think_violation_episodes"] == 1
+    assert result["think_limits"] == workload.THINK_GUARD_DEFAULTS
+
+
+def test_unsanitized_marker_in_content_is_caught_and_cleaned() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "raw" if (g, e) == (1, 2) else None)
+    result = _guard_loop(trainer, 1, max_think_violation_rate=0.1)
+    assert trainer.seen_rewards[0][1] == [1.0, 1.0, 0.0]
+    assert result["think_violations"] == 1
+
+
+def test_empty_blocks_are_counted_not_penalized() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "empty" if e == 0 else None)
+    result = _guard_loop(trainer, 3)
     assert result["train_log"]["empty_think_stripped"] == [2, 2, 2]
     assert result["empty_think_stripped"] == 6
-    # Without a counter (v1) the column is zero.
-    plain = asyncio.run(
+    assert result["think_violations"] == 0
+    assert all(r == [1.0, 1.0, 1.0] for step in trainer.seen_rewards for r in step)
+
+
+def test_rolling_window_rate_aborts() -> None:
+    # 1 violating turn per step = 1/12 > 5% -> abort at step 1, before the update.
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(trainer, 5)
+    assert result["aborted"].startswith("think violations at step 1: rate 0.083")
+    assert trainer.trained == []
+    # A looser rate tolerates it; the window then averages over 10 steps.
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(trainer, 5, max_think_violation_rate=0.1)
+    assert result["aborted"] is None
+    assert result["think_violations"] == 5
+
+
+def test_total_cap_aborts() -> None:
+    trainer = ThinkTrainer(lambda step, g, e: "violation" if (g, e) == (0, 0) else None)
+    result = _guard_loop(
+        trainer, 5, max_think_violation_rate=1.0, max_think_violations=3
+    )
+    assert result["aborted"] == "think violations at step 4: 4 total exceeds 3"
+    assert len(trainer.trained) == 3
+
+
+def test_guard_is_off_without_forbid_think_blocks() -> None:
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    trainer = ThinkTrainer(lambda step, g, e: "violation")
+    scenarios = [{"id": f"s{i}"} for i in range(4)]
+    result = asyncio.run(
         workload.run_training_loop(
-            FakeTrainer(lambda step, index: float(index)),
+            trainer,
             scenarios,
-            schedule,
+            workload.training_schedule(4, 2, 2, seed=7),
             3,
-            ZeroSignalGuard(max_zero_steps=10),
+            ZeroSignalGuard(max_zero_steps=100),
         )
     )
-    assert plain["train_log"]["empty_think_stripped"] == [0, 0, 0]
-    assert plain["empty_think_stripped"] == 0
+    assert result["aborted"] is None
+    assert result["think_violations"] == 0
+    assert result["train_log"]["think_violations"] == [0, 0]
+    assert all(r == [1.0, 1.0, 1.0] for step in trainer.seen_rewards for r in step)
+
+
+def _manifest_config(name: str) -> dict[str, Any]:
+    manifest = json.loads((BENCHMARKS / name).read_text(encoding="utf-8"))
+    return dict(manifest["config"])
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("think_violation_window", 0),
+        ("max_think_violations", 1.5),
+        ("max_think_violation_rate", 0),
+        ("max_think_violation_rate", 1.5),
+        ("max_think_violation_rate", True),
+    ],
+)
+def test_think_limits_are_validated(key: str, value: Any) -> None:
+    config = dict(_manifest_config("flagship_v2_manifest.json"))
+    config[key] = value
+    with pytest.raises(workload.WorkloadError, match=key):
+        workload.validate_config(config)
+
+
+def test_v2_manifests_pin_the_think_limits() -> None:
+    for name in ("flagship_v2_manifest.json", "flagship_v2_preflight_manifest.json"):
+        config = _manifest_config(name)
+        workload.validate_config(config)
+        assert workload.think_guard_limits(config) == workload.THINK_GUARD_DEFAULTS
+        assert all(key in config for key in workload.THINK_GUARD_DEFAULTS)
+
+
+def test_phase_rollout_reports_eval_think_rate_and_never_aborts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stats = workload.ThinkStats()
+
+    def fake_generate(payload: Any) -> Any:
+        def generate(conversations: Any) -> list[str]:
+            replies = []
+            for _ in conversations:
+                clean, kind = workload.sanitize_think("<think>hm</think>ok")
+                stats.record(kind)
+                replies.append(clean)
+            return replies
+
+        generate.think_stats = stats  # type: ignore[attr-defined]
+        return generate
+
+    monkeypatch.setattr(workload, "_hf_policy_generate", fake_generate)
+    payload = {
+        "seed": 1,
+        "backend": "hf",
+        "max_turns": 1,
+        "model_path": "/snap",
+        "adapter_path": None,
+        "forbid_think_blocks": True,
+        "scenarios": [workload.scenario_record(_scenarios("eval", 1)[0])["scenario"]],
+    }
+    out = workload.phase_rollout(payload)
+    assert out["think"]["violations"] == 1
+    assert out["think"]["flagged"] is True
+    assistant = [
+        c for v in out["transcripts"].values() for r, c in v if r == "assistant"
+    ]
+    assert assistant == ["ok"]

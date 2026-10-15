@@ -56,6 +56,9 @@ V2_ONLY_CONFIG_KEYS = {
     "merge_adapter_for_eval",
     "episode_weighting",
     "disable_dropout",
+    "think_violation_window",
+    "max_think_violation_rate",
+    "max_think_violations",
 }
 QWEN35_LINEAR_ATTENTION = {"in_proj_qkv", "in_proj_a", "in_proj_b", "in_proj_z"}
 #: Catalog price the manifest caps are sized for (H100 80GB SECURE).

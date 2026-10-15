@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import collections
 import functools
 import hashlib
 import inspect
@@ -48,6 +49,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Awaitable, Callable, Iterable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -257,6 +259,17 @@ def validate_config(config: Mapping[str, Any]) -> None:
     ):
         if key in config and not isinstance(config[key], bool):
             raise WorkloadError(f"config.{key} must be a boolean")
+    for key in ("think_violation_window", "max_think_violations"):
+        value = config.get(key, THINK_GUARD_DEFAULTS[key])
+        if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+            raise WorkloadError(f"config.{key} must be a positive integer")
+    rate = config.get("max_think_violation_rate", 0.05)
+    if (
+        isinstance(rate, bool)
+        or not isinstance(rate, (int, float))
+        or not 0 < rate <= 1
+    ):
+        raise WorkloadError("config.max_think_violation_rate must be in (0, 1]")
 
 
 def judge_loader(judge: Mapping[str, Any]) -> str:
@@ -278,14 +291,29 @@ def find_think_blocks(texts: Iterable[str]) -> list[str]:
 #: ``<think>\n\n</think>\n\n`` that Qwen3/3.5's ``enable_thinking=False``
 #: template writes into the prompt and that a policy can learn to repeat.
 EMPTY_THINK_PREFIX = re.compile(r"\A\s*(?:<think>\s*</think>\s*)+")
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL)
+
+#: Training-time think guard defaults (overridable per manifest config).
+#: A completion with reasoning content or a marker anywhere but an empty
+#: leading block is a *violation*: its episode reward is zeroed and counted.
+#: The run aborts only when violations exceed the rolling-window rate (share
+#: of assistant turns over the last ``think_violation_window`` steps) or the
+#: absolute cap; preflight-4 died on 1 stray tag in ~24k turns.
+THINK_GUARD_DEFAULTS: dict[str, Any] = {
+    "think_violation_window": 10,
+    "max_think_violation_rate": 0.05,
+    "max_think_violations": 250,
+}
+#: Evaluations never abort on think markers; a violation rate above this is
+#: flagged in the report (``think_flags``).
+EVAL_THINK_FLAG_RATE = 0.01
 
 
 def strip_empty_think_blocks(text: str) -> tuple[str, bool]:
     """Drop leading whitespace-only ``<think></think>`` blocks from a reply.
 
     Returns ``(text, stripped)``. Only empty blocks at the very start are
-    removed; a block with content, or any marker later in the text, is left
-    in place so :func:`assert_no_think_blocks` still fails closed on it.
+    removed; anything else is left for :func:`sanitize_think`.
     """
     match = EMPTY_THINK_PREFIX.match(text)
     if match is None:
@@ -293,35 +321,169 @@ def strip_empty_think_blocks(text: str) -> tuple[str, bool]:
     return text[match.end() :], True
 
 
-def install_empty_think_normalizer(agent: Any) -> dict[str, int]:
-    """Strip leading empty think blocks from every reply ``agent`` finalizes.
+def sanitize_think(text: str) -> tuple[str, str | None]:
+    """Remove reasoning markers and content from a non-thinking reply.
+
+    Returns ``(clean_text, kind)`` where ``kind`` is ``None`` (no marker),
+    ``"empty"`` (only leading empty blocks, benign) or ``"violation"``
+    (reasoning content, or a marker anywhere else). For a violation, complete
+    ``<think>...</think>`` blocks are removed; a lone ``</think>`` keeps the
+    text after it (the reasoning came first) unless that is empty; an
+    unclosed ``<think>`` keeps the text before it unless that is empty; any
+    remaining marker is deleted. Best effort: a violating episode's reward is
+    zeroed anyway, the cleaning only keeps markers out of history,
+    transcripts and the judge.
+    """
+    clean, empty = strip_empty_think_blocks(str(text))
+    if not any(marker in clean for marker in THINK_MARKERS):
+        return clean, ("empty" if empty else None)
+    clean = _THINK_BLOCK.sub(" ", clean)
+    if "</think>" in clean:
+        before, _, after = clean.rpartition("</think>")
+        clean = after if after.strip() else before
+    if "<think>" in clean:
+        before, _, after = clean.partition("<think>")
+        clean = before if before.strip() else after
+    for marker in THINK_MARKERS:
+        clean = clean.replace(marker, "")
+    return re.sub(r"[ \t]{2,}", " ", clean).strip(), "violation"
+
+
+@dataclass
+class ThinkStats:
+    """Think-marker counts for the replies one agent finalized."""
+
+    replies: int = 0
+    empty_stripped: int = 0
+    violations: int = 0
+    pending: list[str | None] = field(default_factory=list, repr=False)
+
+    def record(self, kind: str | None) -> None:
+        self.replies += 1
+        if kind == "empty":
+            self.empty_stripped += 1
+        elif kind == "violation":
+            self.violations += 1
+        self.pending.append(kind)
+
+    def summary(self, flag_rate: float | None = None) -> dict[str, Any]:
+        rate = self.violations / self.replies if self.replies else 0.0
+        out: dict[str, Any] = {
+            "replies": self.replies,
+            "empty_stripped": self.empty_stripped,
+            "violations": self.violations,
+            "violation_rate": rate,
+        }
+        if flag_rate is not None:
+            out["flagged"] = rate > flag_rate
+        return out
+
+
+def install_think_guard(agent: Any) -> ThinkStats:
+    """Sanitize think markers in every reply ``agent`` finalizes.
 
     ``_finalize_response`` is the single point where the agent turns sampled
     text into turn content and history, for training rollouts
-    (``generate_turns_batch``), the vLLM eval renderer and HF
-    ``generate_response`` alike. Normalizing there means the reward, the
-    environment, the next-turn prompt, the transcripts and the judge all see
-    the same text. The turn's recorded ``token_ids``/``sampler_log_probs``
-    stay exactly as sampled (as with ``AgentConfig.enable_reasoning``), so
-    the GSPO importance ratios are computed on the real sampled sequence.
-    Returns the live counter (``{"stripped": n}``); idempotent per agent.
+    (``generate_turn(s)``/``generate_turns_batch``), the vLLM eval renderer
+    and HF ``generate_response`` alike, so the reward, the environment, the
+    next-turn prompt, the transcripts and the judge all see the cleaned text.
+    The rollout APIs are wrapped too, so each returned turn carries
+    ``metadata["think"]`` (``"empty"``/``"violation"``) for the training
+    loop. Recorded ``token_ids``/``sampler_log_probs`` stay exactly as
+    sampled (as with ``AgentConfig.enable_reasoning``), so GSPO ratios are
+    computed on the real sampled sequence. Idempotent per agent.
     """
-    existing = getattr(agent, "_flagship_empty_think", None)
-    if isinstance(existing, dict):
+    existing = getattr(agent, "_flagship_think_stats", None)
+    if isinstance(existing, ThinkStats):
         return existing
-    counter = {"stripped": 0}
+    stats = ThinkStats()
     original = agent._finalize_response
 
     @functools.wraps(original)
     def finalize(response: str, *args: Any, **kwargs: Any) -> Any:
-        text, stripped = strip_empty_think_blocks(str(response))
-        if stripped:
-            counter["stripped"] += 1
+        text, kind = sanitize_think(str(response))
+        stats.record(kind)
         return original(text, *args, **kwargs)
 
     agent._finalize_response = finalize
-    agent._flagship_empty_think = counter
-    return counter
+
+    def tag(turns: list[Any]) -> None:
+        # The finalize calls of one rollout call run without an await between
+        # them, so the newest len(turns) entries belong to these turns.
+        kinds = stats.pending[-len(turns) :] if turns else []
+        stats.pending.clear()
+        if len(kinds) != len(turns):
+            logger.warning("think guard: %d turns, %d replies", len(turns), len(kinds))
+            return
+        for turn, kind in zip(turns, kinds, strict=True):
+            metadata = getattr(turn, "metadata", None)
+            if kind and isinstance(metadata, dict):
+                metadata["think"] = kind
+
+    for name in ("generate_turn", "generate_turns", "generate_turns_batch"):
+        method = getattr(agent, name, None)
+        if not inspect.iscoroutinefunction(method):
+            continue
+
+        def wrap(method: Any, single: bool) -> Any:
+            @functools.wraps(method)
+            async def call(*args: Any, **kwargs: Any) -> Any:
+                result = await method(*args, **kwargs)
+                tag([result] if single else list(result))
+                return result
+
+            return call
+
+        setattr(agent, name, wrap(method, name == "generate_turn"))
+    agent._flagship_think_stats = stats
+    return stats
+
+
+def think_guard_limits(config: Mapping[str, Any]) -> dict[str, Any]:
+    """The configured training think-guard limits (see THINK_GUARD_DEFAULTS)."""
+    return {key: config.get(key, value) for key, value in THINK_GUARD_DEFAULTS.items()}
+
+
+def apply_think_guard(groups: Sequence[Any]) -> dict[str, int]:
+    """Zero the reward of every episode with a think violation; count them.
+
+    A turn violates when the think guard tagged it, or when its content still
+    carries a marker (then the content is sanitized here). Runs before the
+    update, so the zeroed rewards feed the group advantages, like a
+    ``must_avoid`` hit.
+    """
+    counts = {"turns": 0, "violations": 0, "empty_stripped": 0, "episodes": 0}
+    for group in groups:
+        for trajectory in group.trajectories:
+            violated = False
+            for turn in trajectory.turns:
+                if _turn_field(turn, "role") != "assistant":
+                    continue
+                counts["turns"] += 1
+                metadata = _turn_field(turn, "metadata") or {}
+                kind = metadata.get("think") if isinstance(metadata, Mapping) else None
+                content = str(_turn_field(turn, "content") or "")
+                if any(marker in content for marker in THINK_MARKERS):
+                    clean, found = sanitize_think(content)
+                    kind = "violation" if found == "violation" else kind or found
+                    if isinstance(turn, dict):
+                        turn["content"] = clean
+                    else:
+                        turn.content = clean
+                if kind == "violation":
+                    counts["violations"] += 1
+                    violated = True
+                elif kind == "empty":
+                    counts["empty_stripped"] += 1
+            if violated:
+                counts["episodes"] += 1
+                trajectory.total_reward = 0.0
+                metadata = getattr(trajectory, "metadata", None)
+                if isinstance(metadata, dict):
+                    breakdown = metadata.setdefault("reward_breakdown", {})
+                    if isinstance(breakdown, dict):
+                        breakdown["think_violation"] = 1.0
+    return counts
 
 
 def assert_no_think_blocks(texts: Iterable[str], label: str) -> None:
@@ -877,7 +1039,7 @@ async def run_training_loop(
     clock: Callable[[], float] = time.monotonic,
     *,
     forbid_think_blocks: bool = False,
-    empty_think_counter: Mapping[str, int] | None = None,
+    think_limits: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """On-policy multi-turn GSPO: sample groups, then one update, per step.
 
@@ -902,33 +1064,49 @@ async def run_training_loop(
             "optimizer_step",
             "seconds",
             "empty_think_stripped",
+            "think_violations",
+            "think_violation_episodes",
+            "think_violation_rate_window",
             *REWARD_COMPONENT_LOG_KEYS,
         )
     }
     aborted: str | None = None
 
-    def stripped_so_far() -> int:
-        return int((empty_think_counter or {}).get("stripped", 0))
-
+    limits = {**THINK_GUARD_DEFAULTS, **dict(think_limits or {})}
+    window: collections.deque[tuple[int, int]] = collections.deque(
+        maxlen=int(limits["think_violation_window"])
+    )
+    think_totals = {"violations": 0, "episodes": 0, "empty_stripped": 0}
     for step, batch in enumerate(schedule, start=1):
         started = clock()
-        stripped_before = stripped_so_far()
         chosen = [dict(scenarios[index]) for index in batch]
         groups = await trainer.generate_trajectories(
             chosen, num_generations=num_generations
         )
         check_groups(groups, chosen, num_generations)
+        think = {"turns": 0, "violations": 0, "empty_stripped": 0, "episodes": 0}
+        window_rate = 0.0
         if forbid_think_blocks:
-            assert_no_think_blocks(
-                (
-                    str(_turn_field(turn, "content") or "")
-                    for group in groups
-                    for trajectory in group.trajectories
-                    for turn in trajectory.turns
-                    if _turn_field(turn, "role") == "assistant"
-                ),
-                f"training step {step}",
-            )
+            think = apply_think_guard(groups)
+            for key in think_totals:
+                think_totals[key] += think[key]
+            window.append((think["violations"], think["turns"]))
+            seen = sum(turns for _, turns in window)
+            window_rate = sum(v for v, _ in window) / seen if seen else 0.0
+            if window_rate > float(limits["max_think_violation_rate"]):
+                aborted = (
+                    f"think violations at step {step}: rate {window_rate:.3f} over "
+                    f"the last {len(window)} steps exceeds "
+                    f"{limits['max_think_violation_rate']}"
+                )
+            elif think_totals["violations"] > int(limits["max_think_violations"]):
+                aborted = (
+                    f"think violations at step {step}: {think_totals['violations']} "
+                    f"total exceeds {limits['max_think_violations']}"
+                )
+            if aborted is not None:
+                logger.error("%s", aborted)
+                break
         rewards = [_group_rewards(group) for group in groups]
         flat = [value for values in rewards for value in values]
         metrics = dict(await trainer.training_step(groups))
@@ -969,11 +1147,14 @@ async def run_training_loop(
         for key, value in components.items():
             log[key].append(value)
         log["seconds"].append(round(clock() - started, 3))
-        log["empty_think_stripped"].append(stripped_so_far() - stripped_before)
+        log["empty_think_stripped"].append(think["empty_stripped"])
+        log["think_violations"].append(think["violations"])
+        log["think_violation_episodes"].append(think["episodes"])
+        log["think_violation_rate_window"].append(round(window_rate, 6))
         logger.info(
             "step %d/%d reward=%.4f nonzero_adv=%.3f loss=%s %.1fs "
             "repetition=%s placeholders=%s must_avoid=%s unresponsive=%s "
-            "empty_think_stripped=%d",
+            "empty_think_stripped=%d think_violations=%d think_rate_window=%.4f",
             step,
             len(schedule),
             mean,
@@ -985,6 +1166,8 @@ async def run_training_loop(
             components["must_avoid_rate"],
             components["unresponsive_rate"],
             log["empty_think_stripped"][-1],
+            log["think_violations"][-1],
+            window_rate,
         )
         guard.on_step_end(step, {"nonzero_advantage_fraction": fraction})
         if guard.should_abort:
@@ -998,7 +1181,10 @@ async def run_training_loop(
         "steps": len(log["step"]),
         "optimizer_steps": optimizer_steps,
         "nonfinite_skips": int(getattr(trainer, "nonfinite_skips", 0)),
-        "empty_think_stripped": stripped_so_far(),
+        "empty_think_stripped": think_totals["empty_stripped"],
+        "think_violations": think_totals["violations"],
+        "think_violation_episodes": think_totals["episodes"],
+        "think_limits": limits if forbid_think_blocks else None,
         "episodes": (
             len(log["step"]) * len(schedule[0]) * num_generations if schedule else 0
         ),
@@ -1310,6 +1496,17 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         if int(_summary_number(summary, "n", label)) != len(eval_records):
             raise WorkloadError(f"judge scored the wrong number of {label} items")
 
+    think_markers: dict[str, Any] = {
+        "baseline_eval": baseline_out.get("think"),
+        "train": {
+            "empty_stripped": int(train_out.get("empty_think_stripped", 0)),
+            "violations": int(train_out.get("think_violations", 0)),
+            "violation_episodes": int(train_out.get("think_violation_episodes", 0)),
+            "limits": train_out.get("think_limits"),
+        },
+        "final_eval": final_out.get("think"),
+        "eval_flag_rate": EVAL_THINK_FLAG_RATE,
+    }
     reward_fn = deps.reward_fn()
     metrics = {
         "baseline_score": _summary_number(baseline_summary, "mean_score", "baseline"),
@@ -1340,13 +1537,15 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
         "train_steps": train_out.get("steps"),
         "train_optimizer_steps": train_out.get("optimizer_steps"),
         "train_nonfinite_skips": train_out.get("nonfinite_skips", 0),
-        # Leading whitespace-only <think></think> blocks removed from replies
-        # (v2, forbid_think_blocks); non-empty reasoning still fails the run.
-        "empty_think_stripped": {
-            "baseline_eval": int(baseline_out.get("empty_think_stripped", 0)),
-            "train": int(train_out.get("empty_think_stripped", 0)),
-            "final_eval": int(final_out.get("empty_think_stripped", 0)),
-        },
+        # v2 (forbid_think_blocks): think markers sanitized from replies.
+        # Training zeroes violating episodes and aborts only past the limits;
+        # evaluations never abort and are flagged above EVAL_THINK_FLAG_RATE.
+        "think_markers": think_markers,
+        "think_flags": [
+            name
+            for name, value in think_markers.items()
+            if isinstance(value, Mapping) and value.get("flagged")
+        ],
         "train_episodes": train_out.get("episodes"),
         "train_unique_scenarios": len({i for batch in schedule for i in batch}),
         "policy_backend": baseline_out.get("backend"),
@@ -1579,10 +1778,10 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         ),
         memory_window=0,
     )
-    empty_think = (
-        install_empty_think_normalizer(renderer)
+    think_stats = (
+        install_think_guard(renderer)
         if payload.get("forbid_think_blocks")
-        else {"stripped": 0}
+        else ThinkStats()
     )
     # model_path is the local snapshot directory deps.snapshot() resolved at the
     # pinned model_revision, not a hub ID, so there is no revision to pass here.
@@ -1640,7 +1839,7 @@ def _vllm_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
             for output, (_, messages) in zip(outputs, rendered, strict=True)
         ]
 
-    generate.empty_think = empty_think  # type: ignore[attr-defined]
+    generate.think_stats = think_stats  # type: ignore[attr-defined]
     return generate
 
 
@@ -1659,10 +1858,10 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
         ),
         memory_window=0,
     )
-    empty_think = (
-        install_empty_think_normalizer(agent)
+    think_stats = (
+        install_think_guard(agent)
         if payload.get("forbid_think_blocks")
-        else {"stripped": 0}
+        else ThinkStats()
     )
     ready = {"done": False}
 
@@ -1680,7 +1879,7 @@ def _hf_policy_generate(payload: Mapping[str, Any]) -> GenerateFn:
             replies.append(await agent.generate_response(list(messages)))
         return replies
 
-    generate.empty_think = empty_think  # type: ignore[attr-defined]
+    generate.think_stats = think_stats  # type: ignore[attr-defined]
     return generate
 
 
@@ -1736,24 +1935,17 @@ def phase_rollout(payload: Mapping[str, Any]) -> dict[str, Any]:
     scenarios = list(payload["scenarios"])
     environment = make_support_environment(scenarios, int(payload["max_turns"]))
     transcripts = asyncio.run(rollout_episodes(environment, scenarios, generate))
-    if payload.get("forbid_think_blocks"):
-        assert_no_think_blocks(
-            (
-                content
-                for value in transcripts.values()
-                for role, content in value
-                if role == "assistant"
-            ),
-            "evaluation rollout",
-        )
     return {
         "transcripts": {
             key: [list(p) for p in value] for key, value in transcripts.items()
         },
         "backend": used,
         "weights": weights,
-        "empty_think_stripped": int(
-            getattr(generate, "empty_think", {}).get("stripped", 0)
+        # Evaluations never abort on think markers: replies are sanitized
+        # and counted, and a violation rate above EVAL_THINK_FLAG_RATE is
+        # flagged in the report.
+        "think": getattr(generate, "think_stats", ThinkStats()).summary(
+            EVAL_THINK_FLAG_RATE
         ),
         "peak_vram_mb": _peak_vram_mb(),
     }
@@ -1789,11 +1981,8 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
         ),
         memory_window=0,
     )
-    empty_think = (
-        install_empty_think_normalizer(agent)
-        if payload.get("forbid_think_blocks")
-        else None
-    )
+    if payload.get("forbid_think_blocks"):
+        install_think_guard(agent)
     guard = ZeroSignalGuard(max_zero_steps=int(config.get("zero_signal_steps", 10)))
     schedule = [list(batch) for batch in payload["schedule"]]
 
@@ -1821,7 +2010,7 @@ def phase_train(payload: Mapping[str, Any]) -> dict[str, Any]:
             int(config["num_generations"]),
             guard,
             forbid_think_blocks=bool(payload.get("forbid_think_blocks", False)),
-            empty_think_counter=empty_think,
+            think_limits=think_guard_limits(config),
         )
         outcome["gradient_checkpointing"] = checkpointing
         outcome["reference_model"] = trainer.reference_model is not None
