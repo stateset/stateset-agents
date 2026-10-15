@@ -260,10 +260,18 @@ async def test_failed_completion_write_can_be_retried_without_resource_leak(
 @pytest.mark.asyncio
 async def test_shutdown_releases_every_worker_when_completion_writes_fail(orchestrator):
     orchestrator.resource_manager.available_resources[module.ResourceType.CPU] = 2
+    started = asyncio.Queue()
+
+    async def runner(job):
+        started.put_nowait(job.job_id)
+        await asyncio.Event().wait()
+
+    orchestrator.training_runner = runner
     jobs = [make_job("first"), make_job("second")]
     for job in jobs:
         await claim(orchestrator, job)
         await orchestrator._start_job(job)
+        assert await asyncio.wait_for(started.get(), 2) == job.job_id
     state = orchestrator.state_service.state_manager
     state.set.side_effect = OSError("offline")
     with pytest.raises(OSError, match="offline"):

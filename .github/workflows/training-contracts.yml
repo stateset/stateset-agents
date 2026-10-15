@@ -97,4 +97,4 @@ jobs:
       - run: pip install -r requirements-dev-lock.txt
       - run: pip install -e '.[workers]' --no-deps
       - run: pip install 'psycopg[binary]==3.3.6'
-      - run: pytest -n 0 -o addopts='' tests/unit/test_training_queue.py tests/unit/test_runtime_state.py tests/unit/test_training_contracts.py
+      - run: pytest -n 0 -o addopts='' tests/unit/test_training_queue.py tests/api/test_durable_training_worker.py tests/unit/test_runtime_state.py tests/unit/test_training_contracts.py

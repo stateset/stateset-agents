@@ -10,9 +10,11 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+from stateset_agents.utils.async_calls import run_sync_owned
+
 from .schemas import TrainingRequest
 from .services.training_service import TrainingService, build_reward
-from .training_queue import TrainingQueue
+from .training_queue import TrainingLeaseLostError, TrainingQueue
 
 logger = logging.getLogger(__name__)
 
@@ -78,21 +80,32 @@ async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
     except asyncio.CancelledError:
         snapshot.update(status="cancelled", completed_at=datetime.utcnow())
         raise
+    except TrainingLeaseLostError as exc:
+        lost_lease.append(exc)
+        cancel.set()
     except Exception as exc:
         snapshot.update(status="failed", error=str(exc), completed_at=datetime.utcnow())
     finally:
         stop.set()
         try:
             if lost_lease:
-                logger.error(
+                logger.warning(
                     "Worker lease lost for %s; terminal write is fenced", job_id
                 )
             else:
                 # Commit before yielding to thread-pool cleanup: stopping the
                 # heartbeat then awaiting join can let a short lease expire.
-                queue.finish(job_id, token, snapshot)
+                try:
+                    queue.finish(job_id, token, snapshot)
+                except TrainingLeaseLostError:
+                    # A lease may expire after the final training callback and
+                    # before this write. Keep serving other jobs; the next claim
+                    # records the expired job as failed without replaying it.
+                    logger.warning(
+                        "Worker lease expired before publishing result for %s", job_id
+                    )
         finally:
-            await asyncio.to_thread(heartbeat.join)
+            await run_sync_owned(heartbeat.join)
     return True
 
 

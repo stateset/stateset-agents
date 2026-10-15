@@ -130,7 +130,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.66.0`, published from the
+- **Current Python release:** `stateset-agents==0.66.1`, published from the
   annotated release tag with build attestation and an isolated wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
@@ -437,7 +437,14 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.66.0 (latest release; publication triggered by tag):**
+**v0.66.1 (latest release; publication triggered by tag):**
+
+- Fix lease checks under database lock contention and use PostgreSQL server time across worker hosts.
+- Reject invalid lease durations and expired renewals before changing queue state.
+- Keep durable workers processing jobs after lease loss, and finish heartbeat cleanup during repeated cancellation.
+- Add regression tests for stale leases, clock differences, and worker shutdown, including live PostgreSQL checks.
+
+**v0.66.0:**
 
 - Add strict rollout contracts, shared trainer checkpoints, outcome rewards, and validation before compute allocation.
 - Run training through durable SQLite/PostgreSQL queues and independent workers, with idempotency and fenced leases.
@@ -1317,8 +1324,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.66.0" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.66.0"
+pip install "stateset-agents==0.66.1" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.66.1"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2130,7 +2137,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.66.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.66.1`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.66.1] - 2026-10-14 — Harden training worker lease recovery
+
+### Fixed
+
+- Fence training leases using time read after acquiring the queue lock, with
+  PostgreSQL server time shared by all worker hosts. Reject invalid lease
+  durations before mutation and reject renewals at the expiry deadline.
+- Keep durable workers running after losing an attempt's lease, and drain
+  heartbeat threads before propagating repeated shutdown cancellation.
+- Synchronize both running trainers in the shutdown regression before injecting
+  a state-store failure, removing a scheduling race in the publish readiness gate.
+
 ## [0.66.0] - 2026-10-14 — Reliable training and durable workers
 
 ### Added

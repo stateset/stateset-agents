@@ -25,6 +25,13 @@ failed with an explicit checkpoint-resume instruction; it is never blindly
 replayed. Each attempt writes to a distinct artifact directory. Graceful API
 shutdown leaves durable workers independent of request-process lifetimes.
 
+Lease checks use the time after the database transaction lock is acquired.
+PostgreSQL uses its own server clock, so clock differences between worker hosts
+cannot revive expired leases. Claim and heartbeat durations must be finite
+numbers from 1 to 3600 seconds. A lease expires at its deadline. A worker that
+loses a lease stops publishing that attempt and continues processing other jobs;
+repeated cancellation still waits for its heartbeat thread to finish cleanup.
+
 Training rewards default to verified reference agreement:
 
 ```json

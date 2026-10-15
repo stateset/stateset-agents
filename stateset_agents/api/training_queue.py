@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import sqlite3
 import time
 import uuid
@@ -20,6 +21,10 @@ from pathlib import Path
 from typing import Any
 
 TERMINAL = {"completed", "failed", "cancelled"}
+
+
+class TrainingLeaseLostError(RuntimeError):
+    """The worker no longer owns a live lease and must stop publishing results."""
 
 
 class _PostgresRow(dict):
@@ -159,6 +164,24 @@ class TrainingQueue:
             else:
                 connection.commit()
 
+    def _now(self, connection: Any) -> float:
+        """Read the shared clock after acquiring the queue's transaction lock."""
+        if self.postgres_dsn is not None:
+            row = connection.execute(
+                "SELECT EXTRACT(EPOCH FROM clock_timestamp())"
+            ).fetchone()
+            return float(row[0])
+        return time.time()
+
+    @staticmethod
+    def _validate_lease_seconds(lease_seconds: float) -> None:
+        if (
+            type(lease_seconds) not in (int, float)
+            or not 1 <= lease_seconds <= 3600
+            or not math.isfinite(lease_seconds)
+        ):
+            raise ValueError("lease_seconds must be a finite number between 1 and 3600")
+
     @staticmethod
     def _encode(value: Any) -> str:
         return json.dumps(
@@ -228,7 +251,7 @@ class TrainingQueue:
                     fingerprint,
                     "queued",
                     self._encode(snapshot),
-                    time.time(),
+                    self._now(connection),
                 ),
             )
         return job_id
@@ -258,12 +281,11 @@ class TrainingQueue:
         self, *, lease_seconds: float = 60
     ) -> tuple[str, str, dict[str, Any]] | None:
         """Claim at most global capacity; fence expired workers instead of replaying."""
-        if not 1 <= lease_seconds <= 3600:
-            raise ValueError("lease_seconds must be between 1 and 3600")
-        now = time.time()
+        self._validate_lease_seconds(lease_seconds)
         with self._transaction() as connection:
+            now = self._now(connection)
             for row in connection.execute(
-                "SELECT * FROM stateset_training_jobs WHERE lease_until < ? AND status IN ('running','cancelling')",
+                "SELECT * FROM stateset_training_jobs WHERE lease_until <= ? AND status IN ('running','cancelling')",
                 (now,),
             ).fetchall():
                 snapshot = self._decode(row["snapshot"])
@@ -304,14 +326,15 @@ class TrainingQueue:
         progress: dict[str, Any] | None = None,
     ) -> bool:
         """Renew an unexpired lease; return cancellation state, rejecting stale owners."""
-        now = time.time()
+        self._validate_lease_seconds(lease_seconds)
         with self._transaction() as connection:
+            now = self._now(connection)
             row = connection.execute(
-                "SELECT * FROM stateset_training_jobs WHERE id=? AND lease_token=? AND lease_until>=? AND status IN ('running','cancelling')",
+                "SELECT * FROM stateset_training_jobs WHERE id=? AND lease_token=? AND lease_until>? AND status IN ('running','cancelling')",
                 (job_id, token, now),
             ).fetchone()
             if row is None:
-                raise RuntimeError("Training worker lost its lease")
+                raise TrainingLeaseLostError("Training worker lost its lease")
             snapshot = self._decode(row["snapshot"])
             if progress is not None:
                 for name in (
@@ -334,11 +357,11 @@ class TrainingQueue:
             raise ValueError("Worker result must be terminal")
         with self._transaction() as connection:
             row = connection.execute(
-                "SELECT cancel,snapshot FROM stateset_training_jobs WHERE id=? AND lease_token=? AND lease_until>=?",
-                (job_id, token, time.time()),
+                "SELECT cancel,snapshot FROM stateset_training_jobs WHERE id=? AND lease_token=? AND lease_until>? AND status IN ('running','cancelling')",
+                (job_id, token, self._now(connection)),
             ).fetchone()
             if row is None:
-                raise RuntimeError("Training worker lost its lease")
+                raise TrainingLeaseLostError("Training worker lost its lease")
             persisted = self._decode(row["snapshot"])
             persisted.update(
                 {
