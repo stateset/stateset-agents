@@ -599,7 +599,7 @@ transformers==5.14.1
     #   trl
 triton==3.7.1
     # via torch
-trl==1.9.1
+trl==1.14.2
     # via stateset-agents (pyproject.toml)
 typer==0.25.1
     # via
