@@ -170,7 +170,7 @@ jobs:
     - uses: actions/checkout@v7
 
     - name: Set up Node.js
-      uses: actions/setup-node@v6
+      uses: actions/setup-node@v7
       with:
         # npm trusted publishing requires Node >=22.14 and npm >=11.5.1.
         node-version: "24"
