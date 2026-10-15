@@ -262,6 +262,16 @@ What v2 changes, all switched on from the pinned config, so v1 configs
 - **`forbid_think_blocks: true`.** A `<think>` or `<|think|>` marker in any
   training-rollout or evaluation completion fails the run instead of
   scoring reasoning text.
+  One case is normalized first: a reply that *starts* with whitespace-only
+  blocks (`<think>\n\n</think>\n\n`, the block Qwen3.5's non-thinking
+  template writes into the prompt) has them removed in the agent's
+  `_finalize_response`. Reward, environment, next-turn history, transcripts
+  and the judge all see the stripped text; the turn's sampled `token_ids`
+  and log-probs are kept as sampled, so GSPO ratios stay exact. Each step
+  logs `empty_think_stripped`, and the report records the totals for the
+  baseline eval, training and the final eval. Reasoning content, or a block
+  anywhere after the start, still fails the run. (Preflight-3 stopped at
+  step 87 on exactly this empty prefix.)
 - **`lora_target_modules`.** These are the full-attention `q/k/v/o_proj`,
   the GatedDeltaNet linear-attention `in_proj_qkv`, `in_proj_a`,
   `in_proj_b`, `in_proj_z` and `out_proj`, and the MLP `gate/up/down_proj`.

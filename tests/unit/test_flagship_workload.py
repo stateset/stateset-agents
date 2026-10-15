@@ -1206,3 +1206,155 @@ def test_v2_training_config_rejects_bad_weighting() -> None:
         workload.validate_config({**V2_CONFIG, "episode_weighting": "per_token"})
     with pytest.raises(workload.WorkloadError, match="disable_dropout"):
         workload.validate_config({**V2_CONFIG, "disable_dropout": "yes"})
+
+
+# --- Empty <think></think> blocks (preflight-3 failure at step 87) ---------
+
+QWEN_EMPTY_THINK = "<think>\n\n</think>\n\n"
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        (QWEN_EMPTY_THINK + "Happy to help.", "Happy to help."),
+        ("<think></think>Hi", "Hi"),
+        ("  <think> \n</think>\n<think>\n</think>\nHi", "Hi"),
+    ],
+)
+def test_leading_empty_think_blocks_are_stripped(text: str, expected: str) -> None:
+    assert workload.strip_empty_think_blocks(text) == (expected, True)
+    workload.assert_no_think_blocks([expected], "eval")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "<think>check the order first</think>\n\nHappy to help.",
+        "<think>\n\n</think>\n\n<think>plan</think>Hi",
+    ],
+)
+def test_non_empty_think_content_still_fails_closed(text: str) -> None:
+    stripped, _ = workload.strip_empty_think_blocks(text)
+    with pytest.raises(workload.WorkloadError, match="think"):
+        workload.assert_no_think_blocks([stripped], "eval")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Sure. " + QWEN_EMPTY_THINK + "Anything else?",
+        "Hi\n<think></think>",
+    ],
+)
+def test_mid_text_empty_think_block_is_not_stripped(text: str) -> None:
+    assert workload.strip_empty_think_blocks(text) == (text, False)
+    with pytest.raises(workload.WorkloadError, match="think"):
+        workload.assert_no_think_blocks([text], "eval")
+
+
+def test_clean_reply_is_untouched() -> None:
+    assert workload.strip_empty_think_blocks("We think so.") == ("We think so.", False)
+
+
+class _ThinkBackend:
+    def __init__(self, response: str) -> None:
+        self.response = response
+
+    async def generate_with_logprobs(self, prompts: Any, **kwargs: Any) -> Any:
+        from types import SimpleNamespace
+
+        return [
+            SimpleNamespace(
+                prompt=p,
+                response=self.response,
+                prompt_token_ids=[11, 12, 13],
+                response_token_ids=[90, 91, 92, 21, 22],
+                token_logprobs=[-0.1, -0.1, -0.1, -0.5, -1.5],
+            )
+            for p in prompts
+        ]
+
+
+def _normalized_stub_agent(response: str) -> tuple[Any, dict[str, int]]:
+    from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
+
+    agent = MultiTurnAgent(
+        AgentConfig(model_name="stub://x", use_stub_model=True, stub_responses=["ok"])
+    )
+    asyncio.run(agent.initialize())
+    agent.set_rollout_backend(_ThinkBackend(response))
+    return agent, workload.install_empty_think_normalizer(agent)
+
+
+def test_rollout_turn_text_is_normalized_but_tokens_stay_as_sampled() -> None:
+    agent, counter = _normalized_stub_agent(QWEN_EMPTY_THINK + "Happy to help.")
+    turns = asyncio.run(
+        agent.generate_turns_batch(
+            [[{"role": "user", "content": "hi"}], [{"role": "user", "content": "yo"}]]
+        )
+    )
+    # Reward, environment, history and transcripts all read the stripped text.
+    assert [t.content for t in turns] == ["Happy to help.", "Happy to help."]
+    assert agent.conversation_history[-1]["content"] == "Happy to help."
+    # The GSPO ratio is computed on the exact sampled sequence.
+    assert turns[0].metadata["token_ids"] == [90, 91, 92, 21, 22]
+    assert turns[0].metadata["sampler_log_probs"] == [-0.1, -0.1, -0.1, -0.5, -1.5]
+    assert counter == {"stripped": 2}
+    # Installing twice keeps one wrapper and one counter.
+    assert workload.install_empty_think_normalizer(agent) is counter
+
+
+def test_rollout_with_reasoning_content_is_left_for_the_guard() -> None:
+    agent, counter = _normalized_stub_agent("<think>plan</think>Hi")
+    turn = asyncio.run(agent.generate_turn([{"role": "user", "content": "hi"}]))
+    assert turn.content == "<think>plan</think>Hi"
+    assert counter == {"stripped": 0}
+    with pytest.raises(workload.WorkloadError, match="think"):
+        workload.assert_no_think_blocks([turn.content], "training step 1")
+
+
+class EmptyThinkTrainer(FakeTrainer):
+    """Simulates the normalizer having stripped two replies per step."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        self.counter = {"stripped": 0}
+
+    async def generate_trajectories(
+        self, scenarios: Any, num_generations: int | None = None
+    ) -> list[FakeGroup]:
+        self.counter["stripped"] += 2
+        return await super().generate_trajectories(scenarios, num_generations)
+
+
+def test_training_loop_logs_stripped_empty_think_blocks() -> None:
+    from stateset_agents.training.callbacks import ZeroSignalGuard
+
+    scenarios = [{"id": f"s{i}"} for i in range(4)]
+    schedule = workload.training_schedule(4, 2, 3, seed=7)
+    trainer = EmptyThinkTrainer(lambda step, index: float(index))
+    result = asyncio.run(
+        workload.run_training_loop(
+            trainer,
+            scenarios,
+            schedule,
+            3,
+            ZeroSignalGuard(max_zero_steps=10),
+            forbid_think_blocks=True,
+            empty_think_counter=trainer.counter,
+        )
+    )
+    assert result["train_log"]["empty_think_stripped"] == [2, 2, 2]
+    assert result["empty_think_stripped"] == 6
+    # Without a counter (v1) the column is zero.
+    plain = asyncio.run(
+        workload.run_training_loop(
+            FakeTrainer(lambda step, index: float(index)),
+            scenarios,
+            schedule,
+            3,
+            ZeroSignalGuard(max_zero_steps=10),
+        )
+    )
+    assert plain["train_log"]["empty_think_stripped"] == [0, 0, 0]
+    assert plain["empty_think_stripped"] == 0
