@@ -1,0 +1,120 @@
+{
+  "started": 1792250842.9534576,
+  "passed": true,
+  "source_frozen": true,
+  "modules": [
+    "test_deepseek_v41_1017",
+    "test_frontier_models",
+    "test_example_model_presets",
+    "test_remote_model_catalog",
+    "test_remote_model_evidence",
+    "test_finetune_studio",
+    "test_cli_finetune",
+    "test_finetune_backends",
+    "test_finetune_frontier_readiness"
+  ],
+  "stages": [
+    {
+      "name": "lint",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "ruff",
+        "check",
+        "."
+      ],
+      "started": 1792250842.953634,
+      "finished": 1792250843.4568157,
+      "exit_code": 0
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "started": 1792250843.4573507,
+      "finished": 1792250881.1288667,
+      "exit_code": 0
+    },
+    {
+      "name": "source",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/unit/test_deepseek_v41_1017.py",
+        "tests/unit/test_frontier_models.py",
+        "tests/unit/test_example_model_presets.py",
+        "tests/unit/test_remote_model_catalog.py",
+        "tests/unit/test_remote_model_evidence.py",
+        "tests/unit/test_finetune_studio.py",
+        "tests/unit/test_cli_finetune.py",
+        "tests/unit/test_finetune_backends.py",
+        "tests/unit/test_finetune_frontier_readiness.py",
+        "tests/api/test_finetune_operator.py",
+        "--junitxml=/tmp/stateset-deepseek-1017-source.xml"
+      ],
+      "started": 1792250881.1293669,
+      "finished": 1792250968.194999,
+      "exit_code": 0
+    },
+    {
+      "name": "hygiene",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_repo_hygiene.py"
+      ],
+      "started": 1792250968.198035,
+      "finished": 1792250968.6703181,
+      "exit_code": 0
+    },
+    {
+      "name": "api",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_api_compatibility.py"
+      ],
+      "started": 1792250968.6708949,
+      "finished": 1792250994.8089974,
+      "exit_code": 0
+    },
+    {
+      "name": "release",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_release_governance.py"
+      ],
+      "started": 1792250994.8095353,
+      "finished": 1792250995.0401416,
+      "exit_code": 0
+    },
+    {
+      "name": "workflow",
+      "argv": [
+        "/tmp/stateset-actionlint-1.7.12/actionlint",
+        ".github/workflows/training-contracts.yml"
+      ],
+      "started": 1792250995.040585,
+      "finished": 1792250995.4800465,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-deepseek-1017-wheel.py"
+      ],
+      "started": 1792250995.4804826,
+      "finished": 1792251034.403979,
+      "exit_code": 0
+    }
+  ]
+}

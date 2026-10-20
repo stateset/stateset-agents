@@ -1,0 +1,48 @@
+{
+  "credential_in_files": false,
+  "elapsed_seconds": 1361.1,
+  "results": [
+    {
+      "elapsed_seconds": 1200.5,
+      "exit_code": -2,
+      "resubmitted": false,
+      "seed": 2026101901,
+      "timed_out": true
+    },
+    {
+      "elapsed_seconds": 1227.5,
+      "exit_code": -2,
+      "resubmitted": false,
+      "seed": 2026101902,
+      "timed_out": true
+    },
+    {
+      "elapsed_seconds": 160.5,
+      "exit_code": -2,
+      "resubmitted": false,
+      "seed": 2026101903,
+      "timed_out": false
+    },
+    {
+      "elapsed_seconds": 133.0,
+      "exit_code": -2,
+      "resubmitted": false,
+      "seed": 2026101904,
+      "timed_out": false
+    },
+    {
+      "elapsed_seconds": 0.2,
+      "exit_code": 2,
+      "resubmitted": false,
+      "seed": 2026101905,
+      "timed_out": false
+    },
+    {
+      "elapsed_seconds": 0.3,
+      "exit_code": 2,
+      "resubmitted": false,
+      "seed": 2026101906,
+      "timed_out": false
+    }
+  ]
+}

@@ -1,0 +1,119 @@
+{
+  "accepted": true,
+  "cost_usd": null,
+  "decisions": {
+    "test": {
+      "diagnostic_cases": {
+        "parent": {
+          "completion_outcome": 13,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        },
+        "warmup": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        }
+      },
+      "passed": true
+    },
+    "validation": {
+      "diagnostic_cases": {
+        "parent": {
+          "completion_outcome": 1,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        },
+        "warmup": {
+          "completion_outcome": 0,
+          "format": 0,
+          "premature_finish": 0,
+          "reconciliation": 0,
+          "tool_contract": 0,
+          "unsafe_retry": 0
+        }
+      },
+      "passed": true
+    }
+  },
+  "evaluations": {
+    "parent-test": {
+      "generated_tokens": 7352,
+      "passed": 147,
+      "total": 160,
+      "trajectory_seconds": 1398.94280533056,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.08125
+    },
+    "parent-validation": {
+      "generated_tokens": 3765,
+      "passed": 79,
+      "total": 80,
+      "trajectory_seconds": 726.0078557629022,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0125
+    },
+    "warmup-test": {
+      "generated_tokens": 7936,
+      "passed": 160,
+      "total": 160,
+      "trajectory_seconds": 1405.6936716870405,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    },
+    "warmup-validation": {
+      "generated_tokens": 3968,
+      "passed": 80,
+      "total": 80,
+      "trajectory_seconds": 719.3480799108511,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    }
+  },
+  "nonzero_variance_groups": 6,
+  "paired_outcomes": {
+    "test": {
+      "both_passed": 147,
+      "neither_passed": 0,
+      "parent_only": 0,
+      "warmup_only": 13
+    },
+    "validation": {
+      "both_passed": 79,
+      "neither_passed": 0,
+      "parent_only": 0,
+      "warmup_only": 1
+    }
+  },
+  "passed": true,
+  "plan_hash": "5c8eab58a43fca1075b76a97c254e80d1853fed0e3b3922e84d14ba27b02bfad",
+  "previous_arithmetic_test_cases_unattempted": 308,
+  "previous_recovery_test_cases_unattempted": 80,
+  "prior_artifacts_unchanged": 670,
+  "probe_diagnostic_cases": {
+    "completion_outcome": 0,
+    "format": 9,
+    "premature_finish": 0,
+    "reconciliation": 0,
+    "tool_contract": 0,
+    "unsafe_retry": 0
+  },
+  "probe_groups": 19,
+  "probe_passed": 67,
+  "probe_total": 76,
+  "provider_calls_during_review": 0,
+  "replayed_outcomes": 556,
+  "replayed_training_teachers": 160,
+  "rl_updates": 0,
+  "sft_updates": 10,
+  "test_attempted": true
+}

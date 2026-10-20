@@ -26,7 +26,11 @@ import torch.nn.functional as F
 
 from . import objectives, rl_losses
 from .config import TrainingConfig
-from .runtime_state import TrainingRuntime, validate_training_config
+from .runtime_state import (
+    TrainingRuntime,
+    _reject_unsupported_resume,
+    validate_training_config,
+)
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -687,16 +691,13 @@ async def train_with_gepo(
     Returns:
         Tuple of (model, tokenizer, metrics_history)
     """
+    if config is None:
+        config = GEPOConfig(model_name=model_name, output_dir=output_dir)
+    _reject_unsupported_resume(config, "train_with_gepo")
+
     logger.info("=" * 60)
     logger.info("GEPO Training - Group Expectation Policy Optimization")
     logger.info("=" * 60)
-
-    # Create config if not provided
-    if config is None:
-        config = GEPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
-        )
 
     # Initialize W&B
     if use_wandb and wandb_project:

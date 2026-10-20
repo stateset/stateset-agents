@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-river-preflight",
+  "provider": "river",
+  "checked_at": "2026-10-18T22:17:59.185977+00:00",
+  "mode": "live",
+  "passed": true,
+  "checks": {
+    "python": {
+      "version": "3.12.12",
+      "passed": true
+    },
+    "credentials": {
+      "configured": true
+    },
+    "river_sdk": {
+      "version": "0.11.0",
+      "passed": true
+    }
+  },
+  "account": {
+    "status": "checked",
+    "available_models": [
+      "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4",
+      "XiaomiMiMo/MiMo-V2.6-Flash-RL",
+      "XiaomiMiMo/MiMo-V2.6-Pro-RL",
+      "Qwen/Qwen3.8-Flash-Next-FP8",
+      "Qwen/Qwen3.8-27B-FP8",
+      "Qwen/Qwen3.6-35B-A3B-FP8",
+      "Qwen/Qwen3.5-397B-A17B-FP8",
+      "Qwen/Qwen3.5-122B-A10B-FP8",
+      "Qwen/Qwen3.5-9B",
+      "nvidia/Kimi-K2.6-NVFP4",
+      "nvidia/Kimi-K2.6-NVFP4-262K",
+      "nvidia/GLM-5.2-NVFP4",
+      "nvidia/GLM-5.2-NVFP4-262K",
+      "zai-org/GLM-5.3-Flash",
+      "deepseek-ai/DeepSeek-V4-Flash-0731",
+      "deepseek-ai/DeepSeek-V4.1-Flash",
+      "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+      "nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-NVFP4"
+    ]
+  },
+  "model_access": {
+    "Qwen/Qwen3.5-9B": true
+  },
+  "issues": [],
+  "request_timeout_seconds": 20.0,
+  "billable_resources_created": 0,
+  "unverified": [
+    "tokenizer_compatibility",
+    "training_correctness",
+    "model_quality",
+    "capacity_and_funding",
+    "hosted_chat_and_streaming"
+  ]
+}

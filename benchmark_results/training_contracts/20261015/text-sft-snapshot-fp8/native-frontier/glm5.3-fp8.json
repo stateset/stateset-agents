@@ -1,0 +1,11 @@
+{
+  "model": "zai-org/GLM-5.3",
+  "architecture": "GlmMoeDsaForCausalLM",
+  "quantized_tensor_count": 40,
+  "loss": 3.526749610900879,
+  "all_weights_matched_dequantized_reference": true,
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "optimizer_updates": 1,
+  "scope": "local random tiny FP8 attention/per-expert tensors; CPU BF16; no published weights, GPU or distributed execution"
+}

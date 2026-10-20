@@ -21,6 +21,7 @@ from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
 from .routers import (
     agents,
     distributed_rollouts,
+    finetune,
     messages,
     metrics,
     openai,
@@ -247,6 +248,7 @@ def create_app() -> FastAPI:
     app.include_router(agents.router)
     app.include_router(agents.conversation_router)
     app.include_router(training.router)
+    app.include_router(finetune.router)
     app.include_router(metrics.router)
     app.include_router(v1.router)
     app.include_router(messages.router)

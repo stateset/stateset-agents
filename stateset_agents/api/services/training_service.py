@@ -10,11 +10,16 @@ from typing import Any
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-from stateset_agents.utils.async_calls import drain_owned_operation
+from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 
-from ..errors import ResourceExhaustedError, ServiceUnavailableError
+from ..errors import ConflictError, ResourceExhaustedError, ServiceUnavailableError
 from ..schemas import TrainingRequest
-from ..training_queue import TrainingQueue
+from ..training_queue import (
+    MAX_PENDING_JOBS,
+    TrainingIdempotencyConflictError,
+    TrainingQueue,
+    TrainingQueueFullError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +117,7 @@ class TrainingService:
         self.training_jobs: dict[str, dict[str, Any]] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._pending_submissions: set[asyncio.Task[str]] = set()
         self._closing = False
         self.queue = (
             None
@@ -130,7 +136,7 @@ class TrainingService:
         return self._closing
 
     async def aclose(self) -> None:
-        """Cancel cooperatively and own all workers until their cleanup finishes.
+        """Drain accepted submissions and cancel embedded workers cooperatively.
 
         Repeated or concurrent calls are safe. Caller cancellation is propagated
         only after workers exit. Unresponsive trainers can delay shutdown; this
@@ -138,11 +144,12 @@ class TrainingService:
         """
         self._closing = True
         tasks = tuple(self._tasks.values())
+        submissions = tuple(self._pending_submissions)
         for training_id in tuple(self._tasks):
             self.cancel_training(training_id)
 
         async def finish() -> None:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, *submissions, return_exceptions=True)
 
         await drain_owned_operation(finish())
 
@@ -185,7 +192,30 @@ class TrainingService:
         config.validate_for_training()
         reward_fn = build_reward(request.reward_config)
         if self.queue is not None:
-            return self.queue.submit(request.model_dump(), user_id, idempotency_key)
+            # Freeze caller-owned nested data before yielding to the database
+            # thread. Shutdown owns this operation until commit/rollback ends;
+            # disconnecting the HTTP caller cannot detach an unknown write.
+            accepted_config = copy.deepcopy(request.model_dump())
+            submission = asyncio.create_task(
+                run_sync_owned(
+                    self.queue.submit, accepted_config, user_id, idempotency_key
+                )
+            )
+            self._pending_submissions.add(submission)
+
+            async def wait_for_submission() -> str:
+                return await submission
+
+            try:
+                return await drain_owned_operation(wait_for_submission())
+            except TrainingIdempotencyConflictError as exc:
+                raise ConflictError(str(exc)) from exc
+            except TrainingQueueFullError as exc:
+                raise ResourceExhaustedError(
+                    "training_queue", MAX_PENDING_JOBS
+                ) from exc
+            finally:
+                self._pending_submissions.discard(submission)
         if idempotency_key is not None:
             raise ValueError("Idempotency keys require API_TRAINING_QUEUE_PATH")
         # Submission contains no await between this check and task registration,
@@ -201,7 +231,9 @@ class TrainingService:
         now = datetime.utcnow()
 
         # Create training configuration
-        agent_config = AgentConfig(**request.agent_config.model_dump())
+        agent_config = AgentConfig(
+            **request.agent_config.model_dump(), model_revision=config.model_revision
+        )
         agent = MultiTurnAgent(agent_config)
 
         # Create environment
@@ -354,6 +386,58 @@ class TrainingService:
         if not job or not self._can_access_job(job, user_id):
             return None
         return copy.deepcopy(job)
+
+    async def aget_training_status(
+        self, training_id: str, user_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read durable status off-loop while preserving the synchronous API."""
+        if self.queue is not None:
+            return await run_sync_owned(self.get_training_status, training_id, user_id)
+        return self.get_training_status(training_id, user_id)
+
+    async def acancel_training(
+        self, training_id: str, user_id: str | None = None
+    ) -> bool:
+        """Drain a durable cancellation write before propagating caller cancellation."""
+        if self.queue is not None:
+            return await run_sync_owned(self.cancel_training, training_id, user_id)
+        return self.cancel_training(training_id, user_id)
+
+    async def list_training_jobs(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        user_id: str | None = None,
+    ) -> tuple[list[tuple[str, dict[str, Any]]], int]:
+        """Return one detached, authorized page and total without loading all payloads."""
+        if type(page) is not int or page < 1:
+            raise ValueError("page must be a positive integer")
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("page_size must be an integer between 1 and 100")
+        if status is not None and not isinstance(status, str):
+            raise ValueError("status must be a string or None")
+        offset = (page - 1) * page_size
+        if self.queue is not None:
+            return await run_sync_owned(
+                self.queue.page,
+                owner=user_id,
+                status=status,
+                limit=page_size,
+                offset=offset,
+            )
+        jobs = [
+            (job_id, job)
+            for job_id, job in self.training_jobs.items()
+            if self._can_access_job(job, user_id)
+            and (not status or job.get("status") == status)
+        ]
+        jobs.sort(
+            key=lambda item: (item[1].get("created_at") or datetime.min, item[0]),
+            reverse=True,
+        )
+        return copy.deepcopy(jobs[offset : offset + page_size]), len(jobs)
 
 
 def build_reward(config: dict[str, Any]) -> Any:

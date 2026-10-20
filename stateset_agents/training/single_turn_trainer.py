@@ -33,6 +33,7 @@ from .callbacks import (
 )
 from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
+from .grpo_accumulation import backward_accumulated_loss
 from .loss_computation import (
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
@@ -133,6 +134,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
         self._grad_accum_step = 0
+        self._grpo_accumulation: dict[str, Any] | None = None
 
         # HuggingFace components
         self.optimizer: Any | None = None
@@ -362,11 +364,17 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
 
     def _update_global_stats(self, batch_mean: float, batch_size: int) -> None:
         """Update running reward statistics for global baselines."""
-        self._global_reward_mean = (
-            self._global_reward_mean * self._global_reward_count
-            + batch_mean * batch_size
-        ) / max(1, self._global_reward_count + batch_size)
+        if not hasattr(self, "_global_reward_sum"):
+            self._global_reward_sum = (
+                self._global_reward_mean * self._global_reward_count
+            )
+        self._global_reward_sum += batch_mean * batch_size
         self._global_reward_count += batch_size
+        self._global_reward_mean = (
+            self._global_reward_sum / self._global_reward_count
+            if self._global_reward_count > 0
+            else 0.0
+        )
 
     async def _compute_reward_for_turns(
         self,
@@ -485,6 +493,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                         "Could not discard pending gradients: %s", cleanup_error
                     )
             self._grad_accum_step = 0
+            self._grpo_accumulation = None
             raise
         finally:
             try:
@@ -605,6 +614,11 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                     else contextlib.nullcontext()
                 )
 
+                baseline: dict[str, Any] = {
+                    "global_reward_mean": self._global_reward_mean,
+                    "global_reward_count": self._global_reward_count,
+                    "global_reward_sum": getattr(self, "_global_reward_sum", None),
+                }
                 with autocast_ctx:
                     if use_enhanced:
                         loss_dict = compute_enhanced_grpo_loss(
@@ -613,14 +627,15 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                             config=self.config,
                             agent=self.agent,
                             reference_model=self.reference_model,
+                            **baseline,
+                            update_global_stats=self._update_global_stats,
                         )
                     else:
                         loss_dict = compute_grpo_loss(
                             trajectory_groups=training_groups,
                             config=self.config,
                             agent=self.agent,
-                            global_reward_mean=self._global_reward_mean,
-                            global_reward_count=self._global_reward_count,
+                            **baseline,
                             update_global_stats=self._update_global_stats,
                         )
 
@@ -676,15 +691,16 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                                         agent=self.agent,
                                         reference_model=self.reference_model,
                                         old_logprobs=old_logprobs,
+                                        **baseline,
+                                        update_global_stats=None,
                                     )
                                     if use_enhanced
                                     else compute_grpo_loss(
                                         trajectory_groups=training_groups,
                                         config=self.config,
                                         agent=self.agent,
-                                        global_reward_mean=self._global_reward_mean,
-                                        global_reward_count=self._global_reward_count,
-                                        update_global_stats=self._update_global_stats,
+                                        **baseline,
+                                        update_global_stats=None,
                                         old_logprobs=old_logprobs,
                                     )
                                 )
@@ -707,17 +723,40 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                         )
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
                 elif self.optimizer is not None and policy_loss is not None:
-                    scaled_loss = policy_loss / grad_accum_steps
-                    backward_training_loss(
+                    backward_accumulated_loss(
                         self,
-                        scaled_loss,
+                        policy_loss,
+                        loss_dict,
                         torch,
                         scaler=self.scaler if use_amp else None,
+                        regularizer=ewc_penalty,
                     )
 
                     self._grad_accum_step += 1
                     if self._grad_accum_step % grad_accum_steps == 0:
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+
+                from .diagnostics import DiagnosticsMonitor
+
+                if getattr(self, "diagnostics", None) is None:
+                    self.diagnostics = DiagnosticsMonitor(self.config)
+                self._diagnostic_observations = (
+                    getattr(self, "_diagnostic_observations", 0) + 1
+                )
+                self.diagnostics(
+                    "step_end",
+                    {
+                        **{
+                            name: (
+                                value.detach().item()
+                                if torch.is_tensor(value) and value.numel() == 1
+                                else value
+                            )
+                            for name, value in loss_dict.items()
+                        },
+                        "step": self._diagnostic_observations,
+                    },
+                )
 
                 # Progress environment once using best response
                 action_turn = ConversationTurn(
@@ -855,6 +894,12 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             checkpoint_path: Directory written by :meth:`save_checkpoint`.
             trusted: Pass ``True`` only for checkpoints from a source you
                 control; the default unpickles with ``weights_only=True``.
+
+        A model-only or metadata-only import returns ``False``. Imported agent
+        weights remain available for inference, but a mutated learner stays
+        quarantined until full recovery. Construct a fresh trainer for a
+        deliberate warm start. Full recovery includes rollout publication unless
+        ``rollout_sync=False`` explicitly opts out.
         """
         loaded: bool = load_checkpoint_artifacts(
             self,
@@ -864,7 +909,4 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             logger,
             trusted=trusted,
         )
-        if loaded:
-            # An attached rollout engine still holds the pre-resume weights.
-            self._sync_rollout_backend()
         return loaded

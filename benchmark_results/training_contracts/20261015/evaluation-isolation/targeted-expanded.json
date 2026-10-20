@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "job_id": "edce06f7ae5e",
+  "exit_code": 0,
+  "description": "Expanded study checks before shared-evaluator hardening",
+  "log_sha256": "f73227c85b7323584ab8059e5fe888b704bd61fd79fe3bd47e8da2b6bfc3727b",
+  "output": "$ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python -m pytest -q -n0 -o addopts= --timeout=90 tests/unit/test_native_evaluation_isolation.py tests/unit/test_native_refund_study.py tests/unit/test_generation_mode.py tests/unit/test_agent_run_comparison.py tests/unit/test_agent_study.py --tb=short\n........................................................................ [ 30%]\n........................................................................ [ 60%]\n........................................................................ [ 90%]\n........................                                                 [100%]\n240 passed in 162.70s (0:02:42)\n"
+}

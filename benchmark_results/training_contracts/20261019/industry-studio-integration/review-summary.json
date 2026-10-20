@@ -1,0 +1,67 @@
+{
+  "black": "passed outside restricted worker-IPC environment",
+  "checks": {
+    "focused-tests.xml": {
+      "passed": 123,
+      "skipped": 0
+    },
+    "regression-tests.xml": {
+      "passed": 181,
+      "skipped": 0
+    }
+  },
+  "complete": true,
+  "dataset_audit": {
+    "domains": [
+      "ecommerce",
+      "logistics",
+      "saas"
+    ],
+    "passed": true,
+    "quality_certification": false,
+    "source": "industry-policy-simulations-v1",
+    "verified_demonstrations": 2112
+  },
+  "datasets": [
+    {
+      "domain": "ecommerce",
+      "held_out_rejections": [
+        "validation",
+        "test"
+      ],
+      "source_hash": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+      "synthetic_examples": 512,
+      "training_examples": 512
+    },
+    {
+      "domain": "logistics",
+      "held_out_rejections": [
+        "validation",
+        "test"
+      ],
+      "source_hash": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+      "synthetic_examples": 512,
+      "training_examples": 512
+    },
+    {
+      "domain": "saas",
+      "held_out_rejections": [
+        "validation",
+        "test"
+      ],
+      "source_hash": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd",
+      "synthetic_examples": 512,
+      "training_examples": 512
+    }
+  ],
+  "isort": "passed",
+  "model_updates": 0,
+  "mypy_source_files": 443,
+  "provider_calls": 0,
+  "quality_certification": false,
+  "repo_hygiene": "passed",
+  "ruff": "passed",
+  "runs_prepared": 0,
+  "scope": "Studio parsing, provenance, inspection, snapshot and launch-review planning; no training or model evaluation",
+  "unique_tests_passed": 304
+}

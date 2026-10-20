@@ -1,0 +1,95 @@
+...................................................s.................... [ 24%]
+........................................................................ [ 48%]
+........................................................................ [ 72%]
+........................................................................ [ 96%]
+..........                                                               [100%]
+=============================== warnings summary ===============================
+tests/unit/test_training_queue.py: 134 warnings
+tests/api/test_durable_training_worker.py: 10 warnings
+tests/api/test_training_queue_async.py: 12 warnings
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:232: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/unit/test_training_queue.py: 32 warnings
+tests/api/test_durable_training_worker.py: 8 warnings
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:413: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="running", started_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py: 16 warnings
+tests/api/test_training_queue_async.py: 1 warning
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:503: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot["completed_at"] = datetime.utcnow()
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+tests/unit/test_training_queue.py::test_heartbeat_cannot_revive_a_lease_that_expired_while_waiting_for_lock
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+tests/api/test_durable_training_worker.py::test_terminal_lease_loss_does_not_stop_worker_from_processing_next_job
+tests/api/test_durable_training_worker.py::test_lease_lost_during_startup_never_starts_training
+  /home/dom/stateset-agents/stateset_agents/api/training_queue.py:394: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    completed_at=datetime.utcnow(),
+
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[sqlite]
+tests/unit/test_training_queue.py::test_cancellation_and_expired_worker_writes_are_fenced[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:72: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[sqlite]
+tests/unit/test_training_queue.py::test_late_cancellation_cannot_be_overwritten_by_success[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:81: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_lease_is_expired_at_its_deadline
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:161: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/unit/test_training_queue.py::test_postgres_uses_database_clock_instead_of_worker_host_clock[postgres]
+  /home/dom/stateset-agents/tests/unit/test_training_queue.py:181: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/api/test_durable_training_worker.py::test_api_model_revision_reaches_the_agent_before_training[False]
+  /home/dom/stateset-agents/stateset_agents/api/services/training_service.py:231: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    now = datetime.utcnow()
+
+tests/api/test_durable_training_worker.py::test_api_model_revision_reaches_the_agent_before_training[False]
+tests/api/test_durable_training_worker.py::test_api_model_revision_reaches_the_agent_before_training[True]
+tests/api/test_durable_training_worker.py::test_submission_survives_restart_and_worker_publishes_progress
+tests/api/test_durable_training_worker.py::test_terminal_lease_loss_does_not_stop_worker_from_processing_next_job
+tests/api/test_durable_training_worker.py::test_terminal_lease_loss_does_not_stop_worker_from_processing_next_job
+  /home/dom/stateset-agents/stateset_agents/api/services/training_service.py:329: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "completed_at": datetime.utcnow(),
+
+tests/api/test_durable_training_worker.py::test_idempotent_http_retry_reports_existing_terminal_status
+  /home/dom/stateset-agents/tests/api/test_durable_training_worker.py:84: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="completed", completed_at=datetime.utcnow())
+
+tests/api/test_durable_training_worker.py::test_other_replica_can_cancel_running_worker
+tests/api/test_durable_training_worker.py::test_repeated_cancellation_waits_for_inflight_heartbeat_cleanup
+  /home/dom/stateset-agents/stateset_agents/api/services/training_service.py:338: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "completed_at": datetime.utcnow(),
+
+tests/api/test_durable_training_worker.py::test_repeated_cancellation_waits_for_inflight_heartbeat_cleanup
+  /home/dom/stateset-agents/stateset_agents/api/training_worker.py:86: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    snapshot.update(status="cancelled", completed_at=datetime.utcnow())
+
+tests/api/test_training_queue_async.py::test_database_wait_does_not_block_unrelated_http_requests[get]
+  /home/dom/stateset-agents/stateset_agents/api/routers/training.py:288: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created_at=job.get("created_at", datetime.utcnow()),
+
+tests/api/test_training_queue_async.py::test_database_wait_does_not_block_unrelated_http_requests[page]
+tests/api/test_training_queue_async.py::test_http_listing_never_loads_all_jobs
+  /home/dom/stateset-agents/stateset_agents/api/routers/training.py:227: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    created_at=job.get("created_at", datetime.utcnow()),
+
+tests/api/test_training_queue_async.py::test_database_wait_does_not_block_unrelated_http_requests[page]
+tests/api/test_training_queue_async.py::test_http_listing_never_loads_all_jobs
+  /home/dom/stateset-agents/.venv/lib/python3.12/site-packages/pydantic/main.py:263: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    validated_self = self.__pydantic_validator__.validate_python(data, self_instance=self)
+
+tests/api/test_training_queue_async.py::test_http_idempotency_conflict_returns_409_and_preserves_accepted_request
+tests/api/test_training_queue_async.py::test_http_full_durable_queue_returns_429
+  /home/dom/stateset-agents/stateset_agents/api/errors.py:133: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow().isoformat() + "Z",
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+297 passed, 1 skipped, 242 warnings in 73.68s (0:01:13)

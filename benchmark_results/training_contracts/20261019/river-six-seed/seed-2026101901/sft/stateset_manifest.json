@@ -1,0 +1,25 @@
+{
+  "base_model": "Qwen/Qwen3.5-9B",
+  "created_at": "2026-10-19T15:10:28.756677+00:00",
+  "dataset_path": "/home/dom/stateset-agents/outputs/river-six-seed-20261019/seed-2026101901/data/train.jsonl",
+  "dataset_rows": 128,
+  "dataset_sha256": "a12e32e6896ae8d77f726e400993437fd071b22f9a06e5e46a3b9aedcb1243b7",
+  "eval_passed": null,
+  "eval_total": null,
+  "hyperparameters": {
+    "learning_rate": 2e-05,
+    "lora_r": 16,
+    "max_length": 4096,
+    "num_epochs": 1,
+    "per_device_batch_size": 8,
+    "provider": "river",
+    "river_checkpoint": "river://45529f01-6e51-48f2-bc04-ce6ea02bf198/sampler_weights/sft",
+    "seed": 2026101901,
+    "shuffle": true,
+    "steps": 16
+  },
+  "model_revision": null,
+  "package_version": null,
+  "parent_adapter": null,
+  "reward_sha256": null
+}

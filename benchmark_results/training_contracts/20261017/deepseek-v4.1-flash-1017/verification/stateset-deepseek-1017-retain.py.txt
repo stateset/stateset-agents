@@ -1,0 +1,222 @@
+"""Retain final targeted source/wheel evidence; never execute verification work."""
+
+from pathlib import Path
+import argparse
+import fcntl
+import hashlib
+import json
+import shutil
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+import zipfile
+
+ROOT = Path('/home/dom/stateset-agents')
+PREFIX = '/tmp/stateset-deepseek-1017'
+AUDIT = ROOT / 'benchmark_results/training_contracts/20261017/deepseek-v4.1-flash-1017'
+METADATA_SHA256 = '7ecbc70ae58c2d8a8edaf482fb2d78fbec0a33c54cec0b1ab90f3f7de733be63'
+FETCH_SHA256 = '753886e4a079c73f19967c8e7e9ce09183582bf92ab8729c5fbb0e06b7e0e919'
+STAGES = ['lint', 'types', 'source', 'hygiene', 'api', 'release', 'workflow', 'wheel']
+SELECTION = [
+    'tests/unit/test_deepseek_v41_1017.py',
+    'tests/unit/test_frontier_models.py',
+    'tests/unit/test_remote_model_catalog.py',
+    'tests/unit/test_remote_model_evidence.py',
+]
+
+
+def read(path):
+    return json.loads(Path(path).read_text())
+
+
+def sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix(): sha(p) for p in sorted((ROOT / directory).rglob('*.py'))}
+
+
+def fresh(path, start, finish):
+    path = Path(path)
+    assert path.is_file() and not path.is_symlink(), str(path)
+    # Empty actionlint logs can reflect the filesystem's ~10 ms timestamp tick.
+    # This small tolerance still rejects artifacts from earlier job attempts.
+    assert start - 0.05 <= path.stat().st_mtime <= finish + 0.05, str(path)
+
+
+def cases(path):
+    tree = ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure', 'error', 'skipped'))
+    for suite in tree.iter('testsuite'):
+        assert all(int(suite.get(key, '0')) == 0 for key in ('failures', 'errors', 'skipped'))
+    result = [(case.get('classname'), case.get('name')) for case in tree.iter('testcase')]
+    assert result and all(cls and name for cls, name in result)
+    assert len(result) == len(set(result))
+    return result
+
+
+def retain(job_id, queue_path):
+    queue = read(queue_path)
+    assert queue['id'] == job_id and queue['state'] == 'succeeded' and queue['exit_code'] == 0
+    assert queue['argv'] in [
+        ['.venv/bin/python', PREFIX + '-verify.py'],
+        [str(ROOT / '.venv/bin/python'), PREFIX + '-verify.py'],
+    ]
+    created, started, finished = (queue[key] for key in ('created', 'started', 'finished'))
+    assert created <= started <= finished <= time.time()
+    result, frozen = read(PREFIX + '-result.json'), read(PREFIX + '-inputs.json')
+    assert result['passed'] is True and result['source_frozen'] is True
+    assert [stage['name'] for stage in result['stages']] == STAGES
+    assert all(stage['exit_code'] == 0 for stage in result['stages'])
+    assert started <= frozen['captured_at'] <= result['started'] <= finished
+    previous = result['started']
+    for stage in result['stages']:
+        assert previous <= stage['started'] <= stage['finished'] <= finished
+        fresh(PREFIX + '-' + stage['name'] + '.log', stage['started'], stage['finished'])
+        previous = stage['finished']
+    for suffix in ('-inputs.json', '-result.json'):
+        fresh(PREFIX + suffix, started, finished)
+    stages = {stage['name']: stage for stage in result['stages']}
+    source, tests = inventory('stateset_agents'), inventory('tests')
+    assert source == frozen['source_sha256'] and tests == frozen['test_source_sha256']
+    changed = frozen['changed_files']
+    assert {
+        'docs/FRONTIER_FINETUNING.md', 'docs/SUPPORTED_MODELS.md',
+        '.github/workflows/training-contracts.yml',
+    } <= changed.keys()
+    for name, digest in {**source, **tests, **changed}.items():
+        assert not Path(name).is_absolute() and '..' not in Path(name).parts
+        assert sha(ROOT / name) == digest and (ROOT / name).stat().st_mtime <= finished
+    model_docs_workflow = {name: digest for name, digest in changed.items() if Path(name).suffix in {'.md', '.yaml', '.yml'}}
+    assert sha(AUDIT / 'metadata.json') == METADATA_SHA256
+    assert sha(AUDIT / 'fetch-manifest.json') == FETCH_SHA256
+    assert read(PREFIX + '-handoff.json')['metadata_sha256'] == METADATA_SHA256
+    metadata = read(AUDIT / 'metadata.json')[0]
+    assert metadata['key'] == 'deepseek-v4.1-flash-1017'
+
+    for name in ('source', 'wheel'):
+        fresh(PREFIX + '-' + name + '.xml', stages[name]['started'], stages[name]['finished'])
+    source_cases, wheel_cases = cases(PREFIX + '-source.xml'), cases(PREFIX + '-wheel.xml')
+    fresh(PREFIX + '-wheel.json', stages['wheel']['started'], stages['wheel']['finished'])
+    wheel = read(PREFIX + '-wheel.json')
+    assert all(wheel[key] is True for key in ('passed', 'wheel_source_matches', 'module_origins_verified', 'case_identities_match_source'))
+    selection = SELECTION + (['tests/unit/test_finetune_frontier_readiness.py'] if 'tests/unit/test_finetune_frontier_readiness.py' in tests else [])
+    assert wheel['selection'] == selection and wheel['test_count'] == len(wheel_cases)
+    modules = [name[:-3].replace('/', '.') for name in selection]
+    expected = [case for case in source_cases if any(case[0] == module or case[0].startswith(module + '.') for module in modules)]
+    assert expected and set(wheel_cases) == set(expected)
+    wheel_out = Path(wheel['out'])
+    assert wheel_out.is_absolute() and wheel_out.parent == Path('/tmp')
+    assert wheel_out.name.startswith('stateset-deepseek-1017-wheel-')
+    artifacts = list((wheel_out / 'dist').glob('*.whl'))
+    assert len(artifacts) == 1
+    artifact = artifacts[0]
+    assert artifact.is_file() and not artifact.is_symlink() and artifact.stat().st_size <= 16 * 1024 * 1024
+    assert sha(artifact) == wheel['wheel_sha256']
+    with zipfile.ZipFile(artifact) as archive:
+        names = archive.namelist()
+        assert len(names) == len(set(names))
+        packed = {name: hashlib.sha256(archive.read(name)).hexdigest() for name in names if name.startswith('stateset_agents/') and name.endswith('.py')}
+    assert packed == source
+
+    optional_live, live_binding = [], False
+    live_json, live_text = Path(PREFIX + '-live.json'), Path(PREFIX + '-live.txt')
+    if live_json.exists():
+        live = read(live_json)
+        if live.get('source_matches_verified') is True:
+            assert live.get('source_sha256') == source
+            if 'focused_job' in live:
+                assert live['focused_job'] == job_id
+            if 'created_at' in live:
+                assert live['created_at'] >= finished
+            live_binding = True
+        optional_live.append(live_json)
+    if live_text.exists():
+        optional_live.append(live_text)
+    summary = {
+        'schema_version': 1, 'retained_at': time.time(), 'job_id': job_id,
+        'model_id': metadata['model_id'], 'model_revision': metadata['revision'],
+        'audit_metadata_sha256': METADATA_SHA256, 'passed': True,
+        'queue_state': queue['state'], 'queue_exit_code': queue['exit_code'],
+        'queue_wait_seconds': started - created, 'queue_runtime_seconds': finished - started,
+        'queue_reported_wait_seconds': queue.get('wait_seconds'),
+        'queue_reported_elapsed_seconds': queue.get('elapsed_seconds'),
+        'stages': STAGES, 'source_test_count': len(source_cases),
+        'installed_wheel_test_count': len(wheel_cases),
+        'test_execution_count': len(source_cases) + len(wheel_cases),
+        'distinct_case_identity_count': len(set(source_cases) | set(wheel_cases)),
+        'source_and_wheel_case_counts_overlap': True,
+        'wheel_cases_equal_selected_source_cases': True,
+        'failures': 0, 'errors': 0, 'skipped': 0, 'package_file_count': len(source),
+        'source_and_tests_match_frozen_inputs': True,
+        'model_docs_and_workflow_sha256': model_docs_workflow,
+        'installed_wheel_package_matches_frozen_source': True,
+        'wheel_sha256': wheel['wheel_sha256'], 'wheel_artifact_bytes': artifact.stat().st_size,
+        'live_report_retained': bool(optional_live), 'live_source_binding_verified': live_binding,
+        'gpu_training_verified': False, 'full_size_model_training_performed': False,
+        'provider_execution_verified': False, 'weights_downloaded': False,
+        'tokenizer_json_downloaded': False, 'training_codec_verified': False,
+        'quality_gain_verified': False, 'full_repository_acceptance_claimed': False,
+    }
+    destination, summary_path = AUDIT / 'verification', AUDIT / 'verification.json'
+    assert not destination.exists() and not summary_path.exists(), 'Refusing to overwrite retained evidence'
+    staging = Path(tempfile.mkdtemp(prefix='.verification-', dir=AUDIT))
+    (staging / 'verification.json').write_text(json.dumps(summary, indent=2, allow_nan=False) + '\n')
+    (staging / 'source-manifest.json').write_text(json.dumps(frozen, indent=2) + '\n')
+    records = [Path(queue_path)] + [Path(PREFIX + suffix) for suffix in (
+        '-inputs.json', '-result.json', '-handoff.json', '-source.xml', '-wheel.xml', '-wheel.json',
+    )]
+    extra = Path(PREFIX + '-readiness-handoff.json')
+    if extra.exists():
+        records.append(extra)
+    for path in records + optional_live + [Path(PREFIX + '-' + name + '.log') for name in STAGES]:
+        shutil.copy2(path, staging / path.name)
+    queue_log = Path('/home/dom/.local/state/agent-builds/logs') / (job_id + '.log')
+    if queue_log.is_file():
+        shutil.copy2(queue_log, staging / ('queue-' + job_id + '.log'))
+    for suffix in ('-verify.py', '-wheel.py', '-retain.py'):
+        path = Path(PREFIX + suffix)
+        if suffix != '-retain.py':
+            assert path.stat().st_mtime <= started, 'Verifier helper changed after the job started'
+        shutil.copy2(path, staging / (path.name + '.txt'))
+    shutil.copy2(artifact, staging / artifact.name)
+    assert sha(staging / artifact.name) == wheel['wheel_sha256']
+    (staging / 'README.md').write_text(
+        '# DeepSeek V4.1 Flash 1017 targeted verification\n\n'
+        f'Buildr `{job_id}` passed all eight stages: {len(source_cases)} source cases '
+        f'and {len(wheel_cases)} overlapping installed-wheel cases, '
+        f'{len(source_cases) + len(wheel_cases)} executions and '
+        f'{len(set(source_cases) | set(wheel_cases))} distinct identities. '
+        'No selected cases failed, errored or skipped.\n\n'
+        'Frozen source/tests, model docs and workflow hashes match current bytes. '
+        'The retained wheel matches its receipt and frozen package source. '
+        'Optional live reports are separate; screenshot retention alone does not '
+        'establish matching live behavior.\n\n'
+        'This targeted receipt does not establish full repository acceptance, '
+        'full-size model training, GPU/provider execution, packed-weight backward '
+        'support, a reviewed training codec, or model quality improvement. '
+        'No model weights or tokenizer.json were downloaded by this work. '
+        'Existing model metadata and fetch provenance remain unchanged.\n'
+    )
+    assert source == inventory('stateset_agents') and tests == inventory('tests')
+    assert all(sha(ROOT / name) == digest for name, digest in changed.items())
+    assert sha(AUDIT / 'metadata.json') == METADATA_SHA256 and sha(AUDIT / 'fetch-manifest.json') == FETCH_SHA256
+    (staging / 'artifact-sha256.json').write_text(json.dumps({p.relative_to(staging).as_posix(): sha(p) for p in sorted(staging.rglob('*')) if p.is_file()}, indent=2) + '\n')
+    staging.rename(destination)
+    with tempfile.NamedTemporaryFile(mode='w', dir=AUDIT, prefix='.verification-summary-', delete=False) as stream:
+        temporary_summary = Path(stream.name)
+        stream.write((destination / 'verification.json').read_text())
+    assert not summary_path.exists()
+    temporary_summary.rename(summary_path)
+    print(json.dumps({'path': str(summary_path), 'details': str(destination), 'verification': summary}, indent=2, allow_nan=False))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('job_id')
+    parser.add_argument('--queue-json', type=Path, default=Path(PREFIX + '-queue.json'))
+    arguments = parser.parse_args()
+    with Path('/tmp/stateset-studio-mobile-source.lock').open('a') as source_lock:
+        fcntl.flock(source_lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        retain(arguments.job_id, arguments.queue_json)

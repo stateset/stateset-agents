@@ -7,7 +7,8 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 
 import json
 import math
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -18,19 +19,35 @@ def estimate_grpo_optimizer_steps(
     *,
     gradient_accumulation_steps: int = 1,
     num_gradient_updates: int = 1,
+    task_ids: Sequence[str | None] | None = None,
 ) -> int:
     """Estimate native GRPO's optimizer-step budget for a learning-rate schedule.
 
     Token-path inner updates each commit a full step, bypassing accumulation.
     Their budget is an upper bound when batches instead use sequence fallback,
     emit no gradients, or skip updates. A single update per batch uses ordinary
-    accumulation, including one final partial window.
+    accumulation. Supplying task IDs closes each task segment's partial window,
+    matching the trainer's flush before task-memory consolidation.
     """
     batches = max(0, int(rollout_batches))
     inner = max(1, int(num_gradient_updates or 1))
     accumulation = max(1, int(gradient_accumulation_steps or 1))
     if inner > 1:
         return batches * inner
+    if task_ids is not None:
+        if len(task_ids) != batches:
+            raise ValueError("Task schedule must describe every rollout batch")
+        total, size, current = 0, 0, None
+        for task in task_ids:
+            if task is not None and not isinstance(task, str):
+                raise ValueError("Task identifiers must be strings or None")
+            if task is not None and current is not None and task != current:
+                total += (size + accumulation - 1) // accumulation
+                size = 0
+            if task is not None:
+                current = task
+            size += 1
+        return total + (size + accumulation - 1) // accumulation
     return (batches + accumulation - 1) // accumulation
 
 
@@ -227,6 +244,9 @@ class TrainingConfig:
     # Optional measured provider rate. Runtime metrics cover rollout + update
     # time only; provisioning/storage charges remain in the provider ledger.
     compute_cost_per_hour: float | None = None
+    # Keyword-only so existing positional calls to derived configs also retain
+    # their field order. Zero disables the consecutive-zero-advantage guard.
+    zero_signal_patience: int = field(default=5, kw_only=True)
 
     def __post_init__(self):
         # Map compatibility aliases
@@ -435,6 +455,8 @@ class TrainingConfig:
 
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
+        if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
+            raise ValueError("zero_signal_patience must be a nonnegative integer")
         for name in (
             "num_episodes",
             "num_epochs",
@@ -509,6 +531,10 @@ class TrainingConfig:
             OBJECTIVES[self.objective or "grpo"].with_(**self.objective_overrides)
         if not isinstance(self.model_name, str) or not self.model_name.strip():
             raise ValueError("model_name must be nonempty")
+        if self.model_revision is not None and (
+            not isinstance(self.model_revision, str) or not self.model_revision.strip()
+        ):
+            raise ValueError("model_revision must be a nonempty string or None")
         if (
             self.resume_from_checkpoint
             and not Path(self.resume_from_checkpoint).is_dir()

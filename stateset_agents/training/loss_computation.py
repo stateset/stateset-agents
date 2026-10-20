@@ -20,6 +20,10 @@ from ..core.chat_masking import assistant_char_spans
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
+from .ddp_population import run_token_local, token_policy
+from .distributed_advantages import prepare_reward_batch, validate_advantages
+from .grpo_accumulation import NormalizedLoss
+from .metric_reduction import LossMetricReduction
 from .trainer_utils import get_amp, get_functional, get_torch, require_torch
 
 logger = logging.getLogger(__name__)
@@ -221,6 +225,85 @@ def _token_advantages(
     )
 
 
+def _token_batch_advantages(
+    trajectory_groups: list[Any],
+    config: Any,
+    objective: Any,
+    device: Any,
+    *,
+    model: Any = None,
+    global_reward_mean: float | None = None,
+    global_reward_count: int = 0,
+    global_reward_sum: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
+) -> list[Any]:
+    """Preserve prompt baselines while applying batch statistics to the batch."""
+    torch = require_torch()
+    if not trajectory_groups and model is None:
+        return []
+    rewards_by_group, count, mean, std = prepare_reward_batch(
+        trajectory_groups,
+        config,
+        objective,
+        device,
+        model=model,
+        global_reward_mean=global_reward_mean,
+        global_reward_count=global_reward_count,
+        global_reward_sum=global_reward_sum,
+        updating=update_global_stats is not None,
+    )
+
+    def local_advantages() -> list[Any]:
+        if not rewards_by_group:
+            result = []
+        elif getattr(config, "objective", None) is not None:
+            group_ids = torch.cat(
+                [
+                    torch.full_like(rewards, index, dtype=torch.long)
+                    for index, rewards in enumerate(rewards_by_group)
+                ]
+            )
+            batch_norm = objective.advantage == "batch_norm"
+            estimator = (
+                objective.with_(advantage="group_mean") if batch_norm else objective
+            )
+            advantages = objectives.compute_advantages(
+                torch.cat(rewards_by_group), group_ids, estimator
+            )
+            if batch_norm:
+                scale = torch.tensor(std, dtype=torch.float32, device=device)
+                advantages = (
+                    torch.zeros_like(advantages)
+                    if scale <= objective.advantage_eps
+                    else advantages / (scale + objective.advantage_eps)
+                )
+            result = list(
+                advantages.split([len(rewards) for rewards in rewards_by_group])
+            )
+        else:
+            result = [
+                _token_advantages(
+                    rewards,
+                    config,
+                    objective,
+                    global_reward_mean=global_reward_mean,
+                )
+                for rewards in rewards_by_group
+            ]
+        return result
+
+    result = run_token_local(model, "advantages", local_advantages)
+    validate_advantages(result, model, device)
+    if (
+        getattr(config, "objective", None) is None
+        and getattr(config, "baseline_type", "group_mean") == "global_mean"
+        and global_reward_mean is not None
+        and update_global_stats is not None
+    ):
+        run_token_local(model, "baseline", lambda: update_global_stats(mean, count))
+    return result
+
+
 def _forward_token_rows(
     model: Any,
     rows: list[tuple[list[int], list[int], int]],
@@ -250,7 +333,7 @@ def _forward_token_rows(
             attn[i, : seq.numel()] = 1
             resp[i, len(p) : seq.numel()] = 1.0
         with torch.set_grad_enabled(grad):
-            logits = model(input_ids=ids, attention_mask=attn).logits
+            logits = token_policy(model)(input_ids=ids, attention_mask=attn).logits
             lp, m = rl_losses.gather_token_logprobs(logits, ids, resp)
             if want_entropy:
                 shifted = logits[:, :-1, :].float()
@@ -275,6 +358,8 @@ def compute_token_old_logprobs(
     torch = require_torch()
     groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
     rows = [_token_rows_for_group(g) for g in groups]
+    if not groups and getattr(agent.model, "_stateset_token_forward", False) is True:
+        return []
     if not groups or any(r is None for r in rows):
         return None
     device = _resolve_model_device(agent, torch)
@@ -356,6 +441,8 @@ def _compute_token_path_loss(
     reference_model: Any | None = None,
     old_logprobs: list[Any] | None = None,
     global_reward_mean: float | None = None,
+    global_reward_count: int = 0,
+    global_reward_sum: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
 ) -> dict[str, Any]:
     """Batched per-token GRPO over stored token ids for every group.
@@ -366,114 +453,191 @@ def _compute_token_path_loss(
     """
     torch = require_torch()
     device = _resolve_model_device(agent, torch)
-    objective = _token_objective(config)
     entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    objective = _token_objective(config).with_(entropy_coef=entropy_coef)
     use_kl = beta > 0 and reference_model is not None
     if use_kl:
         objective = objective.with_(kl="k3_token", kl_coef=float(beta))
     chunk = int(getattr(config, "generation_batch_size", 0) or 0) or len(
-        max(rows_per_group, key=len)
+        max(rows_per_group, key=len, default=[])
     )
 
-    if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
-        raise ValueError(
-            f"old_logprobs has {len(old_logprobs)} entries for "
-            f"{len(rows_per_group)} groups; snapshot and loss must see the same groups"
-        )
-    old_source = "snapshot" if old_logprobs is not None else "recompute"
-    if old_logprobs is None and (
-        str(getattr(config, "old_logprobs_source", "recompute")) == "sampler"
-    ):
-        old_logprobs = sampler_old_logprobs(trajectory_groups, device)
-        if old_logprobs is not None:
-            old_source = "sampler"
-        else:
-            from .rollout_contract import require_explicit_fallback
-
-            require_explicit_fallback(
-                config,
-                "allow_missing_sampler_logprobs",
-                "Rollouts lack sampler log probabilities",
+    def local_old_source() -> str:
+        nonlocal old_logprobs
+        if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
+            raise ValueError(
+                f"old_logprobs has {len(old_logprobs)} entries for "
+                f"{len(rows_per_group)} groups; snapshot and loss must see the same groups"
             )
-            old_source = "recompute_fallback"
-    losses, kls, ents, adv_log, n_rows = [], [], [], [], 0
-    ratio_means, clip_fracs = [], []
-    for gi, (group, rows) in enumerate(
-        zip(trajectory_groups, rows_per_group, strict=True)
-    ):
-        rewards = torch.tensor(
-            [float(t.total_reward) for t in group.trajectories],
-            dtype=torch.float32,
-            device=device,
-        )
-        reward_clip = getattr(config, "reward_clip", None)
-        if reward_clip is not None:
-            rewards = torch.clamp(
-                rewards, min=-float(reward_clip), max=float(reward_clip)
+        old_source = "snapshot" if old_logprobs is not None else "recompute"
+        if old_logprobs is None and (
+            str(getattr(config, "old_logprobs_source", "recompute")) == "sampler"
+        ):
+            old_logprobs = (
+                []
+                if not trajectory_groups
+                and getattr(agent.model, "_stateset_rollout_source", None) == "sampler"
+                else sampler_old_logprobs(trajectory_groups, device)
             )
-        advantages = _token_advantages(
-            rewards,
-            config,
-            objective,
-            global_reward_mean=global_reward_mean,
-            update_global_stats=update_global_stats,
-        )
-        adv_log.extend(advantages.detach().cpu().tolist())
-        row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
+            if old_logprobs is not None:
+                old_source = "sampler"
+            else:
+                from .rollout_contract import require_explicit_fallback
 
-        logp_cur, mask, entropy = _forward_token_rows(
-            agent.model, rows, device, chunk, grad=True, want_entropy=entropy_coef > 0
-        )
-        logp_ref = None
-        if use_kl:
-            logp_ref, _, _ = _forward_token_rows(
-                reference_model, rows, device, chunk, grad=False
-            )
-        result = objectives.policy_loss(
-            logp_cur=logp_cur,
-            mask=mask,
-            advantages=row_adv,
-            objective=objective.with_(entropy_coef=entropy_coef),
-            logp_old=None if old_logprobs is None else old_logprobs[gi],
-            logp_ref=logp_ref,
-            entropy=entropy,
-        )
-        # A trajectory can contain several assistant turns. For sequence
-        # objectives, sum its turn losses before averaging trajectories; a
-        # mean over turns would change its weight when an episode ends early.
-        scale = (
-            len(rows) / len(group.trajectories)
-            if objective.aggregate in {"seq_mean", "seq_sum_const"}
-            else 1.0
-        )
-        losses.append(result.loss * scale)
-        kls.append(result.metrics["kl"])
-        ents.append(result.metrics["entropy"])
-        ratio_means.append(result.metrics["ratio_mean"])
-        clip_fracs.append(result.metrics["clip_fraction"])
-        n_rows += len(rows)
+                require_explicit_fallback(
+                    config,
+                    "allow_missing_sampler_logprobs",
+                    "Rollouts lack sampler log probabilities",
+                )
+                old_source = "recompute_fallback"
+        return old_source
 
-    total = (
-        torch.stack(losses).mean()
-        if losses
-        else torch.tensor(0.0, device=device, requires_grad=True)
+    old_source = run_token_local(agent.model, "old-source", local_old_source)
+    group_advantages = _token_batch_advantages(
+        trajectory_groups,
+        config,
+        objective,
+        device,
+        model=agent.model,
+        global_reward_mean=global_reward_mean,
+        global_reward_count=global_reward_count,
+        global_reward_sum=global_reward_sum,
+        update_global_stats=update_global_stats,
     )
-    return {
-        "total_loss": total,
-        "policy_loss": total,
-        "kl_penalty": torch.tensor(float(np.mean(kls)) if kls else 0.0, device=device),
-        "entropy": float(np.mean(ents)) if ents else 0.0,
-        "mean_advantage": float(np.mean(adv_log)) if adv_log else 0.0,
-        "advantage_std": float(np.std(adv_log)) if adv_log else 0.0,
-        "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
-        "num_rows": n_rows,
-        "path": "token",
-        "objective": objective.name,
-        "ratio_mean": float(np.mean(ratio_means)) if ratio_means else 1.0,
-        "clip_fraction": float(np.mean(clip_fracs)) if clip_fracs else 0.0,
-        "off_policy": old_logprobs is not None,
-        "old_logprobs_source": old_source,
-    }
+
+    def local_loss() -> dict[str, Any]:
+        losses, entropy_sums, adv_log = [], [], []
+        n_rows = n_tokens = denominator = 0
+        metric_sums = {"kl": 0.0, "ratio_mean": 0.0, "clip_fraction": 0.0}
+        # Entropy has its own token denominator, independent of policy reduction.
+        policy_objective = objective.with_(entropy_coef=0.0)
+        for gi, (group, rows, advantages) in enumerate(
+            zip(trajectory_groups, rows_per_group, group_advantages, strict=True)
+        ):
+            adv_log.extend(advantages.detach().cpu().tolist())
+            row_adv = advantages[torch.tensor([ti for _, _, ti in rows], device=device)]
+
+            logp_cur, mask, entropy = _forward_token_rows(
+                agent.model,
+                rows,
+                device,
+                chunk,
+                grad=True,
+                want_entropy=entropy_coef > 0,
+            )
+            logp_ref = None
+            if use_kl:
+                logp_ref, _, _ = _forward_token_rows(
+                    reference_model, rows, device, chunk, grad=False
+                )
+            result = objectives.policy_loss(
+                logp_cur=logp_cur,
+                mask=mask,
+                advantages=row_adv,
+                objective=policy_objective,
+                logp_old=None if old_logprobs is None else old_logprobs[gi],
+                logp_ref=logp_ref,
+            )
+            # A trajectory can contain several assistant turns. For sequence
+            # objectives, sum its turn losses before averaging trajectories; a
+            # mean over turns would change its weight when an episode ends early.
+            token_count = int(mask.count_nonzero().item())
+            if objective.aggregate in {"seq_mean", "seq_sum_const"}:
+                losses.append(result.loss * len(rows))
+                denominator += len(group.trajectories)
+            else:
+                losses.append(result.loss * token_count)
+                denominator += token_count
+            if entropy is not None:
+                entropy_sums.append((entropy * mask).sum())
+            for name in metric_sums:
+                metric_sums[name] += result.metrics[name] * token_count
+            n_rows += len(rows)
+            n_tokens += token_count
+
+        total = (
+            torch.stack(losses).sum() / max(denominator, 1)
+            if losses
+            else torch.tensor(0.0, device=device, requires_grad=True)
+        )
+        entropy_mean = (
+            torch.stack(entropy_sums).sum() / max(n_tokens, 1) if entropy_sums else None
+        )
+        if not trajectory_groups and entropy_coef > 0:
+            entropy_mean = torch.zeros((), device=device, requires_grad=True)
+        policy_mean = total
+        entropy_loss = (
+            -entropy_coef * entropy_mean if entropy_mean is not None else None
+        )
+        if entropy_loss is not None:
+            total = total + entropy_loss
+        advantage_values = np.asarray(adv_log, dtype=np.float64)
+        advantage_mean = float(advantage_values.mean()) if adv_log else 0.0
+        advantage_m2 = float(np.square(advantage_values - advantage_mean).sum())
+        sequence_measure = objective.aggregate in {"seq_mean", "seq_sum_const"}
+        reduction = LossMetricReduction(
+            measure="trajectory" if sequence_measure else "token",
+            policy_count=denominator,
+            token_count=n_tokens,
+            trajectory_count=sum(len(g.trajectories) for g in trajectory_groups),
+            row_count=n_rows,
+            advantage_count=len(adv_log),
+            nonzero_advantages=int(np.count_nonzero(advantage_values)),
+            policy_sum=float(policy_mean.detach()) * denominator,
+            entropy_loss_sum=(
+                float(entropy_loss.detach()) * n_tokens
+                if entropy_loss is not None
+                else 0.0
+            ),
+            entropy_sum=(
+                float(entropy_mean.detach()) * n_tokens
+                if entropy_mean is not None
+                else 0.0
+            ),
+            kl_sum=metric_sums["kl"],
+            ratio_sum=metric_sums["ratio_mean"],
+            clip_sum=metric_sums["clip_fraction"],
+            advantage_mean=advantage_mean,
+            advantage_m2=advantage_m2,
+        )
+        metrics = {
+            "total_loss": total,
+            "policy_loss": total,
+            "policy_objective_loss": policy_mean,
+            "kl_penalty": torch.tensor(
+                metric_sums["kl"] / max(n_tokens, 1), device=device
+            ),
+            "entropy": (
+                float(entropy_mean.detach()) if entropy_mean is not None else 0.0
+            ),
+            "entropy_measured": entropy_mean is not None,
+            "mean_advantage": advantage_mean,
+            "nonzero_advantage_fraction": (
+                float(np.count_nonzero(adv_log) / len(adv_log)) if adv_log else 0.0
+            ),
+            "advantage_std": float(np.std(adv_log)) if adv_log else 0.0,
+            "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
+            "num_rows": n_rows,
+            "num_tokens": n_tokens,
+            "policy_denominator": denominator,
+            "path": "token",
+            "objective": objective.name,
+            "ratio_mean": metric_sums["ratio_mean"] / n_tokens if n_tokens else 1.0,
+            "clip_fraction": metric_sums["clip_fraction"] / max(n_tokens, 1),
+            "off_policy": old_logprobs is not None,
+            "old_logprobs_source": old_source,
+        }
+        return NormalizedLoss(
+            metrics,
+            policy_mean=policy_mean if sequence_measure else total,
+            policy_count=denominator,
+            measure="trajectory" if sequence_measure else "token",
+            entropy_loss=entropy_loss if sequence_measure else None,
+            token_count=n_tokens,
+            metric_reduction=reduction,
+        )
+
+    return run_token_local(agent.model, "forwards", local_loss)
 
 
 def _try_token_path(
@@ -482,7 +646,9 @@ def _try_token_path(
     """Run the batched token path when every group carries token metadata."""
     groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
     if not groups:
-        return None
+        if getattr(agent.model, "_stateset_token_forward", False) is not True:
+            return None
+        return _compute_token_path_loss([], [], config, agent, **kwargs)
     rows = [_token_rows_for_group(g) for g in groups]
     if any(r is None for r in rows):
         from .rollout_contract import require_explicit_fallback
@@ -504,8 +670,10 @@ def compute_grpo_loss(
     agent: Any,
     global_reward_mean: float,
     global_reward_count: int,
-    update_global_stats: Callable[[float, int], None],
+    update_global_stats: Callable[[float, int], None] | None,
     old_logprobs: list[Any] | None = None,
+    *,
+    global_reward_sum: float | None = None,
 ) -> dict[str, Any]:
     """
     Compute GRPO loss from trajectory groups with configurable baseline and normalization.
@@ -530,6 +698,8 @@ def compute_grpo_loss(
         agent,
         old_logprobs=old_logprobs,
         global_reward_mean=global_reward_mean,
+        global_reward_count=global_reward_count,
+        global_reward_sum=global_reward_sum,
         update_global_stats=update_global_stats,
     )
     if token_result is not None:
@@ -632,6 +802,14 @@ def compute_grpo_loss(
         "path": "sequence",
         "objective": _grpo_objective(config).name,
         "fallback": "explicit_sequence_compatibility",
+        "nonzero_advantage_fraction": (
+            float(
+                np.count_nonzero(all_advantages_for_logging)
+                / len(all_advantages_for_logging)
+            )
+            if all_advantages_for_logging
+            else 0.0
+        ),
         "policy_loss": total_loss_tensor,
         "total_loss": total_loss_tensor,
         "mean_advantage": (
@@ -837,6 +1015,11 @@ def compute_enhanced_grpo_loss(
     agent: Any,
     reference_model: Any | None = None,
     old_logprobs: list[Any] | None = None,
+    *,
+    global_reward_mean: float | None = None,
+    global_reward_count: int = 0,
+    global_reward_sum: float | None = None,
+    update_global_stats: Callable[[float, int], None] | None = None,
 ) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
@@ -858,6 +1041,10 @@ def compute_enhanced_grpo_loss(
         beta=beta,
         reference_model=reference_model,
         old_logprobs=old_logprobs,
+        global_reward_mean=global_reward_mean,
+        global_reward_count=global_reward_count,
+        global_reward_sum=global_reward_sum,
+        update_global_stats=update_global_stats,
     )
     if token_result is not None:
         return token_result
@@ -1002,6 +1189,11 @@ def compute_enhanced_grpo_loss(
         "policy_loss": policy_loss,
         "kl_penalty": kl_penalty,
         "mean_advantage": np.mean(all_advantages) if all_advantages else 0.0,
+        "nonzero_advantage_fraction": (
+            float(np.count_nonzero(all_advantages) / len(all_advantages))
+            if all_advantages
+            else 0.0
+        ),
         "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
         "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
     }

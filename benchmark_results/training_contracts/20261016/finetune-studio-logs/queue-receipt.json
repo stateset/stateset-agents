@@ -1,0 +1,14 @@
+{
+  "id": "71c5cce5bd41",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-studio-logs-verify.py"
+  ],
+  "created": 1792179817.6856396,
+  "started": 1792179818.0286713,
+  "finished": 1792180069.9884894,
+  "wait_seconds": 0.343031644821167,
+  "elapsed_seconds": 251.95981812477112
+}

@@ -72,6 +72,7 @@ async def test_pipeline_with_composite_reward_completes():
     )
     config = TrainingConfig(
         allow_sequence_fallback=True,
+        zero_signal_patience=0,  # Stub-only lifecycle test; no policy learning.
         num_episodes=2,
         max_steps_per_episode=3,
         num_generations=1,
@@ -183,6 +184,7 @@ async def test_pipeline_stable_across_multiple_episodes():
     reward_fn = HelpfulnessReward()
     config = TrainingConfig(
         allow_sequence_fallback=True,
+        zero_signal_patience=0,  # Stub-only lifecycle test; no policy learning.
         num_episodes=3,
         max_steps_per_episode=2,
         num_generations=1,

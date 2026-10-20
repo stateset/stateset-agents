@@ -1,0 +1,59 @@
+"""Hand reviewed staged changes to the queued verifier under its source lock."""
+from pathlib import Path
+import ast
+import fcntl
+import hashlib
+import json
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+try:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    raise SystemExit('Verifier owns source lock; apply after it finishes.')
+
+changes = {}
+preview = json.loads(Path('/tmp/stateset-studio-mobile-preview.json').read_text())
+for name in ['stateset_agents/api/routers/finetune.py', 'tests/api/test_finetune_operator.py']:
+    baseline = preview['source_sha256'][name.removeprefix('stateset_agents/')] if name.startswith('stateset_agents/') else preview['test_source_sha256'][name]
+    changes[name] = (Path('/tmp/stateset-api-fixes')/name, baseline)
+for name, baseline in {
+    'stateset_agents/finetune_inspection.py': '2b3ab4844c0ad78df2b87741edf5d74a8be2d3f4e4839fbfd9d0f5a4cd02ff8a',
+    'tests/unit/test_finetune_inspection.py': '40fd375ec9ced951cf1415bf0e287711d31b2287f6517796993943e424fa6323',
+}.items():
+    changes[name] = (Path('/tmp/stateset-workflow-fixes')/name, baseline)
+for name, info in json.loads(Path('/tmp/stateset-provenance-fixes/manifest.json').read_text()).items():
+    changes[name] = (Path('/tmp/stateset-provenance-fixes')/name, info['original_sha256'])
+for name, info in json.loads(Path('/tmp/stateset-ppo-fixes/manifest.json').read_text())['files'].items():
+    changes[name] = (Path('/tmp/stateset-ppo-fixes')/name, info['base_sha256'])
+
+for name, (staged, baseline) in changes.items():
+    path = root/name
+    actual = hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+    assert actual == baseline, ('Concurrent change', name)
+    assert staged.is_file(), staged
+
+files = ['stateset_agents/tui.py', 'stateset_agents/cli.py', 'tests/unit/test_finetune_mobile.py', *changes]
+for script in ['format','gates']:
+    path = Path('/tmp/stateset-studio-mobile-'+script+'.py')
+    source = path.read_text()
+    tree = ast.parse(source)
+    if script == 'format':
+        node = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'files' for t in n.targets))
+        old = source.splitlines()[node.lineno-1]
+        updated = source.replace(old, 'files='+repr(files), 1)
+    else:
+        line = next(line for line in source.splitlines() if line.startswith('for name in ['))
+        updated = source.replace(line, 'for name in '+repr(files)+':', 1)
+    path.write_text(updated)
+extra = "'tests/unit/test_ppo_safety.py','tests/unit/test_ppo_objective.py','tests/unit/test_remote_runpod_executor.py',"
+for suffix in ['prepare', 'finish']:
+    path = Path('/tmp/stateset-studio-mobile-'+suffix+'.py')
+    source = path.read_text()
+    assert 'test_ppo_safety.py' not in source
+    source = source.replace("'tests/unit/test_finetune_mobile.py',", extra+"'tests/unit/test_finetune_mobile.py',")
+    path.write_text(source)
+for name, (staged, _) in changes.items():
+    (root/name).write_bytes(staged.read_bytes())
+Path('/tmp/stateset-hardening-handoff.json').write_text(json.dumps({'files': files, 'staged_files': {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in changes}, 'queue_job': '1e204ba66630', 'scope': 'Mobile acceptance plus audited RL, operator API, metric and RunPod safety fixes'}, indent=2)+'\n')
+print(json.dumps({'applied':list(changes), 'verification_files':files}))

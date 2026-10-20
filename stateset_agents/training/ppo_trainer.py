@@ -1,8 +1,9 @@
 """
 Proximal Policy Optimization (PPO) Trainer for StateSet Agents
 
-This module provides a clean, efficient PPO implementation that serves as a baseline
-for comparing more advanced algorithms like GRPO, GSPO, DAPO, and VAPO.
+This module provides token-exact online PPO and reference text-batch updates.
+Online sampling retains behavior likelihoods and critic values; the external
+text interface cannot certify caller-supplied behavior-policy provenance.
 
 PPO is the foundation algorithm that most modern RL-from-feedback methods build upon.
 This implementation includes:
@@ -15,12 +16,15 @@ This implementation includes:
 Reference: https://arxiv.org/abs/1707.06347
 """
 
-import asyncio
+import copy
 import logging
+import math
 import os
-from collections.abc import Callable
+import random
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, cast
 
 import torch
 import torch.nn as nn
@@ -36,7 +40,26 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-REWARD_FN_EXCEPTIONS = (RuntimeError, TypeError, ValueError)
+
+@contextmanager
+def _deterministic_scoring(*models: nn.Module | None) -> Iterator[None]:
+    """Disable stochastic layers without disabling gradients; restore all modes."""
+    modes = {
+        module: module.training
+        for model in models
+        if model is not None
+        for module in model.modules()
+    }
+    try:
+        for model in models:
+            if model is not None:
+                model.eval()
+        yield
+    finally:
+        # Restore mixed submodule modes as well as the root's flag.
+        for module, training in modes.items():
+            module.training = training
+
 
 try:
     import numpy as _np
@@ -101,6 +124,8 @@ class PPOConfig(TrainingConfig):
     # Training parameters
     num_ppo_epochs: int = 4  # Inner PPO epochs per batch
     mini_batch_size: int = 4  # Mini-batch size
+    gradient_accumulation_steps: int = 1
+    ppo_prompt_sha256: str | None = None
 
     # Value function
     value_coef: float = 0.5  # Value loss coefficient
@@ -114,7 +139,8 @@ class PPOConfig(TrainingConfig):
     max_prompt_length: int = 256
     max_completion_length: int = 256
     temperature: float = 0.7
-    top_p: float = 0.9
+    top_p: float = 1.0
+    top_k: int = 0
 
     # Model optimization
     use_lora: bool = True
@@ -129,6 +155,33 @@ class PPOConfig(TrainingConfig):
 
     # Reference model (for KL computation)
     use_reference_model: bool = True
+
+    def validate_for_training(self) -> None:
+        """Validate PPO estimator and critic settings before learner mutation."""
+        super().validate_for_training()
+        for name in ("num_ppo_epochs", "mini_batch_size", "value_hidden_size"):
+            if type(getattr(self, name)) is not int or getattr(self, name) < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("gamma", "gae_lambda"):
+            value = getattr(self, name)
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or not 0 <= value <= 1
+            ):
+                raise ValueError(f"{name} must be finite in [0, 1]")
+        for name in ("clip_eps", "value_clip_eps", "value_coef"):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if self.target_kl is not None and (
+            type(self.target_kl) not in (int, float)
+            or not math.isfinite(self.target_kl)
+            or self.target_kl <= 0
+        ):
+            raise ValueError("target_kl must be finite and positive")
+        if self.use_adaptive_kl and (self.target_kl is None or self.beta <= 0):
+            raise ValueError("Adaptive PPO KL requires target_kl and a positive beta")
 
 
 class PPOValueHead(nn.Module):
@@ -190,16 +243,20 @@ class AdaptiveKLController:
         self.target_kl = target_kl
         self.horizon = horizon
 
-    def update(self, current_kl: float, n_steps: int) -> float:
-        """Update KL coefficient based on current KL divergence."""
+    def propose(self, current_kl: float, n_steps: int) -> float:
+        """Calculate a coefficient without changing controller state."""
+        if not math.isfinite(current_kl):
+            raise FloatingPointError("PPO KL divergence must remain finite")
         proportional_error = (current_kl - self.target_kl) / self.target_kl
         mult = 1.0 + proportional_error * n_steps / self.horizon
+        proposed = self.kl_coef * mult
+        if not math.isfinite(proposed):
+            raise FloatingPointError("PPO KL coefficient must remain finite")
+        return max(0.001, min(proposed, 100.0))
 
-        self.kl_coef = self.kl_coef * mult
-
-        # Clamp to reasonable range
-        self.kl_coef = max(0.001, min(self.kl_coef, 100.0))
-
+    def update(self, current_kl: float, n_steps: int) -> float:
+        """Update KL coefficient based on current KL divergence."""
+        self.kl_coef = self.propose(current_kl, n_steps)
         return self.kl_coef
 
 
@@ -253,8 +310,8 @@ class PPOTrainer(TrainingRuntime):
     """
     Proximal Policy Optimization (PPO) Trainer
 
-    A clean, reference implementation of PPO for language model fine-tuning.
-    This serves as a baseline for comparing more advanced algorithms.
+    Token-exact online updates and externally supplied text-batch updates.
+    ``train_step`` requires callers to establish behavior-policy provenance.
 
     Features:
     - Clipped surrogate objective for stable policy updates
@@ -375,18 +432,18 @@ class PPOTrainer(TrainingRuntime):
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
         """Extract hidden states from model."""
-        with torch.set_grad_enabled(self.model.training):
-            outputs = self.model(
-                input_ids=input_ids,
-                attention_mask=attention_mask,
-                output_hidden_states=True,
-            )
-            return outputs.hidden_states[-1]
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            output_hidden_states=True,
+        )
+        return outputs.hidden_states[-1]
 
     def compute_log_probs(
         self,
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
+        temperature: float = 1.0,
     ) -> tuple[torch.Tensor, torch.Tensor]:
         """
         Compute per-token log probabilities.
@@ -399,7 +456,7 @@ class PPOTrainer(TrainingRuntime):
         logits = outputs.logits
 
         # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
+        shift_logits = logits[:, :-1, :].float().contiguous() / temperature
         shift_labels = input_ids[:, 1:].contiguous()
 
         # Log probabilities
@@ -557,50 +614,163 @@ class PPOTrainer(TrainingRuntime):
 
         Returns:
             Dictionary of metrics
+
+        This lower-level API scores caller-supplied text. It does not establish
+        that completions were sampled from the policy or retain exact sampled
+        token boundaries. Ambiguous prompt boundaries and truncated responses
+        are rejected; callers remain responsible for sampling provenance.
+        Scoring disables dropout while retaining gradients. A failure after an
+        optimizer starts quarantines the runtime until a complete checkpoint
+        reload; it does not roll back already committed optimizer updates.
         """
-        self.model.train()
-        self.value_head.train()
+        if getattr(self, "_ppo_online_active", False):
+            raise RuntimeError("PPO online operation is already active")
+        self._ppo_update_in_flight = False
+        try:
+            with _deterministic_scoring(self.model, self.value_head, self.ref_model):
+                return await self._train_text_step(prompts, completions, rewards)
+        except BaseException:
+            if self._ppo_update_in_flight:
+                self._runtime_checkpoint_poisoned = True
+            raise
+        finally:
+            self._ppo_update_in_flight = False
+
+    async def _train_text_step(
+        self,
+        prompts: list[str],
+        completions: list[str],
+        rewards: list[float],
+    ) -> dict[str, float]:
+        """Validate and update a text batch with deterministic model scoring."""
+        validate_training_config(self.config)
+        if self.config.beta > 0 and self.ref_model is None:
+            raise ValueError("PPO beta > 0 requires a reference model")
+        if (
+            type(self.config.num_ppo_epochs) is not int
+            or self.config.num_ppo_epochs < 1
+        ):
+            raise ValueError("num_ppo_epochs must be a positive integer")
+        if (
+            not prompts
+            or len(prompts) != len(completions)
+            or len(prompts) != len(rewards)
+        ):
+            raise ValueError(
+                "PPO requires equal nonempty prompt, completion and reward batches"
+            )
+        if any(not isinstance(value, str) for value in (*prompts, *completions)):
+            raise TypeError("PPO prompts and completions must be strings")
+        try:
+            finite_rewards = [float(value) for value in rewards]
+        except (TypeError, ValueError, OverflowError) as exc:
+            raise ValueError("PPO rewards must be finite numbers") from exc
+        if any(isinstance(value, bool) for value in rewards) or not all(
+            math.isfinite(value) for value in finite_rewards
+        ):
+            raise ValueError("PPO rewards must be finite numbers")
+        rewards_tensor = torch.tensor(
+            finite_rewards, device=self.device, dtype=torch.float
+        )
+        if not torch.isfinite(rewards_tensor).all():
+            raise ValueError("PPO rewards must remain finite in the learner dtype")
+
+        # One extra token detects an overlong prompt without allocating an
+        # unbounded prompt batch. Never label a truncated prompt's tail as a
+        # response merely because the full text has a larger token budget.
+        prompt_encodings = self.tokenizer(
+            prompts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=self.config.max_prompt_length + 1,
+        )
+        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
+        if (prompt_lengths > self.config.max_prompt_length).any():
+            raise ValueError(
+                "PPO prompts exceed max_prompt_length; truncate them explicitly"
+            )
 
         # Tokenize inputs
-        full_texts = [p + c for p, c in zip(prompts, completions, strict=False)]
+        full_texts = [p + c for p, c in zip(prompts, completions, strict=True)]
         encodings = self.tokenizer(
             full_texts,
             return_tensors="pt",
             padding=True,
             truncation=True,
             max_length=self.config.max_prompt_length
-            + self.config.max_completion_length,
+            + self.config.max_completion_length
+            + 1,
         )
+
+        # A BPE merge or an injected special token can change the separately
+        # tokenized prompt. Length alone cannot locate the completion boundary.
+        for row in range(len(prompts)):
+            prompt_ids = prompt_encodings["input_ids"][row][
+                prompt_encodings["attention_mask"][row].bool()
+            ]
+            full_ids = encodings["input_ids"][row][
+                encodings["attention_mask"][row].bool()
+            ]
+            if prompt_ids.numel() == 0 or not torch.equal(
+                prompt_ids, full_ids[: prompt_ids.numel()]
+            ):
+                raise ValueError(
+                    "PPO prompt token boundary is ambiguous in combined text"
+                )
+            if (
+                full_ids.numel() - prompt_ids.numel()
+                > self.config.max_completion_length
+            ):
+                raise ValueError(
+                    "PPO completions exceed max_completion_length; truncated rewards are invalid"
+                )
 
         input_ids = encodings["input_ids"].to(self.device)
         attention_mask = encodings["attention_mask"].to(self.device)
-
-        # Create response mask (1 for completion tokens)
-        prompt_encodings = self.tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=self.config.max_prompt_length,
-        )
-        prompt_lengths = prompt_encodings["attention_mask"].sum(dim=1)
 
         response_mask = self.build_response_mask(
             attention_mask,
             prompt_lengths,
             getattr(self.tokenizer, "padding_side", "right"),
         )
+        if not (response_mask[:, 1:].sum(dim=1) > 0).all():
+            raise ValueError("PPO requires at least one response action in every row")
+
+        return self._update_token_batch(
+            input_ids, attention_mask, response_mask, rewards_tensor
+        )
+
+    def _update_token_batch(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+        response_mask: torch.Tensor,
+        rewards_tensor: torch.Tensor,
+        *,
+        old_log_probs: torch.Tensor | None = None,
+        old_values: torch.Tensor | None = None,
+        temperature: float = 1.0,
+    ) -> dict[str, float]:
+        """Update retained token actions; online callers supply behavior scores."""
 
         # Get initial values and log probs (for old policy)
         with torch.no_grad():
-            old_log_probs, _ = self.compute_log_probs(input_ids, attention_mask)
-            hidden_states = self.get_hidden_states(input_ids, attention_mask)
-            old_values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
+            if old_log_probs is None:
+                old_log_probs, _ = self.compute_log_probs(
+                    input_ids, attention_mask, temperature
+                )
+            if old_values is None:
+                hidden_states = self.get_hidden_states(input_ids, attention_mask)
+                old_values = self.value_head(
+                    hidden_states.to(next(self.value_head.parameters()).dtype)
+                ).squeeze(-1)[:, :-1]
 
-        rewards_tensor = torch.tensor(rewards, device=self.device, dtype=torch.float)
         advantages, returns = self.compute_episode_advantages(
             rewards_tensor, response_mask[:, 1:], old_values
         )
+        if not torch.isfinite(advantages).all() or not torch.isfinite(returns).all():
+            raise FloatingPointError("PPO advantages and returns must remain finite")
 
         # PPO epochs
         total_policy_loss = 0.0
@@ -612,9 +782,13 @@ class PPOTrainer(TrainingRuntime):
 
         for _ in range(self.config.num_ppo_epochs):
             # Forward pass
-            log_probs, entropy = self.compute_log_probs(input_ids, attention_mask)
+            log_probs, entropy = self.compute_log_probs(
+                input_ids, attention_mask, temperature
+            )
             hidden_states = self.get_hidden_states(input_ids, attention_mask)
-            values = self.value_head(hidden_states).squeeze(-1)[:, :-1]
+            values = self.value_head(
+                hidden_states.to(next(self.value_head.parameters()).dtype)
+            ).squeeze(-1)[:, :-1]
 
             # Policy loss
             policy_loss, clip_fraction = self.ppo_loss(
@@ -639,13 +813,15 @@ class PPOTrainer(TrainingRuntime):
                 - self.config.entropy_coef * entropy_bonus
             )
 
-            # KL penalty
+            # Stage adaptive state until this inner update has committed both
+            # optimizers. Rejected losses/gradients must not consume adaptation.
+            proposed_kl_coef = None
             if self.config.beta > 0 and self.ref_model is not None:
                 with torch.no_grad():
                     ref_outputs = self.ref_model(
                         input_ids=input_ids, attention_mask=attention_mask
                     )
-                    ref_logits = ref_outputs.logits[:, :-1, :]
+                    ref_logits = ref_outputs.logits[:, :-1, :].float() / temperature
                     ref_log_probs = F.log_softmax(ref_logits, dim=-1)
                     ref_token_log_probs = ref_log_probs.gather(
                         dim=-1, index=input_ids[:, 1:].unsqueeze(-1)
@@ -657,25 +833,42 @@ class PPOTrainer(TrainingRuntime):
 
                 kl_coef = self.config.beta
                 if self.kl_controller:
-                    kl_coef = self.kl_controller.update(kl.item(), 1)
+                    proposed_kl_coef = self.kl_controller.propose(kl.item(), 1)
+                    kl_coef = proposed_kl_coef
 
                 total_loss = total_loss + kl_coef * kl
 
-            # Backward pass
+            # Reject an invalid objective before discarding existing gradients.
+            if total_loss.numel() != 1 or not torch.isfinite(total_loss).all():
+                raise FloatingPointError("PPO loss must be a finite scalar")
+
+            # Both optimizers share this backward pass. Check both gradient
+            # populations before either optimizer can commit an update.
             self.policy_optimizer.zero_grad()
             self.value_optimizer.zero_grad()
             total_loss.backward()
 
-            # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
-            )
+            try:
+                torch.nn.utils.clip_grad_norm_(
+                    self.model.parameters(),
+                    self.config.max_grad_norm,
+                    error_if_nonfinite=True,
+                )
+                torch.nn.utils.clip_grad_norm_(
+                    self.value_head.parameters(),
+                    self.config.max_grad_norm,
+                    error_if_nonfinite=True,
+                )
+            except RuntimeError as exc:
+                self.policy_optimizer.zero_grad(set_to_none=True)
+                self.value_optimizer.zero_grad(set_to_none=True)
+                raise FloatingPointError("PPO gradients must remain finite") from exc
 
+            self._ppo_update_in_flight = True
             self.policy_optimizer.step()
             self.value_optimizer.step()
+            if proposed_kl_coef is not None and self.kl_controller is not None:
+                self.kl_controller.kl_coef = proposed_kl_coef
 
             total_policy_loss += policy_loss.item()
             total_value_loss += vf_loss.item()
@@ -700,7 +893,7 @@ class PPOTrainer(TrainingRuntime):
             "value_loss": avg_value_loss,
             "entropy": avg_entropy,
             "clip_fraction": avg_clip_fraction,
-            "average_reward": sum(rewards) / len(rewards),
+            "average_reward": float(rewards_tensor.double().mean().item()),
         }
 
         # Update history
@@ -715,56 +908,31 @@ class PPOTrainer(TrainingRuntime):
         prompts: list[str],
         num_episodes: int | None = None,
     ) -> dict[str, Any]:
+        """Train to a total update budget using retained on-policy token samples.
+
+        Prompts cycle deterministically in mini_batch_size windows, with
+        num_generations completions per prompt. A complete checkpoint restores
+        the prompt cursor (global_step) and sampling RNG. Rewards may be sync or
+        async; each receives the original prompt and decoded sampled completion.
+        See ppo_online for the bounded, single-process sampling protocol.
         """
-        Run full PPO training loop.
+        from .ppo_online import train_online
 
-        Args:
-            prompts: List of training prompts
-            num_episodes: Number of training episodes
+        return await train_online(self, prompts, num_episodes)
 
-        Returns:
-            Training summary
-        """
-        num_episodes = num_episodes or self.config.num_episodes
+    def save_runtime_checkpoint(self, output_dir: str) -> None:
+        """Publish a PPO runtime only between complete online batches."""
+        if getattr(self, "_ppo_online_active", False):
+            raise RuntimeError("Cannot checkpoint an active PPO online operation")
+        super().save_runtime_checkpoint(output_dir)
 
-        logger.info(f"Starting PPO training for {num_episodes} episodes")
-
-        for episode in range(num_episodes):
-            # Sample prompts for this episode
-            episode_prompts = prompts[: self.config.num_generations]
-
-            # Generate completions (simplified - would use model generation in practice)
-            completions = ["This is a sample completion."] * len(episode_prompts)
-
-            # Compute rewards
-            rewards = []
-            for p, c in zip(episode_prompts, completions, strict=False):
-                try:
-                    if asyncio.iscoroutinefunction(self.reward_fn):
-                        reward = await self.reward_fn(p, c)
-                    else:
-                        reward = self.reward_fn(p, c)
-                    rewards.append(float(reward))
-                except REWARD_FN_EXCEPTIONS as e:
-                    logger.warning(f"Reward computation failed: {e}")
-                    rewards.append(0.0)
-
-            # Training step
-            metrics = await self.train_step(episode_prompts, completions, rewards)
-
-            if episode % self.config.logging_steps == 0:
-                logger.info(
-                    f"Episode {episode}/{num_episodes} | "
-                    f"Policy Loss: {metrics['policy_loss']:.4f} | "
-                    f"Value Loss: {metrics['value_loss']:.4f} | "
-                    f"Reward: {metrics['average_reward']:.4f}"
-                )
-
-        return {
-            "final_metrics": metrics,
-            "metrics_history": self.metrics_history,
-            "total_episodes": num_episodes,
-        }
+    def load_runtime_checkpoint(
+        self, checkpoint_dir: str, *, trusted: bool = False
+    ) -> bool:
+        """Restore a complete PPO runtime between online batches."""
+        if getattr(self, "_ppo_online_active", False):
+            raise RuntimeError("Cannot reload an active PPO online operation")
+        return super().load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
     def save_checkpoint(self, path: str | None = None) -> str:
         """Publish policy and critic state through the shared runtime."""
@@ -785,7 +953,7 @@ async def train_ppo(
     **kwargs,
 ) -> dict[str, Any]:
     """
-    Quick PPO training with minimal configuration.
+    Load a native causal model and run token-exact, single-process online PPO.
 
     Args:
         model_name: HuggingFace model name
@@ -797,40 +965,46 @@ async def train_ppo(
     Returns:
         Training results
     """
-    # Create config
-    config = PPOConfig(
-        model_name=model_name,
-        num_episodes=num_episodes,
-        **kwargs,
+    from .ppo_online import validate_online_config, validate_prompts
+
+    config = PPOConfig(model_name=model_name, num_episodes=num_episodes, **kwargs)
+    validate_training_config(config)
+    validate_online_config(config)
+    validate_prompts(prompts)
+    if config.use_4bit or config.use_8bit:
+        raise ValueError("Online PPO convenience loading does not support quantization")
+    if not _load_transformers_ppo():
+        raise ImportError("Online PPO requires transformers")
+    torch.manual_seed(config.seed)
+    random.seed(config.seed)
+    if np is not None:
+        np.random.seed(config.seed)
+    tokenizer = cast(Any, AutoTokenizer).from_pretrained(
+        model_name, revision=config.model_revision, trust_remote_code=False
     )
-    config.validate_for_training()
-
-    _load_transformers_ppo()
-
-    if AutoModelForCausalLM is None or AutoTokenizer is None:
-        raise ImportError("transformers is required for PPO training")
-
-    # Load model and tokenizer
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_name, revision=config.model_revision
-    )
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    model = AutoModelForCausalLM.from_pretrained(
+    model = cast(Any, AutoModelForCausalLM).from_pretrained(
         model_name,
         revision=config.model_revision,
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-        device_map="auto" if torch.cuda.is_available() else None,
+        trust_remote_code=False,
+        torch_dtype=torch.float32,
     )
+    if config.use_lora:
+        from peft import LoraConfig, get_peft_model
 
-    # Create trainer
-    trainer = PPOTrainer(
-        config=config,
-        model=model,
-        tokenizer=tokenizer,
-        reward_fn=reward_fn,
+        model = get_peft_model(
+            model,
+            LoraConfig(
+                r=config.lora_r,
+                lora_alpha=config.lora_alpha,
+                lora_dropout=config.lora_dropout,
+                task_type="CAUSAL_LM",
+            ),
+        )
+    model.to("cuda" if torch.cuda.is_available() else "cpu")
+    reference = (
+        copy.deepcopy(model).eval().requires_grad_(False) if config.beta > 0 else None
     )
-
-    # Train
-    return await trainer.train(prompts, num_episodes)
+    trainer = PPOTrainer(config, model, tokenizer, reward_fn, reference)
+    metrics = await trainer.train(prompts)
+    checkpoint = trainer.save_checkpoint()
+    return {**metrics, "checkpoint": checkpoint}

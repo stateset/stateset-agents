@@ -1,0 +1,112 @@
+"""Retain immutable studio acceptance evidence after frozen-source verification."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import sys
+import subprocess
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source = Path(sys.argv[1])
+job = sys.argv[2]
+v = json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+assert package == v['source_sha256']
+assert 'Success: no issues found in 423 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed == package
+    for name in ['stateset_agents/evaluation/rubrics/support_rubric_v4.md', 'stateset_agents/config/presets/experiments/support_recovery_preflight6.json']:
+        assert wheel.read(name) == (root/name).read_bytes()
+def counts(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors', 0))+int(s.get('failures', 0)) for s in suites)
+    skipped = sum(int(s.get('skipped', 0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests', 0)) for s in suites)-skipped, skipped=skipped)
+plan = json.loads((source/'preflight6-plan.json').read_text())
+assert not plan['ready_for_paid_execution'] and plan['estimated_total_cost_usd'] is None
+assert not (source/'unused-studio-workspace').exists()
+live = Path('/tmp/stateset-studio-backends-live.txt')
+summary = dict(passed=True, queue_job=job, typed_modules=423, source_unchanged=True, test_sources_unchanged=True, wheel_source_matches=True, wheel_profile_matches=True, wheel_rubric_matches=True, wheel_sha256=v['wheel_sha256'], source_regressions=counts('regressions.xml'), wheel_regressions=counts('wheel.xml'), real_terminal_navigation_verified=True, real_terminal_run_search_verified=True, real_terminal_prepared_review_verified=True, real_terminal_backend_selection_verified=True, live_herdr_refreshed=live.exists(), studio_worker_tests='CPU fixtures and mocked CUDA/provider boundaries; no real GPU training', failure_tests='Synthetic exceptions and mocked process/provider boundaries; no actual OOM, disk exhaustion or paid training', distributed_contracts_repeated=False, gpu_verified=False, quality_gain_verified=False, paid_run_launched=False, count_note='Targeted source and wheel counts overlap.')
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-backends'
+out.mkdir(parents=True, exist_ok=False)
+receipt = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr', 'show', '--json', job], text=True))
+assert receipt['state'] == 'succeeded' and receipt['exit_code'] == 0
+safe_receipt = {key: receipt.get(key) for key in ['id', 'state', 'exit_code', 'argv', 'created', 'started', 'finished', 'wait_seconds', 'elapsed_seconds']}
+summary['queue_wait_seconds'] = safe_receipt['wait_seconds']
+(out/'queue-receipt.json').write_text(json.dumps(safe_receipt, indent=2)+'\n')
+focused = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr', 'show', '--json', '7f298205438e'], text=True))
+assert focused['state'] == 'succeeded' and focused['exit_code'] == 0
+(out/'focused-queue-receipt.json').write_text(json.dumps({key: focused.get(key) for key in safe_receipt}, indent=2)+'\n')
+(out/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
+for name in ['verification.json', 'regressions.xml', 'wheel.xml', 'gates.log', 'types.log', 'wheel-origin.log', 'workflow-lint.log', 'wheel-test-configuration.json', 'reward-audit.json', 'preflight6-plan.json', 'studio-snapshot.log', 'free-recovery-plan.log', 'studio-narrow-snapshot.log', 'agent-schema.log', 'agent-models.log']:
+    shutil.copy2(source/name, out/name)
+for name in ['stateset-studio-backends-verify.py', 'stateset-studio-backends-retain.py', 'stateset-platform-gates.py']:
+    shutil.copy2(Path('/tmp')/name, out/(name+'.txt'))
+if live.exists():
+    shutil.copy2(live, out/'herdr-live.txt')
+readiness = Path('/tmp/stateset-studio-backends-draft.txt')
+if readiness.exists():
+    shutil.copy2(readiness, out/'herdr-draft.txt')
+for previous in sorted(Path('/tmp').glob('stateset-studio-backends-20261016*')):
+    if previous == source or not (previous/'verification.json').exists():
+        continue
+    attempts = out/'verification-attempts'/previous.name
+    attempts.mkdir(parents=True)
+    for name in ['verification.json', 'gates.log', 'types.log']:
+        if (previous/name).exists():
+            shutil.copy2(previous/name, attempts/name)
+(out/'README.md').write_text(f'''# Fine-tuning backend selection: acceptance
+
+Buildr job `{job}` verified frozen package/test Python and an isolated installed
+wheel. Package Python, packaged recovery profile and rubric bytes match.
+
+- {summary['source_regressions']['passed']:,} targeted source regressions passed ({summary['source_regressions']['skipped']} skips).
+- {summary['wheel_regressions']['passed']:,} installed-wheel regressions passed ({summary['wheel_regressions']['skipped']} skips).
+- All 423 package modules passed typing. Lint, serial formatting, hygiene,
+  release governance, stable API compatibility and workflow lint passed.
+- Real terminal regressions cover editing, run search and prepared-plan review
+  with Escape at 74x44 and 110x32; no training is launched by these PTY checks.
+- Installed-wheel CLI schema/model commands run without a terminal or training.
+
+Backend contracts cover the four-provider picker, escape without mutation,
+Compute-field cycling, explicit uncapped billing policy, exact GPU overrides,
+remote executor routing, paid opt-in for Modal/River, credential presence,
+remote readiness without local GPU requirements, River pointer metadata,
+rejection of missing/malformed/wrong-model artifacts, local queue bypass for
+remote lifecycle waits and machine-readable backend capabilities. Modal and
+River executor/runtime/registry regressions are included in both suites.
+Real PTYs navigate the backend picker and select Modal at both pane sizes.
+No authenticated provider request, allocation or paid training was performed.
+
+Handoff contracts cover agent preparation to human review, same-ID submission,
+retained data with a removed source file, preserved Configure draft and preview,
+saved CPU/RAM/scratch and RunPod resource display, checksum binding through queue
+wait, duplicate submission across UI/CLI, selection changes during refresh,
+changed/corrupt/symlinked records, legacy empty launch locks, missing remote
+credentials, receipt-write failure and narrow scrollable reviews. CUDA and
+provider allocation are mocked; paid or GPU training was not launched.
+
+Agent CLI contracts cover versioned JSON, schema/model discovery, free readiness
+and immutable preparation, shared TUI visibility, checksum/data/code mismatch
+rejection, submission idempotence, explicit paid opt-in and credential presence,
+bounded private logs, environment credential redaction, protocol-key stability,
+whitelisted status metadata, unknown/corrupt records, run-ID traversal/symlinks,
+SFT and native RL preparation, stderr isolation, same-interpreter argv and root
+CLI registration without importing torch/transformers for schema discovery.
+
+Existing readiness, metric history, failure guidance, process lifecycle, tiny
+CPU SFT, remote executor, reward/judge and recovery tests provide regressions.
+Deeply nested diagnosis/history JSON is rejected without crashing readers.
+Fault/provider tests use synthetic exceptions and mocked boundaries; no actual
+OOM, disk exhaustion or paid training was induced. Catalog maturity is not
+backend certification. Training completion/reward is not independent quality.
+Broader historical distributed/GPU matrices were not repeated. Source and wheel
+counts overlap. The installed recovery planner still blocks paid execution.
+The live Herdr pane was refreshed with its draft preserved:
+{summary['live_herdr_refreshed']}.
+''')
+print(json.dumps(dict(path=str(out), summary=summary), indent=2))

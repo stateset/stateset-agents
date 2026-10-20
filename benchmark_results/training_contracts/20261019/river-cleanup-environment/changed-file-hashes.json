@@ -1,0 +1,7 @@
+{
+  "scripts/check_asyncio_wakeup.py": "f8272a3ad3d47de710c450d719df883d10f0492044bd6ca287458e9320e15b36",
+  "tests/unit/test_asyncio_wakeup_check.py": "a042a53e1c90f37ecdf73540f7e64124c11915668a553531f0e1aba89cd7df15",
+  ".github/workflows/ci.yml": "d5807521c4fa024cb1f7e1a9e091862545aeaf7bfa88a5fcd14845944b49a8ac",
+  "docs/RIVER_PROVIDER.md": "1e88eae980f009019f99c430e3a3e2affe19bc9ce2d51223ea56c74ccf6f408f",
+  "CHANGELOG.md": "69c1d6d01d7a3f21587445c13664bf28c37c6c3ec5d8ebe60ff3e0d9d597bfaa"
+}

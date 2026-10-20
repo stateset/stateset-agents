@@ -7,6 +7,429 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.67.0] - 2026-10-20 — Fine-tuning studio and audited River RL
+
+- Add native River refund-recovery CISPO training and retained six-seed
+  replication evidence: six acknowledged RL updates, 960/960 candidate test
+  successes versus 954/960 for the SFT parent, and no observed regressions.
+  The prespecified replication gate did not pass (p = 0.125); no checkpoint
+  was promoted and production quality remains unverified.
+- Add case-clustered replication analysis and an SDK-source-bound sampler-seed
+  overlap audit, retaining the stopped overlapping-seed attempt separately.
+- Require a structurally complete safe LoRA export and captured-input lineage
+  before local/industry SFT reports completion, including shard and tensor-pair
+  checks without loading a base model or certifying quality.
+- Bind local SFT manifests to captured source bytes and parsed rows before model
+  loading, carrying reviewed identities through Studio, industry and packaged
+  workers while keeping source-free inputs explicitly unbound.
+- Bind River SFT lineage and Fireworks uploads to captured source bytes, retain
+  Fireworks source identities across restart/deletion, and keep legacy identities
+  explicitly unknown instead of hashing changed files during fetch.
+- Enforce declared dataset split roles in packaged SFT and industry training,
+  rejecting held-out or ambiguous local SFT sources before compute-provider setup.
+- Accept generated industry training data in Studio, retain declared synthetic
+  provenance in inspection and snapshots, and reject held-out split declarations
+  or duplicate JSON keys before launch.
+- Generate and reconstruct synthetic ecommerce, logistics, and SaaS support
+  datasets with replayed policies, balanced isolated splits, provenance, and
+  compatibility with existing industry SFT previews.
+- Polish the Ghostty terminal studio with searchable Ctrl+P commands, incremental
+  Unicode-safe rendering, responsive Escape, contextual headers and paged settings.
+- Add replay-verified, training-only refund boundary contrasts with canonical
+  parent lineage, held-out overlap rejection, and independent reconstruction.
+- Preflight local worker-thread wakeup sockets before River SDK CI checks so
+  sandbox IPC restrictions fail clearly instead of appearing as cleanup hangs.
+- Exclude confirmed skipped River optimizer batches from checkpoint selection,
+  replay their validation traces, and audit selected-checkpoint update activity
+  separately from whole-run activity.
+- Show an executable JSON lookup action in refund-policy prompts, preserve full
+  order IDs in examples, and keep policy facts private until the lookup executes.
+- Validate dependency locks in temporary outputs, preserve working lock bytes
+  across resolver failures and interruptions, and reject concurrent input edits.
+- Require an explicit boolean checkpoint trust decision before unpickling, enable
+  unsafe Torch-load scanning outside the audited gateway, and pin Nemotron remote
+  code to its model revision. Queue pagination uses complete literal SQL statements
+  with bound owner and status values.
+- Raise the training dependency floor and development lock to Accelerate 1.15.0;
+  retain the unresolved Semgrep/MCP dependency advisory as a release blocker.
+- Add a Python 3.12 training/API dependency lock, an independent dependency-audit
+  CI job, and installed-wheel coverage using that runtime lock.
+
+- Persist evaluation metric mappings in auto-research logs and normalize measured
+  NumPy scalars for native checkpoint diagnostics while retaining nonfinite guards.
+
+- Bind native DDP admission and checkpoint restore to package/model code and
+  runtime revisions. Reject mixed implementations before learner mutation;
+  native DDP checkpoint v3 requires matching sources and rejects older formats.
+
+- Admit each fine-tuning run once across supervisor and direct-worker entry,
+  retaining uncertain ownership instead of silently retrying paid work.
+- Keep cooperative local stop available after supervisor loss, with explicit
+  execution uncertainty in the TUI, agent CLI and HTTP API.
+- Preflight native local checkpoint learner state and quarantine late restore or
+  rollout-publication failures until a complete reload succeeds. Model-only
+  imports remain distinct from training recovery.
+
+- Validate shared runtime checkpoint state before restore, contain late restore
+  failures, preserve adaptive KL state and reject invalid runtime publication.
+  Dedicated GSPO, GSPO-token, DAPO and GEPO convenience loops now reject explicit
+  resume requests before setup rather than silently training from scratch.
+
+- Replace fabricated PPO completions with token-exact online sampling, retained
+  behavior likelihoods and critic values, bounded reward callbacks, rollout
+  receipts and complete checkpoint continuation. Reject unsupported sampling
+  modes and quarantine partial updates. External-text reference updates retain
+  their sampling-provenance limits; online PPO remains experimental.
+- Expose safe HTTP run metadata and the exact checksum needed for stop review,
+  including queued and running jobs during unrelated artifact inspection.
+- Keep TUI and agent metric inspection responsive when metric files are links,
+  pipes, directories or growing snapshots; retain bounded regular-file reads.
+- Pin studio remote jobs to the reviewed framework release and quote RunPod
+  command arguments, preserving literal model names and paths. Release pinning
+  does not attest remote source bytes or dependencies.
+
+- Support phone-sized fine-tuning terminals from 32 columns by 16 rows with
+  compact controls, numeric navigation outside text editors, visible backend
+  selection and paused actions during unusably small resizes. Launches retain
+  explicit Enter confirmation.
+
+- Reopen saved checkpoint nominations from the fine-tuning studio (`h`) and
+  agent JSON commands. Preserve unsaved editors, surface unavailable records,
+  restore the selected receipt without duplication, and keep fresh test cases
+  blank until explicitly selected and reviewed.
+
+- Nominate a recommended intermediate checkpoint for a separately reviewed fresh
+  test evaluation from the fine-tuning studio or JSON CLI. Retain exact selection
+  lineage, rehash nominated weights, reject overlap with validation history and
+  keep training completion and quality receipts unchanged.
+
+- Compare completed checkpoint validations from the fine-tuning studio (`j`,
+  then `b`) or agent JSON commands. Queue checkpoint hashing and judge replay,
+  retain durable handles/progress, reconnect without resubmission, rank matching
+  cohorts with case-level regression guards and earliest-step tie breaking, and
+  retain the base recommendation when no safe improvement is recorded. Restore
+  a recommendation into a separately reviewed validation form without changing
+  training or promoting artifacts.
+
+- Expose a retained training seed in the fine-tuning studio, agent JSON config
+  and remote CLI. Apply it before local adapter initialization and to trainer,
+  data and supported provider paths. Retain SFT seed provenance, advertise
+  provider seed support, reject unsupported/conflicting values, and bind paired
+  evidence to training seeds separately from evaluation randomness.
+  Display valid zero-valued seeds, checkpoint intervals and GPU counts correctly
+  in narrow and two-column configuration layouts.
+
+- Configure periodic native RL checkpoints and evaluate a retained published
+  adapter from the fine-tuning studio (`j` → `n` → `c`) or agent JSON commands.
+  Keep validation separate from fresh-test study evidence, bind reviews to
+  checkpoint receipts and bytes, preserve strict recovery rules, and cancel
+  unlaunched evaluations immediately. Expose controlled partition diagnostics
+  and explicit metadata-only target discovery.
+
+- Run reviewed local base-versus-adapter evaluations from the fine-tuning TUI
+  (`j`) or agent JSON commands. Queue sequential, cache-only policy and pinned
+  judge inference, retain private transcripts and replayable two-pass scores,
+  inspect durable queue handles, sampled wait/headroom and progress, and stop
+  only the evaluation. Preserve existing multi-seed
+  evidence and distinguish a single-run diagnostic from quality certification.
+  Browse held-out JSON cases from the evaluation form (`f`) without reading
+  contents, changing the training draft or bypassing the separate launch review.
+
+- Add exact local checkpoint recovery to the fine-tuning studio (`z`) and agent
+  commands. Publish plan-bound checkpoint receipts, privately snapshot complete
+  model/optimizer state into a new run, preserve original training budgets and
+  require a separate launch review. Restore native trainer state or an explicit
+  SFT checkpoint without fresh-training fallback. Inspect recovery choices
+  through the authenticated operator API.
+
+- Add guided fine-tuning setup, artifact-bound paired quality evidence and
+  confirmed cooperative local stopping to the TUI and versioned agent commands.
+  Separate descriptive gains from reviewed multi-seed study gates. Add strictly
+  authenticated operator HTTP routes with bounded uploads, shared schema,
+  controlled errors, off-loop inspections and credential redaction. Bound
+  workspace metadata reads and preserve stop/checkpoint outcomes.
+
+- Locate malformed fine-tuning data with one-based line/column, example/field
+  or encoding offsets, shared by the inspector and strict preparation parsers.
+  Add safe structured diagnostics to agent CLI errors without reflecting source
+  values. Update background scan status without overwriting later UI actions.
+
+- Inspect fine-tuning datasets in the background (`u`) with character/turn
+  distributions, recorded hashes and duplicate checks. Keep private examples
+  hidden until `e` reveals bounded excerpts; expose the same statistics through
+  `finetune inspect-data`, with explicit sample opt-in. Share bounded regular-file
+  reads with preparation, including limits during concurrent file growth.
+
+- Compare fine-tuning experiments with a session reference pin (`a`) and a
+  scrollable snapshot report (`x`), also available to AI agents through
+  `finetune compare`. Show changed settings, recorded dataset identities and
+  finite latest-metric deltas without selecting a quality winner. Bound record
+  reads, reject special files and preserve drafts and worker state.
+
+- Add a full fine-tuning log viewer (`l`) with training/supervisor source
+  selection, stable paused snapshots, wrapped lines and literal filtering.
+  Bound concurrent reads, label truncated windows, reject special files and
+  keep views bound to the selected run. Expose source and read-window metadata
+  through agent JSON logs without changing workers or provider jobs.
+
+- Add a shared configuration checklist to the fine-tuning studio (`v`) and
+  agent JSON CLI (`finetune validate`). Report field-addressable problems
+  together, jump to hidden invalid fields for repair, reject numeric booleans
+  and preserve incomplete drafts. Validation never reads datasets, prepares
+  jobs or contacts providers, and launch validation uses the same rules.
+
+- Add a fine-tuning backend picker (`b`) for local CUDA, RunPod, Modal and
+  River. Route remote SFT to the selected executor, expose RunPod/Modal GPU
+  choices, and retain River hosted checkpoints without claiming local weights.
+  Require explicit provider-billed policy where dollar caps are unenforced;
+  extend agent JSON discovery, paid opt-in and readiness to the new backends.
+
+- Review an AI-prepared run directly from the fine-tuning TUI with `r`, then
+  launch its existing ID and retained data without changing the Configure draft.
+  Bind new launch records and queued workers to the exact reviewed plan bytes;
+  reject changes and duplicate submissions across human and agent workflows.
+
+- Add a versioned JSON fine-tuning CLI for AI agents, sharing studio workspaces:
+  discover schema/models, inspect readiness, prepare immutable data, launch an
+  exact reviewed plan once, and read status/logs. Require explicit paid opt-in,
+  reject changed reviews and workspace traversal, and redact known credentials
+  from JSON. Run details expose the matching Python environment's status command.
+
+- Record controlled fine-tuning failure diagnoses and recovery guidance for
+  CUDA, dependencies, memory, storage, timeout, review and artifact failures.
+  Preserve child causes when supervisors exit, record failures before worker
+  startup, and show next steps in run details without automatically retrying.
+
+- Add background local readiness checks to the fine-tuning studio, with no
+  provider authentication or allocation. Search retained runs and filter by
+  status. Retain private metric events and chart reported samples, showing SFT
+  epochs or committed RL updates without estimating completion time or quality.
+
+- Improve the fine-tuning studio for narrow Herdr splits with complete model
+  IDs, terminal-cell-aware wrapping and visible shortcuts. Add cursor editing,
+  a JSON/JSONL dataset picker, scrollable run details, stable run selection and
+  hash-checked settings reuse for a new run. Save incomplete drafts, clear stale
+  model pins when changing models, and let Ctrl+C exit any screen while keeping
+  detached jobs running. Viewing, browsing and copying settings start no work.
+
+- Add `stateset-agents tui`, a Herdr-compatible terminal fine-tuning studio with
+  searchable model maturity, editable SFT/RL settings, free input/resource
+  previews, reviewed launches and reconnectable run logs/metrics. Snapshot
+  reviewed data, retain private run records, route local training through an
+  installed Buildr queue and support bounded RunPod SFT. Reject CPU dry-run
+  substitutions and missing weight artifacts; quitting preserves running jobs.
+
+- Add a version-bound recovery profile, free preflight planner and native
+  four-scenario/eight-generation recovery trainer. Fail when a requested
+  reference cannot be created; check the live KL anchor, dropout and optimizer.
+  Retain replayable judge inputs, prompts, raw replies and retries, and verify
+  them before using a selected checkpoint. Use greedy validation while restoring
+  training decoding settings on success or failure. This prepares a new study;
+  it does not certify GPU execution or a policy-quality gain.
+
+- Add PR #109's pinned support reward v3 and two-pass rubric judge, a
+  retrospective paired reward audit, budgeted whole-conversation judge blending,
+  and baseline-preserving validation checkpoint selection. Reject incomplete or
+  unstable judgement and overlapping study cases; bind selection to checkpoint
+  bytes. Document the RunPod regression and remaining evidence without claiming
+  a new policy-quality gain or launching paid compute.
+
+- Report committed optimizer updates from task-boundary and final accumulation
+  flushes through an `optimizer_step` callback and the normal log/evaluation/save
+  cadence. Receipts identify the committed interval and update source without
+  fabricating loss or reward measurements for flushes. Avoid a duplicate final
+  save after a successful final-flush cadence save; preserve early stopping at
+  task boundaries. Native loop v3 agrees on receipt controls before callbacks.
+  Allow GradScaler to skip overflowed pending windows at native task boundaries
+  while retaining strict checkpoint validation of pending gradients.
+
+- Retain validated diagnostic guard history in native trainer checkpoints and
+  coordinate post-step diagnostic failures across live DDP workers. Full reload
+  repairs stale monitor references and transient rollout telemetry; global empty
+  batches preserve signal patience. Learner preflight v4 and native DDP checkpoint
+  v2 bind guard controls before updates and during restore. Serial version-one
+  learning state remains readable with fresh diagnostic history. Native DDP
+  version-one checkpoint directories are rejected.
+
+- Report native DDP episode rewards over all newly generated samples and
+  training-log rollout statistics over all learner samples, including replay.
+  Preserve sample/group weighting and exact global medians without gathering
+  reward vectors or trajectories. Let W&B accept precomputed population metrics;
+  retain older logger signatures and call logger bodies only once. Isolate
+  callback metric mutations from subsequent logs; version loop admission as v2.
+
+- Let native DDP token training workers contribute zero samples without
+  discarding peers' data or changing the global objective. Reduce explicit
+  policy/entropy gradient banks, retain absent gradients for globally unused
+  parameters, and preserve all learning state on globally empty batches.
+  Empty no-ops retain timing/cost measurements without consuming or resetting
+  policy-signal diagnostic patience.
+- Coordinate local native rollout, token-loss, backward, optimizer and ordinary
+  loop callback failures across live workers; failed loops require a full
+  checkpoint reload. Persist an explicit next-episode cursor so initial
+  checkpoints resume episode zero; older snapshots retain their legacy rule.
+  Trigger reporting/evaluation/saves on committed update boundary crossings.
+
+- Consolidate native DDP task memory through unwrapped teacher/Fisher models,
+  accepted-example-weighted global Fisher statistics and staged peer commits.
+  Preserve pending learning state on staging failure; require reload after a
+  partial flush/commit. Flush prior-task windows before capturing memory, budget
+  scheduler updates from task segments, and retain receipts that prevent
+  duplicate final consolidation after completed-run resume.
+- Normalize temporary fast-tokenizer backend padding/truncation in checkpoint
+  identity while retaining vocabulary/template bindings. Clear stale teachers
+  when restoring generations without a reference model.
+
+- Coordinate native DDP evaluation across unequal local partitions, including
+  empty workers. Weight population metrics by actual sample counts, agree on
+  best-checkpoint decisions, preserve training RNGs/modes/buffers and pending
+  gradients, and propagate local errors/cancellation across live peers. Restore
+  prior selection after a failed best save and require reload after a failed
+  buffer restoration. Empty/incomplete evaluations do not consume patience.
+
+- Replace native DDP's weights/counters-only writer with atomic collective
+  checkpoints: shared model/optimizer/scheduler/reference state and rank-local
+  pending gradient banks, buffers, RNGs and learning history. Validate every
+  shard before applying, preserve prior generations on save failure, and block
+  learning after partial restore failure until coordinated reload succeeds.
+  Both native checkpoint APIs now require all DDP workers to participate.
+
+- Check native DDP policy, optimizer-slot and reference parameter values on
+  first learner admission and after checkpoint-load attempts, using bounded
+  content hashes. Bind scheduler Python implementations and callable arguments,
+  defaults, closures and globals that are absent from saved scalar state.
+  Coordinate asymmetric invalidation and reject mixed admission protocols.
+
+- Reject native DDP learner configuration, schedule, optimizer, layout and
+  rollout-path disagreements before buffer synchronization or policy/reference
+  scoring. Validate sampled metadata and preserve pending gradients, optimizer
+  state and running baselines on admission failure; permit unequal chunks.
+
+- Construct native DDP batch-normalized advantages from the global clipped
+  reward population and synchronize legacy running reward baselines. Freeze
+  the baseline across rollout inner updates, observe each batch once, and pass
+  running state through KL-enhanced loss. Reject invalid rewards and divergent
+  estimator/state settings coherently before token-loss model forward.
+
+- Weight native DDP diagnostics by their actual policy/token counts, with global
+  population variance, exact step counters, entropy measurement flags, and
+  coordinated schema validation. Verify source and installed-wheel reports with
+  real CPU peers, including nonzero KL and rejection/recovery cases.
+
+- Correct native DDP token-path RL normalization across unequal worker batches
+  and both policy/entropy gradient banks, including repeated inner updates.
+  Enable manual CPU/Gloo setup and reject conflicting existing process groups;
+  synchronize buffers at learner-step boundaries to permit unequal forward counts.
+  Bound reduction payloads, preserve small FP16 gradients, and avoid overflowing
+  finite means. Verify combined-batch agreement with two real CPU workers.
+
+- Require source-bound input consensus across Muse/frontier SFT ranks before
+  weight loading; retain agreed hashes and reject mismatches on every rank.
+  Verify the fixed-size tensor handshake and recovery with actual CPU/Gloo peers.
+
+- Bind Muse/frontier SFT dataset validation, hashes and training examples to one
+  captured read per split, preventing file-replacement races in provenance.
+- Enforce the Torch 2.7 distributed-loading minimum before backend imports;
+  verify real local FP8 attention/expert dequantization and BF16 adapter updates.
+
+- Add pinned frontier model readiness and distributed assistant-only text SFT
+  for native GLM-5.3/Flash and Qwen3.8 2.4T/Flash-Next, with explicit FP8 to
+  BF16 dequantization, exact language attention adapters and native loss masks.
+- Replace provisional Kimi K3 targets with the released KDA/MLA specification;
+  record MiMo RL/MOPD and DeepSeek V4.1 Flash identities and fail closed on
+  unsupported packed/inference layouts. Full-size GPU training is unverified.
+
+### Added
+
+- Muse Spark Open revision-pinned distributed text LoRA SFT, native Transformers
+  FSDP/expert-parallel loading through TRL, assistant-only masks, strict dataset
+  validation, stable template options, adapter export, and a text GSPO preset.
+  Checkpoint access is gated; full-size GPU conformance remains unverified.
+- Nemotron 3.5 Super VL and Bolt BF16 image-conditioned LoRA SFT, with pinned
+  model/processor revisions, local image/chat datasets, assistant-only masking,
+  optional FSDP launch, CLI configuration, and adapter/processor export. The
+  integration has CPU contract coverage; full-size GPU training is unverified.
+- Checkpoint-pinned Super VL and Bolt River text/tool renderers, including
+  River 0.11 image-token metadata compatibility without changing rollout IDs.
+  Hosted model availability still requires an authenticated account check.
+- Retain a live Super VL NVFP4 River smoke run with one reported optimizer
+  update, finite nonzero gradient norm, hosted checkpoint, and audited evaluation.
+  Validation tied the baseline; this does not establish a quality improvement.
+
+- Add source-isolated temporal curation with baseline contact/credential
+  redaction, duplicate grouping, held-out failure retention and split hashes.
+- Add a callback-based trace-to-policy pipeline, a runnable local transformer
+  example, stage profiling, and fatal learning-signal diagnostics.
+- Bind production promotion to actual policy bytes, immutable lineage, reviewed
+  provenance and recomputed six-seed paired quality/safety evidence. Production
+  inference validates the selected model and content-addressed artifact path.
+- Add an explicit CPU/CUDA logged-policy contract runner for real updates, exact
+  checkpoint resume and reloaded inference, with installed-wheel CPU checks in CI.
+
+### Improved
+
+- Move durable training API database calls off the event loop and drain accepted
+  submission transactions during cancellation and shutdown. Freeze request inputs
+  before deferred writes so caller mutations cannot change admitted work.
+- Filter and paginate training jobs in SQLite/PostgreSQL with consistent counts,
+  stable ordering, and indexes; decode only the requested page's payloads.
+- Return HTTP 409 for conflicting idempotency keys and HTTP 429 for a full
+  durable queue, preserving accepted retries even at capacity.
+
+### Fixed
+
+- Isolate native quality-study evaluation from training RNGs, gradients and
+  module modes, including cancellation. Bind per-case sampling seeds to exact
+  case content so case order and earlier episode lengths do not shift paired
+  evaluation streams. Reject invalid study protocols before model allocation.
+- Reject renamed reviewed cases even when annotations differ; distinguish
+  validation reports from test evidence and retain checkpoint-selection receipts.
+  Refuse candidate testing without consistent committed optimizer updates.
+- Make shared trainer evaluation fail on errors by default, propagate required
+  reward and OOM failures, route executed reward context correctly, and drain
+  concurrent episodes on failure. Diagnostic evaluation retains failed attempts
+  in coverage and success-rate counts instead of silently dropping them.
+- Replace random offline policy batches with aligned logged assistant actions
+  and real IQL-weighted language-model updates. Include tool observations and
+  terminal rewards, and mask only the current assistant action.
+- Save and restore offline policy/IQL optimizers, pending gradients, RNGs and
+  mid-epoch cursors; reject a changed dataset on resume and export reusable weights.
+- Restore CUDA generator states as CPU byte tensors after device-mapped checkpoint
+  loading, fixing a failure found by the live RunPod check.
+- Weight accumulated offline gradients by logged action count, preserving the
+  objective across uneven microbatches and partial windows. Persist pending counts
+  and normalization, validate them before policy restore, and report final-window
+  optimizer updates accurately. Legacy in-flight accumulation is rejected;
+  completed optimizer checkpoints remain loadable.
+- Reduce native token-path policy losses using global trajectory/token counts
+  instead of equally weighted group means. Keep entropy's global token denominator,
+  weight KL/ratio/clipping diagnostics by sampled tokens, and compute named
+  batch-normalized advantages across all prompt groups after reward clipping.
+- Weight native online GRPO accumulation by actual trajectory/token counts,
+  with a separate entropy denominator for sequence objectives and normalized
+  partial windows. Persist pending normalization and auxiliary gradients, and
+  initialize restored AMP scalers before an immediate partial-window flush.
+- Preserve global reward statistics, private replay RNGs, frozen LwF task
+  references and EWC state through both checkpoint APIs. Validate learning state
+  before loading policy weights; reject unrecoverable legacy global/LwF state.
+- Average EWC Fisher statistics over valid examples, preserve task memory when
+  none are scored, and restore module modes on all exits. Promote low-precision
+  arithmetic, avoid sum overflow, reject partial nonfinite consolidation, and
+  propagate OOM/interruptions while exposing accepted/skipped sample counts.
+- Isolate mutable preset configuration and consume agent settings before
+  forwarding trainer arguments.
+
+- Preserve critical errors and evaluator-context requirements through nested
+  composite and uncertainty-weighted rewards. Retain component evidence and
+  reject invalid uncertainty instead of masking errors or amplifying rewards.
+- Preserve final-outcome reward timing through composition and propagate
+  required conversation step-reward errors instead of silently substituting zero.
+- Carry the agent's model revision through online, offline, and hybrid training,
+  and reject conflicting model identities before training starts. Apply API
+  revision overrides when constructing embedded and durable worker agents.
+- Detach nested policy observations from evaluator state so context mutations
+  cannot fabricate executed tool evidence or alter the source scenario.
+
 ## [0.66.1] - 2026-10-14 — Harden training worker lease recovery
 
 ### Fixed

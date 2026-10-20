@@ -1,0 +1,33 @@
+{
+  "artifacts": {
+    "test.json": "87412dc2c140d089188a2556dd9c2f1f159e9246dc07a0adf2bc60c93688ff21",
+    "train.json": "e72e2a4fce9cc9b106398fe5bd9ae1a255bee6bfa804c8fd6b970277349c4010",
+    "train.jsonl": "a1132522230398f48992bad2e6c854ed103e39fd3a31804ec25f8c47a1635bd7",
+    "validation.json": "a21f0691f6d4bb2fc9936a213a18dcb61cbe819bc396d156efc9a35b53338eb0"
+  },
+  "counts": {
+    "test": 64,
+    "train": 128,
+    "validation": 64
+  },
+  "environment": "refund-policy-v2",
+  "families": {
+    "already_refunded": 16,
+    "chargeback": 16,
+    "eligible": 16,
+    "misleading_note": 16,
+    "outside_window": 16,
+    "partial_refund": 16,
+    "undelivered": 16,
+    "window_boundary": 16
+  },
+  "schema_version": 1,
+  "seed": 2026101903,
+  "selected": 128,
+  "source": "reference_policy",
+  "split_hashes": {
+    "test": "6eb4c7486ca04a7c3d670d4a8fe99c6005b28d26df414ad43e0a25b96a206d28",
+    "train": "114f739ff8d46a67d6c1fd23ddb2237f26c821d9fa3ae7dd43860bd54aea57de",
+    "validation": "4e6de08ec567b6dd21f4130b9c64344c7ca627a55a6067f0e834807eece11c42"
+  }
+}

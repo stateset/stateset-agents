@@ -26,6 +26,7 @@ import asyncio
 import inspect
 import json
 import logging
+import math
 import re
 import uuid
 from collections.abc import Callable
@@ -43,6 +44,22 @@ FUNCTION_CALL_EXCEPTIONS = (
     KeyError,
     OSError,
 )
+
+
+def _unique_arguments(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for name, value in pairs:
+        if name in result:
+            raise ValueError("Tool arguments must not contain duplicate keys")
+        result[name] = value
+    return result
+
+
+def _finite_argument(value: str) -> float:
+    result = float(value)
+    if not math.isfinite(result):
+        raise ValueError("Tool arguments must contain only finite numbers")
+    return result
 
 
 class ToolChoiceMode(str, Enum):
@@ -141,12 +158,31 @@ class ToolCall:
         return self.function.get("arguments", "{}")
 
     def parsed_arguments(self) -> dict[str, Any]:
-        """Parse arguments as JSON."""
+        """Require unambiguous JSON object arguments or raise ValueError.
+
+        Invalid input must never fall back to an empty argument object, which
+        could otherwise execute a handler with defaults or no arguments.
+        """
         try:
-            parsed = json.loads(self.arguments)
-            return parsed if isinstance(parsed, dict) else {}
-        except json.JSONDecodeError:
-            return {}
+            parsed = json.loads(
+                self.arguments,
+                object_pairs_hook=_unique_arguments,
+                parse_float=_finite_argument,
+                parse_constant=_finite_argument,
+            )
+        except (TypeError, RecursionError) as exc:
+            raise ValueError("Tool arguments must be a JSON object") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("Tool arguments must be a JSON object")
+        pending: list[tuple[Any, int]] = [(parsed, 1)]
+        while pending:
+            value, depth = pending.pop()
+            if isinstance(value, (dict, list)):
+                if depth > 64:
+                    raise ValueError("Tool arguments exceed 64 container levels")
+                children = value.values() if isinstance(value, dict) else value
+                pending.extend((child, depth + 1) for child in children)
+        return parsed
 
 
 @dataclass

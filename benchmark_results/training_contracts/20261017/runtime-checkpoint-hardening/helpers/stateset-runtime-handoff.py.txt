@@ -1,0 +1,81 @@
+"""Apply reviewed recovery fixes before the queued acceptance freezes sources."""
+from pathlib import Path
+import ast
+import fcntl
+import hashlib
+import json
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+runtime = Path('/tmp/stateset-runtime-checkpoint-fixes')
+manifest = json.loads((runtime/'manifest.json').read_text())
+files = {}
+for name, info in manifest['files'].items():
+    files[name] = (runtime/name, info['base_sha256'])
+entrypoints = Path('/tmp/stateset-entrypoint-resume-fixes')
+for name, digest in {
+    'stateset_agents/training/gspo_entrypoints.py':'130dfa7f9f61cccbb72e65a356571a913b2dbf862db3b4b3872bc1dda30d3687',
+    'stateset_agents/training/gspo_token_trainer.py':'6a98af56e7cfa3b8bb9ea6cefbac06a716794bee622ade3fb93b307e077382b6',
+    'stateset_agents/training/gepo_trainer.py':'cf8c160a958f7b594547170c84ee4fc8d57b974ce07208d41850ec0a44fe1317',
+    'stateset_agents/training/dapo_entrypoints.py':'eb3986bde04e44e5f784706f6bc376dcd411de56edf9d2e40c68fdb1e74c4f06',
+    'tests/unit/test_dedicated_entrypoint_resume.py':None,
+}.items():
+    files[name] = (entrypoints/name, digest)
+for name, (staged, digest) in files.items():
+    actual = hashlib.sha256((root/name).read_bytes()).hexdigest() if (root/name).exists() else None
+    assert actual == digest, ('Concurrent edit',name)
+    assert staged.is_file(), staged
+
+new_modules = [
+    'tests/unit/test_runtime_checkpoint_safety.py',
+    'tests/unit/test_runtime_state.py',
+    'tests/unit/test_dedicated_entrypoint_resume.py',
+    'tests/unit/test_training_resume_required.py',
+    'tests/unit/test_gspo_query_wiring.py',
+    'tests/unit/test_gspo_module_exports.py',
+    'tests/unit/test_dapo_module_exports.py',
+    'tests/unit/test_checkpoint_publication.py',
+    'tests/unit/test_model_checkpoint.py',
+    'tests/unit/test_learning_state_recovery.py',
+    'tests/unit/test_scheduler_identity.py',
+    'tests/unit/test_native_checkpoint_async.py',
+    'tests/unit/test_multi_turn_checkpoint_accumulation.py',
+    'tests/unit/test_ddp_checkpoint_state.py',
+]
+def replace_list(path, variable, additions):
+    source = path.read_text()
+    tree = ast.parse(source)
+    node = next(n for n in tree.body if isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id==variable for t in n.targets))
+    old = ast.get_source_segment(source,node)
+    values = ast.literal_eval(node.value)
+    replacement = list(dict.fromkeys([*additions,*values]))
+    path.write_text(source.replace(old,variable+' = '+repr(replacement),1))
+
+for suffix in ['prepare','finish']:
+    path = Path('/tmp/stateset-studio-mobile-'+suffix+'.py')
+    replace_list(path,'regressions',[*new_modules,'tests/unit/test_checkpoint_trust.py'])
+    # Checkpoint-trust AST governance depends on the repository tree and stays
+    # source-only; functional runtime trust and model-load cases run in wheel.
+    replace_list(path,'wheel_tests',new_modules)
+replace_list(Path('/tmp/stateset-studio-mobile-format.py'),'files',list(files))
+path = Path('/tmp/stateset-studio-mobile-gates.py')
+source = path.read_text()
+line = next(line for line in source.splitlines() if line.startswith('for name in ['))
+existing = ast.literal_eval(line.removeprefix('for name in ').removesuffix(':'))
+path.write_text(source.replace(line,'for name in '+repr(list(dict.fromkeys([*files,*existing])))+':',1))
+for name, (staged, _) in files.items():
+    (root/name).write_bytes(staged.read_bytes())
+path = root/'.github/workflows/training-contracts.yml'
+source = path.read_text()
+marker = '          tests/unit/test_ppo_safety.py\n'
+assert marker in source
+source = source.replace(marker,'          tests/unit/test_runtime_checkpoint_safety.py\n          tests/unit/test_runtime_state.py\n          tests/unit/test_dedicated_entrypoint_resume.py\n          tests/unit/test_training_resume_required.py\n'+marker,1)
+path.write_text(source)
+path = root/'contracts/component_maturity_v1.json'
+source = path.read_text()
+marker = '"tests/unit/test_objective_goldens.py"]'
+assert marker in source
+path.write_text(source.replace(marker,'"tests/unit/test_objective_goldens.py", "tests/unit/test_dedicated_entrypoint_resume.py", "tests/unit/test_runtime_checkpoint_safety.py"]',1))
+Path('/tmp/stateset-runtime-handoff.json').write_text(json.dumps({'queue_job':'1e204ba66630','files':{name:hashlib.sha256((root/name).read_bytes()).hexdigest() for name in files},'new_regression_modules':new_modules,'source_only_module':'tests/unit/test_checkpoint_trust.py'},indent=2)+'\n')
+print(json.dumps({'applied':list(files),'regression_modules':new_modules}))

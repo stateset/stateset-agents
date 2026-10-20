@@ -31,6 +31,7 @@ and `make release-governance` validates it on every pull request and release.
 | `grpo-training` | Stable |
 | `memory` | Beta |
 | `offline-rl` | Experimental |
+| `ppo-reference-updates` | Experimental |
 | `provider-control-plane` | Beta |
 | `research-modules` | Experimental |
 | `reward-learning-rlaif` | Beta |

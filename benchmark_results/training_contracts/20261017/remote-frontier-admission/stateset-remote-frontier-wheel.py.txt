@@ -1,0 +1,47 @@
+"""Check installed model discovery, pins and readiness without checkout imports."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
+
+root=Path('/home/dom/stateset-agents')
+prefix='/tmp/stateset-remote-frontier'
+out=Path(tempfile.mkdtemp(prefix='stateset-remote-frontier-wheel-',dir='/tmp'))
+checks=out/'checks'
+selection=['tests/unit/test_remote_frontier_readiness.py', 'tests/unit/test_finetune_frontier_readiness.py', 'tests/unit/test_frontier_models.py', 'tests/unit/test_transformers_compat.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_deepseek_v41_1017.py']
+env=dict(os.environ,PYTHONPATH=str(out/'site-packages'))
+subprocess.run([sys.executable,'-m','build','--wheel','--no-isolation','--outdir',str(out/'dist')],cwd=root,check=True)
+wheel=next((out/'dist').glob('*.whl'))
+source=json.loads(Path(prefix+'-inputs.json').read_text())['source_sha256']
+with zipfile.ZipFile(wheel) as archive:
+    packed={name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+assert source==packed,'Wheel differs from frozen source'
+subprocess.run([sys.executable,'-m','pip','install','--no-deps','--target',str(out/'site-packages'),str(wheel)],cwd=out,check=True)
+for directory in ('unit','fixtures'):
+    shutil.copytree(root/'tests'/directory,checks/'tests'/directory,ignore=shutil.ignore_patterns('__pycache__'))
+for name in ('tests/__init__.py','tests/conftest.py','tests/_module_stubs.py','pytest.ini'):
+    shutil.copy2(root/name,checks/name)
+for audit in ('20261015/frontier-models','20261017/deepseek-v4.1-flash-1017'):
+    dest=checks/'benchmark_results/training_contracts'/audit
+    dest.mkdir(parents=True)
+    shutil.copy2(root/'benchmark_results/training_contracts'/audit/'metadata.json',dest/'metadata.json')
+subprocess.run([sys.executable,'-c',"from pathlib import Path; import stateset_agents.core.frontier_models as f, stateset_agents.remote.executor as c, stateset_agents.finetune_workspace as w; import sys; assert all(Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1])) for m in (f,c,w)); print('Installed import origins verified')",str(out/'site-packages')],cwd=checks,env=env,check=True)
+argv=[sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=140','--tb=short',*selection,'--junitxml='+prefix+'-wheel.xml']
+subprocess.run(argv,cwd=checks,env=env,check=True)
+def cases(path):
+    tree=ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure','error','skipped'))
+    return [(case.get('classname'),case.get('name')) for case in tree.iter('testcase')]
+modules=[name.removesuffix('.py').replace('/','.') for name in selection]
+expected=[case for case in cases(prefix+'-source.xml') if any(case[0]==name or case[0].startswith(name+'.') for name in modules)]
+actual=cases(prefix+'-wheel.xml')
+assert actual and len(actual)==len(set(actual)) and set(actual)==set(expected)
+result={'passed':True,'out':str(out),'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest(),'wheel_source_matches':True,'module_origins_verified':True,'case_identities_match_source':True,'test_count':len(actual),'selection':selection,'argv':argv}
+Path(prefix+'-wheel.json').write_text(json.dumps(result,indent=2)+'\n')
+print(json.dumps(result,indent=2),flush=True)

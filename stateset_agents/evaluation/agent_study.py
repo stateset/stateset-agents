@@ -29,9 +29,6 @@ from stateset_agents.evaluation.agent_runs import (
     content_hash,
     validate_report,
 )
-from stateset_agents.evaluation.checkpoint_selection import (
-    require_training_progress,
-)
 from stateset_agents.evaluation.implementation import package_implementation
 from stateset_agents.evaluation.refund_trace import (
     audit_refund_traces,
@@ -643,26 +640,23 @@ async def audit_study(directory: Path) -> dict[str, Any]:
                 _require(trace_audit["passed"], "Test trace replay failed")
                 if arm == "rl":
                     evaluations = _read(root / arm / "validation_results.json")
+                    progress = _read(root / arm / "training_metrics.json")
+                    receipts_path = root / arm / "recovery_receipts.json"
+                    receipts = _read(receipts_path) if receipts_path.exists() else {}
                     best = await select_replayed_validation_checkpoint(
                         evaluations,
                         steps=config.steps,
                         cases={row["order_id"]: row for row in splits["validation"]},
                         environment=report["environment"],
                         truncation_reward=EVALUATION_SETTINGS["truncation_reward"],
+                        training_progress=progress,
+                        recovery_receipts=receipts,
+                        run_manifest_hash=content_hash(run),
                     )
                     _require(
                         report["selected_checkpoint"] == best["checkpoint"]
                         and report["selected_validation_step"] == best["step"],
                         "Test checkpoint was not selected by validation",
-                    )
-                    progress = _read(root / arm / "training_metrics.json")
-                    receipts_path = root / arm / "recovery_receipts.json"
-                    receipts = _read(receipts_path) if receipts_path.exists() else {}
-                    require_training_progress(
-                        progress,
-                        steps=config.steps,
-                        recovery_receipts=receipts,
-                        run_manifest_hash=content_hash(run),
                     )
                     activity = summarize_training_activity(progress)
                     _require(
@@ -681,15 +675,33 @@ async def audit_study(directory: Path) -> dict[str, Any]:
                         == content_hash(activity),
                         "Training activity differs from recorded batch metrics",
                     )
+                    selection = best["selection_activity"]
+                    _require(
+                        content_hash(_read(root / arm / "validation_selection.json"))
+                        == content_hash(selection)
+                        and report.get("validation_selection_hash")
+                        == content_hash(selection)
+                        and content_hash(report.get("selected_training_activity"))
+                        == content_hash(selection["selected_training_activity"]),
+                        "Selected checkpoint activity differs from validation and training evidence",
+                    )
                     activity_evidence = {
                         "training_activity": activity,
                         "training_progress_hash": content_hash(progress),
                         "recovery_receipts_hash": content_hash(receipts),
+                        "selected_training_activity": selection[
+                            "selected_training_activity"
+                        ],
+                        "validation_selection_hash": content_hash(selection),
                     }
                     source = report["selected_checkpoint"]["path"]
                 else:
                     _require(
-                        "training_activity" not in report,
+                        not {
+                            "training_activity",
+                            "selected_training_activity",
+                            "validation_selection_hash",
+                        }.intersection(report),
                         "Evaluation-only report cannot claim native RL training activity",
                     )
                 if source is not None:

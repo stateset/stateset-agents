@@ -14,6 +14,60 @@ from stateset_agents.api.training_queue import TrainingLeaseLostError
 from stateset_agents.api.training_worker import work_once
 
 
+@pytest.mark.parametrize("durable", [False, True])
+async def test_api_model_revision_reaches_the_agent_before_training(
+    tmp_path, monkeypatch, durable
+):
+    module = importlib.import_module("stateset_agents.training.train")
+    revision = "a" * 40
+    observed = []
+
+    async def train(**kwargs):
+        observed.append(kwargs["agent"].config.model_revision)
+        assert observed[-1] == kwargs["config_overrides"]["model_revision"]
+        kwargs["callbacks"][0].on_episode_end(0, {"optimizer_updates": 1})
+
+    monkeypatch.setattr(module, "train", train)
+    service = TrainingService(queue_path=tmp_path / "jobs.sqlite3" if durable else None)
+    request = TrainingRequest(
+        agent_config={"model_name": "test"},
+        environment_scenarios=[{"id": "case"}],
+        reward_config={},
+        num_episodes=1,
+        training_config_overrides={"model_revision": revision},
+    )
+    try:
+        job_id = await service.start_training(request, "owner")
+        if durable:
+            assert await work_once(service.queue)
+        else:
+            await asyncio.gather(*tuple(service._tasks.values()))
+        assert service.get_training_status(job_id)["status"] == "completed"
+        assert observed == [revision]
+    finally:
+        await service.aclose()
+
+
+@pytest.mark.parametrize("durable", [False, True])
+@pytest.mark.parametrize("revision", ["", " ", True, 123])
+async def test_invalid_model_revision_never_admits_an_api_job(
+    tmp_path, durable, revision
+):
+    service = TrainingService(queue_path=tmp_path / "jobs.sqlite3" if durable else None)
+    request = TrainingRequest(
+        agent_config={"model_name": "test"},
+        environment_scenarios=[{"id": "case"}],
+        reward_config={},
+        training_config_overrides={"model_revision": revision},
+    )
+    try:
+        with pytest.raises(ValueError, match="model_revision"):
+            await service.start_training(request, "owner")
+        assert service.jobs == {} and not service._tasks
+    finally:
+        await service.aclose()
+
+
 @pytest.mark.asyncio
 async def test_idempotent_http_retry_reports_existing_terminal_status(tmp_path):
     from stateset_agents.api.routers.training import start_training

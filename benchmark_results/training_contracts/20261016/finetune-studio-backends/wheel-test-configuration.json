@@ -1,0 +1,6 @@
+{
+  "source": "pytest.ini",
+  "sha256": "793d1a25bbd22d2e427fa515a5117aebc3475aa25db272f26fc81e950d8e4049",
+  "destination": "checks/pytest.ini",
+  "reason": "Match source pytest async-test configuration"
+}

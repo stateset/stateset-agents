@@ -137,7 +137,12 @@ def get_amp():
 
 
 def backward_training_loss(
-    trainer: Any, loss: Any, torch_module: Any, *, scaler: Any = None
+    trainer: Any,
+    loss: Any,
+    torch_module: Any,
+    *,
+    scaler: Any = None,
+    retain_graph: bool = False,
 ) -> None:
     """Backpropagate only a finite differentiable scalar, discarding failed work."""
     try:
@@ -149,10 +154,11 @@ def backward_training_loss(
             or not bool(torch_module.isfinite(loss))
         ):
             raise ValueError("GRPO loss must be a finite differentiable scalar")
-        if scaler is not None:
-            scaler.scale(loss).backward()
+        target = scaler.scale(loss) if scaler is not None else loss
+        if retain_graph:
+            target.backward(retain_graph=True)
         else:
-            loss.backward()
+            target.backward()
     except BaseException:
         _discard_gradients(trainer)
         raise
@@ -160,6 +166,7 @@ def backward_training_loss(
 
 def _discard_gradients(trainer: Any) -> None:
     trainer._grad_accum_step = 0
+    trainer._grpo_accumulation = None
     if trainer.optimizer is not None:
         try:
             trainer.optimizer.zero_grad(set_to_none=True)
@@ -197,6 +204,10 @@ def safe_optimizer_step(
         max_norm = float(max_grad_norm)
         if not math.isfinite(max_norm) or max_norm < 0:
             raise ValueError("max_grad_norm must be finite and nonnegative")
+        from .grpo_accumulation import finalize_accumulated_gradients
+
+        if finalize_accumulated_gradients(trainer, torch_module):
+            correction = 1.0
         parameters = list(
             {
                 id(parameter): parameter
@@ -263,6 +274,7 @@ def safe_optimizer_step(
         # The model/optimizer commit occurred even if later scheduling fails.
         trainer.global_step += 1
         optimizer.zero_grad(set_to_none=True)
+        trainer._grpo_accumulation = None
         if trainer.lr_scheduler is not None:
             trainer.lr_scheduler.step()
         trainer._sync_rollout_backend()

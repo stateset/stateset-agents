@@ -1,0 +1,14 @@
+{
+  "id": "777c09774483",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-studio-handoff-verify.py"
+  ],
+  "created": 1792177008.5276783,
+  "started": 1792177109.3924131,
+  "finished": 1792177366.0225213,
+  "wait_seconds": 100.86473488807678,
+  "elapsed_seconds": 256.63010811805725
+}

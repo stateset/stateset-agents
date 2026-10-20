@@ -1,0 +1,20 @@
+{
+  "id": "fdedd41e32ba",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "OPENBLAS_NUM_THREADS=1",
+    "RAYON_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "/tmp/stateset-studio-agents-verify.py"
+  ],
+  "created": 1792175907.2402768,
+  "started": 1792175907.2614195,
+  "finished": 1792176138.5865684,
+  "wait_seconds": 0.02114272117614746,
+  "elapsed_seconds": 231.32514882087708
+}

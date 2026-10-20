@@ -1,0 +1,539 @@
+{
+  "cells": {
+    "family:already_refunded": {
+      "delegated_passed": 7,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 7,
+      "total": 7
+    },
+    "family:chargeback": {
+      "delegated_passed": 7,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 7,
+      "total": 7
+    },
+    "family:eligible": {
+      "delegated_passed": 7,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 7,
+      "total": 7
+    },
+    "family:misleading_note": {
+      "delegated_passed": 7,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 7,
+      "total": 7
+    },
+    "family:outside_window": {
+      "delegated_passed": 8,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 8,
+      "total": 8
+    },
+    "family:partial_refund": {
+      "delegated_passed": 14,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 14,
+      "total": 14
+    },
+    "family:undelivered": {
+      "delegated_passed": 7,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 7,
+      "total": 7
+    },
+    "family:window_boundary": {
+      "delegated_passed": 17,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 17,
+      "total": 17
+    },
+    "overall": {
+      "delegated_passed": 74,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 74,
+      "total": 74
+    },
+    "suite-family:arithmetic:partial_refund": {
+      "delegated_passed": 9,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 9,
+      "total": 9
+    },
+    "suite-family:arithmetic:window_boundary": {
+      "delegated_passed": 9,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 9,
+      "total": 9
+    },
+    "suite-family:ordinary:already_refunded": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:chargeback": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:eligible": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:misleading_note": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:outside_window": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:partial_refund": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:undelivered": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:ordinary:window_boundary": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:window:already_refunded": {
+      "delegated_passed": 3,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 3,
+      "total": 3
+    },
+    "suite-family:window:chargeback": {
+      "delegated_passed": 3,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 3,
+      "total": 3
+    },
+    "suite-family:window:eligible": {
+      "delegated_passed": 3,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 3,
+      "total": 3
+    },
+    "suite-family:window:misleading_note": {
+      "delegated_passed": 3,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 3,
+      "total": 3
+    },
+    "suite-family:window:outside_window": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite-family:window:partial_refund": {
+      "delegated_passed": 1,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 1,
+      "total": 1
+    },
+    "suite-family:window:undelivered": {
+      "delegated_passed": 3,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 3,
+      "total": 3
+    },
+    "suite-family:window:window_boundary": {
+      "delegated_passed": 4,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 4,
+      "total": 4
+    },
+    "suite:arithmetic": {
+      "delegated_passed": 18,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 18,
+      "total": 18
+    },
+    "suite:ordinary": {
+      "delegated_passed": 32,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 32,
+      "total": 32
+    },
+    "suite:window": {
+      "delegated_passed": 24,
+      "delegated_truncated": 0,
+      "delegated_violations": 0,
+      "passed": true,
+      "raw_passed": 24,
+      "total": 24
+    }
+  },
+  "passed": true,
+  "summaries": {
+    "delegated": {
+      "families": {
+        "already_refunded": {
+          "generated_tokens": 217,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 14,
+          "total": 7,
+          "trajectory_seconds": 51.27247401501518,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "chargeback": {
+          "generated_tokens": 217,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 14,
+          "total": 7,
+          "trajectory_seconds": 41.51131471188273,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "eligible": {
+          "generated_tokens": 217,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 14,
+          "total": 7,
+          "trajectory_seconds": 48.55714409000939,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "misleading_note": {
+          "generated_tokens": 217,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 14,
+          "total": 7,
+          "trajectory_seconds": 50.19435442786198,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "outside_window": {
+          "generated_tokens": 248,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 8,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6755924351161198,
+            1.0
+          ],
+          "tool_calls": 16,
+          "total": 8,
+          "trajectory_seconds": 59.03549160907278,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "partial_refund": {
+          "generated_tokens": 434,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 14,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.7846891972623643,
+            1.0
+          ],
+          "tool_calls": 28,
+          "total": 14,
+          "trajectory_seconds": 83.86168368707877,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "undelivered": {
+          "generated_tokens": 217,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 14,
+          "total": 7,
+          "trajectory_seconds": 50.419926071946975,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "window_boundary": {
+          "generated_tokens": 527,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 17,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.8156818649911483,
+            1.0
+          ],
+          "tool_calls": 34,
+          "total": 17,
+          "trajectory_seconds": 105.49795071716653,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        }
+      },
+      "generated_tokens": 2294,
+      "mean_reward": 1.0,
+      "mean_tool_calls": 2.0,
+      "passed": 74,
+      "success_rate": 1.0,
+      "success_wilson_95": [
+        0.950650220603614,
+        1.0
+      ],
+      "tool_calls": 148,
+      "total": 74,
+      "trajectory_seconds": 490.35033933003433,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    },
+    "raw": {
+      "families": {
+        "already_refunded": {
+          "generated_tokens": 700,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 21,
+          "total": 7,
+          "trajectory_seconds": 77.0761446589604,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "chargeback": {
+          "generated_tokens": 678,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 21,
+          "total": 7,
+          "trajectory_seconds": 65.94725701911375,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "eligible": {
+          "generated_tokens": 724,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 21,
+          "total": 7,
+          "trajectory_seconds": 68.97232738690218,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "misleading_note": {
+          "generated_tokens": 697,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 21,
+          "total": 7,
+          "trajectory_seconds": 72.09111040504649,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "outside_window": {
+          "generated_tokens": 772,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 8,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6755924351161198,
+            1.0
+          ],
+          "tool_calls": 24,
+          "total": 8,
+          "trajectory_seconds": 76.31131014815765,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "partial_refund": {
+          "generated_tokens": 1423,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 14,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.7846891972623643,
+            1.0
+          ],
+          "tool_calls": 42,
+          "total": 14,
+          "trajectory_seconds": 127.20682680798927,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "undelivered": {
+          "generated_tokens": 698,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 7,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.6456695649333126,
+            1.0
+          ],
+          "tool_calls": 21,
+          "total": 7,
+          "trajectory_seconds": 71.41154364694376,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "window_boundary": {
+          "generated_tokens": 1740,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 17,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.8156818649911483,
+            1.0
+          ],
+          "tool_calls": 51,
+          "total": 17,
+          "trajectory_seconds": 163.77469763776753,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        }
+      },
+      "generated_tokens": 7432,
+      "mean_reward": 1.0,
+      "mean_tool_calls": 3.0,
+      "passed": 74,
+      "success_rate": 1.0,
+      "success_wilson_95": [
+        0.950650220603614,
+        1.0
+      ],
+      "tool_calls": 222,
+      "total": 74,
+      "trajectory_seconds": 722.791217710881,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "f6c69fccc49c",
+  "state": "succeeded",
+  "runner_version": "0.15.0",
+  "command_display": "env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 STATESET_TEST_HF_PROCESSORS=1 .venv/bin/python -m pytest -q -n0 -o addopts= --timeout=90 --tb=short tests/unit/test_river_nemotron.py tests/integration/test_nemotron_vl_processors.py",
+  "exit_code": 0,
+  "wait_seconds": 38.283220052719116,
+  "elapsed_seconds": 20.533260107040405,
+  "usage": {
+    "cpu_seconds": 17.6592,
+    "sampled_peak_rss_gb": 1.1345481872558594,
+    "samples": 34,
+    "observed_seconds": 20.52496774098836,
+    "observed_at": 1792086110.5725138,
+    "source": "local_process_tree",
+    "complete": true,
+    "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+  },
+  "result": {
+    "passed": 17,
+    "seconds": 16.45,
+    "scope": "River tokenizer metadata lowering and actual pinned NVIDIA processors; no paid calls"
+  }
+}

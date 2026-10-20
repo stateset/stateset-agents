@@ -1,0 +1,91 @@
+TEMPORARY UNSAVED READINESS PREVIEW
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+SETTINGS CHECK / configuration only
+Configuration issues: 2 | Enter jumps to a setting
+No dataset contents, hardware or provider access checked.
+
+ > Model / requires_frontier_recipe
+   Dataset / dataset_required
+
+Selected: Model
+This FP8 checkpoint requires the dedicated frontier-sft BF16
+dequantization recipe; inspect frontier-sft --help or choose a supported
+Studio checkpoint.
+Enter opens this field, including settings hidden by the backend.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------
+Settings only; p validates dataset contents. No job starts here.
+Up/Down select | Enter fix field | v recheck | Esc back
+
+RESTORED DRAFT
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+Model: Qwen/Qwen3.5-0.8B
+SFT / local | Inputs not validated
+
+ > Training            sft
+   Compute             local
+   Model               Qwen/Qwen3.5-0.8B
+   Model commit        (not set)
+   Dataset             (not set)
+   Epochs              3
+   Training seed       42
+   Learning rate       1e-05
+   LoRA rank           16
+   Context tokens      1024
+   Timeout seconds     3600
+   Queue CPUs          2
+   Queue RAM GiB       4.0
+   Queue scratch GiB   5.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: sft
+SFT learns replies; RL optimizes the support conversation reward.
+--------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+Arrows/Enter | b backends | m models | v check | p preview | r review
+f files | u data | i readiness | s save | Tab runs | ? help | q quit
+w guided setup: settings -> dataset -> runtime -> review -> quality

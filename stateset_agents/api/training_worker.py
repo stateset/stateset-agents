@@ -67,7 +67,12 @@ async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
             cancel.set()
         await service._run_training(
             job_id,
-            MultiTurnAgent(AgentConfig(**request.agent_config.model_dump())),
+            MultiTurnAgent(
+                AgentConfig(
+                    **request.agent_config.model_dump(),
+                    model_revision=overrides.get("model_revision"),
+                )
+            ),
             ConversationEnvironment(scenarios=request.environment_scenarios),
             build_reward(request.reward_config),
             request,

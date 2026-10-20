@@ -1,0 +1,34 @@
+[
+  {
+    "case": "pending_history_noop_threshold_reload",
+    "passed": true
+  },
+  {
+    "case": "nonfinite_metric",
+    "reloaded_next_update_equal": true
+  },
+  {
+    "case": "local_profile_error",
+    "reloaded_next_update_equal": true
+  },
+  {
+    "case": "finite_signal_disagreement",
+    "reloaded_next_update_equal": true
+  },
+  {
+    "case": "patience",
+    "rejected_before_mutation": true
+  },
+  {
+    "case": "streak",
+    "rejected_before_mutation": true
+  },
+  {
+    "case": "observations",
+    "rejected_before_mutation": true
+  },
+  {
+    "case": "loop_cleanup",
+    "all_peers_finished": true
+  }
+]

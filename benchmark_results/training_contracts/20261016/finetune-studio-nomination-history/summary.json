@@ -1,0 +1,31 @@
+{
+  "passed": true,
+  "source_tests": 774,
+  "installed_wheel_tests": 771,
+  "history_cases": 19,
+  "typed_modules": 431,
+  "queue_job": "4f56e1d5b69c",
+  "wheel_sha256": "5e0ad0fe3d6a31ed128820bebbfb89c99a5372b907eec9134f4d20bc45a5d3aa",
+  "source_and_tests_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match_source": true,
+  "installed_history_cli_verified": true,
+  "real_terminal_sizes": [
+    "74x44",
+    "110x32"
+  ],
+  "layout_sizes": [
+    "72x22",
+    "74x44",
+    "110x32"
+  ],
+  "metadata_reopen_creates_no_records": true,
+  "metadata_reopen_checks_weights": false,
+  "cpu_model_regressions_in_suite": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "count_note": "Source/wheel counts overlap. Selection fixtures use synthetic replies through real scoring/record/replay; broader regressions also exercise tiny CPU models."
+}

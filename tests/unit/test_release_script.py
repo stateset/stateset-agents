@@ -82,6 +82,11 @@ def fixture_repo(tmp_path: Path) -> Path:
     pkg = tmp_path / "stateset_agents"
     pkg.mkdir()
     (pkg / "__init__.py").write_text('__version__ = "0.25.0"\n', encoding="utf-8")
+    experiments = pkg / "config" / "presets" / "experiments"
+    experiments.mkdir(parents=True)
+    (experiments / "support_recovery_preflight6.json").write_text(
+        '{"framework_version": "0.25.0"}\n', encoding="utf-8"
+    )
 
     npm = tmp_path / "npm"
     npm.mkdir()

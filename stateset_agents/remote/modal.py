@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import logging
 import os
+import sys
 import uuid
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
@@ -34,7 +36,11 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from stateset_agents.exceptions import IMPORT_EXCEPTIONS
-from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
+from stateset_agents.remote.executor import (
+    RemoteExecutionError,
+    RemoteExecutor,
+    SubmissionReceiptError,
+)
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 
 try:
@@ -91,6 +97,9 @@ class ModalExecutor(RemoteExecutor):
     """Executes the job on Modal-provisioned GPU compute."""
 
     name = "modal"
+    supports_sft_seed = True
+    uses_packaged_training = True
+    durable_submission_receipts = True
     compute_model = "rented-serverless-gpu"
     verification_status = "transport-unverified"
     #: Modal's own current GPU vocabulary.
@@ -104,6 +113,7 @@ class ModalExecutor(RemoteExecutor):
         region: str | None = None,
     ) -> None:
         self._jobs: dict[str, _ModalJob] = {}
+        self._submission_volume_ids: dict[str, str] = {}
         #: Where the adapter volume is mounted inside the container.
         mount = remote_mount.strip().rstrip("/")
         mount_path = PurePosixPath(mount)
@@ -184,6 +194,63 @@ class ModalExecutor(RemoteExecutor):
                 volume=name,
             ) from exc
 
+    def _observe_modal(
+        self,
+        job_id: str,
+        event: str,
+        resource_kind: str,
+        resource_id: str | None = None,
+    ) -> None:
+        observation: dict[str, Any] = {
+            "job_id": job_id,
+            "event": event,
+            "resource_kind": resource_kind,
+            "resource_id": resource_id,
+        }
+        if resource_kind == "volume":
+            observation["resource_name"] = self._volume_name(job_id)
+        self._observe_submission(observation)
+
+    def _cleanup_submission_volume(self, job_id: str, name: str) -> None:
+        """Report deletion acknowledgement, retaining the primary cleanup error."""
+        primary_error = sys.exc_info()[1]
+        resource_id = self._submission_volume_ids.get(job_id)
+        try:
+            self._delete_volume(name)
+        except Exception:
+            try:
+                self._observe_modal(
+                    job_id, "cleanup_unconfirmed", "volume", resource_id
+                )
+            except SubmissionReceiptError:
+                logging.warning("Could not retain Modal volume cleanup evidence")
+            raise
+        try:
+            self._observe_modal(job_id, "cleanup_acknowledged", "volume", resource_id)
+        except SubmissionReceiptError:
+            if primary_error is None:
+                raise
+            logging.warning("Could not retain Modal volume cleanup evidence")
+
+    def _cleanup_submission_call(
+        self, job_id: str, call: Any, call_id: str | None
+    ) -> None:
+        """Cancel only the owned call after an observed submission fails."""
+        try:
+            call.cancel()
+        except Exception:
+            event = "cleanup_unconfirmed"
+            logging.warning(
+                "Could not acknowledge cancellation of the owned Modal call"
+            )
+        else:
+            event = "cleanup_acknowledged"
+        try:
+            self._observe_modal(job_id, event, "function_call", call_id)
+        except SubmissionReceiptError:
+            # Called only while unwinding the original submission failure.
+            logging.warning("Could not retain Modal call cleanup evidence")
+
     def _run_remote(
         self, spec: RemoteJobSpec, job_id: str
     ) -> tuple[dict[str, Any], Any, str]:
@@ -196,10 +263,31 @@ class ModalExecutor(RemoteExecutor):
         sdk = self._require_sdk()
         image = self.build_image(spec)
         volume_name = self._volume_name(job_id)
+        self._observe_modal(job_id, "allocation_intent", "volume")
         volume = sdk.Volume.from_name(volume_name, create_if_missing=True)
-        app = sdk.App(_APP_NAME)
+        observed = getattr(self, "_submission_observer", None) is not None
+        call = None
+        call_id: str | None = None
+        call_finished = False
 
         try:
+            if observed:
+                hydrate = getattr(volume, "hydrate", None)
+                if not callable(hydrate):
+                    raise RemoteExecutionError(
+                        "Durable Modal submissions require a supported SDK with Volume.hydrate",
+                        provider=self.name,
+                    )
+                hydrate()
+                volume_id = getattr(volume, "object_id", None)
+                if not isinstance(volume_id, str) or not volume_id:
+                    raise RemoteExecutionError(
+                        "Modal did not return a durable volume identity",
+                        provider=self.name,
+                    )
+                self._submission_volume_ids[job_id] = volume_id
+                self._observe_modal(job_id, "allocated", "volume", volume_id)
+            app = sdk.App(_APP_NAME)
             remote_dataset = self._upload_dataset(volume, spec, job_id)
             payload = spec.to_dict()
             payload["dataset"] = remote_dataset
@@ -230,11 +318,47 @@ class ModalExecutor(RemoteExecutor):
             function = app.function(**function_options)(invoke)
 
             with app.run():
-                outcome = function.remote(payload)
-        except Exception:
+                if observed:
+                    spawn = getattr(function, "spawn", None)
+                    if not callable(spawn):
+                        raise RemoteExecutionError(
+                            "Durable Modal submissions require a supported SDK with Function.spawn",
+                            provider=self.name,
+                        )
+                    self._observe_modal(job_id, "allocation_intent", "function_call")
+                    try:
+                        call = spawn(payload)
+                    except NotImplementedError as exc:
+                        raise RemoteExecutionError(
+                            "Durable Modal submissions require a working Function.spawn; no replacement call was started",
+                            provider=self.name,
+                        ) from exc
+                    call_id = getattr(call, "object_id", None)
+                    if not isinstance(call_id, str) or not call_id:
+                        raise RemoteExecutionError(
+                            "Modal did not return a durable function-call identity",
+                            provider=self.name,
+                        )
+                    self._observe_modal(job_id, "allocated", "function_call", call_id)
+                    outcome = call.get()
+                    call_finished = True
+                    self._observe_modal(
+                        job_id, "execution_finished", "function_call", call_id
+                    )
+                else:
+                    outcome = function.remote(payload)
+        except BaseException:
             # The caller never receives the handle on this path, so cleanup
-            # must happen here rather than in submit().
-            self._delete_volume(volume_name)
+            # must happen here rather than in submit(). Never replace the
+            # original error with a cleanup or receipt-persistence failure.
+            if call is not None and not call_finished:
+                self._cleanup_submission_call(job_id, call, call_id)
+            try:
+                self._cleanup_submission_volume(job_id, volume_name)
+            except Exception:
+                logging.warning(
+                    "Could not acknowledge cleanup of the owned Modal volume"
+                )
             raise
 
         return outcome, volume, volume_name
@@ -243,6 +367,7 @@ class ModalExecutor(RemoteExecutor):
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
         self.validate_spec(spec)
+        self._submission_observer_failed = False
         if not spec.dataset.is_file():
             raise RemoteExecutionError(
                 f"Modal dataset must be a regular file: {spec.dataset}",
@@ -274,7 +399,7 @@ class ModalExecutor(RemoteExecutor):
                 except Exception as exc:
                     logs.append(f"failed to download failure artifacts: {exc}")
             try:
-                self._delete_volume(volume_name)
+                self._cleanup_submission_volume(job_id, volume_name)
             except Exception as exc:
                 logs.append(f"failed to delete Modal volume {volume_name}: {exc}")
             self._jobs[job_id] = _ModalJob(
@@ -284,7 +409,7 @@ class ModalExecutor(RemoteExecutor):
 
         if spec.dry_run:
             # Nothing is written on a dry run — that is the whole point.
-            self._delete_volume(volume_name)
+            self._cleanup_submission_volume(job_id, volume_name)
             self._jobs[job_id] = _ModalJob(spec, JobStatus.SUCCEEDED, logs)
             return handle
 
@@ -293,7 +418,7 @@ class ModalExecutor(RemoteExecutor):
         except Exception as exc:
             logs.append(f"failed to download adapter: {exc}")
             try:
-                self._delete_volume(volume_name)
+                self._cleanup_submission_volume(job_id, volume_name)
             except Exception as cleanup_exc:  # noqa: BLE001 - retain both failures
                 logs.append(
                     f"failed to delete Modal volume {volume_name}: {cleanup_exc}"
@@ -302,7 +427,7 @@ class ModalExecutor(RemoteExecutor):
             return handle
 
         try:
-            self._delete_volume(volume_name)
+            self._cleanup_submission_volume(job_id, volume_name)
         except Exception as exc:
             logs.append(f"failed to delete Modal volume {volume_name}: {exc}")
             self._jobs[job_id] = _ModalJob(

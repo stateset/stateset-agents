@@ -34,6 +34,7 @@ TRAINING_START_EVENT = "training_start"
 TRAINING_END_EVENT = "training_end"
 EPISODE_END_EVENT = "episode_end"
 STEP_END_EVENT = "step_end"
+OPTIMIZER_STEP_EVENT = "optimizer_step"
 EVAL_END_EVENT = "evaluation_end"
 CHECKPOINT_SAVED_EVENT = "checkpoint_saved"
 
@@ -163,6 +164,33 @@ async def notify_step_end(
                 logger.debug("Callback %r on_step_end failed: %s", callback, exc)
                 continue
         await _dispatch_callable(callback, STEP_END_EVENT, payload)
+
+
+async def notify_optimizer_step(
+    callbacks: Iterable[Any],
+    *,
+    step: int,
+    metrics: dict[str, Any],
+) -> None:
+    """Report one receipt for committed updates, including accumulation flushes.
+
+    A receipt may cover several inner updates. It is not a new rollout or
+    policy-signal observation; diagnostic monitors ignore this event.
+    """
+    payload = {"step": step, **metrics}
+    for callback in callbacks:
+        method = getattr(callback, "on_optimizer_step", None)
+        if callable(method):
+            try:
+                await _try_call_variants(
+                    method, variants=((step, metrics), (metrics,), ())
+                )
+            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
+                if getattr(callback, "fail_on_error", False) is True:
+                    raise
+                logger.debug("Callback %r on_optimizer_step failed: %s", callback, exc)
+                continue
+        await _dispatch_callable(callback, OPTIMIZER_STEP_EVENT, payload)
 
 
 async def notify_evaluation_end(

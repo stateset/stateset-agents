@@ -531,6 +531,64 @@ def prepare_refund_data_command(
     )
 
 
+@benchmark_app.command("prepare-refund-curriculum")
+def prepare_refund_curriculum_command(
+    data_dir: str = typer.Option(..., "--data-dir", help="Prepared reference dataset."),
+    output: str = typer.Option(..., "--output", "-o", help="Fresh training directory."),
+    policy: str = typer.Option(
+        "adjacent_boundary_v1",
+        "--policy",
+        help=(
+            "adjacent_boundary_v1, policy_parameter_contrasts_v1, "
+            "or borrow_boundary_contrasts_v1."
+        ),
+    ),
+) -> None:
+    """Build versioned training-only policy contrasts offline."""
+    import asyncio
+    from pathlib import Path
+
+    from stateset_agents.data.refund_curriculum import prepare_refund_curriculum
+
+    try:
+        manifest = asyncio.run(
+            prepare_refund_curriculum(Path(data_dir), Path(output), policy=policy)
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _echo(f"Cannot prepare refund curriculum: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo(
+        f"Prepared {manifest['selected']} verified training demonstrations "
+        f"({manifest['derived_cases']} derived): {output}/train.jsonl"
+    )
+
+
+@benchmark_app.command("audit-refund-curriculum")
+def audit_refund_curriculum_command(
+    data_dir: str = typer.Option(..., "--data-dir", help="Original prepared dataset."),
+    output: str = typer.Option(..., "--output", "-o", help="Curriculum to audit."),
+    policy: str = typer.Option(
+        "adjacent_boundary_v1",
+        "--policy",
+        help="Expected curriculum policy; must match the prepared bundle.",
+    ),
+) -> None:
+    """Reconstruct training provenance and replay the curriculum offline."""
+    import asyncio
+    from pathlib import Path
+
+    from stateset_agents.data.refund_curriculum import audit_refund_curriculum
+
+    try:
+        report = asyncio.run(
+            audit_refund_curriculum(Path(data_dir), Path(output), policy=policy)
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _echo(f"Invalid refund curriculum: {exc}", err=True)
+        raise typer.Exit(code=2) from exc
+    _echo(f"PASS: reconstructed {report['replayed_demonstrations']} demonstrations")
+
+
 @benchmark_app.command("filter-refund-data")
 def filter_refund_data_command(
     data_dir: str = typer.Option(

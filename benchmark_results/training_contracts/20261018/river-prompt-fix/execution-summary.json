@@ -1,0 +1,9 @@
+{
+  "exit_code": 0,
+  "timed_out": false,
+  "elapsed_seconds": 398.0,
+  "test_report_exists": true,
+  "training_activity_exists": true,
+  "preflight_passed": true,
+  "credential_persisted": false
+}

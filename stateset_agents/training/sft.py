@@ -32,6 +32,7 @@ import contextlib
 import io
 import json
 import logging
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -44,9 +45,13 @@ from stateset_agents.core.lora_targets import (
 )
 from stateset_agents.core.model_presets import PRESETS
 from stateset_agents.core.transformers_compat import generation_compat_kwargs
+from stateset_agents.data.finetuning import (
+    parse_finetuning_json,
+    validate_finetuning_split,
+)
+from stateset_agents.data.source import DatasetSourceIdentity, SFTDatasetIdentity
 from stateset_agents.training.lineage import (
     AdapterManifest,
-    hash_dataset,
     write_manifest,
 )
 
@@ -75,6 +80,8 @@ __all__ = [
     "judge_completion",
     "load_base_model_for_sft",
     "load_chat_dataset",
+    "load_sft_dataset",
+    "parse_chat_dataset",
     "log_cuda_memory_per_device",
     "log_device_map_summary",
     "model_load_kwargs",
@@ -106,26 +113,70 @@ def load_chat_dataset(path: Path) -> list[dict[str, Any]]:
 
     Each row must have a ``messages`` key with a list of ``{role, content}``
     dicts. Tool-calling rows may also contain ``tools`` (JSON schemas) and
-    assistant ``tool_calls`` with typed arguments. Returns validated rows.
+    assistant ``tool_calls`` with typed arguments. Legacy malformed JSON and
+    missing-message rows are skipped. Ambiguous JSON and non-training split
+    declarations fail the whole read, rather than training on a partial input.
     """
     if not path.exists():
         raise FileNotFoundError(f"Dataset not found: {path}")
 
+    return parse_chat_dataset(path.read_bytes())
+
+
+def parse_chat_dataset(data: bytes) -> list[dict[str, Any]]:
+    """Parse captured UTF-8 chat JSONL with the same rules as the file loader.
+
+    Consumers can hash these exact bytes and retain source identity before
+    training, rather than hashing the original path after it may have changed.
+    """
     rows: list[dict[str, Any]] = []
-    for line_num, line in enumerate(path.read_text().splitlines(), 1):
+    for line_num, line in enumerate(data.decode("utf-8").splitlines(), 1):
         line = line.strip()
         if not line:
             continue
         try:
-            row = json.loads(line)
+            row = parse_finetuning_json(line)
         except json.JSONDecodeError as e:
-            logger.warning("Skipping line %d: %s", line_num, e)
+            logger.warning(
+                "Skipping line %d: invalid JSON at column %d", line_num, e.colno
+            )
             continue
-        if "messages" not in row or not isinstance(row["messages"], list):
+        except ValueError as exc:
+            raise ValueError(f"line {line_num}: {exc}") from None
+        try:
+            validate_finetuning_split(row, expected_split="train")
+        except ValueError as exc:
+            raise ValueError(f"line {line_num}: {exc}") from None
+        if not isinstance(row, dict) or not isinstance(row.get("messages"), list):
             logger.warning("Skipping line %d: missing 'messages' list", line_num)
             continue
         rows.append(row)
     return rows
+
+
+def load_sft_dataset(
+    path: Path, *, text_only: bool = False, expected_sha256: str | None = None
+) -> tuple[list[dict[str, Any]], SFTDatasetIdentity]:
+    """Capture source bytes, parse training rows and bind both identities.
+
+    ``text_only`` uses Studio's strict text normalization. The default preserves
+    typed tool arguments and metadata through the general chat loader. An
+    expected source hash binds this read to an existing review or manifest.
+    """
+    try:
+        data = path.read_bytes()
+    except FileNotFoundError as exc:
+        raise FileNotFoundError(f"Dataset not found: {path}") from exc
+    source = DatasetSourceIdentity.from_bytes(path, data)
+    if expected_sha256 is not None and source.sha256 != expected_sha256:
+        raise ValueError("Training dataset changed from the reviewed source")
+    if text_only:
+        from stateset_agents.data.text_sft import parse_text_sft_records
+
+        rows, _ = parse_text_sft_records(data, str(path))
+    else:
+        rows = parse_chat_dataset(data)
+    return rows, SFTDatasetIdentity.from_rows(rows, source=source)
 
 
 def gpu_available() -> bool:
@@ -146,6 +197,7 @@ def print_training_plan(
     lora_r: int,
     learning_rate: float,
     max_length: int,
+    seed: int = 42,
 ) -> None:
     """Dump a human-readable summary of what training *would* do."""
     print()
@@ -159,6 +211,7 @@ def print_training_plan(
     print(f"  LoRA r:           {lora_r}")
     print(f"  Learning rate:    {learning_rate}")
     print(f"  Max sequence:     {max_length}")
+    print(f"  Training seed:    {seed}")
     print()
     sample = rows[0] if rows else None
     if sample:
@@ -431,6 +484,7 @@ def load_base_model_for_sft(base_model: str, *, revision: str | None = None):
         AutoModelForCausalLM,
         base_model,
         kwargs,
+        for_training=True,
     )
     if resolved_model_cls is not AutoModelForCausalLM:
         logger.info(
@@ -771,12 +825,20 @@ def run_sft(
     dataset_path: Path | None = None,
     parent_adapter: str | None = None,
     model_revision: str | None = None,
+    callbacks: list[Any] | None = None,
+    resume_from_checkpoint: Path | None = None,
+    seed: int = 42,
+    dataset_identity: SFTDatasetIdentity | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
 
     ``resume=True`` continues from the newest ``checkpoint-<N>`` directory
     already in ``output_dir`` when one exists; with none, it logs the fact
     and trains fresh (see ``resolve_resume_checkpoint``).
+
+    ``resume_from_checkpoint`` selects an exact checkpoint and fails if it is
+    missing. It cannot be combined with the legacy ``resume`` flag. The studio
+    verifies and privately snapshots all optimizer/model/RNG bytes before use.
 
     When ``eval_prompts`` is given, a completion per prompt is generated with
     the base model *before* LoRA is applied and again through the trained
@@ -791,8 +853,43 @@ def run_sft(
     the base model. The result is saved as a LoRA adapter directory
     consumable by ``AgentConfig.peft_path``.
 
+    File-based callers should pass ``dataset_identity`` from the same captured
+    read as ``rows``. Without it, ``dataset_path`` is read and checked against
+    the supplied rows before loading a model. In-memory input without a source
+    remains explicitly unbound to a file. No source is hashed after training.
+
     Raises ``ImportError`` if transformers / peft / datasets aren't available.
     """
+    rows = deepcopy(rows)
+    for index, row in enumerate(rows, 1):
+        try:
+            validate_finetuning_split(row, expected_split="train")
+        except ValueError as exc:
+            raise ValueError(f"row {index}: {exc}") from None
+    seed = _training_seed(seed)
+    if dataset_identity is None:
+        if dataset_path is not None:
+            _, dataset_identity = load_sft_dataset(dataset_path)
+        else:
+            dataset_identity = SFTDatasetIdentity.from_rows(rows)
+    if not isinstance(dataset_identity, SFTDatasetIdentity):
+        raise ValueError("Expected a captured SFT dataset identity")
+    dataset_identity.verify_rows(rows)
+    source = dataset_identity.source
+    if dataset_path is not None and (
+        source is None or Path(source.path) != Path(dataset_path)
+    ):
+        raise ValueError("Dataset path differs from the captured SFT source")
+    if resume_from_checkpoint is not None:
+        if (
+            resume
+            or not resume_from_checkpoint.is_dir()
+            or not (resume_from_checkpoint / "trainer_state.json").is_file()
+        ):
+            raise ValueError(
+                "Explicit SFT recovery requires an existing exact checkpoint; fresh fallback is disabled"
+            )
+
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
@@ -800,8 +897,10 @@ def run_sft(
         DataCollatorForSeq2Seq,
         Trainer,
         TrainingArguments,
+        set_seed,
     )
 
+    set_seed(seed)
     logger.info("Loading tokenizer and model: %s", base_model)
     # base_model is a caller-supplied CLI argument (public HF model repo id),
     # not attacker-controlled input; pinning a fixed revision would break
@@ -887,6 +986,8 @@ def run_sft(
         bf16=True,
         logging_steps=10,
         save_strategy="epoch",
+        seed=seed,
+        data_seed=seed,
         report_to=[],  # local-only by default
     )
 
@@ -895,29 +996,37 @@ def run_sft(
         args=args,
         train_dataset=dataset,
         data_collator=DataCollatorForSeq2Seq(tokenizer, label_pad_token_id=-100),
+        **({"callbacks": callbacks} if callbacks is not None else {}),
     )
 
     logger.info("Starting SFT…")
-    if resolve_resume_checkpoint(output_dir, resume):
+    if resume_from_checkpoint is not None:
+        trainer.train(resume_from_checkpoint=str(resume_from_checkpoint))
+    elif resolve_resume_checkpoint(output_dir, resume):
         trainer.train(resume_from_checkpoint=True)
     else:
         trainer.train()
     logger.info("Training complete. Saving adapter to %s", output_dir)
-    model.save_pretrained(str(output_dir))
+    model.save_pretrained(str(output_dir), safe_serialization=True)
     tokenizer.save_pretrained(str(output_dir))
 
     # Provenance is written as soon as the adapter exists, so an adapter is
     # never on disk without a record of what made it — even if the eval
     # below fails or the process dies during it.
-    dataset_sha, dataset_rows = (
-        hash_dataset(dataset_path) if dataset_path is not None else (None, len(rows))
-    )
     manifest = AdapterManifest(
         base_model=base_model,
-        dataset_path=str(dataset_path) if dataset_path is not None else None,
-        dataset_sha256=dataset_sha,
-        dataset_rows=dataset_rows if dataset_rows is not None else len(rows),
+        dataset_path=source.path if source is not None else None,
+        dataset_sha256=source.sha256 if source is not None else None,
+        dataset_rows=source.rows if source is not None else dataset_identity.examples,
         hyperparameters={
+            "dataset_provenance": (
+                "captured_before_training" if source else "in_memory_unbound"
+            ),
+            "training_content_sha256": dataset_identity.content_sha256,
+            "training_input_rows": dataset_identity.examples,
+            "effective_training_rows": len(records),
+            "seed": seed,
+            "data_seed": seed,
             "num_epochs": num_epochs,
             "lora_r": lora_r,
             "lora_alpha": lora_alpha,
@@ -925,13 +1034,28 @@ def run_sft(
             "max_length": max_length,
             "per_device_batch_size": per_device_batch_size,
             "gradient_accumulation_steps": gradient_accumulation_steps,
-            "resumed": bool(resume),
+            "resumed": bool(resume or resume_from_checkpoint is not None),
+            **(
+                {"resume_from_checkpoint": str(resume_from_checkpoint)}
+                if resume_from_checkpoint is not None
+                else {}
+            ),
             "model_revision": model_revision,
         },
         parent_adapter=parent_adapter,
         package_version=_package_version(),
     )
     write_manifest(output_dir, manifest)
+    from stateset_agents.training.sft_artifacts import verify_sft_adapter
+
+    verify_sft_adapter(
+        output_dir,
+        base_model=base_model,
+        lora_r=lora_r,
+        dataset_identity=dataset_identity,
+        model_revision=model_revision,
+        expected_lineage=manifest.to_dict(),
+    )
 
     if eval_prompt_texts:
         logger.info(
@@ -1021,6 +1145,13 @@ def _apply_eval_gate(
     return 1
 
 
+def _training_seed(value: Any) -> int:
+    """Validate before data/model loading, including dry-run entrypoints."""
+    if type(value) is not int or not 0 <= value <= 2**32 - 1:
+        raise ValueError("Training seed must be an integer in [0, 4294967295]")
+    return value
+
+
 def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
     """Run one SFT job from a ``RemoteJobSpec``-shaped dict.
 
@@ -1044,7 +1175,8 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
     returncode = 0
     try:
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
-            rows = load_chat_dataset(Path(job["dataset"]))
+            seed = _training_seed(42 if job.get("seed") is None else job["seed"])
+            rows, dataset_identity = load_sft_dataset(Path(job["dataset"]))
             if not rows:
                 logger.error("No usable rows in %s", job["dataset"])
                 returncode = 1
@@ -1059,6 +1191,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         lora_r=job["lora_r"],
                         learning_rate=job["learning_rate"],
                         max_length=job["max_length"],
+                        seed=seed,
                     )
                 else:
                     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1077,7 +1210,19 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         eval_max_new_tokens=job.get("eval_max_new_tokens", 90),
                         resume=bool(job.get("resume", False)),
                         dataset_path=Path(job["dataset"]),
+                        dataset_identity=dataset_identity,
                         parent_adapter=job.get("parent_adapter"),
+                        seed=seed,
+                    )
+                    from stateset_agents.training.sft_artifacts import (
+                        verify_sft_adapter,
+                    )
+
+                    verify_sft_adapter(
+                        output_dir,
+                        base_model=job["base_model"],
+                        lora_r=job["lora_r"],
+                        dataset_identity=dataset_identity,
                     )
                     returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
     except Exception as exc:  # reported, never raised — see docstring
@@ -1120,6 +1265,12 @@ def build_parser() -> Any:
     parser.add_argument("--max-length", type=int, default=1024)
     parser.add_argument("--per-device-batch-size", type=int, default=2)
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
+    parser.add_argument(
+        "--seed",
+        type=int,
+        default=42,
+        help="Initialization and training seed (0–4294967295).",
+    )
     parser.add_argument(
         "--dry-run",
         action="store_true",
@@ -1206,6 +1357,7 @@ def main(argv: list[str] | None = None) -> int:
             "eval_prompts": eval_prompts,
             "eval_max_new_tokens": args.eval_max_new_tokens,
             "parent_adapter": args.parent_adapter,
+            "seed": args.seed,
         }
     )
 

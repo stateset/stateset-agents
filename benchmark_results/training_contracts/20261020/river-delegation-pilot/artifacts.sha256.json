@@ -1,0 +1,17 @@
+{
+  "README.md": "79976bfa290958a08bcdbfcb369dfb5712b31f68f2d8c2faa7eae802b7637a13",
+  "archive-inputs.json": "4b7617945804185dc91aec9b3a8969b6282ae3c1aaeb9f4baca14757c1bb11e1",
+  "execution-summary.json": "196b1a8de62b3775ef870943983e74251bb4da6955bc4902612b8652cd8590b3",
+  "plan.json": "fb2776bb06b3f47d91246df62983212c78ca6ec1c5affa1b69a54218ddce27ef",
+  "preflight-live.json": "efab4ebebed0ce1211ffc4cd4233bd4be48239ca5e22cf6c89f02aac8f4f9662",
+  "prior-evidence-verified.json": "08f15c9c1d14b32dc6b5ee9a1f0a6e830ce9f1693a0b1f57fa1c04e5e3cfd217",
+  "protocol-gate-tests.xml": "2d33a6a25dca3a7727cc5bd8f7204fcb60b4c971bcb5451f053b8afbe4849170",
+  "resource-comparison.json": "256020815338ea59a0cc7f8d8860268c9fa7faa391c39e6d500bc06a16974397",
+  "result.json": "f57bcf0d41dc034649604031ff14ed9363d3e5f51f475ddfcaa55e78057d8a40",
+  "review-summary.json": "77ad59f15977d784d993206196ab97f8ec76c81488f39cf21221f2a94fb28345",
+  "rollout-budget.json": "c67587e4e6ec7a38e7939a021378a995fb939b36fd22c2798af695020b4278b6",
+  "run.tar.gz": "605028e60e2224380993882de0b039f4e352fad23d9f9c44f3a65f58f17497ef",
+  "test-decision.json": "4493f6269179806ddce1ee294fa5763787e19d1159897b0a6b5db0dd4b1aa058",
+  "unit-tests.xml": "0a14ffb8c620d32130c89bcb111481b9757de7936f6617585f1172e628cfe687",
+  "validation-decision.json": "63a9a5287a96d9b16ed4cb4eab8506c061e6393e34938e36d884a8a32a001e62"
+}

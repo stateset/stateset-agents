@@ -1,16 +1,19 @@
 """
-Offline GRPO Trainer
+Offline value learning and IQL-weighted language-model policy extraction.
 
-Combines offline RL value estimation with online GRPO policy optimization.
-This hybrid approach uses offline data to learn value functions and then
-uses those value estimates as baselines for GRPO training.
+The historical OfflineGRPOTrainer name is retained for compatibility. Its
+train() method fits real logged assistant actions with detached IQL weights;
+hybrid-baseline helpers do not turn this into an on-policy GRPO objective.
 """
 
+import hashlib
+import json
 import logging
 import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
@@ -27,7 +30,15 @@ except ImportError:
     AdamW = cast(Any, None)
 
 from .base_trainer import BaseTrainerConfig
+from .callbacks import (
+    notify_episode_end,
+    notify_step_end,
+    notify_training_end,
+    notify_training_start,
+)
 from .checkpoint_io import load_checkpoint_file
+from .checkpoint_publication import checkpoint_write
+from .runtime_state import capture_rng, restore_rng
 
 logger = logging.getLogger(__name__)
 
@@ -94,6 +105,10 @@ class OfflineGRPOConfig(BaseTrainerConfig):
     state_dim: int = 384
     action_dim: int = 384
     embedding_model: str = "all-MiniLM-L6-v2"
+
+    # Append new fields to preserve positional configuration compatibility.
+    policy_temperature: float = 3.0
+    policy_max_weight: float = 100.0
 
 
 class ValueNetwork(nn.Module):
@@ -213,6 +228,7 @@ class OfflineGRPOTrainer:
         device: str | None = None,
     ):
         _require_torch()
+        config.validate_for_training()
 
         self.config = config
         self.model = model
@@ -263,6 +279,17 @@ class OfflineGRPOTrainer:
 
         # Offline RL algorithm instance
         self._offline_learner: Any | None = None
+        self.policy_optimizer: Any | None = None
+        self.callbacks: list[Any] = []
+        self.current_epoch = 0
+        self.optimizer_updates = 0
+        self._grad_accum_step = 0
+        self._grad_accum_actions = 0
+        self._grad_accum_normalizer = 0
+        self.dataset_sha256: str | None = None
+        self._epoch_order: list[int] | None = None
+        self._batch_offset = 0
+        self._rng = np.random.default_rng(config.seed)
 
     def _init_offline_learner(self) -> None:
         """Initialize the offline RL algorithm"""
@@ -278,11 +305,17 @@ class OfflineGRPOTrainer:
             )
 
         elif algorithm == OfflineRLAlgorithm.IQL:
-            from .offline_rl_algorithms import ImplicitQLearning
+            from .offline_rl_algorithms import ImplicitQLearning, IQLConfig
 
             self._offline_learner = ImplicitQLearning(
                 state_dim=self.config.state_dim,
                 action_dim=self.config.action_dim,
+                config=IQLConfig(
+                    hidden_size=self.config.value_hidden_size,
+                    num_layers=self.config.value_num_layers,
+                    learning_rate=self.config.value_learning_rate,
+                    temperature=self.config.policy_temperature,
+                ),
                 device=self.device,
             )
 
@@ -372,7 +405,7 @@ class OfflineGRPOTrainer:
 
         for step in range(num_steps):
             # Sample batch
-            indices = np.random.choice(
+            indices = self._rng.choice(
                 dataset_size, size=min(batch_size, dataset_size), replace=False
             )
 
@@ -519,60 +552,186 @@ class OfflineGRPOTrainer:
             raise ValueError("Offline dones must be zero or one")
         return arrays
 
-    async def train_step(
-        self,
-        batch: dict[str, Any],
-    ) -> dict[str, float]:
-        """
-        Perform one hybrid GRPO training step.
-
-        Args:
-            batch: Training batch with states, actions, rewards
-
-        Returns:
-            Training metrics
-        """
-        metrics = {}
-
-        # Get offline value estimates
-        states = batch.get("states")
-        actions = batch.get("actions")
-        online_rewards = batch.get("rewards", torch.zeros(1))
-
-        if states is not None:
-            if not isinstance(states, torch.Tensor):
-                states = torch.FloatTensor(states).to(self.device)
-            if not isinstance(actions, torch.Tensor):
-                actions = torch.FloatTensor(actions).to(self.device)
-
-            with torch.no_grad():
-                offline_values = self.value_net(states)
-                offline_q_values = self.q_net(states, actions)
-
-            # Compute advantages
-            advantages = self._compute_hybrid_advantage(
-                online_rewards,
-                offline_values,
-                offline_q_values,
+    def _setup_policy_optimizer(self) -> None:
+        """Require an initialized trainable language model before policy extraction."""
+        if self.config.offline_algorithm.lower() != "iql":
+            raise ValueError(
+                "Language-model policy extraction currently supports IQL only"
+            )
+        if self.model is None or not callable(getattr(self.model, "parameters", None)):
+            raise ValueError(
+                "Offline policy training requires an initialized language model"
+            )
+        for name in ("policy_temperature", "policy_max_weight"):
+            value = getattr(self.config, name)
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(f"{name} must be finite and positive")
+        if self.policy_optimizer is None:
+            parameters = [p for p in self.model.parameters() if p.requires_grad]
+            if not parameters:
+                raise ValueError("Offline policy has no trainable parameters")
+            self.policy_optimizer = AdamW(
+                parameters,
+                lr=self.config.learning_rate,
+                betas=(self.config.adam_beta1, self.config.adam_beta2),
+                weight_decay=self.config.weight_decay,
             )
 
-            metrics["offline_value_mean"] = offline_values.mean().item()
-            metrics["offline_q_mean"] = offline_q_values.mean().item()
-            metrics["advantage_mean"] = (
-                advantages.mean().item()
-                if isinstance(advantages, torch.Tensor)
-                else advantages
+    async def train_step(self, batch: dict[str, Any]) -> dict[str, float]:
+        """Extract an IQL policy using bounded advantage-weighted logged-token NLL.
+
+        Only labels belonging to the current assistant action are supervised.
+        This is offline advantage-weighted behavior cloning, not on-policy GRPO.
+        """
+        self._setup_policy_optimizer()
+        if not self.value_pretrained or self._offline_learner is None:
+            raise ValueError(
+                "Pretrain IQL value functions before extracting the policy"
             )
-
-        # Blend weights based on training progress
-        blend_ratio = self._get_blend_ratio()
-        metrics["blend_ratio"] = blend_ratio
-        metrics["training_step"] = self.training_step
-
+        parameter = next(self.model.parameters())
+        device = parameter.device
+        ids = torch.as_tensor(batch["input_ids"], device=device)
+        labels = torch.as_tensor(batch["labels"], device=device)
+        if ids.dtype not in (torch.int32, torch.int64) or labels.dtype not in (
+            torch.int32,
+            torch.int64,
+        ):
+            raise ValueError("Policy token IDs and labels must be integers")
+        if (
+            ids.ndim != 2
+            or ids.shape != labels.shape
+            or ids.shape[1] < 2
+            or torch.any(ids < 0)
+        ):
+            raise ValueError("Invalid policy token batch")
+        mask = labels[:, 1:] != -100
+        if not mask.any(dim=1).all() or torch.any((labels != -100) & (labels != ids)):
+            raise ValueError(
+                "Every action must have faithful supervised assistant tokens"
+            )
+        attention = torch.as_tensor(
+            batch.get("attention_mask", torch.ones_like(ids)), device=device
+        )
+        if attention.shape != ids.shape or torch.any(
+            (attention != 0) & (attention != 1)
+        ):
+            raise ValueError("Invalid policy attention mask")
+        if torch.any((labels != -100) & (attention == 0)):
+            raise ValueError("Padding cannot be supervised")
+        states = torch.as_tensor(
+            batch["states"], dtype=torch.float32, device=self.device
+        )
+        actions = torch.as_tensor(
+            batch["actions"], dtype=torch.float32, device=self.device
+        )
+        if states.shape != (len(ids), self.config.state_dim) or actions.shape != (
+            len(ids),
+            self.config.action_dim,
+        ):
+            raise ValueError("Policy features do not align with token rows")
+        if not torch.isfinite(states).all() or not torch.isfinite(actions).all():
+            raise ValueError("Policy features must be finite")
+        learner = self._offline_learner
+        with torch.no_grad():
+            values = learner.value_net(states)
+            q_values = torch.minimum(
+                learner.q1(states, actions), learner.q2(states, actions)
+            )
+            advantages = (q_values - values).reshape(-1)
+            if not torch.isfinite(advantages).all():
+                raise ValueError("IQL advantages must be finite")
+            weights = torch.exp(
+                (advantages / self.config.policy_temperature).clamp(
+                    max=math.log(self.config.policy_max_weight)
+                )
+            ).to(device)
+        if not weights.any():
+            raise ValueError("IQL policy weights have no usable learning signal")
+        self.model.train()
+        optimizer = self.policy_optimizer
+        if optimizer is None:
+            raise RuntimeError("Offline policy optimizer was not initialized")
+        if self._grad_accum_step == 0:
+            optimizer.zero_grad(set_to_none=True)
+        logits = self.model(input_ids=ids.long(), attention_mask=attention).logits
+        token_losses = F.cross_entropy(
+            logits[:, :-1, :].float().transpose(1, 2),
+            labels[:, 1:].long(),
+            ignore_index=-100,
+            reduction="none",
+        )
+        per_action = (token_losses * mask).sum(dim=1) / mask.sum(dim=1)
+        loss = (weights * per_action).mean()
+        if not torch.isfinite(loss):
+            raise ValueError("Offline policy loss must be finite")
+        accumulation = self.config.gradient_accumulation_steps
+        if type(accumulation) is not int or accumulation < 1:
+            raise ValueError("gradient_accumulation_steps must be positive")
+        if self._grad_accum_step == 0:
+            batch_size = self.config.batch_size
+            if type(batch_size) is not int or batch_size < 1:
+                raise ValueError("batch_size must be positive")
+            self._grad_accum_normalizer = batch_size * accumulation
+        # Accumulate action sums at a fixed scale, then normalize by the actual
+        # action count at commit. Averaging microbatch means overweights tails.
+        (loss * (len(ids) / self._grad_accum_normalizer)).backward()
+        parameters = [p for p in self.model.parameters() if p.requires_grad]
+        if not any(p.grad is not None for p in parameters):
+            raise ValueError("Offline policy loss did not produce gradients")
+        self._grad_accum_step += 1
+        self._grad_accum_actions += len(ids)
+        committed = self._grad_accum_step == accumulation
+        grad_norm = self._commit_policy_update() if committed else 0.0
         self.training_step += 1
+        metrics = {
+            "policy_loss": float(loss.detach()),
+            "nll": float(per_action.mean().detach()),
+            "advantage_mean": float(advantages.mean()),
+            "policy_weight_mean": float(weights.mean()),
+            "grad_norm": float(grad_norm),
+            "optimizer_updates": float(committed),
+            "training_step": float(self.training_step),
+            "supervised_tokens": float(mask.sum()),
+        }
         self.training_metrics.append(metrics)
-
+        await notify_step_end(self.callbacks, step=self.training_step, metrics=metrics)
         return metrics
+
+    def _commit_policy_update(self) -> float:
+        optimizer = self.policy_optimizer
+        if (
+            optimizer is None
+            or self._grad_accum_step < 1
+            or self._grad_accum_actions < 1
+            or self._grad_accum_normalizer < 1
+        ):
+            raise RuntimeError("Cannot commit an empty offline policy update")
+        parameters = [
+            parameter
+            for parameter in self.model.parameters()
+            if parameter.requires_grad
+        ]
+        factor = self._grad_accum_normalizer / self._grad_accum_actions
+        for parameter in parameters:
+            if parameter.grad is not None:
+                parameter.grad.mul_(factor)
+        try:
+            norm = torch.nn.utils.clip_grad_norm_(
+                parameters, self.config.max_grad_norm, error_if_nonfinite=True
+            )
+            optimizer.step()
+            self.optimizer_updates += 1
+            return float(norm)
+        finally:
+            optimizer.zero_grad(set_to_none=True)
+            self._grad_accum_step = 0
+            self._grad_accum_actions = 0
+            self._grad_accum_normalizer = 0
 
     def _compute_hybrid_advantage(
         self,
@@ -636,67 +795,127 @@ class OfflineGRPOTrainer:
         return self.config.offline_weight
 
     async def train(
-        self,
-        num_epochs: int | None = None,
-        dataset: Any = None,
+        self, num_epochs: int | None = None, dataset: Any = None
     ) -> dict[str, Any]:
-        """
-        Full training loop for Offline GRPO.
-
-        Args:
-            num_epochs: Number of training epochs
-            dataset: Training dataset
-
-        Returns:
-            Training results
-        """
-        dataset = dataset or self.dataset
-        num_epochs = num_epochs or self.config.num_epochs
-
-        # Pre-train values if not done
-        if not self.value_pretrained and dataset is not None:
+        """Fit the language-model policy to aligned, real logged IQL transitions."""
+        dataset = self.dataset if dataset is None else dataset
+        epochs = self.config.num_epochs if num_epochs is None else num_epochs
+        if type(epochs) is not int or epochs < 1:
+            raise ValueError("num_epochs must be a positive integer")
+        batch_size = self.config.batch_size
+        if type(batch_size) is not int or batch_size < 1:
+            raise ValueError("batch_size must be a positive integer")
+        self._setup_policy_optimizer()
+        converter = getattr(dataset, "to_policy_training_format", None)
+        if not callable(converter):
+            raise ValueError(
+                "Dataset must implement to_policy_training_format with logged tokens"
+            )
+        rows = converter(
+            self.tokenizer,
+            self.config.max_prompt_length + self.config.max_completion_length,
+        )
+        features = self._validate_offline_data(dataset.to_offline_rl_format())
+        if not rows or len(rows) != len(features["states"]):
+            raise ValueError("Logged policy tokens and transition features must align")
+        for row in rows:
+            if not isinstance(row, dict):
+                raise ValueError("Policy rows must be dictionaries")
+            ids, labels = row.get("input_ids"), row.get("labels")
+            if (
+                not isinstance(ids, list)
+                or not isinstance(labels, list)
+                or len(ids) != len(labels)
+                or len(ids) < 2
+                or any(type(token) is not int or token < 0 for token in ids)
+                or any(
+                    type(label) is not int or label not in (-100, token)
+                    for token, label in zip(ids, labels, strict=True)
+                )
+                or not any(label != -100 for label in labels[1:])
+            ):
+                raise ValueError(
+                    "Policy rows require faithful integer tokens and nonempty assistant labels"
+                )
+        digest = hashlib.sha256(
+            json.dumps(rows, sort_keys=True, allow_nan=False).encode()
+        )
+        for name in sorted(features):
+            digest.update(name.encode())
+            digest.update(str(features[name].shape).encode())
+            digest.update(features[name].tobytes())
+        dataset_sha256 = digest.hexdigest()
+        if self.dataset_sha256 is not None and self.dataset_sha256 != dataset_sha256:
+            raise ValueError("Offline training dataset differs from the checkpoint")
+        self.dataset_sha256 = dataset_sha256
+        if self._epoch_order is not None and (
+            sorted(self._epoch_order) != list(range(len(rows)))
+            or not 0 <= self._batch_offset <= len(rows)
+        ):
+            raise ValueError("Invalid offline checkpoint batch cursor")
+        if not self.value_pretrained:
             await self.pretrain_value_functions(dataset)
-
-        logger.info(f"Starting Offline GRPO training for {num_epochs} epochs")
-
-        for epoch in range(num_epochs):
-            epoch_metrics = []
-
-            if dataset is not None:
-                # Train on dataset batches
-                batch_size = self.config.batch_size
-                num_batches = len(dataset) // batch_size
-
-                for _batch_idx in range(num_batches):
-                    # Simplified batch preparation
-                    batch = {
-                        "states": np.random.randn(batch_size, self.config.state_dim),
-                        "actions": np.random.randn(batch_size, self.config.action_dim),
-                        "rewards": np.random.randn(batch_size),
-                    }
-
-                    metrics = await self.train_step(batch)
-                    epoch_metrics.append(metrics)
-
-            if epoch_metrics:
-                avg_metrics = {
-                    k: float(np.mean([m[k] for m in epoch_metrics if k in m]))
-                    for k in epoch_metrics[0].keys()
-                }
-                avg_metrics["epoch"] = float(epoch)
-
-                if epoch % 10 == 0:
-                    logger.info(
-                        f"Epoch {epoch}/{num_epochs}: "
-                        f"blend={avg_metrics.get('blend_ratio', 0):.3f}, "
-                        f"adv_mean={avg_metrics.get('advantage_mean', 0):.4f}"
+        await notify_training_start(self.callbacks, trainer=self, config=self.config)
+        for epoch in range(self.current_epoch, epochs):
+            if self._epoch_order is None:
+                self._epoch_order = self._rng.permutation(len(rows)).tolist()
+                self._batch_offset = 0
+            ordering = self._epoch_order
+            metrics = self.training_metrics[-1] if self.training_metrics else {}
+            for start in range(self._batch_offset, len(rows), batch_size):
+                indices = ordering[start : start + batch_size]
+                selected = [rows[int(index)] for index in indices]
+                width = max(len(row["input_ids"]) for row in selected)
+                pad = getattr(self.tokenizer, "pad_token_id", None)
+                if pad is None:
+                    pad = getattr(self.tokenizer, "eos_token_id", None)
+                if type(pad) is not int or pad < 0:
+                    raise ValueError("Tokenizer requires a valid padding or EOS token")
+                ids = np.full((len(selected), width), pad, dtype=np.int64)
+                labels = np.full_like(ids, -100)
+                attention = np.zeros_like(ids)
+                for index, row in enumerate(selected):
+                    length = len(row["input_ids"])
+                    ids[index, :length] = row["input_ids"]
+                    labels[index, :length] = row["labels"]
+                    attention[index, :length] = 1
+                previous_step = self.training_step
+                self._batch_offset = min(len(rows), start + batch_size)
+                try:
+                    metrics = await self.train_step(
+                        {
+                            "input_ids": ids,
+                            "labels": labels,
+                            "attention_mask": attention,
+                            "states": features["states"][indices],
+                            "actions": features["actions"][indices],
+                        }
                     )
-
-        return {
-            "num_epochs": num_epochs,
-            "final_metrics": self.training_metrics[-1] if self.training_metrics else {},
+                except BaseException:
+                    if self.training_step == previous_step:
+                        self._batch_offset = start
+                    raise
+            if self._grad_accum_step:
+                grad_norm = self._commit_policy_update()
+                metrics = {
+                    **metrics,
+                    "grad_norm": grad_norm,
+                    "optimizer_updates": 1.0,
+                }
+                if self.training_metrics:
+                    self.training_metrics[-1] = metrics
+            self.current_epoch = epoch + 1
+            self._epoch_order = None
+            self._batch_offset = 0
+            await notify_episode_end(self.callbacks, episode=epoch, metrics=metrics)
+        result = {
+            "num_epochs": epochs,
+            "optimizer_updates": self.optimizer_updates,
+            "final_metrics": self.training_metrics[-1],
             "training_metrics": self.training_metrics,
         }
+        await notify_training_end(self.callbacks, metrics=result)
+        return result
 
     def get_value_estimate(
         self,
@@ -742,12 +961,75 @@ class OfflineGRPOTrainer:
                 "training_step": self.training_step,
                 "value_pretrained": self.value_pretrained,
                 "training_metrics": self.training_metrics,
+                "current_epoch": self.current_epoch,
+                "dataset_sha256": self.dataset_sha256,
+                "epoch_order": self._epoch_order,
+                "batch_offset": self._batch_offset,
+                "optimizer_updates": self.optimizer_updates,
+                "grad_accum_step": self._grad_accum_step,
+                "policy_accumulation": {
+                    "schema_version": 1,
+                    "action_count": self._grad_accum_actions,
+                    "normalizer": self._grad_accum_normalizer,
+                },
+                "gradients": (
+                    {
+                        name: parameter.grad
+                        for name, parameter in self.model.named_parameters()
+                    }
+                    if self.model is not None
+                    else {}
+                ),
+                "policy_state_dict": (
+                    self.model.state_dict() if self.model is not None else None
+                ),
+                "policy_optimizer_state_dict": (
+                    self.policy_optimizer.state_dict()
+                    if self.policy_optimizer is not None
+                    else None
+                ),
+                "iql_state": self._iql_state(),
+                "rng": capture_rng(torch),
+                "sampler_rng": self._rng.bit_generator.state,
             },
             path,
         )
         logger.info(f"Saved Offline GRPO trainer to {path}")
 
-    def load(self, path: str, *, trusted: bool = False) -> None:
+    def _iql_state(self) -> dict[str, Any] | None:
+        if (
+            self._offline_learner is None
+            or self.config.offline_algorithm.lower() != "iql"
+        ):
+            return None
+        return {
+            name: getattr(self._offline_learner, name).state_dict()
+            for name in (
+                "q1",
+                "q2",
+                "value_net",
+                "value_target",
+                "q_optimizer",
+                "value_optimizer",
+            )
+        }
+
+    def save_checkpoint(self, path: str) -> None:
+        """Atomically publish reusable policy weights and complete offline runtime state."""
+        if self.model is None or self.policy_optimizer is None:
+            raise ValueError("Cannot publish an offline policy without optimizer state")
+        with checkpoint_write(Path(path)) as staging:
+            self.save(str(staging / "training_state.pt"))
+            if callable(getattr(self.model, "save_pretrained", None)):
+                self.model.save_pretrained(staging)
+            else:
+                torch.save(self.model.state_dict(), staging / "pytorch_model.bin")
+            if callable(getattr(self.tokenizer, "save_pretrained", None)):
+                self.tokenizer.save_pretrained(staging)
+
+    def load(
+        self, path: str, *, trusted: bool = False, require_policy: bool = False
+    ) -> None:
         """Load model checkpoint
 
         Args:
@@ -760,6 +1042,57 @@ class OfflineGRPOTrainer:
             path, map_location=self.device, trusted=trusted
         )
 
+        saved_config = checkpoint.get("config", {})
+        for name in (
+            "model_name",
+            "model_revision",
+            "state_dim",
+            "action_dim",
+            "offline_algorithm",
+        ):
+            if saved_config.get(name) != getattr(self.config, name):
+                raise ValueError(f"Offline checkpoint configuration differs: {name}")
+        accumulation_state = self._checkpoint_accumulation(checkpoint)
+        policy_state = checkpoint.get("policy_state_dict")
+        if require_policy and policy_state is None:
+            raise ValueError("Checkpoint has no resumable language-model policy")
+        if policy_state is not None:
+            self._setup_policy_optimizer()
+            if (
+                checkpoint.get("policy_optimizer_state_dict") is None
+                or checkpoint.get("iql_state") is None
+            ):
+                raise ValueError(
+                    "Offline policy checkpoint is missing optimizer or IQL state"
+                )
+            if self._offline_learner is None:
+                self._init_offline_learner()
+            if set(checkpoint["iql_state"]) != {
+                "q1",
+                "q2",
+                "value_net",
+                "value_target",
+                "q_optimizer",
+                "value_optimizer",
+            }:
+                raise ValueError("Offline learner checkpoint components are incomplete")
+            self.model.load_state_dict(policy_state, strict=True)
+            optimizer = self.policy_optimizer
+            if optimizer is None:
+                raise RuntimeError("Offline policy optimizer was not initialized")
+            optimizer.load_state_dict(checkpoint["policy_optimizer_state_dict"])
+            for name, state in checkpoint["iql_state"].items():
+                if name not in {
+                    "q1",
+                    "q2",
+                    "value_net",
+                    "value_target",
+                    "q_optimizer",
+                    "value_optimizer",
+                }:
+                    raise ValueError("Unknown offline learner checkpoint component")
+                getattr(self._offline_learner, name).load_state_dict(state)
+
         self.value_net.load_state_dict(checkpoint["value_net_state_dict"])
         self.q_net.load_state_dict(checkpoint["q_net_state_dict"])
         self.value_target.load_state_dict(checkpoint["value_target_state_dict"])
@@ -768,6 +1101,25 @@ class OfflineGRPOTrainer:
         self.training_step = checkpoint.get("training_step", 0)
         self.value_pretrained = checkpoint.get("value_pretrained", False)
         self.training_metrics = checkpoint.get("training_metrics", [])
+        self.current_epoch = checkpoint.get("current_epoch", 0)
+        self.dataset_sha256 = checkpoint.get("dataset_sha256")
+        self._epoch_order = checkpoint.get("epoch_order")
+        self._batch_offset = checkpoint.get("batch_offset", 0)
+        self.optimizer_updates = checkpoint.get("optimizer_updates", 0)
+        (
+            self._grad_accum_step,
+            self._grad_accum_actions,
+            self._grad_accum_normalizer,
+        ) = accumulation_state
+        if self.model is not None:
+            for name, parameter in self.model.named_parameters():
+                gradient = checkpoint.get("gradients", {}).get(name)
+                parameter.grad = (
+                    None if gradient is None else gradient.to(parameter.device)
+                )
+        if "rng" in checkpoint:
+            restore_rng(checkpoint["rng"], torch)
+            self._rng.bit_generator.state = checkpoint["sampler_rng"]
 
         # Checkpoints store the config as a plain dict (see save()); rebuild it.
         config_payload = checkpoint.get("config")
@@ -778,3 +1130,46 @@ class OfflineGRPOTrainer:
                 logger.warning("Failed to restore config from checkpoint: %s", exc)
 
         logger.info(f"Loaded Offline GRPO trainer from {path}")
+
+    @staticmethod
+    def _checkpoint_accumulation(checkpoint: dict[str, Any]) -> tuple[int, int, int]:
+        """Validate weighted pending gradients before mutating model state."""
+        steps = checkpoint.get("grad_accum_step", 0)
+        if type(steps) is not int or steps < 0:
+            raise ValueError("Invalid offline checkpoint accumulation step")
+        state = checkpoint.get("policy_accumulation")
+        if state is None:
+            if steps:
+                raise ValueError(
+                    "Legacy offline checkpoint has pending gradients without action "
+                    "counts; resume from a completed optimizer update instead"
+                )
+            return 0, 0, 0
+        if (
+            not isinstance(state, dict)
+            or set(state) != {"schema_version", "action_count", "normalizer"}
+            or type(state["schema_version"]) is not int
+            or state["schema_version"] != 1
+        ):
+            raise ValueError("Invalid offline checkpoint policy accumulation schema")
+        actions, normalizer = state["action_count"], state["normalizer"]
+        accumulation = checkpoint.get("config", {}).get("gradient_accumulation_steps")
+        if (
+            type(actions) is not int
+            or type(normalizer) is not int
+            or type(accumulation) is not int
+            or not 0 <= steps < accumulation
+            or actions < steps
+            or (steps == 0 and (actions != 0 or normalizer != 0))
+            or (steps > 0 and normalizer < 1)
+        ):
+            raise ValueError("Invalid offline checkpoint action accumulation state")
+        if steps:
+            gradients = checkpoint.get("gradients")
+            if not isinstance(gradients, dict) or not any(
+                value is not None for value in gradients.values()
+            ):
+                raise ValueError(
+                    "Offline checkpoint is missing pending policy gradients"
+                )
+        return steps, actions, normalizer

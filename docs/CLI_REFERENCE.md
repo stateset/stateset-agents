@@ -4,6 +4,81 @@ Use `stateset-agents --help` to see the current runtime command list.
 
 ## Commands
 
+### `stateset-agents tui`
+
+Open the fine-tuning terminal studio in Herdr or another POSIX terminal.
+Configure local SFT/GRPO/GSPO/DAPO or RunPod/Modal/River SFT, preview inputs/resources,
+review a launch, and reconnect to retained logs and trainer metrics.
+
+```bash
+stateset-agents tui --workspace outputs/finetune
+stateset-agents tui --config outputs/finetune/draft.json
+stateset-agents tui --snapshot
+stateset-agents tui --snapshot --columns 40 --rows 24
+```
+
+Phone terminals work from 32 columns by 16 rows. Compact screens use `2`/`8`
+to move, `3`/`9` to page, `0` to go back, and `4` to switch the main views;
+digits remain literal in text editors and filters. `--columns` (32–300) and
+`--rows` (16–120) require `--snapshot`; interactive mode follows the real
+terminal size. Resizes below the minimum pause actions until the interface can
+be shown again. Enter remains the explicit launch confirmation.
+
+Press `b` for backends and `v` for a field-addressable settings checklist.
+Previewing is free; remote launches require backend authentication and a
+reviewed launch. RunPod enforces a pod ceiling; Modal/River require explicit
+provider-billed policy without an enforced dollar cap. Quitting preserves jobs. See
+[Fine-tuning in Herdr](FINETUNING_TUI.md) for controls and data formats.
+
+### `stateset-agents finetune`
+
+Use the same studio workspace from AI agents through a versioned JSON CLI.
+No interactive terminal is needed.
+
+```bash
+stateset-agents finetune schema
+stateset-agents finetune models
+stateset-agents finetune inspect-data --dataset chat.jsonl --method sft
+stateset-agents finetune validate --config config.json
+stateset-agents finetune prepare --config config.json --workspace outputs/finetune
+stateset-agents finetune status --workspace outputs/finetune
+stateset-agents finetune compare REFERENCE_ID CANDIDATE_ID --workspace outputs/finetune
+stateset-agents finetune workflow --config config.json --workspace outputs/finetune
+stateset-agents finetune quality RUN_ID --evidence paired-reports.json --workspace outputs/finetune
+stateset-agents finetune stop RUN_ID --expected-plan-sha256 SHA --workspace outputs/finetune
+stateset-agents finetune checkpoints RUN_ID --workspace outputs/finetune
+stateset-agents finetune prepare-resume RUN_ID --checkpoint checkpoint-10 --expected-recovery-sha256 SHA --workspace outputs/finetune
+stateset-agents finetune evaluation-plan RUN_ID --config evaluation.json
+stateset-agents finetune evaluation-targets RUN_ID
+stateset-agents finetune validation-compare RUN_ID ANCHOR_EVALUATION_ID
+stateset-agents finetune validation-comparison-status RUN_ID COMPARISON_ID
+stateset-agents finetune nomination-plan RUN_ID COMPARISON_ID
+stateset-agents finetune nomination-prepare RUN_ID COMPARISON_ID --expected-plan-sha256 SHA256
+stateset-agents finetune nominations RUN_ID
+stateset-agents finetune nomination-status RUN_ID NOMINATION_ID
+stateset-agents finetune nomination-config RUN_ID NOMINATION_ID --expected-plan-sha256 SHA256
+stateset-agents finetune evaluation-prepare RUN_ID --config evaluation.json --expected-plan-sha256 SHA
+stateset-agents finetune evaluation-launch RUN_ID EVALUATION_ID --expected-plan-sha256 SHA
+stateset-agents finetune evaluation-status RUN_ID EVALUATION_ID --verify
+```
+
+Commands cover settings validation, readiness, immutable preparation, exact-plan launch, status and
+bounded logs and read-only experiment comparison. Comparison shows saved settings,
+dataset identities and latest training metric deltas; it does not rank quality.
+Launch requires the reviewed plan checksum; repeated submissions
+start no new worker. Every remote launch also requires `--allow-paid` and backend
+authentication. `validate` reports all primary field issues without data/provider
+access: inspect `result.valid`; a completed invalid report still has `ok: true`.
+See the [agent protocol](FINETUNING_AGENTS.md) for JSON
+responses, data formats, retries and spending controls.
+
+`evaluation-*` and `evaluations` share the TUI's `j` workflow: review a local
+base/adapter comparison, submit through Buildr, inspect progress, replay retained
+judge scores or request an evaluation-only stop. They require cached models,
+immutable pins and reviewed held-out cases. This diagnostic preserves training
+and existing quality evidence; it does not automatically rank checkpoints or certify a
+multi-seed quality gain. See [local paired evaluations](FINETUNING_AGENTS.md#local-paired-evaluations).
+
 ### `stateset-agents provider-canary`
 
 Run read-only live authentication, SDK compatibility, and cleanup checks for
@@ -53,6 +128,12 @@ stateset-agents train --objective rloo --no-dry-run
 - `--list-objectives`: Describe every objective preset and exit.
 
 ### `stateset-agents train-remote`
+
+Use `--seed INTEGER` to choose an explicit SFT seed (0–4294967295) on seed-capable
+providers. The studio and agent JSON config expose the same value as `seed`,
+default 42. Omitting the remote CLI flag preserves provider defaults. Unsupported
+providers reject an explicit seed; remote worker packages must contain this
+feature. See [training seed semantics](FINETUNING_AGENTS.md#training-seeds).
 
 Run the SFT job from `improve` on local or rented GPU compute. Picks up where
 `improve` leaves off — it consumes `curated.jsonl` and writes a trained adapter.
@@ -284,7 +365,7 @@ locally built wheel instead of PyPI (the pinned version cannot resolve before
 it is published):
 
 ```python
-RunPodExecutor(wheel=Path("dist/stateset_agents-0.66.1-py3-none-any.whl"))
+RunPodExecutor(wheel=Path("dist/stateset_agents-0.67.0-py3-none-any.whl"))
 ```
 
 ### `stateset-agents undeploy`
@@ -409,7 +490,7 @@ stateset-agents kimi-k2-6 --no-dry-run --task customer_service --use-4bit
 
 Preview or run the dedicated starter path for `moonshotai/Kimi-K3`.
 The command defaults to a dry-run so you can inspect the resolved config before loading a model.
-Note: the `moonshotai/Kimi-K3` ID is provisional — HF weights are not yet published (as of 2026-07-16).
+The released `moonshotai/Kimi-K3` checkpoint is now pinned with published KDA/MLA targets. Its native MXFP4 training loader remains blocked; inspect `stateset-agents frontier-models --model kimi-k3` and the [frontier guide](FRONTIER_FINETUNING.md).
 
 ```bash
 stateset-agents kimi-k3
@@ -472,6 +553,57 @@ stateset-agents muse-glimmer --no-dry-run --task customer_service --use-4bit
 - `--write-config PATH`: Write the resolved starter config to `json`/`yaml` and exit.
 - `--dry-run / --no-dry-run`: Preview or execute the starter workflow.
 - `--json-output`: Emit a machine-readable preview/result payload.
+
+### `stateset-agents nemotron-3-5-super-vl`
+
+Image-conditioned LoRA SFT for NVIDIA's pinned Super VL BF16 checkpoint.
+Install `[nemotron-vl]` and compatible CUDA Mamba kernels for execution.
+
+```bash
+stateset-agents nemotron-3-5-super-vl --train-data data/train.jsonl --write-config super-vl.json
+stateset-agents nemotron-3-5-super-vl --config super-vl.json --check-data
+stateset-agents nemotron-3-5-super-vl --config super-vl.json --no-dry-run
+```
+
+Options: `--config PATH`, `--train-data PATH`, `--validation-data PATH`,
+`--image-root PATH`, `--output-dir PATH`, `--max-steps N`, `--fsdp/--no-fsdp`,
+`--write-config PATH`, `--check-data`, and `--dry-run/--no-dry-run` (dry-run is
+the default). Configuration is JSON; `--write-config` exits without training.
+For FSDP, launch the saved configuration with `torchrun` as described in the
+[Super VL and Bolt guide](NEMOTRON_3_5_VL.md). Full-size GPU training is unverified.
+
+### `stateset-agents nemotron-3-5-bolt`
+
+The same image-conditioned SFT workflow for NVIDIA's Bolt **BF16** checkpoint.
+Options match `nemotron-3-5-super-vl`; configurations must select `model=bolt`.
+
+```bash
+stateset-agents nemotron-3-5-bolt --train-data data/train.jsonl --write-config bolt.json
+stateset-agents nemotron-3-5-bolt --config bolt.json --check-data
+stateset-agents nemotron-3-5-bolt --config bolt.json --no-dry-run
+```
+
+The quantized 24GB and GGUF releases are inference variants; their footprint
+does not describe BF16 training. See [the guide](NEMOTRON_3_5_VL.md) for datasets,
+environment requirements, adapter export/reload, and current verification limits.
+
+### `stateset-agents muse-spark-open`
+
+Configure revision-pinned Muse Spark Open BF16 distributed text LoRA SFT.
+The default is a dry run. Full-size GPU training is not yet certified.
+
+```bash
+stateset-agents muse-spark-open --train-data data/train.jsonl --write-config muse-spark.json
+stateset-agents muse-spark-open --config muse-spark.json --check-data
+```
+
+Options: `--config PATH`, `--train-data PATH`, `--validation-data PATH`,
+`--output-dir PATH`, `--write-config PATH`, `--check-data`, and
+`--dry-run/--no-dry-run`. Execution requires BF16 CUDA, gated checkpoint access,
+and torchrun with a world divisible by the configured expert-parallel size.
+Use the [Muse Spark guide](MUSE_SPARK_OPEN.md) for multi-node launch, memory,
+assistant-loss boundaries, adapter output, and the separate native GSPO preset.
+Load-time sharded SFT saves adapters only; optimizer resume is unsupported.
 
 ### `stateset-agents nemotron-3-5`
 
@@ -1759,3 +1891,18 @@ extras. Evaluation works without ML dependencies and scores exact reference/tool
 agreement, not autonomous task success or business outcomes. Synthetic starter
 data cannot pass the gate. See the industry guide for prediction bundle and
 Python callback contracts.
+
+### `stateset-agents frontier-models`
+
+List pinned official checkpoints, attention adapter targets and training blockers
+as JSON. `--model` selects a preset key or exact repository ID. This command is
+offline and does not import training dependencies.
+
+### `stateset-agents frontier-sft`
+
+Preview or run assistant-only distributed text LoRA. Options: `--model`,
+`--config`, `--train-data`, `--validation-data`, `--output-dir`, `--write-config`,
+`--check-data`, `--dry-run/--no-dry-run` (preview by default). Use `torchrun -m
+stateset_agents.training.frontier_sft --config FILE --execute` on the configured
+cluster. See [the frontier guide](FRONTIER_FINETUNING.md) for supported paths,
+explicit loader blockers and unverified full-size GPU scope.

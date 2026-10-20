@@ -181,3 +181,141 @@ def test_postgres_uses_database_clock_instead_of_worker_host_clock(queue, monkey
     snapshot.update(status="completed", completed_at=datetime.utcnow())
     queue.finish(job_id, token, snapshot)
     assert queue.get(job_id)["status"] == "completed"
+
+
+def test_page_filters_owners_and_status_before_decoding_and_orders_ties(
+    queue, monkeypatch
+):
+    visible = [submit(queue, owner="owner") for _ in range(3)]
+    visible.append(submit(queue, owner=None))
+    cancelled = visible.pop()
+    queue.cancel(cancelled)
+    foreign = submit(queue, owner="someone-else")
+    with queue._transaction() as connection:
+        connection.execute("UPDATE stateset_training_jobs SET created=100")
+        # A different owner's corrupt payload must not be loaded by this listing.
+        connection.execute(
+            "UPDATE stateset_training_jobs SET snapshot='invalid-json' WHERE id=?",
+            (foreign,),
+        )
+    decoded = []
+    original_decode = queue._decode
+
+    def decode(value):
+        decoded.append(value)
+        return original_decode(value)
+
+    monkeypatch.setattr(queue, "_decode", decode)
+    items, total = queue.page(owner="owner", status="queued", limit=1, offset=1)
+    assert (
+        total == 3 and [item[0] for item in items] == sorted(visible, reverse=True)[1:2]
+    )
+    assert len(decoded) == 1
+    items[0][1]["metrics"]["caller-change"] = True
+    assert not queue.get(items[0][0])["metrics"]
+
+
+@pytest.mark.parametrize("status", [None, "", "queued", "cancelled", "' OR 1=1 --"])
+def test_page_keeps_hostile_owner_and_status_values_as_bound_parameters(queue, status):
+    hostile_owner = "' OR 1=1; DROP TABLE stateset_training_jobs; --"
+    owned = submit(queue, owner=hostile_owner)
+    public = submit(queue, owner=None)
+    foreign = submit(queue, owner="foreign")
+    queue.cancel(public)
+    expected = (
+        {owned, public}
+        if not status
+        else (
+            {owned}
+            if status == "queued"
+            else {public} if status == "cancelled" else set()
+        )
+    )
+    rows, total = queue.page(owner=hostile_owner, status=status)
+    assert {job_id for job_id, _ in rows} == expected
+    assert total == len(expected)
+    all_rows, all_total = queue.page()
+    assert all_total == 3 and {job_id for job_id, _ in all_rows} == {
+        owned,
+        public,
+        foreign,
+    }
+
+
+def test_page_counts_public_jobs_and_supports_arbitrarily_large_offsets(queue):
+    public = submit(queue, owner=None)
+    submit(queue, owner="someone-else")
+    items, total = queue.page(owner="owner")
+    assert total == 1 and items[0][0] == public
+    assert queue.page(owner="owner", offset=10**100) == ([], 1)
+    items, total = queue.page()
+    assert len(items) == total == 2
+
+
+@pytest.mark.parametrize(
+    "options",
+    [{"limit": 0}, {"limit": 101}, {"limit": True}, {"offset": -1}, {"offset": False}],
+)
+def test_page_rejects_invalid_bounds(queue, options):
+    with pytest.raises(ValueError):
+        queue.page(**options)
+
+
+def test_page_count_and_rows_share_a_snapshot_while_another_replica_writes(
+    queue, monkeypatch
+):
+    first = submit(queue)
+    other = TrainingQueue(queue.postgres_dsn or queue.path, max_concurrent_jobs=2)
+    original_connection = queue._connection
+    changed = []
+
+    class Connection:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, statement, parameters=()):
+            if statement.startswith("SELECT id,snapshot") and not changed:
+                changed.append(True)
+                other.cancel(first)
+                submit(other)
+                submit(other)
+            return self.connection.execute(statement, parameters)
+
+        def rollback(self):
+            self.connection.rollback()
+
+    @contextmanager
+    def connection():
+        with original_connection() as value:
+            yield Connection(value)
+
+    monkeypatch.setattr(queue, "_connection", connection)
+    items, total = queue.page(owner="owner", status="queued")
+    assert total == 1 and items[0][0] == first
+    assert items[0][1]["status"] == "queued"
+    assert queue.get(first)["status"] == "cancelled"
+
+
+def test_pending_capacity_is_atomic_and_idempotent_retries_still_work(queue):
+    from stateset_agents.api.training_queue import TrainingQueueFullError
+
+    first = submit(queue, key="accepted")
+    with queue._transaction() as connection:
+        for index in range(998):
+            connection.execute(
+                "INSERT INTO stateset_training_jobs(id,owner,fingerprint,status,snapshot,created) "
+                "SELECT ?,owner,fingerprint,status,snapshot,created FROM stateset_training_jobs WHERE id=?",
+                (f"prefill-{index}", first),
+            )
+
+    def attempt(index):
+        try:
+            return submit(queue, key=f"concurrent-{index}")
+        except TrainingQueueFullError as exc:
+            return exc
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(attempt, range(4)))
+    assert sum(isinstance(result, str) for result in results) == 1
+    assert sum(isinstance(result, TrainingQueueFullError) for result in results) == 3
+    assert submit(queue, key="accepted") == first

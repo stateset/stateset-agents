@@ -1,0 +1,19 @@
+{
+  "receipt": {
+    "local_empty": false,
+    "global_empty": false,
+    "rollout_path": "token",
+    "rollout_source": "snapshot",
+    "protocol": "stateset-native-learner-preflight-v5",
+    "components": {
+      "loss": "ccaf149cc23a7b344f922ec23b638b83b6295960ab49e73cd6b85ea4c0e1b894",
+      "schedule": "a3919e1d6b5ebe0c9348393c9cf321afa530c81faa1e627cc899e88659bbbc8c",
+      "model": "7786c49350de1542ec94e4bd2e33731dbc75f05a4f7f93af6260324676bdad20",
+      "optimization": "bf9b0c79d252317e687ca042ceb73413453ef787db6b815bfcd84d9fbe6e8159",
+      "estimator": "5c7fb53416e0436a8f3bf8f1e7edad8e1f3c7fb56413212b042ea5dc1cb14178",
+      "rollouts": "f70186ca5c5b29bee5670df73cdc5e62a4ade5ccf968f98d667b48733dbc30ec"
+    }
+  },
+  "global_step": 1152921504606846979,
+  "calls": 9
+}

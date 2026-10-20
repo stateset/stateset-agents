@@ -43,6 +43,15 @@ class IndustryRecipe:
 
 _RECIPES = (
     IndustryRecipe(
+        "logistics",
+        "Logistics and fulfillment",
+        ("shipment tracking", "address changes", "delivery exceptions"),
+        "get_shipment",
+        "shipment",
+        "Verify authorization before changes; distinguish a label from dispatch and escalate exceptions without inventing delivery times.",
+        ("verified shipment facts", "authorized changes", "accurate exception routing"),
+    ),
+    IndustryRecipe(
         "financial-services",
         "Financial services",
         ("account support", "onboarding", "dispute intake"),
@@ -155,7 +164,7 @@ _RECIPES = (
 
 
 def list_industry_recipes() -> tuple[IndustryRecipe, ...]:
-    """Return all nine immutable industry recipes."""
+    """Return all immutable industry recipes."""
     return _RECIPES
 
 
@@ -327,8 +336,17 @@ def prepare_industry_training(
         raise ValueError("model must be a registered preset name")
     _validate_model_revision(model_revision)
     source_hash = _sha256(Path(dataset))
-    rows = load_finetuning_data(dataset)
+    rows = load_finetuning_data(dataset, expected_split="train")
     train, validation = split_finetuning_data(rows, validation_fraction, seed)
+    # This explicitly derives a new validation set from training-eligible rows.
+    # Keep declarations aligned with the new roles without changing the source.
+    for split, records in (("train", train), ("validation", validation)):
+        for row in records:
+            if "split" in row:
+                row["split"] = split
+            metadata = row.get("metadata")
+            if isinstance(metadata, dict) and "split" in metadata:
+                metadata["split"] = split
     if _sha256(Path(dataset)) != source_hash:
         raise ValueError(
             "Source dataset changed during preparation; retry with a stable file"
@@ -393,8 +411,10 @@ def load_industry_project(
     for name in ("train.jsonl", "validation.jsonl"):
         if _sha256(project / name) != manifest.get("files", {}).get(name):
             raise ValueError(f"{name} changed after preparation; prepare a new project")
-    train = load_finetuning_data(project / "train.jsonl")
-    validation = load_finetuning_data(project / "validation.jsonl")
+    train = load_finetuning_data(project / "train.jsonl", expected_split="train")
+    validation = load_finetuning_data(
+        project / "validation.jsonl", expected_split="validation"
+    )
     check_finetuning_overlap(train, validation)
     if (
         type(manifest.get("train_rows")) is not int
@@ -452,8 +472,13 @@ def train_industry_project(
     }
     if dry_run:
         return plan
-    from stateset_agents.training.sft import gpu_available, run_sft
+    from stateset_agents.training.sft import gpu_available, load_sft_dataset, run_sft
 
+    captured_train, dataset_identity = load_sft_dataset(
+        project / "train.jsonl", expected_sha256=manifest["files"]["train.jsonl"]
+    )
+    if captured_train != train:
+        raise ValueError("Training rows changed after industry project validation")
     if not gpu_available():
         raise RuntimeError("CUDA is required for training; use --dry-run to preview")
     from transformers import set_seed
@@ -477,11 +502,21 @@ def train_industry_project(
             per_device_batch_size=1,
             gradient_accumulation_steps=8,
             dataset_path=project / "train.jsonl",
+            dataset_identity=dataset_identity,
             **(
                 {"model_revision": manifest["model_revision"]}
                 if manifest.get("model_revision")
                 else {}
             ),
+        )
+        from stateset_agents.training.sft_artifacts import verify_sft_adapter
+
+        plan["export"] = verify_sft_adapter(
+            output,
+            base_model=manifest["base_model"],
+            lora_r=16,
+            dataset_identity=dataset_identity,
+            model_revision=manifest.get("model_revision"),
         )
     except Exception:
         _write_json(

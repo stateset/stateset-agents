@@ -1,0 +1,24 @@
+{
+  "files": {
+    "stateset_agents/finetune_worker.py": {
+      "base_sha256": "3ae30a8a73d9141acf1b6ab1504d3a982f837df93bc6938a185fefb0f62b81e7",
+      "staged_sha256": "31aba4688b6af0f93c21435b95e2a16fab8c1eb30d3437898da5d9bbdcbd0621"
+    },
+    "stateset_agents/finetune_workspace.py": {
+      "base_sha256": "68fa9e6d52a41fdcda11351b065824d4b8d8d4160188e52ae52233abe472fe2f",
+      "staged_sha256": "fb8dc6578fe1f8128aa96bf6d8600b3118476207600a1b15aab31b7e420d2a1d"
+    },
+    "tests/unit/test_finetune_worker_terminal.py": {
+      "base_sha256": null,
+      "staged_sha256": "940062e8543653a6660ca7de5a254f564f9d62f00ee83d4282f61f0b3e61d243"
+    },
+    "stateset_agents/finetune_recovery.py": {
+      "base_sha256": "82276859a178ccff3a7baa9469b3e48ae6d0159b3f5bc1ef7f713e6866b3582b",
+      "staged_sha256": "894309f96f9bd72173f92e6fa7cb08dc1a03dac1e3671906ab29e420e5e4b29f"
+    }
+  },
+  "expected_new_test_cases": 47,
+  "canonical_files_modified": false,
+  "checks_run": false,
+  "provider_calls": false
+}

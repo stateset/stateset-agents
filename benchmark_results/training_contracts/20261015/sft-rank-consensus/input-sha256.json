@@ -1,0 +1,14 @@
+{
+  "stateset_agents/training/distributed_preflight.py": "5855ca74d3d6248e8a8d02d800cfc2a06f51eae5e8d64909960ed492329d337c",
+  "stateset_agents/training/frontier_sft.py": "3f5b59d3643063cbcb8fd3e67fc1aaef62e2343bfd085bb68223ad3523bae12a",
+  "stateset_agents/training/muse_spark.py": "eaf552649e5bea292f6004b528c7f3f85f74a1ae8b762bea95888e5f71b9892d",
+  "stateset_agents/data/text_sft.py": "68d904c1dedb2f1cf92232bbe56739a76764183c22bc1bdcd53b975a261adca6",
+  "stateset_agents/core/frontier_models.py": "5cca0ca76cec4effbe1e0f10ab8db80f3eb61224f1208d60f2b3aa7056d7820b",
+  "stateset_agents/core/chat_masking.py": "f79a6513297fbd69f055e0e320d94ff464d099d3e4f1e0cbe1a9110ac1163afd",
+  "tests/unit/test_distributed_preflight.py": "2beea81f527cb925d750e644af8d5c5dcd3f018952b5a4d3daa0099889bae695",
+  "tests/integration/test_sft_rank_consensus.py": "b5559f1527f2a8c7ab8ea568ae767d07720eb776e55502052872861b57a9a7f4",
+  "tests/unit/test_frontier_models.py": "31ea9917b42e645497ac83771fad3ed650d8b4d7a7dd14855be291a59a6eb26b",
+  "tests/unit/test_muse_spark.py": "bc1b805443a517197c480ce164cbfc1104494e1fe615bfecf71734a66031f481",
+  "pyproject.toml": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9",
+  ".github/workflows/training-contracts.yml": "e32ebea2e447cb5e8e2d72465acbae1412518341b6b27ced80b626e29188681d"
+}

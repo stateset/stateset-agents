@@ -1,0 +1,22 @@
+{
+  "corrupt_copy_rejected": true,
+  "failed_lineage_test_export": "/tmp/pytest-of-dom/pytest-459/popen-gw2/test_real_cpu_sft_does_not_suc0/adapter",
+  "failed_run_weights_preserved": true,
+  "missing_lineage_rejected": "Invalid or missing SFT export metadata: stateset_manifest.json",
+  "provider_calls": 0,
+  "quality_certification": false,
+  "scope": "Structural reinspection of two actual tiny CPU test exports; no training or model loading",
+  "successful_test_export": "/tmp/pytest-of-dom/pytest-459/popen-gw3/test_real_cpu_in_memory_sft_ke0/adapter",
+  "target_model_updates": 0,
+  "verified_export": {
+    "effective_training_rows": 1,
+    "format": "peft_lora_safetensors",
+    "lora_pairs": 4,
+    "quality_gain_verified": false,
+    "tensor_count": 8,
+    "training_input_rows": 1,
+    "weights": [
+      "adapter_model.safetensors"
+    ]
+  }
+}

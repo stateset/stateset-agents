@@ -1,0 +1,1 @@
+This earlier 70-test snapshot is historical. [Full acceptance](../finetune-studio-evaluation/README.md) completed in job `16e925fa033f`: 1,265 source tests, 1,154 installed-wheel tests and 429 typed modules. Original snapshot hashes/logs are preserved; counts overlap.

@@ -59,6 +59,7 @@ async def test_stub_training_loop_completes():
     # 4. Training config (minimal)
     training_config = TrainingConfig(
         allow_sequence_fallback=True,
+        zero_signal_patience=0,  # The stub validates lifecycle, not learning.
         num_episodes=2,
         max_steps_per_episode=3,
         num_generations=1,

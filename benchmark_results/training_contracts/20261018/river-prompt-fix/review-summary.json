@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "kind": "river-json-prompt-fix-review",
+  "reviewed_at": "2026-10-19T01:14:04.060287+00:00",
+  "status": "integration_passed_no_observed_rl_validation_gain",
+  "base_model": "Qwen/Qwen3.5-9B",
+  "seed": 20261019,
+  "benchmark": "refund-policy-v2",
+  "elapsed_seconds": 398.0,
+  "change": "Complete executable JSON lookup example, escaped full order ID, explicit action shape and exact ID preservation. Scoring and policy are unchanged.",
+  "validation": [
+    {
+      "step": 0,
+      "passed": 7,
+      "total": 8,
+      "mean_reward": 0.75
+    },
+    {
+      "step": 1,
+      "passed": 7,
+      "total": 8,
+      "mean_reward": 0.75
+    },
+    {
+      "step": 2,
+      "passed": 7,
+      "total": 8,
+      "mean_reward": 0.75
+    }
+  ],
+  "selected_validation_step": 0,
+  "selected_is_untrained_baseline": true,
+  "training_activity": {
+    "completed_batches": 2,
+    "observed_optimizer_updates": 2,
+    "observed_skipped_batches": 0,
+    "schema_version": 1,
+    "scope": "SDK-reported run activity; not proof of nonzero gradients, selected-checkpoint changes, learning gains, or provider cost",
+    "status": "updates_observed",
+    "unknown_update_batches": 0
+  },
+  "training_batches": [
+    {
+      "batch": 1,
+      "updated": 1.0,
+      "grad_norm": 0.17818133533000946,
+      "successful_trajectories": 28.0,
+      "generated_tokens": 3263.0
+    },
+    {
+      "batch": 2,
+      "updated": 1.0,
+      "grad_norm": 0.3159230351448059,
+      "successful_trajectories": 24.0,
+      "generated_tokens": 3269.0
+    }
+  ],
+  "test": {
+    "passed": 6,
+    "total": 8,
+    "success_rate": 0.75,
+    "success_wilson_95": [
+      0.40927543031016883,
+      0.9285207872478909
+    ],
+    "violation_rate": 0.25,
+    "truncation_rate": 0.0
+  },
+  "action_format_audit": {
+    "schema_version": 1,
+    "scope": "held-out executed actions only",
+    "actions_checked": 25,
+    "valid_json_actions": 25,
+    "exact_order_ids": true,
+    "provider_requests": 0
+  },
+  "replay_audit_passed": true,
+  "rollout_budget": {
+    "admitted_trajectories": 96,
+    "fingerprint": "526d4e9b71da835b8655a8582088b807262e7ad8227389ec499de9e5e1825035",
+    "limit": 110000,
+    "reserved_generated_tokens": 98304,
+    "schema_version": 1,
+    "trajectory_tokens": 1024
+  },
+  "verification": {
+    "focused_tests_passed": 143,
+    "real_sdk_scripted_transport_tests_passed": 19,
+    "typed_package_files": 439,
+    "lint_and_format_checks": "passed",
+    "repository_hygiene": "passed"
+  },
+  "cost_usd": null,
+  "dollar_cap_enforced": false,
+  "credential_in_retained_files": false,
+  "quality_certification": false,
+  "remaining_failed_families": [
+    "undelivered",
+    "window_boundary"
+  ],
+  "limitations": [
+    "Synthetic integration canary: one seed, 32 train, 8 validation and 8 held-out cases.",
+    "No observed RL validation gain; all checkpoints tied at 7/8 and baseline won the tie.",
+    "Held-out score belongs to the untrained baseline under the corrected prompt, not the final trained candidate.",
+    "Different seed and cases from the previous 3/8 run; no controlled old/new prompt effect estimate.",
+    "No live crash recovery, independent provider inventory check, or final billing verification."
+  ],
+  "next_experiment": "Build training-only expert demonstrations for policy priority and inclusive window boundaries, compare base/SFT/RL on a larger preregistered fresh evaluation, and keep this held-out split sealed."
+}

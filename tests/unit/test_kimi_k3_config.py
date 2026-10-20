@@ -50,7 +50,7 @@ class TestKimiK3Config:
         config = get_kimi_k3_config()
 
         assert config.starter_profile == "balanced"
-        assert config.use_4bit is True
+        assert config.use_4bit is False
         assert config.per_device_train_batch_size == 1
         assert config.gradient_accumulation_steps == 16
 
@@ -58,7 +58,7 @@ class TestKimiK3Config:
         config = get_kimi_k3_config(starter_profile="memory")
 
         assert config.starter_profile == "memory"
-        assert config.use_4bit is True
+        assert config.use_4bit is False
         assert config.num_generations == 2
         assert config.max_prompt_length == 2048
 
@@ -84,7 +84,7 @@ class TestKimiK3Config:
         assert payload["task"] == "sales"
         assert payload["default_profile"] == "balanced"
         assert set(payload["profiles"]) == set(KIMI_K3_STARTER_PROFILE_CHOICES)
-        assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "4bit"
+        assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "none"
 
     def test_explicit_overrides_beat_profile_defaults(self):
         config = get_kimi_k3_config(
@@ -133,9 +133,9 @@ class TestKimiK3Config:
         summary = summarize_kimi_k3_config(config)
 
         assert summary["starter_profile"] == "memory"
-        assert summary["quantization_mode"] == "4bit"
+        assert summary["quantization_mode"] == "none"
         assert summary["effective_batch_size"] == 24
-        assert summary["uses_quantization"] is True
+        assert summary["uses_quantization"] is False
 
     def test_gspo_config_generation(self):
         base_config = get_config_for_task(
@@ -299,8 +299,8 @@ class TestKimiK3StarterScript:
         payload = json.loads(output)
 
         assert payload["config"]["starter_profile"] == "memory"
-        assert payload["summary"]["quantization_mode"] == "4bit"
-        assert payload["gspo_overrides"]["use_4bit"] is True
+        assert payload["summary"]["quantization_mode"] == "none"
+        assert payload["gspo_overrides"]["use_4bit"] is False
         assert payload["gspo_overrides"]["num_generations"] == 2
 
     @pytest.mark.slow

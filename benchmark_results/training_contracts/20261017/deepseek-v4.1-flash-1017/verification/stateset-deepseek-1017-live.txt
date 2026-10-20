@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+=========================================================================
+MODEL CATALOG / type to search
+Search: DeepSeek-V4.1-Flash-1017
+1 matches | Maturity is not workflow certification.
+ > deepseek-ai/DeepSeek-V4.1-Flash-1017                     [configured]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Selected: deepseek-ai/DeepSeek-V4.1-Flash-1017
+Catalog stage: configured
+-------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+Type to search | Up/Down select | Enter choose | Esc back

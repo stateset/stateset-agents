@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "unit_checks": {
+    "initial_run": {
+      "tests": 184,
+      "passed": 183,
+      "failed": 1,
+      "failure": "pytest 60-second deadline in os.fsync in test_audit_accepts_recovered_commits_only_with_matching_receipts"
+    },
+    "retry": {
+      "tests": 1,
+      "passed": 1,
+      "timeout_seconds": 180,
+      "fsync_elided": false,
+      "duration_seconds": 49.23
+    },
+    "additional_selected_activity_audits": {
+      "tests": 5,
+      "passed": 5
+    },
+    "unique_passing_tests_after_retry": 189
+  },
+  "type_check": {
+    "passed": true,
+    "packaged_files": 439
+  },
+  "ruff": {
+    "passed": true
+  },
+  "black": {
+    "passed": true,
+    "files": 7
+  },
+  "isort": {
+    "passed": true,
+    "files": 7
+  },
+  "repo_hygiene": {
+    "passed": true
+  },
+  "sdk_standard_suite_complete": false,
+  "provider_requests": 0,
+  "quality_certification": false,
+  "sdk_integration": {
+    "passed": false,
+    "status": "stalled_and_bounded",
+    "provider_requests": 0,
+    "normal_fsync_attempts": "Stalled; initial suite interrupted, bounded cancellation check timed out, bounded selection flow exceeded deadline. Stack traces included filesystem fsync and event-loop waits.",
+    "diagnostic_variants": [
+      "fsync elided",
+      "fsync elided and scripted transport yields",
+      "fsync elided and zero batching window",
+      "single selection flow with fsync elided, zero batching window and asyncio debug disabled"
+    ],
+    "diagnostic_result": "No complete passing SDK result; cancellation/cleanup stall remains unresolved. No experimental harness setting was applied to packaged runtime.",
+    "not_established": [
+      "new live training or inference validation",
+      "complete native SDK regression pass",
+      "crash durability",
+      "cause of provider repeatability differences"
+    ]
+  }
+}

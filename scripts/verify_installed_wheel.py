@@ -61,9 +61,10 @@ def main() -> None:
             model.save_pretrained(directory)
             assert list(Path(directory).glob("*.safetensors"))
         assert workflow_tokenizer().encode("request")
-        importlib.import_module("trl").GRPOConfig(
-            output_dir="/tmp/wheel-smoke", bf16=False, report_to="none"
-        )
+        with tempfile.TemporaryDirectory(prefix="stateset-wheel-smoke-") as output:
+            importlib.import_module("trl").GRPOConfig(
+                output_dir=output, bf16=False, report_to="none"
+            )
     print(
         json.dumps(
             {

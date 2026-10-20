@@ -1,0 +1,52 @@
+"""Refresh source/wheel proof after a POSIX-only test marker and CI selection."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import black
+import isort
+
+root=Path('/home/dom/stateset-agents'); candidate=Path('/tmp/stateset-evaluation-case-picker-20261016')
+site=candidate/'site-packages'; checks=candidate/'wheel-checks'
+old=json.loads((candidate/'candidate-wheel-verification.json').read_text())
+assert old['passed']
+assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest==hashlib.sha256((site/name).read_bytes()).hexdigest() for name,digest in old['source_sha256'].items())
+assert (root/'mypy.ini').read_bytes()==(candidate/'mypy.ini').read_bytes()
+assert 'Success: no issues found in 429 source files' in (candidate/'types.log').read_text()
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert tests.keys()==old['test_source_sha256'].keys()
+assert {name for name,digest in tests.items() if digest!=old['test_source_sha256'][name]}=={'tests/unit/test_evaluation_case_picker.py'}
+shutil.copy2(root/'tests/unit/test_evaluation_case_picker.py',checks/'tests/unit/test_evaluation_case_picker.py')
+assert all(hashlib.sha256((checks/name).read_bytes()).hexdigest()==digest for name,digest in tests.items())
+env=dict(os.environ,PATH=str(root/'.venv/bin')+os.pathsep+os.environ['PATH'],OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1')
+def unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in {**old['source_sha256'],**tests}.items())
+stages=[]
+def run(name,argv,cwd,pythonpath):
+    print('Stage:',name,flush=True)
+    with (candidate/(name+'.log')).open('w') as log:
+        process=subprocess.Popen(argv,cwd=cwd,env=dict(env,PYTHONPATH=str(pythonpath)),stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        for line in process.stdout: print(line,end='',flush=True); log.write(line)
+        code=process.wait()
+    stages.append({'name':name,'argv':argv,'exit_code':code})
+    assert code==0 and unchanged(),name
+assert not black.format_file_in_place(root/'tests/unit/test_evaluation_case_picker.py',fast=False,mode=black.Mode(line_length=88,target_versions={black.TargetVersion.PY310}),write_back=black.WriteBack.CHECK)
+assert isort.check_file(root/'tests/unit/test_evaluation_case_picker.py')
+run('current-ruff',[sys.executable,'-m','ruff','check','tests/unit/test_evaluation_case_picker.py'],root,root)
+run('current-workflow',['/tmp/stateset-actionlint-1.7.12/actionlint',str(root/'.github/workflows/training-contracts.yml')],root,root)
+selected=['tests/unit/test_evaluation_case_picker.py','tests/unit/test_finetune_evaluation.py','tests/unit/test_finetune_studio.py']
+pytest=[sys.executable,'-m','pytest','-q','-n0','-p','no:cacheprovider','-o','addopts=','--timeout=150','--tb=short']
+run('current-source',pytest+selected+['--junitxml='+str(candidate/'current-source.xml')],root,root)
+run('current-wheel',pytest+selected+['--junitxml='+str(candidate/'current-wheel.xml')],checks,site)
+def cases(name):
+    tree=ET.parse(candidate/name).getroot()
+    assert all(not sum(int(s.get(k,0)) for k in ['failures','errors','skipped']) for s in tree.iter('testsuite'))
+    return {(c.get('classname'),c.get('name')) for c in tree.iter('testcase')}
+assert cases('current-source.xml')==cases('current-wheel.xml') and len(cases('current-source.xml'))==142
+value={'passed':True,'source_sha256':old['source_sha256'],'test_source_sha256':tests,'passed_tests':142,'case_identities_match':True,'wheel_sha256':old['wheel_sha256'],'package_python_unchanged':True,'typed_modules':429,'typing_evidence_reused_for_identical_package':True,'terminal_evidence_reused_for_identical_package':True,'stages':stages}
+(candidate/'current-verification.json').write_text(json.dumps(value,indent=2)+'\n')
+print('Current canonical and installed-wheel suites both passed 142 matching cases')

@@ -1,0 +1,43 @@
+{
+  "bytes": 1155450,
+  "characters_per_example": {
+    "max": 1674,
+    "median": 1640.0,
+    "min": 1436,
+    "p95": 1665
+  },
+  "dataset_provenance": {
+    "industry_domains": [
+      "logistics"
+    ],
+    "status": "declared_not_independently_verified",
+    "synthetic_examples": 512,
+    "unannotated_examples": 0
+  },
+  "dataset_sha256": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+  "duplicate_definition": "parsed messages; IDs ignored",
+  "duplicate_examples": 0,
+  "examples": 512,
+  "method": "sft",
+  "notes": [
+    "Lengths count Unicode characters, not tokens; no tokenizer or model was loaded.",
+    "p95 uses nearest rank. Turn counts are dataset structure, not completed rollouts.",
+    "This report does not establish data quality, model fit or launch readiness.",
+    "The file may change after this snapshot; preparation captures and validates it again."
+  ],
+  "role_counts": {
+    "assistant": 1536,
+    "user": 1536
+  },
+  "samples_included": false,
+  "turn_definition": "assistant replies",
+  "turns_per_example": {
+    "max": 3,
+    "median": 3.0,
+    "min": 3,
+    "p95": 3
+  },
+  "warnings": [
+    "512 declared synthetic industry examples; not independently reviewed customer data."
+  ]
+}

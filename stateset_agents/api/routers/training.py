@@ -107,6 +107,7 @@ class TrainingCancelResponse(BaseModel):
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
         403: {"description": "Insufficient permissions", "model": ErrorResponse},
+        409: {"description": "Idempotency key conflict", "model": ErrorResponse},
         429: {
             "description": "Training concurrency limit reached",
             "model": ErrorResponse,
@@ -159,7 +160,7 @@ async def start_training(
             training_id = await svc.start_training(request, user_id=user.user_id)
 
         persisted = (
-            svc.get_training_status(training_id, user_id=user.user_id)
+            await svc.aget_training_status(training_id, user_id=user.user_id)
             if svc.queue is not None
             else None
         )
@@ -212,26 +213,12 @@ async def list_training_jobs(
     Returns:
         Paginated list of training job details.
     """
-    # Get all jobs from service
-    all_jobs = [
-        (jid, j)
-        for jid, j in list(svc.jobs.items())
-        if _is_admin_user(user) or j.get("user_id") in (None, user.user_id)
-    ]
-
-    # Apply status filter if provided
-    if status:
-        all_jobs = [(jid, j) for jid, j in all_jobs if j.get("status") == status]
-
-    total = len(all_jobs)
-
-    # Sort by creation time (newest first)
-    all_jobs.sort(key=lambda x: x[1].get("created_at", datetime.min), reverse=True)
-
-    # Paginate
-    start_idx = (page - 1) * page_size
-    end_idx = start_idx + page_size
-    page_jobs = all_jobs[start_idx:end_idx]
+    page_jobs, total = await svc.list_training_jobs(
+        page=page,
+        page_size=page_size,
+        status=status,
+        user_id=None if _is_admin_user(user) else user.user_id,
+    )
 
     items = [
         TrainingJobDetail(
@@ -256,7 +243,7 @@ async def list_training_jobs(
         total=total,
         page=page,
         page_size=page_size,
-        has_next=end_idx < total,
+        has_next=page * page_size < total,
         has_prev=page > 1,
     )
 
@@ -290,7 +277,7 @@ async def get_training_status(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    job = svc.get_training_status(training_id, user_id=user.user_id)
+    job = await svc.aget_training_status(training_id, user_id=user.user_id)
 
     if not job:
         raise TrainingJobNotFoundError(training_id)
@@ -347,11 +334,11 @@ async def cancel_training(
     Raises:
         TrainingJobNotFoundError: If the training job doesn't exist.
     """
-    if not svc.cancel_training(training_id, user_id=user.user_id):
+    if not await svc.acancel_training(training_id, user_id=user.user_id):
         raise TrainingJobNotFoundError(training_id)
 
     # Status reads are snapshots: fetch the result after requesting cancellation.
-    job = svc.get_training_status(training_id, user_id=user.user_id)
+    job = await svc.aget_training_status(training_id, user_id=user.user_id)
     if not job:
         raise TrainingJobNotFoundError(training_id)
     status = job["status"]

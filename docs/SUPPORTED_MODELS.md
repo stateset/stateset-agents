@@ -22,7 +22,7 @@ Each first-class starter provides:
 | **Kimi-K2.6** | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | `examples/finetune_kimi_k2_6_gspo.py` | GKE Autopilot + Standard manifests shipped |
 | **GLM 5.1** | `zai-org/GLM-5.1` (754B MoE) | — (module + example only) | `examples/finetune_glm5_1_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
 | **GLM 5.2** | `zai-org/GLM-5.2` (754B MoE) | — (module + example only) | `examples/finetune_glm5_2_gspo.py` | QLoRA-only; vLLM generation; FP8 alias supported |
-| **Kimi-K3** | `moonshotai/Kimi-K3` *(provisional — HF weights pending as of 2026-07-16)* | `stateset-agents kimi-k3` | `examples/finetune_kimi_k3_gspo.py` | Mirrors K2.6 presets pending official specs |
+| **Kimi-K3** | `moonshotai/Kimi-K3` (pinned released MXFP4) | `stateset-agents frontier-models --model kimi-k3` | `examples/finetune_kimi_k3_gspo.py` | Published KDA/MLA targets; training blocked pending exact packed-weight loader/kernel verification |
 | **Muse Glimmer 30B** | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | `examples/finetune_muse_glimmer_gspo.py` | Meta's open agentic model (Aug 2026); dense 30B, 131K ctx, Apache-2.0; QLoRA 4-bit by default |
 | **Qwen3.8 27B** | `Qwen/Qwen3.8-27B` (also `Qwen/Qwen3.8-27B-FP8`, inference-oriented) | `stateset-agents qwen3-8-27b` | `examples/finetune_qwen3_8_27b_gspo.py` | Alibaba's multimodal hybrid-attention model (2026-08-05, Apache-2.0); 27.8B params (~56GB BF16 — budget 160GB disk and an 80GB card or `--gpu-count 2`), 64 text layers, 256K ctx; LoRA targets standard attention + Mamba-style `linear_attn` + MLP (verified against the weight map); vision tower excluded |
 | **Qwen3 Coder 30B A3B** | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | `examples/finetune_qwen3_coder_gspo.py` | Alibaba's open coding MoE (30B total / ~3B active, 128 experts / 8 active, 256K ctx, Apache-2.0); attention-only LoRA (128-expert MoE MLPs are impractical LoRA targets); FP8 variant is inference-oriented |
@@ -35,6 +35,26 @@ Each CLI command supports `--list-profiles`, `--write-config`, `--config`,
 `--dry-run` / `--no-dry-run`.
 
 ## Reference models (examples, hosting plans, finetuning guides)
+
+Muse Spark Open has a revision-pinned **distributed BF16 text LoRA SFT** command,
+`stateset-agents muse-spark-open`, and a separate `muse-spark-open` native text
+GSPO preset in the unified driver. Its `muse_spark` architecture requires
+`stateset-agents[muse-spark]`, gated checkpoint access, and cluster-scale memory.
+Language attention adapters exclude the vision/audio towers and expert tensors.
+Full-size SFT/RL conformance remains open. See [the Muse Spark guide](MUSE_SPARK_OPEN.md).
+
+Super VL and Bolt have a separate **multimodal LoRA SFT** integration, rather
+than the text-only GSPO starter contract:
+
+| Model | Fine-tuning checkpoint | CLI |
+|---|---|---|
+| Nemotron 3.5 Super VL | `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16` | `stateset-agents nemotron-3-5-super-vl` |
+| Nemotron 3.5 Bolt | `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | `stateset-agents nemotron-3-5-bolt` |
+
+Install `stateset-agents[nemotron-vl]` in a suitable CUDA environment. Local
+images and assistant-only targets are preserved; full-size GPU training is
+not yet certified. Bolt's quantized 24GB inference footprint does not describe
+BF16 training memory. See [the fine-tuning guide](NEMOTRON_3_5_VL.md).
 
 These have example scripts, Kubernetes manifests, or dedicated docs but are not
 exposed as `*_starter.py` modules with profile presets.
@@ -82,7 +102,7 @@ target modules, start from the closest first-class starter and adapt the
 
 ## Algorithm compatibility
 
-All supported models train with any of the algorithms shipped in
+The text-model training paths integrate with the algorithms shipped in
 `stateset_agents/training/`:
 
 | Algorithm | Trainer module |
@@ -158,3 +178,13 @@ To propose a new first-class starter:
 4. Ship `examples/finetune_<family>_gspo.py` + `docs/<family>_starter.rst`.
 5. (Optional) Kubernetes manifest under `deployment/kubernetes/`.
 6. Add a row to the first-class table in this doc.
+
+## Pinned frontier fine-tuning roster
+
+All seven requested families, including the separate MiMo RL/MOPD checkpoints,
+and the separately pinned DeepSeek V4.1 Flash 1017 update are covered by
+`stateset-agents frontier-models`. Use `frontier-sft` for the
+native distributed GLM/Qwen text LoRA paths. MiMo, Kimi K3 and DeepSeek V4.1
+have explicit released-layout blockers; no full-size GPU training is certified.
+See [FRONTIER_FINETUNING.md](FRONTIER_FINETUNING.md) for exact identities,
+licenses, commands, memory requirements and evidence limits.

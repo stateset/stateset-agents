@@ -77,12 +77,12 @@
       "evidence": ["benchmark_results/algorithm_comparison/report/comparison.json"],
       "graduation_criteria": ["Pass the 8B three-seed flagship quality gate", "Retain matched competitor efficiency results"],
       "id": "gspo-dapo-gepo",
-      "limitations": ["Current comparative evidence uses a four-step 0.5B protocol", "Objective math is pinned against TRL 1.12 on CPU fixtures, not live GPU runs"],
+      "limitations": ["Current comparative evidence uses a four-step 0.5B protocol", "Objective math is pinned against TRL 1.12 on CPU fixtures, not live GPU runs", "Dedicated convenience loops do not restore data/query cursors and reject explicit resume requests"],
       "maturity": "beta",
       "name": "GSPO, DAPO, and GEPO trainers",
       "owner": "training",
       "public_contract_refs": [],
-      "tests": ["tests/unit/test_gspo_trainer.py", "tests/unit/test_dapo_trainer_behavioral.py", "tests/unit/test_gepo_trainer_behavioral.py", "tests/unit/test_run_flagship_matrix.py", "tests/unit/test_objectives_trl_pin.py", "tests/unit/test_objective_goldens.py"]
+      "tests": ["tests/unit/test_gspo_trainer.py", "tests/unit/test_dapo_trainer_behavioral.py", "tests/unit/test_gepo_trainer_behavioral.py", "tests/unit/test_run_flagship_matrix.py", "tests/unit/test_objectives_trl_pin.py", "tests/unit/test_objective_goldens.py", "tests/unit/test_dedicated_entrypoint_resume.py", "tests/unit/test_runtime_checkpoint_safety.py"]
     },
     {
       "docs": ["docs/GRPO_IMPLEMENTATION.md", "docs/TRL_GRPO_TRAINING_GUIDE.md"],
@@ -109,16 +109,16 @@
       "tests": ["tests/unit/test_memory_evaluation.py", "tests/api/test_persistence.py"]
     },
     {
-      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md"],
+      "docs": ["docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md", "docs/IMPROVEMENT_PIPELINE.md"],
       "evidence": ["docs/WHITEPAPER.md"],
       "graduation_criteria": ["Publish dialogue-specific held-out comparisons for every advertised offline objective"],
       "id": "offline-rl",
-      "limitations": ["Individual algorithms are tested, but the blending schedule lacks published agent-quality evidence"],
+      "limitations": ["Language-model policy extraction supports IQL; other algorithms expose separate value/model training surfaces", "Representative held-out policy-quality and offline/online blending evidence remains incomplete"],
       "maturity": "experimental",
       "name": "Offline RL algorithms",
       "owner": "research",
       "public_contract_refs": [],
-      "tests": ["tests/unit/test_offline_rl_sim_to_real.py"]
+      "tests": ["tests/unit/test_offline_rl_sim_to_real.py", "tests/unit/test_offline_policy_training.py", "tests/unit/test_logged_transition_semantics.py", "tests/unit/test_improvement_pipeline.py"]
     },
     {
       "docs": ["docs/MANAGED_TRAINING_PROVIDERS.md", "docs/MODEL_PROVIDER_CERTIFICATION.md"],
@@ -131,6 +131,18 @@
       "owner": "platform",
       "public_contract_refs": [],
       "tests": ["tests/unit/test_provider_evidence.py", "tests/unit/test_remote_new_providers.py"]
+    },
+    {
+      "docs": ["docs/OBJECTIVES.md", "docs/ARCHITECTURE.md"],
+      "evidence": ["docs/OBJECTIVES.md"],
+      "graduation_criteria": ["Retain representative end-to-end PPO quality evidence", "Validate large-model GPU throughput, memory and recovery"],
+      "id": "ppo-reference-updates",
+      "limitations": ["Online training is single-process with full-vocabulary sampling and complete-prefix scoring", "Text train_step() does not establish exact sampled token boundaries or on-policy provenance", "Partial updates quarantine the runtime rather than rolling back optimizer commits", "Representative quality and GPU scaling remain unverified"],
+      "maturity": "experimental",
+      "name": "PPO online and reference updates",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": ["tests/unit/test_ppo_objective.py", "tests/unit/test_ppo_safety.py", "tests/unit/test_ppo_online.py"]
     },
     {
       "docs": ["docs/WHITEPAPER.md"],

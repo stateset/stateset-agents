@@ -1,0 +1,11 @@
+{
+  "base_model": "Qwen/Qwen3.5-9B",
+  "checkpoint": "river://18d69a44-6b61-4fa6-8469-3188bf8c8e6f/sampler_weights/sft",
+  "lora": {
+    "rank": 16
+  },
+  "note": "River-hosted pointer; no local adapter weights. Selected using validation only.",
+  "provider": "river",
+  "selected_arm": "sft",
+  "steps": 8
+}

@@ -1,0 +1,60 @@
+{
+  "a_plus_achieved": false,
+  "artifacts_sha256": {
+    "gpu-readiness.json": "ae61075f7bf542d2a03b0ebb74f45c7f891174678a46a095240110e52b50afed",
+    "implementation.json": "4302dabd80f790d3c7e01595c0e1c2b26f00949cd5d9731b653fd5d8d3a3eef3",
+    "regressions.xml": "c3bcfdec101df4fb24a4efab4a762a22b5fb1732d5ae70b462434552b0c0295c",
+    "support-recovery-plan.json": "d15b4914d0341d778a2aa1d1e3441b2919e5df506810d05edf13a3194cd52447"
+  },
+  "clean_release_commit": false,
+  "diff_whitespace_check": true,
+  "format_lint": {
+    "black": true,
+    "isort": true,
+    "ruff": true,
+    "scope": "seven changed Python files"
+  },
+  "gpu_verified": false,
+  "head_commit": "faa4845c2b352baaf4757d1c425f52e29d642f49",
+  "kind": "stateset-local-correctness-verification",
+  "limitations": [
+    "PPO remains an experimental external-text update API; online PPO rollouts are not implemented",
+    "Normalized duplicate checks do not detect semantic paraphrases or establish human review",
+    "Fresh reviewed held-out evaluation cases have not been supplied",
+    "Native GPU acceptance refused execution because two CUDA GPUs are unavailable",
+    "Live model/backend comparisons, representative quality improvements and multi-node soak remain unmeasured",
+    "This is focused source validation, not full-suite, installed-wheel or clean-release certification",
+    "The recovery profile is a separate support protocol, not proof of flagship workload equivalence"
+  ],
+  "model_quality_gain_verified": false,
+  "package_implementation_sha256": "ccf1464854e81ab4033dccb06460a011213a0e7627aaf77cf2310a4167117a71",
+  "paid_jobs_launched": 0,
+  "production_model_certification_added": false,
+  "repository_hygiene": true,
+  "retained_at": "2026-10-17T17:56:31.658542+00:00",
+  "schema_version": 1,
+  "scope": "PPO reference updates and independently judged support-case separation",
+  "source_hash_capture_phase": "after local checks; package matches generated recovery plan",
+  "tests": {
+    "errors": 0,
+    "failures": 0,
+    "skipped": 0,
+    "tests": 359
+  },
+  "top_level_a_plus_gate_executed": false,
+  "typecheck": {
+    "passed": true,
+    "scope": "whole packaged source; repository mypy configuration",
+    "source_files": 437
+  },
+  "verified_behaviors": [
+    "Policy and critic initial likelihood/value comparisons remain identical with dropout configured; gradients still flow",
+    "Mixed submodule modes restore on success and scoring failure",
+    "Ambiguous prompt token boundaries and completion overflow reject before optimizer mutation",
+    "Partial optimizer or later inner-epoch failures quarantine training and checkpoint publication",
+    "A complete checkpoint reload restores policy, critic, optimizers, schedulers, counters and permits continuation",
+    "Recovery planner and checkpoint selector reject repeated normalized support inputs despite changed IDs, labels, metadata or fact order",
+    "Optional source IDs cannot cross train, validation and test partitions",
+    "Existing runtime, model identity, backend conformance and A+ evidence validators pass regression tests"
+  ]
+}

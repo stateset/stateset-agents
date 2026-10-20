@@ -1,0 +1,542 @@
+"""Checkpoint continuation must preserve the estimator and replay decisions."""
+
+from types import SimpleNamespace
+
+import pytest
+
+torch = pytest.importorskip("torch")
+
+from stateset_agents.training.continual_learning import (  # noqa: E402
+    ContinualLearningConfig,
+    ContinualLearningManager,
+    TrajectoryReplayBuffer,
+)
+from stateset_agents.training.multi_turn_trainer import (  # noqa: E402
+    MultiTurnGRPOTrainer,
+)
+from stateset_agents.training.single_turn_trainer import (  # noqa: E402
+    SingleTurnGRPOTrainer,
+)
+from tests.unit.test_continual_learning import _make_group  # noqa: E402
+from tests.unit.test_online_accumulation_weighting import _run, _trainer  # noqa: E402
+from tests.unit.test_token_group_aggregation import _groups  # noqa: E402
+
+
+def _ids(groups):
+    return [group.scenario_id for group in groups]
+
+
+@pytest.mark.parametrize("storage", ["fifo", "reservoir"])
+@pytest.mark.parametrize("sampling", ["uniform", "reward", "balanced", "recent"])
+def test_replay_snapshot_preserves_future_sampling_and_reservoir(storage, sampling):
+    original = TrajectoryReplayBuffer(5, storage, sampling, seed=7)
+    for index in range(20):
+        original.add_groups([_make_group(str(index), index)], task_id=str(index % 2))
+    for _ in range(9):
+        original.sample_groups(2)
+    restored = TrajectoryReplayBuffer(seed=999)
+    restored.load_state_dict(original.state_dict())
+    for index in range(20, 35):
+        group = _make_group(str(index), index)
+        for buffer in (original, restored):
+            buffer.add_groups([group], task_id=str(index % 2))
+        assert _ids(original.sample_groups(3)) == _ids(restored.sample_groups(3))
+        assert _ids([entry.group for entry in original._entries]) == _ids(
+            [entry.group for entry in restored._entries]
+        )
+
+
+@pytest.mark.parametrize("ratio", [0.5, 1.0])
+def test_manager_snapshot_preserves_fractional_replay_choices(ratio):
+    config = ContinualLearningConfig(
+        strategy="replay",
+        replay_ratio=ratio,
+        replay_min_size=1,
+        replay_sampling="recent",
+        replay_storage="fifo",
+    )
+    original = ContinualLearningManager(config, seed=7)
+    original.add_trajectory_groups([_make_group(str(i), i) for i in range(8)])
+    for _ in range(9):
+        original.sample_replay_groups(1)
+    restored = ContinualLearningManager(config, seed=999)
+    restored.load_state_dict(original.state_dict())
+    assert [_ids(original.sample_replay_groups(1)) for _ in range(30)] == [
+        _ids(restored.sample_replay_groups(1)) for _ in range(30)
+    ]
+
+
+def test_frozen_reference_restores_original_task_weights():
+    config = ContinualLearningConfig(strategy="lwf", continual_kl_beta=0.2)
+    model = torch.nn.Linear(2, 1)
+    agent = SimpleNamespace(model=model)
+    original = ContinualLearningManager(config)
+    original._snapshot_reference_model(agent)
+    saved = original.state_dict()
+    with torch.no_grad():
+        model.weight.add_(4)
+    restored = ContinualLearningManager(config)
+    restored._snapshot_reference_model(agent)
+    restored.load_state_dict(saved)
+    for actual, expected in zip(
+        restored.reference_model.parameters(),
+        original.reference_model.parameters(),
+        strict=True,
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        assert not actual.requires_grad
+    assert restored.reference_model.training is False
+
+
+async def _baseline_roundtrip(tmp_path, kind, api, baseline):
+    original = _trainer(tmp_path, kind, "grpo", 0.0, 1)
+    original.config.objective = None
+    original.config.baseline_type = baseline
+    original.config.advantage_normalization = False
+    original.agent.model.save_pretrained = lambda path: torch.save(
+        original.agent.model.state_dict(), path / "pytorch_model.bin"
+    )
+    original._update_global_stats(2.5, 3)
+    await _run(original, [_groups()[0]])
+    path = tmp_path / "saved"
+    if api == "runtime":
+        original.save_runtime_checkpoint(str(path))
+    else:
+        await original.save_checkpoint(checkpoint_name="saved")
+    restored = _trainer(tmp_path / "restored", kind, "grpo", 0.0, 1)
+    restored.config.objective = None
+    restored.config.baseline_type = baseline
+    restored.config.advantage_normalization = False
+    restored._update_global_stats(-100, 11)
+    if api == "runtime":
+        assert restored.load_runtime_checkpoint(str(path))
+    else:
+        assert restored.load_checkpoint(path)
+    return original, restored
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+async def test_running_baseline_restores_exact_statistics(tmp_path, kind, api):
+    original, restored = await _baseline_roundtrip(tmp_path, kind, api, "global_mean")
+    assert restored._global_reward_count == original._global_reward_count
+    assert restored._global_reward_mean == original._global_reward_mean
+    if hasattr(original, "_global_reward_sum"):
+        assert restored._global_reward_sum == original._global_reward_sum
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+@pytest.mark.parametrize("baseline", ["global_mean", "group_mean"])
+async def test_resumed_baseline_produces_same_next_policy_update(
+    tmp_path, kind, api, baseline
+):
+    original, restored = await _baseline_roundtrip(tmp_path, kind, api, baseline)
+    await _run(original, [_groups()[1]])
+    await _run(restored, [_groups()[1]])
+    torch.testing.assert_close(
+        original.agent.model.lookup.weight,
+        restored.agent.model.lookup.weight,
+        rtol=0,
+        atol=0,
+    )
+
+
+def _rewrite_checkpoint(path, state):
+    from stateset_agents.training.checkpoint_publication import (
+        COMPLETION_FILE,
+        checkpoint_write,
+    )
+
+    files = {
+        file.relative_to(path): file.read_bytes()
+        for file in path.rglob("*")
+        if file.is_file() and file.name != COMPLETION_FILE
+    }
+    with checkpoint_write(path) as staging:
+        for name, data in files.items():
+            target = staging / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        torch.save(state, staging / "training_state.pt")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "mean_nan",
+        "mean_none",
+        "count_bool",
+        "count_negative",
+        "sum",
+        "schema",
+        "task",
+        "reference",
+        "manager",
+    ],
+)
+async def test_invalid_learning_state_preserves_live_trainer(
+    tmp_path, kind, api, mutation
+):
+    original, restored = await _baseline_roundtrip(tmp_path, kind, api, "global_mean")
+    path = tmp_path / "saved"
+    state = torch.load(path / "training_state.pt", weights_only=True)
+    learning = state["learning_state"]
+    baseline = learning["reward_baseline"]
+    if mutation == "mean_nan":
+        baseline["mean"] = float("nan")
+    elif mutation == "mean_none":
+        baseline["mean"] = None
+    elif mutation == "count_bool":
+        baseline["count"] = True
+    elif mutation == "count_negative":
+        baseline["count"] = -1
+    elif mutation == "sum":
+        baseline["sum"] = 999
+    elif mutation == "schema":
+        learning["schema_version"] = True
+    elif mutation == "task":
+        learning["current_task_id"] = []
+    elif mutation == "reference":
+        learning["reference_from_continual"] = True
+    else:
+        learning["continual_state"] = {}
+    _rewrite_checkpoint(path, state)
+    with torch.no_grad():
+        restored.agent.model.lookup.weight.add_(5)
+    restored._update_global_stats(-19, 7)
+    before = restored.agent.model.lookup.weight.detach().clone()
+    stats = (
+        restored._global_reward_mean,
+        restored._global_reward_count,
+        getattr(restored, "_global_reward_sum", None),
+    )
+    with pytest.raises(ValueError):
+        if api == "runtime":
+            restored.load_runtime_checkpoint(str(path))
+        else:
+            restored.load_checkpoint(path)
+    torch.testing.assert_close(
+        restored.agent.model.lookup.weight, before, rtol=0, atol=0
+    )
+    assert (
+        restored._global_reward_mean,
+        restored._global_reward_count,
+        getattr(restored, "_global_reward_sum", None),
+    ) == stats
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+async def test_continual_checkpoint_restores_replay_reference_and_ewc(
+    tmp_path, kind, api
+):
+    original = _trainer(tmp_path, kind, "grpo", 0.0, 1)
+    original.agent.model.save_pretrained = lambda path: torch.save(
+        original.agent.model.state_dict(), path / "pytorch_model.bin"
+    )
+    config = ContinualLearningConfig(
+        strategy="replay_lwf_ewc",
+        replay_min_size=1,
+        replay_ratio=0.5,
+        continual_kl_beta=0.1,
+        ewc_lambda=0.2,
+    )
+    manager = ContinualLearningManager(config, seed=7)
+    manager._snapshot_reference_model(original.agent)
+    manager._ewc_fisher = {
+        name: torch.ones_like(p) * 0.1
+        for name, p in original.agent.model.named_parameters()
+    }
+    manager._ewc_params = {
+        name: p.detach().clone() for name, p in original.agent.model.named_parameters()
+    }
+    manager.add_trajectory_groups(_groups(), task_id="task-a")
+    for _ in range(7):
+        manager.sample_replay_groups(1)
+    original.continual_manager = manager
+    original.reference_model = manager.reference_model
+    original._current_task_id = "task-a"
+    with torch.no_grad():
+        original.agent.model.lookup.weight.add_(0.4)
+    path = tmp_path / "saved"
+    if api == "runtime":
+        original.save_runtime_checkpoint(str(path))
+    else:
+        await original.save_checkpoint(checkpoint_name="saved")
+    restored = _trainer(tmp_path / "restored", kind, "grpo", 0.0, 1)
+    restored.continual_manager = ContinualLearningManager(config, seed=999)
+    target_manager = restored.continual_manager
+    if api == "runtime":
+        assert restored.load_runtime_checkpoint(str(path))
+    else:
+        assert restored.load_checkpoint(path)
+    assert restored.continual_manager is target_manager
+    assert restored.reference_model is target_manager.reference_model
+    assert restored._current_task_id == "task-a"
+    for actual, expected in zip(
+        restored.reference_model.parameters(),
+        original.reference_model.parameters(),
+        strict=True,
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+        assert not actual.requires_grad
+    torch.testing.assert_close(
+        manager.compute_ewc_penalty(original.agent),
+        target_manager.compute_ewc_penalty(restored.agent),
+        rtol=0,
+        atol=0,
+    )
+    assert [_ids(manager.sample_replay_groups(1)) for _ in range(20)] == [
+        _ids(target_manager.sample_replay_groups(1)) for _ in range(20)
+    ]
+    await _run(original, [_groups()[1]])
+    await _run(restored, [_groups()[1]])
+    torch.testing.assert_close(
+        original.agent.model.lookup.weight,
+        restored.agent.model.lookup.weight,
+        rtol=0,
+        atol=0,
+    )
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    ["rng", "buffer_rng", "config", "reference", "fisher", "means", "buffer_count"],
+)
+def test_invalid_continual_snapshot_is_transactional(mutation):
+    import copy
+
+    from tests.unit.test_multi_turn_checkpoint_accumulation import assert_equal
+
+    model = torch.nn.Linear(2, 1)
+    manager = ContinualLearningManager(ContinualLearningConfig(strategy="lwf"), seed=7)
+    manager._snapshot_reference_model(SimpleNamespace(model=model))
+    state = manager.state_dict()
+    if mutation == "rng":
+        state["rng_state"] = [3, [], None]
+    elif mutation == "buffer_rng":
+        state["buffer"]["rng_state"] = None
+    elif mutation == "config":
+        state["config"]["ewc_decay"] = float("nan")
+    elif mutation == "reference":
+        state["reference_state"]["weight"] = torch.zeros(3)
+    elif mutation == "fisher":
+        state["ewc_fisher"] = {"weight": torch.zeros_like(model.weight)}
+    elif mutation == "means":
+        state["ewc_fisher"] = {"weight": torch.zeros_like(model.weight)}
+        state["ewc_params"] = {"weight": torch.full_like(model.weight, float("nan"))}
+    else:
+        state["buffer"]["seen"] = True
+    before = copy.deepcopy(manager.state_dict())
+    with pytest.raises(ValueError):
+        manager.load_state_dict(state, model=model)
+    assert_equal(manager.state_dict(), before)
+
+
+def test_replay_rng_survives_json_snapshot():
+    import json
+
+    original = TrajectoryReplayBuffer(5, seed=7)
+    original.add_groups([_make_group(str(i), i) for i in range(9)])
+    saved = json.loads(json.dumps(original.state_dict()))
+    restored = TrajectoryReplayBuffer(seed=999)
+    restored.load_state_dict(saved)
+    assert [_ids(original.sample_groups(2)) for _ in range(10)] == [
+        _ids(restored.sample_groups(2)) for _ in range(10)
+    ]
+
+
+def test_ewc_retains_statistics_precision_for_low_precision_policy():
+    model = torch.nn.Linear(2, 1, bias=False).to(torch.bfloat16)
+    manager = ContinualLearningManager(
+        ContinualLearningConfig(strategy="ewc", ewc_lambda=0.2)
+    )
+    manager._ewc_fisher = {"weight": torch.full((1, 2), 0.123456)}
+    manager._ewc_params = {"weight": torch.full((1, 2), 0.234567)}
+    expected = (
+        0.1
+        * (
+            manager._ewc_fisher["weight"]
+            * (model.weight - manager._ewc_params["weight"]).square()
+        ).sum()
+    )
+    actual = manager.compute_ewc_penalty(SimpleNamespace(model=model))
+    assert actual.dtype == torch.float32
+    torch.testing.assert_close(actual, expected, rtol=0, atol=0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+@pytest.mark.parametrize("baseline", ["global_mean", "group_mean"])
+async def test_legacy_checkpoint_does_not_borrow_target_baseline(
+    tmp_path, kind, api, baseline
+):
+    _, restored = await _baseline_roundtrip(tmp_path, kind, api, baseline)
+    path = tmp_path / "saved"
+    state = torch.load(path / "training_state.pt", weights_only=True)
+    del state["learning_state"]
+    _rewrite_checkpoint(path, state)
+    restored._update_global_stats(-100, 11)
+    before = restored.agent.model.lookup.weight.detach().clone()
+
+    def load():
+        return (
+            restored.load_runtime_checkpoint(str(path))
+            if api == "runtime"
+            else restored.load_checkpoint(path)
+        )
+
+    if baseline == "global_mean":
+        with pytest.raises(ValueError, match="global reward baseline"):
+            load()
+        torch.testing.assert_close(
+            restored.agent.model.lookup.weight, before, rtol=0, atol=0
+        )
+    else:
+        assert load()
+        assert restored._global_reward_count == restored._global_reward_mean == 0
+        assert not hasattr(restored, "_global_reward_sum")
+
+
+def test_legacy_lwf_state_without_reference_is_rejected():
+    manager = ContinualLearningManager(ContinualLearningConfig(strategy="lwf"))
+    state = manager.state_dict()
+    for key in ("schema_version", "rng_state", "reference_state"):
+        del state[key]
+    with pytest.raises(ValueError, match="no frozen reference"):
+        manager.load_state_dict(state)
+
+
+def test_strategy_enum_snapshot_loads_with_weights_only():
+    from io import BytesIO
+
+    from stateset_agents.training.continual_learning import ContinualLearningStrategy
+
+    manager = ContinualLearningManager(
+        ContinualLearningConfig(strategy=ContinualLearningStrategy.REPLAY), seed=7
+    )
+    stream = BytesIO()
+    torch.save(manager.state_dict(), stream)
+    stream.seek(0)
+    saved = torch.load(stream, weights_only=True)
+    assert type(saved["config"]["strategy"]) is str
+    restored = ContinualLearningManager(ContinualLearningConfig(), seed=999)
+    restored.load_state_dict(saved)
+    assert restored._rng.getstate() == manager._rng.getstate()
+
+
+def test_legacy_replay_keeps_loader_streams(tmp_path):
+    from stateset_agents.training.learning_state import prepare_learning_state
+
+    trainer = _trainer(tmp_path, MultiTurnGRPOTrainer, "grpo", 0.0, 1)
+    manager = ContinualLearningManager(
+        ContinualLearningConfig(strategy="replay"), seed=999
+    )
+    trainer.continual_manager = manager
+    legacy = manager.state_dict()
+    for key in ("schema_version", "rng_state", "reference_state"):
+        del legacy[key]
+    for key in ("schema_version", "rng_state"):
+        del legacy["buffer"][key]
+    prepared = prepare_learning_state(trainer, {"continual_state": legacy})
+    staged = prepared["manager"]
+    assert staged._rng.getstate() == manager._rng.getstate()
+    assert staged.buffer._rng.getstate() == manager.buffer._rng.getstate()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+async def test_checkpoint_strategy_enum_is_plain_weights_only_data(tmp_path, kind, api):
+    from stateset_agents.training.continual_learning import ContinualLearningStrategy
+
+    trainer = _trainer(tmp_path, kind, "grpo", 0.0, 1)
+    trainer.config.continual_strategy = ContinualLearningStrategy.REPLAY
+    trainer.continual_manager = ContinualLearningManager(
+        ContinualLearningConfig(strategy=ContinualLearningStrategy.REPLAY)
+    )
+    trainer.agent.model.save_pretrained = lambda path: torch.save(
+        trainer.agent.model.state_dict(), path / "pytorch_model.bin"
+    )
+    path = tmp_path / "saved"
+    if api == "runtime":
+        trainer.save_runtime_checkpoint(str(path))
+    else:
+        await trainer.save_checkpoint(checkpoint_name="saved")
+    saved = torch.load(path / "training_state.pt", weights_only=True)
+    assert type(saved["config"]["continual_strategy"]) is str
+    assert saved["config"]["continual_strategy"] == "replay"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", [MultiTurnGRPOTrainer, SingleTurnGRPOTrainer])
+@pytest.mark.parametrize("api", ["async", "runtime"])
+async def test_signal_guard_roundtrip_and_invalid_restore(tmp_path, kind, api):
+    from stateset_agents.training.diagnostics import (
+        DiagnosticsMonitor,
+        TrainingSignalError,
+        capture_diagnostics,
+    )
+
+    original, restored = await _baseline_roundtrip(tmp_path, kind, api, "group_mean")
+    for trainer in (original, restored):
+        trainer.config.zero_signal_patience = 2
+    monitor = original.diagnostics = DiagnosticsMonitor(original.config)
+    monitor(
+        "episode_end",
+        {"step": 1, "total_reward": 0.5, "nonzero_advantage_fraction": 0.0},
+    )
+    original._diagnostic_observations = 1
+    path = tmp_path / "guard"
+    if api == "runtime":
+        original.save_runtime_checkpoint(str(path))
+    else:
+        await original.save_checkpoint(checkpoint_name="guard")
+
+    stale = restored.diagnostics = DiagnosticsMonitor(restored.config)
+    with pytest.raises(TrainingSignalError):
+        stale._fail("stale target failure")
+
+    def load():
+        return (
+            restored.load_runtime_checkpoint(str(path))
+            if api == "runtime"
+            else restored.load_checkpoint(path)
+        )
+
+    assert load()
+    assert restored.diagnostics is stale
+    assert capture_diagnostics(restored) == capture_diagnostics(original)
+    # A duplicated event must remain duplicated after resume.
+    stale("step_end", {"step": 1, "nonzero_advantage_fraction": 0.0})
+    assert stale.zero_steps == 1
+    with pytest.raises(TrainingSignalError):
+        stale("step_end", {"step": 2, "nonzero_advantage_fraction": 0.0})
+    assert load()
+    before = capture_diagnostics(restored)
+    weights = restored.agent.model.lookup.weight.detach().clone()
+    state = torch.load(path / "training_state.pt", weights_only=True)
+    state["learning_state"]["diagnostics"]["monitor"]["zero_steps"] = -1
+    _rewrite_checkpoint(path, state)
+    with pytest.raises(ValueError):
+        load()
+    assert capture_diagnostics(restored) == before
+    torch.testing.assert_close(
+        restored.agent.model.lookup.weight, weights, rtol=0, atol=0
+    )
+    # Version-one learning state has no retained history; never borrow target state.
+    state["learning_state"].pop("diagnostics")
+    state["learning_state"]["schema_version"] = 1
+    _rewrite_checkpoint(path, state)
+    assert load()
+    assert restored.diagnostics is stale
+    assert restored.diagnostics.zero_steps == restored._diagnostic_observations == 0
+    assert restored.diagnostics.failure is None

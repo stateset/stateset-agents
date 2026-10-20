@@ -1,0 +1,48 @@
+{
+  "name": "stateset-native-contract-cde10c589c8b",
+  "plan": {
+    "container_image": "runpod/pytorch@sha256:6b1e4c00dccf6003302a6ebc83d2e43bcb59b9defbccde978088d4a8730b184c",
+    "tag_observed": "1.1.0-cu1290-torch271-ubuntu2204",
+    "gpu_quotes": [
+      {
+        "id": "NVIDIA RTX A4000",
+        "displayName": "RTX A4000",
+        "secureCloud": true,
+        "communityCloud": true,
+        "securePrice": 0.25,
+        "communityPrice": 0.17
+      },
+      {
+        "id": "NVIDIA RTX A5000",
+        "displayName": "RTX A5000",
+        "secureCloud": true,
+        "communityCloud": true,
+        "securePrice": 0.27,
+        "communityPrice": 0.16
+      }
+    ],
+    "max_lifetime_seconds": 3600,
+    "compute_ceiling_usd": 1.0,
+    "total_initial_budget_usd": 10,
+    "allocates_resources": false
+  },
+  "wheel_sha256": "ed3b57f105aa568f00c1189e1de0b8e86d94c66e9a72695b510bac3e8d2affbd",
+  "contract_script_sha256": "872e52c49b2360cc44126ab2ef00c48b0089fd2f968f40170d201acbf836f169",
+  "pod_id": "iuo6dk72kofvhv",
+  "whole_pod_usd_per_hour": 0.27,
+  "error_type": "RuntimeError",
+  "error": "CUDA contract failed with exit 1",
+  "status": "failed",
+  "duration_seconds": 723.6426882743835,
+  "estimated_compute_usd": 0.0543,
+  "termination_confirmed": true,
+  "owned_pod_ids": [
+    "iuo6dk72kofvhv"
+  ],
+  "deleted_pod_ids": [
+    "iuo6dk72kofvhv"
+  ],
+  "cleanup_errors": [],
+  "excludes_storage_and_network_charges": true,
+  "cost_assumes_same_rate_for_duplicate_resources": true
+}

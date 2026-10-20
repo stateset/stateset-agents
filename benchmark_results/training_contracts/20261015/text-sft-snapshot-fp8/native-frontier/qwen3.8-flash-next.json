@@ -1,0 +1,23 @@
+{
+  "model": "Qwen/Qwen3.8-Flash-Next",
+  "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+  "architecture": "Qwen4ExpForConditionalGeneration",
+  "loss": 3.4490232467651367,
+  "global_step": 1,
+  "attention_modules": [
+    "model.language_model.layers.0.linear_attn.out_proj",
+    "model.language_model.layers.0.linear_attn.in_proj_qkv",
+    "model.language_model.layers.0.linear_attn.in_proj_z",
+    "model.language_model.layers.0.linear_attn.in_proj_b",
+    "model.language_model.layers.0.linear_attn.in_proj_a",
+    "model.language_model.layers.1.self_attn.q_proj",
+    "model.language_model.layers.1.self_attn.k_proj",
+    "model.language_model.layers.1.self_attn.v_proj",
+    "model.language_model.layers.1.self_attn.o_proj",
+    "model.language_model.layers.1.self_attn.indexer.index_qk_proj"
+  ],
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "scope": "random tiny native CPU; synthetic tokenizer; no quantized checkpoint or distributed execution",
+  "full_size_training_verified": false
+}

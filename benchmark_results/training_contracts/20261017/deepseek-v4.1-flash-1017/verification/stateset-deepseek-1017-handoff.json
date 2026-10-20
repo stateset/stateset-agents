@@ -1,0 +1,44 @@
+{
+  "applied_at": 1792250383.9642768,
+  "files": {
+    "stateset_agents/core/frontier_models.py": {
+      "before": "5cca0ca76cec4effbe1e0f10ab8db80f3eb61224f1208d60f2b3aa7056d7820b",
+      "applied_sha256": "56de9e17ae0dc7fea5583cba8d2dd3795ed46d6e2b61c61437d8df0505d4849b"
+    },
+    "tests/unit/test_frontier_models.py": {
+      "before": "31ea9917b42e645497ac83771fad3ed650d8b4d7a7dd14855be291a59a6eb26b",
+      "applied_sha256": "2150abed6c215c8f8f989362860a9150a77fa29af3f83c9943c358dcd84ddc7b"
+    },
+    "tests/unit/test_example_model_presets.py": {
+      "before": "26fb2ed1d55859b7ea45c7b401686cf075ece73e2e227ec75dc4ea23a6266cd4",
+      "applied_sha256": "f0e91e1a1fd6709b53137c8468da286cb40bc58f279dac1f2d7c984c264172b4"
+    },
+    "tests/unit/test_deepseek_v41_1017.py": {
+      "before": null,
+      "applied_sha256": "4d0d65253fbd75318df6f11f10e21c5dcc03e36fd4dbd2a7290804a268490f69"
+    },
+    "stateset_agents/remote/model_evidence.py": {
+      "before": "da6e3666353f8804db2dd026dda235cb08578b7d7e54a0d780e422d12727bfa2",
+      "applied_sha256": "bcec856a37201166e14ddf008b4977e79397938fef44a2955e7b25817d5865b7"
+    },
+    "tests/unit/test_remote_model_catalog.py": {
+      "before": "6c5f51cdcd802bbf04b8bac9de5c4e13a43ed5193f416d8c808d911ec691f341",
+      "applied_sha256": "22f058179328fb5ae43efaf84332c6c69c10a8ea26e497344e9f61b0f91d4323"
+    },
+    "docs/FRONTIER_FINETUNING.md": {
+      "before": "8674be045ea40274af9176312642b85e073ecad992b6935f367d8249f07b5f06",
+      "applied_sha256": "11dc5fb3194b3373a08047bbc6e257a9182235820f59b30560857294a996acef"
+    },
+    "docs/SUPPORTED_MODELS.md": {
+      "before": "31e5f24ceda20d3b3890627a4bf8818b41b59b09384987dbe7044a7046d96f37",
+      "applied_sha256": "6aa8cc803fb24daa4f285d462ab045460a27384b05dbab4f31254822bfb740f7"
+    },
+    ".github/workflows/training-contracts.yml": {
+      "before": "ea3aad6ab9fc15712a9bb654f08c2a5c893dd995d0ce38471def25683dc16746",
+      "applied_sha256": "9b95dd808fa1a496e16f7708c9da5856f28531dc770e91e9e2d4bb8e44dc3648"
+    }
+  },
+  "metadata_sha256": "7ecbc70ae58c2d8a8edaf482fb2d78fbec0a33c54cec0b1ab90f3f7de733be63",
+  "weight_downloaded": false,
+  "provider_contacted": false
+}

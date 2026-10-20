@@ -1,0 +1,82 @@
+{
+  "black": "passed",
+  "complete": true,
+  "counts_per_domain": {
+    "test": 128,
+    "train": 512,
+    "validation": 64
+  },
+  "domains": [
+    "ecommerce",
+    "logistics",
+    "saas"
+  ],
+  "dry_run_plans": {
+    "ecommerce": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "industry": "retail",
+      "max_length": 1024,
+      "method": "bf16_lora",
+      "model_revision": null,
+      "num_epochs": 3,
+      "output_dir": "outputs/industry-datasets-20261019/ecommerce/adapter",
+      "split_seed": 20261019,
+      "status": "planned",
+      "synthetic_rows": 576,
+      "train_rows": 512,
+      "training_seed": 42,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    },
+    "logistics": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "industry": "logistics",
+      "max_length": 1024,
+      "method": "bf16_lora",
+      "model_revision": null,
+      "num_epochs": 3,
+      "output_dir": "outputs/industry-datasets-20261019/logistics/adapter",
+      "split_seed": 20261019,
+      "status": "planned",
+      "synthetic_rows": 576,
+      "train_rows": 512,
+      "training_seed": 42,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    },
+    "saas": {
+      "base_model": "Qwen/Qwen3.5-2B",
+      "industry": "technology",
+      "max_length": 1024,
+      "method": "bf16_lora",
+      "model_revision": null,
+      "num_epochs": 3,
+      "output_dir": "outputs/industry-datasets-20261019/saas/adapter",
+      "split_seed": 20261019,
+      "status": "planned",
+      "synthetic_rows": 576,
+      "train_rows": 512,
+      "training_seed": 42,
+      "validation_rows": 64,
+      "validation_status": "held_out_not_evaluated"
+    }
+  },
+  "final_changed_policy_recheck": 26,
+  "isort": "passed",
+  "limitations": [
+    "Synthetic workflow simulations, not real reviewed customer cases or model quality evidence.",
+    "Training was previewed only. No adapter or provider run was created.",
+    "Text-only Studio parser does not yet accept the provenance-rich rows."
+  ],
+  "model_updates": 0,
+  "mypy_source_files": 443,
+  "provider_calls": 0,
+  "quality_certification": false,
+  "repo_hygiene": "passed",
+  "review_status": "not_independently_reviewed",
+  "ruff": "passed",
+  "synthetic": true,
+  "total_conversations": 2112,
+  "unique_tests_passed": 152,
+  "verified_demonstrations": 2112
+}

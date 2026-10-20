@@ -8,8 +8,11 @@ This module provides distributed training capabilities including:
 - Efficient communication strategies
 """
 
+import inspect
 import logging
 import os
+from collections.abc import Iterator
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, cast
@@ -151,12 +154,22 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 self.distributed_config.local_rank = int(os.environ["LOCAL_RANK"])
 
             if self.distributed_config.world_size > 1:
-                torch.cuda.set_device(self.distributed_config.local_rank)
-                dist.init_process_group(
-                    backend=self.distributed_config.backend,
-                    world_size=self.distributed_config.world_size,
-                    rank=self.distributed_config.rank,
-                )
+                if torch.cuda.is_available():
+                    torch.cuda.set_device(self.distributed_config.local_rank)
+                if not dist.is_initialized():
+                    dist.init_process_group(
+                        backend=self.distributed_config.backend,
+                        world_size=self.distributed_config.world_size,
+                        rank=self.distributed_config.rank,
+                    )
+                elif (
+                    dist.get_world_size() != self.distributed_config.world_size
+                    or dist.get_rank() != self.distributed_config.rank
+                    or str(dist.get_backend()) != self.distributed_config.backend
+                ):
+                    raise ValueError(
+                        "Distributed topology differs from the process group"
+                    )
                 self.is_main_process = self.distributed_config.rank == 0
 
                 logger.info(
@@ -182,14 +195,19 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
     def _wrap_model_ddp(self):
         """Wrap model with DistributedDataParallel"""
+        device = next(self.agent.model.parameters()).device
+        device_ids = (
+            [self.distributed_config.local_rank] if device.type == "cuda" else None
+        )
         self.agent.model = DDP(
             self.agent.model,
-            device_ids=[self.distributed_config.local_rank],
-            output_device=self.distributed_config.local_rank,
+            device_ids=device_ids,
+            output_device=self.distributed_config.local_rank if device_ids else None,
             gradient_as_bucket_view=self.distributed_config.gradient_as_bucket_view,
             find_unused_parameters=self.distributed_config.find_unused_parameters,
             broadcast_buffers=self.distributed_config.broadcast_buffers,
         )
+        self._ddp_replica_consensus_pending = True
         logger.info("Model wrapped with DistributedDataParallel")
 
     def _wrap_model_fsdp(self):
@@ -318,17 +336,49 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 )
             )
         logger.info("Model wrapped with Accelerate")
+        self._ddp_replica_consensus_pending = True
 
     async def training_step(self, trajectory_groups: list[Any]) -> dict[str, Any]:
         """Execute distributed training step"""
+        from .learner_preflight import verify_ddp_learner_batch
 
+        admission = verify_ddp_learner_batch(self, trajectory_groups)
+        from .ddp_population import empty_batch_metrics, token_forward_context
+
+        if (
+            isinstance(self.agent.model, DDP)
+            and dist.get_world_size(self.agent.model.process_group) == 1
+            and all(
+                hasattr(g, "trajectories") and not g.trajectories
+                for g in trajectory_groups
+            )
+        ):
+            return empty_batch_metrics(self)
+        if admission is not None and admission["global_empty"]:
+            return empty_batch_metrics(self)
+        token_context = (
+            token_forward_context(self.agent.model, admission["rollout_source"])
+            if admission is not None and admission["rollout_path"] == "token"
+            else nullcontext()
+        )
         accelerator = self.accelerator
-        if self.distributed_config.strategy == "accelerate" and accelerator is not None:
-            # Use Accelerate's gradient accumulation
-            with accelerator.accumulate(self.agent.model):
-                metrics: dict[str, Any] = await super().training_step(trajectory_groups)
-        else:
-            metrics = await super().training_step(trajectory_groups)
+        try:
+            with self._ddp_step_buffers(), token_context:
+                if (
+                    self.distributed_config.strategy == "accelerate"
+                    and accelerator is not None
+                ):
+                    # Use Accelerate's gradient accumulation
+                    with accelerator.accumulate(self.agent.model):
+                        metrics: dict[str, Any] = await super().training_step(
+                            trajectory_groups
+                        )
+                else:
+                    metrics = await super().training_step(trajectory_groups)
+
+        except BaseException:
+            self._ddp_restore_failed = True
+            raise
 
         # Synchronize metrics across processes
         if self.distributed_config.world_size > 1:
@@ -336,8 +386,53 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
         return metrics
 
+    def _record_training_metrics(self, result: dict[str, Any], seconds: float) -> None:
+        """Finish local telemetry together before any peer starts another step."""
+        if not isinstance(self.agent.model, DDP):
+            return super()._record_training_metrics(result, seconds)
+        from .ddp_control import DDPControlGroup
+        from .diagnostics import diagnostic_control
+
+        group = DDPControlGroup(self, operation="diagnostics")
+        record = super()._record_training_metrics
+        try:
+            group.run("observe", lambda: record(result, seconds))
+            group.run("guard", lambda: diagnostic_control(self), agree=True)
+        except BaseException:
+            # The learner may already have applied an update. A complete reload
+            # repairs both optimizer state and the failed observation history.
+            self._ddp_restore_failed = True
+            raise
+
+    @contextmanager
+    def _ddp_step_buffers(self) -> Iterator[None]:
+        """Broadcast buffers once before uneven local forward chunks.
+
+        DDP's per-forward broadcasts would otherwise collide with a peer's
+        loss/count collective when ranks need different numbers of forwards.
+        Keep the user's buffer-sync preference and restore it on all exits.
+        """
+        model = self.agent.model
+        if not isinstance(model, DDP) or not model.broadcast_buffers:
+            yield
+            return
+        with torch.no_grad():
+            source = dist.get_global_rank(model.process_group, 0)
+            for buffer in model.module.buffers():
+                dist.broadcast(buffer, src=source, group=model.process_group)
+        previous = model.broadcast_buffers
+        try:
+            model.broadcast_buffers = False
+            yield
+        finally:
+            model.broadcast_buffers = previous
+
     def _sync_metrics(self, metrics: dict[str, Any]) -> dict[str, Any]:
         """Synchronize metrics across all processes"""
+        if isinstance(self.agent.model, DDP):
+            from .metric_reduction import reduce_ddp_metrics
+
+            return reduce_ddp_metrics(metrics, self.agent.model)
 
         synced_metrics: dict[str, Any] = {}
         accelerator = self.accelerator
@@ -361,10 +456,356 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
 
         return synced_metrics
 
+    def _maybe_handle_task_switch(self, task_id: str | None) -> None:
+        if isinstance(self.agent.model, DDP):
+            from .ddp_continual import handle_ddp_task
+
+            handle_ddp_task(self, task_id)
+        else:
+            super()._maybe_handle_task_switch(task_id)
+
+    def _apply_optimizer_step(self, torch: Any, *, gradient_scale: float = 1.0) -> bool:
+        if not isinstance(self.agent.model, DDP):
+            return super()._apply_optimizer_step(torch, gradient_scale=gradient_scale)
+        from .checkpoint_state import _prepare_normalization, _validate_gradients
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="optimizer-step")
+
+        def validate() -> None:
+            parameters = dict(self.agent.model.named_parameters())
+            state = self._grpo_accumulation
+            # GradScaler must observe reduced nonfinite banks itself, skip the
+            # optimizer on every peer and lower the shared scale. Checkpoint
+            # finiteness admission would incorrectly turn overflow into failure.
+            if self.scaler is not None and self.scaler.is_enabled():
+                return
+            _validate_gradients(
+                {name: p.grad for name, p in parameters.items()},
+                parameters,
+                torch,
+                allow_empty=True,
+            )
+            if state is not None:
+                _prepare_normalization(
+                    state, parameters, torch, 1, 1, copy_tensors=False, allow_empty=True
+                )
+
+        group.run("gradients", validate)
+        previous = getattr(self, "_ddp_restore_failed", False)
+        self._ddp_restore_failed = True
+        applied = group.run(
+            "apply",
+            lambda: super(DistributedTrainer, self)._apply_optimizer_step(
+                torch, gradient_scale=gradient_scale
+            ),
+            agree=True,
+        )
+        self._ddp_restore_failed = previous
+        return bool(applied)
+
+    async def train(self) -> Any:
+        """Require full restoration after any failed native training loop."""
+        native = isinstance(self.agent.model, DDP)
+        try:
+            return await super().train()
+        except BaseException:
+            if native:
+                self._ddp_restore_failed = True
+            raise
+
+    def _prepare_training_loop(self) -> tuple[int, list[dict[str, Any]], int]:
+        if not isinstance(self.agent.model, DDP):
+            return super()._prepare_training_loop()
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="train-loop")
+        plan = group.run("prepare", super()._prepare_training_loop)
+
+        def controls() -> dict[str, Any]:
+            windows = {
+                name: getattr(self.config, name, default)
+                for name, default in (
+                    ("logging_steps", 10),
+                    ("eval_steps", 50),
+                    ("save_steps", 100),
+                )
+            }
+            if any(type(value) is not int or value < 1 for value in windows.values()):
+                raise ValueError(
+                    "Training log/evaluation/save windows must be positive integers"
+                )
+            return {
+                "protocol": "stateset-native-loop-v3",
+                "episodes": plan[0],
+                "steps": plan[2],
+                "windows": windows,
+                "early_stopping": bool(getattr(self.config, "early_stopping", False)),
+                "patience": getattr(self.config, "patience", 50),
+                "resume": str(getattr(self.config, "resume_from_checkpoint", None)),
+            }
+
+        group.run("controls", controls, agree=True)
+        return cast(tuple[int, list[dict[str, Any]], int], plan)
+
+    async def _training_phase(
+        self, name: str, function: Any, *args: Any, **kwargs: Any
+    ) -> Any:
+        if not isinstance(self.agent.model, DDP):
+            return await super()._training_phase(name, function, *args, **kwargs)
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="train-loop")
+        phase = (
+            name
+            if name
+            in {
+                "scheduler",
+                "training-start",
+                "evaluation-scenarios",
+                "training-end",
+                "tracking-finish",
+            }
+            else f"episode-{self.current_epoch}:{name}"
+        )
+        return await group.arun(
+            phase,
+            lambda: super(DistributedTrainer, self)._training_phase(
+                name, function, *args, **kwargs
+            ),
+        )
+
+    def _resume_start(self, resumed: bool, num_episodes: int) -> int:
+        if not isinstance(self.agent.model, DDP):
+            return super()._resume_start(resumed, num_episodes)
+        from .ddp_control import DDPControlGroup
+
+        return int(
+            DDPControlGroup(self, operation="train-loop").run(
+                "resume-position",
+                lambda: super(DistributedTrainer, self)._resume_start(
+                    resumed, num_episodes
+                ),
+                agree=True,
+            )
+        )
+
+    async def _generate_training_rollouts(
+        self, scenarios: list[dict[str, Any]]
+    ) -> list[Any]:
+        if not isinstance(self.agent.model, DDP):
+            return await super()._generate_training_rollouts(scenarios)
+        from .ddp_control import DDPControlGroup
+        from .learner_preflight import verify_ddp_learner_batch
+
+        verify_ddp_learner_batch(self, [])
+        group = DDPControlGroup(self, operation="train-loop")
+        wrapper = self.agent.model
+
+        async def local() -> Any:
+            from stateset_agents.core.generation_mode import inference_mode
+
+            self.agent.model = wrapper.module
+            self._stateset_native_rollout = True
+            try:
+                with torch.no_grad(), inference_mode(wrapper.module):
+                    return await super(
+                        DistributedTrainer, self
+                    )._generate_training_rollouts(scenarios)
+            finally:
+                self.agent.model = wrapper
+                self._stateset_native_rollout = False
+
+        with self._ddp_step_buffers():
+            return cast(
+                list[Any],
+                await group.arun(f"episode-{self.current_epoch}:rollouts", local),
+            )
+
+    def _rollouts_available(self, groups: list[Any]) -> bool:
+        if not isinstance(self.agent.model, DDP):
+            return super()._rollouts_available(groups)
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="train-loop")
+        local = group.run(
+            "rollout-population",
+            lambda: bool(groups and any(g.trajectories for g in groups)),
+        )
+        flag = torch.tensor(int(local), dtype=torch.int64, device=group.device)
+        dist.all_reduce(flag, op=dist.ReduceOp.MAX, group=group.group)
+        return bool(flag.item())
+
+    def _should_stop_training(self) -> bool:
+        if not isinstance(self.agent.model, DDP):
+            return super()._should_stop_training()
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="train-loop")
+        group.run("stopping-state", lambda: self.steps_without_improvement, agree=True)
+        return bool(group.run("stopping", super()._should_stop_training, agree=True))
+
+    def _optimizer_update_receipt(
+        self,
+        previous_step: int,
+        source: str,
+        metrics: dict[str, Any] | None = None,
+        task_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        if not isinstance(self.agent.model, DDP):
+            return super()._optimizer_update_receipt(
+                previous_step, source, metrics, task_id
+            )
+        from .ddp_control import DDPControlGroup
+
+        group = DDPControlGroup(self, operation="optimizer-report")
+        prepare = super()._optimizer_update_receipt
+        receipt = group.run(
+            "prepare", lambda: prepare(previous_step, source, metrics, task_id)
+        )
+        group.run(
+            "controls",
+            lambda: (
+                None
+                if receipt is None
+                else {
+                    name: receipt[name]
+                    for name in (
+                        "optimizer_step_start",
+                        "optimizer_step_end",
+                        "optimizer_updates",
+                        "update_source",
+                        "update_task_id",
+                    )
+                }
+            ),
+            agree=True,
+        )
+        return cast(dict[str, Any] | None, receipt)
+
+    def _episode_metrics(
+        self, metrics: dict[str, Any], new_groups: list[Any], training_groups: list[Any]
+    ) -> dict[str, Any]:
+        if not isinstance(self.agent.model, DDP):
+            return super()._episode_metrics(metrics, new_groups, training_groups)
+        from .rollout_metrics import summarize_ddp_rollouts
+
+        episode = summarize_ddp_rollouts(self, new_groups, phase="episode")
+        result = {
+            **metrics,
+            "total_reward": episode["reward_mean"],
+            "episode_reward": episode["reward_mean"],
+            "episode_reward_std": episode["reward_std"],
+            "episode_num_trajectories": episode["total_trajectories"],
+            "episode_reward_scope": "ddp_global_new_rollouts",
+        }
+        if self._step_event_due(getattr(self.config, "logging_steps", 10), metrics):
+            result["trajectory_metrics"] = summarize_ddp_rollouts(
+                self, training_groups, phase="training", details=True
+            )
+            result["trajectory_metric_scope"] = "ddp_global_training_batch"
+        return result
+
+    async def _log_training_metrics(
+        self, metrics: dict[str, Any], trajectory_groups: list[Any]
+    ) -> None:
+        if not isinstance(self.agent.model, DDP):
+            await super()._log_training_metrics(metrics, trajectory_groups)
+            return
+        if not self.wandb_logger:
+            return
+        kwargs: dict[str, Any] = {
+            "losses": self._training_log_scalars(metrics),
+            "learning_rate": metrics["learning_rate"],
+            "step": self.global_step,
+            "trajectory_groups": None,
+            "trajectory_metrics": dict(metrics["trajectory_metrics"]),
+        }
+        method = self.wandb_logger.log_training_step
+        try:
+            signature = inspect.signature(method)
+        except (TypeError, ValueError):
+            signature = None
+        if signature is not None:
+            try:
+                signature.bind(**kwargs)
+            except TypeError:
+                # Older loggers already prefix every numeric loss entry. Keep
+                # that API, but provide global scalars instead of local groups.
+                kwargs["losses"] = {
+                    **kwargs["losses"],
+                    **kwargs.pop("trajectory_metrics"),
+                }
+                signature.bind(**kwargs)
+        method(**kwargs)
+
+    def _finish_current_task(self) -> None:
+        if isinstance(self.agent.model, DDP):
+            from .ddp_continual import handle_ddp_task
+
+            handle_ddp_task(self, self._current_task_id, final=True)
+        else:
+            super()._finish_current_task()
+
+    async def evaluate(
+        self, eval_scenarios: list[dict[str, Any]], num_eval_episodes: int = 10
+    ) -> dict[str, float]:
+        """Collectively evaluate native DDP partitions and agree on the best save."""
+        if isinstance(self.agent.model, DDP):
+            from .ddp_evaluation import evaluate_ddp
+
+            return await evaluate_ddp(self, eval_scenarios, num_eval_episodes)
+        return await super().evaluate(eval_scenarios, num_eval_episodes)
+
+    def load_checkpoint(self, checkpoint_path: Any, *, trusted: bool = False) -> bool:
+        """Invalidate replica-value agreement before any restore attempt."""
+        self._ddp_replica_consensus_pending = True
+        if isinstance(self.agent.model, DDP):
+            from .ddp_checkpoint import load_ddp_checkpoint
+
+            return load_ddp_checkpoint(self, checkpoint_path, trusted=trusted)
+        return super().load_checkpoint(checkpoint_path, trusted=trusted)
+
+    def load_runtime_checkpoint(
+        self, checkpoint_dir: str, *, trusted: bool = False
+    ) -> bool:
+        """Require replica-value agreement after a runtime restore attempt."""
+        self._ddp_replica_consensus_pending = True
+        if isinstance(self.agent.model, DDP):
+            from .ddp_checkpoint import load_ddp_checkpoint
+
+            return load_ddp_checkpoint(self, checkpoint_dir, trusted=trusted)
+        return super().load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
+
+    def save_runtime_checkpoint(self, output_dir: str) -> None:
+        """Collectively save native DDP state, or retain the local runtime path."""
+        if isinstance(self.agent.model, DDP):
+            from .ddp_checkpoint import save_ddp_checkpoint
+
+            save_ddp_checkpoint(self, output_dir)
+        else:
+            super().save_runtime_checkpoint(output_dir)
+
     async def save_checkpoint(
         self, is_best: bool = False, checkpoint_name: str | None = None
     ):
         """Save distributed checkpoint"""
+
+        if isinstance(self.agent.model, DDP):
+            from .ddp_checkpoint import save_ddp_checkpoint
+
+            # Native DDP requires every rank's RNG/banks even when the legacy
+            # checkpoint_parallel flag is false. This path is always collective.
+            name = checkpoint_name or (
+                "best-checkpoint" if is_best else f"checkpoint-{self.global_step}"
+            )
+            save_ddp_checkpoint(
+                self, Path(self.distributed_config.checkpoint_dir) / name
+            )
+            return
+        if self.distributed_config.world_size <= 1:
+            await super().save_checkpoint(is_best, checkpoint_name)
+            return
 
         if not self.is_main_process and not self.distributed_config.checkpoint_parallel:
             return

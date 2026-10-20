@@ -1,0 +1,11 @@
+{
+  "model": "zai-org/GLM-5.3-Flash",
+  "architecture": "Glm5NextForConditionalGeneration",
+  "quantized_tensor_count": 41,
+  "loss": 3.5172061920166016,
+  "all_weights_matched_dequantized_reference": true,
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "optimizer_updates": 1,
+  "scope": "local random tiny FP8 attention/per-expert tensors; CPU BF16; no published weights, GPU or distributed execution"
+}

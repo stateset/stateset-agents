@@ -5,6 +5,7 @@ Base environment abstractions and state containers.
 from __future__ import annotations
 
 import asyncio
+import copy
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable
@@ -162,7 +163,12 @@ class Environment(ABC):
                 if not turns and hasattr(trajectory, "__iter__"):
                     turns = list(trajectory)
 
-                result = await self.reward_fn.compute_reward(turns)
+                if getattr(self.reward_fn, "requires_environment_context", False):
+                    result = await self.reward_fn.compute_reward(
+                        turns, getattr(trajectory, "final_state", None)
+                    )
+                else:
+                    result = await self.reward_fn.compute_reward(turns)
                 if hasattr(result, "score"):
                     return float(result.score)
                 if isinstance(result, dict) and "score" in result:
@@ -239,7 +245,10 @@ class Environment(ABC):
             history = [{"role": t.role, "content": t.content} for t in turns]
             # Evaluator references are private. The environment retains them
             # for scoring; only public scenario fields reach the policy.
-            policy_context = self.observation_context(state)
+            # Observation hooks may return nested references into evaluator
+            # state. Policies must not mutate trusted tool traces or scenarios
+            # through the public context, including in custom environments.
+            policy_context = copy.deepcopy(self.observation_context(state))
             agent_response = await agent_fn(history, policy_context)
             agent_turn = (
                 agent_response

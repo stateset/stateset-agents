@@ -1,0 +1,22 @@
+{
+  "retained_at": 1792244005.1624763,
+  "focused_job": "12cf089a9943",
+  "focused_passed": true,
+  "test_counts": {
+    "native": 935,
+    "operator": 615,
+    "governance": 8
+  },
+  "total_tests": 1558,
+  "typed_modules": 431,
+  "source_tests_match_frozen_inputs_and_live": true,
+  "live_pane": "w1:p1A",
+  "draft_preserved": true,
+  "training_launched": false,
+  "full_acceptance_job": "1e204ba66630",
+  "full_state_at_capture": "queued",
+  "installed_wheel_verified_by_this_receipt": false,
+  "gpu_verified": false,
+  "provider_training_verified": false,
+  "model_quality_gain_verified": false
+}

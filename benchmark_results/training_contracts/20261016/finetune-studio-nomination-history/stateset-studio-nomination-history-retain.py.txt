@@ -1,0 +1,98 @@
+"""Retain saved-nomination recovery acceptance with exact source/wheel evidence."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents')
+prefix='stateset-studio-nomination-history'
+pipeline=json.loads(Path('/tmp',prefix+'-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and len(pipeline['stages'])==6 and all(row['exit_code']==0 for row in pipeline['stages'])
+source=Path(pipeline['finished']); verified=json.loads((source/'verification.json').read_text())
+assert verified['passed'] and verified['source_unchanged'] and verified['tests_unchanged']
+current={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert current==verified['source_sha256'] and tests==verified['test_source_sha256']
+assert 'Success: no issues found in 431 source files' in (source/'types.log').read_text()
+def count(name):
+    parsed=ET.parse(source/name).getroot(); suites=list(parsed.iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    assert len([c for c in parsed.iter('testcase') if c.get('classname','').startswith('tests.unit.test_finetune_nomination_history')])==19
+    return sum(int(s.get('tests',0)) for s in suites)
+def receipt(handle):
+    value=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {key:value.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown']}
+job=receipt('4f56e1d5b69c'); assert job['state']=='succeeded' and job['exit_code']==0
+cli=json.loads((source/'nomination-history-cli-verification.json').read_text())
+assert cli['passed'] and cli['existing_run_unchanged'] and cli['installed_origin_verified'] and not cli['new_records_created']
+draft=Path('/tmp',prefix+'-draft.json'); live=Path('/tmp',prefix+'-live.txt')
+assert json.loads(draft.read_text())['draft_preserved']
+assert 'h reopens saved checkpoint nominations' in live.read_text().replace('\n',' ')
+summary=dict(passed=True,source_tests=count('regressions.xml'),installed_wheel_tests=count('wheel.xml'),history_cases=19,typed_modules=431,queue_job=job['id'],wheel_sha256=verified['wheel_sha256'],source_and_tests_unchanged=True,wheel_source_matches=True,wheel_case_identities_match_source=True,installed_history_cli_verified=True,real_terminal_sizes=['74x44','110x32'],layout_sizes=['72x22','74x44','110x32'],metadata_reopen_creates_no_records=True,metadata_reopen_checks_weights=False,cpu_model_regressions_in_suite=True,gpu_verified=False,quality_gain_verified=False,paid_run_launched=False,live_herdr_refreshed=True,draft_preserved=True,count_note='Source/wheel counts overlap. Selection fixtures use synthetic replies through real scoring/record/replay; broader regressions also exercise tiny CPU models.')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-nomination-history'; out.mkdir(exist_ok=False)
+for name,value in [('summary.json',summary),('queue-receipt.json',job),('pipeline-receipt.json',pipeline),('installed-cli-verification.json',cli)]:
+    (out/name).write_text(json.dumps(value,indent=2)+'\n')
+for pattern in ['*.log','*.xml']:
+    for path in source.glob(pattern): shutil.copy2(path,out/path.name)
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['format','gates','prepare','wheel','finish','pipeline','retain','helpers']:
+    path=Path('/tmp',prefix+'-'+suffix+'.py'); shutil.copy2(path,out/(path.name+'.txt'))
+shutil.copy2(live,out/'herdr-live.txt'); shutil.copy2(draft,out/'herdr-draft.json')
+attempts=out/'development-attempts'; attempts.mkdir()
+handles=['c819c008a765','b3c03644a360','ccfe4180ea94']
+(attempts/'queue-receipts.json').write_text(json.dumps([receipt(h) for h in handles],indent=2)+'\n')
+for handle in handles:
+    path=Path('/home/dom/.local/state/agent-builds/logs',handle+'.log'); shutil.copy2(path,attempts/path.name)
+for name in ['stateset-nomination-history-before-terminal-marker.xml','stateset-nomination-history-terminal.xml']:
+    shutil.copy2(Path('/tmp',name),attempts/name)
+(out/'README.md').write_text(f'''# Saved nomination recovery: acceptance
+
+{summary['source_tests']} targeted source tests and {summary['installed_wheel_tests']}
+matching installed-wheel tests passed without skips or failures. Counts overlap;
+each suite includes all 19 saved-nomination cases. Typing passed for 431 package
+modules. Job `{job['id']}` passed repository lint/hygiene, API/release governance,
+serial formatting of six changed Python files, source regressions, wheel build
+and install, three wheel groups, workflow lint and installed CLI checks.
+Package/test Python and declared acceptance assets stayed frozen; wheel bytes
+and selected case identities match. Development attempts remain separate.
+
+Inside the evaluation list, detail, comparison or form, `h` opens saved
+nominations. Enter restores the selected receipt into an unprepared fresh-test
+form with no cases selected. No nomination, evaluation or queue job is created.
+Esc returns to the originating view and preserves an unsaved form. Late
+background completion cannot replace an editor after leaving the browser.
+Unavailable records stay visible and cannot replace the form.
+
+`nominations`, `nomination-status` and `nomination-config` expose the same
+versioned JSON workflow. Configuration restoration requires the exact selected
+nomination checksum. Lists scan at most 100 entries and reject overflow;
+specific-ID inspection remains possible. Code identity is hashed once per list
+and selection metadata is reused for repeated comparison references. Metadata
+availability checks lineage; it never claims checkpoint bytes or fresh case
+validity. Later evaluation review still rehashes weights and checks cases.
+
+Tests cover read-only inspection without weight/case/report reads, broken and
+symlinked receipts, private-data projection, changed code and selection,
+changed weights failing later review, bounded scans, empty histories, exact
+checksum restoration, caching, unsaved editor ownership and list navigation.
+Layouts pass at 72x22, 74x44 and 110x32. Real curses terminals at 74x44 and
+110x32 reopen a saved nomination, choose fresh cases, capture a review and exit
+without creating records or changing the draft. The terminal test uses the
+completed-restore message because curses may reuse a footer prefix.
+
+Separate installed CLI processes list, inspect and restore a saved nomination
+from a synthetic recorded policy/judge fixture. Installed module origin is
+checked and every existing run file remains byte-identical; no new records or
+inference are created by those commands. The broader suite also exercises tiny
+CPU model generation, SFT and resume. No GPU/provider quality study, paid run,
+deployment promotion or independent quality improvement is certified.
+
+The idle user-authorized Herdr split was refreshed with saved draft bytes,
+private permissions and run list preserved. No synthetic data was added to
+the live workspace. Existing nomination, comparison and fresh-test review
+boundaries remain required.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

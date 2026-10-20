@@ -66,6 +66,8 @@ def accumulate(value, x):
 
 def write_unmanifested_state(path, state):
     state.pop("checkpoint_publication", None)
+    state.pop("native_checkpoint_schema", None)
+    state.pop("native_component_identities", None)
     (path.parent / ".stateset-checkpoint.json").unlink(missing_ok=True)
     torch.save(state, path)
 

@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "source_tests": 729,
+  "installed_wheel_tests": 726,
+  "comparison_cases": 45,
+  "typed_modules": 430,
+  "queue_job": "8d44566e0dc6",
+  "real_worker_queue_job": "e00e58d19b43",
+  "wheel_sha256": "5167b8dddc41702b6e1e65771a7f5038829d0db5eda148a88a4ec82ed7f721f9",
+  "source_and_tests_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match_source": true,
+  "real_detached_installed_worker_verified": true,
+  "real_model_inference": false,
+  "real_provider_verified": false,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "count_note": "Source and installed-wheel counts overlap; scoring transports use synthetic replies through actual record/replay logic."
+}

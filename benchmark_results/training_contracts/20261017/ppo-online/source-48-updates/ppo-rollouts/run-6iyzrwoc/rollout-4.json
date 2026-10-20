@@ -1,0 +1,585 @@
+{
+  "behavior_state_sha256": "dc3a6b1455bfb7ffe19822a61d408376f5dc1b345dfe6d125cd32846de82defc",
+  "prompts_sha256": "2a1f5a8c200ec72e7a446e3763eec84d1fb5b5cae275885d1262452ab5b6595a",
+  "protocol": "stateset-ppo-online-v1",
+  "rows": [
+    {
+      "action_ids": [
+        1
+      ],
+      "behavior_log_probs": [
+        -2.612833261489868
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "1",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        3
+      ],
+      "behavior_log_probs": [
+        -2.9547038078308105
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "3",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        14
+      ],
+      "behavior_log_probs": [
+        -2.690208911895752
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "14",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        2
+      ],
+      "behavior_log_probs": [
+        -2.9768714904785156
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "2",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        9
+      ],
+      "behavior_log_probs": [
+        -2.8336691856384277
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "9",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        5
+      ],
+      "behavior_log_probs": [
+        -2.7805495262145996
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "5",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        9
+      ],
+      "behavior_log_probs": [
+        -2.8336691856384277
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "9",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        0
+      ],
+      "behavior_log_probs": [
+        -2.8308470249176025
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "0",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        10
+      ],
+      "behavior_log_probs": [
+        -2.8053884506225586
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "10",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        6
+      ],
+      "behavior_log_probs": [
+        -2.840961456298828
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "6",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        15
+      ],
+      "behavior_log_probs": [
+        -2.7795214653015137
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "15",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        13
+      ],
+      "behavior_log_probs": [
+        -2.7788469791412354
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "13",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        10
+      ],
+      "behavior_log_probs": [
+        -2.8053884506225586
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "10",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        9
+      ],
+      "behavior_log_probs": [
+        -2.8336691856384277
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "9",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        0
+      ],
+      "behavior_log_probs": [
+        -2.8308470249176025
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "0",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        14
+      ],
+      "behavior_log_probs": [
+        -2.690208911895752
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "14",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        2
+      ],
+      "behavior_log_probs": [
+        -2.9768714904785156
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "2",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        5
+      ],
+      "behavior_log_probs": [
+        -2.7805495262145996
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "5",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        0
+      ],
+      "behavior_log_probs": [
+        -2.8308470249176025
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "0",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        13
+      ],
+      "behavior_log_probs": [
+        -2.7788469791412354
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "13",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        7
+      ],
+      "behavior_log_probs": [
+        -2.2154040336608887
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "7",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 1.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        11
+      ],
+      "behavior_log_probs": [
+        -2.7811543941497803
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "11",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        11
+      ],
+      "behavior_log_probs": [
+        -2.7811543941497803
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "11",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        13
+      ],
+      "behavior_log_probs": [
+        -2.7788469791412354
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "13",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        13
+      ],
+      "behavior_log_probs": [
+        -2.7788469791412354
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "13",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        8
+      ],
+      "behavior_log_probs": [
+        -2.854275703430176
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "8",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        3
+      ],
+      "behavior_log_probs": [
+        -2.9547038078308105
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "3",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        2
+      ],
+      "behavior_log_probs": [
+        -2.9768714904785156
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "2",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        2
+      ],
+      "behavior_log_probs": [
+        -2.9768714904785156
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "2",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        3
+      ],
+      "behavior_log_probs": [
+        -2.9547038078308105
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "3",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        1
+      ],
+      "behavior_log_probs": [
+        -2.612833261489868
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "1",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    },
+    {
+      "action_ids": [
+        15
+      ],
+      "behavior_log_probs": [
+        -2.7795214653015137
+      ],
+      "behavior_values": [
+        0.03351062536239624
+      ],
+      "completion": "15",
+      "prompt_ids": [
+        1
+      ],
+      "prompt_index": 0,
+      "reward": 0.0,
+      "termination": "horizon"
+    }
+  ],
+  "step": 4,
+  "temperature": 1.0
+}

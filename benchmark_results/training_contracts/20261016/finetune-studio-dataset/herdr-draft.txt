@@ -1,0 +1,11 @@
+{
+  "pane": "w1:p1A",
+  "draft_sha256": "2c51847a89df1ac552178fe0266089fa7fd07c567ddfa02283ed8ff1bf39a3c1",
+  "draft_preserved": true,
+  "draft_private": true,
+  "live_inspector_shortcut_verified": true,
+  "missing_dataset_guidance_verified": true,
+  "dataset_configured": false,
+  "workspace_had_runs": false,
+  "training_started": false
+}

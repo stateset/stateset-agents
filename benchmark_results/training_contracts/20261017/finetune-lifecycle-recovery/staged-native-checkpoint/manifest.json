@@ -1,0 +1,39 @@
+{
+  "tested": false,
+  "canonical_files_changed": false,
+  "notes": "Staged only; no tests, checks, builds, or formatters executed. Source/test review only; parent must apply under source lock and verify using Buildr.",
+  "files": {
+    "stateset_agents/training/checkpoint_state.py": {
+      "base_sha256": "5e658d18d75dc0ceab85cd0db4ff510d577735529b927f5eddd1f91795b84791",
+      "staged_sha256": "ef0832a358cde15280b3f0dae29ab271e3eb8f1b5725f5720aca50008e6962f7"
+    },
+    "stateset_agents/training/single_turn_trainer.py": {
+      "base_sha256": "8281a48e6f7da39ce397f49e162abb45674c07c147a73dd9dfe495665d7a5c8a",
+      "staged_sha256": "5b78d7d0f3d396dc6fac87be7abaf76efae29d3ef98b73d38bfff548c054048c"
+    },
+    "stateset_agents/training/multi_turn_trainer.py": {
+      "base_sha256": "c13c2894bfad86bde7b1886e9cff246b2c08b24ca80da73525a2d859c4b60eac",
+      "staged_sha256": "fbe41be7c1a871056e69df1f8ce1f427f868d2c016594c06a99b8afb3d783eea"
+    },
+    "tests/unit/test_native_checkpoint_safety.py": {
+      "base_sha256": null,
+      "staged_sha256": "c36e02749c62352b9ed557148be5b9d8cef6ce7096ae57464081ec2899f921fe"
+    },
+    "tests/unit/test_resume_rollout_sync.py": {
+      "base_sha256": "57562678b75f1151b25c7163a058b70cf1b51f6f39dcdb48bd050d29900d3f43",
+      "staged_sha256": "4b41cf9551f6747c1eab7c20b1c99f249c10f86e2db026b102ae992accd3ea70"
+    },
+    "tests/unit/test_checkpoint_trust.py": {
+      "base_sha256": "bf331916fb64cee803553c2544b449c3986f6942d8495f49ce24dd2db621d8fa",
+      "staged_sha256": "97a623963d48c5ebaacba112ec44e899f81bc63322818fcf7d7a6c44a24f8f64"
+    },
+    "tests/unit/test_multi_turn_trainer.py": {
+      "base_sha256": "e5b553840604befca5cd4d30073f28a65fa62c8031a45126a0508fb30774a73c",
+      "staged_sha256": "4fa91839191bb2098d8288bf9f3998afa93e92ecb38a9ccf3f0f3857bb1aaaf8"
+    },
+    "tests/unit/test_training.py": {
+      "base_sha256": "df3d34945e130bd086a8dc760ef290e471b4de2e2d335790ec367710153ce11e",
+      "staged_sha256": "c1a013bda8106ded2a60e56d730df9dc5f9b0e711e15082fe3c25d6674dd6e05"
+    }
+  }
+}

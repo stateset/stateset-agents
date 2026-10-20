@@ -167,6 +167,35 @@ class CompositeReward(RewardFunction):
         self.combination_method = combination_method
         self.normalize_weights = normalize_weights
 
+    @property
+    def reward_type(self) -> RewardType:
+        """Defer a composition to episode end when any child needs the full trace."""
+        if any(
+            reward.reward_type in (RewardType.CUMULATIVE, RewardType.SPARSE)
+            for reward in getattr(self, "reward_functions", [])
+        ):
+            return RewardType.CUMULATIVE
+        return self._reward_type
+
+    @reward_type.setter
+    def reward_type(self, value: RewardType) -> None:
+        self._reward_type = value
+
+    @property
+    def fail_on_error(self) -> bool:
+        """Preserve critical evidence requirements through nested composition."""
+        return any(
+            getattr(reward, "fail_on_error", False) for reward in self.reward_functions
+        )
+
+    @property
+    def requires_environment_context(self) -> bool:
+        """Request final environment state when any component needs it."""
+        return any(
+            getattr(reward, "requires_environment_context", False)
+            for reward in self.reward_functions
+        )
+
     async def compute_reward(
         self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
@@ -184,9 +213,21 @@ class CompositeReward(RewardFunction):
         results: list[tuple[RewardFunction, RewardResult]] = []
         for reward_fn in self.reward_functions:
             try:
-                result = await reward_fn.compute_reward(turns, context)
+                child_context = context
+                if (
+                    self.requires_environment_context
+                    and not getattr(reward_fn, "requires_environment_context", False)
+                    and isinstance(context, dict)
+                    and isinstance(context.get("scenario"), dict)
+                ):
+                    # Ordinary components retain their historical scenario
+                    # context; outcome components receive executed tool state.
+                    child_context = context["scenario"]
+                result = await reward_fn.compute_reward(turns, child_context)
                 results.append((reward_fn, result))
             except REWARD_EXCEPTIONS as e:
+                if getattr(reward_fn, "fail_on_error", False):
+                    raise
                 logger.warning(f"Reward function {reward_fn.name} failed: {e}")
                 # Continue with other reward functions
                 continue
@@ -241,6 +282,8 @@ class CompositeReward(RewardFunction):
             metadata={
                 "component_scores": [r.score for _, r in results],
                 "component_names": [rf.name for rf, _ in results],
+                "component_breakdowns": [r.breakdown for _, r in results],
+                "component_metadata": [r.metadata for _, r in results],
                 "combination_method": self.combination_method,
                 "normalize_weights": self.normalize_weights,
             },

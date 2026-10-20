@@ -1,0 +1,114 @@
+{
+  "passed": true,
+  "parent_unchanged": true,
+  "installed_origin_verified": true,
+  "acceptance_job": "8d44566e0dc6",
+  "worker_job": "e00e58d19b43",
+  "request_id": "20261017-025625-a45f98c9",
+  "request": "/tmp/stateset-studio-validation-compare-20261016-final-retry2/synthetic-validation-comparison-fixture/workspace/20261017-025554-9d903f89/validation-comparisons/20261017-025625-a45f98c9",
+  "worker_module": "/tmp/stateset-studio-validation-compare-20261016-final-retry2/site-packages/stateset_agents/finetune_validation.py",
+  "status_cli": {
+    "schema_version": 1,
+    "ok": true,
+    "command": "validation-comparison-status",
+    "result": {
+      "comparison_id": "20261017-025625-a45f98c9",
+      "anchor_id": "20261017-025559-7dc579ef",
+      "state": {
+        "status": "succeeded",
+        "completed": 3,
+        "total": 3
+      },
+      "job_id": "e00e58d19b43",
+      "result": {
+        "schema_version": 1,
+        "run_id": "20261017-025554-9d903f89",
+        "anchor_id": "20261017-025559-7dc579ef",
+        "protocol_sha256": "2055367a3ae0a0da29bc830c2244577e3a0d86f697a514cee2e5c9acfcea3760",
+        "case_count": 2,
+        "comparison_plan_sha256": "f9fcde087f3ae7544e0dc11548599477960ea37f3ff310d5278392de1872191a",
+        "comparison_complete": true,
+        "verified_at": 1792205792.0666482,
+        "baseline": {
+          "success_rate": 0.5,
+          "judge_score": 0.98
+        },
+        "rows": [
+          {
+            "evaluation_id": "20261017-025554-ebd7fd8a",
+            "checkpoint": "checkpoint-1",
+            "step": 1,
+            "artifact_sha256": "b5182a4c580f9403063da4baa209b23926c499a7048fe56191ff2fa3c8c33d01",
+            "success_rate": 1.0,
+            "judge_score": 1.0,
+            "regressions": 0,
+            "guards": {
+              "no_success_regressions": true,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": true
+            },
+            "replicates": 1,
+            "eligible": true
+          },
+          {
+            "evaluation_id": "20261017-025559-7dc579ef",
+            "checkpoint": "checkpoint-3",
+            "step": 3,
+            "artifact_sha256": "3239dd7ce482c56a1c8057a1ac82a57f2eefb8df7335ba95758cc0bd0181ab18",
+            "success_rate": 1.0,
+            "judge_score": 1.0,
+            "regressions": 0,
+            "guards": {
+              "no_success_regressions": true,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": true
+            },
+            "replicates": 1,
+            "eligible": true
+          },
+          {
+            "evaluation_id": "20261017-025558-743394d1",
+            "checkpoint": "checkpoint-2",
+            "step": 2,
+            "artifact_sha256": "60f62ee5de2bb098ef4c0dcff9092410c3b56aacfab4437266ade8af24df2351",
+            "success_rate": 0.5,
+            "judge_score": 0.98,
+            "regressions": 1,
+            "guards": {
+              "no_success_regressions": false,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": false
+            },
+            "replicates": 1,
+            "eligible": false
+          }
+        ],
+        "excluded": [],
+        "recommendation": {
+          "kind": "checkpoint",
+          "checkpoint": "checkpoint-1",
+          "evaluation_id": "20261017-025554-ebd7fd8a"
+        },
+        "quality_gain_verified": false,
+        "notes": [
+          "Validation diagnostic only; fresh test assessment and independent training seeds remain required.",
+          "Rank by success rate, judge score, then earliest saved step. New critical-check, success, policy or truncation regressions disqualify a candidate.",
+          "Incompatible protocols are excluded; unverifiable, conflicting or baseline-mismatched evidence prevents a recommendation.",
+          "Only the captured history is compared. Verification records bytes at execution time; review rechecks them before another evaluation."
+        ]
+      },
+      "training_started": false,
+      "inference_started": false,
+      "notes": [
+        "Queue work survives leaving the TUI. Reopening does not resubmit.",
+        "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain."
+      ]
+    }
+  },
+  "scope": "Synthetic recorded two-case policy/judge transport; no live model quality claim",
+  "inference_started": false,
+  "quality_gain_verified": false
+}

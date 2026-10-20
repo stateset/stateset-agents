@@ -175,7 +175,12 @@ class WorkflowAgent:
 
 
 async def run_seed(
-    seed: int, output_dir: Path, *, updates: int = 80, device: str = "cpu"
+    seed: int,
+    output_dir: Path,
+    *,
+    updates: int = 80,
+    device: str = "cpu",
+    gradient_accumulation_steps: int = 1,
 ) -> dict[str, Any]:
     """Train, reload, and evaluate paired held-out workflow cases for one seed."""
     import torch
@@ -239,10 +244,11 @@ async def run_seed(
     test_cases = [{"id": f"test-{i}", "eligible": bool(i % 2)} for i in range(128)]
     config = TrainingConfig(
         model_name="local-workflow-transformer",
+        zero_signal_patience=0,  # Fixed-budget regression also measures post-convergence steps.
         num_episodes=updates,
         num_generations=24,
         generation_batch_size=24,
-        gradient_accumulation_steps=1,
+        gradient_accumulation_steps=gradient_accumulation_steps,
         learning_rate=0.003,
         bf16=False,
         report_to="none",
@@ -302,6 +308,7 @@ async def run_seed(
             logger.info(
                 "seed=%s update=%s successful_rollouts=%s", seed, step, successes
             )
+    trainer._flush_accumulation(torch)
     checkpoint = output_dir / "checkpoint"
     await trainer.save_checkpoint(checkpoint_name="checkpoint")
     candidate = await evaluate()
@@ -339,6 +346,7 @@ async def run_seed(
         "improvement": delta,
         "duration_seconds": time.monotonic() - started,
         "reload_verified": True,
+        "performance": trainer.profiler.snapshot(),
         "metrics": metrics,
         "resolved_config": config.to_dict(),
     }
@@ -359,10 +367,15 @@ def main() -> None:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--seeds", type=int, nargs="+", default=[42, 43, 44])
     parser.add_argument("--updates", type=int, default=80)
+    parser.add_argument("--gradient-accumulation-steps", type=int, default=1)
     parser.add_argument("--device", choices=["cpu", "cuda"], default="cpu")
     args = parser.parse_args()
-    if args.updates < 1 or len(set(args.seeds)) != len(args.seeds):
-        parser.error("Use positive updates and unique seeds")
+    if (
+        args.updates < 1
+        or args.gradient_accumulation_steps < 1
+        or len(set(args.seeds)) != len(args.seeds)
+    ):
+        parser.error("Use positive updates/accumulation steps and unique seeds")
     torch.set_num_threads(1)
     if args.output.exists():
         parser.error("Output directory must be new")
@@ -373,6 +386,7 @@ def main() -> None:
                 args.output / f"seed-{seed}",
                 updates=args.updates,
                 device=args.device,
+                gradient_accumulation_steps=args.gradient_accumulation_steps,
             )
         )
         for seed in args.seeds

@@ -655,6 +655,12 @@ class TestResumeCli:
 
         def fake_run_sft(**kwargs):
             captured.update(kwargs)
+            from tests.sft_fixtures import write_sft_export
+
+            write_sft_export(
+                kwargs["output_dir"],
+                **{key: value for key, value in kwargs.items() if key != "output_dir"},
+            )
             return kwargs["output_dir"]
 
         monkeypatch.setattr(sft, "gpu_available", lambda: True)
@@ -1108,7 +1114,9 @@ class TestEvalGateInRunSftJob:
     def _fake_run_sft(self, finetuned: str):
         def fake(rows, base_model, output_dir, eval_prompts, **kwargs):
             # Mimic the real ordering: adapter first, then eval results.
-            (output_dir / "adapter_model.safetensors").write_text("tensors")
+            from tests.sft_fixtures import write_sft_export
+
+            write_sft_export(output_dir, base_model=base_model, **kwargs)
             specs = sft.normalize_eval_prompts(eval_prompts)
             sft.write_eval_results(
                 output_dir,

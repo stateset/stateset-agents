@@ -928,7 +928,7 @@ StateSet Agents ships first-class starters (with dedicated CLI commands, configu
 | Kimi-K2.6 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` |
 | GLM 5.1 (754B MoE) | `zai-org/GLM-5.1` | module + example (QLoRA-only) |
 | GLM 5.2 (754B MoE) | `zai-org/GLM-5.2` | module + example (QLoRA-only) |
-| Kimi-K3 (provisional) | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` |
+| Kimi-K3 (released; MXFP4 training loader blocked) | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` |
 | Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` |
 | Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` |
 | Qwen3.8 27B | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` |

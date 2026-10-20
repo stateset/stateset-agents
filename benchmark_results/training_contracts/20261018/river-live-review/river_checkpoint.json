@@ -1,0 +1,12 @@
+{
+  "provider": "river",
+  "base_model": "Qwen/Qwen3.5-9B",
+  "checkpoint": "river://2a1dd6b6-470c-4aa7-aa1d-f73843c761cf/sampler_weights/rl-eval-00000001",
+  "lora": {
+    "rank": 16
+  },
+  "steps": 1,
+  "completed_training_batches": 2,
+  "selected_validation_step": 1,
+  "note": "River-hosted inference checkpoint selected using validation only. No local adapter weights. Synthetic integration run; not production quality evidence."
+}

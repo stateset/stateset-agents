@@ -1,0 +1,10 @@
+{
+  "applied_at": 1792246869.4155862,
+  "files": {
+    "tests/integration/test_ddp_checkpoint_publication.py": {
+      "before": "d12247391ccfc72559314cf2c91ed27fab49fb5b4e47bb3a8baac768a6152590",
+      "after": "83376ee3319d5ea78bbebfb8f8766e9b7b6ecedcc4059951ef827942a51c1561"
+    }
+  },
+  "reason": "Bind the scenario-local callable explicitly; resolves Ruff B023."
+}

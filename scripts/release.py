@@ -52,6 +52,10 @@ ANCHORED_FILES: list[tuple[str, str]] = [
     ("stateset_agents/__init__.py", '__version__ = "{v}"'),
     ("deployment/helm/stateset-agents/Chart.yaml", 'appVersion: "{v}"'),
     ("npm/package.json", '"version": "{v}"'),
+    (
+        "stateset_agents/config/presets/experiments/support_recovery_preflight6.json",
+        '"framework_version": "{v}"',
+    ),
 ]
 
 #: Files where every occurrence of the current version becomes the new one.
@@ -67,6 +71,7 @@ PLAIN_FILES: list[str] = [
     "docs/ARCHITECTURE.md",
     "docs/KIMI_K25_GKE_AUTOPILOT.md",
     "docs/CLI_REFERENCE.md",
+    "docs/ROADMAP.md",
     "npm/package-lock.json",
 ]
 

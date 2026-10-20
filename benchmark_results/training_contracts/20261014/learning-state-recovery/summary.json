@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-learning-state-recovery-regression",
+  "passed": true,
+  "package_version": "0.66.1",
+  "unreleased_checkout": true,
+  "wheel_sha256": "0eeb334fa1fe218423f0e1a7db3c1c5bb20ccfe39fca8adbf9b10a8177a5a420",
+  "verification_job_id": "b47f5d9c8d5a",
+  "full_suite": {
+    "passed": 8488,
+    "optional_skips": 57,
+    "seconds": 264.0
+  },
+  "focused_tests_passed": 524,
+  "wheel_recovery_cases_passed": 87,
+  "new_regression_cases": 87,
+  "type_checked_modules": 385,
+  "regression_file": "tests/unit/test_learning_state_recovery.py",
+  "regression_file_sha256": "8c9cd491cda860e66f94e744afcbf835f7dcf1ca261d95d0d386daf9ccc10c9e",
+  "baseline_failed": 17,
+  "baseline_controls_passed": 6,
+  "checkpoint_apis": [
+    "async-trainer",
+    "shared-runtime"
+  ],
+  "trainers": [
+    "SingleTurnGRPOTrainer",
+    "MultiTurnGRPOTrainer"
+  ],
+  "global_reward_statistics_and_next_policy_update_verified": true,
+  "private_replay_sampling_and_reservoir_rng_verified": true,
+  "fractional_replay_rng_verified": true,
+  "frozen_lwf_reference_weights_and_alias_verified": true,
+  "ewc_state_and_low_precision_statistics_verified": true,
+  "invalid_learning_state_preserves_live_trainer_verified": true,
+  "legacy_global_and_lwf_missing_history_rejected": true,
+  "legacy_replay_loader_stream_retained": true,
+  "strategy_enum_weights_only_loading_verified": true,
+  "real_transformer_wheel_workflow_passed": true,
+  "cpu_exact_resume_verified": true,
+  "cpu_policy_artifact_revalidated": true,
+  "cpu_policy_artifact_sha256": "655776753ede6ebe520af2c0ffeaca8027dd7785f1ff9af10f3fc66720f8ca3b",
+  "native_sampled_workflow": {
+    "passed": true,
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "rollout_batches_per_seed": 160,
+    "gradient_accumulation_steps": 2,
+    "optimizer_updates_per_seed": 80,
+    "all_reloads_verified": true,
+    "mean_success_rate_improvement": 0.4895833333333333,
+    "seed_bootstrap_95": [
+      0.46875,
+      0.5078125
+    ],
+    "claim_scope": "sampled_training_regression_only",
+    "source_provenance": "native_workflow/provenance.json"
+  },
+  "cuda_retested_for_this_change": false,
+  "paid_resources_allocated_for_this_change": false,
+  "representative_quality_demonstrated": false,
+  "production_approved": false
+}

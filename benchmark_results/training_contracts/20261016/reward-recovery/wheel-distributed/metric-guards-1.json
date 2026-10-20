@@ -1,0 +1,51 @@
+[
+  {
+    "case": "missing_key",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "number_type",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "metadata",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "control",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "mixed_native",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "measure",
+    "rejected": true,
+    "error": "Distributed metric schemas or control state differ across ranks"
+  },
+  {
+    "case": "invalid_count",
+    "rejected": true,
+    "error": "Invalid distributed metric schema or statistics"
+  },
+  {
+    "case": "invalid_stat",
+    "rejected": true,
+    "error": "Invalid distributed metric schema or statistics"
+  },
+  {
+    "case": "nonfinite",
+    "rejected": true,
+    "error": "Invalid distributed metric schema or statistics"
+  },
+  {
+    "case": "recovery",
+    "rejected": false
+  }
+]

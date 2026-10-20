@@ -1,0 +1,196 @@
+{
+  "started": 1792247680.7681239,
+  "checked": true,
+  "passed": true,
+  "source_frozen": true,
+  "native_modules": [
+    "test_ddp_checkpoint_state",
+    "test_ddp_continual",
+    "test_ddp_evaluation",
+    "test_resume_rollout_sync",
+    "test_checkpoint_rng_publication",
+    "test_native_checkpoint_safety",
+    "test_runtime_checkpoint_safety",
+    "test_native_checkpoint_metadata",
+    "test_model_checkpoint"
+  ],
+  "operator_modules": [
+    "test_finetune_worker_terminal",
+    "test_cli_finetune_records",
+    "test_finetune_worker_ownership",
+    "test_finetune_interrupted_stop",
+    "test_finetune_studio",
+    "test_finetune_failures",
+    "test_finetune_backends",
+    "test_finetune_recovery",
+    "test_finetune_checkpoint_evaluation",
+    "test_finetune_evaluation",
+    "test_finetune_seeds",
+    "test_finetune_inspection",
+    "test_finetune_mobile",
+    "test_cli_finetune",
+    "test_finetune_quality",
+    "test_finetune_handoff",
+    "test_remote_runpod_executor"
+  ],
+  "integration_modules": [
+    "test_ddp_checkpoint_publication",
+    "test_native_ddp_checkpoint"
+  ],
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-mobile-format.py",
+        "--format-only"
+      ],
+      "started": 1792247680.7683535,
+      "finished": 1792247706.1610286,
+      "exit_code": 0
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "started": 1792247711.5777109,
+      "finished": 1792247741.7636068,
+      "exit_code": 0
+    },
+    {
+      "name": "native",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/unit/test_ddp_checkpoint_state.py",
+        "tests/unit/test_ddp_continual.py",
+        "tests/unit/test_ddp_evaluation.py",
+        "tests/unit/test_resume_rollout_sync.py",
+        "tests/unit/test_checkpoint_rng_publication.py",
+        "tests/unit/test_native_checkpoint_safety.py",
+        "tests/unit/test_runtime_checkpoint_safety.py",
+        "tests/unit/test_native_checkpoint_metadata.py",
+        "tests/unit/test_model_checkpoint.py",
+        "--junitxml=/tmp/stateset-publication-native.xml"
+      ],
+      "started": 1792247743.950191,
+      "finished": 1792247825.8394725,
+      "exit_code": 0
+    },
+    {
+      "name": "operator",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/unit/test_finetune_worker_terminal.py",
+        "tests/unit/test_cli_finetune_records.py",
+        "tests/unit/test_finetune_worker_ownership.py",
+        "tests/unit/test_finetune_interrupted_stop.py",
+        "tests/unit/test_finetune_studio.py",
+        "tests/unit/test_finetune_failures.py",
+        "tests/unit/test_finetune_backends.py",
+        "tests/unit/test_finetune_recovery.py",
+        "tests/unit/test_finetune_checkpoint_evaluation.py",
+        "tests/unit/test_finetune_evaluation.py",
+        "tests/unit/test_finetune_seeds.py",
+        "tests/unit/test_finetune_inspection.py",
+        "tests/unit/test_finetune_mobile.py",
+        "tests/unit/test_cli_finetune.py",
+        "tests/unit/test_finetune_quality.py",
+        "tests/unit/test_finetune_handoff.py",
+        "tests/unit/test_remote_runpod_executor.py",
+        "tests/api/test_finetune_operator.py",
+        "--junitxml=/tmp/stateset-publication-operator.xml"
+      ],
+      "started": 1792247825.8416338,
+      "finished": 1792247975.0170653,
+      "exit_code": 0
+    },
+    {
+      "name": "distributed",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/integration/test_ddp_checkpoint_publication.py",
+        "tests/integration/test_native_ddp_checkpoint.py",
+        "--junitxml=/tmp/stateset-publication-distributed.xml"
+      ],
+      "started": 1792247975.0174582,
+      "finished": 1792248027.3980715,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-publication-wheel.py"
+      ],
+      "started": 1792248027.39856,
+      "finished": 1792248103.473285,
+      "exit_code": 0
+    },
+    {
+      "name": "gates",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-mobile-gates.py"
+      ],
+      "started": 1792248103.4843073,
+      "finished": 1792248125.2078776,
+      "exit_code": 0
+    },
+    {
+      "name": "governance",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=140",
+        "--tb=short",
+        "tests/unit/test_release_governance.py",
+        "--junitxml=/tmp/stateset-publication-governance.xml"
+      ],
+      "started": 1792248125.208328,
+      "finished": 1792248130.1556313,
+      "exit_code": 0
+    },
+    {
+      "name": "workflow",
+      "argv": [
+        "/tmp/stateset-actionlint-1.7.12/actionlint",
+        ".github/workflows/training-contracts.yml"
+      ],
+      "started": 1792248130.1559663,
+      "finished": 1792248130.3206782,
+      "exit_code": 0
+    }
+  ]
+}

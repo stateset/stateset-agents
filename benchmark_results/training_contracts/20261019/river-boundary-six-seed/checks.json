@@ -1,0 +1,11 @@
+{
+  "control_tests_passed": 4,
+  "packaged_source_unchanged_since_warmup": true,
+  "prior_unit_tests_passed": 370,
+  "prior_sdk_integration_tests_passed": 19,
+  "prior_type_checked_sources": 445,
+  "ruff": "passed",
+  "black": "passed",
+  "rollout_budget": "bounded",
+  "preparation_provider_calls": 0
+}

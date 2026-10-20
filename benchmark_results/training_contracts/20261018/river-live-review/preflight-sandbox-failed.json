@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-river-preflight",
+  "provider": "river",
+  "checked_at": "2026-10-18T20:48:07.229148+00:00",
+  "mode": "live",
+  "passed": false,
+  "checks": {
+    "python": {
+      "version": "3.12.12",
+      "passed": true
+    },
+    "credentials": {
+      "configured": true
+    },
+    "river_sdk": {
+      "version": "0.11.0",
+      "passed": true
+    }
+  },
+  "account": {
+    "status": "failed",
+    "available_models": null
+  },
+  "model_access": {
+    "Qwen/Qwen3.5-9B": null
+  },
+  "issues": [
+    "[NET_003] River model access check failed (RiverConnectionError); check credentials and connectivity before retrying | Context: {'provider': 'river'}"
+  ],
+  "request_timeout_seconds": 20.0,
+  "billable_resources_created": 0,
+  "unverified": [
+    "tokenizer_compatibility",
+    "training_correctness",
+    "model_quality",
+    "capacity_and_funding",
+    "hosted_chat_and_streaming"
+  ]
+}

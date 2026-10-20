@@ -1,3 +1,6 @@
+# Retained experiment artifacts include immutable, hash-bound source snapshots.
+exclude: ^benchmark_results/
+
 repos:
   # Black - Python code formatter
   - repo: https://github.com/psf/black

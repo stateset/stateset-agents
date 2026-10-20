@@ -1,0 +1,97 @@
+[
+  {
+    "case_id": "recovery-056c348ec6547c530f298be8",
+    "family": "authorization_revoked",
+    "receipt_type": "unauthorized"
+  },
+  {
+    "case_id": "recovery-16059c24cfec7e1c05a8f2e8",
+    "family": "clean",
+    "receipt_type": "deny"
+  },
+  {
+    "case_id": "recovery-9700b1c1cc25d664dc9af133",
+    "family": "clean",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-01b23c2ac55fd79faeb9e7f3",
+    "family": "clean",
+    "receipt_type": "refund"
+  },
+  {
+    "case_id": "recovery-07031afabf6a6332aea03edb",
+    "family": "lookup_transient",
+    "receipt_type": "deny"
+  },
+  {
+    "case_id": "recovery-825a61a6311bfe22b586797c",
+    "family": "lookup_transient",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-0aafadc87291040a56b30400",
+    "family": "lookup_transient",
+    "receipt_type": "refund"
+  },
+  {
+    "case_id": "recovery-0329db2ee22365b90cb9d431",
+    "family": "lost_ack_applied",
+    "receipt_type": "deny"
+  },
+  {
+    "case_id": "recovery-48373de38364decc930c16ae",
+    "family": "lost_ack_applied",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-66628ba1d8cb8aee9e9e9c65",
+    "family": "lost_ack_applied",
+    "receipt_type": "refund"
+  },
+  {
+    "case_id": "recovery-21ab5a8ba8b383e43ad7294b",
+    "family": "lost_ack_not_applied",
+    "receipt_type": "deny"
+  },
+  {
+    "case_id": "recovery-f2ecd57bb7abc44fbc6411b1",
+    "family": "lost_ack_not_applied",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-0007112faa23f96e4abdb6ee",
+    "family": "lost_ack_not_applied",
+    "receipt_type": "refund"
+  },
+  {
+    "case_id": "recovery-078fc8f39598fe38b9121a66",
+    "family": "reconcile_pending",
+    "receipt_type": "handoff"
+  },
+  {
+    "case_id": "recovery-00231c09dcb71aee5ae3e351",
+    "family": "reconcile_unavailable",
+    "receipt_type": "handoff"
+  },
+  {
+    "case_id": "recovery-19df2055ff33061f02b8c689",
+    "family": "stale_chargeback",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-0246a2d98457432a47926f40",
+    "family": "stale_refund",
+    "receipt_type": "deny"
+  },
+  {
+    "case_id": "recovery-544ab6d70789afea03c92678",
+    "family": "stale_refund",
+    "receipt_type": "escalate"
+  },
+  {
+    "case_id": "recovery-03c804f93239106fb1ca8b67",
+    "family": "unauthorized",
+    "receipt_type": "unauthorized"
+  }
+]

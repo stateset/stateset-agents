@@ -1,0 +1,40 @@
+STATESET / FINE-TUNING STUDIO                                                                                  unused-workspace  /  0 active
+[CONFIGURE] Runs | Tab switches views                                                                                        Ctrl+P Commands
+============================================================================================================================================
+DATASET INSPECTOR / statistics from one captured file
+
+Method: sft | Examples: 512 | Bytes: 1,259,820
+SHA256: 3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef
+Characters per example: min=1797 | median=1808 | p95=1895 | max=1898
+Turns (assistant replies): min=3 | median=3 | p95=3 | max=3
+Duplicate examples: 0
+Definition: parsed messages; IDs ignored
+Messages: user=1536 | assistant=1536
+
+512 declared synthetic industry examples; not independently reviewed customer data.
+Lengths count Unicode characters, not tokens; no tokenizer or model was loaded.
+p95 uses nearest rank. Turn counts are dataset structure, not completed rollouts.
+This report does not establish data quality, model fit or launch readiness.
+The file may change after this snapshot; preparation captures and validates it again.
+
+Private samples hidden. Press e to show a bounded excerpt.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------------------------------------------------------------------------
+Start here: w guided setup | : actions. Preview is free.
+u rescan | e show/hide private sample | Left/Right sample
+PgUp/Dn scroll | Esc back

@@ -1,0 +1,636 @@
+{
+  "accepted": false,
+  "acknowledged_rl_updates": 6,
+  "admitted_trajectories": 4296,
+  "admitted_unreplayed_trajectories": 0,
+  "cohort_tests": 7,
+  "cost_usd": null,
+  "fresh_test_case_clusters": 40,
+  "industry_artifacts_verified": 24,
+  "old_arithmetic_test_cases_unattempted": 308,
+  "old_recovery_test_cases_unattempted": 80,
+  "passed": true,
+  "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+  "planned_seeds": 6,
+  "prior_artifacts_unchanged": 718,
+  "provider_calls_during_review": 0,
+  "qualifying_seeds": 6,
+  "regression_tests": 136,
+  "replayed_outcomes": 4296,
+  "seeds": {
+    "1070261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": true
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 2,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 78,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 2,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 158,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 12,
+      "nonzero_variance_groups": 3,
+      "provider_reported_grad_norm": 0.08928299695253372,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 3,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 73,
+      "training_rollouts_replayed": 76
+    },
+    "1420261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": true
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 2,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 158,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 12,
+      "nonzero_variance_groups": 3,
+      "provider_reported_grad_norm": 0.08128898590803146,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 3,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 73,
+      "training_rollouts_replayed": 76
+    },
+    "1770261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": true
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 1,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 159,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 8,
+      "nonzero_variance_groups": 2,
+      "provider_reported_grad_norm": 0.09733414649963379,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 2,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 74,
+      "training_rollouts_replayed": 76
+    },
+    "20261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": true
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 1,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 159,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 16,
+      "nonzero_variance_groups": 4,
+      "provider_reported_grad_norm": 0.1352500021457672,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 4,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 72,
+      "training_rollouts_replayed": 76
+    },
+    "370261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": false
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 4,
+      "nonzero_variance_groups": 1,
+      "provider_reported_grad_norm": 0.021743088960647583,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 1,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 75,
+      "training_rollouts_replayed": 76
+    },
+    "720261101": {
+      "decisions": {
+        "greedy-validation": true,
+        "stochastic-validation": true,
+        "test": false
+      },
+      "evaluations": {
+        "parent-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 3,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 77,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "parent-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        },
+        "rl-greedy-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-stochastic-validation": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 80,
+          "total": 80,
+          "truncation_rate": 0.0
+        },
+        "rl-test": {
+          "diagnostic_cases": {
+            "completion_outcome": 0,
+            "format": 0,
+            "premature_finish": 0,
+            "reconciliation": 0,
+            "tool_contract": 0,
+            "unsafe_retry": 0
+          },
+          "passed": 160,
+          "total": 160,
+          "truncation_rate": 0.0
+        }
+      },
+      "native_datums": 20,
+      "nonzero_variance_groups": 5,
+      "provider_reported_grad_norm": 0.13083046674728394,
+      "rl_updates": 1,
+      "train_validation_execution_clean": true,
+      "training_errors": {
+        "completion_outcome": 0,
+        "format": 5,
+        "premature_finish": 0,
+        "reconciliation": 0,
+        "tool_contract": 0,
+        "unsafe_retry": 0
+      },
+      "training_passed": 71,
+      "training_rollouts_replayed": 76
+    }
+  },
+  "supervisor_tests": 3,
+  "test_attempted": true
+}

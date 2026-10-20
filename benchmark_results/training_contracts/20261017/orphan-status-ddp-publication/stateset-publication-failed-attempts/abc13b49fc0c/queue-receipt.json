@@ -1,0 +1,236 @@
+{
+  "id": "abc13b49fc0c",
+  "state": "failed",
+  "created": 1792246682.3680217,
+  "started": 1792246835.8940678,
+  "finished": 1792246856.8942728,
+  "owner_pid": 2070098,
+  "owner_start": "23657727",
+  "child_pid": 2077181,
+  "child_start": "23673101",
+  "cwd": "/home/dom/stateset-agents",
+  "command": "[\".venv/bin/python\", \"/tmp/stateset-publication-verify.py\"]",
+  "backend": "local",
+  "lane": "quick",
+  "slots": 2,
+  "memory_gb": 3.0,
+  "resource_key": "stateset-publication-verification",
+  "exit_code": 1,
+  "reason": "",
+  "cancel_requested": 0,
+  "image": "",
+  "timeout": 1800.0,
+  "herdr": "{\"pane_id\": \"w1:pZ\", \"tab_id\": \"w1:tY\", \"workspace_id\": \"w1\"}",
+  "min_free_gb": 0.0,
+  "scratch_gb": 0.3,
+  "wait_context": {},
+  "usage": {
+    "cpu_seconds": 14.5027,
+    "sampled_peak_rss_gb": 0.08761978149414062,
+    "samples": 34,
+    "observed_seconds": 20.93674119998468,
+    "observed_at": 1792246856.8941429,
+    "source": "local_process_tree",
+    "complete": true,
+    "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+  },
+  "policy_version": "protected-verification-v5",
+  "source": {},
+  "wait_history": {
+    "version": 1,
+    "last_at": 1792246835.8940678,
+    "current_category": "job_capacity",
+    "current_blocker": null,
+    "seconds": {
+      "unobserved": 0.17439532279968262,
+      "priority": 117.05912923812866,
+      "job_capacity": 36.292521476745605
+    },
+    "transitions": [
+      {
+        "at": 1792246682.542417,
+        "category": "priority",
+        "blocking_job_id": "2cd2ebb3826c"
+      },
+      {
+        "at": 1792246724.01877,
+        "category": "priority",
+        "blocking_job_id": "3bd376e422bd"
+      },
+      {
+        "at": 1792246740.8069816,
+        "category": "priority",
+        "blocking_job_id": "eba8b6c00ccb"
+      },
+      {
+        "at": 1792246741.4268138,
+        "category": "priority",
+        "blocking_job_id": "3bd376e422bd"
+      },
+      {
+        "at": 1792246746.05987,
+        "category": "priority",
+        "blocking_job_id": "ab6dec4eb221"
+      },
+      {
+        "at": 1792246767.0215461,
+        "category": "priority",
+        "blocking_job_id": "c2a44b8dbd8c"
+      },
+      {
+        "at": 1792246780.122584,
+        "category": "priority",
+        "blocking_job_id": "d2e27fd094fa"
+      },
+      {
+        "at": 1792246786.8044004,
+        "category": "priority",
+        "blocking_job_id": "02392e187b78"
+      },
+      {
+        "at": 1792246796.8264136,
+        "category": "priority",
+        "blocking_job_id": "5df55465f175"
+      },
+      {
+        "at": 1792246799.2710528,
+        "category": "priority",
+        "blocking_job_id": "fe5b32167570"
+      },
+      {
+        "at": 1792246799.6015463,
+        "category": "job_capacity",
+        "blocking_job_id": null
+      }
+    ],
+    "transition_count": 11
+  },
+  "runner_version": "0.26.1.dev0",
+  "lock_protocol": 1,
+  "resource_keys": [
+    "stateset-publication-verification"
+  ],
+  "batch": {},
+  "admission": {
+    "cpu_slots": 6,
+    "max_running": 4,
+    "max_heavy": 2,
+    "memory_gb": 16,
+    "quick_reserve_slots": 2,
+    "quick_reserve_jobs": 2,
+    "quick_reserve_memory_gb": 4,
+    "protected_quick": true,
+    "aging_seconds": 120
+  },
+  "reserve_protocol": 2,
+  "input_protocol": 0,
+  "input_owner_epoch": 0,
+  "storage_state": "failed",
+  "locks": [],
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-publication-verify.py"
+  ],
+  "command_display": ".venv/bin/python /tmp/stateset-publication-verify.py",
+  "log_path": "/home/dom/.local/state/agent-builds/logs/abc13b49fc0c.log",
+  "origin": {
+    "pane_id": "w1:pZ",
+    "tab_id": "w1:tY",
+    "workspace_id": "w1"
+  },
+  "worker_budget": {
+    "environment": {
+      "CARGO_BUILD_JOBS": "2",
+      "RUST_TEST_THREADS": "2"
+    },
+    "cargo_build": {
+      "queue_default": 2,
+      "configured_value": 2,
+      "source": "queue_environment"
+    },
+    "rust_tests": {
+      "queue_default": 2,
+      "configured_value": 2,
+      "source": "queue_environment"
+    },
+    "direct_cargo_command": false,
+    "runtime_concurrency_measured": false,
+    "inspection_scope": "direct Cargo argv; shell scripts, custom harnesses, and subprocess settings are not inspected"
+  },
+  "wait_seconds": 153.52604603767395,
+  "wait_breakdown": {
+    "recorded": true,
+    "seconds": {
+      "unobserved": 0.17439532279968262,
+      "priority": 117.05912923812866,
+      "job_capacity": 36.292521476745605
+    },
+    "total_seconds": 153.52604603767395,
+    "observed_seconds": 153.35165071487427,
+    "coverage": 0.9988640668648701,
+    "current_category": "job_capacity",
+    "current_blocker": null,
+    "last_observed_at": 1792246835.8940678,
+    "transitions": [
+      {
+        "at": 1792246682.542417,
+        "category": "priority",
+        "blocking_job_id": "2cd2ebb3826c"
+      },
+      {
+        "at": 1792246724.01877,
+        "category": "priority",
+        "blocking_job_id": "3bd376e422bd"
+      },
+      {
+        "at": 1792246740.8069816,
+        "category": "priority",
+        "blocking_job_id": "eba8b6c00ccb"
+      },
+      {
+        "at": 1792246741.4268138,
+        "category": "priority",
+        "blocking_job_id": "3bd376e422bd"
+      },
+      {
+        "at": 1792246746.05987,
+        "category": "priority",
+        "blocking_job_id": "ab6dec4eb221"
+      },
+      {
+        "at": 1792246767.0215461,
+        "category": "priority",
+        "blocking_job_id": "c2a44b8dbd8c"
+      },
+      {
+        "at": 1792246780.122584,
+        "category": "priority",
+        "blocking_job_id": "d2e27fd094fa"
+      },
+      {
+        "at": 1792246786.8044004,
+        "category": "priority",
+        "blocking_job_id": "02392e187b78"
+      },
+      {
+        "at": 1792246796.8264136,
+        "category": "priority",
+        "blocking_job_id": "5df55465f175"
+      },
+      {
+        "at": 1792246799.2710528,
+        "category": "priority",
+        "blocking_job_id": "fe5b32167570"
+      },
+      {
+        "at": 1792246799.6015463,
+        "category": "job_capacity",
+        "blocking_job_id": null
+      }
+    ],
+    "transition_count": 11,
+    "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+  },
+  "elapsed_seconds": 21.000205039978027,
+  "age_seconds": 174.52625107765198
+}

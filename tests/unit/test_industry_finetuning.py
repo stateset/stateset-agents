@@ -222,6 +222,12 @@ def test_training_only_receives_training_split_and_records_outcome(
         captured.update(kwargs)
         if fail:
             raise RuntimeError("trainer failed")
+        from tests.sft_fixtures import write_sft_export
+
+        write_sft_export(
+            kwargs["output_dir"],
+            **{key: value for key, value in kwargs.items() if key != "output_dir"},
+        )
         return kwargs["output_dir"]
 
     monkeypatch.setattr(sft, "run_sft", train)
@@ -242,7 +248,7 @@ def test_preview_and_catalog_do_not_import_ml_stack(prepared):
     code = """
 import sys
 from stateset_agents.training.industry import list_industry_recipes, train_industry_project
-assert len(list_industry_recipes()) == 9
+assert len(list_industry_recipes()) == 10
 assert train_industry_project(sys.argv[1])['status'] == 'planned'
 assert not {'torch', 'transformers', 'peft', 'datasets'} & set(sys.modules)
 """
@@ -254,7 +260,7 @@ def test_cli_end_to_end(tmp_path):
 
     runner = CliRunner()
     source, project = tmp_path / "source", tmp_path / "prepared"
-    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 9
+    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 10
     for args in (
         ["industry", "init", "healthcare", str(source)],
         ["industry", "validate", str(source / "examples.jsonl")],
@@ -297,7 +303,17 @@ def test_pinned_revision_reaches_trainer_and_plan(tmp_path, monkeypatch):
     assert train_industry_project(project)["model_revision"] == "a" * 40
     captured = {}
     monkeypatch.setattr(sft, "gpu_available", lambda: True)
-    monkeypatch.setattr(sft, "run_sft", lambda **kwargs: captured.update(kwargs))
+
+    def train(**kwargs):
+        from tests.sft_fixtures import write_sft_export
+
+        captured.update(kwargs)
+        write_sft_export(
+            kwargs["output_dir"],
+            **{key: value for key, value in kwargs.items() if key != "output_dir"},
+        )
+
+    monkeypatch.setattr(sft, "run_sft", train)
     train_industry_project(project, dry_run=False)
     assert captured["model_revision"] == "a" * 40
 
@@ -309,7 +325,8 @@ def test_sft_model_loader_forwards_revision(monkeypatch):
     captured = {}
     sentinel = object()
 
-    def load(cls, name, kwargs):
+    def load(cls, name, kwargs, *, for_training=False):
+        assert for_training is True
         captured.update(kwargs)
         return sentinel, cls
 

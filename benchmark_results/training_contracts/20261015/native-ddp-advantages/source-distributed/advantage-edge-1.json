@@ -1,0 +1,18 @@
+[
+  {
+    "case": "constant",
+    "max_advantage_error": 0.0
+  },
+  {
+    "case": "singleton",
+    "max_advantage_error": 0.0
+  },
+  {
+    "case": "offset",
+    "max_advantage_error": 0.0
+  },
+  {
+    "case": "tiny",
+    "max_advantage_error": 0.0
+  }
+]

@@ -1,0 +1,33 @@
+{
+  "passed": true,
+  "source_tests": 1650,
+  "installed_wheel_tests": 1611,
+  "mobile_cases": 31,
+  "typed_modules": 431,
+  "queue_job": "1e204ba66630",
+  "wheel_sha256": "2cabaeb08a75fad936506aebcaba1d831fb4cae0d0aa88b7e7d28909b088d299",
+  "source_and_tests_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_case_identities_match_source": true,
+  "installed_phone_snapshots_verified": true,
+  "real_terminal_sizes": [
+    "32x16",
+    "40x24"
+  ],
+  "snapshot_sizes": [
+    "32x16",
+    "40x24",
+    "100x16"
+  ],
+  "native_phone_hardware_verified": false,
+  "resize_actions_guarded": true,
+  "late_resize_enter_guarded": true,
+  "numeric_text_preserved": true,
+  "cpu_model_regressions_in_suite": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "count_note": "Source/wheel cases overlap. Phone layouts are exercised in real Linux PTYs; resize timing uses deterministic curses screen simulation. No iOS/Android hardware claim."
+}

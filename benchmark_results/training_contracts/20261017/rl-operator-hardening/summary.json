@@ -1,0 +1,28 @@
+{
+  "retained_at": 1792239822.9279044,
+  "scope": "Focused source hardening; broader installed-wheel acceptance separately queued",
+  "focused_passed": true,
+  "focused_tests": 228,
+  "governance_tests": 8,
+  "typed_modules": 431,
+  "ppo_safety_cases": 32,
+  "focused_job": "66077d002339",
+  "governance_job": "783c846d1757",
+  "full_acceptance_job": "1e204ba66630",
+  "full_state_at_capture": "queued",
+  "source_manifest_matches_refreshed_live_code": true,
+  "source_or_tests_modified_after_focused_checks": false,
+  "live_pane": "w1:p1A",
+  "draft_preserved": true,
+  "paid_training_launched": false,
+  "provider_calls_made": false,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "limitations": [
+    "Online PPO collection unavailable; reference text updates remain experimental",
+    "Exact sampled BPE boundaries and behavior-policy provenance not established by text PPO",
+    "Per-inner-update guards do not roll back previous updates or make two optimizers atomic",
+    "Remote release pin is not remote source/dependency attestation",
+    "Phone behavior does not certify physical phone hardware"
+  ]
+}

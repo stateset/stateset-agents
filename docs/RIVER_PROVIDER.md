@@ -26,6 +26,35 @@ pointer, not downloaded adapter weights. Local `serve --checkpoint` cannot load
 it. River also offers dedicated OpenAI-compatible deployments for authorized
 team accounts; creating a deployment is a separate billable operation.
 
+### Continue supervised training from a checkpoint
+
+River SFT accepts an explicit starting checkpoint in the provider options:
+
+```python
+from pathlib import Path
+
+from stateset_agents.remote.job import RemoteJobSpec
+
+spec = RemoteJobSpec(
+    dataset=Path("boundary-train.jsonl"),
+    base_model="Qwen/Qwen3.5-9B",
+    output_dir=Path("outputs/boundary-sft"),
+    num_epochs=1,
+    lora_r=16,
+    seed=42,
+    harvest={"checkpoint": "outputs/previous-sft", "shuffle": True},
+)
+```
+
+The reference may be a `river://` URI or a directory containing
+`river_checkpoint.json`. StateSet resolves it before provider calls, checks
+declared base-model and LoRA-rank compatibility, and records the resolved URI
+with the captured seed and shuffle settings in both output artifacts. Later
+changes to the pointer do not redirect training or rewrite its lineage.
+This loads starting weights for a new SFT run; `parent_adapter` separately
+records lineage and does not load weights. Remote compatibility and checkpoint
+availability are still checked by River when the model is created.
+
 ## Preflight before a run
 
 Check the local Python version, supported SDK, and presence of `RIVER_API_KEY`
@@ -266,6 +295,14 @@ Artifacts:
 | `stateset_manifest.json` | Dataset and model provenance |
 | `rl_repeats_report.json` | Per-seed results for a repeated campaign |
 
+For the generic SFT executor, the dataset path, byte SHA-256 and nonblank
+source-line count are captured from the same bytes parsed before client checks
+and tokenization. Fetch retains that identity after source edits or deletion,
+instead of hashing the current file. This is source-file lineage; the effective
+batch can contain fewer examples after filtering/rendering. It does not attest
+provider training, replace independent data review, or change the native RL
+study's separate manifest protocol.
+
 `--max-generated-tokens` reserves each request's worst-case generated tokens
 before submitting it. Complete responses with exact token metadata settle to
 actual counts; uncertain requests, incomplete responses, and inexact token
@@ -427,6 +464,112 @@ reference demonstrations, not sampled model successes or evidence of learning.
 Family and case provenance live in metadata, outside model messages. The River
 SFT batch builder supervises assistant actions and masks environment observations.
 
+To prepare a prospective boundary-reasoning SFT experiment offline:
+
+```bash
+stateset-agents benchmark prepare-refund-curriculum \
+  --data-dir outputs/policy-data-42 --output outputs/policy-boundary-42
+stateset-agents benchmark audit-refund-curriculum \
+  --data-dir outputs/policy-data-42 --output outputs/policy-boundary-42
+```
+
+The `adjacent_boundary_v1` curriculum preserves every original training case.
+For eligible, partially refunded, and boundary training cases, it adds contrasts
+for the day before, the inclusive final day, and the day after the same return
+window. Matching facts reuse an existing training case. All demonstrations replay
+successfully; partial refunds still subtract the recorded refunded cents.
+`lineage.json` and `contrast_groups.json` bind these examples to canonical training
+parents. Validation/test facts are used only to reject overlaps, including matches
+with different order IDs. No new window values or held-out examples are added.
+The audit reconstructs facts, lineage, metadata, and exact teacher transcripts;
+updating artifact hashes cannot admit a rewritten example. Publication uses the
+same atomic bundle writer and refuses nonempty output directories.
+
+An opt-in stability curriculum also varies the policy parameter itself:
+
+```bash
+stateset-agents benchmark prepare-refund-curriculum \
+  --policy policy_parameter_contrasts_v1 \
+  --data-dir outputs/policy-data-42 --output outputs/policy-parameters-42
+stateset-agents benchmark audit-refund-curriculum \
+  --policy policy_parameter_contrasts_v1 \
+  --data-dir outputs/policy-data-42 --output outputs/policy-parameters-42
+```
+
+`policy_parameter_contrasts_v1` preserves all original cases and creates a
+three-day contrast around one new window per source order, rotating 3, 10, 21,
+60 and 90 days within each source family. It uses every training family, retaining
+monetary facts, delivery status, chargebacks and customer notes. Higher priority
+rules still override the date comparison. Teacher transcripts preserve exact
+order IDs, perform one resolution, and finish with empty arguments. Derived facts
+and teacher transcripts are reconstructed during audit, using the explicitly
+selected policy. The default `adjacent_boundary_v1` artifacts remain unchanged.
+
+For partial-refund arithmetic, opt into `borrow_boundary_contrasts_v1` with the
+same prepare/audit commands and `--policy` flag. It retains every parameter
+contrast and adds a nine-case payment/refund offset grid for each eligible
+canonical partial-refund source, including partial orders with untrusted notes.
+Thousand-cent anchors and offsets -1/0/+1 exercise decimal borrow boundaries
+on the inclusive final day. Small-order clipping keeps every new order partially
+refunded. Lineage records the exact source, anchors and offsets; audit reconstructs
+the amounts and replays the exact teacher actions. Neither held-out amounts nor
+held-out model answers supply examples. Both earlier policies remain reproducible.
+
+`stateset_agents.data.refund_arithmetic_stress.refund_arithmetic_stress_cases`
+builds a separate prospective arithmetic grid with independent source orders per
+window/day/payment/refund cell. Declare its decimal `quantum`, windows, repetitions
+and full exclusions before execution. For example, 54 validation cases with
+`quantum=10`, windows `(5, 18, 40)`, and one repetition; 108 test cases with
+`quantum=100`, windows `(8, 25, 75)`, and two repetitions. Its metadata stays
+outside model observations. This changes the evaluation distribution and does
+not establish improved learning. New experiments must retain separate ordinary,
+window-stress and arithmetic-stress regression gates so aggregate arithmetic
+gains cannot conceal an existing policy regression.
+
+Fresh stress validation can exercise parameter transfer before test execution:
+
+```python
+from stateset_agents.data.refund_stress import refund_policy_stress_cases
+
+validation = refund_policy_stress_cases(
+    "validation", seed=2026102901, windows=(5, 18, 40),
+    excluded=historical_cases + all_training_cases,
+)
+test = refund_policy_stress_cases(
+    "test", seed=2026102901, windows=(8, 25, 75),
+    excluded=historical_cases + all_training_cases + validation,
+)
+```
+
+Supply the actual complete exclusion lists; the function does not discover past
+experiments. The `policy_window_grid_v1` stress distribution draws an independent
+order for each source-family/window/day cell: 24 cases per window. It rejects ID
+or observable-fact reuse, including aliases. Private `stress` metadata identifies
+the stratum and source hash; lookup never exposes it to the model. These are
+explicitly different evaluation distributions, not canonical study bundles.
+Freeze windows, seeds, exclusions, regression gates and selection rules before
+provider execution. Existing test outcomes must not supply training examples.
+
+The offline stability preparation retained at
+[`river-boundary-stability`](../benchmark_results/training_contracts/20261019/river-boundary-stability/README.md)
+replays the previous study's 576 validation trajectories, prepares 3,072 verified
+training transcripts across the six retained parents, and excludes historical
+and current training facts from 1,824 fresh holdouts. That preparation made no
+provider calls. The subsequent
+[`stability pilot`](../benchmark_results/training_contracts/20261019/river-stability-pilot/README.md)
+used the first parent's 304 held-out cases; the other five parent sets remain
+unevaluated. Preparation establishes dataset integrity; model-quality claims
+require the separate executed experiment and its frozen acceptance gates.
+
+This is a separate synthetic training bundle, not a replacement benchmark split
+or a model quality result. Pass its `train.jsonl` to SFT; do not pass it as a
+canonical study data directory. A new experiment must declare this training
+distribution before execution, retain its validation-selection rule, exclude
+previously exposed cases from its fresh test set, and compare against the original
+SFT baseline. The existing study planner/auditor does not accept this curriculum
+as its original reference arm. No additional provider run is launched by either
+command, and independently reviewed data remains necessary for production claims.
+
 Train and evaluate this SFT baseline (these two commands contact River):
 
 ```bash
@@ -567,6 +710,78 @@ The native example has its own River budgets and recovery controls; it does not
 use the synchronous executor's generated-token ceiling.
 
 ## Evidence and the A+ acceptance gate
+
+### Borrow-boundary continuation pilot, October 20, 2026
+
+The [arithmetic pilot](../benchmark_results/training_contracts/20261020/river-arithmetic-pilot/README.md)
+completed 88 added River SFT updates and stopped at its validation safety gate.
+Both matched arms passed 157/158 validation cases. Arithmetic improved from
+53/54 to 54/54, but the existing window-stress suite declined from 72/72 to 71/72:
+the candidate prioritized an outside-window denial ahead of the already-refunded
+rule. A later correction cannot erase that policy violation. The candidate
+remains unpromoted; all 308 test cases remain unattempted.
+
+Both arms start from the previous unpromoted parameter checkpoint, use 701 rows,
+44 updates, identical family counts and hyperparameters, and local input/target
+exposure within 0.2%. The arithmetic curriculum adds 189 training-only borrow
+contrasts. Fresh arithmetic validation/test equations are distinct and absent
+from candidate training. This is an exploratory single-parent experiment, not
+an A+ result or proof of a general arithmetic gain.
+
+The executed validation stop demonstrates that an aggregate tie and a gain in
+the new suite cannot waive existing policy regressions. Offline review replayed
+1,402 teacher transcripts and 316 validation trajectories and reconstructed both
+fresh holdout sets. The run reserved 323,584 of its 954,368 output-token allowance;
+these are admission reservations, not billed usage. No retries, RL or deployment.
+199 unit/CLI tests, nine pilot checks and full mypy over 447 packaged sources
+passed. Both earlier curriculum policies remain reproducible.
+
+### Policy-parameter stability pilot, October 19, 2026
+
+The completed [one-parent River pilot](../benchmark_results/training_contracts/20261019/river-stability-pilot/README.md)
+failed its prespecified primary acceptance gate. Fixed final checkpoints passed
+164/200 test cases for the retained original parent, 183/200 for additional legacy
+curriculum SFT, and 197/200 for broader policy-parameter SFT. The trained arms
+share the parent, 512 rows, 32 updates, family counts, seed and hyperparameters;
+input and assistant-token exposure differ by 0.063% and 0.053%, respectively.
+Validation admitted test evaluation only after both safety comparisons passed.
+
+The broader curriculum gains seven percentage points over control, but partial
+refunds decline from 19/19 to 18/19 and stress cases sourced from partial-refund
+orders decline from 8/9 to 7/9. Eight-day stress truncation also increases from
+zero cases to one. Those overlapping strata fail the frozen nonregression gate;
+the comparison against the original passes. The candidate remains unpromoted.
+
+All 64 added SFT updates completed in about 21.6 minutes with no retries or
+deadline extension. Offline review replayed 1,024 training transcripts and 912
+evaluation trajectories and recomputed each gate. Eight new control/gate tests
+passed. The run reserved 933,888 output tokens; this is an admission allowance,
+not generated usage or billed dollars. Actual dollar cost remains unavailable.
+This is one exploratory synthetic parent, with no RL learning or deployment.
+Fixing the remaining regressions requires training-only evidence and fresh
+evaluation; these exposed holdouts must not supply new supervision.
+
+### Six-parent continuation replication, October 19, 2026
+
+The retained [paired SFT study](../benchmark_results/training_contracts/20261019/river-boundary-six-seed/README.md)
+compares original checkpoints, repeated-original-data SFT, and boundary-contrast
+SFT across six retained, independently trained parents. Continuations use new
+shuffle seeds and fresh holdouts. The two trained arms have identical rows,
+16 updates and hyperparameters, with input and assistant-token exposure within
+0.5% per pair. These are conditional continuations, not six new base-model
+initializations.
+
+On 768 fresh test cases per arm, original checkpoints passed 689 (89.7%), the
+repetition control 719 (93.6%), and boundary SFT 747 (97.3%). Boundary SFT passed
+the secondary gate against original checkpoints in all six seeds, with corrected
+p=0.046875. The primary boundary-versus-repetition gate failed: four seed wins,
+two losses, and family, policy-violation and truncation regressions. Its higher
+pooled score does not establish reliable superiority over matched continued SFT.
+
+The audit replayed 3,030 training transcripts and 2,880 evaluation trajectories.
+All 192 added SFT updates completed in about 37 minutes without retries. This
+synthetic policy result does not establish independently reviewed industry
+quality, RL gains, live optimizer recovery, or A+ production readiness.
 
 ### Prepare and audit the entire campaign
 
@@ -803,6 +1018,25 @@ remains visible and is not proof that an update occurred. These counts describe
 the run, not necessarily the selected validation checkpoint, and do not establish
 nonzero gradients or held-out learning gains.
 
+Native training manifests now declare the selection policy
+`initial_and_unskipped_batches_v1`. Selection considers the initial checkpoint
+and batches whose optimizer update was not confirmed skipped, using highest
+validation reward with earliest-batch ties. A higher resampled validation score
+after `train/updated=0` cannot promote unchanged weights. Every validation result,
+including excluded batches, still requires complete case coverage and trace
+replay. Unknown recovery activity stays eligible and remains explicitly unknown.
+
+Before test sampling, `validation_selection.json` records eligible and excluded
+batches, the selected checkpoint, source evidence hashes, and the optimizer
+activity observed through the selected batch. The test report includes this
+selection record's hash and `selected_training_activity`. Selecting batch zero
+reports `initial_checkpoint` with zero prior native RL updates even if later batches
+updated the model. The study auditor independently recomputes and verifies the
+selection record and report fields; a whole-run update count cannot establish
+that selected weights received RL updates. This protocol change applies to new
+runs. Prior study results retain their frozen implementations and selection
+rules; they are not rescored or relabeled as new evidence.
+
 The study auditor recomputes activity from validated `training_metrics.json`
 records and recovery receipts. Both `training_activity.json` and the test report's
 copy must match that summary exactly, including count types. Known zero-update
@@ -841,6 +1075,12 @@ remain separate gates. Auditing never contacts River or retrains a model.
 
 ### Native SDK checks without paid calls
 
+For a separate agent-system approach to the arithmetic pilot's amount and
+priority errors, see [Explicit refund resolution tool](REFUND_RESOLUTION_TOOL.md).
+It delegates policy calculation to a trusted tool and includes a local sandbox
+example. Its scripted tool checks are separate from the River model scores;
+the arithmetic pilot's test cases remain unattempted.
+
 The `river-native` CI job checks both River 0.11.0 and the latest available version
 within the supported `>=0.11.0,<0.12` range on Python 3.12. Each matrix entry runs the
 real River rollout engine and trainer against a scripted transport. It checks
@@ -849,6 +1089,16 @@ errors, durable admission, regeneration of interrupted sandboxes, partial
 training recovery, and fully committed recovery without re-emitted metrics.
 Client construction is forbidden in the suite. No credentials, model downloads,
 GPU, or paid inference/training are required.
+
+Run `python scripts/check_asyncio_wakeup.py` before the SDK checks. It verifies
+that a worker thread can send a wakeup byte through a local socket pair, without
+opening a listener or connecting to an external service. A sandbox can allow
+main-thread socket writes while denying worker-thread writes. Asyncio suppresses
+those wakeup errors; completed checkpoint writes can then appear stalled until
+another timer wakes the loop. A failed probe exits with an actionable error.
+Use an execution environment that permits local worker-thread IPC; keep the
+suite's provider-client and RPC guards enabled. Increasing test deadlines or
+disabling filesystem sync does not resolve that permission restriction.
 
 Run it in a dedicated environment; River's SDK dependencies can conflict with
 static-analysis tools in the full `dev` extra:
@@ -866,8 +1116,9 @@ also checks SDK import before running tests, so missing dependencies cannot
 silently turn that job green. These are native SDK integration checks with
 synthetic model responses and updates, not learning or provider recovery proof.
 
-Historical live SFT/RL runs are documented in `PROOFS.md`; they do not provide
-fresh live-training evidence for the revised driver and recovery policy.
+Historical live SFT/RL runs are documented in `PROOFS.md`; the dated study above
+provides live SFT continuation evidence. Scripted SDK checks do not establish
+live learning or optimizer continuity during a live recovery.
 
 Before calling this production A+, run the same held-out commerce benchmark for
 base, SFT, rejection-sampling SFT, and RL under matched token budgets and at least

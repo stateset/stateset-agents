@@ -1,10 +1,9 @@
 """Packaged Kimi-K3 GSPO starter helpers.
 
-Kimi K3 launched on Moonshot's product surface on 2026-07-16 (~2.5T-param MoE,
-1M+ token native context per press coverage), but HuggingFace weights, model
-card, and license are not yet published. ``KIMI_K3_BASE_MODEL`` and the profile
-presets below are provisional mirrors of the Kimi-K2.6 starter pending the
-official release.
+The released Kimi-K3 checkpoint uses hybrid KDA/MLA attention and native
+MXFP4 experts. Targets below match its pinned index, replacing the provisional
+K2.6 copy. Training remains blocked pending a validated packed-weight loader
+and KDA backward-kernel contract; use ``frontier-models`` to inspect readiness.
 
 Built from a :class:`StarterSpec`; see ``starter_factory``.
 """
@@ -14,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from stateset_agents.core.frontier_models import get_frontier_model
 from stateset_agents.training import starter_common as _common  # noqa: F401
 from stateset_agents.training.config import (  # noqa: F401  (patched by tests)
     TrainingConfig,
@@ -26,6 +26,7 @@ from stateset_agents.training.starter_factory import (
 )
 
 logger = logging.getLogger(__name__)
+_KIMI = get_frontier_model("kimi-k3")
 
 KIMI_K3_BASE_MODEL = "moonshotai/Kimi-K3"
 KIMI_K3_TASK_CHOICES = [
@@ -39,7 +40,11 @@ KIMI_K3_STARTER_PROFILE_CHOICES = ["balanced", "memory", "quality"]
 
 def validate_kimi_k3_config(config: Any) -> list[str]:
     """Validate a Kimi-K3 first-run configuration."""
-    warnings: list[str] = []
+    warnings: list[str] = list(_KIMI.blockers)
+    if config.use_4bit or config.use_8bit:
+        warnings.append(
+            "bitsandbytes re-quantization is unsupported for native MXFP4 Kimi-K3"
+        )
 
     if config.starter_profile not in KIMI_K3_STARTER_PROFILE_CHOICES:
         warnings.append(
@@ -88,24 +93,16 @@ SPEC = StarterSpec(
     task_choices=KIMI_K3_TASK_CHOICES,
     profile_choices=KIMI_K3_STARTER_PROFILE_CHOICES,
     default_output_dir="./outputs/kimi_k3_gspo",
-    lora_target_modules=[
-        "q_proj",
-        "k_proj",
-        "v_proj",
-        "o_proj",
-        "gate_proj",
-        "up_proj",
-        "down_proj",
-    ],
+    lora_target_modules=list(_KIMI.attention_targets),
     profile_descriptions={
-        "balanced": "Default Kimi-K3 first run with QLoRA-friendly settings and a moderate context budget.",
+        "balanced": "Default Kimi-K3 first run configuration preview; released MXFP4 training loader is blocked.",
         "memory": "Lower-memory Kimi-K3 first run with smaller rollout groups and shorter context.",
         "quality": "Heavier Kimi-K3 first run with larger context and rollout sizes when you have more headroom.",
     },
     profile_overrides={
-        "balanced": {"use_4bit": True},
+        "balanced": {"use_4bit": False},
         "memory": {
-            "use_4bit": True,
+            "use_4bit": False,
             "per_device_train_batch_size": 1,
             "gradient_accumulation_steps": 24,
             "num_generations": 2,
@@ -117,7 +114,7 @@ SPEC = StarterSpec(
             "learning_rate": 2e-06,
         },
         "quality": {
-            "use_4bit": True,
+            "use_4bit": False,
             "per_device_train_batch_size": 1,
             "gradient_accumulation_steps": 32,
             "num_generations": 6,
@@ -148,7 +145,7 @@ SPEC = StarterSpec(
         "clip_range_right": 0.0003,
         "save_steps_every": 10,
     },
-    extra_fields=(),
+    extra_fields=(("model_revision", "str | None", _KIMI.revision),),
     wandb_base_tags=("kimi-k3", "gspo"),
     wandb_project_default="kimi_k3-gspo",
     validate=validate_kimi_k3_config,

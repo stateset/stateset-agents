@@ -71,6 +71,7 @@ class AgentConfig:
     # Long-term planning
     enable_planning: bool = False
     planning_config: dict[str, Any] | None = None
+    chat_template_kwargs: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         """Validate configuration after initialization."""
@@ -78,6 +79,27 @@ class AgentConfig:
 
     def validate(self) -> None:
         """Validate all configuration parameters."""
+        if self.chat_template_kwargs is not None:
+            reserved = {
+                "conversation",
+                "messages",
+                "tokenize",
+                "add_generation_prompt",
+                "return_tensors",
+                "return_dict",
+                "return_assistant_tokens_mask",
+                "chat_template",
+            }
+            if (
+                not isinstance(self.chat_template_kwargs, dict)
+                or any(not isinstance(key, str) for key in self.chat_template_kwargs)
+                or reserved.intersection(self.chat_template_kwargs)
+            ):
+                raise ConfigValidationError(
+                    "chat_template_kwargs",
+                    self.chat_template_kwargs,
+                    "must be a dict of template options without tokenizer control arguments",
+                )
         if not self.model_name or not isinstance(self.model_name, str):
             raise ConfigValidationError(
                 "model_name",

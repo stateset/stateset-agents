@@ -25,7 +25,7 @@ def _error(exc: Exception) -> None:
 
 @industry_app.command("list")
 def list_recipes() -> None:
-    """List the nine supported industry starter recipes."""
+    """List supported industry starter recipes."""
     from dataclasses import asdict
 
     from stateset_agents.training.industry import list_industry_recipes
@@ -44,6 +44,65 @@ def show_recipe(industry: str = typer.Argument(...)) -> None:
         recipe = get_industry_recipe(industry)
         _emit({**asdict(recipe), "system_prompt": recipe.system_prompt})
     except ValueError as exc:
+        _error(exc)
+
+
+@industry_app.command("generate")
+def generate_datasets(
+    industry: str = typer.Argument("all", help="all, ecommerce, logistics, or saas."),
+    output: Path = typer.Option(..., "--output", "-o", help="Fresh dataset directory."),
+    seed: int = typer.Option(42, min=0),
+    train_count: int = typer.Option(512, min=8),
+    validation_count: int = typer.Option(64, min=8),
+    test_count: int = typer.Option(128, min=8),
+    model: str = typer.Option(
+        "qwen3.5-2b", help="Registered model preset for local SFT."
+    ),
+) -> None:
+    """Generate replay-checked fictional support datasets offline, without training."""
+    import asyncio
+
+    from stateset_agents.data.industry_synthetic import (
+        DOMAINS,
+        generate_industry_datasets,
+    )
+
+    try:
+        result = asyncio.run(
+            generate_industry_datasets(
+                output,
+                domains=tuple(DOMAINS) if industry == "all" else (industry,),
+                seed=seed,
+                train_count=train_count,
+                validation_count=validation_count,
+                test_count=test_count,
+                model=model,
+            )
+        )
+        _emit(
+            {
+                "directory": str(output),
+                "domains": result["domains"],
+                "counts_per_domain": result["counts_per_domain"],
+                "synthetic": True,
+                "review_status": result["review_status"],
+                "provider_calls": 0,
+            }
+        )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        _error(exc)
+
+
+@industry_app.command("audit-datasets")
+def audit_datasets(output: Path = typer.Argument(...)) -> None:
+    """Reconstruct generated datasets and verify their split/provenance boundaries."""
+    import asyncio
+
+    from stateset_agents.data.industry_synthetic import audit_industry_datasets
+
+    try:
+        _emit(asyncio.run(audit_industry_datasets(output)))
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         _error(exc)
 
 

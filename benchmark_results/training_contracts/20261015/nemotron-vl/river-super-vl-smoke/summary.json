@@ -1,0 +1,75 @@
+{
+  "model": "nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4",
+  "benchmark": "refund-policy-v2",
+  "seed": 42,
+  "scope": "One-batch synthetic mechanics study. No representative quality or local BF16 GPU training certification.",
+  "training_activity": {
+    "completed_batches": 1,
+    "observed_optimizer_updates": 1,
+    "observed_skipped_batches": 0,
+    "schema_version": 1,
+    "scope": "SDK-reported run activity; not proof of nonzero gradients, selected-checkpoint changes, learning gains, or provider cost",
+    "status": "updates_observed",
+    "unknown_update_batches": 0
+  },
+  "optimizer": {
+    "optimizer/step": 1.0,
+    "optimizer/grad_norm": 0.06594276428222656,
+    "optimizer/grad_norm_finite": 1.0,
+    "optimizer/lr": 1e-05,
+    "train/datums": 16.0,
+    "train/active_sequences": 32.0,
+    "train/updated": 1.0
+  },
+  "training_checkpoint": {
+    "path": "river://abb7da7a-30de-4641-89fb-61bb11d9f26a/weights/rl-fd84437d843a-batch-00000001-9b4c7ac4-7be7-470a-a0d9-922d7e9c41e5",
+    "step": 1,
+    "checkpoint_type": "training",
+    "policy_version": {
+      "id": "817c99a2-5786-484d-8466-fa1ee79357d8",
+      "lineage_id": "e60b8b28-cc49-495e-a986-1fce997a63ec",
+      "step": 1,
+      "parent_id": "e60b8b28-cc49-495e-a986-1fce997a63ec"
+    }
+  },
+  "validation": [
+    {
+      "step": 0,
+      "reward_mean": 0.5
+    },
+    {
+      "step": 1,
+      "reward_mean": 0.5
+    }
+  ],
+  "selected_step": 0,
+  "selection_note": "Validation tied; the deterministic tie-break retained the baseline. Test results belong to step 0, not the trained checkpoint.",
+  "test": {
+    "passed": 3,
+    "total": 4,
+    "success_rate": 0.75,
+    "success_wilson_95": [
+      0.30064184258240184,
+      0.9544127391902995
+    ],
+    "violation_rate": 0.25,
+    "truncation_rate": 0.25
+  },
+  "rollout_budget": {
+    "admitted_trajectories": 44,
+    "fingerprint": "90b58879d3874c4a9e5b790a93cc08b791de11c6c225e8a56045b1477a82ed5e",
+    "limit": 98304,
+    "reserved_generated_tokens": 45056,
+    "schema_version": 1,
+    "trajectory_tokens": 1024
+  },
+  "queue": {
+    "id": "606aee50acec",
+    "runner_version": "0.15.0",
+    "state": "succeeded",
+    "exit_code": 0,
+    "wait_seconds": 698.636372089386,
+    "elapsed_seconds": 296.54014348983765,
+    "command_display": "env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python /tmp/stateset-river-super-vl-smoke-retry1.py"
+  }
+}

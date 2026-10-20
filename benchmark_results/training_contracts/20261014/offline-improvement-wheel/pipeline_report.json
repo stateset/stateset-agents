@@ -1,0 +1,71 @@
+{
+  "schema_version": 1,
+  "completed": true,
+  "production_approved": false,
+  "data_manifest_sha256": "f687b2c8a4a87288244c6daa6fe1d0c02527c665234570d7956dd224c6e520a6",
+  "artifact_sha256": "3428a3016c1e501ba82f0adeabedf257b24a6167c78724637758be27cd5e3df0",
+  "artifact": "policy",
+  "evaluation": {
+    "synthetic": true,
+    "outcomes": [
+      {
+        "case_id": "1ed9e60a014d591d89cf84eed06061f7f183e0adae3090fee0854591c6feee08",
+        "response": "refund",
+        "expected": "refund"
+      },
+      {
+        "case_id": "7e50882df264a1332288822f8da898aaa29259c4301b0d940ba6c504ce2cd120",
+        "response": "deny",
+        "expected": "deny"
+      }
+    ],
+    "successes": 2
+  },
+  "baseline_evaluation": {
+    "synthetic": true,
+    "outcomes": [
+      {
+        "case_id": "1ed9e60a014d591d89cf84eed06061f7f183e0adae3090fee0854591c6feee08",
+        "response": "eligible",
+        "expected": "refund"
+      },
+      {
+        "case_id": "7e50882df264a1332288822f8da898aaa29259c4301b0d940ba6c504ce2cd120",
+        "response": "ineligible",
+        "expected": "deny"
+      }
+    ],
+    "successes": 0
+  },
+  "baseline_artifact_sha256": "447851437cde079b0b0eec4a9b97259d7eba0d1ae0779899bda83b9d33122114",
+  "serving": {
+    "reloaded": true,
+    "served": true,
+    "scope": "local inference",
+    "response": "refund"
+  },
+  "stages": [
+    {
+      "stage": "baseline_evaluation",
+      "status": "completed",
+      "artifact_sha256": "447851437cde079b0b0eec4a9b97259d7eba0d1ae0779899bda83b9d33122114"
+    },
+    {
+      "stage": "sft",
+      "status": "completed"
+    },
+    {
+      "stage": "rl",
+      "status": "completed"
+    },
+    {
+      "stage": "evaluation",
+      "status": "completed",
+      "report_sha256": "a1432b268112f02aba49932a4b494a62d7b086365c5620d2eb57eb10ecad02b2"
+    },
+    {
+      "stage": "reload_and_serve",
+      "status": "completed"
+    }
+  ]
+}

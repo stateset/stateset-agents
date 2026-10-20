@@ -1,0 +1,75 @@
+"""Apply reviewed staged lifecycle work without racing frozen acceptance."""
+from pathlib import Path
+import ast
+import fcntl
+import hashlib
+import json
+
+ROOT = Path('/home/dom/stateset-agents')
+STAGES = [Path('/tmp/stateset-interrupted-stop-fixes'), Path('/tmp/stateset-worker-ownership-fixes'), Path('/tmp/stateset-native-checkpoint-fixes')]
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+files = {}
+for stage in STAGES:
+    manifest = json.loads((stage/'manifest.json').read_text())
+    if 'files' in manifest:
+        records = manifest['files']
+    else:
+        records = {name:{'base_sha256':manifest['source_baseline'].get(name), 'staged_sha256':digest}
+                   for name,digest in manifest['staged_sha256'].items()}
+    for name, row in records.items():
+        assert name not in files, 'Overlapping staged ownership: '+name
+        assert sha(ROOT/name) == row['base_sha256'], 'Changed canonical baseline: '+name
+        assert sha(stage/name) == row['staged_sha256'], 'Changed staged content: '+name
+        files[name] = {'stage':str(stage), **row}
+
+# Prepare every update before writing the first file.
+updates = {}
+for name, row in files.items():
+    destination = ROOT/name
+    updates[destination] = (Path(row['stage'])/name).read_bytes()
+
+python_files = [name for name in files if name.endswith('.py')]
+formatter = Path('/tmp/stateset-studio-mobile-format.py')
+source = formatter.read_text()
+node = next(node for node in ast.parse(source).body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='files' for t in node.targets))
+values = list(dict.fromkeys([*ast.literal_eval(node.value), *python_files]))
+updates[formatter] = source.replace(ast.get_source_segment(source,node), 'files = '+repr(values), 1).encode()
+gates = Path('/tmp/stateset-studio-mobile-gates.py')
+source = gates.read_text()
+node = next(node for node in ast.parse(source).body if isinstance(node,ast.For) and isinstance(node.target,ast.Name) and node.target.id=='name')
+values = list(dict.fromkeys([*ast.literal_eval(node.iter), *python_files]))
+updates[gates] = source.replace(ast.get_source_segment(source,node.iter), repr(values), 1).encode()
+
+new_modules = ['tests/unit/test_finetune_worker_ownership.py', 'tests/unit/test_finetune_interrupted_stop.py', 'tests/unit/test_native_checkpoint_safety.py', 'tests/unit/test_resume_rollout_sync.py', 'tests/unit/test_multi_turn_trainer.py']
+for filename in ('stateset-studio-mobile-prepare.py', 'stateset-studio-mobile-finish.py'):
+    path = Path('/tmp')/filename
+    source = path.read_text()
+    nodes = [node for node in ast.parse(source).body if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id in {'regressions','wheel_tests'} for t in node.targets) and isinstance(node.value,ast.List)]
+    assert nodes, filename
+    replacements = []
+    for node in nodes:
+        values = list(dict.fromkeys([*new_modules, *ast.literal_eval(node.value)]))
+        replacements.append((ast.get_source_segment(source,node.value), repr(values)))
+    for old, new in replacements:
+        assert old in source
+        source = source.replace(old, new, 1)
+    updates[path] = source.encode()
+
+workflow = ROOT/'.github/workflows/training-contracts.yml'
+source = workflow.read_text()
+marker = '          tests/unit/test_runtime_checkpoint_safety.py\n'
+assert source.count(marker) == 1
+source = source.replace(marker, ''.join('          '+name+'\n' for name in new_modules)+marker, 1)
+updates[workflow] = source.encode()
+
+for destination, content in updates.items():
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_bytes(content)
+
+Path('/tmp/stateset-lifecycle-handoff.json').write_text(json.dumps({'files':files, 'new_acceptance_modules':new_modules},indent=2)+'\n')
+print('Applied', len(files), 'reviewed staged files and updated source/wheel/CI verification selections')

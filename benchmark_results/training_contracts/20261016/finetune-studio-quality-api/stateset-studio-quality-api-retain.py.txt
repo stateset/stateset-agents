@@ -1,0 +1,150 @@
+"""Retain completed staged acceptance and sanitized queue evidence."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source = Path(sys.argv[1])
+final_job, prepare_job, *wheel_jobs = sys.argv[2:]
+assert len(wheel_jobs) == 3
+v = json.loads((source/'verification.json').read_text())
+prepared = json.loads((source/'prepare-verification.json').read_text())
+assert v['phase']=='complete' and v['passed'] and prepared['phase']=='prepare' and prepared['passed']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package == v['source_sha256'] == prepared['source_sha256']
+assert tests == v['test_source_sha256'] == prepared['test_source_sha256']
+assert 'Success: no issues found in 425 source files' in (source/'types.log').read_text()
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+    assert packed == package
+    for name in ['stateset_agents/config/presets/experiments/support_recovery_preflight6.json', 'stateset_agents/evaluation/rubrics/support_rubric_v4.md']:
+        assert wheel.read(name) == (root/name).read_bytes()
+
+def counts(filename):
+    suites = list(ET.parse(source/filename).getroot().iter('testsuite'))
+    assert not sum(int(s.get('errors',0))+int(s.get('failures',0)) for s in suites)
+    skipped = sum(int(s.get('skipped',0)) for s in suites)
+    return dict(passed=sum(int(s.get('tests',0)) for s in suites)-skipped, skipped=skipped)
+
+receipts = []
+for handle in [prepare_job, *wheel_jobs, final_job, '6678588e5e5c']:
+    record = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    assert record['state']=='succeeded' and record['exit_code']==0
+    receipts.append({key:record.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason']})
+assert not json.loads((source/'preflight6-plan.json').read_text())['ready_for_paid_execution']
+live = Path('/tmp/stateset-studio-quality-api-live.txt')
+draft = Path('/tmp/stateset-studio-quality-api-draft.txt')
+summary = dict(passed=True, prepare_queue_job=prepare_job, wheel_queue_jobs=wheel_jobs, final_queue_job=final_job, source_regressions=counts('regressions.xml'), wheel_regressions=counts('wheel.xml'), typed_modules=425, source_unchanged=True, test_sources_unchanged=True, wheel_source_matches=True, wheel_profile_matches=True, wheel_rubric_matches=True, wheel_case_identities_match=True, wheel_sha256=v['wheel_sha256'], real_terminal_dataset_inspection_verified=True, guided_setup_verified=True, paired_quality_evidence_verified=True, cooperative_local_stop_verified=True, authenticated_operator_http_verified=True, real_terminal_guide_quality_stop_escape_verified=True, dataset_format_diagnostics_verified=True, live_setup_status_verified=True, live_herdr_refreshed=live.exists(), draft_preserved=json.loads(draft.read_text())['draft_preserved'] if draft.exists() else None, gpu_verified=False, quality_gain_verified=False, paid_run_launched=False, count_note='Targeted source and wheel counts overlap; provider/worker boundaries use CPU fixtures and mocks.')
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-quality-api'
+out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+for name in ['wheel-harness-repair.json','verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','regressions.xml','wheel.xml','wheel-shards.json','wheel-shard-1.xml','wheel-shard-2.xml','wheel-shard-3.xml','wheel-shard-1.log','wheel-shard-2.log','wheel-shard-3.log','regressions.log','gates.log','types.log','wheel-origin.log','wheel-test-configuration.json','workflow-lint.log','reward-audit.json','preflight6-plan.json','free-recovery-plan.log','studio-snapshot.log','studio-narrow-snapshot.log','agent-schema.log','agent-models.log','agent-validation.log','agent-invalid-validation.log','agent-data-inspection.log','agent-data-samples.log','agent-workflow.log','operator-fixture.log','agent-quality-import.log','agent-quality-reverify.log','agent-stop-stale.log','agent-stop.log','agent-stop-repeat.log']:
+    shutil.copy2(source/name,out/name)
+shutil.copy2(source/'agent-data-invalid.log',out/'agent-data-invalid.log')
+for name in ['stateset-studio-quality-api-prepare.py','stateset-studio-quality-api-finish.py','stateset-studio-quality-api-retain.py','stateset-studio-quality-api-gates.py','stateset-studio-quality-api-wheel.py','stateset-studio-quality-api-harness-repair.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+shutil.copy2(source/'executed-prepare.py',out/'executed-prepare.py.txt')
+shutil.copytree(source/'wheel-attempts',out/'wheel-attempts')
+for path,name in [(live,'herdr-live.txt'),(draft,'herdr-draft.txt')]:
+    if path.exists():
+        shutil.copy2(path,out/name)
+focused = Path('/tmp/stateset-studio-quality-focused-final.xml')
+if focused.exists():
+    shutil.copy2(focused,out/'focused.xml')
+for previous in sorted(Path('/tmp').glob('stateset-studio-quality-api-20261016*')):
+    if previous == source or not (previous/'verification.json').exists():
+        continue
+    prior=json.loads((previous/'verification.json').read_text())
+    if prior.get('passed'):
+        continue
+    attempt=out/'verification-attempts'/previous.name
+    attempt.mkdir(parents=True)
+    for name in ['verification.json','gates.log','types.log','stage-checkpoint.json','regressions.log','regressions.xml']:
+        if (previous/name).exists():
+            shutil.copy2(previous/name,attempt/name)
+(out/'README.md').write_text(f'''# Fine-tuning quality, setup and operator API: acceptance
+
+{summary['source_regressions']['passed']} targeted source regressions and
+{summary['wheel_regressions']['passed']} installed-wheel regressions passed
+(counts overlap). All 425 package modules passed typing. Repository Ruff,
+serial Black/isort checks for 13 changed Python files, hygiene, release governance,
+stable API compatibility and workflow lint passed.
+
+Preparation job `{prepare_job}` froze package/test Python and three assets,
+ran source contracts and built/installed the matching wheel. Three queued wheel
+groups cover exactly the selected source-case identities, without skips, errors,
+failures or duplicates. Final job `{final_job}` combined reports, checked frozen
+identities again, and ran real installed CLI checks, the three-pair historical
+reward audit and free recovery planner. Sanitized queue receipts retain commands,
+IDs, timings and outcomes. Earlier Ruff, type-check, metadata-expectation and type-floor failures are retained
+under verification-attempts. The first isolated wheel harness omitted the shared
+root fixtures, causing an existing API test to attempt loading its placeholder
+model; offline mode rejected that call. Earlier wheel results and sanitized
+receipts are retained under wheel-attempts. The harness was corrected to copy
+the exact frozen root fixtures, including API development mode, module restoration
+and cost-ledger isolation, then all wheel groups were rerun. Source Python and
+package bytes did not change. The fixture hashes, repair record and originally
+executed preparation helper are retained. These were code/fixture errors, not
+queue failures.
+
+## Behavior covered
+
+- Guided setup (`w`) checks settings, dataset, runtime, review and evaluation
+  in the background. Stale results require refreshing; inspection cannot launch
+  a worker. Real PTYs exercise the guide at 74x44 and 110x32.
+- Quality (`e`, then `f` to import) rehashes completed local weights and binds
+  one candidate to the reviewed model, plan, completion and artifact inventory.
+  Paired test reports expose successes, regressions, recorded rewards, declared
+  study gates and significance information. Raw cases are not displayed; failure
+  handles are hashes. Private receipts reject malformed input and changed
+  artifacts/bindings. The synthetic regression fixture has higher recorded reward
+  yet 32 regressions and a -1 mean success gain, and remains a failed study.
+  Tests cover one/six seeds, malformed reports, file limits, symlinks/FIFOs,
+  no overwrite on invalid import, concurrent UI work and narrow rendering.
+- Local stop (`k`) reviews an exact run and plan checksum. Prepared runs become
+  cancelled, queued workers check before loading models, SFT stops at a callback
+  boundary and native RL saves a recovery checkpoint at a committed optimizer
+  boundary. Stop requests are idempotent; remote requests, stale code/reviews and
+  malformed receipts are refused. Real PTYs Escape the stop review without
+  creating a request. The installed CLI stops only an unlaunched synthetic run;
+  no queue jobs or real training processes are cancelled.
+- The `/finetune` HTTP router uses strict authentication, admin authorization and
+  an explicitly configured server workspace. Capabilities/config validation,
+  bounded run metadata, retained setup inspection, paired-evidence upload/recheck
+  and local stop have controlled structured failures. Tests cover request limits,
+  finite JSON, path restrictions, known-secret redaction, OpenAPI bodies and
+  cancellation ownership. Metadata and stop stay responsive while an inspection
+  owns the single artifact-hashing slot. No HTTP launch or arbitrary server path
+  submission is offered.
+
+The real installed CLI also validates drafts, exposes the shared configuration
+schema, inspects a synthetic dataset with opt-in samples, returns a safe malformed
+second-line diagnostic, and produces wide/narrow studio snapshots. Existing
+backend, comparison, logging, dataset, worker, tiny CPU SFT, provider, reward and
+recovery contracts provide regression coverage. Provider/worker boundaries use
+CPU fixtures and mocks. Source and wheel counts overlap.
+
+## Live pane and limits
+
+The live Herdr split was refreshed: {summary['live_herdr_refreshed']}; its private
+draft was preserved: {summary['draft_preserved']}. It has no retained runs or
+configured dataset. The new guide shows the real blocked/unchecked setup; quality
+and stop panels use temporary test runs in automated terminal acceptance.
+
+This verifies software behavior, not an A+ market ranking or a model-quality
+improvement. Reviewed provenance, judge identity, other seeds' artifacts and study
+independence are recorded claims requiring external review. The TUI does not
+run a judge, select the best checkpoint or resume training. Remote stop and
+provider-hosted artifact evaluation remain unsupported. No paid run, live provider
+authentication or GPU certification occurred. The free recovery planner still
+blocks paid execution pending the missing study evidence. Broad historical
+distributed matrices were not repeated.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

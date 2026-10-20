@@ -21,10 +21,19 @@ from pathlib import Path
 from typing import Any
 
 TERMINAL = {"completed", "failed", "cancelled"}
+MAX_PENDING_JOBS = 1000
 
 
 class TrainingLeaseLostError(RuntimeError):
     """The worker no longer owns a live lease and must stop publishing results."""
+
+
+class TrainingIdempotencyConflictError(ValueError):
+    """An idempotency key already identifies a different accepted request."""
+
+
+class TrainingQueueFullError(ValueError):
+    """The durable queue has reached its global pending-job capacity."""
 
 
 class _PostgresRow(dict):
@@ -116,6 +125,15 @@ class TrainingQueue:
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS stateset_training_jobs_status ON stateset_training_jobs(status, created)"
             )
+            for name, columns in (
+                ("created", "created DESC,id DESC"),
+                ("owner_created", "owner,created DESC,id DESC"),
+                ("status_created", "status,created DESC,id DESC"),
+            ):
+                connection.execute(
+                    f"CREATE INDEX IF NOT EXISTS stateset_training_jobs_{name} "
+                    f"ON stateset_training_jobs({columns})"
+                )
             connection.execute(
                 """CREATE TABLE IF NOT EXISTS stateset_training_queue_settings (
                 id INTEGER PRIMARY KEY CHECK(id=1), capacity INTEGER NOT NULL
@@ -232,7 +250,7 @@ class TrainingQueue:
             ).fetchone()
             if existing:
                 if existing[0] != fingerprint:
-                    raise ValueError(
+                    raise TrainingIdempotencyConflictError(
                         "Idempotency key already binds a different training request"
                     )
                 return job_id
@@ -240,9 +258,9 @@ class TrainingQueue:
                 connection.execute(
                     "SELECT count(*) FROM stateset_training_jobs WHERE status='queued'"
                 ).fetchone()[0]
-                >= 1000
+                >= MAX_PENDING_JOBS
             ):
-                raise ValueError("Training queue is full")
+                raise TrainingQueueFullError("Training queue is full")
             connection.execute(
                 "INSERT INTO stateset_training_jobs(id,owner,fingerprint,status,snapshot,created) VALUES(?,?,?,?,?,?)",
                 (
@@ -265,6 +283,88 @@ class TrainingQueue:
                     "SELECT id,snapshot FROM stateset_training_jobs"
                 )
             }
+
+    def page(
+        self,
+        *,
+        owner: str | None = None,
+        status: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> tuple[list[tuple[str, dict[str, Any]]], int]:
+        """Read one owner-filtered page and its total from a consistent snapshot.
+
+        An omitted owner means unrestricted administrative access, matching
+        ``get()``. Ownerless jobs remain visible to authenticated users. Only
+        the requested page's payloads are fetched and decoded.
+        """
+        if type(limit) is not int or not 1 <= limit <= 100:
+            raise ValueError("limit must be an integer between 1 and 100")
+        if type(offset) is not int or offset < 0:
+            raise ValueError("offset must be a nonnegative integer")
+        if status is not None and not isinstance(status, str):
+            raise ValueError("status must be a string or None")
+        parameters: list[Any] = []
+        if owner is not None:
+            parameters.append(owner)
+        if status:
+            parameters.append(status)
+        # Only choose complete literal statements. Caller-controlled owner and
+        # status values always stay in bound parameters, including quotes/SQL.
+        count_query, page_query = {
+            (False, False): (
+                "SELECT count(*) FROM stateset_training_jobs",
+                "SELECT id,snapshot FROM stateset_training_jobs "
+                "ORDER BY created DESC,id DESC LIMIT ? OFFSET ?",
+            ),
+            (True, False): (
+                "SELECT count(*) FROM stateset_training_jobs "
+                "WHERE (owner=? OR owner IS NULL)",
+                "SELECT id,snapshot FROM stateset_training_jobs "
+                "WHERE (owner=? OR owner IS NULL) "
+                "ORDER BY created DESC,id DESC LIMIT ? OFFSET ?",
+            ),
+            (False, True): (
+                "SELECT count(*) FROM stateset_training_jobs WHERE status=?",
+                "SELECT id,snapshot FROM stateset_training_jobs WHERE status=? "
+                "ORDER BY created DESC,id DESC LIMIT ? OFFSET ?",
+            ),
+            (True, True): (
+                "SELECT count(*) FROM stateset_training_jobs "
+                "WHERE (owner=? OR owner IS NULL) AND status=?",
+                "SELECT id,snapshot FROM stateset_training_jobs "
+                "WHERE (owner=? OR owner IS NULL) AND status=? "
+                "ORDER BY created DESC,id DESC LIMIT ? OFFSET ?",
+            ),
+        }[(owner is not None, bool(status))]
+        with self._connection() as connection:
+            # PostgreSQL READ COMMITTED would allow different snapshots for the
+            # count and rows. Readers never acquire the writers' advisory lock.
+            connection.execute(
+                "BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY"
+                if self.postgres_dsn is not None
+                else "BEGIN"
+            )
+            try:
+                total = int(
+                    connection.execute(
+                        count_query,
+                        parameters,
+                    ).fetchone()[0]
+                )
+                # This also avoids binding a caller's enormous Python offset
+                # into a signed-64-bit database parameter when the page is empty.
+                rows = (
+                    connection.execute(
+                        page_query,
+                        [*parameters, limit, offset],
+                    ).fetchall()
+                    if offset < total
+                    else []
+                )
+            finally:
+                connection.rollback()
+        return [(row["id"], self._decode(row["snapshot"])) for row in rows], total
 
     def get(self, job_id: str, owner: str | None = None) -> dict[str, Any] | None:
         """Read a snapshot subject to the same owner check as the API service."""

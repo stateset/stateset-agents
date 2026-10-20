@@ -136,6 +136,7 @@ class SharedModelManager:
             model_cls,
             self.config.model_name,
             model_kwargs,
+            for_training=True,
         )
         base_model = self._prepare_base_model(base_model)
 

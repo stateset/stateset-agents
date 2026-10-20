@@ -28,6 +28,7 @@ REQUIRED_COMPONENT_IDS = {
     "grpo-training",
     "memory",
     "offline-rl",
+    "ppo-reference-updates",
     "provider-control-plane",
     "research-modules",
     "reward-learning-rlaif",

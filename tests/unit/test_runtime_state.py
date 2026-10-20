@@ -1,13 +1,18 @@
 """Resumption reproduces stochastic updates, including pending gradients."""
 
 import random
+from types import SimpleNamespace
 
 import numpy as np
 import pytest
 import torch
 
 from stateset_agents.training.config import TrainingConfig
-from stateset_agents.training.runtime_state import TrainingRuntime
+from stateset_agents.training.runtime_state import (
+    TrainingRuntime,
+    capture_rng,
+    restore_rng,
+)
 
 
 class Trainer(TrainingRuntime):
@@ -59,6 +64,49 @@ def test_interrupted_update_matches_uninterrupted_update(tmp_path):
     for key, value in resumed.model.state_dict().items():
         torch.testing.assert_close(value, expected[key], rtol=0, atol=0)
     assert resumed.scheduler.state_dict() == trainer.scheduler.state_dict()
+
+
+@pytest.mark.parametrize("device_count", [1, 2])
+def test_device_mapped_cuda_rng_restores_each_generator(device_count):
+    """Device-mapped checkpoint states still restore byte-identical streams."""
+    generators = [torch.Generator().manual_seed(17 + i) for i in range(device_count)]
+
+    class DeviceMappedState:
+        def __init__(self, value):
+            self.value = value
+
+        def cpu(self):
+            return self.value
+
+    class CudaBackend:
+        @staticmethod
+        def is_available():
+            return True
+
+        @staticmethod
+        def device_count():
+            return len(generators)
+
+        @staticmethod
+        def set_rng_state_all(values):
+            # Real generators enforce the same CPU ByteTensor requirement as
+            # CUDA's API, without requiring a GPU in the regression suite.
+            for generator, value in zip(generators, values, strict=True):
+                generator.set_state(value)
+
+    state = capture_rng(torch)
+    state["cuda"] = [
+        DeviceMappedState(generator.get_state()) for generator in generators
+    ]
+    expected = [torch.rand(4, generator=generator) for generator in generators]
+    restore_rng(
+        state,
+        SimpleNamespace(cuda=CudaBackend(), set_rng_state=torch.set_rng_state),
+    )
+    for generator, value in zip(generators, expected, strict=True):
+        torch.testing.assert_close(
+            torch.rand(4, generator=generator), value, rtol=0, atol=0
+        )
 
 
 def test_partial_checkpoint_is_rejected(tmp_path):

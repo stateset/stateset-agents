@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cc1ce6254d10",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-recovery-prepare.py"
+    ],
+    "created": 1792191059.3857503,
+    "started": 1792191059.4162269,
+    "finished": 1792191094.5816479,
+    "wait_seconds": 0.03047657012939453,
+    "elapsed_seconds": 35.16542100906372,
+    "reason": ""
+  },
+  {
+    "id": "d1c59c7e693a",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-recovery-prepare.py"
+    ],
+    "created": 1792191127.9114032,
+    "started": 1792191127.9252567,
+    "finished": 1792191341.312272,
+    "wait_seconds": 0.01385354995727539,
+    "elapsed_seconds": 213.3870153427124,
+    "reason": ""
+  }
+]

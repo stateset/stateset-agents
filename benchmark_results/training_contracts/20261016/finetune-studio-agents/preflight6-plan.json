@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-support-recovery-plan",
+  "protocol": "stateset-support-recovery-v1",
+  "profile_sha256": "35b051ae9b5cd60ba86ee4bac53ab5c9f31e65126efbb1848e76d08c7e5eeca0",
+  "package_implementation_sha256": "88ebcc9a397418801c615933f51c03ece340018a385ba9dd385367edf0b6de1c",
+  "dataset_sha256": null,
+  "case_counts": null,
+  "optimizer_updates": 250,
+  "resolved_objective": {
+    "name": "gspo",
+    "advantage": "group_norm",
+    "advantage_eps": 1e-08,
+    "ratio": "sequence",
+    "ratio_clamp": 20.0,
+    "clip": "clipped",
+    "clip_low": 0.0003,
+    "clip_high": 0.0004,
+    "delta": null,
+    "is_cap": 5.0,
+    "aggregate": "seq_mean",
+    "max_completion_length": 192,
+    "kl": "k3_token",
+    "kl_coef": 0.1,
+    "kl_bias_correction": false,
+    "entropy_coef": 0.0
+  },
+  "training_rollout_episodes": 8000,
+  "planned_validation_evaluations": 11,
+  "validation_decoding": {
+    "do_sample": false,
+    "temperature": 0.0,
+    "num_beams": 1,
+    "repetition_penalty": 1.0
+  },
+  "validation_judge_prompt_upper_bound": null,
+  "test_judge_prompts_included": false,
+  "checkpoint_disk_estimate_gib": 467.48800867795944,
+  "storage_estimate_measured": false,
+  "proposed_compute": {
+    "provider": "runpod",
+    "gpu": "NVIDIA H100 80GB HBM3",
+    "gpu_count": 1,
+    "container_disk_gb": 750,
+    "proposed_spending_ceiling_usd": 32.0,
+    "spending_authorized": false
+  },
+  "estimated_total_cost_usd": null,
+  "ready_for_paid_execution": false,
+  "blockers": [
+    "Reviewed train/validation/fresh-test cases are missing",
+    "Current provider quote including storage, judge and full lifetime is missing",
+    "Immutable launch image and live model/runtime conformance remain unverified",
+    "Paid execution requires a separately reviewed launch contract"
+  ]
+}

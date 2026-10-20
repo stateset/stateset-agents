@@ -1,0 +1,13 @@
+{
+  "elapsed_seconds": 174.59095001005335,
+  "exit_code": 0,
+  "plan_hash": "3a3148b24ea6586d99c8e83b651f7db30671911eb9592076198a968595229305",
+  "result": {
+    "accepted": false,
+    "nonzero_variance_groups": 3,
+    "status": "validation_blocked_test_not_attempted",
+    "test_attempted": false,
+    "training_updates": 0
+  },
+  "timed_out": false
+}

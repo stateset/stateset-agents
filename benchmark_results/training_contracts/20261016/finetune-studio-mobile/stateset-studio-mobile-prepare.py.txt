@@ -1,0 +1,124 @@
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+base = Path('/tmp/stateset-studio-mobile-20261016')
+for index in range(100):
+    out = base if index == 0 else Path(str(base) + f'-retry{index}')
+    if not out.exists():
+        out.mkdir()
+        break
+else:
+    raise RuntimeError('No unused verification directory')
+print('Evidence:', out, flush=True)
+def inventory():
+    return {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+source = inventory()
+asset_paths = ['stateset_agents/config/presets/experiments/support_recovery_preflight6.json', 'stateset_agents/evaluation/rubrics/support_rubric_v4.md', 'tests/fixtures/support_conversation_reward/preflight5_regressions.json']
+assets = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in asset_paths}
+def assets_unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in assets.items())
+def test_inventory():
+    return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+test_source = test_inventory()
+(out/'frozen-inventory.json').write_text(json.dumps(dict(source_sha256=source, test_source_sha256=test_source, assets_sha256=assets), indent=2)+'\n')
+env = dict(os.environ, PATH=str(root/'.venv/bin')+os.pathsep+os.environ['PATH'], OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+stages = []
+def run(name, argv, *, environment=env, cwd=root):
+    print('Stage:', name, flush=True)
+    start = time.monotonic()
+    with (out/(name+'.log')).open('w') as log:
+        process = subprocess.Popen(argv, cwd=cwd, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            if name not in {'wheel-build', 'types'}:
+                print(line, end='', flush=True)
+        code = process.wait()
+    stages.append(dict(name=name, argv=argv, exit_code=code, elapsed_seconds=time.monotonic()-start))
+    (out/'stage-checkpoint.json').write_text(json.dumps(dict(stages=stages, source_sha256=source, test_source_sha256=test_source, assets_sha256=assets), indent=2)+'\n')
+    if code:
+        raise RuntimeError(name+' failed')
+    if inventory() != source or test_inventory() != test_source or not assets_unchanged():
+        raise RuntimeError('Package source changed during verification')
+pytest = [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=150', '--tb=short']
+regressions = ['tests/unit/test_checkpoint_rng_publication.py', 'tests/unit/test_native_checkpoint_metadata.py', 'tests/unit/test_finetune_worker_ownership.py', 'tests/unit/test_finetune_interrupted_stop.py', 'tests/unit/test_native_checkpoint_safety.py', 'tests/unit/test_resume_rollout_sync.py', 'tests/unit/test_multi_turn_trainer.py', 'tests/unit/test_runtime_checkpoint_safety.py', 'tests/unit/test_runtime_state.py', 'tests/unit/test_dedicated_entrypoint_resume.py', 'tests/unit/test_training_resume_required.py', 'tests/unit/test_gspo_query_wiring.py', 'tests/unit/test_gspo_module_exports.py', 'tests/unit/test_dapo_module_exports.py', 'tests/unit/test_checkpoint_publication.py', 'tests/unit/test_model_checkpoint.py', 'tests/unit/test_learning_state_recovery.py', 'tests/unit/test_scheduler_identity.py', 'tests/unit/test_native_checkpoint_async.py', 'tests/unit/test_multi_turn_checkpoint_accumulation.py', 'tests/unit/test_ddp_checkpoint_state.py', 'tests/unit/test_checkpoint_trust.py', 'tests/unit/test_mypy_allowlist_ratchet.py', 'tests/unit/test_release_governance.py', 'tests/unit/test_ppo_safety.py', 'tests/unit/test_ppo_objective.py', 'tests/unit/test_remote_runpod_executor.py', 'tests/unit/test_finetune_mobile.py', 'tests/unit/test_finetune_nomination_history.py', 'tests/unit/test_finetune_nomination.py', 'tests/unit/test_finetune_validation_comparison.py', 'tests/api/test_finetune_operator.py', 'tests/api/test_dependencies.py', 'tests/api/test_routers.py', 'tests/unit/test_finetune_seeds.py', 'tests/unit/test_finetune_studio.py', 'tests/unit/test_finetune_validation.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_finetune_quality.py', 'tests/unit/test_finetune_recovery.py', 'tests/unit/test_finetune_evaluation.py', 'tests/unit/test_finetune_checkpoint_evaluation.py', 'tests/unit/test_evaluation_case_picker.py', 'tests/unit/test_finetune_handoff.py', 'tests/unit/test_finetune_comparison.py', 'tests/unit/test_finetune_logs.py', 'tests/unit/test_finetune_dataset.py', 'tests/unit/test_finetune_inspection.py', 'tests/unit/test_finetune_failures.py', 'tests/unit/test_cli_finetune.py']
+wheel_tests = ['tests/unit/test_checkpoint_rng_publication.py', 'tests/unit/test_native_checkpoint_metadata.py', 'tests/unit/test_finetune_worker_ownership.py', 'tests/unit/test_finetune_interrupted_stop.py', 'tests/unit/test_native_checkpoint_safety.py', 'tests/unit/test_resume_rollout_sync.py', 'tests/unit/test_multi_turn_trainer.py', 'tests/unit/test_runtime_checkpoint_safety.py', 'tests/unit/test_runtime_state.py', 'tests/unit/test_dedicated_entrypoint_resume.py', 'tests/unit/test_training_resume_required.py', 'tests/unit/test_gspo_query_wiring.py', 'tests/unit/test_gspo_module_exports.py', 'tests/unit/test_dapo_module_exports.py', 'tests/unit/test_checkpoint_publication.py', 'tests/unit/test_model_checkpoint.py', 'tests/unit/test_learning_state_recovery.py', 'tests/unit/test_scheduler_identity.py', 'tests/unit/test_native_checkpoint_async.py', 'tests/unit/test_multi_turn_checkpoint_accumulation.py', 'tests/unit/test_ddp_checkpoint_state.py', 'tests/unit/test_ppo_safety.py', 'tests/unit/test_ppo_objective.py', 'tests/unit/test_remote_runpod_executor.py', 'tests/unit/test_finetune_mobile.py', 'tests/unit/test_finetune_nomination_history.py', 'tests/unit/test_finetune_nomination.py', 'tests/unit/test_finetune_validation_comparison.py', 'tests/api/test_finetune_operator.py', 'tests/api/test_dependencies.py', 'tests/api/test_routers.py', 'tests/unit/test_finetune_seeds.py', 'tests/unit/test_finetune_studio.py', 'tests/unit/test_finetune_validation.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_finetune_quality.py', 'tests/unit/test_finetune_recovery.py', 'tests/unit/test_finetune_evaluation.py', 'tests/unit/test_finetune_checkpoint_evaluation.py', 'tests/unit/test_evaluation_case_picker.py', 'tests/unit/test_finetune_handoff.py', 'tests/unit/test_finetune_comparison.py', 'tests/unit/test_finetune_logs.py', 'tests/unit/test_finetune_dataset.py', 'tests/unit/test_finetune_inspection.py', 'tests/unit/test_finetune_failures.py', 'tests/unit/test_cli_finetune.py']
+distributed_test = 'tests/integration/test_distributed_grpo_weighting.py'
+advantage_test = 'tests/integration/test_distributed_advantages.py'
+preflight_test = 'tests/integration/test_learner_preflight.py'
+replica_test = 'tests/integration/test_replica_consensus.py'
+native_test = 'tests/integration/test_native_ddp_checkpoint.py'
+evaluation_test = 'tests/integration/test_ddp_evaluation.py'
+continual_test = 'tests/integration/test_ddp_continual.py'
+empty_test = 'tests/integration/test_ddp_empty_population.py'
+loop_test = 'tests/integration/test_ddp_training_loop.py'
+rollout_test = 'tests/integration/test_ddp_rollout_metrics.py'
+diagnostic_test = 'tests/integration/test_ddp_diagnostics.py'
+reporting_test = 'tests/integration/test_ddp_optimizer_reporting.py'
+support_tests = ['tests/unit/'+name for name in ['test_support_conversation_reward.py', 'test_support_conversation_reward_v3.py', 'test_support_judge.py', 'test_support_reward_recovery.py']]
+# Source-tree AST/allowlist governance runs in the source suite above.
+wheel_tests = [name for name in wheel_tests if not name.endswith('test_torch_import_policy.py')]
+failed = None
+try:
+    run('gates', [sys.executable, '/tmp/stateset-studio-mobile-gates.py'])
+    run('types', [sys.executable, 'scripts/check_types.py', '--all'])
+    run('regressions', pytest+regressions+['--junitxml='+str(out/'regressions.xml')])
+    run('wheel-build', [sys.executable, '-m', 'build', '--wheel', '--no-isolation', '--outdir', str(out/'dist')])
+    wheel = next((out/'dist').glob('*.whl'))
+    with zipfile.ZipFile(wheel) as archive:
+        packed = {name.removeprefix('stateset_agents/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+    assert packed == source, 'Wheel does not match source'
+    with zipfile.ZipFile(wheel) as archive:
+        rubric_name = 'stateset_agents/evaluation/rubrics/support_rubric_v4.md'
+        assert archive.read(rubric_name) == (root/rubric_name).read_bytes(), 'Wheel rubric differs'
+        profile_name = 'stateset_agents/config/presets/experiments/support_recovery_preflight6.json'
+        assert archive.read(profile_name) == (root/profile_name).read_bytes(), 'Wheel recovery profile differs'
+    run('wheel-install', [sys.executable, '-m', 'pip', 'install', '--no-deps', '--target', str(out/'site-packages'), str(wheel)])
+    checks = out/'checks'
+    # Unit contracts import shared independent references and checkpoint fixtures.
+    shutil.copytree(root/'tests/unit', checks/'tests/unit')
+    shutil.copytree(root/'tests/api', checks/'tests/api')
+    shutil.copytree(root/'tests/fixtures/support_conversation_reward', checks/'tests/fixtures/support_conversation_reward')
+    (checks/'tests/integration').mkdir(parents=True)
+    shutil.copy2(root/distributed_test, checks/distributed_test)
+    shutil.copy2(root/advantage_test, checks/advantage_test)
+    shutil.copy2(root/preflight_test, checks/preflight_test)
+    shutil.copy2(root/replica_test, checks/replica_test)
+    shutil.copy2(root/native_test, checks/native_test)
+    shutil.copy2(root/evaluation_test, checks/evaluation_test)
+    shutil.copy2(root/continual_test, checks/continual_test)
+    shutil.copy2(root/empty_test, checks/empty_test)
+    shutil.copy2(root/loop_test, checks/loop_test)
+    shutil.copy2(root/rollout_test, checks/rollout_test)
+    shutil.copy2(root/diagnostic_test, checks/diagnostic_test)
+    shutil.copy2(root/reporting_test, checks/reporting_test)
+    for name in ['tests/__init__.py', 'tests/unit/__init__.py', 'tests/integration/__init__.py']:
+        (checks/name).write_text('')
+    # Match the source suite's async-test semantics in the isolated harness.
+    shutil.copy2(root/'pytest.ini', checks/'pytest.ini')
+    for name in ['tests/conftest.py', 'tests/_module_stubs.py']:
+        shutil.copy2(root/name, checks/name)
+    shutil.copytree(root/'examples', checks/'examples', ignore=shutil.ignore_patterns('__pycache__'))
+    (checks/'scripts').mkdir()
+    for filename in ['release.py','sft_from_curated.py','prepare_sft_dataset.py']:
+        shutil.copy2(root/'scripts'/filename, checks/'scripts'/filename)
+    (out/'wheel-test-configuration.json').write_text(json.dumps(dict(source='pytest.ini', sha256=hashlib.sha256((checks/'pytest.ini').read_bytes()).hexdigest(), destination='checks/pytest.ini', reason='Match source pytest async-test configuration', shared_fixture_sha256={name: hashlib.sha256((checks/name).read_bytes()).hexdigest() for name in ['tests/conftest.py','tests/_module_stubs.py']}), indent=2)+'\n')
+    wheel_env = dict(env, PYTHONPATH=str(out/'site-packages'), STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(out/'wheel-distributed'))
+    run('wheel-origin', [sys.executable, '-c', "import stateset_agents.training.grpo_accumulation as m; from pathlib import Path; import sys; assert Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1]).resolve()), m.__file__; print(m.__file__)", str(out/'site-packages')], environment=wheel_env, cwd=checks)
+    (out/'wheel-shards.json').write_text(json.dumps([wheel_tests[:9], wheel_tests[9:15], wheel_tests[15:]], indent=2)+'\n')
+except Exception as exc:
+    failed = str(exc)
+finally:
+    wheels = list((out/'dist').glob('*.whl')) if (out/'dist').exists() else []
+    report = dict(phase='prepare', worker_environment={key: env[key] for key in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'RAYON_NUM_THREADS', 'TOKENIZERS_PARALLELISM']}, passed=failed is None and inventory()==source and test_inventory()==test_source and assets_unchanged(), assets_sha256=assets, failure=failed, stages=stages, source_sha256=source, test_source_sha256=test_source, tests_unchanged=test_inventory()==test_source, source_unchanged=inventory()==source, wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest() if wheels else None, gpu_verified=False, fsdp_verified=False, deepspeed_verified=False, multi_rank_accelerate_verified=False)
+    (out/'verification.json').write_text(json.dumps(report, indent=2)+'\n')
+    print('Evidence:', out, 'passed:', report['passed'], flush=True)
+raise SystemExit(0 if report['passed'] else 1)

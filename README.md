@@ -72,7 +72,38 @@ with lineage. Multi-turn generation is now available in several trainer
 libraries; the differentiator here is keeping that whole loop coherent and
 measurable.
 
-### Current verification status
+For the Qwen3.5-9B RunPod reward regression, see the
+[reward recovery investigation](docs/RUNPOD_REWARD_RECOVERY.md). It separates
+reported results from recovered evidence and documents v3 rewards,
+independent judge checkpoint selection and the requirements for another run.
+The [2026-10-16 targeted acceptance](benchmark_results/training_contracts/20261016/reward-recovery/README.md)
+passed 2,173 source regressions (seven skips), 906 installed-wheel regressions,
+typing for 416 modules, and twelve two-worker CPU/Gloo contracts against source
+and wheel. The three recovered reward examples are diagnostic evidence;
+representative quality gains and the complete 200-pair re-score remain unverified.
+
+### Verification evidence
+
+The package's current version is listed above. Test and provider results below
+belong to the named release or experiment; they do not certify later changes.
+The [improvement pipeline guide](docs/IMPROVEMENT_PIPELINE.md) describes logged
+policy training, data governance, diagnostics, and production promotion.
+
+The [2026-10-15 local verification](benchmark_results/training_contracts/20261015/evaluation-isolation/summary.json)
+of the unreleased checkout based on `v0.66.1` passed **8,615 tests**, with
+**57 skipped**, and typing for **386 modules**. Its wheel executed real SFT and
+IQL policy updates, export, reload, local inference, and native sampled RL across
+three seeds with gradient accumulation and verified checkpoint recovery.
+Independent references cover uneven prompt groups, accumulated updates,
+partial windows, AMP recovery, and clipping order. The retained
+reports identify the exact wheel and package sources. All 217 combined evaluation,
+recovery and Fisher-estimation cases also passed against that wheel, covering
+isolated sampling, failed-attempt accounting, validation/test separation, reward
+statistics, replay RNGs, frozen task references, EWC state, independent causal
+gradients and low-precision statistics. An earlier wheel's [RTX A5000 device check](benchmark_results/training_contracts/20261014/native-offline-device/README.md)
+verified actual policy updates, exact checkpoint recovery and CUDA inference
+after reload. These synthetic checks do not establish representative quality,
+GPU backend parity, or production approval.
 
 The isolated `v0.58.0` release tree completed its local Linux Python 3.12 suite on
 **2026-10-07** with **6,020 passed, 18 skipped, and 65.00% coverage**. Its release
@@ -130,8 +161,9 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.66.1`, published from the
-  annotated release tag with build attestation and an isolated wheel smoke test.
+- **Current Python release:** `stateset-agents==0.67.0`, with publication triggered by the
+  annotated release tag and gated on readiness, build attestation, and an isolated
+  wheel smoke test.
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
   publication remains pending because npm trusted publishing cannot create a
@@ -333,6 +365,7 @@ the artifact returned — not a mock and not a plan:
 |---|---|
 | Muse Glimmer 30B (63GB, multimodal) | 258MB adapter; persona learned from 140 examples; base model could not answer at all |
 | Nemotron 3.5 Lightning (hybrid Mamba/MoE) | Learns the same task, but needs 8 epochs to hold a brand name where Muse needs 3 |
+| Nemotron 3.5 Super VL NVFP4 on River | One CISPO optimizer update with a finite nonzero gradient norm and hosted step-1 checkpoint; validation tied the baseline, so no quality gain is claimed ([evidence](benchmark_results/training_contracts/20261015/nemotron-vl/README.md)) |
 | Qwen3.8-27B (hybrid, multimodal) | Fine-tuned the week it shipped: 2/2 held-out assertions, $0.96 |
 | A model too big for one card | 63GB checkpoint sharded across two 48GB cards (`0=24 module(s), 1=36 module(s)`) |
 | The RL core, not just SFT | GSPO on a real GPU: target-token probability 2.8e‑05 → 0.125 in 40 steps, re-proved weekly |
@@ -385,7 +418,7 @@ coverage, live hardware attempts, and successful inference by provider.
 
 ## What's new
 
-**Current development head (unreleased):**
+**Platform verification improvements included in v0.67.0:**
 
 - **Evidence-first README refresh.** Release, installation, provider, and
   benchmark status now match `v0.54.0`; the incomplete corrected v3 comparison
@@ -437,7 +470,15 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.66.1 (latest release; publication triggered by tag):**
+**v0.67.0 (latest release; publication triggered by tag):**
+
+- Add the fine-tuning terminal studio, agent CLI and HTTP controls, with durable run ownership, checkpoint inspection and validation/test separation.
+- Add synthetic ecommerce, logistics and SaaS dataset generation with isolated splits and retained provenance; independent domain review remains required.
+- Harden native RL, distributed training, checkpoint recovery, dataset lineage and provider submissions.
+- Complete six native River CISPO updates: RL scored 960/960 versus the SFT parent's 954/960 on shared synthetic test cases. Four seeds improved and two tied; the replication gate failed (p = 0.125), with no promotion or production quality certification.
+- Retain source-bound training evidence and sampler-stream audits. The documented dependency readiness blocker remains subject to the publication gates.
+
+**v0.66.1:**
 
 - Fix lease checks under database lock contention and use PostgreSQL server time across worker hosts.
 - Reject invalid lease durations and expired renewals before changing queue state.
@@ -1324,8 +1365,8 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.66.1" # current stable release
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.66.1"
+pip install "stateset-agents==0.67.0" # current stable release
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.67.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1342,6 +1383,19 @@ backend, and the CLI. Training real models needs `[training]` below.
 ```bash
 pip install "stateset-agents[training]"
 ```
+
+For a pinned training and API environment from this checkout on Python 3.12/Linux:
+
+```bash
+make install-training-locked
+```
+
+`requirements-training-lock.txt` contains the resolved runtime dependencies.
+`make lock` regenerates all three locks, and `make lock-check` verifies them.
+Verification resolves temporary copies, preserves working locks on failure or
+interruption, and rejects input changes made while it runs.
+CI audits the runtime lock independently and tests its installed wheel. A passing
+dependency audit does not establish GPU compatibility or model quality.
 
 ### Optional extras
 
@@ -1413,7 +1467,10 @@ wired up:
 | `google/functiongemma-270m-it` | `python -m stateset_agents.training.sft --base-model google/functiongemma-270m-it ...` | | Tool-calling SFT only; [guide](examples/README.md#additional-small-models-and-functiongemma) |
 | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
 | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
+| `meta-models/Muse-Spark-Open-816B-A42B` | `stateset-agents muse-spark-open` | GPU unverified | Distributed BF16 text LoRA SFT; separate text GSPO preset; gated access and cluster-scale memory; [guide](docs/MUSE_SPARK_OPEN.md) |
 | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
+| `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16` | `stateset-agents nemotron-3-5-super-vl` | CPU contracts | Image-conditioned LoRA SFT; full-size GPU training unverified; [guide](docs/NEMOTRON_3_5_VL.md) |
+| `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | `stateset-agents nemotron-3-5-bolt` | CPU contracts | Image-conditioned LoRA SFT; BF16 training uses more memory than the 24GB inference artifact; [guide](docs/NEMOTRON_3_5_VL.md) |
 | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
 | `Qwen/Qwen3.8-Flash-Next` | `python examples/finetune_gspo.py --model qwen3.8-flash-next` | | Qwen4 architecture preview; 125B main / 6B active + 51B n-gram embeddings; native multimodal, 262K ctx |
 | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
@@ -1431,7 +1488,7 @@ wired up:
 | `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
 | `LiquidAI/LFM2.5-2.6B` | `stateset-agents lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
-| `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` | | **Provisional** — HF weights unpublished as of 2026‑07‑16 |
+| `moonshotai/Kimi-K3` | `stateset-agents frontier-models --model kimi-k3` | | Released MXFP4 checkpoint pinned; training loader blocked; see [frontier guide](docs/FRONTIER_FINETUNING.md) |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.3-Flash` | `python examples/finetune_gspo.py --model glm5.3-flash` | | 320B / 18B active, native multimodal, FP8, 1M ctx |
@@ -1444,7 +1501,7 @@ import get_glm5_2_config, run_glm5_2_config`), as are the others.
 
 ### Supported models
 
-First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(provisional)*, **GLM 5.1**, and **GLM 5.2**. Architecture-aware unified presets additionally cover **GLM-5.3-Flash** and **Qwen3.8-Flash-Next**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Compatible Hugging Face causal LMs work through the generic flow; native multimodal conditional-generation repositories use StateSet's composite-loader fallback for text-only RL.
+First-class starters ship for **Qwen 3.5 0.8B**, **Muse Glimmer 30B**, **Nemotron 3.5 Lightning**, **Qwen3.8 27B**, **Qwen3-Coder 30B**, **gpt-oss 20B**, **DeepSeek V4 Flash**, **Gemma 4 31B IT**, **Kimi-K2.6**, **Kimi-K3** *(released; packed-weight training loader blocked)*, **GLM 5.1**, and **GLM 5.2**. Architecture-aware unified presets additionally cover **GLM-5.3-Flash** and **Qwen3.8-Flash-Next**. Reference examples and hosting plans cover Qwen 3.5 27B, Qwen 3, Qwen 2.5, Kimi-K2.5, Gemma 3 / Gemma 2 27B IT, Llama 3, Llama 2 7B, and Mistral 7B. Compatible Hugging Face causal LMs work through the generic flow; native multimodal conditional-generation repositories use StateSet's composite-loader fallback for text-only RL.
 
 See [`docs/SUPPORTED_MODELS.md`](docs/SUPPORTED_MODELS.md) for the full matrix, algorithm compatibility, and instructions for adding a new starter.
 
@@ -1581,6 +1638,37 @@ asyncio.run(main())
 For the zero-download onboarding path, run `python examples/quick_start.py`.
 
 ---
+
+## Fine-tune from a Herdr terminal
+
+```bash
+stateset-agents tui --workspace outputs/finetune
+# Preview a phone-sized terminal without launching work:
+stateset-agents tui --snapshot --columns 40 --rows 24
+```
+
+Phone-sized terminals work from 32 columns by 16 rows. Compact controls use
+`2`/`8` to move, `3`/`9` to page, `0` to go back and `4` to switch the main views.
+Digits remain literal in editors and filters; reviewed launches still require
+Enter. Resizes that hide the interface pause actions until it can be displayed.
+
+Choose a model and dataset. Press `b` to select local CUDA, RunPod, Modal or
+River. Local supports SFT/RL; remote studio backends support SFT. Preview inputs
+with `p`, inspect local readiness with `i`, and review a launch with `r`.
+Press `v` to see all configuration issues and jump to a field to fix it.
+Press `u` for dataset statistics and duplicate checks; `e` explicitly reveals a
+bounded private excerpt in that report.
+On Runs, `l` opens wrapped logs with source selection, pause/follow and literal filtering.
+Use `a` to pin a reference run and `x` to compare settings and reported metrics.
+Switch to retained runs with `Tab`; `/` searches, `t` filters statuses, and `g`
+opens reported metric trends and progress. Logs and metrics reconnect when you reopen the workspace; closing the pane
+keeps jobs running. Local training uses an installed Buildr queue and requires
+CUDA. See the [terminal studio guide](docs/FINETUNING_TUI.md) for data formats,
+keyboard controls, resource settings and paid-run behavior. AI agents can use
+`stateset-agents finetune schema` to discover the JSON interface and share this
+workspace; see the [agent protocol](docs/FINETUNING_AGENTS.md).
+On Runs, `r` reviews and launches an agent-prepared run with its existing ID,
+saved plan checksum and retained dataset; `c` copies settings for a new run.
 
 ## Train a multi‑turn agent with GRPO
 
@@ -1742,7 +1830,11 @@ All algorithms are available under `stateset_agents.training` when training deps
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
 - **DAPO**: decoupled clip + dynamic sampling for reasoning‑heavy tasks
 - **VAPO**: value‑augmented group optimization (strong for math/reasoning)
-- **PPO baseline**: standard PPO trainer for comparison
+- **PPO**: experimental token-exact online training with retained behavior
+  likelihoods, critic values and rollout receipts, plus external-text reference
+  updates. Online training currently requires one process and full-vocabulary
+  sampling (`top_p=1`, `top_k=0`). See the
+  [PPO limits](docs/OBJECTIVES.md#ppo-reference-update-limits).
 - **RLAIF**: RL from AI feedback via judge/reward models
 
 Every trainer above evaluates a named [`PolicyObjective`](docs/OBJECTIVES.md)
@@ -2137,7 +2229,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.66.1`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.67.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
@@ -2202,3 +2294,10 @@ See `CONTRIBUTING.md`. Please run `pytest -q` and format with `black`/`isort` be
 ## License
 
 Business Source License 1.1. Non‑production use permitted until **2029‑09‑03**, then transitions to Apache 2.0. See `LICENSE`.
+
+Pinned frontier checkpoint support now covers MiMo-V2.6-Pro (RL and MOPD),
+GLM-5.3, Kimi K3, GLM-5.3-Flash, DeepSeek V4.1 Flash, Qwen3.8 2.4T A95B and
+Qwen3.8-Flash-Next. `stateset-agents frontier-models` reports precise readiness.
+The four native GLM/Qwen paths have distributed text LoRA implementations;
+MiMo, Kimi and DeepSeek retain explicit training-loader blockers. Full-size GPU
+training remains unverified. See [the guide](docs/FRONTIER_FINETUNING.md).

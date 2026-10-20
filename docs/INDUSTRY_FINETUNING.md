@@ -8,6 +8,7 @@ criteria. They are not pretrained industry agents or evidence of business outcom
 | --- | --- |
 | `financial-services` | Account support, onboarding, dispute intake |
 | `retail` | Order tracking, returns, product assistance |
+| `logistics` | Shipment tracking, address changes, delivery exceptions |
 | `travel` | Booking support, itinerary changes, guest assistance |
 | `healthcare` | Scheduling, patient navigation, administrative support |
 | `services` | Lead qualification, estimate intake, booking |
@@ -15,6 +16,72 @@ criteria. They are not pretrained industry agents or evidence of business outcom
 | `telecommunications` | Troubleshooting, billing, plan support |
 | `technology` | Product onboarding, technical support, account assistance |
 | `public-sector` | Service navigation, application assistance, case status |
+
+## Generate ecommerce, logistics, and SaaS datasets
+
+Create all three corpora locally, with no model downloads or provider calls:
+
+```bash
+stateset-agents industry generate all --output outputs/industry-datasets --seed 42
+stateset-agents industry audit-datasets outputs/industry-datasets
+stateset-agents industry train outputs/industry-datasets/ecommerce --dry-run
+stateset-agents industry train outputs/industry-datasets/logistics --dry-run
+stateset-agents industry train outputs/industry-datasets/saas --dry-run
+```
+
+Each industry gets **512 training, 64 validation, and 128 reserved test
+conversations** by default, covering eight balanced scenario families per split.
+Use `generate ecommerce`, `generate logistics`, or `generate saas` to select one.
+`--train-count`, `--validation-count`, and `--test-count` accept multiples of eight.
+`--model` chooses the existing local SFT preset; no training starts during generation.
+
+| Domain directory | Workflow coverage | Existing recipe |
+| --- | --- | --- |
+| `ecommerce` | Full/partial refunds, duplicate refunds, delivery status, return-window boundaries, chargebacks, misleading notes | `retail` |
+| `logistics` | Verification, label/dispatch distinction, address changes, cancellation before/after dispatch, late/lost shipments, delivered parcels | `logistics` |
+| `saas` | Tenant verification, viewer/admin permissions, incidents, outages, inclusive quota limits, billing routing, troubleshooting | `technology` |
+
+These are **fictional policy simulations**, clearly marked `synthetic: true` and
+`not_independently_reviewed`. Messages teach a fact lookup, a policy-grounded JSON
+resolution, and explicit finish. Ecommerce reuses the refund sandbox; logistics
+and SaaS use `IndustrySupportEnvironment`. Unverified SaaS/logistics lookups reveal
+only the record ID and verification flag. Customer-note overrides do not change
+the policy, and invalid actions cannot be repaired into a successful episode.
+No real refunds, shipments, account settings or credentials are changed.
+
+Each directory contains `train.jsonl`, `validation.jsonl`, `test.jsonl`, the private
+synthetic cases in `cases/`, and a training-compatible `manifest.json`. The root
+`dataset_manifest.json` binds every artifact. Repeated fact sets and case IDs are
+rejected across all three splits; deterministic extra candidate seeds top up
+families without moving held-out rows into training. Generation seeds and family
+counts are retained. The audit rebuilds the corpora, verifies teacher actions,
+and rejects rewritten facts, messages, provenance and hashes.
+
+Use only `train.jsonl` with the existing industry trainer or `train-remote`.
+Validation supports selection; keep test reserved for a separately frozen
+evaluation. The existing industry evaluator measures teacher-forced reference
+agreement on validation and continues to reject synthetic data for its quality
+gate. Studio also accepts each `train.jsonl`: select it with **f**, inspect it
+with **u**, and preview/review through **p/r**. The inspector, launch review and
+training snapshot retain the declared synthetic status. Only messages enter
+training loss; group/family/case metadata remains outside model inputs. Declared
+validation/test rows are rejected as training inputs even if the file is renamed.
+The packaged SFT loader, direct in-memory SFT, and industry preparation/training
+also enforce split declarations. Local SFT files are checked before submission
+setup on Local, River, RunPod, Modal, CoreWeave, Nebius, Hugging Face Jobs, and
+Fireworks. Both top-level `split` and `metadata.split` must agree with the input
+role; mixed files and duplicate JSON object keys fail the entire read. Keep files
+stable during provider upload: this preflight does not bind uploaded bytes to a
+snapshot. Packaged workers check their training input again. Unannotated chat
+and tool datasets remain supported. Preparing a new project from declared train
+rows may derive a new validation split; its output annotations reflect the new
+roles, and the source file remains unchanged.
+This checks source declarations, not independent provenance: editing or stripping
+annotations cannot be detected from an isolated file. Run `industry audit-datasets`
+against the complete bundle to verify reconstruction before reuse.
+These templates bootstrap workflow
+training; they do not replace reviewed customer conversations or establish
+production quality. Dataset generation alone does not fine-tune a model.
 
 ## Prepare and preview without a GPU
 
@@ -88,8 +155,23 @@ registered checkpoint ID is not a guarantee that every dataset format suits that
 model; specialized tool-only models require appropriately scoped data.
 
 The saved adapter and normal SFT lineage manifest go into `retail-run/adapter`.
+Local SFT captures source bytes and a hash of parsed training rows before model
+loading. Industry execution checks that capture against the prepared manifest;
+Studio checks its reviewed plan. The adapter manifest retains the captured
+source path/hash and source-line count after later edits or deletion, together
+with `training_content_sha256`, `training_input_rows` and
+`effective_training_rows` (after truncation filtering). Direct `run_sft` callers
+can pass the identity returned by `load_sft_dataset`; without it, a supplied
+dataset path is captured and checked against their rows before model loading.
+In-memory calls without a source file remain explicitly unbound to a file.
 `industry_run.json` records the plan, data hashes, and running/trained/failed
-status. Existing adapter directories are refused to prevent accidental overwrite.
+status. A run becomes `trained` only after its fixed-rank LoRA safetensors export,
+tokenizer metadata and captured source/content lineage pass structural checks.
+Empty/corrupt weights, incomplete tensor pairs, missing shards and missing or
+mismatched lineage fail the run. A successful export summary includes counts and
+keeps `quality_gain_verified: false`. This checks tensor headers and metadata,
+not numerical finiteness, actual optimizer updates or inference quality.
+Existing adapter directories are refused to prevent accidental overwrite.
 Serve the adapter through `AgentConfig.peft_path` as with any existing SFT output.
 
 Training leaves validation data untouched. Use the paired evaluator below to

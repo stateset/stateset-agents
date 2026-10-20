@@ -1,0 +1,2034 @@
+* Getting build dependencies for wheel...
+running egg_info
+writing stateset_agents.egg-info/PKG-INFO
+writing dependency_links to stateset_agents.egg-info/dependency_links.txt
+writing entry points to stateset_agents.egg-info/entry_points.txt
+writing requirements to stateset_agents.egg-info/requires.txt
+writing top-level names to stateset_agents.egg-info/top_level.txt
+reading manifest file 'stateset_agents.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+no previously-included directories found matching 'htmlcov'
+no previously-included directories found matching 'outputs'
+no previously-included directories found matching 'checkpoints'
+no previously-included directories found matching 'benchmark_results'
+no previously-included directories found matching 'docs/_build'
+no previously-included directories found matching 'dist'
+no previously-included directories found matching 'build'
+no previously-included directories found matching '.git'
+no previously-included directories found matching '.worktrees'
+warning: no previously-included files matching '*.log' found anywhere in distribution
+warning: no previously-included files matching 'coverage.xml' found anywhere in distribution
+warning: no previously-included files matching '__pycache__' found anywhere in distribution
+warning: no previously-included files matching '*.py[cod]' found anywhere in distribution
+adding license file 'LICENSE'
+writing manifest file 'stateset_agents.egg-info/SOURCES.txt'
+* Building wheel...
+running bdist_wheel
+running build
+running build_py
+copying stateset_agents/cli_remote.py -> build/lib/stateset_agents
+copying stateset_agents/cli_mcp.py -> build/lib/stateset_agents
+copying stateset_agents/exceptions.py -> build/lib/stateset_agents
+copying stateset_agents/tui_tasks.py -> build/lib/stateset_agents
+copying stateset_agents/cli_benchmark.py -> build/lib/stateset_agents
+copying stateset_agents/cli_advanced.py -> build/lib/stateset_agents
+copying stateset_agents/cli_muse.py -> build/lib/stateset_agents
+copying stateset_agents/cli_meta.py -> build/lib/stateset_agents
+copying stateset_agents/cli_finetune.py -> build/lib/stateset_agents
+copying stateset_agents/cli_init.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_provider_submission.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_quality.py -> build/lib/stateset_agents
+copying stateset_agents/cli_evaluate.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_evaluation_worker.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_evaluation_tui.py -> build/lib/stateset_agents
+copying stateset_agents/tui_actions.py -> build/lib/stateset_agents
+copying stateset_agents/cli_research.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_nomination.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_inspection.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_validation.py -> build/lib/stateset_agents
+copying stateset_agents/cli_train.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_worker.py -> build/lib/stateset_agents
+copying stateset_agents/cli_industry.py -> build/lib/stateset_agents
+copying stateset_agents/cli_ingest.py -> build/lib/stateset_agents
+copying stateset_agents/mcp_server.py -> build/lib/stateset_agents
+copying stateset_agents/cli_improve.py -> build/lib/stateset_agents
+copying stateset_agents/cli_flywheel.py -> build/lib/stateset_agents
+copying stateset_agents/cli_frontier.py -> build/lib/stateset_agents
+copying stateset_agents/cli_nemotron.py -> build/lib/stateset_agents
+copying stateset_agents/cli.py -> build/lib/stateset_agents
+copying stateset_agents/__main__.py -> build/lib/stateset_agents
+copying stateset_agents/cli_chat.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_recovery.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_remote_code.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_evaluation.py -> build/lib/stateset_agents
+copying stateset_agents/tui.py -> build/lib/stateset_agents
+copying stateset_agents/__init__.py -> build/lib/stateset_agents
+copying stateset_agents/flywheel.py -> build/lib/stateset_agents
+copying stateset_agents/finetune_workspace.py -> build/lib/stateset_agents
+copying traceforge_rl/__main__.py -> build/lib/traceforge_rl
+copying traceforge_rl/__init__.py -> build/lib/traceforge_rl
+copying stateset_agents/utils/performance_monitor.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/credentials.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/async_calls.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/observability.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/wandb_integration.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/profiler.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/reproducibility.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/cache.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/wandb_logger.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/repo_hygiene.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/alerts.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/monitoring.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/security.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/symbolic_math.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/__init__.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/wandb_config.py -> build/lib/stateset_agents/utils
+copying stateset_agents/utils/logging.py -> build/lib/stateset_agents/utils
+copying stateset_agents/core/reward_factories.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/conversation_environment.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/async_pool.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/checkpoint_io.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/environment_base.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/agent_factories.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/domain_rewards.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/errors.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/multi_agent_coordination.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/model_presets.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/adaptive_learning_controller.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/chat_masking.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/data_processing.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator_logic.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/memory.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/error_handling.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring_tracing.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/frontier_models.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/computational_engine.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator_models.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/trajectory.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/reward.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/environment_presets.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/lora_targets.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/structured_output.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/rust_accelerator.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring_models.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/environment.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/curriculum_learning.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/generation_mode.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/agent_backends.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/performance_optimizer.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/multimodal_processing.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/neural_architecture_search.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/types.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/input_validation.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/transformers_compat.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/type_system.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/agent_config.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/multiturn_agent.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/multiturn_context.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/agent.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/long_term_planning.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/enhanced_state_cache.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/tool_agent.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/enhanced_state_management.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/task_environment.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/function_calling.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/basic_rewards.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/few_shot_adaptation.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/evaluation.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/evaluation_metrics.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/reward_base.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/multiturn_analysis.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/__init__.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/evaluation_models.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/value_function.py -> build/lib/stateset_agents/core
+copying stateset_agents/core/muse_protocol.py -> build/lib/stateset_agents/core
+copying stateset_agents/rewards/bayesian_reward_model.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/nsr_verifier.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/multi_objective_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/support_conversation_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/llm_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/symbolic_physics_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/llm_judge.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/kimi_k25_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/task_outcome.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/support_judge_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/multi_objective_components.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/llm_judge_adapter.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/ruler_reward.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/rewards/__init__.py -> build/lib/stateset_agents/rewards
+copying stateset_agents/training/judge_selection.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/kimi_k3_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gepo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/checkpoint_io.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/promotion.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/advanced_training_orchestrator.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/implementation_identity.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/preset_training.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/glm5_1_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/resource_capacity.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_population.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_control.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/lfm2_5_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/phi4_mini_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/replica_consensus.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/industry.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/transformer_reward_model.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/glm5_2_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/domain_randomization.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/qwen3_5_small_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/nemotron_3_5_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/smollm3_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/offline_rl_bear.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/_registry.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/checkpoint_state.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/model_checkpoint.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/advanced_training_models.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/small_model_specs.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/sampled_workflow.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/qwen3_coder_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/dapo_config.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/rollout_contract.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/harvest.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/vllm_backend.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/async_rollouts.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trainer_utils.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gspo_token_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/callbacks.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/qwen3_small_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/dapo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gpu_verify_rl.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trl_grpo_entrypoints.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_checkpoint.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gspo_entrypoints.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/vapo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/scheduler_identity.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/distributed_advantages.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/state_fingerprint.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/qwen3_5_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/metric_reduction.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/reward_calibration.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ministral3_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/qwen3_8_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/decision_transformer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gemma4_small_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_continual.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/neural_reward_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gspo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/kl_controllers.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gspo_generation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/multi_turn_checkpointing.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/dapo_entrypoints.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/kimi_k2_6_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/frontier_sft.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/grpo_accumulation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/deepseek_v4_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/eval_ladder.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/granite4_micro_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/policy_artifacts.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/native_refund_study.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/learning_state.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/profiling.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/multi_turn_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gemma4_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/configuration.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/offline_rl_bcq.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/sft.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/multi_turn_scenarios.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/distributed.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/job_journal.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/single_turn_state.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/base_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/single_turn_checkpointing.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gspo_config.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/vapo_entrypoints.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/learner_preflight.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/single_turn_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/muse_spark.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/support_recovery.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/serving_artifacts.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/rl_losses.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/loss_computation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ppo_online.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/muse_glimmer_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/sim_to_real.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/multi_turn_evaluation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/vapo_config.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/config.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ppo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ema.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/rollout_metrics.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/llama3_2_small_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/rlaif_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/backends.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/experiment_tracking.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/diagnostics.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/merge_adapter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/deepseek_r1_small_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/checkpoint_publication.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/improvement_pipeline.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trl_grpo_config.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/starter_factory.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/gpt_oss_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/runtime_state.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/objectives.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/olmo3_starter.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/river_refund.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/train.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trl_grpo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/distributed_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_checkpoint_state.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/offline_rl_algorithms.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/starter_common.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/evaluation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/nemotron_vl.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/ddp_evaluation.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/offline_grpo_trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/distributed_rollouts.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trainer.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/__init__.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/lineage.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/river_progress.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/async_runtime.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/continual_learning.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/distributed_preflight.py -> build/lib/stateset_agents/training
+copying stateset_agents/training/trainer_runtime.py -> build/lib/stateset_agents/training
+copying stateset_agents/api/inference_metrics.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/dependencies.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/versioning.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/errors.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/rate_limiter.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/streaming.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/shutdown.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/observability.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/openai_models.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/logging_config.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/training_queue.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/auth.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/messages_utils.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/constants.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/schemas.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/models.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/config.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/cache.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/main.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/persistence.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/security.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/__init__.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/resilience.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/openapi.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/middleware.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/messages_models.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/training_worker.py -> build/lib/stateset_agents/api
+copying stateset_agents/api/distributed_cache.py -> build/lib/stateset_agents/api
+copying stateset_agents/environments/conversation_simulator.py -> build/lib/stateset_agents/environments
+copying stateset_agents/environments/symbolic_physics.py -> build/lib/stateset_agents/environments
+copying stateset_agents/environments/__init__.py -> build/lib/stateset_agents/environments
+copying stateset_agents/data/tool_calling_bench.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/finetuning.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/refund_demonstrations.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/text_sft.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/curation.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/conversation_dataset.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/trajectory_ingest.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/customer_support_bench.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/nemotron_vl.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/__init__.py -> build/lib/stateset_agents/data
+copying stateset_agents/data/gsm8k.py -> build/lib/stateset_agents/data
+copying stateset_agents/tools/nsr.py -> build/lib/stateset_agents/tools
+copying stateset_agents/tools/__init__.py -> build/lib/stateset_agents/tools
+copying stateset_agents/experimental/multi_agent_coordination.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/adaptive_learning_controller.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator_logic.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator_models.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/multimodal_processing.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/neural_architecture_search.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/long_term_planning.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/few_shot_adaptation.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/experimental/__init__.py -> build/lib/stateset_agents/experimental
+copying stateset_agents/config/validation.py -> build/lib/stateset_agents/config
+copying stateset_agents/config/__init__.py -> build/lib/stateset_agents/config
+copying stateset_agents/testing/hypothesis_strategies.py -> build/lib/stateset_agents/testing
+copying stateset_agents/testing/matchers.py -> build/lib/stateset_agents/testing
+copying stateset_agents/testing/fixtures.py -> build/lib/stateset_agents/testing
+copying stateset_agents/testing/__init__.py -> build/lib/stateset_agents/testing
+copying stateset_agents/evaluation/implementation.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/industry.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/study_preflight.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/framework_protocol.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/refund_trace.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/case_separation.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/agent_runs.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/judge_evidence.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/sim_to_real_metrics.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/agent_study.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/reward_audit.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/acceptance.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/support_judge.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/__init__.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/isolation.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/evaluation/checkpoint_selection.py -> build/lib/stateset_agents/evaluation
+copying stateset_agents/remote/modal.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/deployment_registry.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/runpod.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/chat_repl.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_environment.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/tinker.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/registry.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/canary.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/deployment.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/fireworks.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/worker.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/local.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/prime.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_runtime.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/huggingface.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/ledger.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/rollout_budget.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/together.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/job.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/nebius.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/chat_session.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/model_catalog.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/coreweave.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_rl_runner.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_rl.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/artifacts.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/executor.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_renderers.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/__init__.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/river_batches.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/model_evidence.py -> build/lib/stateset_agents/remote
+copying stateset_agents/remote/serve_session.py -> build/lib/stateset_agents/remote
+copying stateset_agents/scaffolding/starter.py -> build/lib/stateset_agents/scaffolding
+copying stateset_agents/scaffolding/__init__.py -> build/lib/stateset_agents/scaffolding
+copying stateset_agents/core/gym/adapter.py -> build/lib/stateset_agents/core/gym
+copying stateset_agents/core/gym/mappers.py -> build/lib/stateset_agents/core/gym
+copying stateset_agents/core/gym/processors.py -> build/lib/stateset_agents/core/gym
+copying stateset_agents/core/gym/agents.py -> build/lib/stateset_agents/core/gym
+copying stateset_agents/core/gym/__init__.py -> build/lib/stateset_agents/core/gym
+copying stateset_agents/core/environments/json_action.py -> build/lib/stateset_agents/core/environments
+copying stateset_agents/core/environments/multimodal_environment.py -> build/lib/stateset_agents/core/environments
+copying stateset_agents/core/environments/refund_policy_environment.py -> build/lib/stateset_agents/core/environments
+copying stateset_agents/core/environments/refund_environment.py -> build/lib/stateset_agents/core/environments
+copying stateset_agents/core/enhanced/advanced_rl_algorithms.py -> build/lib/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/enhanced_agent.py -> build/lib/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/advanced_evaluation.py -> build/lib/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/__init__.py -> build/lib/stateset_agents/core/enhanced
+copying stateset_agents/training/hpo/grpo_hpo_trainer.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/base.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/optuna_backend.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/search_spaces.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/ray_tune_backend.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/config.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/wandb_backend.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/__init__.py -> build/lib/stateset_agents/training/hpo
+copying stateset_agents/training/adapters/verl.py -> build/lib/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/nemo_rl.py -> build/lib/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/openrlhf.py -> build/lib/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/__init__.py -> build/lib/stateset_agents/training/adapters
+copying stateset_agents/training/auto_research/experiment_tracker.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/experiment_loop.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/early_abort.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/checkpoint_manager.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/search_spaces.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/proposer.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/config.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/analysis.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/llm_proposer.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/__init__.py -> build/lib/stateset_agents/training/auto_research
+copying stateset_agents/api/grpo/rate_limiter.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/service_routes.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/state.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/handlers.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/service.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/auth.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/models.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/router_v1.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/config.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/__init__.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/metrics.py -> build/lib/stateset_agents/api/grpo
+copying stateset_agents/api/services/agent_service.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/services/demo_engine.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/services/training_service.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/services/auth_service.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/services/inference_service.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/services/__init__.py -> build/lib/stateset_agents/api/services
+copying stateset_agents/api/routers/messages.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/v1.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/training_lab.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/openai.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/agents.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/training.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/finetune.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/distributed_rollouts.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/__init__.py -> build/lib/stateset_agents/api/routers
+copying stateset_agents/api/routers/metrics.py -> build/lib/stateset_agents/api/routers
+running egg_info
+writing stateset_agents.egg-info/PKG-INFO
+writing dependency_links to stateset_agents.egg-info/dependency_links.txt
+writing entry points to stateset_agents.egg-info/entry_points.txt
+writing requirements to stateset_agents.egg-info/requires.txt
+writing top-level names to stateset_agents.egg-info/top_level.txt
+reading manifest file 'stateset_agents.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+no previously-included directories found matching 'htmlcov'
+no previously-included directories found matching 'outputs'
+no previously-included directories found matching 'checkpoints'
+no previously-included directories found matching 'benchmark_results'
+no previously-included directories found matching 'docs/_build'
+no previously-included directories found matching 'dist'
+no previously-included directories found matching 'build'
+no previously-included directories found matching '.git'
+no previously-included directories found matching '.worktrees'
+warning: no previously-included files matching '*.log' found anywhere in distribution
+warning: no previously-included files matching 'coverage.xml' found anywhere in distribution
+warning: no previously-included files matching '__pycache__' found anywhere in distribution
+warning: no previously-included files matching '*.py[cod]' found anywhere in distribution
+adding license file 'LICENSE'
+writing manifest file 'stateset_agents.egg-info/SOURCES.txt'
+copying stateset_agents/py.typed -> build/lib/stateset_agents
+copying stateset_agents/config/presets/agents/helpful_assistant.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/customer_service.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/tutor.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/creative_writer.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/environments/customer_service.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/tutoring.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/sales.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/technical_support.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/experiments/support_recovery_preflight6.json -> build/lib/stateset_agents/config/presets/experiments
+copying stateset_agents/evaluation/rubrics/support_rubric_v3.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v1.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v4.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v2.md -> build/lib/stateset_agents/evaluation/rubrics
+copying traceforge_rl/py.typed -> build/lib/traceforge_rl
+copying stateset_agents/config/presets/experiments/support_recovery_preflight6.json -> build/lib/stateset_agents/config/presets/experiments
+copying stateset_agents/config/presets/agents/creative_writer.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/customer_service.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/helpful_assistant.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/tutor.yaml -> build/lib/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/environments/customer_service.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/sales.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/technical_support.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/tutoring.yaml -> build/lib/stateset_agents/config/presets/environments
+copying stateset_agents/evaluation/rubrics/support_rubric_v1.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v2.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v3.md -> build/lib/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v4.md -> build/lib/stateset_agents/evaluation/rubrics
+installing to build/bdist.linux-x86_64/wheel
+running install
+running install_lib
+creating build/bdist.linux-x86_64/wheel
+creating build/bdist.linux-x86_64/wheel/stateset_agents
+copying build/lib/stateset_agents/cli_remote.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_mcp.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/exceptions.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/tui_tasks.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_benchmark.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_advanced.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/utils
+copying build/lib/stateset_agents/utils/performance_monitor.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/credentials.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/async_calls.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/observability.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/wandb_integration.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/profiler.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/reproducibility.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/cache.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/wandb_logger.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/repo_hygiene.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/alerts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/monitoring.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/security.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/symbolic_math.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/wandb_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/utils/logging.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/utils
+copying build/lib/stateset_agents/cli_muse.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_meta.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_finetune.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_init.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_provider_submission.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/core
+copying build/lib/stateset_agents/core/reward_factories.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/conversation_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/async_pool.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/checkpoint_io.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/environment_base.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/agent_factories.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/domain_rewards.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/errors.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/multi_agent_coordination.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/model_presets.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/adaptive_learning_controller.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/chat_masking.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/data_processing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/intelligent_orchestrator_logic.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/memory.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/error_handling.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/advanced_monitoring_tracing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/frontier_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/computational_engine.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/intelligent_orchestrator_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/trajectory.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/advanced_monitoring.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/environment_presets.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/lora_targets.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+creating build/bdist.linux-x86_64/wheel/stateset_agents/core/gym
+copying build/lib/stateset_agents/core/gym/adapter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/gym
+copying build/lib/stateset_agents/core/gym/mappers.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/gym
+copying build/lib/stateset_agents/core/gym/processors.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/gym
+copying build/lib/stateset_agents/core/gym/agents.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/gym
+copying build/lib/stateset_agents/core/gym/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/gym
+copying build/lib/stateset_agents/core/structured_output.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/rust_accelerator.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/advanced_monitoring_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/curriculum_learning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/generation_mode.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/agent_backends.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/performance_optimizer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/multimodal_processing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/neural_architecture_search.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/types.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/input_validation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/transformers_compat.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/type_system.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+creating build/bdist.linux-x86_64/wheel/stateset_agents/core/environments
+copying build/lib/stateset_agents/core/environments/json_action.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/environments
+copying build/lib/stateset_agents/core/environments/multimodal_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/environments
+copying build/lib/stateset_agents/core/environments/refund_policy_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/environments
+copying build/lib/stateset_agents/core/environments/refund_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/environments
+copying build/lib/stateset_agents/core/agent_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/multiturn_agent.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/multiturn_context.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/agent.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/long_term_planning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/enhanced_state_cache.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/tool_agent.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/enhanced_state_management.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/task_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/intelligent_orchestrator.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/function_calling.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/basic_rewards.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/few_shot_adaptation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/evaluation_metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/reward_base.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/multiturn_analysis.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+creating build/bdist.linux-x86_64/wheel/stateset_agents/core/enhanced
+copying build/lib/stateset_agents/core/enhanced/advanced_rl_algorithms.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/enhanced
+copying build/lib/stateset_agents/core/enhanced/enhanced_agent.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/enhanced
+copying build/lib/stateset_agents/core/enhanced/advanced_evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/enhanced
+copying build/lib/stateset_agents/core/enhanced/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core/enhanced
+copying build/lib/stateset_agents/core/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/evaluation_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/value_function.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+copying build/lib/stateset_agents/core/muse_protocol.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/core
+creating build/bdist.linux-x86_64/wheel/stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/bayesian_reward_model.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/nsr_verifier.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/multi_objective_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/support_conversation_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/llm_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/symbolic_physics_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/llm_judge.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/kimi_k25_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/task_outcome.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/support_judge_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/multi_objective_components.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/llm_judge_adapter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/ruler_reward.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/rewards/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/rewards
+copying build/lib/stateset_agents/finetune_quality.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_evaluate.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/training
+copying build/lib/stateset_agents/training/judge_selection.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/kimi_k3_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gepo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/checkpoint_io.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/promotion.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/advanced_training_orchestrator.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/implementation_identity.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/preset_training.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/glm5_1_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/resource_capacity.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_population.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_control.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/lfm2_5_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/phi4_mini_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/replica_consensus.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/industry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/transformer_reward_model.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/glm5_2_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/domain_randomization.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/qwen3_5_small_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/nemotron_3_5_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/smollm3_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/offline_rl_bear.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/_registry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/checkpoint_state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/model_checkpoint.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/advanced_training_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/small_model_specs.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/sampled_workflow.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/qwen3_coder_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/dapo_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/rollout_contract.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/harvest.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/vllm_backend.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/async_rollouts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/trainer_utils.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gspo_token_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/callbacks.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/qwen3_small_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/dapo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gpu_verify_rl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+creating build/bdist.linux-x86_64/wheel/stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/grpo_hpo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/base.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/optuna_backend.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/search_spaces.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/ray_tune_backend.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/wandb_backend.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/hpo/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/hpo
+copying build/lib/stateset_agents/training/trl_grpo_entrypoints.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_checkpoint.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gspo_entrypoints.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/vapo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/scheduler_identity.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/distributed_advantages.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/state_fingerprint.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/qwen3_5_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/metric_reduction.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/reward_calibration.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ministral3_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/qwen3_8_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/decision_transformer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gemma4_small_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_continual.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/neural_reward_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gspo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/kl_controllers.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gspo_generation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/multi_turn_checkpointing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/dapo_entrypoints.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/kimi_k2_6_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/frontier_sft.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/grpo_accumulation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/deepseek_v4_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/eval_ladder.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/granite4_micro_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/policy_artifacts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/native_refund_study.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/learning_state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/profiling.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/multi_turn_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gemma4_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/configuration.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/offline_rl_bcq.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/sft.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/multi_turn_scenarios.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/distributed.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/job_journal.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+creating build/bdist.linux-x86_64/wheel/stateset_agents/training/adapters
+copying build/lib/stateset_agents/training/adapters/verl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/adapters
+copying build/lib/stateset_agents/training/adapters/nemo_rl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/adapters
+copying build/lib/stateset_agents/training/adapters/openrlhf.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/adapters
+copying build/lib/stateset_agents/training/adapters/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/adapters
+copying build/lib/stateset_agents/training/single_turn_state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/base_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/single_turn_checkpointing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gspo_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/vapo_entrypoints.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/learner_preflight.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/single_turn_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/muse_spark.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/support_recovery.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/serving_artifacts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/rl_losses.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/loss_computation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ppo_online.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/muse_glimmer_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/sim_to_real.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/multi_turn_evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/vapo_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ppo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ema.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/rollout_metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/llama3_2_small_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/rlaif_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/backends.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/experiment_tracking.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/diagnostics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/merge_adapter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/deepseek_r1_small_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/checkpoint_publication.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/improvement_pipeline.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/trl_grpo_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/starter_factory.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/gpt_oss_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/runtime_state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/objectives.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/olmo3_starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/river_refund.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/train.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/trl_grpo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/distributed_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_checkpoint_state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/offline_rl_algorithms.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/starter_common.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+creating build/bdist.linux-x86_64/wheel/stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/experiment_tracker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/experiment_loop.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/early_abort.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/checkpoint_manager.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/search_spaces.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/proposer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/analysis.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/llm_proposer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/auto_research/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training/auto_research
+copying build/lib/stateset_agents/training/nemotron_vl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/ddp_evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/offline_grpo_trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/distributed_rollouts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/trainer.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/lineage.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/river_progress.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/async_runtime.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/continual_learning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/distributed_preflight.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/training/trainer_runtime.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/training
+copying build/lib/stateset_agents/finetune_evaluation_worker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_evaluation_tui.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/tui_actions.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_research.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_nomination.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_inspection.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_validation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_train.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_worker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_industry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_ingest.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/api
+copying build/lib/stateset_agents/api/inference_metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/dependencies.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/versioning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/errors.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/rate_limiter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/streaming.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/shutdown.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/observability.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+creating build/bdist.linux-x86_64/wheel/stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/rate_limiter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/service_routes.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/state.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/handlers.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/service.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/auth.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/router_v1.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/grpo/metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/grpo
+copying build/lib/stateset_agents/api/openai_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/logging_config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/training_queue.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/auth.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/messages_utils.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/constants.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/schemas.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+creating build/bdist.linux-x86_64/wheel/stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/agent_service.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/demo_engine.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/training_service.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/auth_service.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/inference_service.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+copying build/lib/stateset_agents/api/services/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/services
+creating build/bdist.linux-x86_64/wheel/stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/messages.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/v1.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/training_lab.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/openai.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/agents.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/training.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/finetune.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/distributed_rollouts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/routers/metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api/routers
+copying build/lib/stateset_agents/api/config.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/cache.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/main.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/persistence.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/security.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/resilience.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/openapi.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/middleware.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/messages_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/training_worker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/api/distributed_cache.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/api
+copying build/lib/stateset_agents/mcp_server.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_improve.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/environments
+copying build/lib/stateset_agents/environments/conversation_simulator.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/environments
+copying build/lib/stateset_agents/environments/symbolic_physics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/environments
+copying build/lib/stateset_agents/environments/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/environments
+copying build/lib/stateset_agents/cli_flywheel.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/data
+copying build/lib/stateset_agents/data/tool_calling_bench.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/finetuning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/refund_demonstrations.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/text_sft.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/curation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/conversation_dataset.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/trajectory_ingest.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/customer_support_bench.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/nemotron_vl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/data/gsm8k.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/data
+copying build/lib/stateset_agents/cli_frontier.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_nemotron.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/__main__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/py.typed -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/cli_chat.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/tools
+copying build/lib/stateset_agents/tools/nsr.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/tools
+copying build/lib/stateset_agents/tools/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/tools
+creating build/bdist.linux-x86_64/wheel/stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/multi_agent_coordination.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/adaptive_learning_controller.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/intelligent_orchestrator_logic.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/intelligent_orchestrator_models.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/multimodal_processing.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/neural_architecture_search.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/long_term_planning.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/intelligent_orchestrator.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/few_shot_adaptation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/experimental/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/experimental
+copying build/lib/stateset_agents/finetune_recovery.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/config
+copying build/lib/stateset_agents/config/validation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/config
+creating build/bdist.linux-x86_64/wheel/stateset_agents/config/presets
+creating build/bdist.linux-x86_64/wheel/stateset_agents/config/presets/experiments
+copying build/lib/stateset_agents/config/presets/experiments/support_recovery_preflight6.json -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/experiments
+creating build/bdist.linux-x86_64/wheel/stateset_agents/config/presets/agents
+copying build/lib/stateset_agents/config/presets/agents/helpful_assistant.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/agents
+copying build/lib/stateset_agents/config/presets/agents/customer_service.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/agents
+copying build/lib/stateset_agents/config/presets/agents/tutor.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/agents
+copying build/lib/stateset_agents/config/presets/agents/creative_writer.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/config/presets/environments
+copying build/lib/stateset_agents/config/presets/environments/customer_service.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/environments
+copying build/lib/stateset_agents/config/presets/environments/tutoring.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/environments
+copying build/lib/stateset_agents/config/presets/environments/sales.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/environments
+copying build/lib/stateset_agents/config/presets/environments/technical_support.yaml -> build/bdist.linux-x86_64/wheel/./stateset_agents/config/presets/environments
+copying build/lib/stateset_agents/config/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/config
+copying build/lib/stateset_agents/finetune_remote_code.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/testing
+copying build/lib/stateset_agents/testing/hypothesis_strategies.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/testing
+copying build/lib/stateset_agents/testing/matchers.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/testing
+copying build/lib/stateset_agents/testing/fixtures.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/testing
+copying build/lib/stateset_agents/testing/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/testing
+creating build/bdist.linux-x86_64/wheel/stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/implementation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/industry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/study_preflight.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/framework_protocol.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+creating build/bdist.linux-x86_64/wheel/stateset_agents/evaluation/rubrics
+copying build/lib/stateset_agents/evaluation/rubrics/support_rubric_v3.md -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation/rubrics
+copying build/lib/stateset_agents/evaluation/rubrics/support_rubric_v1.md -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation/rubrics
+copying build/lib/stateset_agents/evaluation/rubrics/support_rubric_v4.md -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation/rubrics
+copying build/lib/stateset_agents/evaluation/rubrics/support_rubric_v2.md -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation/rubrics
+copying build/lib/stateset_agents/evaluation/refund_trace.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/case_separation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/agent_runs.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/judge_evidence.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/sim_to_real_metrics.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/agent_study.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/reward_audit.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/acceptance.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/support_judge.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/isolation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/evaluation/checkpoint_selection.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/evaluation
+copying build/lib/stateset_agents/finetune_evaluation.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/remote
+copying build/lib/stateset_agents/remote/modal.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/deployment_registry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/runpod.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/chat_repl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_environment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/tinker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/registry.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/canary.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/deployment.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/fireworks.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/worker.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/local.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/prime.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_runtime.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/huggingface.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/ledger.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/rollout_budget.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/together.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/job.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/nebius.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/chat_session.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/model_catalog.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/coreweave.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_rl_runner.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_rl.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/artifacts.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/executor.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_renderers.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/river_batches.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/model_evidence.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/remote/serve_session.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/remote
+copying build/lib/stateset_agents/tui.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/stateset_agents/scaffolding
+copying build/lib/stateset_agents/scaffolding/starter.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/scaffolding
+copying build/lib/stateset_agents/scaffolding/__init__.py -> build/bdist.linux-x86_64/wheel/./stateset_agents/scaffolding
+copying build/lib/stateset_agents/flywheel.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+copying build/lib/stateset_agents/finetune_workspace.py -> build/bdist.linux-x86_64/wheel/./stateset_agents
+creating build/bdist.linux-x86_64/wheel/traceforge_rl
+copying build/lib/traceforge_rl/__main__.py -> build/bdist.linux-x86_64/wheel/./traceforge_rl
+copying build/lib/traceforge_rl/py.typed -> build/bdist.linux-x86_64/wheel/./traceforge_rl
+copying build/lib/traceforge_rl/__init__.py -> build/bdist.linux-x86_64/wheel/./traceforge_rl
+running install_egg_info
+Copying stateset_agents.egg-info to build/bdist.linux-x86_64/wheel/./stateset_agents-0.66.1-py3.12.egg-info
+running install_scripts
+creating build/bdist.linux-x86_64/wheel/stateset_agents-0.66.1.dist-info/WHEEL
+creating '/tmp/stateset-a-plus-20261018/dist/.tmp-zpcequjw/stateset_agents-0.66.1-py3-none-any.whl' and adding 'build/bdist.linux-x86_64/wheel' to it
+adding 'stateset_agents/__init__.py'
+adding 'stateset_agents/__main__.py'
+adding 'stateset_agents/cli.py'
+adding 'stateset_agents/cli_advanced.py'
+adding 'stateset_agents/cli_benchmark.py'
+adding 'stateset_agents/cli_chat.py'
+adding 'stateset_agents/cli_evaluate.py'
+adding 'stateset_agents/cli_finetune.py'
+adding 'stateset_agents/cli_flywheel.py'
+adding 'stateset_agents/cli_frontier.py'
+adding 'stateset_agents/cli_improve.py'
+adding 'stateset_agents/cli_industry.py'
+adding 'stateset_agents/cli_ingest.py'
+adding 'stateset_agents/cli_init.py'
+adding 'stateset_agents/cli_mcp.py'
+adding 'stateset_agents/cli_meta.py'
+adding 'stateset_agents/cli_muse.py'
+adding 'stateset_agents/cli_nemotron.py'
+adding 'stateset_agents/cli_remote.py'
+adding 'stateset_agents/cli_research.py'
+adding 'stateset_agents/cli_train.py'
+adding 'stateset_agents/exceptions.py'
+adding 'stateset_agents/finetune_evaluation.py'
+adding 'stateset_agents/finetune_evaluation_tui.py'
+adding 'stateset_agents/finetune_evaluation_worker.py'
+adding 'stateset_agents/finetune_inspection.py'
+adding 'stateset_agents/finetune_nomination.py'
+adding 'stateset_agents/finetune_provider_submission.py'
+adding 'stateset_agents/finetune_quality.py'
+adding 'stateset_agents/finetune_recovery.py'
+adding 'stateset_agents/finetune_remote_code.py'
+adding 'stateset_agents/finetune_validation.py'
+adding 'stateset_agents/finetune_worker.py'
+adding 'stateset_agents/finetune_workspace.py'
+adding 'stateset_agents/flywheel.py'
+adding 'stateset_agents/mcp_server.py'
+adding 'stateset_agents/py.typed'
+adding 'stateset_agents/tui.py'
+adding 'stateset_agents/tui_actions.py'
+adding 'stateset_agents/tui_tasks.py'
+adding 'stateset_agents/api/__init__.py'
+adding 'stateset_agents/api/auth.py'
+adding 'stateset_agents/api/cache.py'
+adding 'stateset_agents/api/config.py'
+adding 'stateset_agents/api/constants.py'
+adding 'stateset_agents/api/dependencies.py'
+adding 'stateset_agents/api/distributed_cache.py'
+adding 'stateset_agents/api/errors.py'
+adding 'stateset_agents/api/inference_metrics.py'
+adding 'stateset_agents/api/logging_config.py'
+adding 'stateset_agents/api/main.py'
+adding 'stateset_agents/api/messages_models.py'
+adding 'stateset_agents/api/messages_utils.py'
+adding 'stateset_agents/api/middleware.py'
+adding 'stateset_agents/api/models.py'
+adding 'stateset_agents/api/observability.py'
+adding 'stateset_agents/api/openai_models.py'
+adding 'stateset_agents/api/openapi.py'
+adding 'stateset_agents/api/persistence.py'
+adding 'stateset_agents/api/rate_limiter.py'
+adding 'stateset_agents/api/resilience.py'
+adding 'stateset_agents/api/schemas.py'
+adding 'stateset_agents/api/security.py'
+adding 'stateset_agents/api/shutdown.py'
+adding 'stateset_agents/api/streaming.py'
+adding 'stateset_agents/api/training_queue.py'
+adding 'stateset_agents/api/training_worker.py'
+adding 'stateset_agents/api/versioning.py'
+adding 'stateset_agents/api/grpo/__init__.py'
+adding 'stateset_agents/api/grpo/auth.py'
+adding 'stateset_agents/api/grpo/config.py'
+adding 'stateset_agents/api/grpo/handlers.py'
+adding 'stateset_agents/api/grpo/metrics.py'
+adding 'stateset_agents/api/grpo/models.py'
+adding 'stateset_agents/api/grpo/rate_limiter.py'
+adding 'stateset_agents/api/grpo/router_v1.py'
+adding 'stateset_agents/api/grpo/service.py'
+adding 'stateset_agents/api/grpo/service_routes.py'
+adding 'stateset_agents/api/grpo/state.py'
+adding 'stateset_agents/api/routers/__init__.py'
+adding 'stateset_agents/api/routers/agents.py'
+adding 'stateset_agents/api/routers/distributed_rollouts.py'
+adding 'stateset_agents/api/routers/finetune.py'
+adding 'stateset_agents/api/routers/messages.py'
+adding 'stateset_agents/api/routers/metrics.py'
+adding 'stateset_agents/api/routers/openai.py'
+adding 'stateset_agents/api/routers/training.py'
+adding 'stateset_agents/api/routers/training_lab.py'
+adding 'stateset_agents/api/routers/v1.py'
+adding 'stateset_agents/api/services/__init__.py'
+adding 'stateset_agents/api/services/agent_service.py'
+adding 'stateset_agents/api/services/auth_service.py'
+adding 'stateset_agents/api/services/demo_engine.py'
+adding 'stateset_agents/api/services/inference_service.py'
+adding 'stateset_agents/api/services/training_service.py'
+adding 'stateset_agents/config/__init__.py'
+adding 'stateset_agents/config/validation.py'
+adding 'stateset_agents/config/presets/agents/creative_writer.yaml'
+adding 'stateset_agents/config/presets/agents/customer_service.yaml'
+adding 'stateset_agents/config/presets/agents/helpful_assistant.yaml'
+adding 'stateset_agents/config/presets/agents/tutor.yaml'
+adding 'stateset_agents/config/presets/environments/customer_service.yaml'
+adding 'stateset_agents/config/presets/environments/sales.yaml'
+adding 'stateset_agents/config/presets/environments/technical_support.yaml'
+adding 'stateset_agents/config/presets/environments/tutoring.yaml'
+adding 'stateset_agents/config/presets/experiments/support_recovery_preflight6.json'
+adding 'stateset_agents/core/__init__.py'
+adding 'stateset_agents/core/adaptive_learning_controller.py'
+adding 'stateset_agents/core/advanced_monitoring.py'
+adding 'stateset_agents/core/advanced_monitoring_models.py'
+adding 'stateset_agents/core/advanced_monitoring_tracing.py'
+adding 'stateset_agents/core/agent.py'
+adding 'stateset_agents/core/agent_backends.py'
+adding 'stateset_agents/core/agent_config.py'
+adding 'stateset_agents/core/agent_factories.py'
+adding 'stateset_agents/core/async_pool.py'
+adding 'stateset_agents/core/basic_rewards.py'
+adding 'stateset_agents/core/chat_masking.py'
+adding 'stateset_agents/core/checkpoint_io.py'
+adding 'stateset_agents/core/computational_engine.py'
+adding 'stateset_agents/core/conversation_environment.py'
+adding 'stateset_agents/core/curriculum_learning.py'
+adding 'stateset_agents/core/data_processing.py'
+adding 'stateset_agents/core/domain_rewards.py'
+adding 'stateset_agents/core/enhanced_state_cache.py'
+adding 'stateset_agents/core/enhanced_state_management.py'
+adding 'stateset_agents/core/environment.py'
+adding 'stateset_agents/core/environment_base.py'
+adding 'stateset_agents/core/environment_presets.py'
+adding 'stateset_agents/core/error_handling.py'
+adding 'stateset_agents/core/errors.py'
+adding 'stateset_agents/core/evaluation.py'
+adding 'stateset_agents/core/evaluation_metrics.py'
+adding 'stateset_agents/core/evaluation_models.py'
+adding 'stateset_agents/core/few_shot_adaptation.py'
+adding 'stateset_agents/core/frontier_models.py'
+adding 'stateset_agents/core/function_calling.py'
+adding 'stateset_agents/core/generation_mode.py'
+adding 'stateset_agents/core/input_validation.py'
+adding 'stateset_agents/core/intelligent_orchestrator.py'
+adding 'stateset_agents/core/intelligent_orchestrator_logic.py'
+adding 'stateset_agents/core/intelligent_orchestrator_models.py'
+adding 'stateset_agents/core/long_term_planning.py'
+adding 'stateset_agents/core/lora_targets.py'
+adding 'stateset_agents/core/memory.py'
+adding 'stateset_agents/core/model_presets.py'
+adding 'stateset_agents/core/multi_agent_coordination.py'
+adding 'stateset_agents/core/multimodal_processing.py'
+adding 'stateset_agents/core/multiturn_agent.py'
+adding 'stateset_agents/core/multiturn_analysis.py'
+adding 'stateset_agents/core/multiturn_context.py'
+adding 'stateset_agents/core/muse_protocol.py'
+adding 'stateset_agents/core/neural_architecture_search.py'
+adding 'stateset_agents/core/performance_optimizer.py'
+adding 'stateset_agents/core/reward.py'
+adding 'stateset_agents/core/reward_base.py'
+adding 'stateset_agents/core/reward_factories.py'
+adding 'stateset_agents/core/rust_accelerator.py'
+adding 'stateset_agents/core/structured_output.py'
+adding 'stateset_agents/core/task_environment.py'
+adding 'stateset_agents/core/tool_agent.py'
+adding 'stateset_agents/core/trajectory.py'
+adding 'stateset_agents/core/transformers_compat.py'
+adding 'stateset_agents/core/type_system.py'
+adding 'stateset_agents/core/types.py'
+adding 'stateset_agents/core/value_function.py'
+adding 'stateset_agents/core/enhanced/__init__.py'
+adding 'stateset_agents/core/enhanced/advanced_evaluation.py'
+adding 'stateset_agents/core/enhanced/advanced_rl_algorithms.py'
+adding 'stateset_agents/core/enhanced/enhanced_agent.py'
+adding 'stateset_agents/core/environments/json_action.py'
+adding 'stateset_agents/core/environments/multimodal_environment.py'
+adding 'stateset_agents/core/environments/refund_environment.py'
+adding 'stateset_agents/core/environments/refund_policy_environment.py'
+adding 'stateset_agents/core/gym/__init__.py'
+adding 'stateset_agents/core/gym/adapter.py'
+adding 'stateset_agents/core/gym/agents.py'
+adding 'stateset_agents/core/gym/mappers.py'
+adding 'stateset_agents/core/gym/processors.py'
+adding 'stateset_agents/data/__init__.py'
+adding 'stateset_agents/data/conversation_dataset.py'
+adding 'stateset_agents/data/curation.py'
+adding 'stateset_agents/data/customer_support_bench.py'
+adding 'stateset_agents/data/finetuning.py'
+adding 'stateset_agents/data/gsm8k.py'
+adding 'stateset_agents/data/nemotron_vl.py'
+adding 'stateset_agents/data/refund_demonstrations.py'
+adding 'stateset_agents/data/text_sft.py'
+adding 'stateset_agents/data/tool_calling_bench.py'
+adding 'stateset_agents/data/trajectory_ingest.py'
+adding 'stateset_agents/environments/__init__.py'
+adding 'stateset_agents/environments/conversation_simulator.py'
+adding 'stateset_agents/environments/symbolic_physics.py'
+adding 'stateset_agents/evaluation/__init__.py'
+adding 'stateset_agents/evaluation/acceptance.py'
+adding 'stateset_agents/evaluation/agent_runs.py'
+adding 'stateset_agents/evaluation/agent_study.py'
+adding 'stateset_agents/evaluation/case_separation.py'
+adding 'stateset_agents/evaluation/checkpoint_selection.py'
+adding 'stateset_agents/evaluation/framework_protocol.py'
+adding 'stateset_agents/evaluation/implementation.py'
+adding 'stateset_agents/evaluation/industry.py'
+adding 'stateset_agents/evaluation/isolation.py'
+adding 'stateset_agents/evaluation/judge_evidence.py'
+adding 'stateset_agents/evaluation/refund_trace.py'
+adding 'stateset_agents/evaluation/reward_audit.py'
+adding 'stateset_agents/evaluation/sim_to_real_metrics.py'
+adding 'stateset_agents/evaluation/study_preflight.py'
+adding 'stateset_agents/evaluation/support_judge.py'
+adding 'stateset_agents/evaluation/rubrics/support_rubric_v1.md'
+adding 'stateset_agents/evaluation/rubrics/support_rubric_v2.md'
+adding 'stateset_agents/evaluation/rubrics/support_rubric_v3.md'
+adding 'stateset_agents/evaluation/rubrics/support_rubric_v4.md'
+adding 'stateset_agents/experimental/__init__.py'
+adding 'stateset_agents/experimental/adaptive_learning_controller.py'
+adding 'stateset_agents/experimental/few_shot_adaptation.py'
+adding 'stateset_agents/experimental/intelligent_orchestrator.py'
+adding 'stateset_agents/experimental/intelligent_orchestrator_logic.py'
+adding 'stateset_agents/experimental/intelligent_orchestrator_models.py'
+adding 'stateset_agents/experimental/long_term_planning.py'
+adding 'stateset_agents/experimental/multi_agent_coordination.py'
+adding 'stateset_agents/experimental/multimodal_processing.py'
+adding 'stateset_agents/experimental/neural_architecture_search.py'
+adding 'stateset_agents/remote/__init__.py'
+adding 'stateset_agents/remote/artifacts.py'
+adding 'stateset_agents/remote/canary.py'
+adding 'stateset_agents/remote/chat_repl.py'
+adding 'stateset_agents/remote/chat_session.py'
+adding 'stateset_agents/remote/coreweave.py'
+adding 'stateset_agents/remote/deployment.py'
+adding 'stateset_agents/remote/deployment_registry.py'
+adding 'stateset_agents/remote/executor.py'
+adding 'stateset_agents/remote/fireworks.py'
+adding 'stateset_agents/remote/huggingface.py'
+adding 'stateset_agents/remote/job.py'
+adding 'stateset_agents/remote/ledger.py'
+adding 'stateset_agents/remote/local.py'
+adding 'stateset_agents/remote/modal.py'
+adding 'stateset_agents/remote/model_catalog.py'
+adding 'stateset_agents/remote/model_evidence.py'
+adding 'stateset_agents/remote/nebius.py'
+adding 'stateset_agents/remote/prime.py'
+adding 'stateset_agents/remote/registry.py'
+adding 'stateset_agents/remote/river.py'
+adding 'stateset_agents/remote/river_batches.py'
+adding 'stateset_agents/remote/river_environment.py'
+adding 'stateset_agents/remote/river_renderers.py'
+adding 'stateset_agents/remote/river_rl.py'
+adding 'stateset_agents/remote/river_rl_runner.py'
+adding 'stateset_agents/remote/river_runtime.py'
+adding 'stateset_agents/remote/rollout_budget.py'
+adding 'stateset_agents/remote/runpod.py'
+adding 'stateset_agents/remote/serve_session.py'
+adding 'stateset_agents/remote/tinker.py'
+adding 'stateset_agents/remote/together.py'
+adding 'stateset_agents/remote/worker.py'
+adding 'stateset_agents/rewards/__init__.py'
+adding 'stateset_agents/rewards/bayesian_reward_model.py'
+adding 'stateset_agents/rewards/kimi_k25_reward.py'
+adding 'stateset_agents/rewards/llm_judge.py'
+adding 'stateset_agents/rewards/llm_judge_adapter.py'
+adding 'stateset_agents/rewards/llm_reward.py'
+adding 'stateset_agents/rewards/multi_objective_components.py'
+adding 'stateset_agents/rewards/multi_objective_reward.py'
+adding 'stateset_agents/rewards/nsr_verifier.py'
+adding 'stateset_agents/rewards/ruler_reward.py'
+adding 'stateset_agents/rewards/support_conversation_reward.py'
+adding 'stateset_agents/rewards/support_judge_reward.py'
+adding 'stateset_agents/rewards/symbolic_physics_reward.py'
+adding 'stateset_agents/rewards/task_outcome.py'
+adding 'stateset_agents/scaffolding/__init__.py'
+adding 'stateset_agents/scaffolding/starter.py'
+adding 'stateset_agents/testing/__init__.py'
+adding 'stateset_agents/testing/fixtures.py'
+adding 'stateset_agents/testing/hypothesis_strategies.py'
+adding 'stateset_agents/testing/matchers.py'
+adding 'stateset_agents/tools/__init__.py'
+adding 'stateset_agents/tools/nsr.py'
+adding 'stateset_agents/training/__init__.py'
+adding 'stateset_agents/training/_registry.py'
+adding 'stateset_agents/training/advanced_training_models.py'
+adding 'stateset_agents/training/advanced_training_orchestrator.py'
+adding 'stateset_agents/training/async_rollouts.py'
+adding 'stateset_agents/training/async_runtime.py'
+adding 'stateset_agents/training/backends.py'
+adding 'stateset_agents/training/base_trainer.py'
+adding 'stateset_agents/training/callbacks.py'
+adding 'stateset_agents/training/checkpoint_io.py'
+adding 'stateset_agents/training/checkpoint_publication.py'
+adding 'stateset_agents/training/checkpoint_state.py'
+adding 'stateset_agents/training/config.py'
+adding 'stateset_agents/training/configuration.py'
+adding 'stateset_agents/training/continual_learning.py'
+adding 'stateset_agents/training/dapo_config.py'
+adding 'stateset_agents/training/dapo_entrypoints.py'
+adding 'stateset_agents/training/dapo_trainer.py'
+adding 'stateset_agents/training/ddp_checkpoint.py'
+adding 'stateset_agents/training/ddp_checkpoint_state.py'
+adding 'stateset_agents/training/ddp_continual.py'
+adding 'stateset_agents/training/ddp_control.py'
+adding 'stateset_agents/training/ddp_evaluation.py'
+adding 'stateset_agents/training/ddp_population.py'
+adding 'stateset_agents/training/decision_transformer.py'
+adding 'stateset_agents/training/deepseek_r1_small_starter.py'
+adding 'stateset_agents/training/deepseek_v4_starter.py'
+adding 'stateset_agents/training/diagnostics.py'
+adding 'stateset_agents/training/distributed.py'
+adding 'stateset_agents/training/distributed_advantages.py'
+adding 'stateset_agents/training/distributed_preflight.py'
+adding 'stateset_agents/training/distributed_rollouts.py'
+adding 'stateset_agents/training/distributed_trainer.py'
+adding 'stateset_agents/training/domain_randomization.py'
+adding 'stateset_agents/training/ema.py'
+adding 'stateset_agents/training/eval_ladder.py'
+adding 'stateset_agents/training/evaluation.py'
+adding 'stateset_agents/training/experiment_tracking.py'
+adding 'stateset_agents/training/frontier_sft.py'
+adding 'stateset_agents/training/gemma4_small_starter.py'
+adding 'stateset_agents/training/gemma4_starter.py'
+adding 'stateset_agents/training/gepo_trainer.py'
+adding 'stateset_agents/training/glm5_1_starter.py'
+adding 'stateset_agents/training/glm5_2_starter.py'
+adding 'stateset_agents/training/gpt_oss_starter.py'
+adding 'stateset_agents/training/gpu_verify_rl.py'
+adding 'stateset_agents/training/granite4_micro_starter.py'
+adding 'stateset_agents/training/grpo_accumulation.py'
+adding 'stateset_agents/training/gspo_config.py'
+adding 'stateset_agents/training/gspo_entrypoints.py'
+adding 'stateset_agents/training/gspo_generation.py'
+adding 'stateset_agents/training/gspo_token_trainer.py'
+adding 'stateset_agents/training/gspo_trainer.py'
+adding 'stateset_agents/training/harvest.py'
+adding 'stateset_agents/training/implementation_identity.py'
+adding 'stateset_agents/training/improvement_pipeline.py'
+adding 'stateset_agents/training/industry.py'
+adding 'stateset_agents/training/job_journal.py'
+adding 'stateset_agents/training/judge_selection.py'
+adding 'stateset_agents/training/kimi_k2_6_starter.py'
+adding 'stateset_agents/training/kimi_k3_starter.py'
+adding 'stateset_agents/training/kl_controllers.py'
+adding 'stateset_agents/training/learner_preflight.py'
+adding 'stateset_agents/training/learning_state.py'
+adding 'stateset_agents/training/lfm2_5_starter.py'
+adding 'stateset_agents/training/lineage.py'
+adding 'stateset_agents/training/llama3_2_small_starter.py'
+adding 'stateset_agents/training/loss_computation.py'
+adding 'stateset_agents/training/merge_adapter.py'
+adding 'stateset_agents/training/metric_reduction.py'
+adding 'stateset_agents/training/ministral3_starter.py'
+adding 'stateset_agents/training/model_checkpoint.py'
+adding 'stateset_agents/training/multi_turn_checkpointing.py'
+adding 'stateset_agents/training/multi_turn_evaluation.py'
+adding 'stateset_agents/training/multi_turn_scenarios.py'
+adding 'stateset_agents/training/multi_turn_trainer.py'
+adding 'stateset_agents/training/muse_glimmer_starter.py'
+adding 'stateset_agents/training/muse_spark.py'
+adding 'stateset_agents/training/native_refund_study.py'
+adding 'stateset_agents/training/nemotron_3_5_starter.py'
+adding 'stateset_agents/training/nemotron_vl.py'
+adding 'stateset_agents/training/neural_reward_trainer.py'
+adding 'stateset_agents/training/objectives.py'
+adding 'stateset_agents/training/offline_grpo_trainer.py'
+adding 'stateset_agents/training/offline_rl_algorithms.py'
+adding 'stateset_agents/training/offline_rl_bcq.py'
+adding 'stateset_agents/training/offline_rl_bear.py'
+adding 'stateset_agents/training/olmo3_starter.py'
+adding 'stateset_agents/training/phi4_mini_starter.py'
+adding 'stateset_agents/training/policy_artifacts.py'
+adding 'stateset_agents/training/ppo_online.py'
+adding 'stateset_agents/training/ppo_trainer.py'
+adding 'stateset_agents/training/preset_training.py'
+adding 'stateset_agents/training/profiling.py'
+adding 'stateset_agents/training/promotion.py'
+adding 'stateset_agents/training/qwen3_5_small_starter.py'
+adding 'stateset_agents/training/qwen3_5_starter.py'
+adding 'stateset_agents/training/qwen3_8_starter.py'
+adding 'stateset_agents/training/qwen3_coder_starter.py'
+adding 'stateset_agents/training/qwen3_small_starter.py'
+adding 'stateset_agents/training/replica_consensus.py'
+adding 'stateset_agents/training/resource_capacity.py'
+adding 'stateset_agents/training/reward_calibration.py'
+adding 'stateset_agents/training/river_progress.py'
+adding 'stateset_agents/training/river_refund.py'
+adding 'stateset_agents/training/rl_losses.py'
+adding 'stateset_agents/training/rlaif_trainer.py'
+adding 'stateset_agents/training/rollout_contract.py'
+adding 'stateset_agents/training/rollout_metrics.py'
+adding 'stateset_agents/training/runtime_state.py'
+adding 'stateset_agents/training/sampled_workflow.py'
+adding 'stateset_agents/training/scheduler_identity.py'
+adding 'stateset_agents/training/serving_artifacts.py'
+adding 'stateset_agents/training/sft.py'
+adding 'stateset_agents/training/sim_to_real.py'
+adding 'stateset_agents/training/single_turn_checkpointing.py'
+adding 'stateset_agents/training/single_turn_state.py'
+adding 'stateset_agents/training/single_turn_trainer.py'
+adding 'stateset_agents/training/small_model_specs.py'
+adding 'stateset_agents/training/smollm3_starter.py'
+adding 'stateset_agents/training/starter_common.py'
+adding 'stateset_agents/training/starter_factory.py'
+adding 'stateset_agents/training/state_fingerprint.py'
+adding 'stateset_agents/training/support_recovery.py'
+adding 'stateset_agents/training/train.py'
+adding 'stateset_agents/training/trainer.py'
+adding 'stateset_agents/training/trainer_runtime.py'
+adding 'stateset_agents/training/trainer_utils.py'
+adding 'stateset_agents/training/transformer_reward_model.py'
+adding 'stateset_agents/training/trl_grpo_config.py'
+adding 'stateset_agents/training/trl_grpo_entrypoints.py'
+adding 'stateset_agents/training/trl_grpo_trainer.py'
+adding 'stateset_agents/training/vapo_config.py'
+adding 'stateset_agents/training/vapo_entrypoints.py'
+adding 'stateset_agents/training/vapo_trainer.py'
+adding 'stateset_agents/training/vllm_backend.py'
+adding 'stateset_agents/training/adapters/__init__.py'
+adding 'stateset_agents/training/adapters/nemo_rl.py'
+adding 'stateset_agents/training/adapters/openrlhf.py'
+adding 'stateset_agents/training/adapters/verl.py'
+adding 'stateset_agents/training/auto_research/__init__.py'
+adding 'stateset_agents/training/auto_research/analysis.py'
+adding 'stateset_agents/training/auto_research/checkpoint_manager.py'
+adding 'stateset_agents/training/auto_research/config.py'
+adding 'stateset_agents/training/auto_research/early_abort.py'
+adding 'stateset_agents/training/auto_research/experiment_loop.py'
+adding 'stateset_agents/training/auto_research/experiment_tracker.py'
+adding 'stateset_agents/training/auto_research/llm_proposer.py'
+adding 'stateset_agents/training/auto_research/proposer.py'
+adding 'stateset_agents/training/auto_research/search_spaces.py'
+adding 'stateset_agents/training/hpo/__init__.py'
+adding 'stateset_agents/training/hpo/base.py'
+adding 'stateset_agents/training/hpo/config.py'
+adding 'stateset_agents/training/hpo/grpo_hpo_trainer.py'
+adding 'stateset_agents/training/hpo/optuna_backend.py'
+adding 'stateset_agents/training/hpo/ray_tune_backend.py'
+adding 'stateset_agents/training/hpo/search_spaces.py'
+adding 'stateset_agents/training/hpo/wandb_backend.py'
+adding 'stateset_agents/utils/__init__.py'
+adding 'stateset_agents/utils/alerts.py'
+adding 'stateset_agents/utils/async_calls.py'
+adding 'stateset_agents/utils/cache.py'
+adding 'stateset_agents/utils/credentials.py'
+adding 'stateset_agents/utils/logging.py'
+adding 'stateset_agents/utils/monitoring.py'
+adding 'stateset_agents/utils/observability.py'
+adding 'stateset_agents/utils/performance_monitor.py'
+adding 'stateset_agents/utils/profiler.py'
+adding 'stateset_agents/utils/repo_hygiene.py'
+adding 'stateset_agents/utils/reproducibility.py'
+adding 'stateset_agents/utils/security.py'
+adding 'stateset_agents/utils/symbolic_math.py'
+adding 'stateset_agents/utils/wandb_config.py'
+adding 'stateset_agents/utils/wandb_integration.py'
+adding 'stateset_agents/utils/wandb_logger.py'
+adding 'stateset_agents-0.66.1.dist-info/licenses/LICENSE'
+adding 'traceforge_rl/__init__.py'
+adding 'traceforge_rl/__main__.py'
+adding 'traceforge_rl/py.typed'
+adding 'stateset_agents-0.66.1.dist-info/METADATA'
+adding 'stateset_agents-0.66.1.dist-info/WHEEL'
+adding 'stateset_agents-0.66.1.dist-info/entry_points.txt'
+adding 'stateset_agents-0.66.1.dist-info/top_level.txt'
+adding 'stateset_agents-0.66.1.dist-info/RECORD'
+removing build/bdist.linux-x86_64/wheel
+* Getting build dependencies for sdist...
+running egg_info
+writing stateset_agents.egg-info/PKG-INFO
+writing dependency_links to stateset_agents.egg-info/dependency_links.txt
+writing entry points to stateset_agents.egg-info/entry_points.txt
+writing requirements to stateset_agents.egg-info/requires.txt
+writing top-level names to stateset_agents.egg-info/top_level.txt
+reading manifest file 'stateset_agents.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+no previously-included directories found matching 'htmlcov'
+no previously-included directories found matching 'outputs'
+no previously-included directories found matching 'checkpoints'
+no previously-included directories found matching 'benchmark_results'
+no previously-included directories found matching 'docs/_build'
+no previously-included directories found matching 'dist'
+no previously-included directories found matching 'build'
+no previously-included directories found matching '.git'
+no previously-included directories found matching '.worktrees'
+warning: no previously-included files matching '*.log' found anywhere in distribution
+warning: no previously-included files matching 'coverage.xml' found anywhere in distribution
+warning: no previously-included files matching '__pycache__' found anywhere in distribution
+warning: no previously-included files matching '*.py[cod]' found anywhere in distribution
+adding license file 'LICENSE'
+writing manifest file 'stateset_agents.egg-info/SOURCES.txt'
+* Building sdist...
+running sdist
+running egg_info
+writing stateset_agents.egg-info/PKG-INFO
+writing dependency_links to stateset_agents.egg-info/dependency_links.txt
+writing entry points to stateset_agents.egg-info/entry_points.txt
+writing requirements to stateset_agents.egg-info/requires.txt
+writing top-level names to stateset_agents.egg-info/top_level.txt
+reading manifest file 'stateset_agents.egg-info/SOURCES.txt'
+reading manifest template 'MANIFEST.in'
+no previously-included directories found matching 'htmlcov'
+no previously-included directories found matching 'outputs'
+no previously-included directories found matching 'checkpoints'
+no previously-included directories found matching 'benchmark_results'
+no previously-included directories found matching 'docs/_build'
+no previously-included directories found matching 'dist'
+no previously-included directories found matching 'build'
+no previously-included directories found matching '.git'
+no previously-included directories found matching '.worktrees'
+warning: no previously-included files matching '*.log' found anywhere in distribution
+warning: no previously-included files matching 'coverage.xml' found anywhere in distribution
+warning: no previously-included files matching '__pycache__' found anywhere in distribution
+warning: no previously-included files matching '*.py[cod]' found anywhere in distribution
+adding license file 'LICENSE'
+writing manifest file 'stateset_agents.egg-info/SOURCES.txt'
+running check
+creating stateset_agents-0.66.1
+creating stateset_agents-0.66.1/stateset_agents
+creating stateset_agents-0.66.1/stateset_agents.egg-info
+creating stateset_agents-0.66.1/stateset_agents/api
+creating stateset_agents-0.66.1/stateset_agents/api/grpo
+creating stateset_agents-0.66.1/stateset_agents/api/routers
+creating stateset_agents-0.66.1/stateset_agents/api/services
+creating stateset_agents-0.66.1/stateset_agents/config
+creating stateset_agents-0.66.1/stateset_agents/config/presets/agents
+creating stateset_agents-0.66.1/stateset_agents/config/presets/environments
+creating stateset_agents-0.66.1/stateset_agents/config/presets/experiments
+creating stateset_agents-0.66.1/stateset_agents/core
+creating stateset_agents-0.66.1/stateset_agents/core/enhanced
+creating stateset_agents-0.66.1/stateset_agents/core/environments
+creating stateset_agents-0.66.1/stateset_agents/core/gym
+creating stateset_agents-0.66.1/stateset_agents/data
+creating stateset_agents-0.66.1/stateset_agents/environments
+creating stateset_agents-0.66.1/stateset_agents/evaluation
+creating stateset_agents-0.66.1/stateset_agents/evaluation/rubrics
+creating stateset_agents-0.66.1/stateset_agents/experimental
+creating stateset_agents-0.66.1/stateset_agents/remote
+creating stateset_agents-0.66.1/stateset_agents/rewards
+creating stateset_agents-0.66.1/stateset_agents/scaffolding
+creating stateset_agents-0.66.1/stateset_agents/testing
+creating stateset_agents-0.66.1/stateset_agents/tools
+creating stateset_agents-0.66.1/stateset_agents/training
+creating stateset_agents-0.66.1/stateset_agents/training/adapters
+creating stateset_agents-0.66.1/stateset_agents/training/auto_research
+creating stateset_agents-0.66.1/stateset_agents/training/hpo
+creating stateset_agents-0.66.1/stateset_agents/utils
+creating stateset_agents-0.66.1/tests
+creating stateset_agents-0.66.1/traceforge_rl
+copying files to stateset_agents-0.66.1...
+copying LICENSE -> stateset_agents-0.66.1
+copying MANIFEST.in -> stateset_agents-0.66.1
+copying README.md -> stateset_agents-0.66.1
+copying pyproject.toml -> stateset_agents-0.66.1
+copying requirements-training-lock.txt -> stateset_agents-0.66.1
+copying stateset_agents/__init__.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/__main__.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_advanced.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_benchmark.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_chat.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_evaluate.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_finetune.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_flywheel.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_frontier.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_improve.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_industry.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_ingest.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_init.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_mcp.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_meta.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_muse.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_nemotron.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_remote.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_research.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/cli_train.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/exceptions.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_evaluation.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_evaluation_tui.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_evaluation_worker.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_inspection.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_nomination.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_provider_submission.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_quality.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_recovery.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_remote_code.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_validation.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_worker.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/finetune_workspace.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/flywheel.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/mcp_server.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/py.typed -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/tui.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/tui_actions.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents/tui_tasks.py -> stateset_agents-0.66.1/stateset_agents
+copying stateset_agents.egg-info/PKG-INFO -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents.egg-info/SOURCES.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents.egg-info/dependency_links.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents.egg-info/entry_points.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents.egg-info/requires.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents.egg-info/top_level.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+copying stateset_agents/api/__init__.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/auth.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/cache.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/config.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/constants.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/dependencies.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/distributed_cache.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/errors.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/inference_metrics.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/logging_config.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/main.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/messages_models.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/messages_utils.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/middleware.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/models.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/observability.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/openai_models.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/openapi.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/persistence.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/rate_limiter.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/resilience.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/schemas.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/security.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/shutdown.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/streaming.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/training_queue.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/training_worker.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/versioning.py -> stateset_agents-0.66.1/stateset_agents/api
+copying stateset_agents/api/grpo/__init__.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/auth.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/config.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/handlers.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/metrics.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/models.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/rate_limiter.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/router_v1.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/service.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/service_routes.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/grpo/state.py -> stateset_agents-0.66.1/stateset_agents/api/grpo
+copying stateset_agents/api/routers/__init__.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/agents.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/distributed_rollouts.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/finetune.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/messages.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/metrics.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/openai.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/training.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/training_lab.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/routers/v1.py -> stateset_agents-0.66.1/stateset_agents/api/routers
+copying stateset_agents/api/services/__init__.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/api/services/agent_service.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/api/services/auth_service.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/api/services/demo_engine.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/api/services/inference_service.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/api/services/training_service.py -> stateset_agents-0.66.1/stateset_agents/api/services
+copying stateset_agents/config/__init__.py -> stateset_agents-0.66.1/stateset_agents/config
+copying stateset_agents/config/validation.py -> stateset_agents-0.66.1/stateset_agents/config
+copying stateset_agents/config/presets/agents/creative_writer.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/customer_service.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/helpful_assistant.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/agents/tutor.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/agents
+copying stateset_agents/config/presets/environments/customer_service.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/sales.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/technical_support.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/environments/tutoring.yaml -> stateset_agents-0.66.1/stateset_agents/config/presets/environments
+copying stateset_agents/config/presets/experiments/support_recovery_preflight6.json -> stateset_agents-0.66.1/stateset_agents/config/presets/experiments
+copying stateset_agents/core/__init__.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/adaptive_learning_controller.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring_models.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/advanced_monitoring_tracing.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/agent.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/agent_backends.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/agent_config.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/agent_factories.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/async_pool.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/basic_rewards.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/chat_masking.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/checkpoint_io.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/computational_engine.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/conversation_environment.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/curriculum_learning.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/data_processing.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/domain_rewards.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/enhanced_state_cache.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/enhanced_state_management.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/environment.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/environment_base.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/environment_presets.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/error_handling.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/errors.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/evaluation.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/evaluation_metrics.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/evaluation_models.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/few_shot_adaptation.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/frontier_models.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/function_calling.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/generation_mode.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/input_validation.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator_logic.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/intelligent_orchestrator_models.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/long_term_planning.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/lora_targets.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/memory.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/model_presets.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/multi_agent_coordination.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/multimodal_processing.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/multiturn_agent.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/multiturn_analysis.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/multiturn_context.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/muse_protocol.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/neural_architecture_search.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/performance_optimizer.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/reward.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/reward_base.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/reward_factories.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/rust_accelerator.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/structured_output.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/task_environment.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/tool_agent.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/trajectory.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/transformers_compat.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/type_system.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/types.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/value_function.py -> stateset_agents-0.66.1/stateset_agents/core
+copying stateset_agents/core/enhanced/__init__.py -> stateset_agents-0.66.1/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/advanced_evaluation.py -> stateset_agents-0.66.1/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/advanced_rl_algorithms.py -> stateset_agents-0.66.1/stateset_agents/core/enhanced
+copying stateset_agents/core/enhanced/enhanced_agent.py -> stateset_agents-0.66.1/stateset_agents/core/enhanced
+copying stateset_agents/core/environments/json_action.py -> stateset_agents-0.66.1/stateset_agents/core/environments
+copying stateset_agents/core/environments/multimodal_environment.py -> stateset_agents-0.66.1/stateset_agents/core/environments
+copying stateset_agents/core/environments/refund_environment.py -> stateset_agents-0.66.1/stateset_agents/core/environments
+copying stateset_agents/core/environments/refund_policy_environment.py -> stateset_agents-0.66.1/stateset_agents/core/environments
+copying stateset_agents/core/gym/__init__.py -> stateset_agents-0.66.1/stateset_agents/core/gym
+copying stateset_agents/core/gym/adapter.py -> stateset_agents-0.66.1/stateset_agents/core/gym
+copying stateset_agents/core/gym/agents.py -> stateset_agents-0.66.1/stateset_agents/core/gym
+copying stateset_agents/core/gym/mappers.py -> stateset_agents-0.66.1/stateset_agents/core/gym
+copying stateset_agents/core/gym/processors.py -> stateset_agents-0.66.1/stateset_agents/core/gym
+copying stateset_agents/data/__init__.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/conversation_dataset.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/curation.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/customer_support_bench.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/finetuning.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/gsm8k.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/nemotron_vl.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/refund_demonstrations.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/text_sft.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/tool_calling_bench.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/data/trajectory_ingest.py -> stateset_agents-0.66.1/stateset_agents/data
+copying stateset_agents/environments/__init__.py -> stateset_agents-0.66.1/stateset_agents/environments
+copying stateset_agents/environments/conversation_simulator.py -> stateset_agents-0.66.1/stateset_agents/environments
+copying stateset_agents/environments/symbolic_physics.py -> stateset_agents-0.66.1/stateset_agents/environments
+copying stateset_agents/evaluation/__init__.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/acceptance.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/agent_runs.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/agent_study.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/case_separation.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/checkpoint_selection.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/framework_protocol.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/implementation.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/industry.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/isolation.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/judge_evidence.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/refund_trace.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/reward_audit.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/sim_to_real_metrics.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/study_preflight.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/support_judge.py -> stateset_agents-0.66.1/stateset_agents/evaluation
+copying stateset_agents/evaluation/rubrics/support_rubric_v1.md -> stateset_agents-0.66.1/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v2.md -> stateset_agents-0.66.1/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v3.md -> stateset_agents-0.66.1/stateset_agents/evaluation/rubrics
+copying stateset_agents/evaluation/rubrics/support_rubric_v4.md -> stateset_agents-0.66.1/stateset_agents/evaluation/rubrics
+copying stateset_agents/experimental/__init__.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/adaptive_learning_controller.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/few_shot_adaptation.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator_logic.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/intelligent_orchestrator_models.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/long_term_planning.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/multi_agent_coordination.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/multimodal_processing.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/experimental/neural_architecture_search.py -> stateset_agents-0.66.1/stateset_agents/experimental
+copying stateset_agents/remote/__init__.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/artifacts.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/canary.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/chat_repl.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/chat_session.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/coreweave.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/deployment.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/deployment_registry.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/executor.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/fireworks.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/huggingface.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/job.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/ledger.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/local.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/modal.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/model_catalog.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/model_evidence.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/nebius.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/prime.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/registry.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_batches.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_environment.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_renderers.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_rl.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_rl_runner.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/river_runtime.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/rollout_budget.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/runpod.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/serve_session.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/tinker.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/together.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/remote/worker.py -> stateset_agents-0.66.1/stateset_agents/remote
+copying stateset_agents/rewards/__init__.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/bayesian_reward_model.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/kimi_k25_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/llm_judge.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/llm_judge_adapter.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/llm_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/multi_objective_components.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/multi_objective_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/nsr_verifier.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/ruler_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/support_conversation_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/support_judge_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/symbolic_physics_reward.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/rewards/task_outcome.py -> stateset_agents-0.66.1/stateset_agents/rewards
+copying stateset_agents/scaffolding/__init__.py -> stateset_agents-0.66.1/stateset_agents/scaffolding
+copying stateset_agents/scaffolding/starter.py -> stateset_agents-0.66.1/stateset_agents/scaffolding
+copying stateset_agents/testing/__init__.py -> stateset_agents-0.66.1/stateset_agents/testing
+copying stateset_agents/testing/fixtures.py -> stateset_agents-0.66.1/stateset_agents/testing
+copying stateset_agents/testing/hypothesis_strategies.py -> stateset_agents-0.66.1/stateset_agents/testing
+copying stateset_agents/testing/matchers.py -> stateset_agents-0.66.1/stateset_agents/testing
+copying stateset_agents/tools/__init__.py -> stateset_agents-0.66.1/stateset_agents/tools
+copying stateset_agents/tools/nsr.py -> stateset_agents-0.66.1/stateset_agents/tools
+copying stateset_agents/training/__init__.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/_registry.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/advanced_training_models.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/advanced_training_orchestrator.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/async_rollouts.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/async_runtime.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/backends.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/base_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/callbacks.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/checkpoint_io.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/checkpoint_publication.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/checkpoint_state.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/config.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/configuration.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/continual_learning.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/dapo_config.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/dapo_entrypoints.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/dapo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_checkpoint.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_checkpoint_state.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_continual.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_control.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_evaluation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ddp_population.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/decision_transformer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/deepseek_r1_small_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/deepseek_v4_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/diagnostics.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/distributed.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/distributed_advantages.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/distributed_preflight.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/distributed_rollouts.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/distributed_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/domain_randomization.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ema.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/eval_ladder.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/evaluation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/experiment_tracking.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/frontier_sft.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gemma4_small_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gemma4_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gepo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/glm5_1_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/glm5_2_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gpt_oss_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gpu_verify_rl.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/granite4_micro_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/grpo_accumulation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gspo_config.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gspo_entrypoints.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gspo_generation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gspo_token_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/gspo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/harvest.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/implementation_identity.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/improvement_pipeline.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/industry.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/job_journal.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/judge_selection.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/kimi_k2_6_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/kimi_k3_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/kl_controllers.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/learner_preflight.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/learning_state.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/lfm2_5_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/lineage.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/llama3_2_small_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/loss_computation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/merge_adapter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/metric_reduction.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ministral3_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/model_checkpoint.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/multi_turn_checkpointing.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/multi_turn_evaluation.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/multi_turn_scenarios.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/multi_turn_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/muse_glimmer_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/muse_spark.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/native_refund_study.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/nemotron_3_5_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/nemotron_vl.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/neural_reward_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/objectives.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/offline_grpo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/offline_rl_algorithms.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/offline_rl_bcq.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/offline_rl_bear.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/olmo3_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/phi4_mini_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/policy_artifacts.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ppo_online.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/ppo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/preset_training.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/profiling.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/promotion.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/qwen3_5_small_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/qwen3_5_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/qwen3_8_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/qwen3_coder_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/qwen3_small_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/replica_consensus.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/resource_capacity.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/reward_calibration.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/river_progress.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/river_refund.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/rl_losses.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/rlaif_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/rollout_contract.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/rollout_metrics.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/runtime_state.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/sampled_workflow.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/scheduler_identity.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/serving_artifacts.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/sft.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/sim_to_real.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/single_turn_checkpointing.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/single_turn_state.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/single_turn_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/small_model_specs.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/smollm3_starter.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/starter_common.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/starter_factory.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/state_fingerprint.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/support_recovery.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/train.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trainer_runtime.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trainer_utils.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/transformer_reward_model.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trl_grpo_config.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trl_grpo_entrypoints.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/trl_grpo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/vapo_config.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/vapo_entrypoints.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/vapo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/vllm_backend.py -> stateset_agents-0.66.1/stateset_agents/training
+copying stateset_agents/training/adapters/__init__.py -> stateset_agents-0.66.1/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/nemo_rl.py -> stateset_agents-0.66.1/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/openrlhf.py -> stateset_agents-0.66.1/stateset_agents/training/adapters
+copying stateset_agents/training/adapters/verl.py -> stateset_agents-0.66.1/stateset_agents/training/adapters
+copying stateset_agents/training/auto_research/__init__.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/analysis.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/checkpoint_manager.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/config.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/early_abort.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/experiment_loop.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/experiment_tracker.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/llm_proposer.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/proposer.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/auto_research/search_spaces.py -> stateset_agents-0.66.1/stateset_agents/training/auto_research
+copying stateset_agents/training/hpo/__init__.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/base.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/config.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/grpo_hpo_trainer.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/optuna_backend.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/ray_tune_backend.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/search_spaces.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/training/hpo/wandb_backend.py -> stateset_agents-0.66.1/stateset_agents/training/hpo
+copying stateset_agents/utils/__init__.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/alerts.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/async_calls.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/cache.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/credentials.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/logging.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/monitoring.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/observability.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/performance_monitor.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/profiler.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/repo_hygiene.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/reproducibility.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/security.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/symbolic_math.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/wandb_config.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/wandb_integration.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying stateset_agents/utils/wandb_logger.py -> stateset_agents-0.66.1/stateset_agents/utils
+copying tests/test_security_exceptions.py -> stateset_agents-0.66.1/tests
+copying traceforge_rl/__init__.py -> stateset_agents-0.66.1/traceforge_rl
+copying traceforge_rl/__main__.py -> stateset_agents-0.66.1/traceforge_rl
+copying traceforge_rl/py.typed -> stateset_agents-0.66.1/traceforge_rl
+copying stateset_agents.egg-info/SOURCES.txt -> stateset_agents-0.66.1/stateset_agents.egg-info
+Writing stateset_agents-0.66.1/setup.cfg
+Creating tar archive
+removing 'stateset_agents-0.66.1' (and everything under it)
+Successfully built stateset_agents-0.66.1-py3-none-any.whl and stateset_agents-0.66.1.tar.gz

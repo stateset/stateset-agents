@@ -376,6 +376,185 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
             for trajectory in group
         ]
 
+    async def test_delegated_tool_uses_real_engine_and_replays_separate_execution(self):
+        from stateset_agents.core.environments.refund_policy_environment import (
+            refund_policy_benchmark,
+        )
+        from stateset_agents.evaluation.refund_delegation_trace import (
+            replay_delegation_trace,
+        )
+        from stateset_agents.remote.river_refund_delegation import (
+            river_refund_delegation_factory,
+            trajectory_delegation_trace,
+        )
+
+        class IntentModel:
+            base_model = "scripted-delegation-contract"
+
+            async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+                results = []
+                for chunks in model_input:
+                    prompt = ScriptedRenderer.tokenizer.decode(
+                        [t for c in chunks for t in c["tokens"]]
+                    )
+                    action = (
+                        {"tool": "finish", "args": {}}
+                        if STOP in prompt
+                        else {
+                            "tool": "resolve_refund",
+                            "args": {"intent": "resolve_refund"},
+                        }
+                    )
+                    tokens = ScriptedRenderer.tokenizer.encode(
+                        json.dumps(action) + STOP
+                    )
+                    assert len(tokens) <= max_tokens
+                    results.append(
+                        [
+                            Sample(
+                                tokens=tokens,
+                                text=ScriptedRenderer.tokenizer.decode(tokens),
+                                logprobs=[-0.1] * len(tokens),
+                                stop_reason="stop",
+                                model_step=0,
+                                token_data_is_exact=True,
+                            )
+                        ]
+                    )
+                return results
+
+        cases = refund_policy_benchmark("train", count=8, seed=601)
+        engine = rl.RolloutEngine(
+            IntentModel(),
+            env=river_refund_delegation_factory(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=4,
+                max_generated_tokens=1024,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=4),
+            seed=42,
+        )
+        trajectories = await self.collect(engine, cases, group_size=1)
+        self.assertEqual(len(trajectories), 8)
+        by_id = {row["order_id"]: row for row in cases}
+        for trajectory in trajectories:
+            trace = trajectory_delegation_trace(trajectory)
+            replay = await replay_delegation_trace(by_id[trace["case_id"]], trace)
+            self.assertTrue(replay["success"])
+            self.assertEqual(replay["executed_tool_calls"], 3)
+            self.assertEqual(len(trace["steps"]), 2)
+
+    async def test_recovery_protocol_runs_every_fault_through_native_engine(self):
+        from stateset_agents.data.refund_recovery import (
+            reference_recovery_action,
+            refund_recovery_cases,
+        )
+        from stateset_agents.evaluation.refund_recovery_trace import (
+            replay_recovery_trace,
+        )
+        from stateset_agents.remote.river_refund_recovery import (
+            river_refund_recovery_factory,
+            trajectory_recovery_trace,
+        )
+
+        class RecoveryModel:
+            base_model = "scripted-recovery-contract"
+
+            async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+                results = []
+                for chunks in model_input:
+                    prompt = ScriptedRenderer.tokenizer.decode(
+                        [token for chunk in chunks for token in chunk["tokens"]]
+                    )
+                    latest = json.loads(prompt.rsplit("\n", 1)[-1])
+                    observations = [
+                        json.loads(message["content"])
+                        for message in latest
+                        if message["role"] == "user"
+                        and message["content"].startswith("{")
+                    ]
+                    observation = observations[-1] if observations else None
+                    action = reference_recovery_action(observation)
+                    tokens = ScriptedRenderer.tokenizer.encode(
+                        json.dumps(action) + STOP
+                    )
+                    assert len(tokens) <= max_tokens
+                    results.append(
+                        [
+                            Sample(
+                                tokens=tokens,
+                                text=ScriptedRenderer.tokenizer.decode(tokens),
+                                logprobs=[-0.1] * len(tokens),
+                                stop_reason="stop",
+                                model_step=0,
+                                token_data_is_exact=True,
+                            )
+                        ]
+                    )
+                return results
+
+        cases = refund_recovery_cases("train", count=20, seed=602)
+        engine = rl.RolloutEngine(
+            RecoveryModel(),
+            env=river_refund_recovery_factory(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=6,
+                max_generated_tokens=1536,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=4),
+            seed=42,
+        )
+        trajectories = await self.collect(engine, cases, group_size=1)
+        self.assertEqual(len(trajectories), 20)
+        by_id = {row["order_id"]: row for row in cases}
+        for trajectory in trajectories:
+            trace = trajectory_recovery_trace(trajectory)
+            replay = await replay_recovery_trace(by_id[trace["case_id"]], trace)
+            self.assertTrue(replay["success"], trace)
+            self.assertLessEqual(replay["resolution_count"], 1)
+
+    async def test_checkpoint_sampler_preserves_explicit_zero_temperature(self):
+        temperatures = []
+
+        class RecordingSession(ScriptedSession):
+            def submit_sample(self, **kwargs):
+                temperatures.append(kwargs["temperature"])
+                return super().submit_sample(**kwargs)
+
+        model = ScriptedModel()
+        sampler = rl.CheckpointSampler(
+            RecordingSession(model),
+            base_model=model.base_model,
+            checkpoint=Checkpoint(
+                path="river://scripted-fixed", step=0, checkpoint_type="inference"
+            ),
+            tokenizer=CharacterTokenizer(),
+        )
+        engine = rl.RolloutEngine(
+            sampler,
+            env=self.environment(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=4,
+                max_generated_tokens=1024,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=2),
+            temperature=0,
+            seed=42,
+        )
+        trajectories = await self.collect(engine, group_size=1)
+        self.assertEqual(len(trajectories), 2)
+        self.assertTrue(temperatures)
+        self.assertTrue(all(value == 0 for value in temperatures))
+
     async def test_real_evaluator_retains_complete_validation_case_evidence(self):
         model = ScriptedModel()
         cases = {row["order_id"]: row for row in ROWS}
@@ -568,6 +747,23 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(report["selected_validation_step"], 0)
                         self.assertEqual(report["passed"], 1)
                         self.assertEqual(report["training_activity"], activity)
+                        selection = json.loads(
+                            (output / "validation_selection.json").read_text()
+                        )
+                        self.assertEqual(selection["selected_validation_step"], 0)
+                        self.assertEqual(
+                            report["validation_selection_hash"], content_hash(selection)
+                        )
+                        self.assertEqual(
+                            report["selected_training_activity"]["status"],
+                            "initial_checkpoint",
+                        )
+                        self.assertEqual(
+                            report["selected_training_activity"][
+                                "observed_optimizer_updates"
+                            ],
+                            0,
+                        )
                         self.assertTrue(
                             (await audit_refund_traces(report, splits["test"]))[
                                 "passed"

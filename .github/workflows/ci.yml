@@ -39,7 +39,10 @@ jobs:
         HF_HUB_OFFLINE: "1"
         TRANSFORMERS_OFFLINE: "1"
       run: |
+        python scripts/check_asyncio_wakeup.py
         python -m unittest discover -s tests/integration -p test_river_native_sdk.py -v
+        pip install pytest pytest-asyncio pytest-xdist pytest-timeout
+        pytest --confcutdir=tests/unit -n 0 -o addopts='' tests/unit/test_river_nemotron.py
 
   npm-client:
     runs-on: ubuntu-latest

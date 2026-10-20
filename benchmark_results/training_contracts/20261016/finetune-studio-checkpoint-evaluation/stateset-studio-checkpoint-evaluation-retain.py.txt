@@ -1,0 +1,115 @@
+"""Retain a frozen checkpoint-validation acceptance, without private datasets."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+root = Path('/home/dom/stateset-agents')
+prefix = 'stateset-studio-checkpoint-evaluation'
+pipeline = json.loads(Path('/tmp', prefix+'-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and len(pipeline['stages']) == 6
+assert all(s['exit_code'] == 0 for s in pipeline['stages'])
+source = Path(pipeline['finished'])
+verification = json.loads((source/'verification.json').read_text())
+assert verification['passed'] and verification['source_unchanged'] and verification['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert package == verification['source_sha256'] and tests == verification['test_source_sha256']
+assert 'Success: no issues found in 429 source files' in (source/'types.log').read_text()
+
+def count(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    return sum(int(s.get('tests',0)) for s in suites)
+
+def receipt(handle):
+    value=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {key:value.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown']}
+
+job = receipt(sys.argv[1])
+assert job['state']=='succeeded' and job['exit_code']==0
+live = Path('/tmp', prefix+'-live.txt')
+draft = Path('/tmp', prefix+'-draft.json')
+assert live.is_file() and json.loads(draft.read_text())['draft_preserved']
+summary = dict(passed=True,source_tests=count('regressions.xml'),installed_wheel_tests=count('wheel.xml'),typed_modules=429,queue_job=job['id'],wheel_sha256=verification['wheel_sha256'],source_and_tests_unchanged=True,wheel_bytes_match_source=True,wheel_case_identities_match_source=True,real_cpu_checkpoint_cadence_verified=True,real_cpu_selected_adapter_loading_verified=True,real_pty_checkpoint_picker_sizes=[[74,44],[110,32]],live_herdr_refreshed=True,draft_preserved=True,live_judge_verified=False,gpu_verified=False,remote_evaluation_verified=False,quality_gain_verified=False,paid_run_launched=False,count_note='Source and installed-wheel cases overlap; synthetic judge replies and provider/process mocks do not establish model quality.')
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-checkpoint-evaluation'
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipt.json').write_text(json.dumps(job,indent=2)+'\n')
+(out/'pipeline-receipt.json').write_text(json.dumps(pipeline,indent=2)+'\n')
+previous=json.loads((root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation/verification.json').read_text())
+delta={key:sorted(name for name in previous[key].keys() | verification[key].keys() if previous[key].get(name)!=verification[key].get(name)) for key in ['source_sha256','test_source_sha256']}
+assert len(delta['source_sha256'])==10 and delta['test_source_sha256']==['tests/unit/test_finetune_checkpoint_evaluation.py','tests/unit/test_finetune_recovery.py']
+(out/'change-scope.json').write_text(json.dumps({'baseline':'../finetune-studio-evaluation/verification.json','changed':delta},indent=2)+'\n')
+for pattern in ['*.log','*.xml']:
+    for path in source.glob(pattern):
+        shutil.copy2(path,out/path.name)
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['format','gates','prepare','wheel','finish','pipeline','retain']:
+    path=Path('/tmp',prefix+'-'+suffix+'.py')
+    shutil.copy2(path,out/(path.name+'.txt'))
+shutil.copy2(live,out/'herdr-live.txt')
+shutil.copy2(draft,out/'herdr-draft.json')
+attempts=out/'development-attempts'; attempts.mkdir()
+handles=['187824636206','1b245302cb26','686dac56b498','3456ed21c5fb','e6f0f933a32c']
+if len(sys.argv)>2:
+    handles.extend(sys.argv[2:])
+(attempts/'queue-receipts.json').write_text(json.dumps([receipt(h) for h in handles],indent=2)+'\n')
+for handle in handles:
+    path=Path('/home/dom/.local/state/agent-builds/logs',handle+'.log')
+    shutil.copy2(path,attempts/path.name)
+(out/'README.md').write_text(f'''# Published checkpoint validation acceptance
+
+{summary['source_tests']} targeted source tests and {summary['installed_wheel_tests']}
+installed-wheel tests passed without skips or failures. Counts overlap. All 429
+package modules passed typing. Buildr job `{job['id']}` ran serial formatting,
+repository lint/hygiene, release/API governance, source regressions, wheel
+build/install, three wheel groups, workflow lint and installed CLI checks.
+Frozen package/test inventories, actual wheel bytes and selected case identities
+match. Twelve changed Python files pass Black/isort checks.
+
+Native local GRPO/GSPO/DAPO exposes a committed-update checkpoint interval;
+zero preserves final-only saving. Positive cadence is bounded to 100 planned
+full-state checkpoints including the final save. The existing SFT cadence is
+unchanged. Real tiny CPU optimizer commits and actual native checkpoint writers
+verify intervals zero, one and two and their published receipts.
+
+The evaluation form's `c` picker discovers receipt metadata without hashing
+model bytes. Review binds a selected safetensors adapter to its receipt, actual
+inventory, training inputs and terminal parent state. A stopped/failed or
+exhausted parent can be evaluated after its worker exits. Optimizer files are
+hashed without deserialization. Recovery still requires remaining budget and
+matching trainer implementation. Tampered inputs fail before inference.
+
+Selected published checkpoints use validation cases. Results retain exactly
+one replayable base/candidate pair, cannot satisfy the held-out test study gate,
+and cannot import as final test quality evidence. Structured partition errors
+hide private case values. Prepared evaluation stop is immediately terminal;
+submitted work retains cooperative stopping. Malformed target metadata remains
+inspectable as unreadable rather than breaking rendering.
+
+Actual curses terminals at 74x44 and 110x32 choose a checkpoint, escape/reopen
+the picker, edit all settings, review and exit without submission or draft
+changes. Unit layouts also cover 72x22. Installed CLI checks metadata discovery,
+validation planning/preparation, controlled partition errors, cancelled status
+and unchanged training parents without inference or provider requests. A real
+tiny CPU PEFT fixture proves selected-checkpoint loading differs from final
+adapter loading, without deserializing optimizer state. Positive judge replies
+are synthetic through the real rubric/parser/recorder/replay, not a live model.
+
+The existing idle Herdr split was refreshed with private draft bytes preserved.
+No synthetic runs were placed in the live workspace. Development failures and
+corrections are retained separately; they are code/harness failures, not queue
+failures, and their counts are not added to current acceptance.
+
+Automatic checkpoint ranking/nomination, fresh test of a selected intermediate,
+inline judge-guided training, remote/GPU evaluation and independent reviewed
+multi-seed quality improvement remain unverified or unimplemented. Provenance
+is declared; reviewers must keep validation and test data semantically separate.
+No paid run or external provider request was launched.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

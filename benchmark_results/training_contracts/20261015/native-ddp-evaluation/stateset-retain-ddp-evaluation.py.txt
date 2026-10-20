@@ -1,0 +1,83 @@
+from pathlib import Path
+import hashlib
+import importlib.metadata
+import json
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source, job = Path(sys.argv[1]), sys.argv[2]
+verification = json.loads((source/'verification.json').read_text())
+assert verification['passed'] and verification['source_unchanged'] and verification['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package == verification['source_sha256'] and tests == verification['test_source_sha256']
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+assert package == packed
+
+def counts(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    total = sum(int(s.get('tests',0)) for s in suites)
+    skipped = sum(int(s.get('skipped',0)) for s in suites)
+    failed = sum(int(s.get('failures',0))+int(s.get('errors',0)) for s in suites)
+    assert failed == 0
+    return dict(passed=total-skipped, skipped=skipped, failed=failed)
+
+baseline = None
+stages = {}
+for stage in ['source-distributed', 'wheel-distributed']:
+    rows = [json.loads((source/stage/f'ddp-evaluation-{r}.json').read_text()) for r in [0,1]]
+    assert len(rows[0]) == len(rows[1]) == 28
+    assert rows[0] == rows[1]
+    if baseline is None: baseline = rows[0]
+    else: assert baseline == rows[0]
+    assert sum(r['rejected'] for r in rows[0]) == 18
+    for row in rows[0]:
+        assert row['global_metric_correct'] and row['coordinated_selection'] and row['rng_modes_gradients_buffers_preserved']
+        assert row['rejected'] == row['repaired']
+        assert all(w in [['torch.int64',66], ['torch.int64',4], ['torch.float64',3]] for w in row['typed_tensor_wire'])
+    existing = {}
+    for file, expected in [('rank-0.json',294), ('advantages-0.json',48), ('learner-preflight-0.json',40), ('replica-consensus-0.json',32), ('native-ddp-checkpoint-0.json',98)]:
+        existing[file] = len(json.loads((source/stage/file).read_text()))
+        assert existing[file] == expected
+    stages[stage] = dict(world_size=2, backend='gloo', evaluation_cases_per_peer=28, rejection_recovery_cases_per_peer=18, existing_contract_counts=existing)
+
+summary = dict(passed=True, queue_job=job, protocol='stateset-native-ddp-evaluation-v1',
+    typed_modules=408, source_modules=len(package), source_unchanged=True, test_sources_unchanged=True,
+    wheel_source_matches=True, wheel_sha256=verification['wheel_sha256'],
+    regressions=counts('regressions.xml'), source_distributed=counts('source-distributed.xml'),
+    wheel_regressions=counts('wheel.xml'), wheel_distributed=counts('wheel-distributed.xml'),
+    distributed=stages, runtime={n:importlib.metadata.version(n) for n in ['torch','transformers','accelerate','numpy']},
+    semantics=dict(means_and_population_variance='weighted by valid samples', success_and_error_rates='weighted by all attempted samples',
+       empty_partitions='neutral', empty_or_incomplete_global_evaluation='no best selection or patience consumption',
+       exact_success_count='native private integer receipt; public JSON fields unchanged',
+       selection='globally identical metrics/best/patience and collective best publication; failed save restores prior selection',
+       inference='unwrapped local policy; buffer broadcast preference honored once; local buffers, RNGs, module modes and pending gradients preserved',
+       cleanup_failure='buffer restoration failure poisons training/evaluation until successful native checkpoint reload'),
+    wire=dict(status_int64_elements=66, count_int64_elements=4, moment_float64_elements=3, pickled_objects=False),
+    cpu_native_ddp_evaluation_verified=True, gpu_verified=False, multi_node_verified=False,
+    fsdp_verified=False, deepspeed_verified=False, multi_rank_accelerate_verified=False,
+    full_training_loop_task_transitions_verified=False, model_quality_improvement_verified=False,
+    boundaries='Every live native DDP participant enters evaluation. Scenario inputs are local partitions; counts report attempts, not deduplicated unique cases. Collective timeout must cover slowest partition. Serialize with training and other process-global RNG consumers. Arbitrary callback/remote-service collectives, process failure recovery and environment-owned RNG/state are outside this protocol.',
+    count_note='Overlapping targeted source/wheel tests. Six actual distributed pytest contracts contain many scenarios; 28 evaluation scenarios per peer are not separate pytest cases.')
+out = root/'benchmark_results/training_contracts/20261015/native-ddp-evaluation'
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','source-distributed.xml','wheel.xml','wheel-distributed.xml','gates.log','types.log','source-distributed.log','wheel-distributed.log','wheel-origin.log']:
+    shutil.copy2(source/name, out/name)
+for stage in stages:
+    shutil.copytree(source/stage,out/stage)
+for name in ['stateset-ddp-evaluation-verify.py','stateset-platform-gates.py','stateset-retain-ddp-evaluation.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+failures = out/'failures'
+failures.mkdir()
+contexts = [
+ dict(job='279d1cee3712',kind='fixture_failure',explanation='27 tests passed, including the existing native checkpoint contract. The new fixture recorded mixed module modes before a warm-up training step reset them. Record the actual pre-evaluation modes after warm-up instead.'),
+ dict(job='aca4f3ad7eff',kind='gate_failure',explanation='Repository lint/formatting caught an unused import and prior retained runner scripts added as unformatted Python sources. Removed the import and archived exact runner inputs as .py.txt data; no lint policy was weakened.')]
+for context in contexts:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(context['job']+'.log'), failures/(context['job']+'.log'))
+(failures/'context.json').write_text(json.dumps(contexts,indent=2)+'\n')
+print(json.dumps(summary,indent=2))

@@ -172,6 +172,51 @@ def test_manual_metric_sync_uses_model_parameter_device(monkeypatch):
     }
 
 
+def test_manual_cpu_topology_does_not_select_cuda(monkeypatch):
+    trainer = trainer_with_accelerator(None, world_size=2)
+    trainer.distributed_config.strategy = "ddp"
+    trainer.distributed_config.backend = "gloo"
+    for key in ["RANK", "WORLD_SIZE", "LOCAL_RANK"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(distributed.torch.cuda, "is_available", lambda: False)
+    select_device = MagicMock()
+    initialize = MagicMock()
+    monkeypatch.setattr(distributed.torch.cuda, "set_device", select_device)
+    monkeypatch.setattr(distributed.dist, "is_initialized", lambda: False)
+    monkeypatch.setattr(distributed.dist, "init_process_group", initialize)
+
+    trainer._init_distributed()
+
+    select_device.assert_not_called()
+    initialize.assert_called_once_with(backend="gloo", world_size=2, rank=0)
+    assert trainer.is_main_process is True
+
+
+@pytest.mark.parametrize("mismatch", ["world_size", "rank", "backend"])
+def test_manual_topology_rejects_conflicting_existing_group(monkeypatch, mismatch):
+    trainer = trainer_with_accelerator(None, world_size=2)
+    trainer.distributed_config.strategy = "ddp"
+    trainer.distributed_config.backend = "gloo"
+    for key in ["RANK", "WORLD_SIZE", "LOCAL_RANK"]:
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setattr(distributed.torch.cuda, "is_available", lambda: False)
+    monkeypatch.setattr(distributed.dist, "is_initialized", lambda: True)
+    monkeypatch.setattr(
+        distributed.dist, "get_world_size", lambda: 3 if mismatch == "world_size" else 2
+    )
+    monkeypatch.setattr(
+        distributed.dist, "get_rank", lambda: 1 if mismatch == "rank" else 0
+    )
+    monkeypatch.setattr(
+        distributed.dist,
+        "get_backend",
+        lambda: "nccl" if mismatch == "backend" else "gloo",
+    )
+
+    with pytest.raises(ValueError, match="topology differs"):
+        trainer._init_distributed()
+
+
 def test_real_accelerate_prepares_cpu_model_and_optimizer():
     accelerator = Accelerator(cpu=True)
     trainer = trainer_with_accelerator(accelerator)

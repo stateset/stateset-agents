@@ -1,0 +1,810 @@
+[
+  {
+    "id": "16e925fa033f",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-evaluation-pipeline.py"
+    ],
+    "created": 1792196153.8178945,
+    "started": 1792198770.6139476,
+    "finished": 1792199054.1093047,
+    "wait_seconds": 2616.796053171158,
+    "elapsed_seconds": 283.4953570365906,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 249.02043795585632,
+        "priority": 37.821985960006714,
+        "disk": 357.582093000412,
+        "job_capacity": 148.1235818862915,
+        "heavy_capacity": 1426.2880201339722,
+        "ram_headroom": 206.08175659179688,
+        "cpu_capacity": 191.87817764282227
+      },
+      "total_seconds": 2616.796053171158,
+      "observed_seconds": 2367.7756152153015,
+      "coverage": 0.9048376591465424,
+      "current_category": "heavy_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792198770.6139476,
+      "transitions": [
+        {
+          "at": 1792196153.8382065,
+          "category": "priority",
+          "blocking_job_id": "b8a42029d33b"
+        },
+        {
+          "at": 1792196179.987063,
+          "category": "priority",
+          "blocking_job_id": "b0003b776df2"
+        },
+        {
+          "at": 1792196182.1291642,
+          "category": "priority",
+          "blocking_job_id": "b8a42029d33b"
+        },
+        {
+          "at": 1792196183.6756637,
+          "category": "priority",
+          "blocking_job_id": "217b690a072e"
+        },
+        {
+          "at": 1792196187.3259723,
+          "category": "disk",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196793.9081912,
+          "category": "priority",
+          "blocking_job_id": "217b690a072e"
+        },
+        {
+          "at": 1792196795.4293122,
+          "category": "priority",
+          "blocking_job_id": "eca2874c961e"
+        },
+        {
+          "at": 1792196795.7450607,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196809.3369596,
+          "category": "priority",
+          "blocking_job_id": "4edfc0271818"
+        },
+        {
+          "at": 1792196809.6571488,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196828.4702861,
+          "category": "priority",
+          "blocking_job_id": "a155bd42a037"
+        },
+        {
+          "at": 1792196828.7868135,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196862.2647073,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196862.8860781,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196865.0152247,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196884.1703372,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196892.6744094,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196901.2023373,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196908.1914442,
+          "category": "priority",
+          "blocking_job_id": "574b5e46e09f"
+        },
+        {
+          "at": 1792196908.5115075,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196912.7622745,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196917.0073106,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196919.1372316,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196934.591034,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196955.2640045,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196955.8847606,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792196993.4494283,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197026.5196867,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197039.549793,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197054.4773204,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197056.5942705,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197062.9553206,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197073.8822935,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197076.0036588,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197180.4243317,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197214.4243343,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197227.1463737,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197236.2512965,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197238.3903744,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197277.2215276,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197279.346936,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197332.7007923,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197435.7437427,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197453.815103,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197516.8640466,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792197550.8769898,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198036.7833767,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198089.5616834,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198181.3788385,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198217.4252186,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198258.9564977,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198264.4172385,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198435.7436726,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198439.0796766,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198573.141427,
+          "category": "priority",
+          "blocking_job_id": "c4847a326fd5"
+        },
+        {
+          "at": 1792198573.4532206,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198647.3354542,
+          "category": "priority",
+          "blocking_job_id": "c5db5d73447d"
+        },
+        {
+          "at": 1792198647.9499166,
+          "category": "priority",
+          "blocking_job_id": "cfbd45aba0a9"
+        },
+        {
+          "at": 1792198648.5642314,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792198657.0456593,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 60,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 208.012,
+      "sampled_peak_rss_gb": 1.3900413513183594,
+      "samples": 465,
+      "observed_seconds": 283.4776511719974,
+      "observed_at": 1792199054.10912,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "ecfc38d746e2",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-check.py",
+      "--format-only"
+    ],
+    "created": 1792192612.2162693,
+    "started": 1792192612.8395576,
+    "finished": 1792192618.5460281,
+    "wait_seconds": 0.6232883930206299,
+    "elapsed_seconds": 5.706470489501953,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.6232883930206299
+      },
+      "total_seconds": 0.6232883930206299,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792192612.8395576,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 4.2098,
+      "sampled_peak_rss_gb": 0.051898956298828125,
+      "samples": 9,
+      "observed_seconds": 5.699396078009158,
+      "observed_at": 1792192618.5458617,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "691f880c6db0",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-check.py"
+    ],
+    "created": 1792193142.9647925,
+    "started": 1792193649.1247885,
+    "finished": 1792193723.4040534,
+    "wait_seconds": 506.15999603271484,
+    "elapsed_seconds": 74.2792649269104,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.3370215892791748,
+        "priority": 119.58228588104248,
+        "cpu_capacity": 382.2930312156677,
+        "job_capacity": 3.947657346725464
+      },
+      "total_seconds": 506.15999603271484,
+      "observed_seconds": 505.82297444343567,
+      "coverage": 0.999334159965385,
+      "current_category": "cpu_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792193649.1247885,
+      "transitions": [
+        {
+          "at": 1792193143.301814,
+          "category": "priority",
+          "blocking_job_id": "f0a123fbcf90"
+        },
+        {
+          "at": 1792193152.0889337,
+          "category": "priority",
+          "blocking_job_id": "76e7a9765115"
+        },
+        {
+          "at": 1792193152.3995612,
+          "category": "priority",
+          "blocking_job_id": "f0a123fbcf90"
+        },
+        {
+          "at": 1792193198.67974,
+          "category": "priority",
+          "blocking_job_id": "3df0813551bb"
+        },
+        {
+          "at": 1792193199.2913008,
+          "category": "priority",
+          "blocking_job_id": "f0a123fbcf90"
+        },
+        {
+          "at": 1792193211.708763,
+          "category": "priority",
+          "blocking_job_id": "02f81fa4da33"
+        },
+        {
+          "at": 1792193212.0219562,
+          "category": "priority",
+          "blocking_job_id": "f0a123fbcf90"
+        },
+        {
+          "at": 1792193255.285835,
+          "category": "priority",
+          "blocking_job_id": "9c041f8ec4bd"
+        },
+        {
+          "at": 1792193255.6007926,
+          "category": "priority",
+          "blocking_job_id": "f0a123fbcf90"
+        },
+        {
+          "at": 1792193261.9602246,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792193262.5752258,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792193266.5228832,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792193603.32849,
+          "category": "priority",
+          "blocking_job_id": "9eeb7d6c1109"
+        },
+        {
+          "at": 1792193604.2523654,
+          "category": "cpu_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 14,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 48.1852,
+      "sampled_peak_rss_gb": 0.9410629272460938,
+      "samples": 118,
+      "observed_seconds": 74.26925028997357,
+      "observed_at": 1792193723.403934,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "718917e810ad",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-quick-types.py"
+    ],
+    "created": 1792197435.707514,
+    "started": 1792197435.7340717,
+    "finished": 1792197453.5619285,
+    "wait_seconds": 0.02655768394470215,
+    "elapsed_seconds": 17.82785677909851,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.02655768394470215
+      },
+      "total_seconds": 0.02655768394470215,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792197435.7340717,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 17.0103,
+      "sampled_peak_rss_gb": 0.3607444763183594,
+      "samples": 30,
+      "observed_seconds": 17.81563822599128,
+      "observed_at": 1792197453.5617628,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "32140640143e",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-quick-focused.py"
+    ],
+    "created": 1792197516.3759005,
+    "started": 1792197516.4112802,
+    "finished": 1792197550.8316422,
+    "wait_seconds": 0.035379648208618164,
+    "elapsed_seconds": 34.42036199569702,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.035379648208618164
+      },
+      "total_seconds": 0.035379648208618164,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792197516.4112802,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 23.666,
+      "sampled_peak_rss_gb": 0.8501853942871094,
+      "samples": 58,
+      "observed_seconds": 34.39596709999023,
+      "observed_at": 1792197550.8314948,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "d72f4e87a399",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-check.py"
+    ],
+    "created": 1792198036.5744154,
+    "started": 1792198036.5893555,
+    "finished": 1792198089.3870308,
+    "wait_seconds": 0.014940023422241211,
+    "elapsed_seconds": 52.797675371170044,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.014940023422241211
+      },
+      "total_seconds": 0.014940023422241211,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792198036.5893555,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 44.7273,
+      "sampled_peak_rss_gb": 0.9106636047363281,
+      "samples": 87,
+      "observed_seconds": 52.79205762100173,
+      "observed_at": 1792198089.386879,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "b1d6d1554573",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-wheel.py"
+    ],
+    "created": 1792198181.074579,
+    "started": 1792198181.1329877,
+    "finished": 1792198216.3008976,
+    "wait_seconds": 0.05840873718261719,
+    "elapsed_seconds": 35.16790986061096,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.05840873718261719
+      },
+      "total_seconds": 0.05840873718261719,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792198181.1329877,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 28.1595,
+      "sampled_peak_rss_gb": 0.864349365234375,
+      "samples": 58,
+      "observed_seconds": 35.162221086007776,
+      "observed_at": 1792198216.300717,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "9df080fce68d",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-terminal.py"
+    ],
+    "created": 1792198257.193706,
+    "started": 1792198257.2093282,
+    "finished": 1792198263.3456607,
+    "wait_seconds": 0.015622138977050781,
+    "elapsed_seconds": 6.1363325119018555,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.015622138977050781
+      },
+      "total_seconds": 0.015622138977050781,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792198257.2093282,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 1.5297,
+      "sampled_peak_rss_gb": 0.07674026489257812,
+      "samples": 11,
+      "observed_seconds": 6.130208817980019,
+      "observed_at": 1792198263.3455057,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "80f844255c06",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-picker-post-integration.py"
+    ],
+    "created": 1792198435.6706867,
+    "started": 1792198435.6821673,
+    "finished": 1792198439.0025551,
+    "wait_seconds": 0.011480569839477539,
+    "elapsed_seconds": 3.320387840270996,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.011480569839477539
+      },
+      "total_seconds": 0.011480569839477539,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792198435.6821673,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 3.2587,
+      "sampled_peak_rss_gb": 0.5203666687011719,
+      "samples": 6,
+      "observed_seconds": 3.3154491760069504,
+      "observed_at": 1792198439.0024588,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "0f94032359ed",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-picker-current-check.py"
+    ],
+    "created": 1792198729.4648056,
+    "started": 1792198729.4754014,
+    "finished": 1792198796.4755561,
+    "wait_seconds": 0.01059579849243164,
+    "elapsed_seconds": 67.00015473365784,
+    "reason": "",
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.01059579849243164
+      },
+      "total_seconds": 0.01059579849243164,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792198729.4754014,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    },
+    "usage": {
+      "cpu_seconds": 51.0436,
+      "sampled_peak_rss_gb": 0.8753814697265625,
+      "samples": 110,
+      "observed_seconds": 66.99571965800715,
+      "observed_at": 1792198796.4753795,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "b10d3c8b4284",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "scripts/check_types.py",
+      "--all"
+    ],
+    "created": 1792197348.429602,
+    "started": 1792199054.6689124,
+    "finished": 1792199070.0611472,
+    "wait_seconds": 1706.239310503006,
+    "elapsed_seconds": 15.392234802246094,
+    "usage": {
+      "cpu_seconds": 15.0937,
+      "sampled_peak_rss_gb": 0.3611106872558594,
+      "samples": 26,
+      "observed_seconds": 15.387963613989996,
+      "observed_at": 1792199070.060995,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "role": "supplementary_type_confirmation"
+  }
+]

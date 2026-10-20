@@ -1,5 +1,12 @@
 # API Request/Response Examples
 
+The [fine-tuning operator API](FINETUNING_AGENTS.md#http-operator-api) shares
+the Herdr studio workspace: discover capabilities, validate configuration,
+inspect retained setup, import/reverify paired quality evidence and request a
+reviewed local stop. It requires strict admin authentication and server-selected
+workspace configuration. These routes do not launch training or control remote
+resources.
+
 ## Durable training workers
 
 Set `API_TRAINING_QUEUE_PATH` on each API replica and run independent workers:
@@ -31,6 +38,32 @@ cannot revive expired leases. Claim and heartbeat durations must be finite
 numbers from 1 to 3600 seconds. A lease expires at its deadline. A worker that
 loses a lease stops publishing that attempt and continues processing other jobs;
 repeated cancellation still waits for its heartbeat thread to finish cleanup.
+
+Durable submission, status, listing, and cancellation run database I/O off the
+API event loop. Shutdown waits for accepted submissions to commit or roll back;
+disconnecting a caller does not undo an accepted job. Retry with the same
+`Idempotency-Key` to retrieve that job after a lost response. A key that already
+binds different inputs returns HTTP 409. The global limit of 1,000 pending jobs
+returns HTTP 429 for new submissions; accepted idempotent retries still succeed.
+
+Listings filter ownership and status in the database and decode only the
+requested page. The total and rows share one read snapshot, including when other
+replicas change jobs concurrently. Equal creation times are ordered by descending
+job ID. Python clients can use `aget_training_status()`, `acancel_training()`, and
+`list_training_jobs()` for async access; existing synchronous methods remain
+available.
+
+To reproduce the synthetic history benchmark:
+
+```bash
+python -m benchmarks.training_queue_pagination --jobs 10000 --page-size 20
+```
+
+The retained run in
+`benchmark_results/training_contracts/20261014/api-pagination.json` returned
+identical pages while reducing measured Python heap peaks from approximately
+32.7 MB to 115 KB. Timings include `tracemalloc` instrumentation; this measures
+synthetic SQLite metadata access rather than a production latency guarantee.
 
 Training rewards default to verified reference agreement:
 

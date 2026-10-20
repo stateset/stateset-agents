@@ -1,0 +1,24 @@
+{
+  "passed": true,
+  "test_payload_limit_bytes": 16,
+  "production_payload_limit_bytes": 26214400,
+  "observed_payload_bytes": [
+    16,
+    12,
+    4,
+    16,
+    8,
+    16,
+    8,
+    4,
+    16,
+    12,
+    4,
+    16,
+    8,
+    16,
+    8,
+    4
+  ],
+  "half_overflow_and_subnormal_checked": true
+}

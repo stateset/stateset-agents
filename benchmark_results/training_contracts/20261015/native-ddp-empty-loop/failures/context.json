@@ -1,0 +1,22 @@
+[
+  {
+    "job": "7e4fe2c0675d",
+    "kind": "admission_and_fixture_regressions",
+    "explanation": "55 passed, 3 failed. Restored the single-worker DDP bypass, rejected entropy-only zero-policy counts, and fixed the malformed-group negative fixture indexing. Existing positive two-rank update cases had completed before the guard assertion."
+  },
+  {
+    "job": "8787a3085323",
+    "kind": "stale_scenario_count",
+    "explanation": "91 passed, 1 failed. All 131 population scenarios executed successfully; the parent test still expected 129 after adding two CPU GradScaler overflow cases. Corrected the asserted count to 131."
+  },
+  {
+    "job": "a828cf4d459e",
+    "kind": "test_lint_findings",
+    "explanation": "All 410 source modules type-checked and all 8 profiling/training-loop tests passed. Ruff found an unused test import and eight unbound loop captures. Removed the import and bound failure-fixture closure variables explicitly."
+  },
+  {
+    "job": "05e67f806651",
+    "kind": "workflow_shellcheck_finding",
+    "explanation": "Actionlint/Shellcheck flagged two preexisting ambiguous wheel extra expansions with SC1087. Used explicit variable braces in the wheel-install commands; reran workflow lint against the updated YAML."
+  }
+]

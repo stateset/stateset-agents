@@ -55,6 +55,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 import time
 import uuid
 from collections.abc import Iterator
@@ -62,6 +63,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.finetuning import (
+    parse_finetuning_json,
+    validate_finetuning_split,
+)
+from stateset_agents.data.source import DatasetSourceIdentity
 from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
 from stateset_agents.remote.job import (
     JobHandle,
@@ -188,6 +194,7 @@ class _FireworksJob:
     cost_usd: float | None = None
     submitted_at: float = field(default_factory=time.time)
     duration_s: float | None = None
+    dataset_source: DatasetSourceIdentity | None = None
     #: Last progress line appended, so repeated polls at the same percent do
     #: not fill the log with identical lines.
     last_progress: str | None = None
@@ -249,6 +256,9 @@ class FireworksExecutor(RemoteExecutor):
             "submitted_at": record.submitted_at,
             "duration_s": record.duration_s,
             "last_progress": record.last_progress,
+            "dataset_source": (
+                record.dataset_source.to_dict() if record.dataset_source else None
+            ),
         }
         target = self._state_path(job_id)
         temporary = target.with_suffix(".tmp")
@@ -272,7 +282,7 @@ class FireworksExecutor(RemoteExecutor):
             if payload.get("provider") != self.name or payload.get("job_id") != job_id:
                 raise ValueError("state identity mismatch")
             record = _FireworksJob(
-                spec=RemoteJobSpec.from_dict(payload["spec"]),
+                spec=RemoteJobSpec.from_dict(payload["spec"], require_dataset=False),
                 dataset_id=str(payload["dataset_id"]),
                 job_name=str(payload["job_name"]),
                 status=JobStatus(str(payload.get("status", "pending"))),
@@ -282,6 +292,11 @@ class FireworksExecutor(RemoteExecutor):
                 submitted_at=float(payload.get("submitted_at", time.time())),
                 duration_s=payload.get("duration_s"),
                 last_progress=payload.get("last_progress"),
+                dataset_source=(
+                    DatasetSourceIdentity.from_dict(payload["dataset_source"])
+                    if payload.get("dataset_source") is not None
+                    else None
+                ),
             )
         except FileNotFoundError:
             return None
@@ -344,10 +359,18 @@ class FireworksExecutor(RemoteExecutor):
         """Upload the dataset, create the fine-tuning job, return its handle."""
         self.validate_spec(spec)
         self._warn_ignored_fields(spec)
-        # Credentials first: failing on a missing key after validating a
-        # large dataset wastes the user's time.
+        # Validate, upload and identify one captured version. Provider setup can
+        # take long enough for the original path to change or disappear.
+        source_path = Path(spec.dataset)
+        try:
+            source_data = source_path.read_bytes()
+        except FileNotFoundError as exc:
+            raise RemoteExecutionError(
+                f"dataset not found: {source_path}", provider=self.name
+            ) from exc
+        rows = _read_chat_rows(source_path, data=source_data)
+        source = DatasetSourceIdentity.from_bytes(source_path, source_data)
         client = self._get_client()
-        rows = _read_chat_rows(Path(spec.dataset))
 
         dataset_id = _dataset_id(spec)
         _verbose_log(f"creating dataset {dataset_id} ({len(rows)} examples)")
@@ -371,7 +394,13 @@ class FireworksExecutor(RemoteExecutor):
 
         _verbose_log(f"uploading {len(rows)} examples to {dataset_id}")
         try:
-            with Path(spec.dataset).open("rb") as handle:
+            # Keep the SDK's binary-file interface while isolating it from the
+            # original path. NamedTemporaryFile creates a private file and
+            # removes it on success and every upload failure.
+            with tempfile.NamedTemporaryFile(mode="w+b", suffix=".jsonl") as handle:
+                handle.write(source_data)
+                handle.flush()
+                handle.seek(0)
                 client.datasets.upload(dataset_id, file=handle)
         except Exception as exc:  # noqa: BLE001 - provider SDK error
             raise RemoteExecutionError.wrap(
@@ -411,6 +440,7 @@ class FireworksExecutor(RemoteExecutor):
             job_name=job_name,
             output_model=getattr(job, "output_model", None),
             logs=[f"fireworks job {job_id} submitted on {spec.base_model}"],
+            dataset_source=source,
         )
         self._persist_record(job_id, self._jobs[job_id])
         _verbose_log(f"submitted job {job_id}")
@@ -656,19 +686,18 @@ class FireworksExecutor(RemoteExecutor):
     ) -> None:
         from stateset_agents.training.lineage import (
             AdapterManifest,
-            hash_dataset,
             write_manifest,
         )
 
         spec = record.spec
-        digest, rows = hash_dataset(Path(spec.dataset))
+        source = record.dataset_source
         write_manifest(
             output_dir,
             AdapterManifest(
                 base_model=spec.base_model,
-                dataset_path=str(spec.dataset),
-                dataset_sha256=digest,
-                dataset_rows=rows,
+                dataset_path=source.path if source is not None else str(spec.dataset),
+                dataset_sha256=source.sha256 if source is not None else None,
+                dataset_rows=source.rows if source is not None else None,
                 hyperparameters={
                     "provider": self.name,
                     "lora_r": spec.lora_r,
@@ -679,6 +708,11 @@ class FireworksExecutor(RemoteExecutor):
                     "fireworks_job": record.job_name,
                     "fireworks_model": record.output_model,
                     "weights_downloaded": bool(downloaded),
+                    "dataset_provenance": (
+                        "captured_at_submission"
+                        if source
+                        else "unavailable_legacy_metadata"
+                    ),
                 },
                 parent_adapter=spec.parent_adapter,
                 package_version=spec.package_version,
@@ -850,30 +884,37 @@ def _dataset_id(spec: RemoteJobSpec) -> str:
     return f"stateset-{stem or 'sft'}-{uuid.uuid4().hex[:8]}"[:63]
 
 
-def _read_chat_rows(dataset: Path) -> list[dict[str, Any]]:
+def _read_chat_rows(
+    dataset: Path, *, data: bytes | None = None
+) -> list[dict[str, Any]]:
     """Load and validate the JSONL, which is already Fireworks' CHAT format.
 
     Both this framework and Fireworks use ``{"messages": [{"role", "content"}]}``
     per line, so there is no conversion — only validation, done here so a
     malformed row fails before anything is uploaded or billed.
     """
-    if not dataset.exists():
+    if data is None and not dataset.exists():
         raise RemoteExecutionError(
             f"dataset not found: {dataset}", provider="fireworks"
         )
+    if data is None:
+        data = dataset.read_bytes()
     rows: list[dict[str, Any]] = []
-    for lineno, line in enumerate(
-        dataset.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    for lineno, line in enumerate(data.decode("utf-8").splitlines(), start=1):
         if not line.strip():
             continue
         try:
-            row = json.loads(line)
+            row = parse_finetuning_json(line)
+            validate_finetuning_split(row, expected_split="train")
         except json.JSONDecodeError as exc:
             raise RemoteExecutionError.wrap(
                 exc,
                 f"{dataset}:{lineno} is not valid JSON",
                 provider="fireworks",
+            ) from exc
+        except ValueError as exc:
+            raise RemoteExecutionError(
+                f"{dataset}:{lineno}: {exc}", provider="fireworks"
             ) from exc
         messages = row.get("messages") if isinstance(row, dict) else None
         if not isinstance(messages, list) or not messages:

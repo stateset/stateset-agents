@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "prepare_queue_job": "74b783ca242d",
+  "wheel_queue_jobs": [
+    "2f23da8268c6",
+    "6cf2e0f8fdf6",
+    "54f71e7251ea"
+  ],
+  "final_queue_job": "07bc3da201b9",
+  "source_regressions": {
+    "passed": 1025,
+    "skipped": 0
+  },
+  "wheel_regressions": {
+    "passed": 914,
+    "skipped": 0
+  },
+  "typed_modules": 425,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_profile_matches": true,
+  "wheel_rubric_matches": true,
+  "wheel_case_identities_match": true,
+  "wheel_sha256": "77848b441ac340e4fa17af5d821ffefc2257f4c4ac8f233aea8eb03651a8e958",
+  "real_terminal_dataset_inspection_verified": true,
+  "guided_setup_verified": true,
+  "paired_quality_evidence_verified": true,
+  "cooperative_local_stop_verified": true,
+  "authenticated_operator_http_verified": true,
+  "real_terminal_guide_quality_stop_escape_verified": true,
+  "dataset_format_diagnostics_verified": true,
+  "live_setup_status_verified": true,
+  "live_herdr_refreshed": true,
+  "draft_preserved": true,
+  "gpu_verified": false,
+  "quality_gain_verified": false,
+  "paid_run_launched": false,
+  "count_note": "Targeted source and wheel counts overlap; provider/worker boundaries use CPU fixtures and mocks."
+}

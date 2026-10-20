@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "kind": "stateset-native-checkpoint-hardware-contract",
+  "status": "failed",
+  "device": "cuda",
+  "error_type": "RuntimeError",
+  "error": "Native GPU acceptance requires two CUDA GPUs; no CPU fallback"
+}

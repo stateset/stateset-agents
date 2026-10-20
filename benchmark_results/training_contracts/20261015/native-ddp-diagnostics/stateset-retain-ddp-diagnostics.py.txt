@@ -1,0 +1,122 @@
+from pathlib import Path
+import hashlib
+import importlib.metadata
+import json
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source, job, lint_job = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
+v = json.loads((source/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert package == v['source_sha256'] and tests == v['test_source_sha256']
+with zipfile.ZipFile(next((source/'dist').glob('*.whl'))) as wheel:
+    packed = {n.removeprefix('stateset_agents/'): hashlib.sha256(wheel.read(n)).hexdigest() for n in wheel.namelist() if n.startswith('stateset_agents/') and n.endswith('.py')}
+assert packed == package
+
+def counts(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    skipped = sum(int(s.get('skipped', 0)) for s in suites)
+    assert sum(int(s.get('failures', 0)) + int(s.get('errors', 0)) for s in suites) == 0
+    return dict(passed=sum(int(s.get('tests', 0)) for s in suites)-skipped, skipped=skipped)
+
+existing = {'rank-0.json': 294, 'advantages-0.json': 48, 'learner-preflight-0.json': 40, 'replica-consensus-0.json': 32, 'native-ddp-checkpoint-0.json': 98, 'ddp-evaluation-0.json': 28, 'ddp-continual-0.json': 46, 'empty-population-0.json': 131, 'ddp-training-loop-0.json': 17, 'ddp-rollout-metrics-0.json': 21}
+baseline = None
+for stage in ['source-distributed', 'wheel-distributed']:
+    for name, expected in existing.items():
+        assert len(json.loads((source/stage/name).read_text())) == expected
+    rows = [json.loads((source/stage/f'ddp-diagnostics-{r}.json').read_text()) for r in [0, 1]]
+    assert rows[0] == rows[1] and len(rows[0]) == 8
+    assert all(all(value is True for key, value in row.items() if key != 'case') for row in rows[0])
+    if baseline is None:
+        baseline = rows[0]
+    else:
+        assert baseline == rows[0]
+workflow = root/'.github/workflows/training-contracts.yml'
+summary = dict(passed=True, queue_job=job, typed_modules=411, source_unchanged=True, test_sources_unchanged=True, wheel_source_matches=True, wheel_sha256=v['wheel_sha256'],
+    regressions=counts('regressions.xml'), source_distributed=counts('source-distributed.xml'), wheel_regressions=counts('wheel.xml'), wheel_distributed=counts('wheel-distributed.xml'),
+    runtime={n: importlib.metadata.version(n) for n in ['torch', 'transformers', 'accelerate', 'numpy', 'tokenizers']},
+    diagnostic_scenarios_per_peer=8, existing_scenario_reports=existing,
+    semantics=dict(checkpoint='learning state v2 validates history before weight application; serial v1 restores fresh history; native checkpoint v2 binds shared guard controls',
+        history='patience, counters, bounded recent rewards, finite scalar latest metrics, last-step identity and retained failure; process-local clocks restart',
+        observation='coordinate local post-step timing/cost and monitor failures, then agree on guard controls',
+        failures='post-update diagnostics poison every peer until a complete healthy checkpoint reload; failed snapshots retain failure',
+        recovery='preserve existing monitor callback references; clear stale target failure and transient rollout timing; exact subsequent learner update matches combined reference',
+        admission='preflight v4 checks guard controls before forward; differing patience, streak or observation count rejects without learner mutation',
+        noop='globally empty batches do not create, advance or reset guard history; pending batches retain prior step-identity deduplication'),
+    gpu_verified=False, multi_node_verified=False, fsdp_verified=False, deepspeed_verified=False, multi_rank_accelerate_verified=False, model_quality_improvement_verified=False,
+    workflow_validation=dict(queue_job=lint_job, tool='actionlint 1.7.12', path=workflow.relative_to(root).as_posix(), sha256=hashlib.sha256(workflow.read_bytes()).hexdigest()),
+    boundaries='Tiny FP32 CPU/Gloo learners and synthetic rewards. Native checkpoint v1 directories fail closed. All live peers must enter the same operation. Incompatible callback collectives, backend collective failure and process loss require external recovery. Task/final flush event reporting remains open.',
+    count_note='Targeted source/wheel tests overlap. Eleven two-worker pytest contracts contain multiple scenarios; eight new scenarios per peer are not separate pytest cases.')
+out = root/'benchmark_results/training_contracts/20261015/native-ddp-diagnostics'
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary, indent=2)+'\n')
+for name in ['verification.json', 'regressions.xml', 'source-distributed.xml', 'wheel.xml', 'wheel-distributed.xml', 'gates.log', 'types.log', 'source-distributed.log', 'wheel-distributed.log', 'wheel-origin.log']:
+    shutil.copy2(source/name, out/name)
+for stage in ['source-distributed', 'wheel-distributed']:
+    shutil.copytree(source/stage, out/stage)
+for name in ['stateset-ddp-diagnostics-verify.py', 'stateset-ddp-diagnostics-verify-next.py', 'stateset-platform-gates.py', 'stateset-retain-ddp-diagnostics.py', 'stateset-prepare-diagnostics-wheel-config.py']:
+    shutil.copy2(Path('/tmp')/name, out/(name+'.txt'))
+shutil.copy2(source/'workflow-actionlint.log', out/'workflow-actionlint.log')
+shutil.copy2(source/'wheel-test-configuration.json', out/'wheel-test-configuration.json')
+shutil.copy2(source/'checks/pytest.ini', out/'wheel-pytest.ini')
+config=json.loads((source/'wheel-test-configuration.json').read_text())
+assert hashlib.sha256((out/'wheel-pytest.ini').read_bytes()).hexdigest() == config['sha256']
+failures = out/'failures'
+failures.mkdir()
+contexts = [
+    dict(job='e32abad35787', kind='typing', explanation='All repository gates passed; full typing found one missing dict[str, Any] annotation in the extracted runtime telemetry hook. Added the annotation before final acceptance.'),
+    dict(job='f4815b096399', kind='harness_path', explanation='Workflow lint referenced a stale temporary executable path. Located the installed /tmp/stateset-actionlint-1.7.12/actionlint and reran through Buildr; this was not a queue failure.'),
+    dict(job='e93f7ed00d41', kind='test_lint', explanation='Ruff B023 identified an unbound test-loop closure. No tests ran. Bound the learner before focused verification.'),
+    dict(job='86ae6c09bde3', kind='test_expectation', explanation='166 tests passed; the new Gloo contract reached error cleanup but incorrectly expected a success training_end callback. Existing lifecycle intentionally omits that event on failure. Corrected the assertion while retaining tracking-error cleanup checks.'),
+]
+for row in contexts:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(row['job']+'.log'), failures/(row['job']+'.log'))
+shutil.copy2(Path('/tmp/stateset-ddp-diagnostics-20261015/types.log'), failures/'e32abad35787-types.log')
+shutil.copy2(Path('/tmp/stateset-ddp-diagnostics-20261015/verification.json'), failures/'e32abad35787-verification.json')
+(failures/'context.json').write_text(json.dumps(contexts, indent=2)+'\n')
+(out/'README.md').write_text(f'''# Native DDP diagnostic recovery acceptance
+
+Buildr job `{job}` passed source and isolated installed-wheel verification.
+[summary.json](summary.json) records runtime, semantics and boundaries.
+[verification.json](verification.json) pins every package/test Python file.
+The wheel's packaged Python matches the accepted checkout.
+
+- {summary['regressions']['passed']:,} targeted source regressions passed ({summary['regressions']['skipped']} skips).
+- All 411 package modules passed typing.
+- {summary['wheel_regressions']['passed']:,} targeted installed-wheel regressions passed.
+- Eleven real two-worker CPU/Gloo contracts passed against source and wheel.
+- Eight new diagnostic scenarios per peer have matching peer/source/wheel reports.
+  Scenarios are not separate pytest cases; targeted source/wheel tests overlap.
+
+The guard retains observation counters, zero-signal streaks, patience, last-step
+identity, bounded recent rewards, finite latest metrics and retained failures.
+Checkpoint staging validates this history before applying weights. Healthy
+reloads repair stale target failures, preserve monitor references held by
+callbacks and clear transient rollout telemetry. Failed snapshots retain their
+failure. Process-local clocks restart. Serial version-one learning state remains
+readable with fresh guard history; native DDP checkpoint v1 fails closed.
+
+Real Gloo cases cover a pending-window roundtrip, a global empty no-op, threshold
+failure and healthy reload, a nonfinite metric on one peer, local profiling
+failure, divergent finite signal decisions, three pre-update control mismatches,
+and complete training-loop error cleanup. Post-update errors poison all peers
+until a complete reload; the next real optimizer update matches an unwrapped
+combined-population learner. Differing patience, streak or observation count
+rejects coherently before learner mutation and supports corrected inputs.
+
+Preflight v4 keeps the 194-int64 header and rejects older protocol versions
+before the added post-step collectives. Native checkpoint v2 agrees on guard
+controls while retaining each rank's diagnostic logs. All live peers must enter
+the same operation; process loss, backend collective failure and incompatible
+callback collectives are outside this protocol. Evidence is CPU/Gloo with tiny
+models and synthetic rewards. GPU, multi-node and quality gains are unverified.
+Task-boundary/final-flush event reporting remains open.
+
+The isolated wheel harness uses the repository's pytest.ini, including async\ntest mode. The configuration and its hash are retained. The executed verifier\nand configuration-preparation helper document this run. The additional\nstateset-ddp-diagnostics-verify-next.py.txt reproduction driver includes that\nconfiguration setup inline for future runs. No package or test Python changes\nduring verification.\n\nWorkflow lint passed through Buildr job `{lint_job}` using actionlint 1.7.12.
+''')
+print(json.dumps(dict(path=str(out), summary=summary), indent=2))

@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import math
 import random
 import re
 import time
@@ -28,14 +29,22 @@ from stateset_agents.evaluation.agent_runs import (
     evaluation_report,
 )
 from stateset_agents.evaluation.implementation import package_implementation
+from stateset_agents.evaluation.isolation import (
+    EVALUATION_RNG_PROTOCOL,
+    isolated_evaluation,
+    paired_evaluation_seed,
+)
 
 
 def load_cases(path: Path) -> dict[str, Any]:
     """Validate reviewed provenance and disjoint independent case partitions."""
     data: dict[str, Any] = json.loads(path.read_text())
+    if not isinstance(data, dict):
+        raise ValueError("Study cases must be a JSON object")
     provenance = data.get("provenance", {})
     if (
-        provenance.get("source") != "reviewed"
+        not isinstance(provenance, dict)
+        or provenance.get("source") != "reviewed"
         or not isinstance(provenance.get("reviewer"), str)
         or not provenance["reviewer"].strip()
     ):
@@ -51,20 +60,59 @@ def load_cases(path: Path) -> dict[str, Any]:
         for case in cases:
             RefundPolicyEnvironment.validate_scenario(case)
             identifier = case["order_id"]
-            fingerprint = content_hash(
-                {
-                    key: value
-                    for key, value in case.items()
-                    if key not in {"order_id", "family", "split"}
-                }
-            )
+            fingerprint = RefundPolicyEnvironment.case_fingerprint(case)
             if identifier in ids or fingerprint in fingerprints:
                 raise ValueError(
                     "Study cases must be unique and disjoint across partitions"
                 )
             ids.add(identifier)
             fingerprints.add(fingerprint)
+    content_hash(data)  # Reject nonfinite metadata before allocating a model.
     return data
+
+
+def validate_study_config(args: argparse.Namespace) -> None:
+    """Reject unusable study budgets and protocols before allocating a model."""
+    if (
+        not isinstance(args.model, str)
+        or not args.model.strip()
+        or not isinstance(args.model_revision, str)
+        or not re.fullmatch("[0-9a-f]{40}", args.model_revision)
+        or args.model_revision == "0" * 40
+    ):
+        raise ValueError("Pin a nonempty model to a nonzero full model revision")
+    if any(
+        type(getattr(args, name)) is not int or getattr(args, name) < 1
+        for name in ("updates", "generations", "eval_every")
+    ):
+        raise ValueError("Run budgets must be positive integers")
+    if args.generations < 2:
+        raise ValueError("Group-relative learning requires at least two generations")
+    if (
+        not isinstance(args.seeds, (list, tuple))
+        or not args.seeds
+        or any(type(seed) is not int or not 0 <= seed < 2**32 for seed in args.seeds)
+        or len(set(args.seeds)) != len(args.seeds)
+    ):
+        raise ValueError("Use unique integer seeds in [0, 2**32)")
+    if not args.synthetic and len(args.seeds) < 6:
+        raise ValueError("Reviewed quality studies require at least six training seeds")
+    try:
+        valid_rate = (
+            type(args.learning_rate) in (int, float)
+            and math.isfinite(args.learning_rate)
+            and args.learning_rate > 0
+        )
+    except OverflowError:
+        valid_rate = False
+    if not valid_rate:
+        raise ValueError("Learning rate must be finite and positive")
+    if args.synthetic and (
+        type(args.synthetic_case_count) is not int
+        or args.synthetic_case_count < 8
+        or args.synthetic_case_count % 8
+    ):
+        raise ValueError("Synthetic case count must be a positive multiple of eight")
 
 
 async def evaluate(
@@ -75,19 +123,47 @@ async def evaluate(
     settings: dict[str, Any],
     checkpoint: str,
     implementation: dict[str, Any] | None = None,
+    split: str = "test",
 ) -> dict[str, Any]:
-    """Execute tools and score outcomes, retaining failures and bounded truncation."""
-    import torch
-
+    """Score paired cases without changing local training RNGs or model modes."""
     if implementation is not None and package_implementation() != implementation:
         raise ValueError("Implementation changed during the study")
 
-    torch.manual_seed(seed + 10000)
-    environment = RefundPolicyEnvironment()
+    if not isinstance(cases, list) or not cases:
+        raise ValueError("Evaluation requires nonempty cases")
+    if split not in {"validation", "test"}:
+        raise ValueError("Evaluation split must be validation or test")
+    if not isinstance(settings, dict) or not settings:
+        raise ValueError("Evaluation settings must be a nonempty object")
+    content_hash(settings)
+    identities = {}
+    for case in cases:
+        RefundPolicyEnvironment.validate_scenario(case)
+        case_id = case["order_id"]
+        if case_id in identities:
+            raise ValueError("Evaluation case identifiers must be unique")
+        case_hash = content_hash(case)
+        identities[case_id] = (
+            case_hash,
+            paired_evaluation_seed(seed, case_id, case_hash),
+        )
+    rng_settings = {"protocol": EVALUATION_RNG_PROTOCOL, "scope": "local-global-rngs"}
+    if (
+        "evaluation_randomness" in settings
+        and settings["evaluation_randomness"] != rng_settings
+    ):
+        raise ValueError(
+            "Evaluation randomness settings differ from the native protocol"
+        )
     outcomes = []
     for case in cases:
+        case_hash, evaluation_seed = identities[case["order_id"]]
         started = time.monotonic()
-        trajectory = await environment.run_episode(agent.generate_turn, case)
+        with isolated_evaluation(
+            seed=evaluation_seed, model=getattr(agent, "model", None)
+        ):
+            environment = RefundPolicyEnvironment()
+            trajectory = await environment.run_episode(agent.generate_turn, case)
         state = trajectory.final_state or {}
         success = bool(
             state.get("resolution") is not None
@@ -97,6 +173,8 @@ async def evaluate(
         outcomes.append(
             {
                 "case_id": case["order_id"],
+                "case_hash": case_hash,
+                "evaluation_seed": evaluation_seed,
                 "success": success,
                 "policy_violations": int(state.get("violations", 0)),
                 "truncated": (
@@ -131,10 +209,11 @@ async def evaluate(
         base_model=agent.config.model_name,
         seed=seed,
         cases={c["order_id"]: c for c in cases},
-        settings=settings,
+        settings={**settings, "evaluation_randomness": rng_settings},
         checkpoint={"path": checkpoint},
         outcomes=outcomes,
         implementation=implementation,
+        split=split,
     )
 
 
@@ -217,8 +296,14 @@ async def run_seed(
         settings=settings,
         checkpoint="initial",
         implementation=implementation,
+        split="validation",
     )
+    (root / "validation-0.json").write_text(json.dumps(initial, indent=2) + "\n")
     best = initial["success_rate"]
+    selected_step = 0
+    validations = [
+        {"step": 0, "report": "validation-0.json", "sha256": content_hash(initial)}
+    ]
     updates = []
     for step in range(args.updates):
         torch.manual_seed(seed + 20000 + step)
@@ -240,19 +325,61 @@ async def run_seed(
                 settings=settings,
                 checkpoint=str(step + 1),
                 implementation=implementation,
+                split="validation",
             )
             (root / f"validation-{step + 1}.json").write_text(
                 json.dumps(validation, indent=2) + "\n"
             )
+            validations.append(
+                {
+                    "step": step + 1,
+                    "report": f"validation-{step + 1}.json",
+                    "sha256": content_hash(validation),
+                }
+            )
             if validation["success_rate"] > best:
                 best = validation["success_rate"]
+                selected_step = step + 1
                 await trainer.save_checkpoint(checkpoint_name="selected")
     # Preserve actual update counts even if validation selects the initial policy.
     (root / "updates.json").write_text(
         json.dumps(updates, indent=2, allow_nan=False) + "\n"
     )
+    committed_updates = 0
+    for metrics in updates:
+        count = metrics.get("optimizer_updates")
+        if type(count) is not int or count < 0:
+            raise RuntimeError(
+                "Missing committed optimizer updates; candidate test remains sealed"
+            )
+        committed_updates += count
+        if (
+            type(metrics.get("global_step")) is not int
+            or metrics["global_step"] != committed_updates
+        ):
+            raise RuntimeError(
+                "Inconsistent optimizer counters; candidate test remains sealed"
+            )
+    if committed_updates < 1 or committed_updates != trainer.global_step:
+        raise RuntimeError(
+            "No verified training progress; candidate test remains sealed"
+        )
     if not trainer.load_checkpoint(root / "selected"):
         raise RuntimeError("Selected checkpoint did not reload")
+    checkpoint_inventory = content_hash(
+        json.loads((root / "selected" / ".stateset-checkpoint.json").read_text())
+    )
+    selection = {
+        "schema_version": 1,
+        "criterion": "validation_success_rate",
+        "tie_break": "earliest_step",
+        "selected_step": selected_step,
+        "selected_success_rate": best,
+        "committed_optimizer_updates": committed_updates,
+        "validation_reports": validations,
+        "checkpoint_inventory_sha256": checkpoint_inventory,
+    }
+    (root / "selection.json").write_text(json.dumps(selection, indent=2) + "\n")
     candidate = await evaluate(
         agent,
         data["test"],
@@ -261,9 +388,8 @@ async def run_seed(
         checkpoint=str(root / "selected"),
         implementation=implementation,
     )
-    candidate["selected_checkpoint"]["inventory_sha256"] = content_hash(
-        json.loads((root / "selected" / ".stateset-checkpoint.json").read_text())
-    )
+    candidate["selected_checkpoint"]["inventory_sha256"] = checkpoint_inventory
+    candidate["selected_checkpoint"]["selection_sha256"] = content_hash(selection)
     (root / "candidate.json").write_text(json.dumps(candidate, indent=2) + "\n")
     del trainer, agent
     torch.cuda.empty_cache()
@@ -288,17 +414,12 @@ def main() -> None:
     parser.add_argument("--learning-rate", type=float, default=1e-5)
     parser.add_argument("--synthetic-case-count", type=int, default=32)
     args = parser.parse_args()
-    if (
-        not re.fullmatch("[0-9a-f]{40}", args.model_revision)
-        or min(args.updates, args.generations, args.eval_every) < 1
-    ):
-        parser.error("Pin a full model revision and use positive run budgets")
-    if len(set(args.seeds)) != len(args.seeds) or any(seed < 0 for seed in args.seeds):
-        parser.error("Use unique nonnegative seeds")
+    try:
+        validate_study_config(args)
+    except ValueError as exc:
+        parser.error(str(exc))
     if args.output.exists():
         parser.error("Output directory must be new")
-    if args.synthetic_case_count < 8 or args.synthetic_case_count % 8:
-        parser.error("Synthetic case count must be a positive multiple of eight")
     data = (
         load_cases(args.cases)
         if args.cases

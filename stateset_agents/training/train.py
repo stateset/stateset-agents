@@ -4,12 +4,17 @@ High-level training interface for GRPO Agent Framework
 
 import asyncio
 import logging
+import math
 from enum import Enum
+from numbers import Real
+from pathlib import Path
 from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
+from stateset_agents.core.reward_base import RewardResult, RewardType
+from stateset_agents.core.trajectory import ConversationTurn
 
 from .configuration import resolve_training_config as _build_training_config
 from .diagnostics import DiagnosticsMonitor
@@ -93,13 +98,17 @@ async def train(
         )
 
     extra_config = dict(kwargs)
-    agent_model = getattr(getattr(agent, "config", None), "model_name", None)
-    if (
-        isinstance(agent_model, str)
-        and "model_name" not in (config_overrides or {})
-        and "model_name" not in extra_config
-    ):
-        extra_config["model_name"] = agent_model
+    agent_config = getattr(agent, "config", None)
+    agent_model = getattr(agent_config, "model_name", None)
+    agent_identity: dict[str, str | None] = {}
+    if isinstance(agent_model, str):
+        agent_identity["model_name"] = agent_model
+        revision = getattr(agent_config, "model_revision", None)
+        if revision is None or isinstance(revision, str):
+            agent_identity["model_revision"] = revision
+        for name, value in agent_identity.items():
+            if name not in (config_overrides or {}) and name not in extra_config:
+                extra_config[name] = value
     config = _build_training_config(
         profile=profile,
         num_episodes=num_episodes,
@@ -109,6 +118,12 @@ async def train(
         objective_overrides=objective_overrides,
         extra_config=extra_config,
     )
+    for name, value in agent_identity.items():
+        if getattr(config, name) != value:
+            raise ValueError(
+                f"Training {name} differs from the supplied agent configuration. "
+                "Set the model identity in AgentConfig before calling train()."
+            )
 
     logger.info(f"Starting training with profile: {profile}")
 
@@ -122,6 +137,11 @@ async def train(
             )
 
     # Set up reward function
+    if training_mode == "offline" and config.objective is not None:
+        raise ValueError(
+            "Offline training uses IQL-weighted logged-action extraction; "
+            "objective selects an online policy objective and cannot be applied here"
+        )
     if reward_fn is None:
         reward_fn = environment.reward_fn
 
@@ -205,6 +225,20 @@ def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
         return reward_fn
 
 
+def _finite_nonnegative_uncertainty(value: Any, name: str) -> float:
+    """Accept finite real estimates without coercing strings or booleans."""
+    message = f"{name} must be a finite nonnegative uncertainty value"
+    if isinstance(value, bool) or not isinstance(value, Real):
+        raise ValueError(message)
+    try:
+        numeric = float(value)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise ValueError(message) from exc
+    if not math.isfinite(numeric) or numeric < 0:
+        raise ValueError(message)
+    return numeric
+
+
 class UncertaintyWeightedReward(RewardFunction):
     """Wraps a reward function to discount high-uncertainty predictions.
 
@@ -219,32 +253,58 @@ class UncertaintyWeightedReward(RewardFunction):
         self,
         base_reward: RewardFunction,
         uncertainty_discount: float = 0.5,
-    ):
+    ) -> None:
+        discount = _finite_nonnegative_uncertainty(
+            uncertainty_discount, "uncertainty_discount"
+        )
         super().__init__(
             weight=base_reward.weight,
             reward_type=base_reward.reward_type,
             name=f"UncertaintyWeighted({base_reward.name})",
         )
         self.base_reward = base_reward
-        self.uncertainty_discount = uncertainty_discount
+        self._reward_type_override: RewardType | None = None
+        self.uncertainty_discount = discount
 
-    async def compute_reward(self, turns, context=None):
-        from stateset_agents.core.reward_base import RewardResult
+    @property
+    def reward_type(self) -> RewardType:
+        """Use the wrapped reward's current step or episode timing."""
+        if self._reward_type_override is not None:
+            return self._reward_type_override
+        return self.base_reward.reward_type
 
+    @reward_type.setter
+    def reward_type(self, value: RewardType) -> None:
+        # RewardFunction also initializes this field before base_reward is
+        # attached. The constructor clears that initial value to track the base.
+        self._reward_type_override = value
+
+    @property
+    def fail_on_error(self) -> bool:
+        """Keep the wrapped reward's critical failures visible to trainers."""
+        return bool(getattr(self.base_reward, "fail_on_error", False))
+
+    @property
+    def requires_environment_context(self) -> bool:
+        """Forward the wrapped reward's need for private evaluator state."""
+        return bool(getattr(self.base_reward, "requires_environment_context", False))
+
+    async def compute_reward(
+        self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
+    ) -> RewardResult:
+        """Discount valid uncertainty while retaining the underlying outcome evidence."""
         result = await self.base_reward.compute_reward(turns, context)
-
-        # Extract uncertainty from breakdown/metadata if the base reward
-        # provides it (e.g. BayesianRewardFunction, LLMJudgeRewardWithFallback)
+        if not math.isfinite(result.score):
+            raise ValueError("Base reward score must be finite")
+        # Validate every supplied estimate: NaN must not be silently replaced
+        # by a max/min clamp, and negative uncertainty must not amplify scores.
         uncertainty = 0.0
-        if hasattr(result, "breakdown"):
-            uncertainty = result.breakdown.get(
-                "total_uncertainty",
-                result.breakdown.get("epistemic_uncertainty", 0.0),
-            )
-        if hasattr(result, "metadata"):
-            uncertainty = max(
-                uncertainty, result.metadata.get("total_uncertainty", 0.0)
-            )
+        for evidence in (result.breakdown, result.metadata):
+            for key in ("total_uncertainty", "epistemic_uncertainty"):
+                if key not in evidence:
+                    continue
+                value = _finite_nonnegative_uncertainty(evidence[key], key)
+                uncertainty = max(uncertainty, value)
 
         # Scale score by confidence
         confidence = max(0.0, 1.0 - self.uncertainty_discount * uncertainty)
@@ -252,15 +312,25 @@ class UncertaintyWeightedReward(RewardFunction):
 
         return RewardResult(
             score=adjusted,
+            breakdown={
+                **result.breakdown,
+                "base_score": result.score,
+                "uncertainty": uncertainty,
+                "confidence": confidence,
+            },
             components={
+                **result.components,
                 "base_score": result.score,
                 "uncertainty": uncertainty,
                 "confidence": confidence,
             },
             metadata={
+                **result.metadata,
                 "uncertainty_weighted": True,
-                "base_metadata": result.metadata,
+                "base_metadata": dict(result.metadata),
+                "base_breakdown": dict(result.breakdown),
             },
+            explanation=result.explanation,
         )
 
 
@@ -289,6 +359,11 @@ async def _train_offline(
     callbacks: list[Any] | None,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
+    from stateset_agents.data.conversation_dataset import (
+        ConversationDataset,
+        EmbeddingCache,
+    )
+
     from .offline_grpo_trainer import OfflineGRPOConfig, OfflineGRPOTrainer
 
     if dataset is None:
@@ -297,12 +372,22 @@ async def _train_offline(
             "Pass dataset= or dataset_path= to train()."
         )
 
-    offline_config = OfflineGRPOConfig(
-        model_name=config.model_name,
-        learning_rate=config.learning_rate,
-        num_episodes=config.num_episodes,
-        offline_algorithm="iql",
-    )
+    if getattr(agent, "model", None) is None:
+        await agent.initialize()
+    settings = {
+        name: value
+        for name, value in config.to_dict().items()
+        if name in OfflineGRPOConfig.__dataclass_fields__
+    }
+    settings["batch_size"] = config.batch_size or config.per_device_train_batch_size
+    if isinstance(dataset, ConversationDataset):
+        if dataset.embedding_cache is None:
+            dataset.embedding_cache = EmbeddingCache(
+                embedding_model=dataset.config.embedding_model
+            )
+        dimensions = dataset.embedding_cache.embedding_dim
+        settings.update(state_dim=dimensions, action_dim=dimensions)
+    offline_config = OfflineGRPOConfig(**settings)
 
     trainer = OfflineGRPOTrainer(
         config=offline_config,
@@ -311,12 +396,20 @@ async def _train_offline(
         reward_fn=reward_fn,
         dataset=dataset,
     )
+    trainer.callbacks = [DiagnosticsMonitor(config), *(callbacks or [])]
 
     logger.info("Starting offline training with IQL on %s samples", len(dataset))
 
-    # Pre-train value functions
-    pretrain_metrics = await trainer.pretrain_value_functions(dataset, num_steps=100)
-    logger.info("Value pre-training: %s", pretrain_metrics)
+    if config.resume_from_checkpoint:
+        from .checkpoint_publication import validate_checkpoint_publication
+
+        validate_checkpoint_publication(
+            Path(config.resume_from_checkpoint), required=True
+        )
+        trainer.load(
+            str(Path(config.resume_from_checkpoint) / "training_state.pt"),
+            require_policy=True,
+        )
 
     # Main training
     await trainer.train(
@@ -325,6 +418,7 @@ async def _train_offline(
     )
 
     if save_path:
+        trainer.save_checkpoint(save_path)
         logger.info("Saving offline-trained model to %s", save_path)
 
     return agent

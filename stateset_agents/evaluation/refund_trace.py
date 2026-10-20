@@ -13,13 +13,18 @@ from stateset_agents.core.environments.refund_policy_environment import (
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash, validate_report
-from stateset_agents.evaluation.checkpoint_selection import select_validation_checkpoint
+from stateset_agents.evaluation.checkpoint_selection import (
+    require_training_progress,
+    select_validation_checkpoint,
+)
 from stateset_agents.evaluation.implementation import package_implementation
 
 _ENVIRONMENTS = {
     "refund-v1": RefundEnvironment,
     "refund-policy-v2": RefundPolicyEnvironment,
 }
+
+VALIDATION_SELECTION_POLICY = "initial_and_unskipped_batches_v1"
 
 
 async def select_replayed_validation_checkpoint(
@@ -29,13 +34,35 @@ async def select_replayed_validation_checkpoint(
     cases: dict[str, Any],
     environment: str,
     truncation_reward: float = -1.0,
+    training_progress: Any = None,
+    recovery_receipts: dict[str, Any] | None = None,
+    run_manifest_hash: str | None = None,
 ) -> dict[str, Any]:
     """Select only after every planned validation reward passes sandbox replay.
 
     All steps are checked, including checkpoints that would not win selection.
-    No test cases or provider calls are used by this selection gate.
+    No test cases or provider calls are used by this selection gate. When native
+    training progress is supplied, confirmed skipped batches cannot promote a
+    fresh resampling of unchanged weights. Unknown recovery activity remains
+    eligible and explicit, rather than being invented as an update or a skip.
     """
-    selected = select_validation_checkpoint(evaluations, steps=steps, cases=cases)
+    skipped_steps: tuple[int, ...] = ()
+    if training_progress is not None:
+        require_training_progress(
+            training_progress,
+            steps=steps,
+            recovery_receipts=recovery_receipts,
+            run_manifest_hash=run_manifest_hash,
+        )
+        skipped_steps = tuple(
+            entry["step"]
+            for entry in training_progress
+            if isinstance(entry.get("metrics"), dict)
+            and entry["metrics"].get("train/updated") == 0
+        )
+    selected = select_validation_checkpoint(
+        evaluations, steps=steps, cases=cases, skipped_steps=skipped_steps
+    )
     for evaluation in evaluations:
         for outcome in evaluation["outcomes"]:
             case_id = outcome["case_id"]
@@ -52,7 +79,29 @@ async def select_replayed_validation_checkpoint(
                 raise ValueError(
                     f"Validation replay failed at step {evaluation['step']}, case {case_id}: {exc}"
                 ) from exc
-    return selected
+    if training_progress is None:
+        return selected
+    from stateset_agents.training.river_progress import summarize_training_activity
+
+    activity = summarize_training_activity(training_progress[: selected["step"]])
+    if selected["step"] == 0:
+        activity["status"] = "initial_checkpoint"
+    selection = {
+        "schema_version": 1,
+        "policy": VALIDATION_SELECTION_POLICY,
+        "run_manifest_hash": run_manifest_hash,
+        "selected_validation_step": selected["step"],
+        "selected_checkpoint": copy.deepcopy(selected["checkpoint"]),
+        "eligible_validation_steps": [
+            step for step in range(steps + 1) if step not in skipped_steps
+        ],
+        "excluded_skipped_batches": list(skipped_steps),
+        "selected_training_activity": activity,
+        "validation_results_hash": content_hash(evaluations),
+        "training_progress_hash": content_hash(training_progress),
+        "recovery_receipts_hash": content_hash(recovery_receipts or {}),
+    }
+    return {**selected, "selection_activity": selection}
 
 
 def _same(actual: Any, recorded: Any, description: str) -> None:

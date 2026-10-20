@@ -1,0 +1,198 @@
+"""Retain reviewed local-evaluation acceptance and sanitized queue receipts."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+root = Path('/home/dom/stateset-agents')
+source = Path(sys.argv[1])
+pipeline_job = sys.argv[2]
+pipeline = json.loads(Path('/tmp/stateset-studio-evaluation-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and Path(pipeline['finished'])==source
+assert [row['name'] for row in pipeline['stages']]==['format','prepare','wheel-1','wheel-2','wheel-3','finish']
+assert all(row['exit_code']==0 for row in pipeline['stages'])
+verification = json.loads((source/'verification.json').read_text())
+prepared = json.loads((source/'prepare-verification.json').read_text())
+assert verification['passed'] and prepared['passed']
+assert verification['phase']=='complete' and prepared['phase']=='prepare'
+package = {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert package == verification['source_sha256'] == prepared['source_sha256']
+assert tests == verification['test_source_sha256'] == prepared['test_source_sha256']
+assert 'Success: no issues found in 429 source files' in (source/'types.log').read_text()
+wheel = next((source/'dist').glob('*.whl'))
+assert hashlib.sha256(wheel.read_bytes()).hexdigest() == verification['wheel_sha256']
+
+def counts(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    return {'passed':sum(int(s.get('tests',0)) for s in suites),'skipped':0}
+
+def receipt(handle):
+    job = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {key:job.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason','wait_breakdown','usage']}
+
+receipts = [receipt(handle) for handle in [pipeline_job,'ecfc38d746e2','691f880c6db0','718917e810ad','32140640143e','d72f4e87a399','b1d6d1554573','9df080fce68d','80f844255c06','0f94032359ed']]
+assert all(j['state']=='succeeded' and j['exit_code']==0 for j in receipts)
+candidate = Path('/tmp/stateset-evaluation-case-picker-20261016')
+focused = json.loads((candidate/'current-verification.json').read_text())
+post = json.loads((candidate/'canonical-picker-verification.json').read_text())
+terminal = json.loads((candidate/'terminal-verification.json').read_text())
+assert focused['passed'] and focused['case_identities_match'] and post['passed'] and terminal['passed']
+assert 'Success: no issues found in 429 source files' in (candidate/'types.log').read_text()
+assert package=={name.removeprefix('stateset_agents/'):digest for name,digest in focused['source_sha256'].items() if name.startswith('stateset_agents/')}
+assert tests==focused['test_source_sha256']
+live = Path('/tmp/stateset-studio-evaluation-live.txt')
+draft = Path('/tmp/stateset-studio-evaluation-draft.txt')
+assert live.exists() and json.loads(draft.read_text())['draft_preserved']
+summary = {'passed':True,'source_regressions':counts('regressions.xml'),'wheel_regressions':counts('wheel.xml'),'typed_modules':429,'pipeline_queue_job':pipeline_job,'focused_queue_job':'0f94032359ed','focused_wheel_queue_job':'0f94032359ed','focused_tests':focused['passed_tests'],'picker_post_integration_tests':post['picker_tests'],'picker_real_terminal_checks':len(terminal['checks']),'wheel_sha256':verification['wheel_sha256'],'source_unchanged':True,'test_sources_unchanged':True,'wheel_source_matches':True,'wheel_case_identities_match':True,'real_cpu_policy_and_adapter_generation':True,'recorded_judge_replay_verified':True,'judge_generation_in_contracts':'injected deterministic synthetic replies; no live judge model quality claim','real_terminal_configuration_and_review_verified':True,'live_herdr_refreshed':True,'draft_preserved':True,'gpu_verified':False,'paid_run_launched':False,'quality_gain_verified':False,'remote_evaluation_verified':False,'count_note':'Source/wheel counts overlap; provider boundaries and positive judge transport use mocks.'}
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation'
+out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+(out/'pipeline-receipt.json').write_text(json.dumps(pipeline,indent=2)+'\n')
+shutil.copy2(candidate/'current-source.xml',out/'focused.xml')
+shutil.copy2(candidate/'current-wheel.xml',out/'focused-wheel.xml')
+shutil.copy2('/tmp/stateset-evaluation-current-focused.xml',out/'preceding-focused.xml')
+shutil.copy2('/tmp/stateset-evaluation-quick-types.json',out/'preceding-quick-types-verification.json')
+shutil.copy2('/tmp/stateset-evaluation-current-focused.json',out/'preceding-quick-focused-verification.json')
+for name, handle in [('types','718917e810ad'),('focused','32140640143e')]:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(handle+'.log'),out/('preceding-quick-'+name+'.log'))
+for name in ['stateset-evaluation-quick-types.py','stateset-evaluation-quick-focused.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+for name in ['candidate-verification.json','candidate-wheel-verification.json','terminal-verification.json','canonical-integration.json','canonical-picker-verification.json','canonical-picker.xml','terminal-74x44.log','terminal-110x32.log']:
+    shutil.copy2(candidate/name,out/name)
+shutil.copy2(candidate/'current-verification.json',out/'current-focused-verification.json')
+shutil.copy2('/home/dom/.local/state/agent-builds/logs/0f94032359ed.log',out/'current-focused.log')
+for label,handle in [('candidate-source','d72f4e87a399'),('candidate-wheel','b1d6d1554573'),('candidate-terminal','9df080fce68d'),('canonical-picker','80f844255c06')]:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(handle+'.log'),out/(label+'.log'))
+for path in source.glob('*.log'):
+    shutil.copy2(path,out/path.name)
+for path in source.glob('*.xml'):
+    shutil.copy2(path,out/path.name)
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['gates','prepare','wheel','finish','pipeline','retain']:
+    name = 'stateset-studio-evaluation-'+suffix+'.py'
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+for name in ['stateset-evaluation-check.py','stateset-evaluation-case-picker-check.py','stateset-evaluation-case-picker-wheel.py','stateset-evaluation-case-picker-terminal.py','stateset-evaluation-case-picker-integrate.py','stateset-evaluation-picker-post-integration.py','stateset-evaluation-picker-current-check.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+shutil.copy2(live,out/'herdr-live.txt')
+shutil.copy2(draft,out/'herdr-draft.txt')
+attempts = out/'verification-attempts'
+attempts.mkdir()
+corrections = []
+for handle in ['7ab253f18250','0c34192c4a6c','1c2728e9aa51','7aa4c1b07efc','77f58a86d3d3','7387afbe7842']:
+    corrections.append(receipt(handle))
+    log = Path('/home/dom/.local/state/agent-builds/logs')/(handle+'.log')
+    shutil.copy2(log,attempts/(handle+'.log'))
+(attempts/'queue-receipts.json').write_text(json.dumps(corrections,indent=2)+'\n')
+shutil.copy2('/tmp/stateset-studio-evaluation-20261016-retry1/types.log', attempts/'7387afbe7842-types.log')
+predecessor = Path('/tmp/stateset-studio-evaluation-20261016')
+if predecessor != source and (predecessor/'verification.json').exists():
+    previous = attempts/'predecessor-candidate'
+    previous.mkdir()
+    for name in ['verification.json','frozen-inventory.json','regressions.xml','regressions.log','wheel-shard-1.xml','wheel-shard-2.xml','wheel-shard-3.xml']:
+        shutil.copy2(predecessor/name,previous/name)
+    (previous/'queue-receipts.json').write_text(json.dumps([receipt(handle) for handle in ['10d86ca8c3e7','34c1adbc2352','3df0813551bb','02f81fa4da33']],indent=2)+'\n')
+(out/'README.md').write_text(f'''# Local paired evaluation: acceptance
+
+{summary['source_regressions']['passed']} targeted source tests and
+{summary['wheel_regressions']['passed']} installed-wheel tests passed with no
+skips or failures; counts overlap. All 429 package modules passed typing.
+Repository Ruff/hygiene, stable API compatibility, release governance, serial
+format checks for ten changed Python files and workflow lint passed.
+
+Pipeline job `{pipeline_job}` used one shared allocation for serial formatting,
+preparation, three wheel groups and finish. Preparation froze package/test
+Python and packaged assets, ran source regressions and built/installed a
+byte-matching wheel. Wheel groups use matching pytest/root fixtures and cover
+exactly the selected source case identities. Finish completed installed CLI and
+offline audit checks while verifying frozen identities. Stage and queue receipts and
+earlier fixture/typing/lint corrections are retained; these were code/harness
+failures, not queue failures.
+
+An earlier candidate passed its source and wheel groups and was superseded
+after inspection found that a relative model directory could override a Hub
+commit argument. Current acceptance resolves the exact cached snapshot before
+loading and tests directory collisions, invalid repository paths and missing or
+mismatched cached commits. Earlier jobs finished normally; their evidence is
+retained separately and is not counted as current acceptance.
+
+## Operator and agent behavior
+
+Press `f` in the evaluation form to browse regular JSON case files using the
+shared directory picker. Selection returns to that exact editor; Escape keeps
+its values. Browsing reads no case contents and writes no training settings.
+JSONL, hidden files, symlink files and special files are omitted for cases.
+PageUp/Down navigates both evaluation and training file lists. Changed or busy
+evaluation editors reject a late selection. Review remains a separate action.
+
+Press `j` on Runs/details/quality, then `n` to configure held-out cases, a pinned
+judge and resource/token limits. `r` captures a background review. Only Enter in
+that review prepares and submits through Buildr. Existing prepared evaluations
+can be reopened, reviewed and submitted using their same ID. The editor does
+not alter training configuration or its private draft. Escape before submission
+creates no evaluation or worker. Owned submission and stop work finishes even
+after leaving its view; read-only work never steals later focus.
+
+Plans bind base commit, adapter inventory, parent plan/completion/dataset,
+installed implementation, rubric, cases and fixed workload/thresholds.
+Preparation atomically publishes private case snapshots; changed inputs,
+oversized serialized snapshots and failed writes expose no partial evaluation.
+Launch requires an exact checksum and an exclusive receipt. Execution claims
+its pipeline once. No automatic retry, provider provisioning, weight download,
+model-code execution or training modification is performed.
+
+Three sequential subprocess commands generate baseline replies, candidate
+replies and judge scores. Model access is cache-only and safetensors-only with
+native code. Policies use the same scripted turns, supplied facts and greedy
+decoding. Prompt overflow fails instead of losing facts; token-limit responses
+cannot pass. The two-pass checklist judge records requests/replies/retries;
+parsing errors and excessive self-disagreement reject the diagnostic.
+Success additionally requires every resolution, accuracy and policy check,
+plus no repeated replies in both passes. A 0.96 aggregate score cannot hide
+wrong resolution, invented facts or a redundant request.
+
+Progress survives reopening the TUI. Bounded, allowlisted retained Buildr events
+expose the job handle, sampled queue wait, admission category and disk/RAM
+headroom without shared-state calls or raw commands/messages. Incomplete,
+malformed, nonfinite, special-file and foreign-handle events cannot claim a new
+evaluation state; the sample age stays explicit. Reopening preserves inspection
+handles without granting cancellation or automatic resubmission.
+Evaluation-only cooperative stop is bound
+to its reviewed plan and does not stop training or unrelated jobs. Result
+verification rehashes the adapter and replays judge recordings without models,
+checking protocol, case hashes, transcripts, outcomes and displayed score means.
+Existing multi-seed quality evidence is preserved; paired-reports.json is an
+explicit import. A one-run diagnostic never certifies independent quality gain
+or chooses a production checkpoint. CPU/RAM/scratch reservations do not reserve
+a GPU; placement remains the operator's local configuration.
+
+## Evidence and limits
+
+Tests exercise a real tiny CPU HF model with a real PEFT safetensors adapter,
+an actual pinned Hub-cache snapshot despite a conflicting relative directory,
+cache/pin arguments, deterministic equal outputs for a zero-initialized adapter
+and hard context bounds. Positive end-to-end scoring uses injected synthetic
+judge replies through the real rubric, findings, two-pass parser, recorder and
+replay. Queue and phase submission are checked with controlled process mocks.
+These do not certify a live judge model, GPU fit, speed or improvement.
+
+Real PTYs at 74x44 and 110x32 edit all evaluation fields, capture a review and
+Escape without creating a job or changing the draft. Narrow layout is also
+covered at 72x22. Installed CLI checks plan, stale prepare/launch/stop refusal,
+private preparation without inference, progress/listing, refusal to verify an
+unfinished evaluation and an isolated synthetic evaluation stop. Training is
+unchanged and no supervisor/model/provider is launched by those CLI checks.
+
+The live Herdr split was refreshed, its private draft preserved, and `j` gives
+controlled guidance in its empty workspace. No synthetic live runs were added.
+No paid training, remote evaluation, GPU certification, multi-seed study or
+independent quality gain occurred. Existing free preflight planning remains
+blocked from paid execution. Historical distributed matrices were not repeated.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

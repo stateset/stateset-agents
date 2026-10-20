@@ -1,0 +1,58 @@
+{"arm": "base", "split": "validation", "passed": 58, "total": 64}
+[river] River account advertises model access: Qwen/Qwen3.5-9B
+[river] built 128 River SFT data from 128 rows
+[river] created River model on Qwen/Qwen3.5-9B (LoRA rank 16, attn+mlp)
+[river] step 10 loss 0.0382
+[river] epoch 1/1 complete (16 steps, loss 0.0086)
+[river] saved River checkpoint: river://45529f01-6e51-48f2-bc04-ce6ea02bf198/sampler_weights/sft
+{"arm": "sft", "split": "validation", "passed": 54, "total": 64}
+{"arm": "base", "split": "test", "passed": 53, "total": 64}
+Traceback (most recent call last):
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 316, in <module>
+    worker(args.seed)
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 239, in worker
+    asyncio.run(w.evaluate(evaluation,renderer,checkpoint,test,'test',arm,budget,plan['implementation']))
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 195, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py", line 691, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/warmup_runner.py", line 127, in evaluate
+    async for group in groups:
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/utils/async_calls.py", line 85, in iterate
+    worker.result()
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/utils/async_calls.py", line 67, in drive
+    item = await generator.__anext__()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/engine.py", line 383, in rollout
+    result = await self.next_group()
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/engine.py", line 347, in next_group
+    raise result
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/engine.py", line 1055, in _run_group
+    tasks[i].result()
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/engine.py", line 844, in _run_member
+    sample = await future
+             ^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/rl/engine.py", line 577, in _sample
+    pending = await asyncio.get_running_loop().run_in_executor(
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/concurrent/futures/thread.py", line 59, in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/client.py", line 2984, in submit_sampling_batch
+    return _submit_independent_samples(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/client.py", line 5799, in _submit_independent_samples
+    request_ids = submit_batch(
+                  ^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/sampling.py", line 99, in submit_batch
+    response = session._client._rpc(
+               ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/river_client/client.py", line 4613, in _rpc
+    raise RiverConnectionError.from_grpc_error(e, context) from None
+river_client.types.RiverConnectionError: Server is unavailable. Check your network connection and endpoint. [UNAVAILABLE] - upstream connect error or disconnect/reset before headers. reset reason: connection termination

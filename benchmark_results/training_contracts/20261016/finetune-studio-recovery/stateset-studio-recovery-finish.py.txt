@@ -1,0 +1,202 @@
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import time
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+base = Path('/tmp/stateset-studio-recovery-20261016-final')
+for index in range(100):
+    out = base if index == 0 else Path(str(base) + f'-retry{index}')
+    if not out.exists():
+        out.mkdir()
+        break
+else:
+    raise RuntimeError('No unused verification directory')
+print('Evidence:', out, flush=True)
+def inventory():
+    return {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+source = inventory()
+asset_paths = ['stateset_agents/config/presets/experiments/support_recovery_preflight6.json', 'stateset_agents/evaluation/rubrics/support_rubric_v4.md', 'tests/fixtures/support_conversation_reward/preflight5_regressions.json']
+assets = {name: hashlib.sha256((root/name).read_bytes()).hexdigest() for name in asset_paths}
+def assets_unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in assets.items())
+def test_inventory():
+    return {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+test_source = test_inventory()
+env = dict(os.environ, PATH=str(root/'.venv/bin')+os.pathsep+os.environ['PATH'], OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+stages = []
+def run(name, argv, *, environment=env, cwd=root, expected_exit=0):
+    print('Stage:', name, flush=True)
+    start = time.monotonic()
+    with (out/(name+'.log')).open('w') as log:
+        process = subprocess.Popen(argv, cwd=cwd, env=environment, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            if name not in {'wheel-build', 'types'}:
+                print(line, end='', flush=True)
+        code = process.wait()
+    stages.append(dict(name=name, argv=argv, exit_code=code, expected_exit_code=expected_exit, elapsed_seconds=time.monotonic()-start))
+    if code != expected_exit:
+        raise RuntimeError(name+' failed')
+    if inventory() != source or test_inventory() != test_source or not assets_unchanged():
+        raise RuntimeError('Package source changed during verification')
+pytest = [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=150', '--tb=short']
+regressions = ['tests/unit/test_finetune_recovery.py','tests/unit/test_multi_turn_checkpoint_accumulation.py','tests/unit/test_checkpoint_publication.py','tests/unit/test_finetune_quality.py','tests/api/test_finetune_operator.py','tests/api/test_dependencies.py','tests/api/test_routers.py', 'tests/unit/test_text_sft.py', 'tests/unit/test_finetune_dataset.py', 'tests/unit/test_finetune_comparison.py', 'tests/unit/test_finetune_logs.py', 'tests/unit/test_finetune_validation.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_remote_modal_executor.py', 'tests/unit/test_remote_river_executor.py', 'tests/unit/test_river_runtime.py', 'tests/unit/test_remote_registry.py', 'tests/unit/test_finetune_handoff.py', 'tests/unit/test_cli_finetune.py', 'tests/unit/test_finetune_failures.py', 'tests/unit/test_finetune_inspection.py', 'tests/unit/test_finetune_studio.py', 'tests/unit/test_cli.py', 'tests/unit/test_training_sft.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_remote_local_executor.py', 'tests/unit/test_support_recovery_evidence.py', 'tests/unit/test_support_reward_recovery.py', 'tests/unit/test_support_judge.py', 'tests/unit/test_release_script.py', 'tests/unit/test_pyproject_extras.py', 'tests/unit/test_mypy_allowlist_ratchet.py', 'tests/unit/test_root_package_lazy_import.py', 'tests/unit/test_torch_import_policy.py']
+wheel_tests = ['tests/unit/test_finetune_recovery.py','tests/unit/test_multi_turn_checkpoint_accumulation.py','tests/unit/test_checkpoint_publication.py','tests/unit/test_finetune_quality.py','tests/api/test_finetune_operator.py','tests/api/test_dependencies.py','tests/api/test_routers.py', 'tests/unit/test_text_sft.py', 'tests/unit/test_finetune_dataset.py', 'tests/unit/test_finetune_comparison.py', 'tests/unit/test_finetune_logs.py', 'tests/unit/test_finetune_validation.py', 'tests/unit/test_finetune_backends.py', 'tests/unit/test_remote_modal_executor.py', 'tests/unit/test_remote_river_executor.py', 'tests/unit/test_river_runtime.py', 'tests/unit/test_remote_registry.py', 'tests/unit/test_finetune_handoff.py', 'tests/unit/test_cli_finetune.py', 'tests/unit/test_finetune_failures.py', 'tests/unit/test_finetune_inspection.py', 'tests/unit/test_finetune_studio.py', 'tests/unit/test_training_sft.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_remote_local_executor.py', 'tests/unit/test_support_recovery_evidence.py', 'tests/unit/test_support_reward_recovery.py', 'tests/unit/test_support_judge.py', 'tests/unit/test_release_script.py', 'tests/unit/test_root_package_lazy_import.py', 'tests/unit/test_torch_import_policy.py']
+distributed_test = 'tests/integration/test_distributed_grpo_weighting.py'
+advantage_test = 'tests/integration/test_distributed_advantages.py'
+preflight_test = 'tests/integration/test_learner_preflight.py'
+replica_test = 'tests/integration/test_replica_consensus.py'
+native_test = 'tests/integration/test_native_ddp_checkpoint.py'
+evaluation_test = 'tests/integration/test_ddp_evaluation.py'
+continual_test = 'tests/integration/test_ddp_continual.py'
+empty_test = 'tests/integration/test_ddp_empty_population.py'
+loop_test = 'tests/integration/test_ddp_training_loop.py'
+rollout_test = 'tests/integration/test_ddp_rollout_metrics.py'
+diagnostic_test = 'tests/integration/test_ddp_diagnostics.py'
+reporting_test = 'tests/integration/test_ddp_optimizer_reporting.py'
+support_tests = ['tests/unit/'+name for name in ['test_support_conversation_reward.py', 'test_support_conversation_reward_v3.py', 'test_support_judge.py', 'test_support_reward_recovery.py']]
+# Source-tree AST/allowlist governance runs in the source suite above.
+wheel_tests = [name for name in wheel_tests if not name.endswith('test_torch_import_policy.py')]
+failed = None
+try:
+    recovered = Path(sys.argv[1])
+    prepared = json.loads((recovered/'verification.json').read_text())
+    assert prepared['phase']=='prepare' and prepared['passed'] and prepared['source_unchanged'] and prepared['tests_unchanged']
+    assert source == prepared['source_sha256'] and test_source == prepared['test_source_sha256'] and assets == prepared['assets_sha256']
+    shutil.copytree(recovered, out, dirs_exist_ok=True)
+    stages.extend(prepared['stages'])
+    wheel = next((out/'dist').glob('*.whl'))
+    with zipfile.ZipFile(wheel) as archive:
+        packed = {name.removeprefix('stateset_agents/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+        assert packed == source
+        for name in asset_paths[:2]:
+            assert archive.read(name) == (root/name).read_bytes()
+    checks=out/'checks'
+    for path in (root/'tests/unit').rglob('*.py'):
+        if path.name != '__init__.py':
+            assert (checks/path.relative_to(root)).read_bytes() == path.read_bytes()
+    test_config=json.loads((out/'wheel-test-configuration.json').read_text())
+    for name in ['tests/conftest.py','tests/_module_stubs.py']:
+        assert hashlib.sha256((checks/name).read_bytes()).hexdigest() == test_source[name] == test_config['shared_fixture_sha256'][name]
+    groups=json.loads((out/'wheel-shards.json').read_text())
+    assert [name for group in groups for name in group] == wheel_tests
+    import xml.etree.ElementTree as ET
+    merged=ET.Element('testsuites')
+    actual=[]
+    for index in range(1,4):
+        parsed=ET.parse(out/f'wheel-shard-{index}.xml').getroot()
+        for suite in parsed.iter('testsuite'):
+            assert not sum(int(suite.get(key,0)) for key in ['failures','errors','skipped'])
+            merged.append(suite)
+        actual += [(c.get('classname'),c.get('name')) for c in parsed.iter('testcase')]
+    modules=[name.removesuffix('.py').replace('/','.') for name in wheel_tests]
+    expected=[(c.get('classname'),c.get('name')) for c in ET.parse(out/'regressions.xml').getroot().iter('testcase') if any(c.get('classname','')==m or c.get('classname','').startswith(m+'.') for m in modules)]
+    assert len(actual)==len(set(actual)) and actual and set(actual)==set(expected)
+    ET.ElementTree(merged).write(out/'wheel.xml',encoding='utf-8',xml_declaration=True)
+    stages.append(dict(name='wheel-regressions', exit_code=0, evidence='Three queued groups; complete JUnit case identities match source selection'))
+    (out/'prepare-verification.json').write_text(json.dumps(prepared,indent=2)+'\n')
+    wheel_env=dict(env,PYTHONPATH=str(out/'site-packages'))
+    run('wheel-origin',[sys.executable,'-c',"import stateset_agents.finetune_inspection as m; from pathlib import Path; import sys; assert Path(m.__file__).resolve().is_relative_to(Path(sys.argv[1]).resolve()), m.__file__; print(m.__file__)",str(out/'site-packages')],environment=wheel_env,cwd=checks)
+    run('reward-audit', [sys.executable, '-m', 'stateset_agents.evaluation.reward_audit', str(root/'tests/fixtures/support_conversation_reward/preflight5_regressions.json'), '--expected-pairs', '3', '--output', str(out/'reward-audit.json')], environment=wheel_env, cwd=checks)
+    run('free-recovery-plan', [sys.executable, '-m', 'stateset_agents.training.support_recovery', '--output', str(out/'preflight6-plan.json')], environment=wheel_env, cwd=checks)
+    valid_config = out/'valid-agent-config.json'
+    invalid_config = out/'invalid-agent-config.json'
+    valid_config.write_text(json.dumps({'dataset': 'not-read.jsonl'}))
+    invalid_config.write_text(json.dumps({'dataset': 'not-read.jsonl', 'provider': 'river', 'epochs': 0}))
+    sample_config=out/'sample-chat.jsonl'
+    sample_config.write_text('{"messages":[{"role":"user","content":"Hi"},{"role":"assistant","content":"Hello"}]}\n')
+    run('agent-data-inspection',[sys.executable,'-m','stateset_agents.cli','finetune','inspect-data','--dataset',str(sample_config)],environment=wheel_env,cwd=checks)
+    inspection=json.loads((out/'agent-data-inspection.log').read_text())['result']
+    assert inspection['examples']==1 and 'samples' not in inspection
+    run('agent-data-samples',[sys.executable,'-m','stateset_agents.cli','finetune','inspect-data','--dataset',str(sample_config),'--include-samples'],environment=wheel_env,cwd=checks)
+    assert 'assistant: Hello' in json.loads((out/'agent-data-samples.log').read_text())['result']['samples'][0]['text']
+    malformed = out/'malformed-chat.jsonl'
+    malformed.write_text('\n{"messages":[],"PRIVATE_VALUE":123}\n')
+    run('agent-data-invalid',[sys.executable,'-m','stateset_agents.cli','finetune','inspect-data','--dataset',str(malformed)],environment=wheel_env,cwd=checks,expected_exit=1)
+    error=json.loads((out/'agent-data-invalid.log').read_text())['error']
+    assert error['code']=='invalid_dataset' and error['diagnostic']['location']=={'line':2}
+    assert error['diagnostic']['code']=='invalid_conversation'
+    assert 'PRIVATE_VALUE' not in (out/'agent-data-invalid.log').read_text()
+    run('agent-validation', [sys.executable, '-m', 'stateset_agents.cli', 'finetune', 'validate', '--config', str(valid_config)], environment=wheel_env, cwd=checks)
+    assert json.loads((out/'agent-validation.log').read_text())['result']['valid']
+    run('agent-invalid-validation', [sys.executable, '-m', 'stateset_agents.cli', 'finetune', 'validate', '--config', str(invalid_config)], environment=wheel_env, cwd=checks)
+    invalid = json.loads((out/'agent-invalid-validation.log').read_text())['result']
+    assert not invalid['valid'] and {i['field'] for i in invalid['issues']} == {'cost_policy', 'epochs'}
+    run('agent-schema', [sys.executable, '-m', 'stateset_agents.cli', 'finetune', 'schema'], environment=wheel_env, cwd=checks)
+    run('agent-models', [sys.executable, '-m', 'stateset_agents.cli', 'finetune', 'models'], environment=wheel_env, cwd=checks)
+    run('studio-snapshot', [sys.executable, '-m', 'stateset_agents.cli', 'tui', '--workspace', str(out/'unused-studio-workspace'), '--snapshot'], environment=wheel_env, cwd=checks)
+    run('studio-narrow-snapshot', [sys.executable, '-c', "from pathlib import Path; from stateset_agents.tui import Studio; print('\\n'.join(Studio(Path('unused-narrow-workspace')).lines(74,44)))"], environment=wheel_env, cwd=checks)
+    assert not (out/'unused-studio-workspace').exists()
+    run('workflow-lint', ['/tmp/stateset-actionlint-1.7.12/actionlint', str(root/'.github/workflows/training-contracts.yml')])
+    run('agent-workflow', [sys.executable,'-m','stateset_agents.cli','finetune','workflow','--config',str(invalid_config)], environment=wheel_env,cwd=checks)
+    guided=json.loads((out/'agent-workflow.log').read_text())['result']
+    assert len(guided['steps'])==5 and not guided['training_started'] and not guided['prepared']
+    fixture_code = '''from pathlib import Path
+import json,sys
+from tests.unit.test_finetune_quality import make_completed,evidence_for
+from stateset_agents.finetune_workspace import create_run,plan_run,read_run_plan
+root=Path(sys.argv[1]); root.mkdir()
+run,config=make_completed(root)
+source=root/'paired.json'; source.write_text(json.dumps(evidence_for(run,config,regression=True)))
+prepared=create_run(run.parent,plan_run(config))
+(root/'metadata.json').write_text(json.dumps({'completed':run.name,'prepared':prepared.name,'digest':read_run_plan(prepared)[1]}))
+'''
+    fixture = out/'synthetic-operator-fixture'
+    run('operator-fixture',[sys.executable,'-c',fixture_code,str(fixture)],environment=wheel_env,cwd=checks)
+    identity=json.loads((fixture/'metadata.json').read_text())
+    workspace=fixture/'workspace'
+    quality_args=[sys.executable,'-m','stateset_agents.cli','finetune','quality',identity['completed'],'--workspace',str(workspace)]
+    run('agent-quality-import',quality_args+['--evidence',str(fixture/'paired.json')],environment=wheel_env,cwd=checks)
+    reported=json.loads((out/'agent-quality-import.log').read_text())['result']
+    assert reported['regressions_total']==32 and reported['mean_success_gain']==-1 and not reported['recorded_study_passed']
+    assert 'PRIVATE-ID' not in (out/'agent-quality-import.log').read_text()
+    run('agent-quality-reverify',quality_args,environment=wheel_env,cwd=checks)
+    stop_args=[sys.executable,'-m','stateset_agents.cli','finetune','stop',identity['prepared'],'--workspace',str(workspace),'--expected-plan-sha256']
+    run('agent-stop-stale',stop_args+['0'*64],environment=wheel_env,cwd=checks,expected_exit=1)
+    assert not (workspace/identity['prepared']/'stop.json').exists()
+    run('agent-stop',stop_args+[identity['digest']],environment=wheel_env,cwd=checks)
+    receipt=(workspace/identity['prepared']/'stop.json').read_bytes()
+    run('agent-stop-repeat',stop_args+[identity['digest']],environment=wheel_env,cwd=checks)
+    assert (workspace/identity['prepared']/'stop.json').read_bytes()==receipt
+    assert json.loads((out/'agent-stop.log').read_text())['result']['status']=='cancelled'
+    recovery_fixture=out/'synthetic-recovery-fixture'
+    code="from pathlib import Path; import json,sys; from tests.unit.test_finetune_recovery import make_parent; root=Path(sys.argv[1]); run,config=make_parent(root); (root/'metadata.json').write_text(json.dumps({'run_id':run.name}))"
+    run('recovery-fixture',[sys.executable,'-c',code,str(recovery_fixture)],environment=wheel_env,cwd=checks)
+    parent=json.loads((recovery_fixture/'metadata.json').read_text())['run_id']
+    recovery_workspace=recovery_fixture/'workspace'
+    checkpoint_args=[sys.executable,'-m','stateset_agents.cli','finetune','checkpoints',parent,'--workspace',str(recovery_workspace)]
+    run('agent-checkpoints',checkpoint_args,environment=wheel_env,cwd=checks)
+    choices=json.loads((out/'agent-checkpoints.log').read_text())['result']
+    selected=choices['checkpoints'][0]
+    assert selected['available'] and not choices['prepared'] and not choices['training_started']
+    assert 'PRIVATE CUSTOMER' not in (out/'agent-checkpoints.log').read_text()
+    recovery_args=[sys.executable,'-m','stateset_agents.cli','finetune','prepare-resume',parent,'--workspace',str(recovery_workspace),'--checkpoint',selected['checkpoint'],'--expected-recovery-sha256']
+    run('agent-recovery-stale',recovery_args+['0'*64],environment=wheel_env,cwd=checks,expected_exit=1)
+    assert len(list(recovery_workspace.glob('*/plan.json')))==1
+    run('agent-recovery-prepare',recovery_args+[selected['recovery_sha256']],environment=wheel_env,cwd=checks)
+    resumed=json.loads((out/'agent-recovery-prepare.log').read_text())['result']
+    assert resumed['prepared'] and not resumed['launched']
+    child=recovery_workspace/resumed['run']['run_id']
+    assert json.loads((child/'state.json').read_text())['status']=='prepared'
+    assert not (child/'launch.lock').exists() and not (child/'stop.json').exists()
+    assert (child/'dataset').read_bytes()==(recovery_workspace/parent/'dataset').read_bytes()
+    assert (child/'resume-checkpoint/optimizer.pt').stat().st_mode & 0o777 == 0o600
+    run('agent-recovery-status',[sys.executable,'-m','stateset_agents.cli','finetune','status',child.name,'--workspace',str(recovery_workspace)],environment=wheel_env,cwd=checks)
+    status=json.loads((out/'agent-recovery-status.log').read_text())['result']['run']
+    assert status['resume']['parent_run_id']==parent and not status['quality_gain_verified']
+    assert status['plan_sha256']==resumed['plan_sha256']
+except Exception as exc:
+    failed = str(exc)
+finally:
+    wheels = list((out/'dist').glob('*.whl')) if (out/'dist').exists() else []
+    report = dict(phase='complete', worker_environment={key: env[key] for key in ['OMP_NUM_THREADS', 'MKL_NUM_THREADS', 'OPENBLAS_NUM_THREADS', 'NUMEXPR_NUM_THREADS', 'RAYON_NUM_THREADS', 'TOKENIZERS_PARALLELISM']}, passed=failed is None and inventory()==source and test_inventory()==test_source and assets_unchanged(), assets_sha256=assets, failure=failed, stages=stages, source_sha256=source, test_source_sha256=test_source, tests_unchanged=test_inventory()==test_source, source_unchanged=inventory()==source, wheel_sha256=hashlib.sha256(wheels[0].read_bytes()).hexdigest() if wheels else None, gpu_verified=False, fsdp_verified=False, deepspeed_verified=False, multi_rank_accelerate_verified=False)
+    (out/'verification.json').write_text(json.dumps(report, indent=2)+'\n')
+    print('Evidence:', out, 'passed:', report['passed'], flush=True)
+raise SystemExit(0 if report['passed'] else 1)

@@ -1,0 +1,84 @@
+"""Finish checkpoint metadata compatibility under the shared source lock."""
+from pathlib import Path
+import fcntl
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+path = root/'stateset_agents/training/runtime_state.py'
+source = path.read_text()
+needle = '            learning = prepare_learning_state(self, state)\n'
+assert source.count(needle) == 1
+source = source.replace(needle, '''            learning_input = state
+            if "learning_state" not in state and "_current_task_id" in counters:
+                task = counters["_current_task_id"]
+                if "current_task_id" in state and state["current_task_id"] != task:
+                    raise ValueError("Checkpoint task identifiers disagree")
+                learning_input = {**state, "current_task_id": task}
+            learning = prepare_learning_state(self, learning_input)
+            if (
+                "_current_task_id" in counters
+                and counters["_current_task_id"] != learning["current_task_id"]
+            ):
+                raise ValueError("Checkpoint task identifiers disagree")
+''', 1)
+path.write_text(source)
+
+path = root/'tests/unit/test_runtime_checkpoint_safety.py'
+source = path.read_text()
+needle = '        state.pop("runtime_component_identities")\n        state["counters"]["best_eval_metric"]'
+assert source.count(needle) == 1
+source = source.replace(needle, '        state.pop("runtime_component_identities")\n        state.pop("learning_state")\n        state["current_task_id"] = "support"\n        state["counters"]["best_eval_metric"]', 1)
+needle = '    target = TinyRuntime()\n    assert target.load_runtime_checkpoint(str(path))\n    for parameter in target.model.parameters():\n'
+assert source.count(needle) == 1
+source = source.replace(needle, '''    target = TinyRuntime()
+    assert target.load_runtime_checkpoint(str(path))
+    assert target.training_metrics is not cached["counters"]["training_metrics"]
+    assert target.training_metrics["loss"] is not cached["counters"]["training_metrics"]["loss"]
+    cached["counters"]["training_metrics"]["loss"].append(42.0)
+    assert target.training_metrics["loss"] == before["counters"]["training_metrics"]["loss"]
+    cached["counters"]["training_metrics"]["loss"].pop()
+    for parameter in target.model.parameters():
+''', 1)
+source += '''
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_contradictory_task_ids_rejected_before_mutation(checkpoint, tmp_path, legacy):
+    _, path = checkpoint
+
+    def mutate(state, staging):
+        state["counters"]["_current_task_id"] = "support"
+        if legacy:
+            state.pop("learning_state")
+            state["current_task_id"] = "other-task"
+
+    bad = tmp_path / "conflicting-task-ids"
+    republish(path, bad, mutate)
+    target = TinyRuntime()
+    before = snapshot(target)
+    with pytest.raises(ValueError, match="task identifiers disagree"):
+        target.load_runtime_checkpoint(str(bad))
+    assert_same(snapshot(target), before)
+    assert target._current_task_id is None
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+async def test_task_id_restored_from_consistent_or_legacy_counter(checkpoint, tmp_path, legacy):
+    _, path = checkpoint
+
+    def mutate(state, staging):
+        state["counters"]["_current_task_id"] = "support"
+        if legacy:
+            state.pop("learning_state")
+            state.pop("current_task_id", None)
+        else:
+            state["learning_state"]["current_task_id"] = "support"
+
+    good = tmp_path / "task-id"
+    republish(path, good, mutate)
+    target = TinyRuntime()
+    assert target.load_runtime_checkpoint(str(good))
+    assert target._current_task_id == "support"
+'''
+path.write_text(source)
+print('Rejected contradictory task metadata; preserved genuine legacy task restores and two-way metric ownership')

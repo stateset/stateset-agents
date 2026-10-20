@@ -146,6 +146,8 @@ class TestSingleTurnGRPOTrainer:
         """Create a test training config"""
         return TrainingConfig(
             allow_sequence_fallback=True,
+            # Constant mock rewards deliberately have no within-group signal.
+            zero_signal_patience=0,
             num_episodes=2,
             max_steps_per_episode=3,
             learning_rate=1e-5,
@@ -263,6 +265,23 @@ class TestSingleTurnGRPOTrainer:
         assert result == mock_agent
         assert trainer.global_step > 0
         assert trainer.current_epoch >= 1
+
+    async def test_single_turn_stops_on_measured_zero_advantages(
+        self, mock_agent, mock_environment, mock_reward_fn, training_config
+    ):
+        from stateset_agents.training.diagnostics import TrainingSignalError
+
+        training_config.zero_signal_patience = 2
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            reward_fn=mock_reward_fn,
+            config=training_config,
+        )
+        await trainer.initialize()
+        with pytest.raises(TrainingSignalError, match="No policy advantage signal"):
+            await trainer.train()
+        assert trainer.diagnostics.zero_steps == 2
 
     @pytest.mark.asyncio
     async def test_single_turn_trainer_emits_replay_metrics(
@@ -428,45 +447,34 @@ class TestSingleTurnGRPOTrainer:
     def test_single_turn_trainer_load_checkpoint(
         self, mock_agent, mock_environment, training_config, tmp_path
     ):
-        """Test loading checkpoint training state."""
+        """Incomplete metadata cannot claim resume or alter learner state."""
+        import copy
+
+        mock_agent.model = torch.nn.Linear(2, 1)
+        mock_agent.tokenizer = None
         trainer = SingleTurnGRPOTrainer(
             agent=mock_agent,
             environment=mock_environment,
             config=training_config,
         )
 
-        trainer.optimizer = MagicMock()
-        trainer.lr_scheduler = MagicMock()
+        trainer.optimizer = torch.optim.SGD(trainer.agent.model.parameters(), lr=0.1)
+        trainer.lr_scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, 1)
 
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
-        (checkpoint_path / "training_state.pt").write_text("placeholder")
-
-        state = {
-            "global_step": 5,
-            "current_epoch": 2,
-            "best_eval_metric": 0.4,
-            "steps_without_improvement": 1,
-            "grad_accum_step": 0,  # Legacy state is safe only at a completed window.
-            "optimizer_state_dict": {"opt": 1},
-            "scheduler_state_dict": {"sched": 2},
-        }
-
-        with patch(
-            "stateset_agents.training.single_turn_trainer.require_torch"
-        ) as mock_torch:
-            mock_torch.return_value = MagicMock(load=MagicMock(return_value=state))
-            loaded = trainer.load_checkpoint(checkpoint_path)
-
-        assert loaded is True
-        assert trainer.global_step == 5
-        assert trainer.current_epoch == 2
-        trainer.optimizer.load_state_dict.assert_called_once_with(
-            state["optimizer_state_dict"]
-        )
-        trainer.lr_scheduler.load_state_dict.assert_called_once_with(
-            state["scheduler_state_dict"]
-        )
+        torch.save({"global_step": 5}, checkpoint_path / "training_state.pt")
+        model = copy.deepcopy(trainer.agent.model.state_dict())
+        optimizer = copy.deepcopy(trainer.optimizer.state_dict())
+        scheduler = copy.deepcopy(trainer.lr_scheduler.state_dict())
+        assert trainer.load_checkpoint(checkpoint_path) is False
+        assert trainer.global_step == 0
+        assert trainer.current_epoch == 0
+        for name, value in trainer.agent.model.state_dict().items():
+            torch.testing.assert_close(value, model[name], rtol=0, atol=0)
+        assert trainer.optimizer.state_dict() == optimizer
+        assert trainer.lr_scheduler.state_dict() == scheduler
+        assert not getattr(trainer, "_runtime_checkpoint_poisoned", False)
 
 
 # ===========================

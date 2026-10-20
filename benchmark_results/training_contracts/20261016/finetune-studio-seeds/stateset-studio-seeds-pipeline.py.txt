@@ -1,0 +1,48 @@
+"""Complete frozen acceptance sequentially within one shared-queue allocation."""
+from pathlib import Path
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+
+root = Path('/home/dom/stateset-agents')
+# Coordinate brief source handoffs with this process's complete frozen run.
+# An updater uses LOCK_NB and never waits while this verification owns it.
+source_lock = Path('/tmp/stateset-studio-seeds-source.lock').open('a')
+fcntl.flock(source_lock.fileno(), fcntl.LOCK_EX)
+os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+os.environ['PATH'] = str(root/'.venv/bin') + os.pathsep + os.environ['PATH']
+temporary = Path('/tmp')
+before = set(temporary.glob('stateset-studio-seeds-20261016*'))
+stages = []
+receipt = temporary/'stateset-studio-seeds-pipeline-receipt.json'
+
+def run(name, script, *args):
+    argv = [sys.executable, str(temporary/script), *map(str,args)]
+    started = time.time()
+    print('Pipeline stage:', name, flush=True)
+    code = subprocess.call(argv)
+    stages.append({'name':name,'argv':argv,'started':started,'finished':time.time(),'exit_code':code})
+    receipt.write_text(json.dumps({'stages':stages,'passed':all(row['exit_code']==0 for row in stages)},indent=2)+'\n')
+    if code:
+        raise SystemExit(code)
+
+run('format','stateset-studio-seeds-format.py','--format-only')
+run('prepare','stateset-studio-seeds-prepare.py')
+created = set(temporary.glob('stateset-studio-seeds-20261016*'))-before
+prepared = [path for path in created if path.is_dir() and (path/'verification.json').exists() and json.loads((path/'verification.json').read_text()).get('phase')=='prepare']
+assert len(prepared)==1
+prepared = prepared[0]
+for index in range(1,4):
+    run('wheel-'+str(index),'stateset-studio-seeds-wheel.py',prepared,index)
+run('finish','stateset-studio-seeds-finish.py',prepared)
+created = set(temporary.glob('stateset-studio-seeds-20261016*'))-before
+finished = [path for path in created if path.is_dir() and (path/'verification.json').exists() and json.loads((path/'verification.json').read_text()).get('phase')=='complete']
+assert len(finished)==1
+value = json.loads(receipt.read_text())
+value.update({'prepared':str(prepared),'finished':str(finished[0]),'passed':True})
+receipt.write_text(json.dumps(value,indent=2)+'\n')
+print('Completed acceptance:', finished[0], flush=True)

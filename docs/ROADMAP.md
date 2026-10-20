@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current release line: **v0.54.x (strong beta)**.
+Current package release: **v0.67.0 (strong beta)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -14,7 +14,7 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 - [x] RunPod training, artifact retrieval, serving, leases, and cleanup controls
 - [x] Fireworks adapter with durable job reconnection and artifact handling
 - [x] FastAPI/OpenAI-compatible serving, observability, and deployment assets
-- [x] Python 3.10–3.13 packaging and a 4,600+ test default suite
+- [x] Python 3.10–3.13 packaging and a growing deterministic test suite
 - [x] Provenance-enforced measured algorithm/framework comparison schemas
 - [x] Neutral StateSet/upstream-TRL runner with config attestation and artifact hashing
 - [x] Strict 1/2/4/8-GPU scaling and three-scenario recovery validators
@@ -44,6 +44,13 @@ has retained tests or live evidence; an unchecked box is not a product claim.
 See [`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md) for the exact current claims.
 
 ## A+ evidence gates
+
+The unreleased checkout has retained [2026-10-15 local verification](../benchmark_results/training_contracts/20261015/evaluation-isolation/README.md)
+for evaluation RNG isolation, complete failure accounting, validation/test
+separation and checkpoint-selection receipts. Its full suite passed 8,615 tests
+with 57 skipped, and 217 combined contracts passed against the rebuilt wheel.
+The [remaining evidence requirements](../benchmark_results/training_contracts/20261015/evaluation-isolation/a_plus_readiness.json)
+remain open; these engineering checks do not close the live A+ gates below.
 
 These are the blockers between the current strong beta and an independently
 defensible A+ rating.
@@ -80,6 +87,11 @@ provenance and SBOM artifacts.
 
 ### Comparative evidence
 
+- [ ] Recover and independently reproduce the Qwen3.5-9B v2 preflight-5
+  reward/judge divergence; run v3 on fresh validation/test partitions with
+  baseline-preserving judge checkpoint selection before a paid three-seed run.
+  See [reward recovery](RUNPOD_REWARD_RECOVERY.md) for reported versus recovered
+  evidence, implemented safeguards and the remaining paid-run gates.
 - [ ] Complete the 8B, three-seed flagship multi-turn benchmark
 - [x] Add a fail-closed flagship collector with immutable model, dataset, and
   judge revisions, provider cost ceilings, complete seed accounting, artifact
@@ -90,6 +102,68 @@ provenance and SBOM artifacts.
 - [ ] Obtain at least one independent reproduction outside StateSet
 
 ### Scale and reliability
+
+- [x] Match native DDP token-path updates to the combined-batch objective with
+  global trajectory/token counts, separately synchronized entropy, complete and
+  partial accumulation, and repeated inner updates; verify real CPU/Gloo peers,
+  registered buffers and bounded, precision-safe gradient reductions through
+  [288 source/wheel scenarios](../benchmark_results/training_contracts/20261015/native-ddp-weighting/summary.json)
+- [x] Report native DDP loss/entropy/KL/ratio diagnostics using global counts,
+  stable advantage moments, exact control counters and coordinated schema
+  rejection; retain [294 source/wheel scenarios](../benchmark_results/training_contracts/20261015/native-ddp-metrics/summary.json)
+- [x] Verify cross-rank batch-normalized and global reward-mean advantage
+  construction, including frozen baselines across inner updates; retain
+  [48 source/wheel population scenarios and 12 rejection/recovery cases](../benchmark_results/training_contracts/20261015/native-ddp-advantages/summary.json)
+- [x] Verify native learner preflight agreement on loss configuration and update
+  schedules, and coordinated rejection of invalid sampled-token metadata before
+  old-policy or reference-model scoring; retain
+  [40 source/wheel admission rejection and recovery cases](../benchmark_results/training_contracts/20261015/native-ddp-preflight/summary.json)
+- [x] Compare initial/invalidated DDP replica values and scheduler callable
+  bindings before scoring; retain
+  [32 completed-checkpoint startup scenarios](../benchmark_results/training_contracts/20261015/native-ddp-replica-consensus/summary.json)
+- [x] Verify checkpoint-bound policy/optimizer tensor agreement and scheduler
+  implementation identity across native CPU/Gloo learner ranks before resumed
+  updates; retain [source/wheel checkpoint evidence](../benchmark_results/training_contracts/20261015/native-ddp-checkpoint/summary.json)
+- [x] Replace native DDP's legacy parallel writer with atomic shared state and
+  rank-local gradients/banks, RNGs, buffers and estimator history; verify
+  [84 two-rank resume and 14 rejection/recovery scenarios](../benchmark_results/training_contracts/20261015/native-ddp-checkpoint/README.md)
+  per peer against source and installed wheel on CPU/Gloo
+- [x] Weight native DDP evaluation by sample counts and agree on best-checkpoint
+  decisions across unequal/empty local partitions; preserve training state and
+  verify [28 source/wheel evaluation scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-evaluation/README.md)
+- [x] Consolidate native DDP Fisher/teacher memory with global accepted-example
+  weights, staged commits and preserved local learning state; close task windows,
+  budget their updates and retain completed-boundary receipts; verify
+  [46 source/wheel task-memory and training/resume scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-continual/README.md)
+- [x] Coordinate native DDP local generation/callback failures and empty token
+  batches; verify initial/completed resumes and interrupted-task episode cursors
+  with [131 population and 17 loop/recovery scenarios per peer against source and wheel](../benchmark_results/training_contracts/20261015/native-ddp-empty-loop/README.md)
+- [x] Coordinate and checkpoint native diagnostic guard history; preserve empty
+  no-ops and callback references, reject divergent controls before learner work,
+  and verify [8 source/wheel recovery scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-diagnostics/README.md)
+- [x] Report optimizer updates committed by task-boundary and final accumulation
+  flushes, share committed-update cadence and preserve early stopping;
+  verify [16 source/wheel reporting and recovery scenarios per peer](../benchmark_results/training_contracts/20261016/reward-recovery/README.md)
+  with real schedulers and correctly matched initial reference architectures
+- [x] Weight native episode callback rewards and training-log rollout summaries
+  across unequal/empty workers; separate new and replay populations and preserve
+  exact global medians with [21 source/wheel reporting scenarios per peer](../benchmark_results/training_contracts/20261015/native-ddp-rollout-metrics/README.md)
+- [x] Bind native DDP model/runtime implementation revisions across workers and
+  checkpoint restore; verify fresh source reads, portable wheel identities,
+  47 admission rejection/recovery scenarios and 99 checkpoint scenarios per peer
+  against source and installed wheel on CPU/Gloo; retain
+  [implementation evidence](../benchmark_results/training_contracts/20261017/native-ddp-implementation/summary.json)
+- [ ] Verify the same native RL updates under NCCL and multi-rank Accelerate,
+  including partial-window optimizer flush and checkpoint recovery
+- [x] Bind Muse/frontier text SFT validation, source hashes and training to one
+  captured read per split, with file-replacement race regressions
+- [x] Verify tiny serialized GLM FP8 attention/expert dequantization, BF16
+  adapter optimizer updates, frozen weights and export/reload on CPU
+- [x] Require rank agreement before Muse/frontier weight loading on source-bound
+  datasets, tokenization, labels, settings, runtime versions and StateSet code;
+  verify agreement, rejection and recovery with two actual CPU/Gloo ranks
+- [ ] Verify NCCL consensus and adapter synchronization under actual load-time
+  FSDP/EP execution on GPUs
 
 - [x] Measure 1/2/4/8-GPU throughput, memory, and weak/strong scaling efficiency
 - [x] Define native policy-versioned async queue and runtime, staleness bounds,
@@ -197,4 +271,4 @@ an integration or live-evidence path. Performance changes need before/after raw
 artifacts on identical configurations. Feature requests and RFCs belong in the
 GitHub issue tracker.
 
-Last updated: 2026-09-10.
+Last updated: 2026-10-15.

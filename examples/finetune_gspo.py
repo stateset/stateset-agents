@@ -132,6 +132,9 @@ def build_agent_config(preset: ModelPreset, *, dry_run: bool) -> Any:
 
     return AgentConfig(
         model_name=preset.model_id,
+        model_revision=preset.model_revision,
+        trust_remote_code=preset.trust_remote_code,
+        chat_template_kwargs=dict(preset.chat_template_kwargs) or None,
         system_prompt=(
             f"You are a helpful assistant fine-tuned from {preset.model_id}."
         ),
@@ -161,9 +164,17 @@ def build_gspo_config(
         raise ValueError(
             "This model supports SFT only; use stateset_agents.training.sft."
         )
+    if preset.model_id.startswith("meta-models/Muse-Spark-Open-") and (
+        use_4bit or use_8bit
+    ):
+        raise ValueError(
+            "Muse Spark's BF16 text RL preset does not certify 4/8-bit training; "
+            "expert tensors are not ordinary quantized Linear modules."
+        )
 
     kwargs: dict[str, Any] = {
         "model_name": preset.model_id,
+        "model_revision": preset.model_revision,
         "run_name": f"{preset.model_id}-{task}",
         "trust_remote_code": preset.trust_remote_code,
         "learning_rate": (

@@ -1,0 +1,14 @@
+{
+  "id": "9bb286e32d88",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-studio-backends-verify.py"
+  ],
+  "created": 1792178106.7085562,
+  "started": 1792178106.7238643,
+  "finished": 1792178341.6574523,
+  "wait_seconds": 0.015308141708374023,
+  "elapsed_seconds": 234.9335880279541
+}

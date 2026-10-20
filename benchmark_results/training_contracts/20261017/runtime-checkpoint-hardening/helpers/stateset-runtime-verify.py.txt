@@ -1,0 +1,51 @@
+"""Verify runtime checkpoint and explicit resume safety in the shared queue."""
+from pathlib import Path
+import fcntl
+import json
+import os
+import subprocess
+import sys
+
+root = Path('/home/dom/stateset-agents')
+os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+try:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print('Full acceptance owns source; focused checks are included in that frozen run.',flush=True)
+    Path('/tmp/stateset-runtime-verify-result.json').write_text(json.dumps({'checked':False,'delegated_to_full_acceptance':True})+'\n')
+    raise SystemExit(0)
+tests = [
+    'tests/unit/test_runtime_checkpoint_safety.py',
+    'tests/unit/test_runtime_state.py',
+    'tests/unit/test_dedicated_entrypoint_resume.py',
+    'tests/unit/test_training_resume_required.py',
+    'tests/unit/test_gspo_query_wiring.py',
+    'tests/unit/test_gspo_module_exports.py',
+    'tests/unit/test_dapo_module_exports.py',
+    'tests/unit/test_ppo_safety.py',
+    'tests/unit/test_ppo_objective.py',
+    'tests/unit/test_checkpoint_publication.py',
+    'tests/unit/test_checkpoint_trust.py',
+    'tests/unit/test_model_checkpoint.py',
+    'tests/unit/test_learning_state_recovery.py',
+    'tests/unit/test_scheduler_identity.py',
+    'tests/unit/test_native_checkpoint_async.py',
+    'tests/unit/test_multi_turn_checkpoint_accumulation.py',
+    'tests/unit/test_ddp_checkpoint_state.py',
+]
+stages = []
+for command in [
+    [sys.executable, '/tmp/stateset-studio-mobile-format.py','--format-only'],
+    [sys.executable,'scripts/check_types.py','--all'],
+    [sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=90','--tb=short',*tests,'--junitxml=/tmp/stateset-runtime-verify.xml'],
+    [sys.executable,'/tmp/stateset-studio-mobile-gates.py'],
+    [sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=90','tests/unit/test_release_governance.py','--junitxml=/tmp/stateset-runtime-governance.xml'],
+    ['/tmp/stateset-actionlint-1.7.12/actionlint','.github/workflows/training-contracts.yml'],
+]:
+    print('Checking:', ' '.join(command),flush=True)
+    code = subprocess.call(command)
+    stages.append({'argv':command,'exit_code':code})
+    Path('/tmp/stateset-runtime-verify-result.json').write_text(json.dumps({'checked':True,'passed':all(row['exit_code']==0 for row in stages),'test_modules':tests,'stages':stages},indent=2)+'\n')
+raise SystemExit(0 if all(row['exit_code']==0 for row in stages) else 1)

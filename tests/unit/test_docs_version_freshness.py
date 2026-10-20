@@ -89,6 +89,11 @@ def test_readme_release_install_surfaces_match_current_version() -> None:
     assert f"stateset-agents.git@v{current}" in text
 
 
+def test_roadmap_package_version_matches_current_release() -> None:
+    text = (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
+    assert f"Current package release: **v{stateset_agents.__version__} " in text
+
+
 def test_marker_exempts_the_next_line():
     text = (
         "intro\n"

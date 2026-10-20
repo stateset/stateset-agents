@@ -7,6 +7,31 @@ optimizer allocation. `validate()` retains advisory guidance. CLI, API and Pytho
 training share a torch-free configuration resolver; checkpoints retain the
 resolved configuration.
 
+`train()` inherits both `model_name` and `model_revision` from the supplied
+agent configuration in online, offline, and hybrid modes. Explicit settings must
+agree with that identity; configure a different model or revision on the agent
+before training. A training override cannot retroactively pin loaded weights.
+Nonempty string revisions are accepted for exploration; use immutable commits
+for reproducible studies.
+For API training, set `training_config_overrides.model_revision`; embedded and
+durable workers apply it to the agent before loading its tokenizer and weights.
+
+Required outcome rewards retain their failure and evaluator-context requirements
+when nested inside `CompositeReward` or `UncertaintyWeightedReward`. Missing
+references or executed tool evidence still stop training. Ordinary composite
+components keep their scenario context; outcome components receive final
+environment state. Composite metadata retains each component's breakdown and
+metadata without treating a positive aggregate score as verified task success.
+Compositions containing a sparse or cumulative child run at episode end, with
+the complete trace. Required step-reward errors also propagate to the caller.
+`Environment.get_reward()` supplies a completed trajectory's final state when
+the reward requires evaluator context, so rescoring retains the same evidence.
+Episode execution deep-copies public observation contexts before calling the
+policy, including contexts supplied by custom observation hooks. Policy-side
+mutations therefore leave evaluator tool traces and nested source data intact.
+Uncertainty weighting preserves the original evidence and explanation, validates
+finite nonnegative estimates and coefficients, and rejects nonfinite base scores.
+
 Exact prompt and sampled token IDs are required by default. Legacy text-only
 trajectories require `allow_sequence_fallback=True`. Requesting sampler
 importance correction without sampler probabilities raises unless
@@ -17,6 +42,384 @@ effective objective and fallback explicitly.
 
 Sequence objectives sum assistant-turn losses within each trajectory before
 averaging trajectories, so early termination cannot reweight other episodes.
+Across prompt groups, sequence objectives weight actual trajectory counts and
+token objectives weight actual sampled response-token counts. Entropy remains
+one global response-token mean, independent of the policy reduction; KL,
+importance-ratio and clipping diagnostics also weight sampled tokens. Explicit
+batch-normalized advantages center rewards within each prompt group and use the
+reward standard deviation across the whole training batch, after reward clipping.
+Forward chunk sizes do not change these measures. Uneven groups contribute
+according to their actual trajectory/token counts.
+
+Native GRPO gradient accumulation carries those counts across microbatches.
+Policy terms use their configured trajectory/token measure, while entropy keeps
+its response-token measure. Each microbatch graph is released after backward;
+sequence objectives with entropy retain a second gradient bank. Both sums are
+normalized before clipping, including a final incomplete accumulation window.
+Advantage estimation still belongs to each rollout batch: accumulating gradients
+does not merge independently sampled groups or recompute their reward statistics.
+Checkpoint state records pending counts, scales and entropy gradients. Legacy
+pending scalar windows finish with their original microbatch-mean estimator;
+subsequent native token windows use count weighting. Custom scalar and sequence
+compatibility losses retain their existing estimator.
+Pending count-weighted windows use accumulation schema 2; completed or scalar
+windows retain schema 1.
+Keep custom/sequence compatibility losses in separate accumulation windows;
+mixing them into a pending count-weighted window raises an error rather than
+silently changing its measure.
+
+Native token-path losses under `DistributedDataParallel` use counts summed over
+the wrapper's own process group. A shared window scale and the global
+trajectory/token denominator compensate for DDP's rank averaging. Policy and
+entropy banks are both reduced before they are merged, unscaled and clipped;
+the second backward on a retained graph cannot rely on DDP's first reduction.
+These reductions also reconcile pending no-sync gradients. They add a final
+bank reduction even when DDP has already averaged the policy bank. Flattened
+reduction payloads are limited to 25 MiB, including when an individual gradient
+is larger; noncontiguous inputs can require additional bounded copy storage.
+FP16/BF16 bank reductions accumulate in FP32, and values are divided by the
+group size before summation to avoid overflowing an otherwise finite mean.
+`DistributedTrainer` synchronizes registered model buffers once at the learner
+step boundary, then suppresses per-forward buffer broadcasts while local chunks
+run. It restores the user's broadcast preference even when the loss fails.
+This avoids collective-order deadlocks from unequal forward counts; buffer
+layouts must remain consistent across workers.
+
+Single-step, complete/partial accumulation windows and repeated inner updates
+follow the same count rule. A fixed-size integer handshake rejects differing
+trajectory/token measures, entropy-bank settings and invalid counts on every
+participating rank. Manual CPU/Gloo setup uses CPU DDP device arguments and
+validates an existing process group's topology/backend before reusing it.
+Workers must enter the same update/window schedule with nonempty token-path
+batches. Custom scalar/sequence compatibility losses retain their earlier
+rank-mean estimator. The two-worker CPU contract does not certify NCCL, FSDP,
+DeepSpeed or distributed checkpoint recovery. A prompt's complete group must
+stay on one worker. Multi-rank Accelerate optimizer/partial-flush behavior
+remains a separate verification requirement.
+
+Native token-path `batch_norm` advantages (REINFORCE++ baseline) subtract each
+complete prompt group's mean, then divide by the population standard deviation
+of **all clipped rewards in that learner batch across the DDP process group**.
+Group-normalized, median and leave-one-out estimators retain their complete
+local prompt-group populations. An accumulation window does not become a new
+reward-normalization population.
+
+The legacy `global_mean` baseline uses the previous running mean, shared across
+DDP ranks. Each rollout batch adds its global clipped reward mean/count once.
+Both plain and KL-enhanced losses receive this state. Repeated inner updates
+reuse a fixed baseline snapshot and do not observe the same rewards again,
+including when a pending accumulation window must first be flushed.
+Legacy `advantage_normalization` still centers and scales within each complete
+group; when that scale is nonzero, centering cancels the running-mean offset.
+
+A fixed-size count/configuration-digest handshake checks reward validity,
+estimator settings, clipping, update intent and prior running state before the
+token-loss model forward. FP64 central moments provide the global population
+scale; counts remain exact int64. Nonfinite raw rewards are rejected even if
+clipping could hide them. Peers also reject nonfinite computed advantages
+together before baseline mutation or backward. Reward-level agreement alone
+requires valid token-path batches on the same schedule. The native
+learner admission check below additionally coordinates malformed or missing
+metadata and incompatible path selection before old-policy scoring.
+These semantics apply to the native token path, not sequence compatibility
+fallbacks, FSDP or DeepSpeed.
+
+`DistributedTrainer.training_step` admits a multi-worker native DDP batch before
+buffer synchronization, old-policy snapshots or policy/reference scoring. Its
+`stateset-native-learner-preflight-v5` handshake exchanges one 194-element int64
+tensor per worker on DDP's own process group: protocol version, validity bits
+and six SHA-256 digests. The components cover the effective loss, update schedule
+and exact counters, model/reference layouts, optimizer groups and scheduler/AMP
+state, active baseline/continual settings, and effective rollout path. The model
+component also binds StateSet package source hashes, policy/reference submodule
+source and loaded method revisions, learner/optimizer/scheduler implementations,
+runtime dependency versions and numerical precision controls. Errors
+identify components and process-group ranks without transporting sampled IDs,
+prompt text, parameter values or pickled objects.
+
+Admission checks sampled IDs, aligned finite nonpositive sampler likelihoods,
+policy-version metadata, finite raw rewards and clipped FP32 bounds. Vocabulary
+bounds are checked when the model exposes embedding sizes or a vocabulary size.
+Explicit compatibility permissions still select the sequence or missing-sampler
+fallback; peers must select the same effective path. Complete group sizes and
+forward chunk counts may differ, and chunk preferences are validated locally
+without requiring identical values. Rejected admission preserves model buffers,
+optimizer state, pending gradients/banks, counters and running reward statistics;
+corrected inputs/settings can continue on the same learner and process group.
+
+The v3 admission descriptor distinguishes genuine empty contributors from
+malformed rollout groups. Empty workers adopt populated peers' token path and
+old-policy source, participate in global reward statistics and explicit
+gradient-bank reductions, and perform no actor scoring forwards. Local sample
+counts weight both the objective and metrics. Parameters unused on every worker
+retain absent gradients, preserving optimizer momentum and weight-decay behavior.
+A globally empty batch returns a no-op before buffer, gradient, optimizer,
+scheduler, counter or running-baseline mutation. Mixed empty/positive sequence
+compatibility batches reject before scoring; this guarantee covers token training.
+Timing and cost remain observable for no-ops, but they do not consume or reset
+the diagnostic monitor's policy-signal patience.
+
+The native training loop coordinates local setup, rollout generation, ordinary
+callbacks/logging, early-stop decisions and tracking cleanup. Generation uses
+the unwrapped actor under inference mode; local token loss/backward and optimizer
+phases report application failures to all live peers. A failed native loop is
+poisoned until a complete checkpoint reload, including when an earlier optimizer
+update already committed. All peers must still enter the same operation;
+callbacks that perform their own incompatible collectives and failures inside
+in-flight backend collectives are outside this protocol.
+
+New multi-turn checkpoints persist `_next_episode`: zero before the first episode,
+advanced after successful learner work or a globally empty episode, and unchanged
+after an unexecuted transition. Resume uses that cursor; snapshots without it
+preserve the older `current_epoch + 1` rule. Reporting, evaluation and periodic
+saves fire once when batch-reported committed updates cross their configured
+interval, including inner updates that cross a boundary without landing exactly
+on it. Pending gradient accumulation batches do not repeat the previous step's
+events.
+Task-boundary and final accumulation flushes now construct committed-update
+receipts and use the same log/evaluation/periodic-save cadence as batch updates.
+The optional `on_optimizer_step(step, metrics)` callback and callable
+`optimizer_step` event receive one receipt for each successful operation that
+committed updates. `optimizer_step_start` is exclusive and `optimizer_step_end`
+inclusive; `optimizer_updates` records the actual counter delta, including
+multiple inner updates. `update_source` is `batch`, `task_boundary` or
+`final_flush`; `update_task_id` identifies the outgoing active continual task,
+or is null when no continual task is active. Episode callbacks continue to
+describe generated episodes.
+
+Flush receipts contain update counters and learning rate, without a newly
+measured loss, reward or trajectory population. Their empty `trajectory_metrics`
+is labelled `trajectory_metric_scope=not_measured_flush`. Loggers receive
+numeric flush counts, including `task_boundary_updates` or `final_flush_updates`.
+The event is separate from `step_end`, so it does not reset signal-guard history.
+Only actual committed updates trigger cadence; GradScaler overflow skips and
+globally empty work produce no update receipt. Native task-window admission
+allows scaled overflow to reach GradScaler, while checkpoint publication still
+rejects nonfinite pending gradients.
+
+Boundary evaluation can stop before the incoming task generates data. Final
+flushes evaluate before the final checkpoint, and a successful periodic save
+after final consolidation satisfies the final save. Resumes with an exhausted episode budget produce
+no additional update events. Native loop v3 agrees on receipt controls before
+callbacks and rejects older loop generations at startup. All workers must enter
+the same operation. Callback delivery is not transactional: failures after a
+commit can leave an applied update, and loading an older checkpoint may replay
+work. Native failures require a complete healthy reload. Failed task-memory
+consolidation can also leave an earlier flush committed before reporting.
+
+The [2026-10-16 source/wheel acceptance](../benchmark_results/training_contracts/20261016/reward-recovery/README.md)
+verifies sixteen reporting and recovery scenarios per peer within twelve real
+two-worker CPU/Gloo contracts. It includes real scheduler recovery and matched
+initial/continual reference architectures. The retained failed attempts show
+the fixture corrections. GPU/NCCL, multi-node and model-quality gains remain
+unverified; the diagnostic acceptance below predates these reporting changes.
+
+The native runtime now finishes local timing/cost recording and signal-guard
+observation through coordinated DDP status phases. A local nonfinite metric or
+profiling error rejects every live peer before the next learner step. Because
+the optimizer may already have committed, these failures require a complete
+checkpoint reload. Preflight v4 agrees on guard patience, streak, last-step
+identity, retained failure and observation count before model scoring; differing
+controls reject without learner mutation. Timing values and reward logs stay
+rank-local. All participants must use this protocol; older native preflight
+versions reject before the new post-step collectives.
+
+Version-two learning state retains native diagnostic history across runtime and
+asynchronous checkpoints: counters, bounded recent rewards, finite scalar
+metrics, last-step identity and failures. Restore validates this state before
+applying weights, preserves existing monitor references held by callbacks, and
+clears transient rollout timing. Failed snapshots retain their failure; healthy
+snapshots repair stale target failures. Process-local elapsed clocks restart.
+Serial version-one learning state remains readable and starts fresh diagnostic
+history, rather than borrowing history from the target trainer. Pending batches
+retain the existing step-identity deduplication rule; globally empty batches
+neither consume nor reset signal patience. Native DDP checkpoint v3 binds the
+guard's shared controls while retaining each rank's diagnostic logs. Native v1
+directories fail closed; this change does not migrate them.
+
+The [diagnostic recovery acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-diagnostics/summary.json)
+retains 2,034 targeted source regressions (7 skips), 767 isolated-wheel
+regressions, 411 type-checked modules and eleven actual two-worker contracts
+against source and wheel. Eight diagnostic scenarios per peer cover pending
+history and empty no-ops, threshold failure/reload, one-worker nonfinite metrics
+and profiling errors, divergent finite guard decisions, three pre-update control
+mismatches, and complete error cleanup. Corrected inputs remain usable after
+admission rejection; post-update diagnostic errors require a healthy full reload.
+The next optimizer update after reload matches an unwrapped combined-population
+reference. Unit contracts also cover malformed history, retained failures,
+callback monitor references and serial version-one learning-state compatibility
+through runtime and asynchronous single/multi-turn checkpoint APIs. Peer, source
+and wheel diagnostic reports agree. Package/test Python hashes remain fixed,
+the wheel matches source, and workflow lint passes. This evidence uses tiny
+CPU/Gloo learners and synthetic rewards; GPU and quality gains remain unverified.
+Native episode callbacks now use global newly generated raw rewards:
+`total_reward`, `episode_reward`, `episode_reward_std` and
+`episode_num_trajectories`, labelled `episode_reward_scope=ddp_global_new_rollouts`.
+Replay rewards remain separate. On reporting steps, `trajectory_metrics` covers
+the global learner population including replay, labelled
+`trajectory_metric_scope=ddp_global_training_batch`. W&B accepts these precomputed
+scalars even when its worker generated no episodes. Inspectable older logger
+signatures receive the same global scalar names through their existing metric
+argument, without local trajectory objects or logger-body retries.
+
+Rollout reports retain sample-weighted mean/std/extrema, group-weighted reward
+diversity and an exact global median. Diversity excludes groups with fewer than
+two reward observations. The model's process group exchanges four
+int64 counts and eight float64 summaries after bounded protocol/status admission.
+Detailed median selection uses at most 64 reductions of two cumulative counts
+over ordered float64 keys, with no reward-vector, trajectory or text gathering.
+Only local keys are sorted; even medians average two exact ratios before one
+float64 rounding. Detail selection runs only on reporting steps. Count reporting
+rejects populations above `2**53 - 1`; native loop v2 detects mixed v1/v2 loops
+before starting episodes. Callback metric dictionaries and their nested rollout
+summaries are copied so callback edits do not alter later logs.
+
+The [global rollout reporting acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-rollout-metrics/summary.json)
+retains 2,014 source regressions (7 skips), 741 isolated-wheel regressions,
+411 type-checked modules and ten actual two-worker contracts against source and
+wheel. Twenty-one new scenarios per peer cover twelve reward populations, five
+coherent rejection/recovery cases and four complete callback/logger loops.
+Independent high-precision Decimal references cover unequal/empty workers,
+float64 extrema, subnormals and skewed medians. A main worker with only replay
+reports global new-episode mean 1.5/count 2 and learner-population mean 0.6/count 5.
+Policy updates still agree with an unwrapped combined-population reference;
+direct observation preserves learner state and RNG. Peer/source/wheel reports
+agree, package/test hashes stay fixed, and workflow lint passes. This evidence
+is CPU/Gloo with synthetic rewards; it does not establish GPU or quality gains.
+
+The [empty-worker and loop-recovery acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-empty-loop/summary.json)
+retains 1,990 targeted source regressions (7 skips), 717 isolated-wheel regressions,
+410 type-checked source modules, and nine real two-worker contracts against both
+source and wheel. Its new 128-case update matrix crosses eight objective settings,
+entropy on/off, one/two inner updates, fixed/alternating empty workers and SGD/AdamW.
+Combined-population updates and metrics agree within `rtol=2e-5, atol=2e-6`;
+pending-checkpoint next parameters and optimizer state agree exactly. A direct
+CPU GradScaler resume/flush and two coherent overflow skips bring that contract
+to 131 scenarios per peer.
+
+Seventeen loop scenarios cover initial/completed resume, a failed task-B teacher
+snapshot followed by exact recovery from task A, and fifteen coordinated local
+failure cases. Source/test hashes stay fixed; wheel Python matches source; new
+peer/source/wheel reports agree. CI includes these regressions and workflow lint
+passes. These synthetic tiny CPU/Gloo cases do not establish GPU/NCCL,
+multi-node or model-quality gains; the lifecycle gaps above remain open.
+
+The guard compares layouts and scalar settings/state, including scalar tensor
+learning rates. Scheduler identity additionally binds Python class code/source,
+lambda/partial arguments, defaults, closures and referenced globals. Composite
+schedulers include their children. Identical saved `LambdaLR` scalar state does
+not establish the same future learning rates; differing callable bindings now
+reject before scoring. Unsupported opaque bindings fail closed. This is not a
+proof of equivalence for arbitrary callbacks or external mutable services.
+
+At first admission after model wrapping, and at admission after a legacy/runtime
+checkpoint load attempt, workers also compare dense policy/reference parameter
+values and optimizer slots. Any worker's invalidation requests this check on all peers;
+a successful cached check is skipped on routine learner steps. Values are
+fingerprinted in bounded CPU tensor chunks (4 MiB by default, at least one
+element), without making a full host copy. Device placement and strides do not
+change identity; dtype, shape and exact bytes do. Nonfinite tensors, meta/sparse/
+PyTorch-quantized layouts and unsupported opaque state reject coherently. The
+value phase sends one additional 98-element int64 tensor of validity bits and
+SHA-256 digests. Buffers and pending
+gradient banks can legitimately differ between workers and remain rank-local.
+The fixed-width admission version rejects mixed v1/v2 headers before this
+conditional phase, so peers cannot disagree about entering it.
+
+These admission checks protect completed-checkpoint startup and subsequent
+restore attempts. Native DDP now also has the separate collective checkpoint
+format described below. Every peer must reach admission; process/network
+failures require a separate recovery protocol.
+Single-worker DDP and non-DDP execution retain their local paths. Direct loss
+helpers do not provide this learner-boundary admission guarantee.
+Native token-path diagnostics under DDP now use their actual global measures.
+`policy_objective_loss` includes the configured KL term and uses the policy's
+trajectory/token denominator. `total_loss` and the historical `policy_loss`
+alias additionally include token-weighted entropy; an EWC penalty is reported
+separately with the policy measure. Entropy, KL, importance ratios and clipping
+fractions weight sampled tokens. Advantage mean, nonzero fraction and population
+standard deviation combine all workers' already-computed advantages using
+counts and stable central moments, independently of the reward-population
+statistics used to construct those advantages.
+
+Reports expose global `num_trajectories`, `num_rows`, `num_tokens` and
+`policy_denominator`, with `metric_scope="ddp_global_batch"` and
+`metric_reduction_protocol="stateset-native-metrics-v1"`. These describe one
+learner call; repeated inner updates report the final inner loss, and an
+accumulation window is not retrospectively merged into a diagnostic batch.
+`entropy_measured=false` marks the legacy zero placeholder when entropy was not
+calculated. Integer optimizer counters retain their exact types and values.
+
+A fixed-size integer/schema-hash handshake rejects mismatched names/types,
+native/compatibility paths, reduction measures, nonfinite values and divergent
+control state before the diagnostic payload collective. Counts remain int64;
+values and moments travel as float64, without pickled objects or application
+strings. Custom scalar metrics retain their rank-mean estimator. Diagnostic
+validation follows the learner update and cannot roll back a committed optimizer
+step. FSDP/DeepSpeed reporting and multi-rank Accelerate remain unverified.
+
+The [retained native-DDP evidence](../benchmark_results/training_contracts/20261015/native-ddp-weighting/summary.json)
+records 919 passing targeted regressions (7 skips), 355 passing wheel
+regressions, and the same real two-process contract against source and wheel.
+Each contract runs 288 update scenarios across six objectives, variable chunks,
+entropy, complete/partial accumulation, repeated inner updates and `no_sync()`.
+It also verifies registered buffers, rejection/recovery, missing gradients,
+bounded payloads, and FP16 overflow/subnormal handling. The largest observed
+parameter error from the combined-batch reference is about 1.2e-7. Counts overlap;
+these are generated tiny CPU policies, not quality or GPU scaling measurements.
+
+The newer [diagnostic verification](../benchmark_results/training_contracts/20261015/native-ddp-metrics/summary.json)
+records 1,793 passing targeted regressions (7 skips), 399 type-checked modules,
+371 passing wheel regressions and 294 real two-process update/report scenarios
+against both source and wheel, including six nonzero-KL cases. Nine malformed
+metric/schema cases reject on both ranks and recover afterward. The maximum
+observed report difference from the combined-batch reference is about 1.6e-7.
+
+The [reward-population verification](../benchmark_results/training_contracts/20261015/native-ddp-advantages/summary.json)
+records 1,826 passing targeted regressions (7 skips), 400 type-checked modules,
+495 passing wheel regressions, and both real two-process contracts against
+source and installed wheel. The new contract exercises 48 population scenarios
+across plain/KL-enhanced loss, clipping, normalized/running baselines, accumulation
+and repeated inner updates, in addition to the existing 294 update/report
+scenarios. Independent reward formulas match the distributed advantages; running
+baseline states are identical across workers. Four edge populations cover
+constant rewards, singletons, large offsets and below-epsilon scales. Twelve
+bad reward/estimator/state cases reject on both peers and recover on the same
+process group. The largest parameter difference from the combined-batch
+reference is about 1.2e-7; the largest diagnostic difference is about 1.2e-6.
+These CPU results do not certify split prompt groups, GPUs, multi-node execution
+or improved model quality. Regression and wheel counts overlap.
+
+The [native learner admission evidence](../benchmark_results/training_contracts/20261015/native-ddp-preflight/summary.json)
+records 1,848 passing targeted regressions (7 skips), 401 type-checked modules,
+517 passing wheel regressions and three real two-process contracts against
+source and installed wheel. Forty admission rejection/recovery cases include
+loss/schedule/optimizer drift, malformed sampled metadata, clipping, divergent
+buffer preferences and trainable layouts, missing references, and pending
+accumulation state. They verify no policy/reference scoring and unchanged
+buffers, optimizer state, gradients/banks, counters and running baselines on
+rejection, then continue on the same learner/process group. The wire capture
+verifies one fixed-size int64 digest collective per rejection. The accepted
+control preserves a counter above 2^53 while workers use different chunk sizes.
+The existing 294 update/report and 48 reward-population scenarios also pass.
+These are CPU contracts with overlapping regression counts; they do not prove
+GPU execution, checkpoint tensor agreement or model-quality improvement.
+
+The [replica and scheduler verification](../benchmark_results/training_contracts/20261015/native-ddp-replica-consensus/summary.json)
+records 1,874 passing targeted regressions (7 skips), 404 type-checked modules,
+543 passing wheel regressions, and all four two-process contracts against
+source and installed wheel. Package and test sources stay unchanged throughout
+acceptance. Thirty-two new scenarios use completed one-worker checkpoints staged
+per worker and restored before DDP wrapping through both checkpoint APIs.
+Twenty-six cases reject value drift/nonfinite values, scheduler callable
+differences, source-file I/O failure or mixed protocol headers without scoring
+or changing learner state. Corrected next updates match the combined reference
+exactly in these generated tiny CPU tests. Asymmetric invalidation, failed-load
+invalidation and skipped routine rechecks are covered. The existing 294 update,
+48 population and 40 admission scenarios also pass. Counts overlap; this does
+not certify the legacy parallel checkpoint writer, multi-rank pending-window
+recovery, GPUs, multi-node execution or quality gains.
+
 The Hugging Face fallback batches groups up to `generation_batch_size`, trims
 padding after EOS, and restores model mode and KV-cache settings on failure.
 Token scoring gathers selected logits before normalization, avoiding a full
@@ -30,12 +433,213 @@ Torch RNGs. Native single/multi-turn GRPO retain their asynchronous checkpoint
 API and share the same publication and RNG primitives. Legacy model exports
 are not silently treated as complete runtime checkpoints.
 
-Run a genuinely sampled multi-turn regression without downloads:
+The shared runtime validates optimizer slots, registered component schemas,
+counters, pending gradients and isolated RNG states before applying restored
+learner state. Nonfinite policy parameters or optimizer slots cannot be
+published as a new runtime checkpoint. Restore checks policy parameters after
+loading; a late model, component or rollout-publication failure quarantines the
+trainer. Its managed training, generation and checkpoint publication paths stay
+blocked until a complete validated runtime reload succeeds. This containment
+does not roll back a partially applied restore or guard direct calls to a raw
+optimizer. Unsupported stateful components or load hooks reject explicitly.
+The verified optimizer surface is standard PyTorch SGD, Adam and AdamW;
+custom optimizer classes and load hooks reject. Built-in scheduler/scaler state
+must pass its schema and binding checks. Restored metric histories own their
+containers, and NumPy numeric metrics serialize as plain Python values without
+changing the live histories or rounding integer metrics through floating point.
+Conflicting saved task identifiers reject before learner mutation.
+
+Local native single/multi-turn checkpoint recovery also stages supported
+optimizer, scheduler, scaler, counter, pending-gradient and RNG state before
+changing the policy. Later commit failures keep managed training and publication
+quarantined until a complete reload succeeds. Restored policy publication must
+succeed when rollout synchronization is enabled; explicit `rollout_sync=False`
+retains its opt-out. The collective native DDP protocol remains a separate path.
+
+Model-only imports retain their `False` return and can change weights for
+inspection or inference. They do not establish learner recovery, and a mutated
+trainer remains quarantined; construct a fresh trainer for an intentional warm
+start. Structurally complete legacy checkpoints without RNG state remain a
+best-effort recovery path, with a warning that exact stochastic continuation is
+unavailable. Metadata alone does not establish successful training recovery.
+New native payloads declare `native_checkpoint_schema: 1`, requiring complete
+learner records and atomic publication. The older publication marker alone
+does not assert that payload schema. After successful rollout publication, RNGs
+restore last so backend setup cannot advance the resumed learner's stream.
+
+Adaptive PPO runtime checkpoints retain the current KL coefficient, target and
+horizon. A configured adaptive controller requires that saved state; old
+checkpoints without it cannot establish exact adaptive continuation. Supported
+legacy checkpoints without an adaptive controller remain readable. Objective
+and estimator configuration must match, including the PPO GAE/value/clipping
+and inner-update settings.
+
+Dedicated `train_with_gspo`, `train_with_gspo_token`, `train_with_dapo` and
+`train_with_gepo` convenience loops, plus their customer-service/reasoning
+wrappers, reject explicit resume requests before expensive setup. They do not
+restore an iteration/query cursor. Native single/multi-turn GRPO resume remains
+supported, including the studio's local GSPO objective path. Dataset/environment
+cursors and arbitrary user callbacks are not supplied by the low-level runtime.
+
+When `DistributedTrainer.agent.model` is an actual DDP wrapper, both checkpoint
+APIs use `stateset-native-ddp-checkpoint-v3`. All process-group workers must
+call the same save or load, with the same absolute shared-filesystem path.
+The asynchronous API uses `DistributedConfig.checkpoint_dir`; the runtime API
+uses its explicit directory. Native DDP always saves each worker's state,
+including when the legacy `checkpoint_parallel` setting is false. Unwrapped
+single-worker checkpoints retain their existing local format.
+
+The atomic directory holds one `training_state.pt` for policy/reference
+parameters, optimizer slots/groups and scheduler state, a `native-ddp.json`
+generation record, and a `rank-NNNNN.pt` shard for every process-group rank.
+Local shards retain persistent and nonpersistent buffers, pending policy and
+entropy gradients with their normalization counts, RNGs, estimator/replay/EWC
+history, counters, AMP state and rollout publication versions. The publication
+inventory binds every file. Save checks shared values and control agreement
+before publishing; a failed save preserves the previous completed generation.
+
+Initialize the supplied model, optimizer, scheduler and DDP wrapper before
+loading. Restore requires the same ordered process-group ranks, Python/Torch
+versions, device family, architecture, training configuration and tokenizer
+identity. Each peer validates its shard before any peer applies state. Model
+parameters and the DDP wrapper retain their identities. Scheduler validation
+binds future callable behavior as well as saved scalars. CPU optimizer slots
+receive owned storage so later updates cannot modify mapped checkpoint files.
+Optimizer load hooks are unsupported because staging them could mutate live
+state. This directory is a learner checkpoint; export model weights separately
+for Hugging Face serving.
+
+Version 3 additionally requires matching implementation revisions, including
+when all workers agree with each other but differ from the checkpoint. Older
+native DDP checkpoints lack this binding and are rejected; they must be resumed
+with their original implementation. Unwrapped single-worker formats are
+unchanged. Source identities exclude installation paths, so identical source
+and wheel installations agree. Source files must be readable; edits and missing
+sources are checked at admission, without a permanently cached startup identity.
+Use immutable installations and restart workers after code changes. This is
+source/runtime provenance, not hardware attestation or complete equivalence of
+arbitrary mutable globals, hooks, external services or native library binaries.
+
+Validation errors preserve live learner state. An unexpected apply or rollout
+publication failure blocks training and checkpoint saving on all peers until
+a coordinated reload succeeds. This does not roll back a partially applied
+restore. Every worker must participate in the operation; a lost worker or
+broken process group requires process-group recovery outside this protocol.
+Dataset/environment cursors and arbitrary user callbacks are also outside the
+checkpoint. GPU/AMP, multi-node, FSDP/DeepSpeed and multi-rank Accelerate recovery
+require their own acceptance evidence.
+
+The [native DDP checkpoint acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-checkpoint/summary.json)
+retains 1,890 passing targeted regressions (7 skips), 406 type-checked modules,
+559 installed-wheel regressions and five real two-worker contracts against
+both source and wheel. The new contract runs 84 resume scenarios per peer:
+both checkpoint APIs, SGD with momentum and AdamW, six explicit objectives plus
+the default objective, completed/partial accumulation and repeated inner
+updates. Resumed parameters, optimizer state and rank-local RNG draws match
+exactly. Fourteen rejection/recovery scenarios cover write/read/validation/apply
+faults, re-signed malformed shards, differing paths/operations and shared-value
+drift. Unit checks also exercise replay, EWC name translation, frozen LwF
+references, malformed optimizer slots and mapped-storage ownership. Package
+and test hashes stay fixed throughout acceptance, and the wheel matches every
+package source file. These generated tiny CPU tests verify learner mechanics;
+they do not establish model quality or complete training-loop task/evaluation
+coordination. Counts overlap with the earlier contracts.
+
+Both checkpoint APIs retain the global reward baseline's mean, count and running
+sum, private replay/reservoir and fractional-replay RNG streams, the current task,
+frozen LwF reference weights, and EWC statistics. Learning-state validation occurs
+before policy weights change. Legacy checkpoints without baseline history cannot
+resume a `global_mean` estimator; legacy LwF snapshots without reference weights
+are also rejected. Legacy snapshots used with group baselines reset unused global
+statistics, and older replay snapshots without RNG state retain their supplied
+generator stream without claiming exact historical replay recovery.
+
+EWC's empirical Fisher estimate averages squared trajectory-loss gradients over
+accepted examples. `ewc_num_samples` caps attempted trajectories; failed examples
+do not dilute the denominator or trigger extra attempts. Empty/truncated assistant
+targets are skipped before forward, and nonfinite losses/gradients are excluded.
+Zero connected gradients remain valid observations. If no example is accepted,
+the prior Fisher statistics and task anchor remain unchanged.
+
+FP16/BF16 gradients are squared and averaged in FP32, with FP32 anchors; FP64
+policies retain FP64 statistics. A running mean avoids overflowing a finite
+estimate's intermediate sum. Consolidation validates all candidate statistics
+before replacing task memory. Existing optimizer gradients and each submodule's
+train/eval flag are preserved; OOM and interruption errors propagate. Inspect
+`manager.last_fisher_estimate` for attempted, accepted, skipped and failure counts.
+
+For a native DDP policy, `ContinualLearningManager.on_task_end()` is collective
+and requires the standard manager on every live process-group worker. Teacher
+snapshots copy the unwrapped policy and freeze it; they retain no DDP reducer
+or forward collectives. Fisher estimation also forwards the unwrapped policy,
+enables autograd inside `no_grad`, and never accumulates into live parameter
+gradients. Peers may contribute different numbers of accepted examples or none.
+Global Fisher is the accepted-count-weighted mean of local estimates. Empty
+global populations preserve prior Fisher and anchors without applying decay.
+Reduction prescales FP64 buckets capped at 4 MiB before writing FP32/FP64 master
+statistics. Invalid examples remain visible in the population report.
+
+Consolidation stages teacher/EWC state and private replay RNG streams before
+committing. Local buffers, module modes, global RNGs, optimizer state and pending
+policy/entropy banks survive rejected staging. Buffer synchronization honors the
+wrapper preference once, then restores local values. Every worker validates the
+candidate before replacing the public manager's contents. Partial memory
+application or cleanup failures block learning, evaluation and saving until a
+full native checkpoint reload succeeds.
+
+Automatic task switches close the previous task's pending optimizer window
+before constructing its teacher and anchors. A successful flush remains a
+committed update if later memory estimation fails; the old memory and task ID
+stay unchanged, and retry does not repeat that update. Partial flush failure
+requires full reload. The scheduler budget uses the captured training task
+sequence, including each task's partial window. Finalization uses the same
+coordinated flush. Checkpoints retain a task/policy-step/replay-sequence receipt
+so a completed-run resume does not consolidate the final task twice. Older
+snapshots without this receipt cannot prove that final consolidation occurred.
+
+Native checkpoint tokenizer identity excludes incidental fast-backend padding
+and truncation state left by preprocessing. It still binds vocabulary, added
+tokens, processing, templates and tokenizer sides; training lengths are bound
+in configuration. Loading a generation without a reference model clears a
+stale teacher, including after a failed task-memory commit.
+
+Task labels and transition order must agree across workers. These task-memory
+phases have their own evidence boundary. The surrounding loop now coordinates
+local generation and ordinary callback failures as described above; callback
+collectives, environment-owned state, lost processes and GPU/multi-node
+acceptance remain separate requirements.
+
+The [native DDP continual-learning acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-continual/summary.json)
+retains 1,965 targeted source regressions (7 skips), 674 installed-wheel
+regressions, 409 type-checked modules and seven real two-worker contracts against
+source and wheel. Its new contract contains 36 population scenarios across LwF,
+EWC and combined replay/LwF/EWC, with buffer synchronization enabled/disabled
+and unequal, empty, masked, capped or privately sampled replay populations.
+Fisher applies in 24 cases and frozen teachers in 24. Reference Fisher uses real
+offline HF tokenization, assistant masks and causal autograd losses.
+
+Eight rejection/recovery cases cover snapshot/estimation failures, divergent
+configuration/task/window state, partial memory commit, failed optimizer flush,
+and estimation failure after a completed flush. Two additional complete training
+and resume cases execute five task segments with one or two inner updates,
+commit exactly five or ten optimizer steps, and preserve final task memory on
+completed-run resume. Pending-window checkpoints resume exact next parameters
+and optimizer state. All source/test hashes stay fixed, the wheel matches the
+source, and peer/source/wheel outcomes agree. These generated tiny FP32 CPU/Gloo
+cases do not certify general loop failure orchestration, GPUs or quality gains;
+scenario and regression counts overlap with prior records.
+
+Run a sampled multi-turn regression without downloads:
 
 ```bash
 python -m stateset_agents.training.sampled_workflow \
   --output /tmp/sampled-workflow --seeds 42 43 44
 ```
+
+To exercise gradient accumulation with the same 80 optimizer-update budget per
+seed, use `--updates 160 --gradient-accumulation-steps 2` and a new output path.
+`--updates` counts rollout batches; the report records committed optimizer
+updates. A final partial accumulation window is flushed before checkpointing.
 
 The tiny transformer receives supervised tool-syntax preparation shared by the
 baseline and candidate. Balanced decision labels leave policy learning to RL.
@@ -44,6 +648,9 @@ against an isolated ledger. Evidence retains paired held-out outcomes, case
 hashes, optimizer updates, reload checks and a bootstrap interval across seeds.
 This is synthetic mechanics evidence, not representative industry quality.
 Use reviewed cases and `stateset_agents.evaluation.agent_study` for that claim.
+The retained [three-seed CPU regression with accumulation](../benchmark_results/training_contracts/20261015/evaluation-isolation/native_workflow/summary.json)
+includes raw before/after outcomes, training metrics, and exact-weight reload
+checks for this workflow.
 
 `training-contracts.yml` checks installed wheels with minimal, API, workers and
 training extras; deliberate minimum/latest/locked dependency combinations; the
@@ -60,12 +667,100 @@ python -m stateset_agents.training.native_refund_study \
 
 The JSON contains `provenance` (`source="reviewed"`, a nonempty `reviewer`) and
 `train`, `validation`, `test` lists of refund-policy order facts. Each partition
-needs at least 32 independent cases, with no repeated IDs or content across
-partitions. The default six training seeds support an exact seed-level sign
+needs at least 32 independent cases, with no repeated IDs or observable order
+facts across partitions. Changing annotations or IDs does not create a distinct
+case. Reviewed studies require at least six training seeds for an exact seed-level sign
 test; the final policy is selected exclusively on validation results. Raw test
 outcomes are retained before training and once after reloading the selected
 checkpoint. Failure to meet the quality gate exits nonzero. `--synthetic`
 exercises the same pipeline while always refusing a representative-quality claim.
+
+Native refund evaluation uses `sha256-case-v1` randomness: the first 64 bits of
+the canonical SHA-256 of protocol, training seed, case ID and exact case hash
+seed each episode independently. Reports retain that seed and case hash.
+Python and Torch use the full 64-bit seed; NumPy's legacy generator uses its
+low 32 bits. Case order and an earlier episode's token consumption do not shift
+later cases.
+Both policies start each matched case from the same streams; divergent action
+paths can still consume different random draws within a case. Historical
+sequential-stream reports are a different protocol and cannot be mixed with
+these reports in a comparison.
+
+`evaluation.isolation.isolated_evaluation()` preserves Python, NumPy, CPU Torch
+and available CUDA RNGs, grad mode, each module's train/eval flag, and the model's
+KV-cache setting on normal exit, error or cancellation. Imports remain lazy.
+Local evaluations must run serially with training and other global RNG consumers;
+overlapping isolated contexts from different tasks or threads raise before
+reseeding. Private agent/provider RNGs need their own explicit isolation.
+Invalid revisions, nonfinite learning rates, insufficient reviewed seed counts
+and group-relative budgets with fewer than two generations fail before model
+allocation. Synthetic runs may use fewer seeds but cannot pass the representative
+quality gate.
+
+Validation reports use `split="validation"`; held-out comparison rejects them.
+The native study retains the initial validation report and every scheduled
+validation, then writes a selection receipt with their hashes, the winning step
+(earliest on ties), committed optimizer-update count and checkpoint inventory.
+The candidate report binds that receipt. Missing, inconsistent or zero committed
+updates stop the study before candidate test evaluation.
+
+The shared `training.evaluation.evaluate_agent()` aborts on episode/scoring
+errors by default. Concurrent episodes are cancelled and drained before failure
+returns. Required reward failures and OOM propagate even in diagnostic mode.
+Rewards needing evaluator context receive final executed state; ordinary rewards
+receive the scenario. Nonfinite rewards are invalid, and an unavailable override
+never falls back to the environment's score.
+With `EvaluationConfig(fail_on_error=False)`, reports include attempted, valid
+and failed episode counts, error rate and completeness. Failed attempts stay
+in the success-rate denominator; reward/length means describe valid samples only.
+`eval_success_rate` retains its legacy `reward > 0.5` heuristic. It does not
+establish verified task success; use executed-outcome evidence for quality claims.
+
+`MultiTurnGRPOTrainer.evaluate()` now isolates local evaluation from training
+RNGs, grad mode, module modes and KV-cache preferences. Empty or incomplete
+results neither select a best checkpoint nor consume early-stopping patience.
+A failed best-checkpoint save restores the previous best score and patience.
+
+For an actual native DDP wrapper, `DistributedTrainer.evaluate()` is collective.
+Each worker's scenario list is its local partition, and `num_eval_episodes` is
+a per-worker limit. Lists are not automatically sharded or deduplicated; counts
+describe attempted samples rather than unique reviewed cases. Workers agree on
+evaluation settings, policy values and selection counters before inference.
+Local generation uses the unwrapped policy, allowing unequal forward counts
+and empty partitions. Buffer synchronization follows the DDP preference once
+at entry, and local buffers are restored before selection, including custom
+evaluation buffer writes. Pending policy/entropy gradient banks stay intact.
+
+Global reward/length means and population reward variance use valid sample
+counts; success/error rates retain all attempts in their denominators. Native
+metrics carry an exact private integer success count without adding public
+JSON fields. Counts travel as four int64 values and moments as three float64
+values, after a fixed 66-element int64 status/identity handshake. Every peer
+receives the same metrics and enters the same collective best save. Local
+errors and cancellation notify peers before returning; cancellation retains
+its local exception type. A buffer-restoration failure blocks further learning
+and evaluation until a complete native checkpoint reload succeeds.
+
+Every live peer must enter evaluation, and process-group timeouts must cover
+the slowest local partition. Serialize evaluation with training and other
+process-global RNG consumers. Environment-owned state/RNGs, external providers,
+arbitrary user callback collectives, lost workers, and complete training-loop
+task transitions require separate coordination. CPU/Gloo evidence does not
+establish GPU, multi-node or other distributed-backend behavior.
+
+The [native DDP evaluation acceptance record](../benchmark_results/training_contracts/20261015/native-ddp-evaluation/summary.json)
+retains 1,917 targeted source regressions (7 skips), 586 installed-wheel
+regressions, 408 type-checked modules and six real two-worker contracts against
+source and wheel. The new contract checks 28 scenarios per peer with buffer
+broadcasting enabled and disabled: unequal populations, nonimprovement/ties,
+empty partitions, local errors/cancellation, policy/settings/counter drift,
+malformed statistics, failed best publication, failed buffer restoration and
+different collective operations. Eighteen reject and then recover on the same
+process group. Best checkpoints preserve pending windows and resume the same
+next optimizer update. Wire shapes/dtypes are checked, source and test hashes
+stay fixed, and source/wheel outcomes agree. These generated tiny CPU tests
+verify evaluator mechanics; they do not establish model quality or complete
+training-loop orchestration. Test counts overlap with earlier acceptance runs.
 
 Shared runtime metrics separate rollout time from update time, count exact
 generated tokens and verified successful episodes where available, and report
@@ -427,6 +1122,66 @@ VAPO's value loss and positive-example LM loss, PPO's value loss, and
 enhanced GRPO's exact full-vocabulary KL remain in their trainers; the
 objective owns the policy term only.
 
+## PPO reference update limits
+
+Canonical `PPOTrainer` supports experimental token-exact online training through
+`train()` and the `train_ppo()` convenience loader. The online protocol samples
+real categorical actions and retains their token IDs, behavior log probabilities,
+critic values, terminal rewards and EOS/horizon boundaries. It never decodes and
+re-tokenizes actions for training. Sampling, current-policy scoring and reference
+KL use the same positive temperature. Online sampling requires `top_p=1`,
+`top_k=0` and `gradient_accumulation_steps=1`, now the PPO-specific defaults.
+
+Each update cycles through `mini_batch_size` prompts and samples
+`num_generations` completions per prompt. `num_episodes` passed to `train()` is a
+total update target, including completed updates. Without that argument the
+target is `config.num_episodes * config.num_epochs`. A complete runtime checkpoint
+restores both optimizers, the critic, schedulers, update cursor and RNGs. The
+ordered prompt population, actual prompt token IDs and EOS setting are bound in
+the checkpoint configuration; changed input populations reject. For a fresh
+trainer, set `resume_from_checkpoint` and call `train()` with the same prompts.
+The convenience loader pins both model and tokenizer to `model_revision`, seeds
+initialization/sampling from `seed`, and saves a final checkpoint. With an
+already-created model, seed initialization before constructing the trainer;
+online collection consumes the active PyTorch RNG stream.
+
+`output_dir/ppo-rollouts/run-*/` retains one raw rollout and matching commit
+receipt per successful update. Receipts bind the full behavior learner state
+and exact sampled records. Reward callbacks may be synchronous or asynchronous;
+they receive the original prompt and decoded completion. Reentrant training,
+saving and loading reject while a batch is active. Callback state mutations
+quarantine the learner, and unchanged-learner collection failures restore RNGs
+for retry. External reward-service state is not checkpointed; callers must keep
+the reward definition and external dependencies stable for exact continuation.
+
+This initial online implementation uses complete-prefix scoring and full learner
+fingerprints. It targets correctness, with CPU tiny-transformer and synthetic
+learning contracts; large-model throughput, GPU memory, distributed execution,
+quantized training and independent quality gains remain unverified. EOS and the
+configured token horizon both end an episode, with no truncation bootstrap.
+
+`train_step()` remains available for externally supplied text batches. It
+requires equal nonempty populations, finite numeric rewards, a positive inner
+epoch count, prompts and completions within their configured limits and at least
+one response action per row. The separately tokenized prompt must be an exact
+prefix of the combined text's tokens; ambiguous BPE joins and special-token
+boundaries reject before model scoring. Completion overflow rejects rather than
+applying a full-response reward to truncated text. It rejects nonfinite
+advantages, returns, losses and gradients
+before the affected inner update can step either optimizer. A positive KL
+penalty requires a reference model. Adaptive coefficients commit only after both
+optimizers succeed, so rejected updates preserve the controller. Old/current
+policy, critic and reference scoring use evaluation mode with gradients enabled
+for current scores; dropout cannot manufacture an initial importance ratio.
+Every submodule's original mode is restored on success or failure.
+
+These guards do not roll back earlier inner updates or make failures between
+optimizer commits atomic. Any failure after an optimizer starts quarantines
+training and checkpoint publication until a complete runtime checkpoint reload.
+The external text interface still does not establish exact sampled token identity
+or behavior-policy provenance; use the online path to retain those values.
+The shared declarative PPO objective and its numeric contracts remain available.
+
 ## Sampled workflow and representative studies
 
 `python -m stateset_agents.training.sampled_workflow --device cuda` runs three
@@ -442,3 +1197,48 @@ and retains per-case test traces. Its six-seed default supports the quality gate
 The retained one-seed synthetic pretrained diagnostic scored 0/8 before and after
 training and failed that gate. A reviewed dataset is still required for the
 representative study.
+
+## Large-model text SFT source identity
+
+Muse Spark and frontier SFT capture each dataset split once. Strict chat validation,
+overlap checks, file SHA-256 and normalized conversation SHA-256 all use those
+captured bytes; tokenizer/model initialization cannot change the examples by
+replacing a source path. Training and preview receipts include both raw file
+identity (`dataset_sha256`) and normalized content identity
+(`training_content_sha256`). Row IDs and whitespace affect the raw file hash,
+while IDs do not create independent conversations for overlap checks.
+
+Both paths check the Torch 2.7 load-time FSDP minimum before importing training
+backends. The GLM FP8 contract loads locally serialized float8 attention and
+per-expert checkpoint tensors, verifies exact BF16 dequantization and native
+expert merging, then checks adapter backpropagation, optimizer updates, frozen
+weights and export/reload. This is CPU mechanics evidence with generated weights;
+released checkpoint and GPU/distributed conformance remain unverified.
+
+## Distributed SFT input agreement
+
+Muse and frontier SFT verify `stateset-sft-consensus-v1` after training arguments
+initialize the process group and before constructing `SFTTrainer` or loading
+model weights. Every rank must agree on the canonical model/revision, training
+settings, captured dataset identities/counts, native tokenizer backend and chat
+template, ordered encoded inputs/labels, runtime versions, and critical StateSet
+implementation hashes. Local source/output paths are excluded so nodes can stage
+identical files under different mount points. Raw file identities must match;
+this is not a path for intentionally distinct per-rank input shards.
+
+The guard uses a fixed three-int header and fixed-size SHA-256 tensors, with no
+application text or serialized Python objects in the collective. Invalid identity
+construction, missing fields, nonfinite metadata, protocol/world-size mismatches
+and differing components stop participating ranks before trainer construction.
+The adapter receipt's `rank_consensus` records the agreed identity/component
+hashes, protocol, world size and backend. An initialized Gloo or NCCL group is
+required; there is no local-success fallback.
+
+Seventeen scenarios run through two actual local CPU/Gloo ranks, including
+agreement after rejected calls. The same contract passes against the installed
+wheel; [retained evidence](../benchmark_results/training_contracts/20261015/sft-rank-consensus/summary.json)
+binds the wheel to all 398 packaged source files. This verifies consensus and rejection mechanics;
+NCCL/GPU execution, FSDP/EP adapter synchronization, full-size weight loading and
+multi-node training remain separate unverified gates. Local validation and
+launcher/process failures outside the collective still use the launcher's normal
+failure handling and process-group timeouts.

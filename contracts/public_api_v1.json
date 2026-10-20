@@ -4018,6 +4018,11 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "compute_cost_per_hour"
+            },
+            {
+              "default": 5,
+              "kind": "KEYWORD_ONLY",
+              "name": "zero_signal_patience"
             }
           ]
         }

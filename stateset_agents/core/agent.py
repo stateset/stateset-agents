@@ -18,6 +18,7 @@ from stateset_agents.core.generation_mode import inference_mode
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import AgentConfig, ConfigValidationError
+from .muse_protocol import is_muse_spark, muse_spark_final_response
 from .trajectory import ConversationTurn
 from .transformers_compat import generation_compat_kwargs, load_generation_model
 
@@ -950,8 +951,8 @@ class MultiTurnAgent(Agent):
                 while length and int(response_tokens[length - 1]) == int(pad_id):
                     length -= 1
             response_tokens = response_tokens[:length]
-            text = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
-            details: dict[str, Any] = {"response": self._clean_response(text)}
+            text = self._decode_model_response(response_tokens)
+            details: dict[str, Any] = {"response": text}
             if backend_error:
                 details["rollout_backend_error"] = backend_error
             try:
@@ -1010,9 +1011,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS as e:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 # Fallback to manual formatting if chat template fails
                 logger.debug("Chat template failed, using manual formatting: %s", e)
                 prompt = self._format_conversation(recent_messages)
@@ -1217,9 +1223,9 @@ class MultiTurnAgent(Agent):
         prompt_len = int(inputs["input_ids"].shape[1])
         sequences = outputs.sequences[0]
         response_tokens = sequences[prompt_len:]
-        response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
+        response = self._decode_model_response(response_tokens)
 
-        details: dict[str, Any] = {"response": self._clean_response(response)}
+        details: dict[str, Any] = {"response": response}
         if backend_error:
             details["rollout_backend_error"] = backend_error
         # Best-effort token capture for per-token RL. Never let it break
@@ -1252,7 +1258,20 @@ class MultiTurnAgent(Agent):
             logger.debug("token capture skipped: %s", e)
         return details
 
-    def _clean_response(self, response: str) -> str:
+    def _decode_model_response(self, token_ids: Any) -> str:
+        """Keep native Muse channel boundaries while retaining the sampled IDs."""
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Model tokenizer is not initialized")
+        native = is_muse_spark(self.config.model_name, self.model)
+        response = str(tokenizer.decode(token_ids, skip_special_tokens=not native))
+        if native:
+            return self._clean_response(response, native_protocol=True)
+        return self._clean_response(response)
+
+    def _clean_response(
+        self, response: str, *, native_protocol: bool | None = None
+    ) -> str:
         """Clean up generated response by removing artifacts and stop tokens.
 
         Args:
@@ -1261,6 +1280,12 @@ class MultiTurnAgent(Agent):
         Returns:
             Cleaned response with artifacts removed
         """
+        if native_protocol is not False and is_muse_spark(
+            self.config.model_name, self.model
+        ):
+            response = muse_spark_final_response(
+                response, allow_plain=native_protocol is None
+            )
         # Remove common artifacts
         response = response.strip()
 
@@ -1365,9 +1390,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 prompt = self._format_conversation(recent_messages)
         else:
             prompt = self._format_conversation(recent_messages)
@@ -1375,7 +1405,18 @@ class MultiTurnAgent(Agent):
         response_text = ""
 
         # For stub backend, yield the full response in chunks
-        if self._is_stub_backend and isinstance(self.model, StubModel):
+        if (
+            is_muse_spark(self.config.model_name, self.model)
+            and not self._is_stub_backend
+        ):
+            # Native recipient headers must survive decoding. Buffer the full
+            # generation before emitting user-directed content; a generic
+            # streamer discards those headers and would expose private reasoning.
+            response_text = await self._generate_with_model(prompt, context)
+            for offset in range(0, len(response_text), 32):
+                yield response_text[offset : offset + 32]
+                await asyncio.sleep(0)
+        elif self._is_stub_backend and isinstance(self.model, StubModel):
             response = str(self.model.generate(prompt, context))
             # Simulate streaming by yielding word by word
             words = response.split()
@@ -1497,7 +1538,10 @@ class MultiTurnAgent(Agent):
                     await asyncio.sleep(0.01)
                 response_text = response
 
-        response_text = self._clean_response(response_text)
+        if is_muse_spark(self.config.model_name, self.model):
+            response_text = self._clean_response(response_text, native_protocol=False)
+        else:
+            response_text = self._clean_response(response_text)
         self.conversation_history.append(
             {"role": "assistant", "content": response_text}
         )

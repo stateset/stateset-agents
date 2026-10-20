@@ -1,0 +1,114 @@
+"""Retain nomination source/wheel, CLI and live-pane acceptance evidence."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents')
+prefix='stateset-studio-nomination'
+pipeline=json.loads(Path('/tmp',prefix+'-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and len(pipeline['stages'])==6
+assert all(row['exit_code']==0 for row in pipeline['stages'])
+source=Path(pipeline['finished'])
+verified=json.loads((source/'verification.json').read_text())
+assert verified['passed'] and verified['source_unchanged'] and verified['tests_unchanged']
+current={p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert current==verified['source_sha256'] and tests==verified['test_source_sha256']
+assert 'Success: no issues found in 431 source files' in (source/'types.log').read_text()
+
+def count(name):
+    parsed=ET.parse(source/name).getroot()
+    suites=list(parsed.iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    cases=[c for c in parsed.iter('testcase') if c.get('classname','').startswith('tests.unit.test_finetune_nomination')]
+    assert len(cases)==26
+    return sum(int(s.get('tests',0)) for s in suites)
+
+def receipt(handle):
+    value=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {key:value.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown']}
+
+integration=json.loads(Path('/tmp',prefix+'-real-worker-verification.json').read_text())
+assert integration['passed'] and integration['parent_unchanged'] and integration['installed_origin_verified']
+assert integration['original_files_unchanged'] and not integration['test_inference_launched']
+job=receipt(integration['acceptance_job']); worker=receipt(integration['worker_job'])
+assert all(j['state']=='succeeded' and j['exit_code']==0 for j in [job,worker])
+draft=Path('/tmp',prefix+'-draft.json'); live=Path('/tmp',prefix+'-live.txt')
+assert json.loads(draft.read_text())['draft_preserved']
+assert 'nomination for separate fresh test cases' in live.read_text().replace('\n',' ')
+summary=dict(passed=True,source_tests=count('regressions.xml'),installed_wheel_tests=count('wheel.xml'),nomination_cases=26,typed_modules=431,queue_job=job['id'],real_worker_queue_job=worker['id'],wheel_sha256=verified['wheel_sha256'],source_and_tests_unchanged=True,wheel_source_matches=True,wheel_case_identities_match_source=True,installed_nomination_cli_verified=True,real_terminal_sizes=['74x44','110x32'],nomination_real_model_inference=False,cpu_model_regressions_in_suite=True,gpu_verified=False,quality_gain_verified=False,paid_run_launched=False,live_herdr_refreshed=True,draft_preserved=True,count_note='Source and installed-wheel counts overlap; nomination policy/judge replies use synthetic transports through actual scoring and record/replay. The broader regression suite also exercises tiny CPU model generation, SFT and resume.')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-nomination'
+out.mkdir(exist_ok=False)
+for name,value in [('summary.json',summary),('queue-receipts.json',[job,worker]),('pipeline-receipt.json',pipeline),('installed-cli-verification.json',integration)]:
+    (out/name).write_text(json.dumps(value,indent=2)+'\n')
+for pattern in ['*.log','*.xml']:
+    for path in source.glob(pattern): shutil.copy2(path,out/path.name)
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['format','gates','prepare','wheel','finish','pipeline','retain','smoke','helpers']:
+    path=Path('/tmp',prefix+'-'+suffix+'.py'); shutil.copy2(path,out/(path.name+'.txt'))
+shutil.copy2(live,out/'herdr-live.txt'); shutil.copy2(draft,out/'herdr-draft.json')
+attempts=out/'development-attempts'; attempts.mkdir()
+handles=['d06df5b65706','cbd739c19845','96844041c39b','46d5738a5c24','985775e0265a']
+(attempts/'queue-receipts.json').write_text(json.dumps([receipt(h) for h in handles],indent=2)+'\n')
+for handle in handles:
+    path=Path('/home/dom/.local/state/agent-builds/logs',handle+'.log'); shutil.copy2(path,attempts/path.name)
+shutil.copy2('/tmp/stateset-studio-nomination-before-terminal-sync.json',attempts/'before-terminal-sync.json')
+shutil.copy2('/tmp/stateset-nomination-terminal-probe.xml',attempts/'terminal-probe.xml')
+shutil.copy2('/tmp/stateset-studio-nomination-20261016/regressions.xml',attempts/'before-terminal-sync-regressions.xml')
+(out/'README.md').write_text(f'''# Reviewed checkpoint nomination and fresh test: acceptance
+
+{summary['source_tests']} targeted source tests and {summary['installed_wheel_tests']}
+matching installed-wheel tests passed without skips or failures. Counts overlap;
+each suite includes all 26 nomination cases. Typing passed for 431 package
+modules. Job `{job['id']}` passed repository lint/hygiene, API/release governance,
+serial formatting of nine changed Python files, source regressions, actual
+wheel build/install, three wheel groups, workflow lint and installed CLI checks.
+Package/test Python and tracked acceptance assets stayed frozen; wheel bytes
+and selected case identities match. Earlier development runs remain separate.
+
+Inside a completed checkpoint validation comparison, `n` reviews an explicit
+nomination. Enter retains a private hash-bound receipt and opens a fresh test
+form with no cases selected. Esc keeps the comparison without writing a
+receipt. An owned submission finishes if the view is left; it does not steal
+editor focus. A separate evaluation review and Enter are required for inference.
+The agent CLI provides `nomination-plan` and `nomination-prepare` with the same
+exact-checksum boundary. Named checkpoints without a valid nomination remain
+validation-only. Choosing another target clears the nomination.
+
+The receipt binds parent, implementation, comparison, selected validation and
+checkpoint digests. Evaluation review rehashes the checkpoint, rechecks lineage
+and verifies private cases. Test IDs and normalized user turns cannot overlap
+retained validation cases, including prepared and failed validations. Training
+overlap/provenance checks remain. History fails closed above 100 entries or on
+unreadable evidence. These exact checks cannot establish semantic or external
+dataset independence; human freshness is still a reviewed attestation.
+
+An earlier checkpoint is evaluated through actual policy/judge recording and
+replay even when synthetic training completion points to a later checkpoint.
+Tampered selection, comparison, nomination or checkpoint bytes fail; base-only
+recommendations cannot become adapters. No completion/quality receipt is
+replaced, no weights copied, and no final-adapter fallback or deployment
+approval occurs. Real terminal sessions at 74x44 and 110x32 nominate, select
+fresh cases, capture a review, and exit without submitting inference or changing
+the training draft. Nomination cases use injected synthetic policy/judge replies,
+not a real-model quality study.
+
+Real local Buildr job `{worker['id']}` executed the installed-wheel comparison
+verifier on synthetic retained evidence. The installed JSON CLI then reviewed
+and retained a nomination, reviewed distinct fresh test cases and prepared its
+evaluation without launching. Existing parent files remained byte-identical;
+only the owned nomination/evaluation records were added. The execution receipt
+proves installed module origin. Queue submission is not nested in another job.
+
+The idle user-authorized Herdr split was refreshed with saved draft bytes,
+private permissions and run list preserved. No synthetic runs were inserted
+in the live workspace. The broader regression suite also exercises tiny CPU
+model generation, SFT and resume. No GPU/provider certification, paid training,
+live-model nomination study, production promotion or independent quality gain
+is claimed.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

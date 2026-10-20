@@ -1,0 +1,11 @@
+{
+  "counts": {
+    "test": 80,
+    "train": 160,
+    "validation": 40
+  },
+  "manifest_hash": "21d3f501489b940f2532091bfd4e8ce6880624454964146960824ab9c52e4127",
+  "passed": true,
+  "provider_calls": 0,
+  "replayed_train_demonstrations": 160
+}

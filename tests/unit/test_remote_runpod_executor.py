@@ -750,7 +750,8 @@ class TestGpuCount:
         response = requests.Response()
         response.status_code = 500
 
-        def fail_send(request):
+        def fail_send(request, *, attempts):
+            assert attempts == 1
             raise requests.HTTPError("provider details", response=response)
 
         monkeypatch.setattr(RunPodApi, "_send", staticmethod(fail_send))
@@ -761,7 +762,7 @@ class TestGpuCount:
             )
 
         assert "secret-key" not in str(caught.value)
-        assert caught.value.context.details["attempts"] == 5
+        assert caught.value.context.details["attempts"] == 1
 
     def test_transient_http_errors_use_bounded_exponential_backoff(self, monkeypatch):
         import requests
@@ -1133,6 +1134,89 @@ class TestNetworkVolume:
         trains = [c for c in ssh.commands if "training.sft" in c]
         assert all("--resume" not in c for c in trains)
         assert any("restarting training from scratch" in ln for ln in result.logs)
+
+
+class TestRemoteCommandArguments:
+    """Inspect inert shell metacharacters without executing a shell or provider."""
+
+    @pytest.mark.parametrize("job_kind", ["sft", "harvest"])
+    @pytest.mark.parametrize(
+        "model",
+        [
+            "vendor/model with spaces",
+            "vendor/model'; printf INERT; #",
+            "vendor/model$(printf INERT)",
+        ],
+    )
+    def test_model_remains_one_literal_argument(
+        self, make_executor, spec, job_kind, model
+    ):
+        import shlex
+
+        spec.job_kind = job_kind
+        spec.base_model = model
+        commands = make_executor()._remote_commands(spec, "/workspace/dataset.jsonl")
+        tokens = shlex.split(commands[1])
+        assert tokens[tokens.index("--base-model") + 1] == model
+
+    @pytest.mark.parametrize("job_kind", ["sft", "harvest"])
+    def test_dataset_remains_one_literal_argument(self, make_executor, spec, job_kind):
+        import shlex
+
+        spec.job_kind = job_kind
+        remote = "/workspace/data 'quoted'; $(printf INERT).jsonl"
+        commands = make_executor()._remote_commands(spec, remote)
+        tokens = shlex.split(commands[1])
+        option = "--dataset" if job_kind == "sft" else "--prompts-file"
+        assert tokens[tokens.index(option) + 1] == remote
+
+    @pytest.mark.parametrize("job_kind", ["sft", "harvest"])
+    def test_package_requirement_is_one_literal_argument(
+        self, make_executor, spec, job_kind, monkeypatch
+    ):
+        import shlex
+
+        monkeypatch.delenv("STATESET_AGENTS_WHEEL", raising=False)
+        spec.job_kind = job_kind
+        spec.package_version = "0.20.0'; printf INERT; #"
+        commands = make_executor()._remote_commands(spec, "/workspace/dataset.jsonl")
+        assert shlex.split(commands[0]) == [
+            "pip",
+            "install",
+            "--quiet",
+            "stateset-agents[training]==" + spec.package_version,
+        ]
+
+    def test_wheel_requirement_is_one_literal_argument(
+        self, make_executor, spec, tmp_path
+    ):
+        import shlex
+
+        wheel = tmp_path / "stateset_agents-'quoted'; INERT.whl"
+        commands = make_executor(wheel=wheel)._remote_commands(
+            spec, "/workspace/dataset.jsonl"
+        )
+        assert shlex.split(commands[0]) == [
+            "pip",
+            "install",
+            "--quiet",
+            f"/workspace/{wheel.name}[training]",
+        ]
+
+    @pytest.mark.parametrize("model", [None, "--prompts-file", "--output-dir"])
+    def test_harvest_rewrites_only_path_values(self, make_executor, spec, model):
+        import shlex
+
+        spec.job_kind = "harvest"
+        spec.base_model = str(spec.dataset) if model is None else model
+        spec.output_dir = spec.dataset
+        commands = make_executor()._remote_commands(spec, "/workspace/uploaded.jsonl")
+        tokens = shlex.split(commands[1])
+        assert tokens[1 + tokens.index("--base-model")] == spec.base_model
+        assert (
+            tokens[1 + tokens.index("--prompts-file", 5)] == "/workspace/uploaded.jsonl"
+        )
+        assert tokens[1 + tokens.index("--output-dir", 7)] == "/workspace/out"
 
 
 class TestEvalPrompts:

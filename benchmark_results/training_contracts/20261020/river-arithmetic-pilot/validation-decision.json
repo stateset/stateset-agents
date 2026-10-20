@@ -1,0 +1,1136 @@
+{
+  "arithmetic_case_gain": 1,
+  "baseline_report_hash": "3269f2d907528bd5d46bf805badd13c22a6a99bc465456faa58a9a66f90a1651",
+  "candidate_report_hash": "7ec624bf288c16089fe58f325632c025be6d4e84a3ef4516d683e08e8c807674",
+  "gain": 0.0,
+  "passed": false,
+  "plan_hash": "5bdb9e6569bf9c32a7ec9048bf15042f371100d55c003dcfa81219dd0cda21db",
+  "require_arithmetic_gain": false,
+  "required_gain": 0,
+  "safety_passed": false,
+  "scope": "single_parent_descriptive_pilot_not_population_significance",
+  "strata": {
+    "all": {
+      "baseline": {
+        "passed": 157,
+        "total": 158,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 157,
+        "total": 158,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_day_offset:-1": {
+      "baseline": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_day_offset:0": {
+      "baseline": {
+        "passed": 26,
+        "total": 27,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_paid_offset:-1": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_paid_offset:0": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_paid_offset:1": {
+      "baseline": {
+        "passed": 17,
+        "total": 18,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_refunded_offset:-1": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_refunded_offset:0": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_refunded_offset:1": {
+      "baseline": {
+        "passed": 17,
+        "total": 18,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_source_family:partial_refund": {
+      "baseline": {
+        "passed": 53,
+        "total": 54,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 54,
+        "total": 54,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_window:18": {
+      "baseline": {
+        "passed": 17,
+        "total": 18,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_window:40": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "arithmetic_window:5": {
+      "baseline": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 18,
+        "total": 18,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "distribution:ordinary": {
+      "baseline": {
+        "passed": 32,
+        "total": 32,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 32,
+        "total": 32,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "distribution:stress": {
+      "baseline": {
+        "passed": 125,
+        "total": 126,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 125,
+        "total": 126,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:already_refunded": {
+      "baseline": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 12,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "family:chargeback": {
+      "baseline": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:eligible": {
+      "baseline": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:misleading_note": {
+      "baseline": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:outside_window": {
+      "baseline": {
+        "passed": 16,
+        "total": 16,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 16,
+        "total": 16,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:partial_refund": {
+      "baseline": {
+        "passed": 34,
+        "total": 34,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 34,
+        "total": 34,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:undelivered": {
+      "baseline": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 13,
+        "total": 13,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "family:window_boundary": {
+      "baseline": {
+        "passed": 42,
+        "total": 43,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 43,
+        "total": 43,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:already_refunded": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 8,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:chargeback": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:eligible": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:misleading_note": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:outside_window": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:partial_refund": {
+      "baseline": {
+        "passed": 62,
+        "total": 63,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 63,
+        "total": 63,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:undelivered": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_source_family:window_boundary": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_window:18": {
+      "baseline": {
+        "passed": 41,
+        "total": 42,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 42,
+        "total": 42,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "stress_window:40": {
+      "baseline": {
+        "passed": 42,
+        "total": 42,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 41,
+        "total": 42,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "stress_window:5": {
+      "baseline": {
+        "passed": 42,
+        "total": 42,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 42,
+        "total": 42,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite:arithmetic": {
+      "baseline": {
+        "passed": 53,
+        "total": 54,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 54,
+        "total": 54,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite:ordinary": {
+      "baseline": {
+        "passed": 32,
+        "total": 32,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 32,
+        "total": 32,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite:window": {
+      "baseline": {
+        "passed": 72,
+        "total": 72,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 71,
+        "total": 72,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "suite_family:arithmetic:partial_refund": {
+      "baseline": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:arithmetic:window_boundary": {
+      "baseline": {
+        "passed": 26,
+        "total": 27,
+        "truncated_cases": 1,
+        "violation_cases": 1
+      },
+      "candidate": {
+        "passed": 27,
+        "total": 27,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:already_refunded": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:chargeback": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:eligible": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:misleading_note": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:outside_window": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:partial_refund": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:undelivered": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:ordinary:window_boundary": {
+      "baseline": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 4,
+        "total": 4,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:already_refunded": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 8,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:chargeback": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:eligible": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:misleading_note": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:outside_window": {
+      "baseline": {
+        "passed": 12,
+        "total": 12,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 12,
+        "total": 12,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:partial_refund": {
+      "baseline": {
+        "passed": 3,
+        "total": 3,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 3,
+        "total": 3,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:undelivered": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "suite_family:window:window_boundary": {
+      "baseline": {
+        "passed": 12,
+        "total": 12,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 12,
+        "total": 12,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:already_refunded": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 8,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "window_source_family:chargeback": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:eligible": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:misleading_note": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:outside_window": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:partial_refund": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:undelivered": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_source_family:window_boundary": {
+      "baseline": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 9,
+        "total": 9,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_window:18": {
+      "baseline": {
+        "passed": 24,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 24,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    },
+    "window_window:40": {
+      "baseline": {
+        "passed": 24,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 23,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 1
+      },
+      "policy_nonregression": false,
+      "success_nonregression": false,
+      "truncation_nonregression": true
+    },
+    "window_window:5": {
+      "baseline": {
+        "passed": 24,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "candidate": {
+        "passed": 24,
+        "total": 24,
+        "truncated_cases": 0,
+        "violation_cases": 0
+      },
+      "policy_nonregression": true,
+      "success_nonregression": true,
+      "truncation_nonregression": true
+    }
+  }
+}
