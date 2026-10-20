@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792420765724,
+  "lastUpdate": 1792500347540,
   "repoUrl": "https://github.com/stateset/stateset-agents",
   "entries": {
     "Python Benchmark": [
@@ -694,6 +694,70 @@ window.BENCHMARK_DATA = {
             "unit": "iter/sec",
             "range": "stddev: 9.853606573840627e-8",
             "extra": "mean: 332.98196844000284 nsec\nrounds: 197317"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "name": "Dom Steil",
+            "username": "domsteil",
+            "email": "domsteil14@gmail.com"
+          },
+          "committer": {
+            "name": "GitHub",
+            "username": "web-flow",
+            "email": "noreply@github.com"
+          },
+          "id": "4164974a853bca6c42fab94cbc9142c506a16ebd",
+          "message": "fix: reward-hacking-resistant support reward, stable judge, non-finite skip, RunPod driver hardening (#108)\n\nLessons from three H100 flagship preflights: per-turn reward was hacked (judge 0.748 -> 0.605) -> conversation-level reward v2; lenient/unstable judge -> Mistral-Small-24B + checklist rubric v4 with exact detector checks; bf16 backward NaNs -> diagnose-and-skip policy; provider-exited pods and exhausted credit now fail fast. Flagship config not yet validated end to end (next preflight blocked on RunPod credit).",
+          "timestamp": "2026-10-14T03:32:33Z",
+          "url": "https://github.com/stateset/stateset-agents/commit/4164974a853bca6c42fab94cbc9142c506a16ebd"
+        },
+        "date": 1792500346522,
+        "tool": "pytest",
+        "benches": [
+          {
+            "name": "tests/performance/test_benchmarks.py::test_helpfulness_reward_throughput",
+            "value": 14594.908745136298,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000008842488595860747",
+            "extra": "mean: 68.51704368026601 usec\nrounds: 2152"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_safety_reward_throughput",
+            "value": 15006.12920109718,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009485262511663611",
+            "extra": "mean: 66.6394368993494 usec\nrounds: 3122"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_throughput",
+            "value": 11170.030925748484,
+            "unit": "iter/sec",
+            "range": "stddev: 0.000009540385303227014",
+            "extra": "mean: 89.52526690815691 usec\nrounds: 4968"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_composite_reward_large_batch",
+            "value": 1434.6819399277897,
+            "unit": "iter/sec",
+            "range": "stddev: 0.00001571461735974607",
+            "extra": "mean: 697.0186019420667 usec\nrounds: 1236"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_trajectory_turn_construction",
+            "value": 291.51537097419276,
+            "unit": "iter/sec",
+            "range": "stddev: 0.0000788831537912701",
+            "extra": "mean: 3.4303508479095868 msec\nrounds: 263"
+          },
+          {
+            "name": "tests/performance/test_benchmarks.py::test_serving_manifest_build_throughput",
+            "value": 4454279.986908479,
+            "unit": "iter/sec",
+            "range": "stddev: 2.589879631198045e-8",
+            "extra": "mean: 224.50317513472166 nsec\nrounds: 196928"
           }
         ]
       }
