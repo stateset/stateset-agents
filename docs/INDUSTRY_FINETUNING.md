@@ -19,7 +19,7 @@ criteria. They are not pretrained industry agents or evidence of business outcom
 
 ## Generate industry policy datasets
 
-Create all six corpora locally, with no model downloads or provider calls:
+Create all nine corpora locally, with no model downloads or provider calls:
 
 ```bash
 stateset-agents industry generate all --output outputs/industry-datasets --seed 42
@@ -30,6 +30,9 @@ stateset-agents industry train outputs/industry-datasets/saas --dry-run
 stateset-agents industry train outputs/industry-datasets/travel --dry-run
 stateset-agents industry train outputs/industry-datasets/services --dry-run
 stateset-agents industry train outputs/industry-datasets/telecommunications --dry-run
+stateset-agents industry train outputs/industry-datasets/media --dry-run
+stateset-agents industry train outputs/industry-datasets/healthcare --dry-run
+stateset-agents industry train outputs/industry-datasets/public-sector --dry-run
 ```
 
 Each industry gets **512 training, 64 validation, and 128 reserved test
@@ -51,17 +54,25 @@ stateset-agents industry generate travel --output outputs/travel-dataset --seed 
 | `travel` | Booking verification, disruption escalation, cancellation terms, consent, availability, confirmed prices, booking status | `travel` |
 | `services` | Field-service verification, hazard escalation, quote and consent checks, slot availability, booking, rescheduling, request status | `services` |
 | `telecommunications` | Account verification, incidents and outages, owner authorization, cancellation consent, confirmed plan prices, usage boundaries, billing routing | `telecommunications` |
+| `media` | Subscriber verification, incidents and outages, cancellation without quote requirements, authorized plan changes, access and billing routing | `media` |
+| `healthcare` | Appointment administration: authorization, consent, available slots, booking, rescheduling, cancellation and staff routing | `healthcare` |
+| `public-sector` | Fictional application support: authorization, document completeness, consent, submission, appointments and case status | `public-sector` |
 
 These are **fictional policy simulations**, clearly marked `synthetic: true` and
 `not_independently_reviewed`. Messages teach a fact lookup, a policy-grounded JSON
 resolution, and explicit finish. Ecommerce reuses the refund sandbox; the other
-five domains use `IndustrySupportEnvironment`. Unverified support lookups reveal
+eight domains use `IndustrySupportEnvironment`. Unverified support lookups reveal
 only the record ID and verification flag. Customer-note overrides do not change
 the policy, and invalid actions cannot be repaired into a successful episode.
 No real refunds, shipments, account settings or credentials are changed.
 Travel availability, fares, cancellation terms, field-service safety routing,
 and telecom prices are invented simulation rules, not live business policies.
 The field-service hazard cases teach escalation without repair instructions.
+Healthcare cases cover appointment administration only; they contain no patient
+records, diagnosis, triage, treatment recommendations, or clinical decisions.
+Public-sector cases simulate paperwork and case navigation; submission never
+implies approval, eligibility, or an actual agency action. Media terms and prices
+are fictional. These simulations do not implement real organizational policies.
 
 Each directory contains `train.jsonl`, `validation.jsonl`, `test.jsonl`, the private
 synthetic cases in `cases/`, and a training-compatible `manifest.json`. The root
@@ -109,7 +120,8 @@ result = await replay_industry_trace("travel", case, trace)
 assert result["success"]
 ```
 
-The helper supports logistics, SaaS, travel, services, and telecommunications.
+The helper supports logistics, SaaS, travel, services, telecommunications, media,
+healthcare administration, and public-sector application support.
 For ecommerce, use `replay_refund_trace` from
 `stateset_agents.evaluation.refund_trace`. Replay verifies case identity, initial
 messages, every action and observation, rewards, metrics, and the terminal
@@ -118,7 +130,7 @@ failure reward (default `-1`); replay verifies the declared outcome but cannot
 establish what triggered that stop. `tool_calls` counts attempted action turns,
 including rejected actions, rather than successful business changes.
 
-The native River SDK integration checks cover all five support domains and
+The native River SDK integration checks cover all eight support domains and
 eight scenario families, including mixed successful/failed groups and truncated
 rollouts. They verify generated token spans and signed advantages using scripted
 sampling with the real SDK trajectory and batch builders. These checks make no

@@ -51,7 +51,10 @@ def show_recipe(industry: str = typer.Argument(...)) -> None:
 def generate_datasets(
     industry: str = typer.Argument(
         "all",
-        help="all, ecommerce, logistics, saas, travel, services, or telecommunications.",
+        help=(
+            "all, ecommerce, logistics, saas, travel, services, telecommunications, "
+            "media, healthcare, or public-sector."
+        ),
     ),
     output: Path = typer.Option(..., "--output", "-o", help="Fresh dataset directory."),
     seed: int = typer.Option(42, min=0),
