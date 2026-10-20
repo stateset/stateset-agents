@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,33 @@ def read(path):
     with publication.checkpoint_read(path):
         assert publication.validate_checkpoint_publication(path, required=True)
         return (path / "training_state.pt").read_bytes()
+
+
+def test_windows_staged_sync_uses_write_access_but_validation_is_read_only(
+    tmp_path, monkeypatch
+):
+    artifact = tmp_path / "training_state.pt"
+    artifact.write_bytes(b"retained weights")
+    opened_modes = {}
+    opened, synced = Path.open, []
+
+    def open_file(path, mode="r", *args, **kwargs):
+        stream = opened(path, mode, *args, **kwargs)
+        opened_modes[stream.fileno()] = mode
+        return stream
+
+    def sync_file(descriptor):
+        assert opened_modes[descriptor] == "r+b"
+        synced.append(descriptor)
+
+    monkeypatch.setattr(Path, "open", open_file)
+    monkeypatch.setattr(publication, "os", SimpleNamespace(name="nt", fsync=sync_file))
+    published = publication._inventory(tmp_path, sync=True)
+    assert len(synced) == 1
+    opened_modes.clear()
+    assert publication._inventory(tmp_path) == published
+    assert set(opened_modes.values()) == {"rb"}
+    assert artifact.read_bytes() == b"retained weights"
 
 
 @pytest.mark.parametrize("overwrite", [False, True])

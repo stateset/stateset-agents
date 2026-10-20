@@ -83,9 +83,10 @@ def test_review_freezes_exact_data_and_private_run(settings, tmp_path):
     assert (run / "dataset").read_bytes() == original
     assert read_json(run / "plan.json") == description
     assert read_json(run / "state.json")["status"] == "prepared"
-    assert run.stat().st_mode & 0o077 == 0
-    assert (run / "dataset").stat().st_mode & 0o077 == 0
-    assert (run / "plan.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert run.stat().st_mode & 0o077 == 0
+        assert (run / "dataset").stat().st_mode & 0o077 == 0
+        assert (run / "plan.json").stat().st_mode & 0o077 == 0
     assert worker._settings(run)[1] == settings
 
 
@@ -216,9 +217,14 @@ def test_reconnect_marks_dead_or_reused_owner_without_signalling(
     assert run_status(run)["status"] == "succeeded"
 
 
-def test_log_tail_is_bounded_scrollable_and_terminal_safe(tmp_path):
-    (tmp_path / "run.log").write_text(
-        "\n".join([f"row-{i}" for i in range(20)]) + "\n\x1b[31merror\x1b[0m\x00"
+@pytest.mark.parametrize("newline", ["\n", "\r\n", "\r"])
+def test_log_tail_is_bounded_scrollable_and_terminal_safe(tmp_path, newline):
+    (tmp_path / "run.log").write_bytes(
+        (
+            newline.join([f"row-{i}" for i in range(20)])
+            + newline
+            + "\x1b[31merror\x1b[0m\x00"
+        ).encode()
     )
     assert log_tail(tmp_path, lines=2) == ["row-19", "error"]
     assert log_tail(tmp_path, lines=2, offset=2) == ["row-17", "row-18"]

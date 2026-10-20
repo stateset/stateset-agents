@@ -6,6 +6,7 @@ import io
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -127,6 +128,63 @@ def test_capture_reads_only_the_wheel_override_and_does_not_expose_source_path(w
     assert "source_path" not in record and selection.source_path == wheel
 
 
+def test_wheel_capture_preserves_binary_bytes(wheel):
+    raw = b"PK\x03\x04\r\n\x1a\x00\xff\r\nend"
+    wheel.write_bytes(raw)
+    record = capture(wheel).describe()
+    assert record["wheel_bytes"] == len(raw)
+    assert record["wheel_sha256"] == hashlib.sha256(raw).hexdigest()
+
+
+@pytest.mark.parametrize("change", [None, "descriptor", "path"])
+def test_cross_api_ctime_difference_preserves_each_api_change_guard(
+    wheel, monkeypatch, change
+):
+    """Model Windows creation/change-time differences without dropping either guard."""
+    real_fstat, real_lstat = os.fstat, Path.lstat
+    calls = {"descriptor": 0, "path": 0}
+
+    def stamp(info, ctime):
+        return SimpleNamespace(
+            st_mode=info.st_mode,
+            st_dev=info.st_dev,
+            st_ino=info.st_ino,
+            st_size=info.st_size,
+            st_mtime_ns=info.st_mtime_ns,
+            st_ctime_ns=ctime,
+        )
+
+    def descriptor_stat(descriptor):
+        info = real_fstat(descriptor)
+        calls["descriptor"] += 1
+        return stamp(
+            info,
+            info.st_ctime_ns
+            + 10
+            + int(change == "descriptor" and calls["descriptor"] > 1),
+        )
+
+    def path_stat(path, *args, **kwargs):
+        info = real_lstat(path, *args, **kwargs)
+        if path != wheel:
+            return info
+        calls["path"] += 1
+        return stamp(
+            info, info.st_ctime_ns + int(change == "path" and calls["path"] > 2)
+        )
+
+    monkeypatch.setattr(code.os, "fstat", descriptor_stat)
+    monkeypatch.setattr(Path, "lstat", path_stat)
+    if change is None:
+        assert (
+            capture(wheel).describe()["wheel_sha256"]
+            == hashlib.sha256(wheel.read_bytes()).hexdigest()
+        )
+    else:
+        with pytest.raises(ValueError, match="changed during inspection"):
+            capture(wheel)
+
+
 def test_relative_override_is_bound_to_review_cwd(wheel):
     selection = code.capture_remote_code(
         "runpod", VERSION, environ={code.WHEEL_ENV: WHEEL_NAME}, cwd=wheel.parent
@@ -229,12 +287,27 @@ def test_wheel_mutation_during_stream_is_rejected(wheel, monkeypatch, mutation):
             else:
                 replacement = wheel.with_name("replacement.whl")
                 replacement.write_bytes(b"replacement")
-                replacement.replace(wheel)
+                try:
+                    replacement.replace(wheel)
+                except PermissionError:
+                    if os.name != "nt":
+                        raise
+                    # Windows can refuse replacement of an open file. That
+                    # prevents this mutation before the reader needs to reject it.
+                    return chunk
         return chunk
 
     monkeypatch.setattr(code.os, "read", read_and_mutate)
-    with pytest.raises(ValueError, match="changed during inspection"):
-        capture(wheel)
+    try:
+        selection = capture(wheel)
+    except ValueError as error:
+        assert "changed during inspection" in str(error)
+    else:
+        assert os.name == "nt" and mutation == "replace"
+        assert (
+            selection.describe()["wheel_sha256"]
+            == hashlib.sha256(wheel.read_bytes()).hexdigest()
+        )
     assert changed
 
 

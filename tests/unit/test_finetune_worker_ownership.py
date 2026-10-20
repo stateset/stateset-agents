@@ -121,7 +121,8 @@ def test_concurrent_execution_has_one_training_owner(make_run, monkeypatch, prov
             "pid": os.getpid(),
             "process_token": worker.process_token(os.getpid()),
         }
-        assert (run / "execution.json").stat().st_mode & 0o077 == 0
+        if os.name != "nt":
+            assert (run / "execution.json").stat().st_mode & 0o077 == 0
     finally:
         release.set()
         thread.join(5)
@@ -164,7 +165,8 @@ def test_concurrent_supervisor_does_not_enqueue_or_overwrite_winner(
         assert records(run) == before
         assert calls == ["queue"] and settings.call_count == 1
         assert workspace.read_json(run / "state.json")["status"] == "queued"
-        assert (run / "supervisor.json").stat().st_mode & 0o077 == 0
+        if os.name != "nt":
+            assert (run / "supervisor.json").stat().st_mode & 0o077 == 0
     finally:
         release.set()
         thread.join(5)
@@ -521,7 +523,8 @@ def test_supervised_admission_excludes_direct_execution_at_each_boundary(
         assert "--supervised" in argv
         assert token not in json.dumps(argv)
         assert token not in (run / "command.json").read_text()
-        assert (run / "admission.json").stat().st_mode & 0o077 == 0
+        if os.name != "nt":
+            assert (run / "admission.json").stat().st_mode & 0o077 == 0
         return SimpleNamespace(
             wait=lambda **_kwargs: worker.execute(run, supervisor_token=token)
         )

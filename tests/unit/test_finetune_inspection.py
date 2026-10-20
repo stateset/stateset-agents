@@ -160,7 +160,8 @@ def test_metric_events_preserve_history_latest_and_private_permissions(tmp_path)
     assert [row["step"] for row in history] == [2, 4]
     assert history[0]["metrics"] == {"loss": 1.5, "epoch": 0.25}
     assert history[-1] == read_json(tmp_path / "metrics.json")
-    assert (tmp_path / "metrics.jsonl").stat().st_mode & 0o077 == 0
+    if os.name != "nt":
+        assert (tmp_path / "metrics.jsonl").stat().st_mode & 0o077 == 0
     assert inspection.metric_history(tmp_path, limit=1) == history[-1:]
 
 

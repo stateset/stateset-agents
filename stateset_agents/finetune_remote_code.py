@@ -110,7 +110,12 @@ def _wheel_identity(
 ) -> tuple[str, int]:
     if not _FILENAME.fullmatch(path.name) or path.is_symlink():
         raise ValueError("Remote wheel must be a plain regular .whl file")
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0)
+    )
     descriptor = os.open(path, flags)
     try:
         before = os.fstat(descriptor)
@@ -123,6 +128,15 @@ def _wheel_identity(
             )
         if private and os.name != "nt" and stat.S_IMODE(before.st_mode) & 0o077:
             raise ValueError("Remote wheel snapshot must remain private")
+        path_before = path.lstat()
+        # On Windows, stat's ctime may be creation time while fstat's ctime
+        # is change time (CPython #157671). Compare compatible identity fields
+        # across APIs, then retain full before/after stamps within each API.
+        if (
+            not stat.S_ISREG(path_before.st_mode)
+            or _stamp(before)[:4] != _stamp(path_before)[:4]
+        ):
+            raise ValueError("Remote wheel changed during inspection")
         digest, total = hashlib.sha256(), 0
         while total <= MAX_WHEEL_BYTES:
             chunk = os.read(descriptor, min(_CHUNK_BYTES, MAX_WHEEL_BYTES + 1 - total))
@@ -137,7 +151,7 @@ def _wheel_identity(
         if (
             total != before.st_size
             or _stamp(before) != _stamp(os.fstat(descriptor))
-            or _stamp(before) != _stamp(path.lstat())
+            or _stamp(path_before) != _stamp(path.lstat())
         ):
             raise ValueError("Remote wheel changed during inspection")
         return digest.hexdigest(), total
@@ -189,7 +203,13 @@ def snapshot_remote_code(run: Path, selection: RemoteCodeSelection) -> dict[str,
     created = False
     try:
         _private_directory(directory)
-        flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+        flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
         descriptor = os.open(target, flags, 0o600)
         created = True
         try:

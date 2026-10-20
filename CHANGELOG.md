@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Replay-checked synthetic travel, field-service, and telecommunications datasets,
+  with eight scenario families per domain, isolated train/validation/test splits,
+  and preserved synthetic provenance through Studio and the existing SFT trainer.
+
+### Fixed
+
+- Update the training/API dependency locks to patched aiohttp and certifi, the
+  optional MCP SDK floor to 1.30.0, and the daemon's rustls, quinn-proto, and
+  certificate-root locks to releases passing the current vulnerability audit.
+  Document the remaining Semgrep/MCP development-tool advisory without waiving it.
+- Preserve checkpoint syncing on Windows with writable staged-file handles;
+  retain read-only validation and both path/descriptor wheel mutation guards.
+- Preserve binary wheel bytes and normalize CRLF log tails without adding blank
+  lines. Exercise platform-specific shell and permission behavior in tests.
+- Remove a terminal-test assumption that random run IDs created in the same
+  second sort in creation order.
+- Finish every supported Python/Windows CI matrix entry after another entry
+  fails, retaining complete compatibility results instead of cancellations.
 - Make real tiny-model evaluation fixtures emit a deterministic completion,
   while separately verifying rejection of EOS, padding, and unknown-token-only
   output. Preserve pinned-base loading and exact checkpoint-weight checks.

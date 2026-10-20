@@ -396,8 +396,10 @@ def test_real_terminal_prepared_review_and_escape_do_not_launch(
         )
         captured.clear()
         wait_for(candidate.name[-8:])
-        # Refresh preserves the reference selection; the newer candidate is above it.
-        os.write(terminal, b"\x1bOA")
+        # History uses descending run IDs. Runs prepared in the same second
+        # have random suffixes, so creation order does not establish row order.
+        # Refresh preserves the pinned reference selection in either position.
+        os.write(terminal, b"\x1bOA" if candidate.name > run.name else b"\x1bOB")
         os.write(terminal, b"x")
         wait_for("COMPARISON / candidate minus reference")
         wait_for("Training snapshots do not establish quality")

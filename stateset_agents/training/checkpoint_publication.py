@@ -85,7 +85,10 @@ def _inventory(path: Path, *, sync: bool = False) -> dict[str, str]:
         if item == path / COMPLETION_FILE:
             continue
         digest = hashlib.sha256()
-        with item.open("rb") as stream:
+        # Windows FlushFileBuffers (used by os.fsync) requires write access.
+        # Validation remains read-only; only a freshly staged publication is
+        # opened for updating, without truncating or changing artifact bytes.
+        with item.open("r+b" if sync and os.name == "nt" else "rb") as stream:
             for chunk in iter(lambda: stream.read(1024 * 1024), b""):
                 digest.update(chunk)
             if sync:

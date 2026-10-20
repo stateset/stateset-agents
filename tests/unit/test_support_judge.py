@@ -549,7 +549,11 @@ def test_rubric_identity_ignores_crlf_checkouts(tmp_path, monkeypatch) -> None:
     lf_revision = support_judge.rubric_revision()
     lf_sections = support_judge._load_rubric()
     crlf = tmp_path / "support_rubric_v3.md"
-    crlf.write_bytes(support_judge.RUBRIC_PATH.read_bytes().replace(b"\n", b"\r\n"))
+    crlf.write_bytes(
+        support_judge.RUBRIC_PATH.read_text(encoding="utf-8")
+        .encode()
+        .replace(b"\n", b"\r\n")
+    )
     monkeypatch.setattr(support_judge, "RUBRIC_PATH", crlf)
 
     assert support_judge.rubric_revision() == lf_revision

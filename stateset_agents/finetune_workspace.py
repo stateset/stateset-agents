@@ -1306,7 +1306,9 @@ def read_log_snapshot(run: Path, *, source: str = "auto") -> LogSnapshot:
     text = raw.decode("utf-8", errors="replace")
     text = re.sub(r"\x1b\[[0-?]*[ -/]*[@-~]", "", text)
     text = "".join(char for char in text if char in "\n\r\t" or char.isprintable())
-    rows = tuple(text.replace("\r", "\n").expandtabs(4).splitlines())
+    rows = tuple(
+        text.replace("\r\n", "\n").replace("\r", "\n").expandtabs(4).splitlines()
+    )
     return LogSnapshot(selected, filename, rows, len(raw), start > 0, True)
 
 
