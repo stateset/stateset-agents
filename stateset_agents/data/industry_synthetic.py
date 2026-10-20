@@ -31,7 +31,14 @@ from stateset_agents.data.refund_demonstrations import reference_refund_demonstr
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.remote.river_rl import exclusive_run
 
-DOMAINS = {"ecommerce": "retail", "logistics": "logistics", "saas": "technology"}
+DOMAINS = {
+    "ecommerce": "retail",
+    "logistics": "logistics",
+    "saas": "technology",
+    "travel": "travel",
+    "services": "services",
+    "telecommunications": "telecommunications",
+}
 GENERATOR_VERSION = "industry-policy-simulations-v1"
 
 
@@ -158,7 +165,7 @@ async def _build_files(
         or len(set(domains)) != len(domains)
         or any(domain not in DOMAINS for domain in domains)
     ):
-        raise ValueError("Choose ecommerce, logistics, saas, or all")
+        raise ValueError(f"Choose {', '.join(DOMAINS)}, or all")
     if type(seed) is not int or seed < 0:
         raise ValueError("Seed must be a nonnegative integer")
     if set(counts) != {"train", "validation", "test"} or any(

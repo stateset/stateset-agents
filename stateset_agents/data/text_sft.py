@@ -134,7 +134,14 @@ def parse_text_sft_records(
                     or metadata["source"] != "industry-policy-simulations-v1"
                     or metadata["review_status"] != "not_independently_reviewed"
                     or metadata["industry_domain"]
-                    not in {"ecommerce", "logistics", "saas"}
+                    not in {
+                        "ecommerce",
+                        "logistics",
+                        "saas",
+                        "travel",
+                        "services",
+                        "telecommunications",
+                    }
                     or len(metadata["case_sha256"]) != 64
                     or any(
                         char not in "0123456789abcdef"

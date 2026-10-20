@@ -17,9 +17,9 @@ criteria. They are not pretrained industry agents or evidence of business outcom
 | `technology` | Product onboarding, technical support, account assistance |
 | `public-sector` | Service navigation, application assistance, case status |
 
-## Generate ecommerce, logistics, and SaaS datasets
+## Generate industry policy datasets
 
-Create all three corpora locally, with no model downloads or provider calls:
+Create all six corpora locally, with no model downloads or provider calls:
 
 ```bash
 stateset-agents industry generate all --output outputs/industry-datasets --seed 42
@@ -27,11 +27,19 @@ stateset-agents industry audit-datasets outputs/industry-datasets
 stateset-agents industry train outputs/industry-datasets/ecommerce --dry-run
 stateset-agents industry train outputs/industry-datasets/logistics --dry-run
 stateset-agents industry train outputs/industry-datasets/saas --dry-run
+stateset-agents industry train outputs/industry-datasets/travel --dry-run
+stateset-agents industry train outputs/industry-datasets/services --dry-run
+stateset-agents industry train outputs/industry-datasets/telecommunications --dry-run
 ```
 
 Each industry gets **512 training, 64 validation, and 128 reserved test
 conversations** by default, covering eight balanced scenario families per split.
-Use `generate ecommerce`, `generate logistics`, or `generate saas` to select one.
+Pass a domain name to select one, for example:
+
+```bash
+stateset-agents industry generate travel --output outputs/travel-dataset --seed 42
+```
+
 `--train-count`, `--validation-count`, and `--test-count` accept multiples of eight.
 `--model` chooses the existing local SFT preset; no training starts during generation.
 
@@ -40,14 +48,20 @@ Use `generate ecommerce`, `generate logistics`, or `generate saas` to select one
 | `ecommerce` | Full/partial refunds, duplicate refunds, delivery status, return-window boundaries, chargebacks, misleading notes | `retail` |
 | `logistics` | Verification, label/dispatch distinction, address changes, cancellation before/after dispatch, late/lost shipments, delivered parcels | `logistics` |
 | `saas` | Tenant verification, viewer/admin permissions, incidents, outages, inclusive quota limits, billing routing, troubleshooting | `technology` |
+| `travel` | Booking verification, disruption escalation, cancellation terms, consent, availability, confirmed prices, booking status | `travel` |
+| `services` | Field-service verification, hazard escalation, quote and consent checks, slot availability, booking, rescheduling, request status | `services` |
+| `telecommunications` | Account verification, incidents and outages, owner authorization, cancellation consent, confirmed plan prices, usage boundaries, billing routing | `telecommunications` |
 
 These are **fictional policy simulations**, clearly marked `synthetic: true` and
 `not_independently_reviewed`. Messages teach a fact lookup, a policy-grounded JSON
-resolution, and explicit finish. Ecommerce reuses the refund sandbox; logistics
-and SaaS use `IndustrySupportEnvironment`. Unverified SaaS/logistics lookups reveal
+resolution, and explicit finish. Ecommerce reuses the refund sandbox; the other
+five domains use `IndustrySupportEnvironment`. Unverified support lookups reveal
 only the record ID and verification flag. Customer-note overrides do not change
 the policy, and invalid actions cannot be repaired into a successful episode.
 No real refunds, shipments, account settings or credentials are changed.
+Travel availability, fares, cancellation terms, field-service safety routing,
+and telecom prices are invented simulation rules, not live business policies.
+The field-service hazard cases teach escalation without repair instructions.
 
 Each directory contains `train.jsonl`, `validation.jsonl`, `test.jsonl`, the private
 synthetic cases in `cases/`, and a training-compatible `manifest.json`. The root

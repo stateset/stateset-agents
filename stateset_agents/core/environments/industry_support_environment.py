@@ -1,4 +1,4 @@
-"""Fictional logistics and SaaS support policies with isolated action replay."""
+"""Fictional industry support policies with isolated action replay."""
 
 from __future__ import annotations
 
@@ -37,6 +37,39 @@ POLICIES = {
         "Otherwise resolve troubleshoot. Never request a password, secret, or API key. "
         "Do not invent outage recovery times."
     ),
+    "travel": (
+        "Apply these fictional booking rules in order. If verified is false, resolve "
+        "request_verification. If disruption is true, resolve escalate_disruption. "
+        "If cancel_requested, first require consent (request_consent); then resolve "
+        "cancel_booking if refundable, otherwise explain_nonrefundable. If "
+        "change_requested, first require consent (request_consent), then availability "
+        "(offer_alternatives if unavailable), then a confirmed price (request_quote "
+        "if price_confirmed is false); otherwise resolve change_booking. With no "
+        "requested change resolve report_booking. Never invent availability, a fare, "
+        "a refund, or a completed booking. All prices and dates are fictional."
+    ),
+    "services": (
+        "Apply these fictional field-service rules in order. If verified is false, "
+        "resolve request_verification. If safety_hazard is true, resolve "
+        "escalate_safety and never provide repair instructions. If booking_requested "
+        "or reschedule_requested, first require quote_confirmed (request_quote), "
+        "then consent (request_consent), then slot_available (offer_alternatives). "
+        "After those checks, resolve reschedule_service for reschedule_requested, "
+        "otherwise book_service. With no requested booking resolve report_request. "
+        "Do not invent a quote, an appointment, or completed field work."
+    ),
+    "telecommunications": (
+        "Apply these fictional telecom rules in order. If verified is false, "
+        "resolve request_verification. If security_alert is true, resolve "
+        "escalate_security. If service_outage is true, resolve report_outage. If "
+        "cancel_requested or plan_change_requested, first require actor_role owner "
+        "(request_authorization otherwise), then consent (request_consent). Resolve "
+        "cancel_service for cancel_requested; a plan change requires price_confirmed "
+        "(request_quote otherwise), then resolves change_plan. Otherwise, if "
+        "usage_units >= allowance_units resolve explain_usage; if balance_due_cents "
+        "> 0 resolve route_billing; otherwise troubleshoot_connection. Never request "
+        "passwords or invent outage recovery times, charges, or restored service."
+    ),
 }
 FAMILIES = {
     "logistics": (
@@ -59,7 +92,211 @@ FAMILIES = {
         "security_incident",
         "technical_issue",
     ),
+    "travel": (
+        "missing_verification",
+        "disruption",
+        "no_consent",
+        "no_availability",
+        "unconfirmed_price",
+        "authorized_change",
+        "cancellation",
+        "booking_status",
+    ),
+    "services": (
+        "missing_verification",
+        "safety_hazard",
+        "quote_pending",
+        "no_consent",
+        "no_slot",
+        "confirmed_booking",
+        "reschedule",
+        "request_status",
+    ),
+    "telecommunications": (
+        "missing_verification",
+        "security_incident",
+        "outage",
+        "cancellation",
+        "plan_change",
+        "usage",
+        "billing",
+        "technical_issue",
+    ),
 }
+
+# These allowlists are shared by validation and observation filtering. Private
+# teacher labels and family annotations never become tool results.
+_EXTRA_FIELDS = {
+    "travel": (
+        (
+            "disruption",
+            "cancel_requested",
+            "change_requested",
+            "consent",
+            "refundable",
+            "available",
+            "price_confirmed",
+        ),
+        ("departure_day", "quoted_price_cents"),
+    ),
+    "services": (
+        (
+            "safety_hazard",
+            "booking_requested",
+            "reschedule_requested",
+            "quote_confirmed",
+            "consent",
+            "slot_available",
+        ),
+        ("service_day", "quoted_price_cents"),
+    ),
+    "telecommunications": (
+        (
+            "security_alert",
+            "service_outage",
+            "cancel_requested",
+            "plan_change_requested",
+            "consent",
+            "price_confirmed",
+        ),
+        ("usage_units", "allowance_units", "balance_due_cents", "cycle_day"),
+    ),
+}
+
+
+def _additional_resolution(domain: str, row: dict[str, Any]) -> str:
+    if domain == "travel":
+        if row["disruption"]:
+            return "escalate_disruption"
+        if row["cancel_requested"]:
+            if not row["consent"]:
+                return "request_consent"
+            return "cancel_booking" if row["refundable"] else "explain_nonrefundable"
+        if row["change_requested"]:
+            if not row["consent"]:
+                return "request_consent"
+            if not row["available"]:
+                return "offer_alternatives"
+            return "change_booking" if row["price_confirmed"] else "request_quote"
+        return "report_booking"
+    if domain == "services":
+        if row["safety_hazard"]:
+            return "escalate_safety"
+        if row["booking_requested"] or row["reschedule_requested"]:
+            if not row["quote_confirmed"]:
+                return "request_quote"
+            if not row["consent"]:
+                return "request_consent"
+            if not row["slot_available"]:
+                return "offer_alternatives"
+            return (
+                "reschedule_service" if row["reschedule_requested"] else "book_service"
+            )
+        return "report_request"
+    if row["security_alert"]:
+        return "escalate_security"
+    if row["service_outage"]:
+        return "report_outage"
+    if row["cancel_requested"] or row["plan_change_requested"]:
+        if row["actor_role"] != "owner":
+            return "request_authorization"
+        if not row["consent"]:
+            return "request_consent"
+        if row["cancel_requested"]:
+            return "cancel_service"
+        return "change_plan" if row["price_confirmed"] else "request_quote"
+    if row["usage_units"] >= row["allowance_units"]:
+        return "explain_usage"
+    return (
+        "route_billing" if row["balance_due_cents"] > 0 else "troubleshoot_connection"
+    )
+
+
+def _additional_case(
+    domain: str, family: str, variant: int, rng: random.Random
+) -> dict[str, Any]:
+    if domain == "travel":
+        row: dict[str, Any] = {
+            "disruption": False,
+            "cancel_requested": False,
+            "change_requested": family != "booking_status",
+            "consent": True,
+            "refundable": variant % 2 == 0,
+            "available": True,
+            "price_confirmed": True,
+            "departure_day": rng.randint(1, 100000),
+            "quoted_price_cents": rng.randint(1000, 500000),
+        }
+        if family == "missing_verification":
+            row.update(verified=False, disruption=True)
+        elif family == "disruption":
+            row.update(disruption=True, cancel_requested=True)
+        elif family == "no_consent":
+            row.update(consent=False, cancel_requested=variant % 2 == 0)
+        elif family == "no_availability":
+            row.update(available=False, price_confirmed=False)
+        elif family == "unconfirmed_price":
+            row["price_confirmed"] = False
+        elif family == "cancellation":
+            row["cancel_requested"] = True
+        return row
+    if domain == "services":
+        row = {
+            "safety_hazard": False,
+            "booking_requested": family != "request_status",
+            "reschedule_requested": False,
+            "quote_confirmed": True,
+            "consent": True,
+            "slot_available": True,
+            "service_day": rng.randint(1, 100000),
+            "quoted_price_cents": rng.randint(1000, 500000),
+        }
+        if family == "missing_verification":
+            row.update(verified=False, safety_hazard=True)
+        elif family == "safety_hazard":
+            row["safety_hazard"] = True
+        elif family == "quote_pending":
+            row.update(quote_confirmed=False, consent=False, slot_available=False)
+        elif family == "no_consent":
+            row.update(consent=False, slot_available=False)
+        elif family == "no_slot":
+            row["slot_available"] = False
+        elif family == "reschedule":
+            row.update(booking_requested=False, reschedule_requested=True)
+        return row
+    limit = rng.randint(100, 100000)
+    row = {
+        "actor_role": "owner",
+        "security_alert": False,
+        "service_outage": False,
+        "cancel_requested": False,
+        "plan_change_requested": False,
+        "consent": True,
+        "price_confirmed": True,
+        "usage_units": rng.randint(0, limit - 1),
+        "allowance_units": limit,
+        "balance_due_cents": 0,
+        "cycle_day": rng.randint(1, 100000),
+    }
+    if family == "missing_verification":
+        row.update(verified=False, security_alert=True)
+    elif family == "security_incident":
+        row.update(security_alert=True, service_outage=True, cancel_requested=True)
+    elif family == "outage":
+        row.update(service_outage=True, plan_change_requested=True)
+    elif family in {"cancellation", "plan_change"}:
+        row.update(
+            cancel_requested=family == "cancellation",
+            plan_change_requested=family == "plan_change",
+            actor_role="member" if variant % 4 == 0 else "owner",
+            consent=variant % 4 != 1,
+            price_confirmed=variant % 4 != 2,
+        )
+    elif family == "usage":
+        row.update(usage_units=limit + rng.randint(0, 20), balance_due_cents=100)
+    elif family == "billing":
+        row["balance_due_cents"] = rng.randint(1, 50000)
+    return row
 
 
 def support_resolution(domain: str, row: dict[str, Any]) -> str:
@@ -68,6 +305,8 @@ def support_resolution(domain: str, row: dict[str, Any]) -> str:
         raise ValueError("Unknown support domain")
     if not row["verified"]:
         return "request_verification"
+    if domain in _EXTRA_FIELDS:
+        return _additional_resolution(domain, row)
     if domain == "logistics":
         status = row["status"]
         if status == "lost":
@@ -129,7 +368,9 @@ def support_cases(
             "verified": True,
             "customer_note": "Please resolve this support request using the recorded facts.",
         }
-        if domain == "logistics":
+        if domain in _EXTRA_FIELDS:
+            row.update(_additional_case(domain, family, index // 8, rng))
+        elif domain == "logistics":
             promised = rng.randint(100, 100000)
             row.update(
                 status="processing",
@@ -223,8 +464,20 @@ class IndustrySupportEnvironment(Environment):
             row.get("customer_note"), str
         ):
             raise ValueError("Verification must be boolean and customer_note text")
-        if self.domain == "logistics":
-            booleans: tuple[str, ...] = ("cancel_requested", "address_change_requested")
+        booleans: tuple[str, ...]
+        integers: tuple[str, ...]
+        if self.domain in _EXTRA_FIELDS:
+            booleans, integers = _EXTRA_FIELDS[self.domain]
+            if self.domain == "telecommunications":
+                if row.get("actor_role") not in {"owner", "member"}:
+                    raise ValueError("Unknown telecom actor role")
+                if (
+                    type(row.get("allowance_units")) is not int
+                    or row["allowance_units"] < 1
+                ):
+                    raise ValueError("allowance_units must be positive")
+        elif self.domain == "logistics":
+            booleans = ("cancel_requested", "address_change_requested")
             integers = ("current_day", "promised_day")
             if row.get("status") not in {
                 "processing",
@@ -294,7 +547,7 @@ class IndustrySupportEnvironment(Environment):
             tool, args = parse_json_action(action)
             if tool == "lookup_record" and args == {"record_id": row["record_id"]}:
                 ctx["looked_up"] = True
-                fields = (
+                fields: tuple[str, ...] = (
                     ("record_id", "verified")
                     if not row["verified"]
                     else (
@@ -323,6 +576,17 @@ class IndustrySupportEnvironment(Environment):
                         )
                     )
                 )
+                if row["verified"] and self.domain in _EXTRA_FIELDS:
+                    flags, counters = _EXTRA_FIELDS[self.domain]
+                    fields = (
+                        "record_id",
+                        "verified",
+                        "customer_note",
+                        *flags,
+                        *counters,
+                    )
+                    if self.domain == "telecommunications":
+                        fields += ("actor_role",)
                 observation: dict[str, Any] = {key: row[key] for key in fields}
             elif tool == "resolve" and ctx["looked_up"] and not ctx["resolved"]:
                 expected = {

@@ -5,14 +5,14 @@ import json
 import pytest
 
 from stateset_agents import tui
-from stateset_agents.data.industry_synthetic import generate_industry_datasets
+from stateset_agents.data.industry_synthetic import DOMAINS, generate_industry_datasets
 from stateset_agents.data.text_sft import DatasetFormatError, load_text_sft_snapshot
 from stateset_agents.finetune_inspection import inspect_training_data
 from stateset_agents.finetune_workspace import FinetuneConfig, plan_run
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("domain", ["ecommerce", "logistics", "saas"])
+@pytest.mark.parametrize("domain", DOMAINS)
 async def test_source_provenance_survives_inspection_plan_and_training_snapshot(
     tmp_path, domain
 ):
@@ -45,13 +45,16 @@ async def test_source_provenance_survives_inspection_plan_and_training_snapshot(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("split", ["validation", "test"])
-async def test_renamed_held_out_file_cannot_reach_studio_training(tmp_path, split):
+@pytest.mark.parametrize("domain", DOMAINS)
+async def test_renamed_held_out_file_cannot_reach_studio_training(
+    tmp_path, split, domain
+):
     root = tmp_path / "data"
     await generate_industry_datasets(
-        root, domains=("saas",), train_count=8, validation_count=8, test_count=8
+        root, domains=(domain,), train_count=8, validation_count=8, test_count=8
     )
     path = tmp_path / "renamed-train.jsonl"
-    path.write_bytes((root / "saas" / f"{split}.jsonl").read_bytes())
+    path.write_bytes((root / domain / f"{split}.jsonl").read_bytes())
     for operation in (
         lambda: load_text_sft_snapshot(str(path)),
         lambda: inspect_training_data(path),
