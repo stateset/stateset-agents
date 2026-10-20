@@ -173,8 +173,8 @@ def test_nonlinux_direct_owner_probe_preserves_existing_platform_semantics(
     monkeypatch.setattr(workspace, "sys", SimpleNamespace(platform="win32"))
     calls = []
 
-    def probe(pid, signal):
-        calls.append((pid, signal))
+    def probe(pid):
+        calls.append(pid)
         if outcome == "permission":
             raise PermissionError()
         if outcome == "missing":
@@ -182,12 +182,12 @@ def test_nonlinux_direct_owner_probe_preserves_existing_platform_semantics(
         if outcome == "overflow":
             raise OverflowError()
 
-    monkeypatch.setattr(workspace.os, "kill", probe)
+    monkeypatch.setattr(workspace, "probe_process", probe)
     status = workspace.run_status(run)
     assert status["status"] == (
         "running" if outcome in {"alive", "permission"} else "interrupted"
     )
-    assert calls == [(200001, 0)]
+    assert calls == [200001]
 
 
 def test_prepared_run_without_owners_remains_available(make_run, monkeypatch):

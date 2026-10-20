@@ -34,6 +34,7 @@ from stateset_agents.finetune_workspace import (
     read_run_plan,
     write_json,
 )
+from stateset_agents.utils.process_probe import probe_process
 
 RECORD_ID = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}"
 MAX_COMPARISON_RECORDS = 100
@@ -708,7 +709,7 @@ def comparison_status(path: Path) -> dict[str, Any]:
                 status = "interrupted"
             elif token is None:
                 try:
-                    os.kill(pid, 0)
+                    probe_process(pid)
                 except ProcessLookupError:
                     status = "interrupted"
                 except PermissionError:

@@ -34,6 +34,7 @@ from stateset_agents.finetune_workspace import (
     verified_run_settings,
     write_json,
 )
+from stateset_agents.utils.process_probe import probe_process
 
 MAX_CHECKPOINT_FILES = 4096
 MAX_CHECKPOINT_BYTES = 1024**4
@@ -268,7 +269,7 @@ def _parent(
             current = process_token(pid)
             if current is None:
                 try:
-                    os.kill(pid, 0)
+                    probe_process(pid)
                 except ProcessLookupError:
                     continue
                 except PermissionError:

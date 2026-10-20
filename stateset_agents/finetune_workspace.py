@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_remote_code import RemoteCodeSelection
+from stateset_agents.utils.process_probe import probe_process
 
 MAX_DATA_BYTES = 64 * 1024 * 1024
 MAX_STUDIO_CHECKPOINTS = 100
@@ -1161,7 +1162,7 @@ def _owner_confirmed(path: Path) -> bool:
             return token is not None and token == owner.get("process_token")
         else:
             try:
-                os.kill(pid, 0)
+                probe_process(pid)
                 return True
             except PermissionError:
                 return True

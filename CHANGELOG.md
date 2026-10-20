@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replay recorded industry policy traces offline, checking every transition,
+  terminal outcome, and external-stop failure reward against a fresh sandbox.
+  Exercise all five support domains through the real River SDK's rollout and
+  batch builders with scripted sampling, exact token spans, and signed advantages.
 - Expose and record industry SFT training seeds independently of dataset split
   seeds, passing the chosen seed to both initialization and trainer/data-order RNGs.
 - Replay-checked synthetic travel, field-service, and telecommunications datasets,
@@ -17,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Probe Windows worker and evaluation-process presence through read-only process
+  handles instead of signal zero, which can interrupt the Windows console.
 - Keep Windows advisory lock metadata outside checkpoint payload inventories,
   retaining symlink rejection and weight-integrity checks on nested reads.
 - Preserve all 46 distributed continual-learning scenarios across bounded

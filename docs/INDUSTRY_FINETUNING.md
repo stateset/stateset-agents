@@ -97,6 +97,33 @@ These templates bootstrap workflow
 training; they do not replace reviewed customer conversations or establish
 production quality. Dataset generation alone does not fine-tune a model.
 
+### Replay recorded policy actions
+
+Recorded River rollout traces can be checked offline against a fresh sandbox:
+
+```python
+from stateset_agents.evaluation.environment_trace import replay_industry_trace
+
+# case is the original scenario; trace is its recorded environment_trace.
+result = await replay_industry_trace("travel", case, trace)
+assert result["success"]
+```
+
+The helper supports logistics, SaaS, travel, services, and telecommunications.
+For ecommerce, use `replay_refund_trace` from
+`stateset_agents.evaluation.refund_trace`. Replay verifies case identity, initial
+messages, every action and observation, rewards, metrics, and the terminal
+outcome. An external stop replaces any partial reward with the configured
+failure reward (default `-1`); replay verifies the declared outcome but cannot
+establish what triggered that stop. `tool_calls` counts attempted action turns,
+including rejected actions, rather than successful business changes.
+
+The native River SDK integration checks cover all five support domains and
+eight scenario families, including mixed successful/failed groups and truncated
+rollouts. They verify generated token spans and signed advantages using scripted
+sampling with the real SDK trajectory and batch builders. These checks make no
+provider calls or optimizer updates and do not demonstrate learned improvement.
+
 ## Prepare and preview without a GPU
 
 ```bash

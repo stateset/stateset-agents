@@ -624,6 +624,7 @@ class IndustrySupportEnvironment(Environment):
                 "metrics": {
                     "task_success": float(success),
                     "policy_violations": ctx["violations"],
+                    "tool_calls": state.turn_count,
                 },
             },
         )
