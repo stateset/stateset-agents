@@ -413,12 +413,9 @@ def test_selected_checkpoint_loads_real_cpu_safetensors_instead_of_final_weights
 ):
     import torch
     from peft import LoraConfig, get_peft_model
-    from tokenizers import Tokenizer
-    from tokenizers.models import WordLevel
-    from tokenizers.pre_tokenizers import Whitespace
-    from transformers import GPT2Config, GPT2LMHeadModel, PreTrainedTokenizerFast
 
     from stateset_agents.finetune_evaluation_worker import LocalGenerator
+    from tests.sft_fixtures import write_tiny_text_policy
 
     run, config, settings = published(tmp_path)
     cache = tmp_path / "cache"
@@ -430,34 +427,7 @@ def test_selected_checkpoint_loads_real_cpu_safetensors_instead_of_final_weights
     )
     snapshot.mkdir(parents=True)
     monkeypatch.setenv("HF_HUB_CACHE", str(cache))
-    tokenizer = Tokenizer(
-        WordLevel(
-            {"<unk>": 0, "<eos>": 1, "<pad>": 2, "user": 3, "assistant": 4, "reply": 5},
-            unk_token="<unk>",
-        )
-    )
-    tokenizer.pre_tokenizer = Whitespace()
-    fast = PreTrainedTokenizerFast(
-        tokenizer_object=tokenizer,
-        unk_token="<unk>",
-        eos_token="<eos>",
-        pad_token="<pad>",
-    )
-    fast.chat_template = "{% for message in messages %}{{ message['role'] + ' ' + message['content'] + ' ' }}{% endfor %}assistant "
-    fast.save_pretrained(snapshot)
-    torch.manual_seed(7)
-    base = GPT2LMHeadModel(
-        GPT2Config(
-            n_layer=1,
-            n_head=1,
-            n_embd=16,
-            n_positions=128,
-            vocab_size=6,
-            eos_token_id=1,
-            pad_token_id=2,
-        )
-    )
-    base.save_pretrained(snapshot)
+    base = write_tiny_text_policy(snapshot)
     model = get_peft_model(
         base,
         LoraConfig(r=2, lora_alpha=4, target_modules=["c_attn"], task_type="CAUSAL_LM"),

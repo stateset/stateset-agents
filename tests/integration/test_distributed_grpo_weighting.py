@@ -18,9 +18,30 @@ from types import SimpleNamespace
 import pytest
 
 pytestmark = pytest.mark.integration
+SHARDS = 4
 
 
-def _worker(rank, directory):
+def _matrix_cases():
+    cases = [
+        (*case, 0.0)
+        for case in itertools.product(
+            ["grpo", "dr_grpo", "dapo", "cispo", "rloo", "gspo"],
+            [0.0, 0.07],
+            [1, 2, 4],
+            [1, 16],
+            [1, 2],
+            [False, True],
+        )
+    ]
+    cases.extend(
+        (name, 0.07, steps, chunk, 1, unsynced, 0.2)
+        for name in ["grpo", "dr_grpo", "dapo"]
+        for steps, chunk, unsynced in [(2, 1, False), (4, 16, True)]
+    )
+    return cases
+
+
+def _worker(rank, directory, shard):
     import torch
     import torch.distributed as dist
 
@@ -69,23 +90,10 @@ def _worker(rank, directory):
             return SimpleNamespace(logits=output.logits * self.scale)
 
     try:
-        cases = [
-            (*case, 0.0)
-            for case in itertools.product(
-                ["grpo", "dr_grpo", "dapo", "cispo", "rloo", "gspo"],
-                [0.0, 0.07],
-                [1, 2, 4],
-                [1, 16],
-                [1, 2],
-                [False, True],
-            )
-        ]
-        cases.extend(
-            (name, 0.07, steps, chunk, 1, unsynced, 0.2)
-            for name in ["grpo", "dr_grpo", "dapo"]
-            for steps, chunk, unsynced in [(2, 1, False), (4, 16, True)]
-        )
-        for objective, entropy, steps, chunk_size, inner, no_sync, beta in cases:
+        for index, case in enumerate(_matrix_cases()):
+            if index % SHARDS != shard:
+                continue
+            objective, entropy, steps, chunk_size, inner, no_sync, beta = case
             config = TrainingConfig(
                 objective=objective,
                 entropy_coef=entropy,
@@ -221,6 +229,7 @@ def _worker(rank, directory):
             error = (actual - wanted).abs().max().item()
             results.append(
                 {
+                    "matrix_index": index,
                     "objective": objective,
                     "entropy": entropy,
                     "steps": steps,
@@ -241,6 +250,8 @@ def _worker(rank, directory):
             assert trainer.global_step == inner
             assert trainer.agent.model.module.scale.item() == 1.0
             assert trainer.agent.model.broadcast_buffers is True
+        if shard != 0:
+            return
         metric_guards = []
         baseline = metric_rows()[rank]
         huge_step = 2**60 + 1
@@ -462,19 +473,21 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
-def test_two_rank_uneven_updates_match_combined_reference(tmp_path):
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("shard", range(SHARDS), ids=lambda value: f"shard-{value}")
+def test_two_rank_uneven_updates_match_combined_reference(tmp_path, shard):
     torch = pytest.importorskip("torch")
     dist = pytest.importorskip("torch.distributed")
     if not dist.is_available() or not dist.is_gloo_available():
         pytest.skip("requires the CPU Gloo backend")
     context = torch.multiprocessing.spawn(
-        _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
+        _worker, args=(str(tmp_path.resolve()), shard), nprocs=2, join=False
     )
     try:
         deadline = time.monotonic() + 90
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("two-rank RL weighting exceeded 90 seconds")
+                pytest.fail(f"two-rank RL weighting shard {shard} exceeded 90 seconds")
     finally:
         for process in context.processes:
             if process.is_alive():
@@ -482,13 +495,22 @@ def test_two_rank_uneven_updates_match_combined_reference(tmp_path):
                 process.join(timeout=5)
         destination = os.environ.get("STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR")
         if destination:
-            output = Path(destination)
+            output = Path(destination) / "weighting" / f"shard-{shard}"
             output.mkdir(parents=True, exist_ok=True)
             for path in tmp_path.glob("*.json"):
                 (output / path.name).write_bytes(path.read_bytes())
     first = json.loads((tmp_path / "rank-0.json").read_text())
     second = json.loads((tmp_path / "rank-1.json").read_text())
-    assert len(first) == len(second) == 294
+    assert len(_matrix_cases()) == 294
+    expected_indices = list(range(shard, 294, SHARDS))
+    assert [row["matrix_index"] for row in first] == expected_indices
+    assert [row["matrix_index"] for row in second] == expected_indices
+    for left, right in zip(first, second, strict=True):
+        assert left["max_parameter_error"] == pytest.approx(
+            right["max_parameter_error"], abs=1e-7
+        )
+    if shard != 0:
+        return
     metric_guards = json.loads((tmp_path / "metric-guards-0.json").read_text())
     assert metric_guards == json.loads((tmp_path / "metric-guards-1.json").read_text())
     assert sum(row["rejected"] for row in metric_guards) == 9
@@ -502,7 +524,3 @@ def test_two_rank_uneven_updates_match_combined_reference(tmp_path):
     assert json.loads((tmp_path / "buffer-sync-0.json").read_text()) == json.loads(
         (tmp_path / "buffer-sync-1.json").read_text()
     )
-    for left, right in zip(first, second, strict=True):
-        assert left["max_parameter_error"] == pytest.approx(
-            right["max_parameter_error"], abs=1e-7
-        )

@@ -16,6 +16,28 @@ from pathlib import Path
 import pytest
 
 pytestmark = pytest.mark.integration
+SHARDS = 4
+
+
+def _matrix_cases():
+    return list(
+        itertools.product(
+            [
+                "grpo",
+                "dr_grpo",
+                "dapo",
+                "cispo",
+                "rloo",
+                "gspo",
+                "reinforce_pp_baseline",
+                None,
+            ],
+            [0.0, 0.07],
+            [1, 2],
+            ["fixed", "alternating"],
+            ["sgd", "adamw"],
+        )
+    )
 
 
 def _make(
@@ -57,7 +79,7 @@ def _make(
     return trainer
 
 
-def _worker(rank, directory):
+def _worker(rank, directory, shard):
     import torch
     import torch.distributed as dist
 
@@ -79,23 +101,10 @@ def _worker(rank, directory):
     results = []
     try:
         for index, (objective, entropy, inner, pattern, optimizer) in enumerate(
-            itertools.product(
-                [
-                    "grpo",
-                    "dr_grpo",
-                    "dapo",
-                    "cispo",
-                    "rloo",
-                    "gspo",
-                    "reinforce_pp_baseline",
-                    None,
-                ],
-                [0.0, 0.07],
-                [1, 2],
-                ["fixed", "alternating"],
-                ["sgd", "adamw"],
-            )
+            _matrix_cases()
         ):
+            if index % SHARDS != shard:
+                continue
             folder = root / str(index)
             trainer = _make(
                 folder,
@@ -171,6 +180,7 @@ def _worker(rank, directory):
             assert trainer.agent.model.module.unused.item() == torch.tensor(0.2).item()
             results.append(
                 {
+                    "matrix_index": index,
                     "objective": objective,
                     "entropy": entropy,
                     "inner": inner,
@@ -183,6 +193,9 @@ def _worker(rank, directory):
                     "unused_parameter_unchanged": True,
                 }
             )
+
+        if shard != 0:
+            return
 
         # A resumed zero-gradient worker may flush before its next backward.
         trainer = _make(root / "scaler", rank, scaler=True)
@@ -243,7 +256,8 @@ def _worker(rank, directory):
 
 
 @pytest.mark.timeout(120)
-def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path):
+@pytest.mark.parametrize("shard", range(SHARDS), ids=lambda value: f"shard-{value}")
+def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path, shard):
     torch = pytest.importorskip("torch")
     if (
         not torch.distributed.is_available()
@@ -251,13 +265,13 @@ def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path):
     ):
         pytest.skip("Gloo required")
     context = torch.multiprocessing.spawn(
-        _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
+        _worker, args=(str(tmp_path.resolve()), shard), nprocs=2, join=False
     )
     try:
         deadline = time.monotonic() + 90
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("empty population contract exceeded 90 seconds")
+                pytest.fail(f"empty population shard {shard} exceeded 90 seconds")
     finally:
         for process in context.processes:
             if process.is_alive():
@@ -265,11 +279,15 @@ def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path):
             process.join(timeout=5)
         report = os.environ.get("STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR")
         if report:
-            Path(report).mkdir(parents=True, exist_ok=True)
+            destination = Path(report) / "empty-population" / f"shard-{shard}"
+            destination.mkdir(parents=True, exist_ok=True)
             for p in tmp_path.glob("empty-population-*.json"):
-                shutil.copy2(p, Path(report) / p.name)
+                shutil.copy2(p, destination / p.name)
+    assert len(_matrix_cases()) == 128
+    expected_indices = list(range(shard, 128, SHARDS))
     for rank in [0, 1]:
-        assert (
-            len(json.loads((tmp_path / f"empty-population-{rank}.json").read_text()))
-            == 131
-        )
+        rows = json.loads((tmp_path / f"empty-population-{rank}.json").read_text())
+        assert len(rows) == len(expected_indices) + (3 if shard == 0 else 0)
+        assert [
+            row["matrix_index"] for row in rows if "matrix_index" in row
+        ] == expected_indices

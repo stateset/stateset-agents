@@ -582,16 +582,9 @@ def test_real_tiny_cpu_policy_generation_uses_pinned_base_and_safe_adapter(
 ):
     import torch
     from peft import LoraConfig, get_peft_model
-    from tokenizers import Tokenizer
-    from tokenizers.models import WordLevel
-    from tokenizers.pre_tokenizers import Whitespace
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        GPT2Config,
-        GPT2LMHeadModel,
-        PreTrainedTokenizerFast,
-    )
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+
+    from tests.sft_fixtures import write_tiny_text_policy
 
     cache = tmp_path / "cache"
     base = cache / "models--fixture--base" / "snapshots" / ("a" * 40)
@@ -601,34 +594,7 @@ def test_real_tiny_cpu_policy_generation_uses_pinned_base_and_safe_adapter(
     collision = tmp_path / "fixture/base"
     collision.mkdir(parents=True)
     (collision / "config.json").write_text("relative directory must never load")
-    tokenizer = Tokenizer(
-        WordLevel(
-            {"<unk>": 0, "<eos>": 1, "<pad>": 2, "user": 3, "assistant": 4, "reply": 5},
-            unk_token="<unk>",
-        )
-    )
-    tokenizer.pre_tokenizer = Whitespace()
-    fast = PreTrainedTokenizerFast(
-        tokenizer_object=tokenizer,
-        unk_token="<unk>",
-        eos_token="<eos>",
-        pad_token="<pad>",
-    )
-    fast.chat_template = "{% for message in messages %}{{ message['role'] + ' ' + message['content'] + ' ' }}{% endfor %}assistant "
-    fast.save_pretrained(base)
-    torch.manual_seed(7)
-    model = GPT2LMHeadModel(
-        GPT2Config(
-            n_layer=1,
-            n_head=1,
-            n_embd=16,
-            n_positions=128,
-            vocab_size=6,
-            eos_token_id=1,
-            pad_token_id=2,
-        )
-    )
-    model.save_pretrained(base)
+    model = write_tiny_text_policy(base)
     adapter = tmp_path / "adapter"
     get_peft_model(
         model,
@@ -658,12 +624,30 @@ def test_real_tiny_cpu_policy_generation_uses_pinned_base_and_safe_adapter(
     first = worker.LocalGenerator("fixture/base", "a" * 40)
     second = worker.LocalGenerator("fixture/base", "a" * 40, adapter=adapter)
     messages = [{"role": "user", "content": "reply"}]
-    assert first.generate(messages, tokens=4, context=64) == second.generate(
-        messages, tokens=4, context=64
-    )
+    output = first.generate(messages, tokens=4, context=64)
+    assert output[0].split() == ["reply"] * 4 and output[1:] == (4, True)
+    assert output == second.generate(messages, tokens=4, context=64)
     assert all(call["revision"] == "a" * 40 for call in calls)
     with pytest.raises(ValueError, match="context"):
         first.generate(messages, tokens=128, context=128)
+
+
+@pytest.mark.parametrize("reply_token_id", [0, 1, 2], ids=["unknown", "eos", "padding"])
+def test_real_tiny_generation_rejects_special_only_completions(
+    tmp_path, monkeypatch, reply_token_id
+):
+    import torch
+
+    from tests.sft_fixtures import write_tiny_text_policy
+
+    cache = tmp_path / "cache"
+    base = cache / "models--fixture--base" / "snapshots" / ("a" * 40)
+    monkeypatch.setenv("HF_HUB_CACHE", str(cache))
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    write_tiny_text_policy(base, reply_token_id=reply_token_id)
+    generator = worker.LocalGenerator("fixture/base", "a" * 40)
+    with pytest.raises(ValueError, match="empty completion"):
+        generator.generate([{"role": "user", "content": "reply"}], tokens=4, context=64)
 
 
 @pytest.mark.parametrize("name", ["../..", "fixture/..", "fixture/a--b", "fixture/a."])

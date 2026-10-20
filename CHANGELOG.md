@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Make real tiny-model evaluation fixtures emit a deterministic completion,
+  while separately verifying rejection of EOS, padding, and unknown-token-only
+  output. Preserve pinned-base loading and exact checkpoint-weight checks.
+- Split native distributed numerical contracts into bounded shards, preserving
+  all 294 weighting cases and 131 population/recovery cases per rank, with
+  isolated retained reports and the existing 90-second worker deadlines.
+
 ## [0.67.0] - 2026-10-20 — Fine-tuning studio and audited River RL
 
 - Add native River refund-recovery CISPO training and retained six-seed
