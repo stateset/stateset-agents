@@ -14,7 +14,7 @@ aiohappyeyeballs==2.7.1
     # via
     #   -c requirements-dev-lock.txt
     #   aiohttp
-aiohttp==3.14.3
+aiohttp==3.14.5
     # via
     #   -c requirements-dev-lock.txt
     #   fsspec
@@ -45,13 +45,14 @@ cachetools==7.1.6
     # via
     #   -c requirements-dev-lock.txt
     #   stateset-agents (pyproject.toml)
-certifi==2026.7.22
+certifi==2026.10.19
     # via
     #   -c requirements-dev-lock.txt
     #   httpcore
     #   httpx
     #   requests
     #   sentry-sdk
+    #   stateset-agents (pyproject.toml)
 charset-normalizer==3.4.9
     # via
     #   -c requirements-dev-lock.txt
@@ -482,7 +483,7 @@ xxhash==3.8.1
     # via
     #   -c requirements-dev-lock.txt
     #   datasets
-yarl==1.24.5
+yarl==1.25.1
     # via
     #   -c requirements-dev-lock.txt
     #   aiohttp

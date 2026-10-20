@@ -92,6 +92,24 @@ Accelerate finding documented in [`docs/RELEASE_GUIDE.md`](docs/RELEASE_GUIDE.md
 Security fixes and disclosures are published as
 GitHub Security Advisories.
 
+### Current development-tool dependency blocker
+
+As of October 20, 2026, upstream Semgrep pins `mcp==1.29.0`, including
+the latest checked release, 1.181.0. That SDK version is affected by
+[CVE-2026-59951 / GHSA-84m7-p3x7-pcfv](https://github.com/modelcontextprotocol/python-sdk/security/advisories/GHSA-84m7-p3x7-pcfv):
+unbounded sessions in stateful Streamable HTTP servers. The patched 1.x
+version is 1.30.0. Our optional product MCP server uses stdio, and its
+`[mcp]` extra now requires the patched SDK. The SDK in the development lock
+is a transitive scanner dependency, not an active product HTTP server.
+
+The development dependency audit must still report this advisory and fail.
+Do not force an unsupported dependency override or add a security exception
+to turn the audit green. Install `[dev]` and `[mcp]` in separate environments
+until Semgrep's dependency pin permits the patched SDK. Training and API
+runtime locks do not include this scanner dependency. Recheck the official
+[Semgrep package metadata](https://pypi.org/pypi/semgrep/json) before updating
+the scanner and regenerating the development lock.
+
 The machine-readable response commitments live in
 [`contracts/security_response_v1.json`](contracts/security_response_v1.json).
 The repository currently has no retained independent third-party security
