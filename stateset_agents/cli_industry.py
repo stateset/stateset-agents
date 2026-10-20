@@ -176,6 +176,13 @@ def train_project(
     ),
     num_epochs: int = typer.Option(3, min=1),
     max_length: int = typer.Option(1024, min=2),
+    training_seed: int = typer.Option(
+        42,
+        "--seed",
+        min=0,
+        max=2**32 - 1,
+        help="Training RNG seed; the prepared dataset split stays fixed.",
+    ),
 ) -> None:
     """Verify prepared data and run BF16 LoRA SFT on CUDA."""
     from stateset_agents.training.industry import train_industry_project
@@ -187,6 +194,7 @@ def train_project(
                 dry_run=dry_run,
                 num_epochs=num_epochs,
                 max_length=max_length,
+                training_seed=training_seed,
             )
         )
     except (OSError, ValueError, RuntimeError, ImportError) as exc:

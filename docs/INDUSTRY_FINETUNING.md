@@ -158,8 +158,13 @@ stateset-agents industry train ./retail-run --num-epochs 3 --max-length 1024
 ```
 
 Execution uses the existing SFT trainer: BF16 LoRA, rank 16, alpha 32, learning
-rate `2e-5`, batch size 1, accumulation 8, and training seed 42. `--seed` on
-`prepare` controls the dataset split. This workflow requires CUDA for execution
+rate `2e-5`, batch size 1, accumulation 8, and training seed 42 by default.
+`industry train --seed 1729` changes initialization and trainer/data-order RNGs;
+the preview and `industry_run.json` record it as `training_seed`. `--seed` on
+`prepare` controls the dataset split, recorded separately as `split_seed` in a
+training plan. Changing a training seed never regenerates that prepared split.
+Each execution needs a fresh prepared project directory because existing adapter
+outputs are refused. This workflow requires CUDA for execution
 and returns an error when it is unavailable. CPU previews are explicitly marked
 `planned`; they never claim to have trained an adapter. Use the existing model
 starter commands for GSPO and QLoRA profiles.

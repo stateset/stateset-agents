@@ -209,8 +209,9 @@ def test_no_gpu_is_an_execution_error_not_a_successful_preview(prepared, monkeyp
 
 
 @pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("training_seed", [0, 1729])
 def test_training_only_receives_training_split_and_records_outcome(
-    prepared, monkeypatch, fail
+    prepared, monkeypatch, fail, training_seed
 ):
     from stateset_agents.training import sft
 
@@ -233,15 +234,43 @@ def test_training_only_receives_training_split_and_records_outcome(
     monkeypatch.setattr(sft, "run_sft", train)
     if fail:
         with pytest.raises(RuntimeError, match="trainer failed"):
-            train_industry_project(prepared, dry_run=False)
+            train_industry_project(prepared, dry_run=False, training_seed=training_seed)
     else:
-        assert train_industry_project(prepared, dry_run=False)["status"] == "trained"
+        assert (
+            train_industry_project(
+                prepared, dry_run=False, training_seed=training_seed
+            )["status"]
+            == "trained"
+        )
+    assert captured["seed"] == training_seed
     assert captured["rows"] == load_finetuning_data(prepared / "train.jsonl")
     check_finetuning_overlap(
         captured["rows"], load_finetuning_data(prepared / "validation.jsonl")
     )
     run = json.loads((prepared / "adapter/industry_run.json").read_text())
     assert run["status"] == ("failed" if fail else "trained")
+    assert run["training_seed"] == training_seed
+    assert (
+        run["split_seed"]
+        == json.loads((prepared / "manifest.json").read_text())["seed"]
+    )
+
+
+def test_training_seed_changes_do_not_resplit_or_mutate_prepared_data(prepared):
+    before = {path.name: path.read_bytes() for path in prepared.iterdir()}
+    default = train_industry_project(prepared)
+    assert default["training_seed"] == 42
+    for seed in (0, 1729, 2**32 - 1):
+        plan = train_industry_project(prepared, training_seed=seed)
+        assert plan == {**default, "training_seed": seed}
+    assert {path.name: path.read_bytes() for path in prepared.iterdir()} == before
+
+
+@pytest.mark.parametrize("seed", [-1, 2**32, True, 1.5, "42"])
+def test_invalid_training_seed_rejected_before_artifact_creation(prepared, seed):
+    with pytest.raises(ValueError, match="training_seed"):
+        train_industry_project(prepared, training_seed=seed)
+    assert not (prepared / "adapter").exists()
 
 
 def test_preview_and_catalog_do_not_import_ml_stack(prepared):
@@ -271,11 +300,13 @@ def test_cli_end_to_end(tmp_path):
             str(source / "examples.jsonl"),
             str(project),
         ],
-        ["industry", "train", str(project), "--dry-run"],
+        ["industry", "train", str(project), "--dry-run", "--seed", "1729"],
     ):
         result = runner.invoke(app, args)
         assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["status"] == "planned"
+    assert json.loads(result.stdout)["training_seed"] == 1729
+    assert json.loads(result.stdout)["split_seed"] == 42
     assert runner.invoke(app, ["industry", "show", "unknown"]).exit_code == 2
 
 

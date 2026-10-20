@@ -9,12 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Expose and record industry SFT training seeds independently of dataset split
+  seeds, passing the chosen seed to both initialization and trainer/data-order RNGs.
 - Replay-checked synthetic travel, field-service, and telecommunications datasets,
   with eight scenario families per domain, isolated train/validation/test splits,
   and preserved synthetic provenance through Studio and the existing SFT trainer.
 
 ### Fixed
 
+- Update the async-trait macro to remove generated-code Clippy failures while
+  retaining the strict Rust lint gate.
 - Update the training/API dependency locks to patched aiohttp and certifi, the
   optional MCP SDK floor to 1.30.0, and the daemon's rustls, quinn-proto, and
   certificate-root locks to releases passing the current vulnerability audit.

@@ -432,12 +432,15 @@ def train_industry_project(
     dry_run: bool = True,
     num_epochs: int = 3,
     max_length: int = 1024,
+    training_seed: int = 42,
 ) -> dict[str, Any]:
     """Verify prepared data and preview or execute BF16 LoRA SFT.
 
     A preview never imports the ML stack. Execution requires CUDA and never
     reports a successful training run when only a CPU preview took place.
     The validation split remains untouched for an independent evaluator.
+    ``training_seed`` controls initialization and trainer/data-order RNGs;
+    it does not regenerate the prepared dataset split.
     """
     if (
         isinstance(num_epochs, bool)
@@ -451,6 +454,8 @@ def train_industry_project(
         or max_length < 2
     ):
         raise ValueError("max_length must be an integer of at least 2")
+    if type(training_seed) is not int or not 0 <= training_seed < 2**32:
+        raise ValueError("training_seed must be an integer in [0, 2**32)")
     project = Path(project)
     manifest, train, validation = load_industry_project(project)
     output = project / "adapter"
@@ -468,7 +473,7 @@ def train_industry_project(
         "max_length": max_length,
         "method": "bf16_lora",
         "split_seed": manifest["seed"],
-        "training_seed": 42,
+        "training_seed": training_seed,
     }
     if dry_run:
         return plan
@@ -481,9 +486,6 @@ def train_industry_project(
         raise ValueError("Training rows changed after industry project validation")
     if not gpu_available():
         raise RuntimeError("CUDA is required for training; use --dry-run to preview")
-    from transformers import set_seed
-
-    set_seed(plan["training_seed"])
     output.mkdir(exist_ok=False)
     _write_json(
         output / "industry_run.json",
@@ -501,6 +503,7 @@ def train_industry_project(
             max_length=max_length,
             per_device_batch_size=1,
             gradient_accumulation_steps=8,
+            seed=training_seed,
             dataset_path=project / "train.jsonl",
             dataset_identity=dataset_identity,
             **(
