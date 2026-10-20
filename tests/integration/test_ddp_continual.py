@@ -17,6 +17,17 @@ from types import SimpleNamespace
 import pytest
 
 pytestmark = pytest.mark.integration
+SHARDS = 4
+
+
+def _matrix_cases():
+    return tuple(
+        itertools.product(
+            ["lwf", "ewc", "replay_lwf_ewc"],
+            [False, True],
+            ["uneven", "empty_peer", "all_empty", "masked", "cap", "buffer"],
+        )
+    )
 
 
 def _policy():
@@ -195,7 +206,7 @@ def _reference(trainer, groups):
     return value / encoded.item() if encoded.item() else value, encoded.item()
 
 
-def _worker(rank, directory):
+def _worker(rank, directory, shard):
     import torch
     import torch.distributed as dist
 
@@ -219,11 +230,9 @@ def _worker(rank, directory):
     )
     results = []
     try:
-        for strategy, broadcast, population in itertools.product(
-            ["lwf", "ewc", "replay_lwf_ewc"],
-            [False, True],
-            ["uneven", "empty_peer", "all_empty", "masked", "cap", "buffer"],
-        ):
+        for case_index, (strategy, broadcast, population) in enumerate(_matrix_cases()):
+            if case_index % SHARDS != shard:
+                continue
             folder = root / f"{strategy}-{broadcast}-{population}"
             trainer = _make(folder, rank, strategy, broadcast)
             manager = trainer.continual_manager
@@ -305,6 +314,7 @@ def _worker(rank, directory):
             )
             results.append(
                 {
+                    "matrix_index": case_index,
                     "strategy": strategy,
                     "broadcast_buffers": broadcast,
                     "population": population,
@@ -315,16 +325,21 @@ def _worker(rank, directory):
                 }
             )
 
-        for fault in [
-            "snapshot",
-            "estimate",
-            "config",
-            "task",
-            "commit",
-            "window",
-            "flush",
-            "after_flush",
-        ]:
+        for case_index, fault in enumerate(
+            [
+                "snapshot",
+                "estimate",
+                "config",
+                "task",
+                "commit",
+                "window",
+                "flush",
+                "after_flush",
+            ],
+            start=len(_matrix_cases()),
+        ):
+            if case_index % SHARDS != shard:
+                continue
             folder = root / fault
             trainer = _make(folder, rank)
             manager = trainer.continual_manager
@@ -423,13 +438,16 @@ def _worker(rank, directory):
             }
             results.append(
                 {
+                    "matrix_index": case_index,
                     "fault": fault,
                     "coordinated_rejection": True,
                     "recovered": True,
                     "boundary_flush": True,
                 }
             )
-        for inner in [1, 2]:
+        for case_index, inner in enumerate([1, 2], start=len(_matrix_cases()) + 8):
+            if case_index % SHARDS != shard:
+                continue
             folder = root / f"full-train-{inner}"
             trainer = _make(folder, rank)
             trainer.config.num_episodes = 5
@@ -456,6 +474,7 @@ def _worker(rank, directory):
             _same(capture_payload(trainer), before, torch)
             results.append(
                 {
+                    "matrix_index": case_index,
                     "full_train_inner_updates": inner,
                     "task_window_budget": 5 * inner,
                     "complete_resume_idempotent": True,
@@ -468,7 +487,9 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
-def test_native_ddp_task_memory_population_and_recovery(tmp_path):
+@pytest.mark.timeout(120)
+@pytest.mark.parametrize("shard", range(SHARDS))
+def test_native_ddp_task_memory_population_and_recovery(tmp_path, shard):
     torch = pytest.importorskip("torch")
     pytest.importorskip("transformers")
     pytest.importorskip("tokenizers")
@@ -478,7 +499,7 @@ def test_native_ddp_task_memory_population_and_recovery(tmp_path):
     ):
         pytest.skip("Gloo required")
     context = torch.multiprocessing.spawn(
-        _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
+        _worker, args=(str(tmp_path.resolve()), shard), nprocs=2, join=False
     )
     try:
         deadline = time.monotonic() + 90
@@ -492,11 +513,12 @@ def test_native_ddp_task_memory_population_and_recovery(tmp_path):
             process.join(timeout=5)
         directory = os.environ.get("STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR")
         if directory:
-            destination = Path(directory)
+            destination = Path(directory) / "ddp-continual" / f"shard-{shard}"
             destination.mkdir(parents=True, exist_ok=True)
             for p in tmp_path.glob("ddp-continual-*.json"):
                 shutil.copy2(p, destination / p.name)
+    assert len(_matrix_cases()) == 36
+    expected_indices = [index for index in range(46) if index % SHARDS == shard]
     for rank in [0, 1]:
-        assert (
-            len(json.loads((tmp_path / f"ddp-continual-{rank}.json").read_text())) == 46
-        )
+        results = json.loads((tmp_path / f"ddp-continual-{rank}.json").read_text())
+        assert [row["matrix_index"] for row in results] == expected_indices

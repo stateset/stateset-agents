@@ -22,6 +22,7 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 COMPLETION_FILE = ".stateset-checkpoint.json"
+LOCK_FILE = ".stateset-checkpoint.lock"
 
 
 def _sync_directory(path: Path) -> None:
@@ -46,9 +47,10 @@ def _lock(parent: Path) -> Iterator[None]:
     if sys.platform == "win32":
         import msvcrt
 
-        with (parent / ".stateset-checkpoint.lock").open("a+b") as stream:
-            stream.write(b"0")
-            stream.flush()
+        with (parent / LOCK_FILE).open("a+b") as stream:
+            if stream.seek(0, os.SEEK_END) == 0:
+                stream.write(b"0")
+                stream.flush()
             stream.seek(0)
             try:
                 msvcrt.locking(stream.fileno(), msvcrt.LK_NBLCK, 1)
@@ -82,7 +84,11 @@ def _inventory(path: Path, *, sync: bool = False) -> dict[str, str]:
             continue
         if not item.is_file():
             raise ValueError("Checkpoint artifacts must be regular files")
-        if item == path / COMPLETION_FILE:
+        # Windows readers/writers retain an advisory lock file in their parent
+        # directory. Accessing a child checkpoint can create this metadata
+        # inside an existing publication; it is never model/trainer payload.
+        # Symlinks and nonregular files are still rejected before this check.
+        if item == path / COMPLETION_FILE or item.name == LOCK_FILE:
             continue
         digest = hashlib.sha256()
         # Windows FlushFileBuffers (used by os.fsync) requires write access.

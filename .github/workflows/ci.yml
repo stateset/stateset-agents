@@ -280,7 +280,15 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --tb=short
+        pytest -v --tb=short --junitxml=pytest-windows-${{ matrix.python-version }}.xml
+
+    - name: Retain Windows test results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: windows-tests-${{ matrix.python-version }}
+        path: pytest-windows-${{ matrix.python-version }}.xml
+        if-no-files-found: warn
 
   security:
     runs-on: ubuntu-latest

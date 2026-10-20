@@ -165,6 +165,27 @@ def test_reader_excludes_writer_without_overwriting_checkpoint(tmp_path):
             read(path)
     assert read(path) == b"original"
 
+    if sys.platform == "win32":
+        assert (tmp_path / publication.LOCK_FILE).read_bytes() == b"0"
+
+
+def test_internal_lock_metadata_does_not_change_checkpoint_inventory(tmp_path):
+    path = tmp_path / "saved"
+    save(path, b"original")
+    (path / publication.LOCK_FILE).write_bytes(b"0")
+    assert read(path) == b"original"
+    (path / "model.safetensors").write_bytes(b"changed weights")
+    with pytest.raises(ValueError, match="differ"):
+        read(path)
+
+
+def test_internal_lock_symlink_is_not_exempt_from_integrity_checks(tmp_path):
+    path = tmp_path / "saved"
+    save(path, b"original")
+    (path / publication.LOCK_FILE).symlink_to(path / "training_state.pt")
+    with pytest.raises(ValueError, match="symlinks"):
+        read(path)
+
 
 def test_new_directory_replaces_stale_weight_layout(tmp_path):
     path = tmp_path / "saved"

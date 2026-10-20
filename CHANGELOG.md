@@ -17,6 +17,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep Windows advisory lock metadata outside checkpoint payload inventories,
+  retaining symlink rejection and weight-integrity checks on nested reads.
+- Preserve all 46 distributed continual-learning scenarios across bounded
+  shards with separate per-rank reports, and raise the coverage floor to 72%
+  after hosted CI measured 72.55%.
 - Update the async-trait macro to remove generated-code Clippy failures while
   retaining the strict Rust lint gate.
 - Update the training/API dependency locks to patched aiohttp and certifi, the

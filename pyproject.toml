@@ -410,7 +410,9 @@ omit = [
 # 63.21%. Real-model streaming tests raised the Python 3.11 CI measurement
 # to 64.06%. The expanded local Python 3.12 suite measured 65.80% after the
 # River workflow and training-integrity additions, raising the floor to 65.
-fail_under = 65
+# Hosted Python 3.11 CI measured 72.55% on 2026-10-20 (run 39493579058);
+# preserve that measured gain with a 72% floor.
+fail_under = 72
 precision = 2
 show_missing = true
 skip_covered = false
