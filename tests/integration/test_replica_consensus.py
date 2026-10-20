@@ -408,6 +408,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(120)
 def test_checkpoint_value_consensus_and_scheduler_bindings(tmp_path):
     torch = pytest.importorskip("torch")
     if (

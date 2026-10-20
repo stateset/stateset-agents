@@ -176,6 +176,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(120)
 def test_ddp_diagnostics_failure_and_checkpoint_recovery(tmp_path):
     torch = pytest.importorskip("torch")
     if (

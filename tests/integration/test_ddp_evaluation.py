@@ -355,6 +355,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(120)
 def test_native_ddp_uneven_evaluation_and_best_checkpoint(tmp_path):
     torch = pytest.importorskip("torch")
     if (

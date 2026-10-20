@@ -329,6 +329,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(120)
 def test_ddp_reward_populations_and_frozen_rollout_baselines(tmp_path):
     torch = pytest.importorskip("torch")
     if (

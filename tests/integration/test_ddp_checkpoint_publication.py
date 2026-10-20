@@ -346,6 +346,7 @@ def _worker(
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(120)
 @pytest.mark.parametrize("api", ["runtime", "async"])
 def test_collective_checkpoint_publication_rng_and_failure_recovery(tmp_path, api):
     torch = pytest.importorskip("torch")

@@ -43,19 +43,20 @@ def test_comparisons_doc_has_all_three_sections() -> None:
     assert "## StateSet Agents vs LLM Orchestration Frameworks" in contents
 
 
-def test_readme_marks_exactly_one_latest_release() -> None:
+def test_readme_marks_exactly_one_latest_candidate() -> None:
     """Guard against the version-bump sed mangling What's-new headers.
 
     Release bumps rewrite version strings across the README; twice now that
     rewrote a historical ``**vX.Y.Z:**`` heading into a second block claiming
-    to be the latest release. Exactly one block may carry the marker, and its
-    version must match the packaged version.
+    to be the latest release. Exactly one candidate block may carry the marker,
+    and its version must match the packaged version. Publication is verified
+    separately from preparing the source candidate.
     """
     readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
-    markers = re.findall(r"\*\*v([0-9.]+) \(latest release", readme)
+    markers = re.findall(r"\*\*v([0-9.]+) \(latest (?:release|candidate)", readme)
 
     assert len(markers) == 1, (
-        f"README must mark exactly one release as latest; found {len(markers)}: "
+        f"README must mark exactly one candidate as latest; found {len(markers)}: "
         f"{markers}"
     )
 
@@ -63,6 +64,6 @@ def test_readme_marks_exactly_one_latest_release() -> None:
     version_match = re.search(r'^version = "([^"]+)"', pyproject, re.MULTILINE)
     assert version_match is not None, "could not read version from pyproject.toml"
     assert markers[0] == version_match.group(1), (
-        f"README's latest-release block says v{markers[0]} but pyproject.toml "
+        f"README's latest-candidate block says v{markers[0]} but pyproject.toml "
         f"says {version_match.group(1)}"
     )

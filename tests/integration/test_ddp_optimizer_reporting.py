@@ -332,6 +332,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
+@pytest.mark.timeout(140)
 def test_ddp_flush_reporting_and_recovery(tmp_path):
     torch = pytest.importorskip("torch")
     if (
