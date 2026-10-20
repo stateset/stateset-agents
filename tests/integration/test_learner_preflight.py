@@ -217,6 +217,29 @@ def _worker(rank, directory):
     if sys.platform.startswith("linux"):
         os.environ["GLOO_SOCKET_IFNAME"] = "lo"
     root = Path(directory)
+    results = []
+
+    def progress(phase, case=None):
+        # Keep the last completed stage even when native code aborts without a
+        # Python exception. Replace atomically so readers never see partial JSON.
+        pending = root / f"learner-progress-{rank}.tmp"
+        pending.write_text(
+            json.dumps(
+                {
+                    "rank": rank,
+                    "pid": os.getpid(),
+                    "torch_version": torch.__version__,
+                    "phase": phase,
+                    "case": case,
+                    "completed_cases": [row["case"] for row in results],
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+        pending.replace(root / f"learner-progress-{rank}.json")
+
+    progress("initializing_group")
     dist.init_process_group(
         "gloo",
         rank=rank,
@@ -224,9 +247,9 @@ def _worker(rank, directory):
         init_method=(root / "rendezvous").as_uri(),
         timeout=timedelta(seconds=30),
     )
-    results = []
     try:
         for case in CASES:
+            progress("constructing_trainer", case)
             trainer, clean_groups = make(case)
             groups = copy.deepcopy(clean_groups)
             metadata = groups[rank].trajectories[0].turns[0].metadata
@@ -402,6 +425,7 @@ def _worker(rank, directory):
 
                 restore.callback(setattr, dist, "all_gather", original_gather)
                 dist.all_gather = capture
+                progress("rejecting_unsafe_batch", case)
                 with pytest.raises(ValueError, match="preflight") as error:
                     asyncio.run(trainer.training_step(local))
                 assert len(wire) == 1
@@ -412,6 +436,7 @@ def _worker(rank, directory):
                 if trainer.reference_model is not None:
                     assert trainer.reference_model.calls == 0
                 message = str(error.value)
+            progress("recovering_safe_batch", case)
             metrics = asyncio.run(
                 trainer.training_step([copy.deepcopy(clean_groups[rank])])
             )
@@ -437,7 +462,9 @@ def _worker(rank, directory):
             (root / f"learner-preflight-{rank}.json").write_text(
                 json.dumps(results, indent=2) + "\n"
             )
+            progress("case_complete", case)
         # Exact counters and intentionally unequal chunk preferences are valid.
+        progress("accepting_uneven_chunks", "uneven_chunks")
         trainer, groups = make("uneven_chunks")
         trainer.global_step = 2**60 + 1
         trainer.config.generation_batch_size = 1 if rank == 0 else 16
@@ -457,10 +484,17 @@ def _worker(rank, directory):
             )
             + "\n"
         )
+        # Neither peer should destroy shared communication state while the
+        # other still checks the final update or writes its acceptance receipt.
+        progress("waiting_for_peer", "uneven_chunks")
+        dist.barrier()
+        progress("closing_group", "uneven_chunks")
     finally:
         dist.destroy_process_group()
+    progress("complete", "uneven_chunks")
 
 
+@pytest.mark.timeout(120)
 def test_real_ddp_admission_rejects_before_forward_and_recovers(tmp_path):
     torch = pytest.importorskip("torch")
     if (
@@ -502,3 +536,8 @@ def test_real_ddp_admission_rejects_before_forward_and_recovers(tmp_path):
     assert accepted[0]["receipt"] == accepted[1]["receipt"]
     assert accepted[0]["global_step"] == accepted[1]["global_step"] == 2**60 + 3
     assert accepted[0]["calls"] != accepted[1]["calls"]
+    for rank in (0, 1):
+        journal = json.loads((tmp_path / f"learner-progress-{rank}.json").read_text())
+        assert journal["rank"] == rank
+        assert journal["phase"] == "complete"
+        assert journal["completed_cases"] == CASES

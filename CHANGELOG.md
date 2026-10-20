@@ -21,6 +21,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Keep verified PyPI install pins separate from source candidates during version
+  bumps, and correct the v0.67.0 publication status and install instructions.
+- Retain Linux JUnit and distributed worker receipts after failures. Journal
+  learner-preflight stages, synchronize successful peer shutdown, and retain the
+  90-second worker deadline inside a consistent outer test timeout.
 - Probe Windows worker and evaluation-process presence through read-only process
   handles instead of signal zero, which can interrupt the Windows console.
 - Keep Windows advisory lock metadata outside checkpoint payload inventories,

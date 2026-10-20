@@ -161,9 +161,11 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python release:** `stateset-agents==0.67.0`, with publication triggered by the
-  annotated release tag and gated on readiness, build attestation, and an isolated
-  wheel smoke test.
+- **Current Python candidate:** `stateset-agents==0.67.0`, tagged but not published.
+  Publication status and retained runs are listed in
+  [release evidence](docs/RELEASE_EVIDENCE.md).
+- **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
+  2026 against the [version's published artifacts](https://pypi.org/project/stateset-agents/0.66.1/).
 - **Node client:** the typed, zero-runtime-dependency `@stateset/agents`
   package is tested and release-wired in [`npm/`](npm/). Its first registry
   publication remains pending because npm trusted publishing cannot create a
@@ -470,7 +472,7 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.67.0 (latest release; publication triggered by tag):**
+**v0.67.0 (latest candidate; publication blocked):**
 
 - Add the fine-tuning terminal studio, agent CLI and HTTP controls, with durable run ownership, checkpoint inspection and validation/test separation.
 - Add synthetic ecommerce, logistics and SaaS dataset generation with isolated splits and retained provenance; independent domain review remains required.
@@ -1365,14 +1367,16 @@ asyncio.run(main())
 ### Core (lightweight, stub‑ready)
 
 ```bash
-pip install "stateset-agents==0.67.0" # current stable release
+pip install "stateset-agents==0.66.1" # latest verified PyPI release
+# Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
 pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.67.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
 backend, and the CLI. Training real models needs `[training]` below.
 
-> PyPI tracks the release tags. For unreleased work on master:
+> PyPI publication requires a successful release workflow; a tag alone does not
+> publish a version. For unreleased work on master:
 >
 > ```bash
 > pip install "git+https://github.com/stateset/stateset-agents@master"
@@ -2229,7 +2233,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest release `v0.67.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.67.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

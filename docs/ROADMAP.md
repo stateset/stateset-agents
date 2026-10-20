@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current package release: **v0.67.0 (strong beta)**.
+Current tagged version: **v0.67.0 (strong beta; publication blocked)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -62,10 +62,10 @@ evaluation, and lineage contracts.
 
 ### Release and provider completion
 
-- [x] Publish the current release to PyPI through the release workflow
+- [ ] Publish the current release to PyPI through the release workflow
 - [ ] Live-verify Fireworks training, artifact retrieval, serving, and cleanup
 - [ ] Keep tag-triggered River, RunPod, and Fireworks canaries green
-- [x] Publish signed provenance for Python distributions
+- [ ] Publish and verify signed provenance for the current Python distributions
 - [ ] Publish provenance and SBOMs for container artifacts
 - [x] Publish a machine-readable model/provider tier and certification matrix
 - [x] Add non-billable RunPod resource planning with measured-vs-estimated labels
@@ -77,7 +77,12 @@ evaluation, and lineage contracts.
 - [x] Complete Modal dataset upload, isolated input/output Volume paths,
   output commit, named-Secret/region injection, and multi-GPU resource wiring
 
-The tag pipeline now generates GitHub build attestations for Python artifacts
+Earlier releases retain successful Python publication and attestations in
+[`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md). The v0.67.0 publish workflow failed
+before publication; its PyPI upload, GitHub release, and distribution
+attestations remain unverified. Post-tag fixes do not change the immutable tag.
+
+The tag pipeline generates GitHub build attestations for Python artifacts
 and requests maximal provenance plus SBOMs for both container images. This gate
 remains unchecked until a tagged run retains and verifies those attestations.
 The scaling benchmark now has a separate digest-pinned BuildKit path and the

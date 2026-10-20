@@ -200,8 +200,11 @@ jobs:
     - name: Run tests
       # Coverage threshold (`fail_under`) is set in pyproject.toml's
       # [tool.coverage.report] section — pytest-cov reads it automatically.
+      env:
+        PYTHONFAULTHANDLER: '1'
+        STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR: ${{ runner.temp }}/native-ddp-contract
       run: |
-        pytest --cov=stateset_agents --cov-report=xml --cov-report=term
+        pytest --cov=stateset_agents --cov-report=xml --cov-report=term --junitxml=pytest-linux-${{ matrix.python-version }}.xml
 
     - name: Coverage ratchet
       # fail_under tracks the measured floor, never an aspiration. When
@@ -253,6 +256,16 @@ jobs:
         flags: unittests
         name: codecov-umbrella
         fail_ci_if_error: false
+
+    - name: Retain Linux test and distributed worker results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: linux-tests-${{ matrix.python-version }}
+        path: |
+          pytest-linux-${{ matrix.python-version }}.xml
+          ${{ runner.temp }}/native-ddp-contract
+        if-no-files-found: warn
 
   test-windows:
     runs-on: windows-latest
