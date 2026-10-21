@@ -1,8 +1,8 @@
 # Fine-tuning on RunPod
 
-Everything in this guide has been run against real rented hardware. Where a
-number appears — a disk size, a cost, a model that fits — it came from a run
-that either worked or failed instructively, not from a spec sheet.
+This guide includes retained hardware experiments and local lifecycle checks.
+Dated prices and model results describe those experiments; they are not current
+quotes or production-quality certification.
 
 The shape of it: you have conversation logs and no GPU. You rent one for
 twenty minutes, train an adapter, get proof it learned, and give the hardware
@@ -107,8 +107,8 @@ stateset-agents train-remote --provider runpod \
 
 What happens, in order: a pod is created, your dataset is copied to it, the
 published package is installed, training runs, the adapter is copied back to
-`outputs/`, and **the pod is terminated** — on success, on failure, and on
-timeout. Training cleanup runs in a `finally`, so a hard kill of the caller or
+`outputs/`, and **termination is requested** on success, failure, and timeout
+after a usable pod ID returns. Training cleanup runs in a `finally`, so a hard kill of the caller or
 a laptop power loss can bypass it; check the RunPod console after that kind of
 failure and terminate any orphan. (`serve-remote` separately arms an in-pod
 watchdog.)
@@ -122,8 +122,30 @@ stateset-agents runpod-orphans
 stateset-agents runpod-orphans --terminate
 ```
 
-Leases are removed only after the RunPod API confirms termination. The command
-never deletes network volumes.
+Leases are removed after the RunPod API acknowledges the termination request;
+that acknowledgement does not independently establish when billing stopped.
+The command never deletes network volumes.
+
+### SSH timeouts and uncertain outcomes
+
+The built-in `SshTransport` bounds every SSH/SCP subprocess. Its default
+per-operation timeout is one hour, configurable with `operation_timeout_s`.
+Readiness probes use at most ten seconds and share the caller's readiness
+deadline; retry sleeps cannot extend that deadline. For direct transport use,
+`run(command, timeout_s=...)` selects a different finite command limit.
+
+The built-in training executor gives each attempt an independent SSH endpoint
+and a deadline based on `RemoteJobSpec.timeout_s`, starting when its pod identity
+returns. Uploads and foreground commands use the remaining budget, so each
+command does not start a new full job allowance. Injected custom transports
+remain responsible for bounding their own operations.
+
+A transport timeout leaves the remote result unknown. It requests cleanup and
+does not automatically start replacement training. Secret-upload errors exclude
+the secret and remote output from displayed diagnostics. These are client-side
+bounds, not proof that a remote process stopped or a complete pod-lifetime
+spend ceiling: provider API requests, termination confirmation, caller failure
+before cleanup, and final billing still require their own lifecycle evidence.
 
 Check what it cost:
 

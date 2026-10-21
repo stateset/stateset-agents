@@ -381,14 +381,110 @@ class RunPodApi:
         response.raise_for_status()
 
 
-class SshTransport:
-    """File and command transport over the system ``ssh``/``scp`` binaries."""
+class _SshTimeout(RemoteExecutionError):
+    """A bounded SSH operation ended without establishing its remote outcome."""
 
-    def __init__(self, user: str = "root", key_path: Path | None = None) -> None:
+
+class SshTransport:
+    """SSH/SCP transport with finite client waits and optional job deadlines.
+
+    Client timeouts do not prove a remote command stopped or billing ended.
+    Built-in executor attempts use independent transports with shared deadlines;
+    injected transports remain responsible for their own blocking operations.
+    """
+
+    def __init__(
+        self,
+        user: str = "root",
+        key_path: Path | None = None,
+        *,
+        operation_timeout_s: float = 3600.0,
+    ) -> None:
         self.user = user
         self.key_path = key_path
+        self.operation_timeout_s = self._positive_timeout(operation_timeout_s)
+        self._deadline: float | None = None
         self._host: str | None = None
         self._port: int | None = None
+
+    @staticmethod
+    def _positive_timeout(value: float) -> float:
+        if (
+            type(value) not in (int, float)
+            or value <= 0
+            or value > 7 * 24 * 3600
+            or not math.isfinite(value)
+        ):
+            raise ValueError("SSH timeout must be finite and in (0, 604800] seconds")
+        return float(value)
+
+    def _for_deadline(self, deadline: float) -> SshTransport:
+        """Give an attempt its own endpoint and deadline without mutating a peer."""
+        if type(deadline) not in (int, float) or not math.isfinite(deadline):
+            raise ValueError("SSH deadline must be finite")
+        transport = SshTransport(
+            self.user, self.key_path, operation_timeout_s=self.operation_timeout_s
+        )
+        transport._deadline = deadline
+        return transport
+
+    def _timeout(
+        self, requested: float | None = None, *, command: bool = False
+    ) -> float:
+        timeout = (
+            self.operation_timeout_s
+            if requested is None
+            else self._positive_timeout(requested)
+        )
+        if self._deadline is not None:
+            remaining = self._deadline - time.monotonic()
+            if remaining <= 0:
+                raise _SshTimeout(
+                    "RunPod transport deadline expired before starting an operation",
+                    provider="runpod",
+                    stage="ssh_timeout",
+                    outcome_unknown=False,
+                )
+            # The foreground training command may use the remaining job budget;
+            # ordinary transfers retain their per-operation limit as well.
+            timeout = (
+                min(remaining, 7 * 24 * 3600)
+                if command and requested is None
+                else min(timeout, remaining)
+            )
+        return timeout
+
+    def _invoke(
+        self,
+        argv: list[str],
+        *,
+        operation: str,
+        timeout_s: float | None = None,
+        command: bool = False,
+        input_text: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        timeout = self._timeout(timeout_s, command=command)
+        kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": timeout,
+        }
+        if input_text is None:
+            kwargs["stdin"] = subprocess.DEVNULL
+        else:
+            kwargs["input"] = input_text
+        try:
+            return subprocess.run(argv, **kwargs)
+        except subprocess.TimeoutExpired:
+            # TimeoutExpired can retain command arguments and captured output.
+            # Do not expose those (or streamed credentials) in the error chain.
+            raise _SshTimeout(
+                f"RunPod {operation} exceeded {timeout:g}s; remote outcome is unknown",
+                provider="runpod",
+                stage="ssh_timeout",
+                outcome_unknown=True,
+            ) from None
 
     def _base_opts(self) -> list[str]:
         opts = [
@@ -400,6 +496,10 @@ class SshTransport:
             "UserKnownHostsFile=/dev/null",
             "-o",
             "LogLevel=ERROR",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
             # Without keepalives a dead peer (pod crash/restart mid-job —
             # observed live: RunPod restarted a pod under a running job and
             # its IP changed) leaves the blocking ssh read hung for hours.
@@ -413,31 +513,40 @@ class SshTransport:
             opts += ["-i", str(self.key_path)]
         return opts
 
-    def wait_until_reachable(self, host: str, port: int, timeout_s: int) -> None:
+    def wait_until_reachable(self, host: str, port: int, timeout_s: float) -> None:
         """Block until sshd answers, or raise once ``timeout_s`` elapses."""
         self._host, self._port = host, port
+        timeout_s = self._positive_timeout(timeout_s)
         deadline = time.monotonic() + timeout_s
+        if self._deadline is not None:
+            deadline = min(deadline, self._deadline)
         last_error = ""
         while time.monotonic() < deadline:
-            probe = subprocess.run(
-                [
-                    "ssh",
-                    *self._base_opts(),
-                    "-p",
-                    str(port),
-                    "-o",
-                    "ConnectTimeout=10",
-                    f"{self.user}@{host}",
-                    "true",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if probe.returncode == 0:
-                return
-            last_error = (probe.stderr or "").strip()
-            time.sleep(5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                probe = self._invoke(
+                    [
+                        "ssh",
+                        *self._base_opts(),
+                        "-p",
+                        str(port),
+                        f"{self.user}@{host}",
+                        "true",
+                    ],
+                    operation="SSH readiness probe",
+                    timeout_s=min(10.0, remaining),
+                )
+            except _SshTimeout:
+                last_error = "SSH readiness probe timed out"
+            else:
+                if probe.returncode == 0 and time.monotonic() <= deadline:
+                    return
+                last_error = (probe.stderr or "").strip()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(5.0, remaining))
         raise RemoteExecutionError(
             f"pod ssh at {host}:{port} did not answer within {timeout_s}s: "
             f"{last_error}",
@@ -450,7 +559,7 @@ class SshTransport:
     def upload_secret(self, secret: str, remote: str) -> None:
         """Stream a secret to a root-only remote file without local storage."""
         command = f"umask 077; cat > {shlex.quote(remote)}"
-        result = subprocess.run(
+        result = self._invoke(
             [
                 "ssh",
                 *self._base_opts(),
@@ -459,14 +568,12 @@ class SshTransport:
                 f"{self.user}@{self._host}",
                 command,
             ],
-            input=secret,
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="secret upload",
+            input_text=secret,
         )
         if result.returncode != 0:
             raise RemoteExecutionError(
-                f"secret upload failed: {(result.stderr or '').strip()}",
+                f"secret upload failed (ssh exit {result.returncode})",
                 provider="runpod",
             )
 
@@ -508,14 +615,15 @@ class SshTransport:
         if recursive:
             cmd.append("-r")
         cmd += [src, dest]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = self._invoke(cmd, operation="SCP transfer")
         if result.returncode != 0:
             raise RemoteExecutionError(
                 f"scp failed: {(result.stderr or '').strip()}", provider="runpod"
             )
 
-    def run(self, command: str) -> tuple[int, str]:
-        result = subprocess.run(
+    def run(self, command: str, *, timeout_s: float | None = None) -> tuple[int, str]:
+        """Run one remote command, bounding the client wait without retrying it."""
+        result = self._invoke(
             [
                 "ssh",
                 *self._base_opts(),
@@ -524,9 +632,9 @@ class SshTransport:
                 f"{self.user}@{self._host}",
                 command,
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="SSH command",
+            timeout_s=timeout_s,
+            command=True,
         )
         return result.returncode, (result.stdout or "") + (result.stderr or "")
 
@@ -1200,6 +1308,11 @@ class RunPodExecutor(RemoteExecutor):
                 + (f", ${cost_per_hr}/hr)" if cost_per_hr is not None else ")")
             )
 
+            if type(ssh) is SshTransport:
+                # Keep transport construction inside the allocation's cleanup
+                # boundary, after retaining its identity and lease.
+                ssh = ssh._for_deadline(pod_started_monotonic + spec.timeout_s)
+
             # Refuse before work, retaining the allocated pod's observed cost.
             # Failed or ambiguous termination can still leave billing active.
             try:
@@ -1258,7 +1371,7 @@ class RunPodExecutor(RemoteExecutor):
                             f"ssh transport to pod {pod_id} died mid-job (ssh exit 255)",
                             provider=self.name,
                         )
-                except (SubmissionReceiptError, _PodDiedMidJob):
+                except (SubmissionReceiptError, _PodDiedMidJob, _SshTimeout):
                     raise
                 except Exception as exc:
                     raise _PodDiedMidJob(
