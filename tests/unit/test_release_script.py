@@ -134,6 +134,7 @@ def fixture_repo(tmp_path: Path) -> Path:
     for name in (
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
+        "agent_quality_manifest.json",
         "distributed_async_manifest.json",
         "distributed_async_local_manifest.json",
     ):
@@ -348,6 +349,7 @@ def test_build_plan_bumps_current_evidence_manifests(fixture_repo: Path) -> None
     for name in (
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
+        "agent_quality_manifest.json",
         "distributed_async_manifest.json",
         "distributed_async_local_manifest.json",
     ):

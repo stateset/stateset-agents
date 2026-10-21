@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "stateset-distributed-async-manifest",
   "protocol": "stateset-distributed-async-v1",
-  "framework_version": "0.65.0",
+  "framework_version": "0.67.0",
   "provider": "runpod",
   "cost_source": "runpod-api",
   "seeds": [42, 1337, 2026],

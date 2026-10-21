@@ -576,8 +576,17 @@ def _compute_token_path_loss(
     """
     torch = require_torch()
     device = _resolve_model_device(agent, torch)
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
-    objective = _token_objective(config).with_(entropy_coef=0.0)
+
+    def objective_settings() -> tuple[Any, float]:
+        entropy = float(getattr(config, "entropy_coef", 0.0))
+        # Validate before forwards, reward statistics or streamed backward.
+        # Entropy is then applied separately with its own token denominator.
+        validated = _token_objective(config).with_(entropy_coef=entropy)
+        return validated.with_(entropy_coef=0.0), entropy
+
+    objective, entropy_coef = run_token_local(
+        agent.model, "objective", objective_settings
+    )
     use_kl = beta > 0 and reference_model is not None
     if use_kl:
         objective = _token_kl_objective(objective, config, beta=beta)
