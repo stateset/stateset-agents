@@ -24,6 +24,7 @@ CASES = [
     "objective",
     "clip",
     "entropy",
+    "dropout_setting",
     "beta",
     "normalization",
     "global_step",
@@ -316,6 +317,8 @@ def _worker(rank, directory):
                         trainer.config.reward_clip = 2.0
                     elif case == "entropy":
                         trainer.config.entropy_coef = 0.1
+                    elif case == "dropout_setting":
+                        trainer.config.disable_dropout = True
                     elif case == "beta":
                         trainer.config.beta = 0.3
                     elif case == "normalization":
@@ -523,7 +526,7 @@ def test_real_ddp_admission_rejects_before_forward_and_recovers(tmp_path):
                 (output / path.name).write_bytes(path.read_bytes())
     first = json.loads((tmp_path / "learner-preflight-0.json").read_text())
     second = json.loads((tmp_path / "learner-preflight-1.json").read_text())
-    assert len(first) == len(second) == len(CASES) == 47
+    assert len(first) == len(second) == len(CASES) == 48
     # Different settings intentionally produce different digest bytes. Wire
     # shape/type/range are checked per worker; outcomes and errors must agree.
     assert [{k: v for k, v in row.items() if k != "wire"} for row in first] == [

@@ -14,7 +14,7 @@ import importlib.machinery
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -516,7 +516,11 @@ class TestQuickHPO:
                 "stateset_agents.training.hpo.grpo_hpo_trainer.MultiTurnGRPOTrainer"
             ) as mock_trainer:
                 mock_instance = AsyncMock()
-                mock_instance.train = AsyncMock(return_value={"reward": 0.8})
+                mock_instance.callbacks = []
+                mock_instance._get_eval_scenarios = MagicMock(return_value=[{}])
+                mock_instance.evaluate = AsyncMock(
+                    return_value={"eval_reward": 0.8, "eval_num_episodes": 1.0}
+                )
                 mock_trainer.return_value = mock_instance
 
                 summary = await quick_hpo(

@@ -4,6 +4,7 @@ Configuration surface for GSPO training.
 
 from __future__ import annotations
 
+import dataclasses
 import importlib.util
 from dataclasses import dataclass
 
@@ -19,7 +20,7 @@ class GSPOConfig(TrainingConfig):
     """Configuration for GSPO training."""
 
     num_generations: int = 4
-    trust_remote_code: bool = True
+    trust_remote_code: bool = False
     beta: float = 0.0
 
     clip_range_left: float = 3e-4
@@ -69,6 +70,29 @@ class GSPOConfig(TrainingConfig):
         """Validate configuration and return warnings."""
         warnings = super().validate()
 
+        ignored = [
+            name
+            for name in _GSPO_IGNORED_FIELDS
+            if getattr(self, name) != _FIELD_DEFAULTS[name]
+        ]
+        if ignored:
+            warnings.append(
+                f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} "
+                "ignored by the GSPO trainer: train_step takes one optimizer step "
+                "per outer iteration on a cosine schedule, without reward clipping."
+            )
+
+        if (
+            self.num_episodes != _NUM_EPISODES_DEFAULT
+            and self.num_outer_iterations == _OUTER_ITERATIONS_DEFAULT
+            and self.num_episodes != self.num_outer_iterations
+        ):
+            warnings.append(
+                f"num_episodes={self.num_episodes} is not read by the GSPO trainer; "
+                f"it runs num_outer_iterations={self.num_outer_iterations} "
+                "outer iteration(s). Set num_outer_iterations instead."
+            )
+
         if self.gradient_checkpointing and self.use_lora:
             warnings.append(
                 "gradient_checkpointing with LoRA can require input gradients; "
@@ -108,5 +132,22 @@ class GSPOConfig(TrainingConfig):
 
         return warnings
 
+
+# Inherited or declared fields the GSPO trainer never reads.
+_GSPO_IGNORED_FIELDS = (
+    "num_iterations",
+    "mini_batch_size",
+    "gradient_accumulation_steps",
+    "lr_scheduler_type",
+    "reward_clip",
+)
+_GSPO_DEFAULTS = {f.name: f.default for f in dataclasses.fields(GSPOConfig)}
+_NUM_EPISODES_DEFAULT = _GSPO_DEFAULTS["num_episodes"]
+_OUTER_ITERATIONS_DEFAULT = _GSPO_DEFAULTS["num_outer_iterations"]
+_FIELD_DEFAULTS = {
+    f.name: f.default
+    for f in dataclasses.fields(GSPOConfig)
+    if f.name in _GSPO_IGNORED_FIELDS
+}
 
 __all__ = ["GSPOConfig"]

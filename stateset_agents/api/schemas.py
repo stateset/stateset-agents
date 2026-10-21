@@ -105,6 +105,95 @@ class ConversationRequest(BaseModel):
         return v
 
 
+# Canonical training profiles and the CLI's aliases (kept in sync with
+# ``stateset_agents.cli.TRAIN_PROFILE_*`` by a unit test; importing the CLI
+# here would pull Typer and every subcommand into the API process).
+_TRAINING_PROFILES = frozenset(
+    {"conservative", "balanced", "aggressive", "experimental"}
+)
+_TRAINING_PROFILE_ALIASES = {"speed": "aggressive", "quality": "conservative"}
+
+
+# TrainingConfig fields a client may tune through the API. Everything else
+# (output/resume paths, run names, experiment trackers, data loading, model
+# repository identity, vLLM resources) is server-controlled. Model revisions
+# remain selectable within the permitted repository.
+API_TRAINING_OVERRIDE_KEYS = frozenset(
+    {
+        "num_episodes",
+        "num_epochs",
+        "learning_rate",
+        "model_revision",
+        "adam_beta1",
+        "adam_beta2",
+        "weight_decay",
+        "max_grad_norm",
+        "warmup_ratio",
+        "lr_scheduler_type",
+        "per_device_train_batch_size",
+        "batch_size",
+        "gradient_accumulation_steps",
+        "num_generations",
+        "generation_batch_size",
+        "eval_num_generations",
+        "max_prompt_length",
+        "max_completion_length",
+        "max_steps_per_episode",
+        "gradient_checkpointing",
+        "bf16",
+        "fp16",
+        "eval_steps",
+        "save_steps",
+        "logging_steps",
+        "save_total_limit",
+        "auto_adjust",
+        "early_stopping",
+        "patience",
+        "gamma",
+        "gae_lambda",
+        "reward_clip",
+        "advantage_normalization",
+        "baseline_type",
+        "beta",
+        "use_reference_model",
+        "clip_ratio",
+        "seq_clip_ratio",
+        "value_clip",
+        "entropy_coef",
+        "continual_strategy",
+        "replay_buffer_size",
+        "replay_ratio",
+        "replay_min_size",
+        "replay_sampling",
+        "continual_kl_beta",
+        "ewc_lambda",
+        "ewc_num_samples",
+        "ewc_decay",
+        "task_id_key",
+        "task_schedule",
+        "task_switch_steps",
+        "run_post_eval",
+        "post_eval_samples",
+        "post_eval_detailed",
+        "use_lora",
+        "lora_r",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "seed",
+        "objective",
+        "objective_overrides",
+        "num_gradient_updates",
+        "old_logprobs_source",
+        "disable_dropout",
+    }
+)
+
+
 class TrainingRequest(BaseModel):
     """Request for training an agent."""
 
@@ -128,7 +217,7 @@ class TrainingRequest(BaseModel):
                 "reward_config": {"helpfulness_weight": 0.7, "safety_weight": 0.3},
                 "num_episodes": 50,
                 "profile": "balanced",
-                "resume_from_checkpoint": "./outputs/checkpoint-100",
+                "resume_from_checkpoint": "3f2b8c1e-0000-4000-8000-000000000000",
                 "training_config_overrides": {
                     "continual_strategy": "replay_lwf",
                     "replay_ratio": 0.3,
@@ -149,11 +238,45 @@ class TrainingRequest(BaseModel):
     )
     profile: str = Field("balanced", description="Training profile")
     resume_from_checkpoint: str | None = Field(
-        None, description="Checkpoint path to resume training from"
+        None,
+        description=(
+            "A previous training job id, or a checkpoint path under the "
+            "server's training output root, to resume from"
+        ),
     )
     training_config_overrides: dict[str, Any] | None = Field(
         None, description="Optional training configuration overrides"
     )
+
+    @field_validator("profile")
+    @classmethod
+    def validate_profile(cls, v: str) -> str:
+        """Reject unknown profiles up front (a 422, not a failed job) and
+        normalise the CLI aliases to canonical names."""
+        normalized = str(v).strip().lower()
+        normalized = _TRAINING_PROFILE_ALIASES.get(normalized, normalized)
+        if normalized not in _TRAINING_PROFILES:
+            choices = ", ".join(sorted(_TRAINING_PROFILES))
+            aliases = ", ".join(sorted(_TRAINING_PROFILE_ALIASES))
+            raise ValueError(f"profile must be one of: {choices} (aliases: {aliases})")
+        return normalized
+
+    @field_validator("training_config_overrides")
+    @classmethod
+    def validate_training_config_overrides(
+        cls, v: dict[str, Any] | None
+    ) -> dict[str, Any] | None:
+        """Only tuning knobs are client-settable; paths and integrations are
+        server-controlled (a 422 names every rejected key)."""
+        if v is None:
+            return v
+        rejected = sorted(str(k) for k in v if k not in API_TRAINING_OVERRIDE_KEYS)
+        if rejected:
+            raise ValueError(
+                "training_config_overrides contains keys that cannot be set "
+                f"through the API: {', '.join(rejected)}"
+            )
+        return v
 
     @field_validator("resume_from_checkpoint")
     @classmethod

@@ -75,12 +75,12 @@ def build_generate_fn(
     import torch
     from transformers import AutoTokenizer
 
-    from stateset_agents.training.sft import load_base_model_for_sft
+    from stateset_agents.training.sft import _trust_remote_code, load_base_model_for_sft
 
     logger.info("Loading tokenizer and model: %s", base_model)
     # base_model is the caller's own CLI argument, not attacker input.
     tokenizer = AutoTokenizer.from_pretrained(
-        base_model, trust_remote_code=True
+        base_model, trust_remote_code=_trust_remote_code(base_model)
     )  # nosec: B615
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token

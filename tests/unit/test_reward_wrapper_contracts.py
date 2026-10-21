@@ -86,7 +86,11 @@ async def test_optional_reward_failures_remain_optional_and_capabilities_are_dyn
     optional = RecordedReward(failure=ValueError("optional unavailable"))
     composite = CompositeReward([optional, RecordedReward()])
     assert not composite.fail_on_error and not composite.requires_environment_context
-    assert (await composite.compute_reward([])).score == 0.5
+    result = await composite.compute_reward([])
+    # Optional failure redistributes its weight over successful components;
+    # required evidence failures below must still propagate.
+    assert result.score == 1.0
+    assert result.metadata["failed_components"] == ["RecordedReward"]
     composite.reward_functions.append(TaskOutcomeReward())
     assert composite.fail_on_error and composite.requires_environment_context
     with pytest.raises(ValueError, match="expected_response"):

@@ -162,7 +162,9 @@ class TestDomainRandomization:
 
     def test_user_persona_creation(self):
         """Test UserPersona creation and properties"""
-        from stateset_agents.training.domain_randomization import UserPersona
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
+            UserPersona,
+        )
 
         persona = UserPersona(
             name="Test User",
@@ -177,7 +179,9 @@ class TestDomainRandomization:
 
     def test_user_persona_system_prompt(self):
         """Test persona converts to system prompt"""
-        from stateset_agents.training.domain_randomization import UserPersona
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
+            UserPersona,
+        )
 
         persona = UserPersona(
             name="Expert",
@@ -191,7 +195,7 @@ class TestDomainRandomization:
 
     def test_persona_generator_random(self):
         """Test random persona generation"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             PersonaGenerator,
         )
@@ -207,7 +211,7 @@ class TestDomainRandomization:
 
     def test_persona_interpolation(self):
         """Test persona interpolation"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             PersonaGenerator,
             UserPersona,
@@ -224,7 +228,7 @@ class TestDomainRandomization:
 
     def test_scenario_generator(self):
         """Test scenario generation"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             ScenarioGenerator,
         )
@@ -241,7 +245,7 @@ class TestDomainRandomization:
 
     def test_curriculum_sampling(self):
         """Test curriculum learning schedule"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             ScenarioGenerator,
         )
@@ -261,7 +265,7 @@ class TestDomainRandomization:
 
     def test_domain_randomizer(self):
         """Test DomainRandomizer integration"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             DomainRandomizer,
         )
@@ -281,7 +285,9 @@ class TestSimToRealMetrics:
 
     def test_kl_divergence(self):
         """Test KL divergence computation"""
-        from stateset_agents.evaluation.sim_to_real_metrics import compute_kl_divergence
+        from stateset_agents.experimental.sim_to_real.metrics import (
+            compute_kl_divergence,
+        )
 
         p = np.array([0.5, 0.5])
         q = np.array([0.5, 0.5])
@@ -291,7 +297,9 @@ class TestSimToRealMetrics:
 
     def test_js_divergence(self):
         """Test Jensen-Shannon divergence"""
-        from stateset_agents.evaluation.sim_to_real_metrics import compute_js_divergence
+        from stateset_agents.experimental.sim_to_real.metrics import (
+            compute_js_divergence,
+        )
 
         p = np.array([0.5, 0.5])
         q = np.array([0.5, 0.5])
@@ -302,7 +310,7 @@ class TestSimToRealMetrics:
 
     def test_mmd_computation(self):
         """Test MMD computation"""
-        from stateset_agents.evaluation.sim_to_real_metrics import compute_mmd
+        from stateset_agents.experimental.sim_to_real.metrics import compute_mmd
 
         x = np.random.randn(100)
         y = np.random.randn(100)
@@ -316,7 +324,7 @@ class TestSimToRealMetrics:
 
     def test_distribution_divergence(self):
         """Test distribution divergence computation"""
-        from stateset_agents.evaluation.sim_to_real_metrics import (
+        from stateset_agents.experimental.sim_to_real.metrics import (
             compute_distribution_divergence,
         )
 
@@ -333,7 +341,7 @@ class TestSimToRealMetrics:
 
     def test_sim_to_real_metrics_dataclass(self):
         """Test SimToRealMetrics dataclass"""
-        from stateset_agents.evaluation.sim_to_real_metrics import SimToRealMetrics
+        from stateset_agents.experimental.sim_to_real.metrics import SimToRealMetrics
 
         metrics = SimToRealMetrics(
             response_length_kl=0.1,
@@ -356,7 +364,7 @@ class TestOfflineRLConfigs:
 
     def test_bcq_config_defaults(self):
         """Test BCQConfig default values"""
-        from stateset_agents.training.offline_rl_bcq import BCQConfig
+        from stateset_agents.experimental.offline_rl.bcq import BCQConfig
 
         config = BCQConfig()
         assert config.hidden_size == 256
@@ -367,7 +375,7 @@ class TestOfflineRLConfigs:
 
     def test_bear_config_defaults(self):
         """Test BEARConfig default values"""
-        from stateset_agents.training.offline_rl_bear import BEARConfig
+        from stateset_agents.experimental.offline_rl.bear import BEARConfig
 
         config = BEARConfig()
         assert config.hidden_size == 256
@@ -377,7 +385,7 @@ class TestOfflineRLConfigs:
 
     def test_decision_transformer_config_defaults(self):
         """Test DecisionTransformerConfig default values"""
-        from stateset_agents.training.decision_transformer import (
+        from stateset_agents.experimental.offline_rl.decision_transformer import (
             DecisionTransformerConfig,
         )
 
@@ -389,7 +397,9 @@ class TestOfflineRLConfigs:
 
     def test_offline_grpo_config_defaults(self):
         """Test OfflineGRPOConfig default values"""
-        from stateset_agents.training.offline_grpo_trainer import OfflineGRPOConfig
+        from stateset_agents.experimental.offline_rl.offline_grpo import (
+            OfflineGRPOConfig,
+        )
 
         config = OfflineGRPOConfig()
         assert config.offline_algorithm == "iql"
@@ -398,7 +408,7 @@ class TestOfflineRLConfigs:
 
     def test_sim_to_real_config_defaults(self):
         """Test SimToRealConfig default values"""
-        from stateset_agents.training.sim_to_real import SimToRealConfig
+        from stateset_agents.experimental.sim_to_real.transfer import SimToRealConfig
 
         config = SimToRealConfig()
         assert config.user_model_type == "learned"
@@ -413,7 +423,7 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_warmup(self):
         """Test sim/real ratio during warmup"""
-        from stateset_agents.training.sim_to_real import (
+        from stateset_agents.experimental.sim_to_real.transfer import (
             SimToRealConfig,
             SimToRealTransfer,
         )
@@ -427,7 +437,7 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_linear(self):
         """Test linear transfer schedule"""
-        from stateset_agents.training.sim_to_real import (
+        from stateset_agents.experimental.sim_to_real.transfer import (
             SimToRealConfig,
             SimToRealTransfer,
         )
@@ -447,7 +457,7 @@ class TestSimToRealTransfer:
 
     def test_transfer_ratio_cosine(self):
         """Test cosine transfer schedule"""
-        from stateset_agents.training.sim_to_real import (
+        from stateset_agents.experimental.sim_to_real.transfer import (
             SimToRealConfig,
             SimToRealTransfer,
         )
@@ -476,7 +486,7 @@ class TestMMDKernel:
         pytest.importorskip("torch")
         import torch
 
-        from stateset_agents.training.offline_rl_bear import MMDKernel
+        from stateset_agents.experimental.offline_rl.bear import MMDKernel
 
         kernel = MMDKernel(kernel_type="gaussian", sigma=1.0)
 
@@ -492,7 +502,7 @@ class TestMMDKernel:
         pytest.importorskip("torch")
         import torch
 
-        from stateset_agents.training.offline_rl_bear import MMDKernel
+        from stateset_agents.experimental.offline_rl.bear import MMDKernel
 
         kernel = MMDKernel(kernel_type="laplacian", sigma=1.0)
 
@@ -534,14 +544,17 @@ class TestModuleImports:
 
     def test_import_evaluation_module(self):
         """Test evaluation module imports"""
-        from stateset_agents.evaluation import SimToRealEvaluator, SimToRealMetrics
+        from stateset_agents.experimental.sim_to_real.metrics import (
+            SimToRealEvaluator,
+            SimToRealMetrics,
+        )
 
         assert SimToRealMetrics is not None
         assert SimToRealEvaluator is not None
 
     def test_import_domain_randomization(self):
         """Test domain randomization imports"""
-        from stateset_agents.training.domain_randomization import (
+        from stateset_agents.experimental.sim_to_real.domain_randomization import (
             DomainRandomizationConfig,
             UserPersona,
         )

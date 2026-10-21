@@ -184,10 +184,19 @@ optional development lockfile dependency `accelerate==1.14.0`, finding
 `PYSEC-2026-3804` / `GHSA-4j2p-28q2-5m79`). Accelerate's sharded checkpoint
 `weight_map` loader does not validate paths in untrusted checkpoint indexes.
 Only load checkpoints from trusted sources. The upstream maintainers closed
-the proposed fixes as outside their security policy; no patched release was
-available on 2026-09-23. The CI exception matches the package, version,
-pip-audit advisory ID, GHSA alias, and CVE exactly. It expires after
-2026-12-31. Reassess it when a patched release appears or by the expiry date.
+the proposed fixes as outside their security policy. The CI exception matches
+the package, version, pip-audit advisory ID, GHSA alias, and CVE exactly. It
+expires after 2026-12-31.
+
+Since v0.64.2 the lockfile pins `accelerate==1.15.0` and the package requires
+`accelerate>=1.15.0`. pip-audit no longer reports the advisory, but only because
+its affected range ("through 1.14.0") predates 1.15.0: source inspection shows
+1.15.0's `load_checkpoint_in_model` still joins `weight_map` entries without
+validation. StateSet does not call `load_checkpoint_in_model` or
+`load_checkpoint_and_dispatch`, and
+`tests/unit/test_accelerate_advisory_reachability.py` fails if package code
+starts to. Reassess when upstream ships a validated loader or the advisory
+range changes.
 Other findings still fail CI.
 
 ### Release

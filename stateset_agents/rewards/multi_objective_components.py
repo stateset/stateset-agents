@@ -125,8 +125,10 @@ class LengthRewardComponent(BaseRewardComponent):
         **kwargs,
     ):
         super().__init__(name, weight, **kwargs)
-        self.min_length = min_length
-        self.max_length = max_length
+        # The optimal range must lie inside [min_length, max_length]; a range
+        # reaching past max_length would score its own top end as too long.
+        self.min_length = min(min_length, optimal_range[0])
+        self.max_length = max(max_length, optimal_range[1])
         self.optimal_range = optimal_range
 
     async def compute_score(

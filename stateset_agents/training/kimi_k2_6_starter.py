@@ -125,6 +125,8 @@ SPEC = StarterSpec(
     },
     system_prompt_intro="You are Kimi, an AI assistant created by Moonshot AI.",
     config_defaults={
+        # Non-native architecture: the HF repo ships its modelling code.
+        "trust_remote_code": True,
         "lora_r": 64,
         "lora_alpha": 128,
         "max_new_tokens": 1024,

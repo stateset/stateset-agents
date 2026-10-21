@@ -189,7 +189,7 @@ def _vapo(**cfg):
 
 
 def _ppo(**cfg):
-    from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer
+    from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer
 
     return PPOTrainer(
         config=PPOConfig(model_name="gpt2", **cfg),

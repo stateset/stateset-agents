@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import logging
 import random
+import re
 import uuid
 from typing import Any, cast
 
@@ -21,8 +22,57 @@ from .trajectory import ConversationTurn
 logger = logging.getLogger(__name__)
 
 
+def _scripted_user_turns(scenario: Any) -> list[str] | None:
+    """Return a scenario's scripted user messages, if it declares them."""
+    if not isinstance(scenario, dict):
+        return None
+    turns = scenario.get("user_turns")
+    if not isinstance(turns, (list, tuple)) or not turns:
+        return None
+    return [str(turn) for turn in turns]
+
+
+def _opening_user_message(scenario: Any) -> str | None:
+    """The message the customer opens with: ``user_turns[0]`` or ``user_query``."""
+    scripted = _scripted_user_turns(scenario)
+    if scripted is not None:
+        return scripted[0]
+    if isinstance(scenario, dict):
+        query = scenario.get("user_query")
+        if isinstance(query, str) and query.strip():
+            return query
+    return None
+
+
+#: Phrases that end an unscripted episode when ``end_on_farewell`` is on.
+FAREWELL_PHRASES: tuple[str, ...] = ("goodbye", "bye", "see you", "talk to you later")
+_FAREWELL_RE = re.compile(
+    r"\b(?:" + "|".join(re.escape(p) for p in FAREWELL_PHRASES) + r")\b",
+    re.IGNORECASE,
+)
+
+
 class ConversationEnvironment(Environment):
-    """Environment for open-ended conversations with a convenience step API."""
+    """Environment for open-ended conversations with a convenience step API.
+
+    System prompt: the episode opens with a system turn only when one is
+    explicitly provided — the ``system_prompt`` argument, a scenario's
+    ``"system_prompt"``, or a scenario's ``"context"`` (rendered as
+    ``"Context: ..."``). ``persona`` is appended to that turn when one is
+    emitted. Otherwise :meth:`get_initial_prompt` returns ``""`` and the
+    agent's own ``AgentConfig.system_prompt`` applies; when both exist, the
+    environment's system turn takes precedence (``MultiTurnAgent`` does not
+    add its own system prompt to a history that already has one).
+
+    Episode end: ``max_turns``, the end of a scenario's scripted
+    ``user_turns``, or — for unscripted scenarios with ``end_on_farewell``
+    (default ``True``) — an assistant reply containing a farewell
+    (:data:`FAREWELL_PHRASES`, matched as whole words). Scripted scenarios
+    never end early on a farewell: the script defines the episode length.
+    """
+
+    scores_steps = True
+    supports_concurrent_episodes = True
 
     def __init__(
         self,
@@ -30,11 +80,15 @@ class ConversationEnvironment(Environment):
         max_turns: int = 10,
         reward_fn: RewardFunction | None = None,
         persona: str | None = None,
+        system_prompt: str | None = None,
+        end_on_farewell: bool = True,
         **kwargs: Any,
     ) -> None:
         super().__init__(max_turns, reward_fn, **kwargs)
         self.scenarios = scenarios
         self.persona = persona
+        self.system_prompt = system_prompt
+        self.end_on_farewell = bool(end_on_farewell)
         self.current_scenario: dict[str, Any] | None = None
         self._last_state: EnvironmentState | None = None
 
@@ -77,6 +131,9 @@ class ConversationEnvironment(Environment):
                 "history": [],
             },
         )
+        opening = _opening_user_message(scenario)
+        if opening is not None:
+            state.context["history"] = [{"role": "user", "content": opening}]
         if isinstance(scenario, dict):
             if scenario.get("id") is not None:
                 state.context["scenario_id"] = scenario.get("id")
@@ -141,18 +198,21 @@ class ConversationEnvironment(Environment):
         new_state = state.copy()
         new_state.turn_count += 1
 
-        history = list(new_state.context.get("history", []))
-        history.append({"role": "assistant", "content": agent_turn.content})
-
-        user_response = await self._generate_user_response(agent_turn, state)
-        history.append({"role": "user", "content": user_response.content})
+        prior_history = list(new_state.context.get("history", []))
+        history = prior_history + [{"role": "assistant", "content": agent_turn.content}]
         new_state.context["history"] = history
 
+        # Score the reply against the conversation it answers, before the
+        # simulated user's next message exists.
         step_reward = 0.0
         if self.reward_fn is not None and self._should_compute_step_reward():
+            reward_turns = [
+                ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+                for m in prior_history
+            ] + [agent_turn]
             try:
                 reward_result = await self.reward_fn.compute_reward(
-                    [agent_turn, user_response],
+                    reward_turns,
                     new_state.context,
                 )
                 if hasattr(reward_result, "score"):
@@ -169,8 +229,24 @@ class ConversationEnvironment(Environment):
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))
 
+        scripted = _scripted_user_turns(new_state.context.get("scenario"))
+        user_response: ConversationTurn | None
+        if scripted is None:
+            user_response = await self._generate_user_response(agent_turn, state)
+        elif new_state.turn_count < len(scripted):
+            user_response = ConversationTurn(
+                role="user",
+                content=scripted[new_state.turn_count],
+                metadata={"scripted": True, "turn_number": new_state.turn_count},
+            )
+        else:
+            user_response = None
+        if user_response is not None:
+            history.append({"role": "user", "content": user_response.content})
+
         done = (
             new_state.turn_count >= self.max_turns
+            or user_response is None
             or await self._should_end_conversation(agent_turn, state)
         )
         if done:
@@ -184,14 +260,35 @@ class ConversationEnvironment(Environment):
         }
         return new_state, step_reward, bool(done), info
 
+    async def get_initial_turns(
+        self, state: EnvironmentState
+    ) -> list[ConversationTurn]:
+        """Open with the scenario's first user message when it has one."""
+        return [
+            ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+            for m in state.context.get("history", [])
+        ]
+
     async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
-        scenario = scenario or self.current_scenario
-        base_prompt = "You are a helpful AI assistant. Engage in natural conversation with the user."
+        """The episode's system turn, or ``""`` when none is explicitly set.
+
+        Returning ``""`` leaves the agent's own ``AgentConfig.system_prompt``
+        in charge; see the class docstring for the precedence rules.
+        """
+        scenario = scenario if scenario is not None else self.current_scenario
+        if not isinstance(scenario, dict):
+            scenario = {}
+        parts: list[str] = []
+        explicit = self.system_prompt or scenario.get("system_prompt")
+        if isinstance(explicit, str) and explicit.strip():
+            parts.append(explicit.strip())
+        if scenario.get("context"):
+            parts.append(f"Context: {scenario['context']}")
+        if not parts:
+            return ""
         if self.persona:
-            base_prompt += f" {self.persona}"
-        if scenario and "context" in scenario:
-            base_prompt += f" Context: {scenario['context']}"
-        return base_prompt
+            parts.insert(1, str(self.persona))
+        return " ".join(parts)
 
     async def _generate_user_response(
         self, agent_turn: ConversationTurn, state: EnvironmentState
@@ -226,10 +323,12 @@ class ConversationEnvironment(Environment):
     async def _should_end_conversation(
         self, agent_turn: ConversationTurn, state: EnvironmentState
     ) -> bool:
-        goodbye_phrases = ["goodbye", "bye", "see you", "talk to you later"]
-        return any(
-            phrase in (agent_turn.content or "").lower() for phrase in goodbye_phrases
-        )
+        """End early on an assistant farewell (unscripted scenarios only)."""
+        if not self.end_on_farewell:
+            return False
+        if _scripted_user_turns(state.context.get("scenario")) is not None:
+            return False
+        return bool(_FAREWELL_RE.search(agent_turn.content or ""))
 
     def clone(self) -> ConversationEnvironment:
         """Create a new ConversationEnvironment with the same configuration."""
@@ -238,5 +337,7 @@ class ConversationEnvironment(Environment):
             max_turns=self.max_turns,
             reward_fn=self.reward_fn,
             persona=self.persona,
+            system_prompt=self.system_prompt,
+            end_on_farewell=self.end_on_farewell,
             timeout_seconds=self.timeout_seconds,
         )

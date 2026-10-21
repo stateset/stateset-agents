@@ -215,6 +215,34 @@ class DAPORewardShaper:
         return base_reward + weight * length_adjustment
 
 
+def _overlong_shaping_bounds(config: DAPOConfig) -> tuple[int, int]:
+    """L_max and L_cache for overlong shaping, anchored to the generation cap.
+
+    Responses never exceed ``max_completion_length`` tokens, so a soft interval
+    placed at ``max_generation_length`` beyond that cap could never trigger.
+    A cache at least as long as L_max would penalize every response; it is
+    clamped to the paper's ratio (4096 / 20480 = 1/5 of L_max).
+    """
+    max_length = max(
+        1, min(int(config.max_generation_length), int(config.max_completion_length))
+    )
+    cache_length = int(config.overlong_cache_length)
+    if config.use_overlong_shaping and not 0 < cache_length < max_length:
+        clamped = max(1, max_length // 5)
+        # The stock default is sized for 20k-token generations; only an
+        # explicit setting that cannot fit is worth a warning.
+        user_set = cache_length != type(config)().overlong_cache_length
+        (logger.warning if user_set else logger.debug)(
+            "overlong_cache_length=%d does not fit inside the %d-token generation "
+            "cap; using %d tokens for the soft overlong penalty interval",
+            cache_length,
+            max_length,
+            clamped,
+        )
+        cache_length = clamped
+    return max_length, cache_length
+
+
 class DynamicSamplingBuffer:
     """
     Implements DAPO's Dynamic Sampling.
@@ -340,9 +368,10 @@ class DAPOTrainer(TrainingRuntime):
             self._setup_vllm()
 
         # Reward shaper for length penalty
+        shaping_max, shaping_cache = _overlong_shaping_bounds(config)
         self.reward_shaper = DAPORewardShaper(
-            max_length=config.max_generation_length,
-            cache_length=config.overlong_cache_length,
+            max_length=shaping_max,
+            cache_length=shaping_cache,
             penalty=config.overlong_penalty,
         )
 

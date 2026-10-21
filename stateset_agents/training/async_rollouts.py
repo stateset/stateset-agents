@@ -16,9 +16,9 @@ import asyncio
 import math
 import re
 from collections import deque
-from collections.abc import Callable, Coroutine, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import asdict, dataclass
-from typing import Any, TypeVar
+from typing import Any
 
 
 class AsyncRolloutError(RuntimeError):
@@ -33,34 +33,28 @@ class AsyncRolloutTimeout(AsyncRolloutError):
     """Raised when bounded backpressure or batch collection times out."""
 
 
-_T = TypeVar("_T")
+async def _wait_bounded(
+    condition: asyncio.Condition,
+    predicate: Callable[[], bool],
+    timeout_seconds: float | None,
+    message: str,
+) -> None:
+    """Wait on ``condition`` (already held) for ``predicate``, within a timeout.
 
-
-async def _await_bounded(
-    operation: Coroutine[Any, Any, _T], timeout_seconds: float, message: str
-) -> _T:
-    """Resolve a timed operation after cancellation before reporting timeout.
-
-    ``wait_for`` can report a timeout even when the child committed a queue
-    change just before cancellation reached it. Awaiting the cancelled task's
-    outcome distinguishes that committed result from a cancelled wait.
+    Only the wait is bounded, and it runs in the caller's own task: the caller
+    then mutates the queue with no further suspension point, so cancelling it
+    can never discard records that already changed hands. A timeout that
+    races a notification is resolved by re-checking the predicate, which the
+    caller holds the lock for once the wait returns.
     """
-    task = asyncio.create_task(operation)
+    if timeout_seconds is None:
+        await condition.wait_for(predicate)
+        return
     try:
-        done, _ = await asyncio.wait({task}, timeout=timeout_seconds)
-        if done:
-            return task.result()
-        task.cancel()
-        outcome = (await asyncio.gather(task, return_exceptions=True))[0]
-        if isinstance(outcome, asyncio.CancelledError):
-            raise AsyncRolloutTimeout(message)
-        if isinstance(outcome, BaseException):
-            raise outcome
-        return outcome
-    finally:
-        if not task.done():
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+        await asyncio.wait_for(condition.wait_for(predicate), timeout_seconds)
+    except asyncio.TimeoutError:
+        if not predicate():
+            raise AsyncRolloutTimeout(message) from None
 
 
 @dataclass(frozen=True)
@@ -279,6 +273,22 @@ class AsyncRolloutCoordinator:
         self._rejected_duplicate = 0
         self._max_observed_policy_lag = 0
         self._seen_rollout_ids: set[str] = set()
+        self._eviction_listeners: list[Callable[[RolloutRecord, int], None]] = []
+
+    def add_eviction_listener(
+        self, listener: Callable[[RolloutRecord, int], None]
+    ) -> None:
+        """Observe every admitted record later evicted for exceeding the lag bound.
+
+        ``listener(record, lag)`` runs synchronously while the coordinator lock
+        is held, so it must not suspend or raise. Listeners are process-local
+        and are not part of :meth:`state_dict`; re-attach them after restore.
+        This lets a transport account for admitted-but-untrained rollout IDs
+        instead of only the aggregate ``dropped_stale`` counter.
+        """
+        if not callable(listener):
+            raise TypeError("eviction listener must be callable")
+        self._eviction_listeners.append(listener)
 
     @property
     def current_policy_version(self) -> int:
@@ -291,8 +301,11 @@ class AsyncRolloutCoordinator:
     def _evict_stale(self) -> None:
         retained: deque[RolloutRecord] = deque()
         for record in self._queue:
-            if self._policy_lag(record) > self.config.max_policy_lag:
+            lag = self._policy_lag(record)
+            if lag > self.config.max_policy_lag:
                 self._dropped_stale += 1
+                for listener in self._eviction_listeners:
+                    listener(record, lag)
             else:
                 retained.append(record)
         self._queue = retained
@@ -336,10 +349,13 @@ class AsyncRolloutCoordinator:
                     self._dropped_stale += 1
                     return False
 
-                await self._condition.wait_for(
+                await _wait_bounded(
+                    self._condition,
                     lambda: (
                         self._closed or len(self._queue) < self.config.queue_capacity
-                    )
+                    ),
+                    timeout_seconds,
+                    "timed out waiting for rollout queue capacity",
                 )
                 if self._closed:
                     raise AsyncRolloutClosed("rollout coordinator is closed")
@@ -368,11 +384,7 @@ class AsyncRolloutCoordinator:
                 self._condition.notify_all()
                 return True
 
-        if timeout_seconds is None:
-            return await _submit()
-        return await _await_bounded(
-            _submit(), timeout_seconds, "timed out waiting for rollout queue capacity"
-        )
+        return await _submit()
 
     async def next_batch(
         self,
@@ -404,8 +416,11 @@ class AsyncRolloutCoordinator:
         async def _collect() -> RolloutBatch:
             async with self._condition:
                 self._evict_stale()
-                await self._condition.wait_for(
-                    lambda: len(self._queue) >= requested_min or self._closed
+                await _wait_bounded(
+                    self._condition,
+                    lambda: len(self._queue) >= requested_min or self._closed,
+                    timeout_seconds,
+                    "timed out waiting for a rollout batch",
                 )
                 self._evict_stale()
                 if not self._queue:
@@ -424,11 +439,7 @@ class AsyncRolloutCoordinator:
                     policy_lags=lags,
                 )
 
-        if timeout_seconds is None:
-            return await _collect()
-        return await _await_bounded(
-            _collect(), timeout_seconds, "timed out waiting for a rollout batch"
-        )
+        return await _collect()
 
     async def advance_policy(self, new_version: int | None = None) -> int:
         """Advance learner weights and evict samples beyond the lag bound."""

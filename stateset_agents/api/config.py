@@ -340,6 +340,21 @@ class APIConfig:
     enable_training_lab: bool = False
     training_max_concurrent_jobs: int = 1
     training_queue_path: str | None = None
+    # Server-controlled root for every API training job's outputs; clients
+    # can neither choose output directories nor resume from outside it.
+    training_output_root: str = "outputs/api-training"
+    # Client-requested models load real weights only when an operator opts in
+    # (any environment), optionally restricted to an allow-list of model IDs
+    # or ``prefix*`` patterns; otherwise development/staging use the stub
+    # backend and production refuses the request.
+    allow_external_models: bool = False
+    model_allowlist: list[str] = field(default_factory=list)
+    # Serve Prometheus ``/metrics`` without authentication (for scrapers that
+    # cannot send credentials). Off by default when auth is required.
+    public_metrics: bool = False
+    # Accept training-lab WebSocket credentials from the query string, which
+    # leaks them into access logs. Off by default; prefer headers.
+    lab_ws_query_token: bool = False
 
     @classmethod
     def from_env(cls) -> "APIConfig":
@@ -379,6 +394,13 @@ class APIConfig:
                 ),
             )
             or None,
+            training_output_root=os.getenv(
+                "API_TRAINING_OUTPUT_ROOT", "outputs/api-training"
+            ),
+            allow_external_models=_get_bool("API_ALLOW_EXTERNAL_MODELS", False),
+            model_allowlist=_get_list("API_MODEL_ALLOWLIST", []),
+            public_metrics=_get_bool("API_PUBLIC_METRICS", False),
+            lab_ws_query_token=_get_bool("API_LAB_WS_QUERY_TOKEN", False),
         )
 
     def validate(self) -> list[str]:

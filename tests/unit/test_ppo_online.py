@@ -9,8 +9,7 @@ import pytest
 import torch
 
 from stateset_agents.evaluation.agent_runs import content_hash
-from stateset_agents.training import ppo_online
-from stateset_agents.training import ppo_trainer as ppo
+from stateset_agents.experimental import ppo, ppo_online
 from tests.unit.test_ppo_safety import (
     CharacterTokenizer,
     assert_same,

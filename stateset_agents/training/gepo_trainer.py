@@ -221,6 +221,11 @@ class GEPOTrainer(TrainingRuntime):
         _load_transformers_gepo()
 
         validate_training_config(config)
+        if float(getattr(config, "beta", 0.0) or 0.0) > 0:
+            raise ValueError(
+                "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
+                f"(got {config.beta}). Use the GRPO or GSPO trainer for a KL term."
+            )
         self.config = config
         # GEPO objective: group-expectation importance coefficient, PPO clip.
         self._objective = objectives.resolve_objective(
@@ -309,7 +314,8 @@ class GEPOTrainer(TrainingRuntime):
             token_log_probs: Log probs for each token [batch, seq_len]
             sequence_log_probs: Sum of log probs per sequence [batch]
         """
-        with torch.set_grad_enabled(self.model.training):
+        # Never re-enable autograd inside a caller's no_grad (sampler pass).
+        with torch.set_grad_enabled(self.model.training and torch.is_grad_enabled()):
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
             logits = outputs.logits
 
@@ -400,19 +406,36 @@ class GEPOTrainer(TrainingRuntime):
         learner_seq_log_probs: torch.Tensor,
         sampler_seq_log_probs: torch.Tensor,
         advantages: torch.Tensor,
+        *,
+        token_log_probs: torch.Tensor | None = None,
+        response_mask: torch.Tensor | None = None,
     ) -> torch.Tensor:
         """GEPO objective for one prompt group via ``objectives.policy_loss``.
 
-        Each sequence is one "token" carrying its summed log-prob; the whole
-        call is one group, so the group-expectation denominator spans it.
+        With ``token_log_probs``/``response_mask`` the per-token learner
+        log-probs are passed through, so sequence ratios (``gspo``,
+        ``gspo_token``) are length-normalised as GSPO defines them. Without
+        them each sequence is one "token" carrying its summed log-prob, which
+        is only correct for the group-expectation ratio. The whole call is one
+        group, so the group-expectation denominator spans it.
         """
-        logp_cur = learner_seq_log_probs.unsqueeze(-1)
+        if token_log_probs is not None and response_mask is not None:
+            logp_cur = token_log_probs
+            mask = response_mask.to(token_log_probs.dtype)
+        else:
+            if self._objective.ratio != "group_expectation":
+                raise ValueError(
+                    f"ratio={self._objective.ratio!r} needs token_log_probs and "
+                    "response_mask for length normalisation"
+                )
+            logp_cur = learner_seq_log_probs.unsqueeze(-1)
+            mask = torch.ones_like(logp_cur)
         group_ids = torch.zeros(
             logp_cur.shape[0], dtype=torch.long, device=logp_cur.device
         )
         result = objectives.policy_loss(
             logp_cur=logp_cur,
-            mask=torch.ones_like(logp_cur),
+            mask=mask,
             advantages=advantages,
             objective=self._objective,
             logp_old=sampler_seq_log_probs.detach(),
@@ -603,10 +626,12 @@ class GEPOTrainer(TrainingRuntime):
             accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
 
             for rollout in rollouts:
-                _, learner_seq_log_probs = self.compute_sequence_log_probs(
-                    rollout["input_ids"],
-                    rollout["attention_mask"],
-                    rollout["response_start_idx"],
+                learner_token_log_probs, learner_seq_log_probs = (
+                    self.compute_sequence_log_probs(
+                        rollout["input_ids"],
+                        rollout["attention_mask"],
+                        rollout["response_start_idx"],
+                    )
                 )
 
                 with torch.no_grad():
@@ -620,6 +645,10 @@ class GEPOTrainer(TrainingRuntime):
                     learner_seq_log_probs,
                     rollout["sampler_seq_log_probs"],
                     rollout["advantages"],
+                    token_log_probs=learner_token_log_probs,
+                    response_mask=self.build_response_mask(
+                        rollout["attention_mask"], rollout["response_start_idx"]
+                    ),
                 )
 
                 accumulated_loss = accumulated_loss + policy_loss

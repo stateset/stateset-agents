@@ -592,6 +592,7 @@ def test_evaluate_requires_every_gate_on_one_commit(
     monkeypatch.setattr(
         gate.agent_quality_evidence, "summarize", lambda _: {"passed": True}
     )
+    monkeypatch.setattr(gate, "_require_pinned_suite_revisions", lambda *_: None)
     monkeypatch.setattr(
         gate.run_flagship_matrix,
         "load_manifest",

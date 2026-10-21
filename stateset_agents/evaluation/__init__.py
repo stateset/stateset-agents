@@ -1,26 +1,11 @@
 """
 Evaluation utilities for stateset-agents.
 
-Includes metrics for sim-to-real transfer evaluation and agent performance.
+The sim-to-real metrics that used to be re-exported here live in
+``stateset_agents.experimental.sim_to_real.metrics`` (moved in v0.64.0; the
+re-exports were removed in v0.65.0).
 """
 
 from __future__ import annotations
 
-from importlib import import_module
-from typing import Any
-
-__all__ = [
-    "SimToRealMetrics",
-    "SimToRealEvaluator",
-    "compute_distribution_divergence",
-    "compute_response_statistics",
-]
-
-
-def __getattr__(name: str) -> Any:
-    """Keep outcome comparisons independent of optional tensor dependencies."""
-    if name not in __all__:
-        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(".sim_to_real_metrics", __name__), name)
-    globals()[name] = value
-    return value
+__all__: list[str] = []

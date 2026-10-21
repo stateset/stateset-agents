@@ -55,7 +55,9 @@ from stateset_agents.remote.runpod import (
 
 __all__ = [
     "RemoteServeSession",
+    "adapter_no_effect_message",
     "find_serve_pod",
+    "greedy_completion",
     "list_serve_pods",
     "self_destruct_script",
 ]
@@ -64,6 +66,8 @@ _POD_PREFIX = "stateset-serve-"
 _REMOTE_ADAPTER_DIR = f"{_REMOTE_WORKDIR}/adapter"
 _REMOTE_ADAPTER_TAR = f"{_REMOTE_WORKDIR}/adapter.tar.gz"
 _REMOTE_KEY_FILE = f"{_REMOTE_WORKDIR}/.runpod_key"
+# vLLM reads its bearer token from VLLM_API_KEY; keep it off the command line.
+_REMOTE_VLLM_KEY_FILE = f"{_REMOTE_WORKDIR}/.vllm_api_key"
 _REMOTE_DESTRUCT_SCRIPT = f"{_REMOTE_WORKDIR}/self_destruct.sh"
 _REMOTE_VLLM_LOG = f"{_REMOTE_WORKDIR}/vllm.log"
 _VLLM_PORT = 8000
@@ -126,6 +130,47 @@ def _default_http_post_json(
     response = requests.post(url, headers=headers, json=payload, timeout=120)
     response.raise_for_status()
     return dict(response.json())
+
+
+def greedy_completion(
+    endpoint_url: str,
+    token: str,
+    model: str,
+    *,
+    http_post_json: HttpPostJson | None = None,
+) -> str:
+    """One greedy probe completion from ``model`` on an OpenAI-compatible URL.
+
+    ``endpoint_url`` is the server root (without ``/v1``). Shared by the
+    RunPod serve session and the agent-quality endpoint wrapper so both run
+    the identical adapter-effect probe.
+    """
+    post = http_post_json or _default_http_post_json
+    body = post(
+        f"{endpoint_url}/v1/chat/completions",
+        {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
+        {
+            "model": model,
+            "temperature": 0,
+            "max_tokens": 48,
+            "messages": [{"role": "user", "content": _PROBE_PROMPT}],
+        },
+    )
+    return str(body["choices"][0]["message"]["content"])
+
+
+def adapter_no_effect_message(name: str) -> str:
+    """The failure text for an adapter whose greedy output equals the base."""
+    return (
+        f"adapter {name!r} has NO EFFECT: its greedy completion "
+        "is byte-identical to the base model's. vLLM loads some "
+        "adapters (hybrid Qwen3.5 families) without error and "
+        "silently serves base weights — use --merge for those. "
+        "See docs/PROOFS.md."
+    )
 
 
 def self_destruct_script(
@@ -568,19 +613,20 @@ class RemoteServeSession:
         """The launch line: vLLM's built-in OpenAI-compatible server.
 
         ``vllm serve`` binds 0.0.0.0:8000 with ``/v1`` chat/completions
-        endpoints, requiring ``Authorization: Bearer <token>`` because of
-        ``--api-key``. With adapters, ``--enable-lora`` registers each as a
+        endpoints, requiring ``Authorization: Bearer <token>``. The token is
+        exported as ``VLLM_API_KEY`` from a 0600 secret file, so it never
+        appears on a command line visible in ``ps``. With adapters, ``--enable-lora`` registers each as a
         served model under its own name — request any of them (or the base)
         via the ``model`` field, which is how A/B comparison works.
         """
         parts = [
+            f'VLLM_API_KEY="$(cat {shlex.quote(_REMOTE_VLLM_KEY_FILE)})"',
             "nohup",
             "vllm",
             "serve",
             shlex.quote(model_path or base_model),
             "--host 0.0.0.0",
             f"--port {_VLLM_PORT}",
-            f"--api-key {shlex.quote(self.token)}",
         ]
         if model_path is not None:
             # A merged checkpoint serves under the API name "adapter" so
@@ -640,20 +686,12 @@ class RemoteServeSession:
     def _greedy_probe(self, model: str) -> str:
         """One greedy completion from ``model`` through the live endpoint."""
         assert self.endpoint_url is not None
-        body = self._http_post_json(
-            f"{self.endpoint_url}/v1/chat/completions",
-            {
-                "Authorization": f"Bearer {self.token}",
-                "Content-Type": "application/json",
-            },
-            {
-                "model": model,
-                "temperature": 0,
-                "max_tokens": 48,
-                "messages": [{"role": "user", "content": _PROBE_PROMPT}],
-            },
+        return greedy_completion(
+            self.endpoint_url,
+            self.token,
+            model,
+            http_post_json=self._http_post_json,
         )
-        return str(body["choices"][0]["message"]["content"])
 
     def _verify_adapter_effect(
         self, base_model: str, adapter_names: list[str], *, strict: bool
@@ -685,13 +723,7 @@ class RemoteServeSession:
                 )
                 continue
             if adapter_completion == base_completion:
-                message = (
-                    f"adapter {name!r} has NO EFFECT: its greedy completion "
-                    "is byte-identical to the base model's. vLLM loads some "
-                    "adapters (hybrid Qwen3.5 families) without error and "
-                    "silently serves base weights — use --merge for those. "
-                    "See docs/PROOFS.md."
-                )
+                message = adapter_no_effect_message(name)
                 if strict:
                     raise RemoteExecutionError(message, provider=self.provider)
                 self.effect_warnings.append(message)
@@ -832,6 +864,7 @@ class RemoteServeSession:
                 )
             else:
                 launch = self._vllm_command(base_model, list(all_adapters))
+            ssh.upload_secret(str(self.token), _REMOTE_VLLM_KEY_FILE)
             self._run_checked(ssh, launch)
             self._await_server_ready(ssh)
             if all_adapters and not merge:
@@ -876,7 +909,6 @@ class RemoteServeSession:
             shlex.quote(base_model),
             "--host 0.0.0.0",
             f"--port {_VLLM_PORT}",
-            f"--api-key {shlex.quote(self.token)}",
         ]
         engine_args = list(self.vllm_args)
         if gpu_count > 1 and not any(
@@ -893,12 +925,16 @@ class RemoteServeSession:
             f"exec {' '.join(launch_parts)} >{_DIRECT_LOG_FILE} 2>&1"
         )
         volume_args = self._network_volume_args(api, network_volume_id)
-        env = {}
+        # vLLM reads its bearer token from VLLM_API_KEY, so it stays out of
+        # the container's command line.
+        env = {"VLLM_API_KEY": str(self.token)}
         if network_volume_id:
-            env = {
-                "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
-                "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
-            }
+            env.update(
+                {
+                    "HF_HOME": f"{_REMOTE_WORKDIR}/huggingface",
+                    "HF_HUB_CACHE": f"{_REMOTE_WORKDIR}/huggingface/hub",
+                }
+            )
         self.pod_name = f"{_POD_PREFIX}{uuid.uuid4().hex[:12]}"
         pod = api.create_pod(
             name=self.pod_name,
@@ -955,8 +991,8 @@ class RemoteServeSession:
 
     def _direct_log_server_source(self) -> str:
         """A tiny Bearer-protected endpoint serving only the last 64 KiB."""
-        return f"""import http.server
-TOKEN = {self.token!r}
+        return f"""import http.server, os
+TOKEN = os.environ["VLLM_API_KEY"]
 LOG = {_DIRECT_LOG_FILE!r}
 
 class Handler(http.server.BaseHTTPRequestHandler):

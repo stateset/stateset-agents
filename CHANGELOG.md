@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Merge the checkpointed IQL policy extractor with the experimental module layout
+  and support aligned logged-message datasets without changing its objective.
+- Keep sampled stop tokens and their log-probabilities in RL actions while hiding
+  configured stop strings in displayed replies. Publish restored native policies
+  once after checkpoint state commits.
+- Preserve shuffled PPO mini-batches, finite-update checks, exact behavior
+  evidence and complete runtime recovery in the experimental PPO trainer.
+
+
 ### Added
 
 - Replay recorded industry policy traces offline, checking every transition,
@@ -714,6 +725,614 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and gradients before advancing optimizer or scheduler state.
 - Average GSPO-token loss across processed prompt groups, including KL, and honor
   `rescore_old_log_probs` with the same score-gap diagnostic as GSPO.
+- Made `SecureConfig` fail closed when encrypted secrets lack a configured key
+  or the `cryptography` dependency; explicit plaintext storage remains available
+  through `encrypt=False`.
+- Rejected expired `AuthService` sessions during authorization and made security
+  timestamps timezone aware while accepting older naive UTC timestamps.
+- Capped the in-memory `SecurityMonitor` event history at 10,000 entries by
+  default, so repeated authentication failures cannot grow it without bound;
+  both security monitors now reject invalid event limits.
+- Bounded the API authentication failure tracker to 10,000 credential keys by
+  default. It prunes expired records and rejects new invalid credentials when
+  full without evicting active lockouts.
+- Made healthy Redis misses authoritative in the hybrid cache, so a key deleted
+  by another instance cannot reappear from stale local memory. Redis read
+  failures still use the local availability fallback.
+- Retry a configured Redis connection after a hybrid cache starts in memory
+  fallback mode, allowing the cache to recover when Redis becomes available.
+- Isolate API cache decorator keys by fully qualified function name and full
+  SHA-256 argument digests to prevent cross-function cache collisions.
+- Keep real-model streaming off the event loop, preserve inference mode, stop
+  cleanly across chunk boundaries, and surface generation worker failures.
+- Validate rollout backend batch counts, prompt identity, token alignment, and
+  finite log-probabilities before handing samples to trainers. Invalid batches
+  use one native fallback and retain the backend error on each turn.
+- Require exact sampled-token log-probabilities from vLLM generation and exact
+  prompt-aligned response-token probabilities from vLLM rescoring; missing data
+  now raises instead of silently substituting unrelated values or zero.
+- Reject duplicate prompt keys, invalid group sizes, incomplete groups, and
+  misattributed responses in vLLM/HuggingFace group generation and the GSPO
+  and DAPO training paths.
+
+## [0.65.0] - 2026-10-13 — Correct, fast multi-turn RL
+
+### Performance
+
+- **GSPO samples a whole step in one `generate` call.** GSPO and GSPO-token
+  generated each prompt's group separately; they now sample all prompts x
+  `num_generations` rows through `MultiTurnAgent.generate_turns_batch`
+  (greedy decoding gives identical groups either way). On CPU with a tiny
+  Qwen2+LoRA policy a 4x4 step went from ~23 s to ~15 s; the v5 shootout
+  measured native GSPO at ~30 s/step against TRL's 7.9 s on identical work.
+  On an L40S (Qwen2.5-1.5B, 200 steps) training time fell from 6,032 s to
+  1,357 s (~6.7 s/step); the matched v5.1 shootout measured 1.01 samples/s
+  against TRL's 0.99.
+
+### Fixed
+
+- **GSPO rollouts use the trainer's sampling settings.** `train_with_gspo`
+  rebuilt the agent's generation config from `AgentConfig` defaults, so
+  `GSPOConfig.temperature`/`top_p` never reached generation. The trainer
+  config's `temperature`, `top_p`, `top_k` and `repetition_penalty` now drive
+  GSPO rollouts (`apply_rollout_sampling`).
+- **The phase-0 native shootout leg samples exactly like the TRL leg**
+  (protocol temperature/top_p, no top-k, no repetition penalty, no stop
+  strings) and records it as `algorithm_config.sampling`.
+
+### Changed
+
+- **Agent-quality gate: SWE-bench Verified is now optional.** The A+ gate in
+  `benchmarks/agent_quality_evidence.py` now requires only `tau3-bench` and
+  `bfcl-v4` (`REQUIRED_SUITES`). `swe-bench-verified` is in the new
+  `OPTIONAL_SUITES`. The flagship is a 7–8B customer-support / tool-use policy,
+  so repository-level software engineering is out of domain. The threshold did
+  not get weaker:
+  - Every suite in the evidence, including an optional one, must pass the same
+    per-suite gate: at least +3% mean improvement, a paired 95% confidence
+    bound above zero, matched seeds, and one shared trained artifact.
+  - `run_agent_quality_matrix.py` requires the evidence to cover exactly the
+    manifest roster. You cannot run an optional suite and then drop it.
+  - Unknown suites and duplicate roster entries are still rejected.
+  - The suite sets in the adapters (`official_suite_pipeline`,
+    `official_result_normalizer`, `paired_agent_harness`) now come from the
+    shared constants. `paired_agent_harness validate` checks the required
+    suites plus any optional suites that are configured.
+  - The example manifests list only the two required suites.
+    `benchmarks/README.md` explains how to add SWE-bench Verified.
+  - Matrix reports now record `required_suites`.
+
+- **`MultiTurnAgent` text is exactly what the policy sampled.** For every
+  generated assistant turn, `content == tokenizer.decode(token_ids,
+  skip_special_tokens=True)`, so the conversation history, rewards and the
+  token-path loss agree:
+  - No default stop strings: replies are no longer cut at the first blank
+    line (`"\n\n"`) or at `User:`/`System:`. Stops are explicit via the new
+    `AgentConfig.stop_sequences` (default `[]`); text and `token_ids` are
+    truncated at the same token boundary, including when a stop string lands
+    inside a merged token. `LEGACY_STOP_SEQUENCES` restores the old set.
+  - Sampled text is no longer whitespace-stripped or cut at speaker labels
+    (the streaming display path still hides speaker labels).
+  - Canned persona sentences ("I'll help you with your billing question
+    right away.") are off by default (`AgentConfig.enable_persona_hints`) and
+    are never applied by `generate_turn`/`generate_turns` (a warning is
+    logged instead), so they cannot reach training rollouts.
+  - Rollout-engine results get the same stop handling and now receive the
+    configured `top_k` (`-1` when disabled).
+- **`AgentConfig.top_k` accepts `0` or `None` to disable top-k** (both map to
+  HF `top_k=0`; booleans are rejected). The default stays 50.
+- **`ConversationEnvironment` no longer overrides the agent's system prompt.**
+  `get_initial_prompt` returns `""` unless a system prompt is explicitly
+  provided (new `system_prompt` argument, scenario `"system_prompt"`, or
+  scenario `"context"`); the generic "You are a helpful AI assistant..." turn
+  is gone and `persona` alone no longer creates a system turn. A system turn
+  in the history still takes precedence over `AgentConfig.system_prompt`
+  (now checked anywhere in the history, not only at index 0).
+- **Farewell endings are configurable and skip scripted scenarios.** New
+  `ConversationEnvironment(end_on_farewell=True)`; scenarios with
+  `user_turns` run their full script even if the agent says "Goodbye!", and
+  farewell phrases match whole words only ("see your order" no longer ends an
+  episode).
+
+## [0.64.2] - 2026-10-12 — Security and Windows fixes
+
+### Fixed
+
+- `BayesianRewardFunction` initialises its `RewardFunction` base (it had no
+  `weight`, `reward_type` or `name`, so composite rewards and environments
+  failed on it).
+- Checkpoint publication flushes files through a writable handle on Windows
+  (fsync on a read-only handle raised EBADF there).
+
+### Security
+
+- `InputValidator.detect_injection_attempts` flags any `<script` opening tag;
+  it missed unclosed tags and end tags such as `</script >` (CodeQL
+  `py/bad-tag-filter`).
+- Training Lab playground sessions are owner-scoped: another user's session
+  returns 404 on read, chat, and clear (admins see all).
+
+## [0.64.1] - 2026-10-12 — Security hardening
+
+### Security
+
+- **API training jobs can no longer write or read outside the server's
+  training root.** `training_config_overrides` accepts tuning keys only
+  (`output_dir`, `report_to`, `wandb_*`, `overwrite_output_dir`, and arbitrary
+  `resume_from_checkpoint` paths are rejected with 422); outputs go to
+  `API_TRAINING_OUTPUT_ROOT/<training_id>`, and resume takes a job id or a path
+  under that root.
+- **Agents are owned.** `/agents` list/get/delete are scoped to the creator
+  (admins see all); another user's agent returns 404. Training Lab experiments
+  are owned the same way, and clone/patch re-validate merged configs.
+- **Model loading is opt-in in every environment.** Real weights load only with
+  `API_ALLOW_EXTERNAL_MODELS=true` (previously implicit in production),
+  optionally restricted by `API_MODEL_ALLOWLIST`, and require the trainer or
+  admin role.
+- **`trust_remote_code` defaults to False** (`TrainingConfig`, GSPO, vLLM,
+  presets, starters, serving export); only model families transformers does
+  not implement natively (Kimi, GLM, Muse-Glimmer) enable it explicitly.
+- A successful login clears only its own credential's lockout; Training Lab
+  WebSockets take credentials from headers (`API_LAB_WS_QUERY_TOKEN=true`
+  re-enables query tokens); `/metrics` requires auth when auth is on unless
+  `API_PUBLIC_METRICS=true` (`deployment/scripts/health_check.sh` sends
+  `HEALTH_CHECK_API_KEY`); `serve-remote` passes the vLLM API key via a 0600
+  file or environment, never argv.
+
+**Upgrade notes:** production deployments that let clients name models must set
+`API_ALLOW_EXTERNAL_MODELS=true` (and ideally `API_MODEL_ALLOWLIST`);
+Prometheus scrapers need credentials or `API_PUBLIC_METRICS=true`; custom
+models that need remote code must set `trust_remote_code=True` explicitly.
+
+### Removed
+
+- **The v0.64.0 experimental-move deprecation shims are gone.** These old
+  module paths now raise `ModuleNotFoundError`; import from
+  `stateset_agents.experimental` instead:
+  - `stateset_agents.training.ppo_trainer` → `stateset_agents.experimental.ppo`
+  - `stateset_agents.training.rlaif_trainer` → `stateset_agents.experimental.rlaif`
+  - `stateset_agents.training.offline_rl_algorithms` (CQL/IQL) →
+    `stateset_agents.experimental.offline_rl.algorithms`
+  - `stateset_agents.training.offline_rl_bcq` → `stateset_agents.experimental.offline_rl.bcq`
+  - `stateset_agents.training.offline_rl_bear` → `stateset_agents.experimental.offline_rl.bear`
+  - `stateset_agents.training.decision_transformer` →
+    `stateset_agents.experimental.offline_rl.decision_transformer`
+  - `stateset_agents.training.offline_grpo_trainer` →
+    `stateset_agents.experimental.offline_rl.offline_grpo`
+  - `stateset_agents.training.sim_to_real` → `stateset_agents.experimental.sim_to_real.transfer`
+  - `stateset_agents.training.domain_randomization` →
+    `stateset_agents.experimental.sim_to_real.domain_randomization`
+  - `stateset_agents.environments.conversation_simulator` →
+    `stateset_agents.experimental.sim_to_real.conversation_simulator`
+  - `stateset_agents.evaluation.sim_to_real_metrics` →
+    `stateset_agents.experimental.sim_to_real.metrics`
+  - `stateset_agents.rewards.bayesian_reward_model` →
+    `stateset_agents.experimental.bayesian_reward_model`
+- **Package-level re-exports removed** (now `AttributeError`/`ImportError`):
+  - `stateset_agents.training`: `PPOConfig`, `PPOTrainer`, `PPOValueHead`,
+    `AdaptiveKLController`, `compute_gae`, `train_ppo` (→ `experimental.ppo`);
+    `RLAIFConfig`, `RLAIFTrainer`, `ConstitutionalAI`, `train_rlaif`
+    (→ `experimental.rlaif`); `CQLConfig`, `IQLConfig`,
+    `ConservativeQLearning`, `ImplicitQLearning`, `OfflineRLTrainer`
+    (→ `experimental.offline_rl.algorithms`); `BCQConfig`,
+    `BatchConstrainedQLearning`, `ConversationalVAE`, `BCQTrainer`
+    (→ `experimental.offline_rl.bcq`); `BEARConfig`, `ConversationalBEAR`,
+    `MMDKernel`, `BEARTrainer` (→ `experimental.offline_rl.bear`);
+    `DecisionTransformerConfig`, `DecisionTransformer`,
+    `DecisionTransformerTrainer`, `ConversationEmbedder`
+    (→ `experimental.offline_rl.decision_transformer`); `OfflineGRPOConfig`,
+    `OfflineGRPOTrainer`, `OfflineRLAlgorithm`
+    (→ `experimental.offline_rl.offline_grpo`); `DomainRandomizationConfig`,
+    `DomainRandomizer`, `PersonaGenerator`, `ScenarioGenerator`, `UserPersona`
+    (→ `experimental.sim_to_real.domain_randomization`); `SimToRealConfig`,
+    `SimToRealTransfer`, `UserBehaviorModel`, `DomainAdaptationModule`
+    (→ `experimental.sim_to_real.transfer`). The `*_AVAILABLE` flags
+    (`PPO_AVAILABLE`, `SIM_TO_REAL_AVAILABLE`, ...) are unchanged.
+  - `stateset_agents.evaluation`: `SimToRealMetrics`, `SimToRealEvaluator`,
+    `compute_distribution_divergence`, `compute_response_statistics`
+    (→ `experimental.sim_to_real.metrics`).
+  - `stateset_agents.environments`: `ConversationSimulator`,
+    `ConversationSimulatorConfig`, `UserSimulator`
+    (→ `experimental.sim_to_real.conversation_simulator`).
+- `pytest.ini` no longer escalates the v0.65.0 removal warnings;
+  `tests/unit/test_experimental_shims.py` is replaced by
+  `tests/unit/test_experimental_shims_removed.py`, which asserts the old paths
+  stay gone and the experimental paths import.
+
+**Migration:** replace the old import with the experimental path, e.g.
+`from stateset_agents.training import PPOTrainer` →
+`from stateset_agents.experimental.ppo import PPOTrainer`, and
+`from stateset_agents.environments import ConversationSimulator` →
+`from stateset_agents.experimental.sim_to_real.conversation_simulator import
+ConversationSimulator`. Objects, signatures and behavior are unchanged.
+
+### Deprecated
+
+- **Root sim-to-real exports kept one more minor release.**
+  `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator`, and `ConversationSimulatorConfig` are stable v1
+  public-API-contract names. `docs/API_COMPATIBILITY.md` requires a deprecated
+  stable symbol to remain available for at least one minor release after the
+  one that deprecated it (v0.64.0), so they stay in `stateset_agents.__all__`
+  and the v1 contract (unchanged) through v0.65.x, still warning, and are now
+  scheduled for removal in **v0.66.0** (the v0.64.0 notes said v0.65.0). They
+  resolve directly from `stateset_agents.experimental.sim_to_real`.
+
+## [0.64.0] - 2026-10-12 — Smaller stable surface
+
+### Changed
+
+- **Smaller stable surface: the least-proven training modules moved to
+  `stateset_agents.experimental`** (no API stability guarantee). Old path →
+  new path:
+  - `stateset_agents.training.ppo_trainer` → `stateset_agents.experimental.ppo`
+  - `stateset_agents.training.rlaif_trainer` → `stateset_agents.experimental.rlaif`
+  - `stateset_agents.training.offline_rl_algorithms` (CQL/IQL) →
+    `stateset_agents.experimental.offline_rl.algorithms`
+  - `stateset_agents.training.offline_rl_bcq` → `stateset_agents.experimental.offline_rl.bcq`
+  - `stateset_agents.training.offline_rl_bear` → `stateset_agents.experimental.offline_rl.bear`
+  - `stateset_agents.training.decision_transformer` →
+    `stateset_agents.experimental.offline_rl.decision_transformer`
+  - `stateset_agents.training.offline_grpo_trainer` →
+    `stateset_agents.experimental.offline_rl.offline_grpo`
+  - `stateset_agents.training.sim_to_real` → `stateset_agents.experimental.sim_to_real.transfer`
+  - `stateset_agents.training.domain_randomization` →
+    `stateset_agents.experimental.sim_to_real.domain_randomization`
+  - `stateset_agents.environments.conversation_simulator` →
+    `stateset_agents.experimental.sim_to_real.conversation_simulator`
+  - `stateset_agents.evaluation.sim_to_real_metrics` →
+    `stateset_agents.experimental.sim_to_real.metrics`
+  - `stateset_agents.rewards.bayesian_reward_model` →
+    `stateset_agents.experimental.bayesian_reward_model`
+- `contracts/component_maturity_v1.json`: `sim-to-real` is now experimental
+  (was beta); new experimental components `ppo-rlaif-trainers` and
+  `bayesian-reward-model`; `offline-rl` now covers Decision Transformer and
+  offline GRPO. Each lists its limitations and graduation criteria (a learning
+  test on a realistic task and retained GPU evidence).
+- `train(training_mode="offline"|"hybrid")` and the uncertainty-weighted
+  reward wrapper now import their implementations from the experimental
+  namespace; behavior is unchanged.
+
+### Deprecated
+
+- Every old module path above is a shim that emits a `DeprecationWarning`
+  naming the new path and is removed in **v0.65.0**. The package-level
+  re-exports are deprecated on the same schedule and warn on every access:
+  the PPO/RLAIF/offline-RL/sim-to-real names served lazily from
+  `stateset_agents.training` (e.g. `from stateset_agents.training import
+  PPOTrainer`), `stateset_agents.evaluation.SimToRealMetrics`/
+  `SimToRealEvaluator`, `stateset_agents.environments.ConversationSimulator`/
+  `ConversationSimulatorConfig`/`UserSimulator`, and the root exports
+  `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator`, and `ConversationSimulatorConfig` (still in the v1
+  public API contract with unchanged signatures for this release).
+  `pytest.ini` turns these warnings into errors so nothing in-repo relies on
+  the shims.
+
+## [0.63.1] - 2026-10-12 — Publishable release gate
+
+### Fixed
+
+- **Publishable release gate**: the flywheel loss-knob CLI tests strip ANSI
+  styling and pin a wide terminal, so they pass under CI's `FORCE_COLOR=1`
+  (v0.63.0's tag-triggered publish failed on them; v0.63.0 never reached PyPI).
+
+## [0.63.0] - 2026-10-12 — Training correctness audit
+
+### Added
+
+- `TrainingConfig.disable_dropout` (keyword-only, default off as in TRL's
+  GRPO): zeroes every dropout module, including LoRA dropout, in the policy
+  for every RL trainer, so separately scored old/reference log-probs match the
+  learner's forward pass.
+
+### Fixed
+
+- **Training loop cadence**: with gradient accumulation, multi-turn evaluation,
+  checkpointing and logging repeated for the same optimizer step (and early
+  stopping fired N times too soon); with several steps per episode, multiples
+  were skipped. They now fire once per crossed interval.
+- **KL controllers**: `HybridKLController` decayed geometrically instead of on
+  its cosine schedule and crashed on negative KL estimates; the default
+  `CosineKLScheduler` never reached `min_kl_coef`; `AdaptiveKLController`
+  scaled its update by the global step. PPO applies its KL penalty when
+  `beta > 0` (it was skipped without an explicit `ref_model`).
+- **GEPO**: the `gspo`/`gspo_token` presets used exp(sum) instead of
+  exp(mean) token log-ratios, clipping almost every sample; `beta > 0` is now
+  rejected instead of ignored.
+- **Rewards**: a failed `CompositeReward` component no longer counts as 0;
+  multi-objective `geometric_mean` is the weighted geometric mean;
+  `LengthRewardComponent` presets no longer score their optimal range as too
+  long; LLM-judge errors score neutral and are not cached; trajectory reward
+  totals are no longer rounded to 0.1; untyped reward functions are applied
+  once per episode, not per step and again at the end.
+- **Evaluation**: post-training evaluation keeps environment rewards when the
+  trainer has no `reward_fn`; `evaluate_agent` counts failed episodes
+  (`eval_failed_episodes`) and restores the global RNG state; sim-to-real
+  reports `reward_distribution_gap` instead of correlating unpaired samples.
+- **Offline RL**: Decision Transformer generation now uses the training state
+  format and real past states, keeps the last context window, trains on every
+  window and partial batch, and checkpoints its embedding projection.
+  `OfflineGRPOTrainer` bootstraps Q from V(s') and trains on logged
+  transitions rather than random features. `to_offline_rl_format` builds one
+  transition per assistant decision with correct terminal flags and rewards,
+  and ShareGPT speaker names map to user/assistant.
+- **Reward models**: the enhanced `DPOTrainer` trains on response-token
+  log-probs (it could not backpropagate); `NeuralRewardModel` uses its
+  `encoder`; Bayesian active-learning updates train the model;
+  `ValueFunction.compute_gae` returns detached targets.
+- **GRPO advantages**: `baseline_type="group_median"`/`"global_mean"` survive
+  `advantage_normalization` (scaled by the group std, no longer re-centred
+  on the mean); `global_mean` uses the group mean until running statistics
+  exist, and `num_gradient_updates > 1` counts each batch once in them. The
+  KL/reference-model path (`compute_enhanced_grpo_loss`) now shares the
+  plain path's advantages (`reward_clip`, `baseline_type`, normalisation,
+  objective presets, population std) and entropy bonus, and its KL mask is
+  shifted to the scored tokens; the `grpo_enhanced` objective golden moved
+  accordingly (loss ×√1.5 from population std, KL from the mask shift).
+- **Optimizers and config**: single-turn and GSPO AdamW honour
+  `adam_beta1`/`adam_beta2` (GSPO also `weight_decay`); `GSPOConfig.validate`
+  warns about fields the GSPO trainer does not read. Balanced continual-
+  learning replay no longer always replays the first task.
+- **DAPO/VAPO**: DAPO's overlong shaping is anchored to the real generation
+  cap (`max_completion_length`), so it fires with default settings. VAPO
+  aggregates policy, value and LM losses as batch token-means, defaults to
+  undiscounted returns (`gamma=1.0`), keeps value-loss gradients out of the
+  policy backbone, uses the paper's length-adaptive λ = 1 − 1/(αL) (floored
+  at 0), and computes rollout values without value-head dropout.
+- **Rewards and environments**: the RULER judge actually runs (it always fell
+  back to its heuristic); symbolic-physics rewards sample deterministically
+  per task; `ConversationEnvironment` scores a reply against the history it
+  answered, not the following simulated user turn; reward calibration keeps
+  its pre-computed statistics and `RewardNormalizer` stays exact once its
+  buffer evicts; reward-model training tolerates mixed metadata and resets
+  early stopping per `train()`; `TaskCompletionReward` is capped at 1 and
+  counts only required actions; `SymbolicPhysicsEnvironment` shows the agent
+  its task; symmetry checks recompute derived variables.
+- **PPO/RLAIF**: PPO tokenizes prompt and completion separately, so a long
+  prompt's tail is no longer trained as the response; `PPOTrainer.train()`
+  samples completions from the policy (it trained on a constant string) and
+  honours `mini_batch_size` with shuffled mini-batches. RLAIF trains the first
+  completion token and never padding, derives advantages from per-sequence
+  (group-relative) rewards, and generates in inference mode.
+- **Async rollouts**: checkpointing the control plane no longer deadlocks with
+  a full queue; a cancelled timed `next_batch`/`submit` never loses records;
+  a heartbeat no longer rejects in-flight rollouts within `max_policy_lag`;
+  LoRA weight sync hands loaders merged copies and maps `modules_to_save`
+  parameters to engine names.
+- **Checkpoints and data parallelism**: DDP/Accelerate checkpoints save and
+  restore the unwrapped model plus full training state (resume silently
+  restored nothing before; non-parallel saves crashed), and a load that
+  matches no weights fails instead of reporting success. Ranks seed and pick
+  scenarios distinctly so data parallelism adds samples. Training checkpoints
+  carry running reward statistics and RNG state. The TRL wrapper honours
+  `resume_from_checkpoint`, rounds the generation batch to a multiple of
+  `num_generations` (the customer-service profile failed TRL validation),
+  and uses `warmup_ratio`.
+- **HPO**: GRPO trials initialize the trainer and score a real post-training
+  evaluation (every trial scored -inf before, making "best" arbitrary); trials
+  start from the same restored weights with per-trial seeds; failed trials get
+  the direction-aware worst value in Ray/W&B; Optuna pruning is wired; log-scale
+  dimensions are honoured. auto_research treats a missing metric as a crash.
+- **CLI and config mapping**: `train --config` forwards every `training:` key
+  (unknown keys are rejected) and an explicit `--profile` beats the file;
+  offline/hybrid `train()` maps the fields the offline trainer reads, rejects
+  the rest, and saves to `save_path`; `train_customer_service_with_gspo` honours
+  `num_episodes`; an explicit `--use-8bit` disables a profile's 4-bit default;
+  the `batch_size` alias no longer overrides later changes; the API rejects
+  unknown training profiles with 422; `flywheel` rejects loss knobs that do not
+  apply to the chosen algorithm.
+- **SFT**: River SFT steps once per accumulation window and records it;
+  Tinker SFT shuffles each epoch; `merge_adapter` keeps sharded models in place
+  and accepts `revision`.
+- **Offline GRPO trains its policy**: `OfflineGRPOTrainer` now applies an
+  advantage-weighted likelihood update to the attached policy on the logged
+  responses (it only trained value/Q networks; `learning_rate` was unused).
+  `ConversationDataset.to_offline_rl_format()` also returns `contexts` and
+  `responses`. RLAIF `train()` cycles through every prompt; VAPO warns once
+  when the length-adaptive λ is 0 (α·L ≤ 1).
+- **Learning tests** (`tests/learning`): every RL, preference and offline
+  trainer must improve a toy task through its real entry point, with a
+  sign-flipped control that must regress.
+
+## [0.62.1] - 2026-10-11 — Publishable release gate
+
+### Fixed
+
+- Made the orchestrator shutdown test deterministic: its runner now blocks
+  until cancelled and the test waits for both workers to start. The immediate
+  mock runner let jobs fail before shutdown under Python 3.11 scheduling, which
+  failed the publish-readiness gate for every release since v0.57.0.
+
+## [0.62.0] - 2026-10-11 — Correct RL, SFT and rollout training math
+
+### Added
+
+- `train()` accepts `objective` and `objective_overrides`, and applies any
+  other `TrainingConfig` field passed as a keyword (e.g. `learning_rate=1e-5`).
+  Unknown keywords, conflicting duplicate settings, unknown objectives and
+  unknown `training_mode` values now raise instead of being silently ignored.
+
+### Fixed
+
+- Sequence-path GRPO now trains on assistant tokens only. Real tokenizers
+  return a `BatchEncoding` with an `assistant_masks` key, which the old check
+  (`dict` with `assistant_tokens_mask`) never matched, so prompts were silently
+  supervised. Templates without `{% generation %}` markers (Qwen3, Qwen3.5,
+  ChatML) now get assistant spans from prefix renders. Tokenizers without a
+  chat template fall back to role-tagged spans instead of crashing.
+- DAPO dynamic sampling no longer discards every group when no verifier is
+  set (the default): groups are scored before filtering, and without a
+  verifier only zero-signal groups (all rewards equal) are dropped. DAPO now
+  accumulates every group into one optimizer step per inner update, so its
+  token-level mean spans the whole batch as in the paper.
+- VAPO computes GAE in the shifted action frame used by its log-probs, values
+  and loss masks. The episode reward previously landed one token past the last
+  action, so policy advantages depended on a never-trained value. Value warmup
+  targets now use the same frame and discount.
+- PPO places the scalar episode reward on the last response action instead of
+  every response token, which inflated returns with length. Padding is now
+  excluded from the response mask (with left padding handled), no longer
+  bootstraps values, and is left out of advantage normalization.
+- Native GRPO inner updates snapshot old-policy log-probs under the same
+  autocast precision as the losses, so the first importance ratio is exactly 1.
+- Sequence-path GRPO skips trajectories whose replies were truncated away
+  instead of falling back to supervising the whole conversation, and its
+  entropy bonus now reads the logits that predict the supervised tokens.
+- GSPO and GSPO-token score responses against the untruncated rendered prompt.
+  Prompts longer than `max_prompt_length` previously leaked their tail into the
+  response mask (or, when very long, displaced the response entirely).
+- GSPO's cosine LR schedule is sized by optimizer steps (one per outer
+  iteration, not multiplied by `num_iterations`) and holds its final value past
+  the end instead of oscillating between full and zero learning rate.
+- With `rescore_old_log_probs=False`, GSPO's rollout-time old log-probs now
+  cover exactly the tokens it scores: a trailing EOS is dropped, and HF or vLLM
+  sampler log-probs are used only when the sampled ids round-trip to the scored
+  text (otherwise the rollout is rescored). The EOS term previously biased the
+  sequence ratio by about log p(EOS) / |y|, far outside GSPO's clip band.
+- Batched group generation stops each row independently. The stop-string
+  criterion read only row 0 and returned one flag for the whole batch, so one
+  sample emitting `\n\n` or `User:` truncated all of its siblings while stop
+  strings in other rows were ignored. Padding after a stop string is no longer
+  recorded as a sampled EOS when `pad_token_id == eos_token_id`.
+- Restoring a trainer checkpoint now syncs an attached rollout engine, which
+  otherwise kept serving pre-resume weights until the next optimizer step.
+- `CalibratedRewardFunction` normalizes against statistics frozen between
+  `calibration_interval` refreshes (identity before the first one) instead of
+  updating them on every call, which split ties and inverted rankings within
+  a group.
+- Over-long generation prompts are truncated from the left, keeping the latest
+  user turn and the assistant cue, and a warning is logged.
+- The per-token GRPO path honours `baseline_type="group_median"` and
+  `"global_mean"` (with the trainer's running reward mean) through the same
+  helper as the sequence path; it previously fell back to group normalization.
+- CQL bootstraps from next-state actions: dataset `next_actions` when passed to
+  `train_step`, otherwise a soft maximum over sampled actions. It previously
+  evaluated `Q(s', a_t)` with the current action. The CQL penalty now scales
+  `logsumexp(Q / tau)` by `tau`, as in CQL(H).
+- River/Tinker SFT datums are the single full render of each conversation,
+  weighted on assistant spans located in that render. Splicing separately
+  tokenized prefix renders corrupted every multi-turn row for Qwen3/Qwen3.5
+  (which add a `<think>` stub to the final assistant turn only). Tool-calling
+  fields and row `tools` are now kept instead of being stripped or dropping
+  the row. Assistant-span logic is shared in `stateset_agents.core.chat_masking`.
+- Local and industry SFT label assistant tokens only (system prompts, user
+  turns and tool results are context) and drop rows whose answer is truncated
+  away at `max_length`, instead of training on every token.
+- `ConversationDataset.split`, `filter_by_quality` and `filter_by_length` no
+  longer re-normalize the shared trajectories in place (which changed the
+  parent and rescaled each subset by its own statistics). `filter_by_quality`
+  compares raw total rewards, and `split` no longer reseeds the global RNG.
+- The Decision Transformer pairs each assistant action with the full
+  conversation before it and the return-to-go at its own turn; states and
+  returns were previously offset from their actions.
+- `build_rl_batch` uses the same pre-shifted label layout as the live
+  `build_group_rl_datums` path; its values were one position late.
+- TRL-backed GRPO now honours `TrainingConfig.objective`: `grpo`, `bnpo`,
+  `dapo`, `dr_grpo`, `cispo` and `gspo` map to TRL's `loss_type`, importance
+  level, clip range and reward scaling; presets or overrides TRL cannot express
+  raise. Settings the installed TRL no longer accepts (e.g. `max_prompt_length`
+  on TRL 1.12) are logged instead of dropped silently.
+
+## [0.61.0] - 2026-10-08 — River RL reliability and training integrity
+
+### Added
+
+- Add `river-preflight` and a Python API for local prerequisites and opt-in live
+  account access checks, with versioned JSON, finite request timeouts, and no
+  training sessions or sampling.
+- Add native River commerce environments, refund-policy demonstrations,
+  checkpoint selection, trace replay, held-out evaluation, and reproducible
+  agent studies with provenance and explicit learning gates.
+- Add durable training job records, capacity reservations, bounded admission,
+  fair scheduling, and lifecycle-aware shutdown and recovery.
+
+### Fixed
+
+- Check fresh River model access before sessions and model loading. Isolate SFT
+  tokenizer caches by model and keep dry runs and completed RL resumes offline.
+- Close executor-owned clients after completion, failure, or interruption;
+  preserve injected client ownership and completed checkpoints on cleanup failure.
+  Reject overlapping submissions on one executor.
+- Publish cancelled synchronous RL from validated committed state, preserve
+  token reservations, and resume only remaining rounds. Report or bookkeeping
+  failures preserve the original interruption.
+- Validate finite losses and gradients before optimizer updates. Correct GRPO
+  accumulation, partial-window scaling, scheduler budgets, and checkpoint state;
+  advance metrics only for committed training progress.
+- Harden API training admission, cancellation, persistence, startup/shutdown
+  cleanup, and security scan reporting.
+
+### Verification scope
+
+- Local tests and mocked SDK transport establish integration contracts. They do
+  not establish model quality, hosted chat/streaming support, or live training
+  success for every account-advertised model. Provider cost remains unknown
+  where the SDK supplies no billing evidence.
+
+## [0.60.0] - 2026-10-08 — Reward audits before RL training
+
+### Added
+
+- Add `reward-audit` and an asynchronous Python API to check real reward
+  functions before RL training. Retain repeated scores and errors, identify
+  constant within-prompt rewards, test reviewed candidate rankings, and provide
+  a runnable synthetic GSM8K example without model downloads.
+
+## [0.59.0] - 2026-10-08 — Paired industry evaluation and verified GPU pilots
+
+### Added
+
+- Support immutable model revisions for industry preparation, tokenizer and
+  weight loading, adapter lineage, and paired evaluation. Add a reproducible
+  CUDA pilot harness for Qwen3.5 2B/4B with synthetic-data labeling, saved
+  adapter checks, reload-effect probes, and retained raw predictions.
+- Add paired industry reference evaluation through `industry eval-export`,
+  `industry evaluate`, and backend-independent Python prediction callbacks.
+  Evaluate every assistant turn, preserve typed tool arguments and failed
+  requests, bind reports to dataset/prediction hashes, and reject incomplete or
+  incomparable evidence. Configurable quality and resource gates count source
+  groups, detect per-case regressions, and refuse synthetic demonstrations.
+
+## [0.58.0] - 2026-10-07 — Industry fine-tuning workflows
+
+### Added
+
+- Add industry CLI commands and Python APIs for financial services, retail,
+  travel, healthcare, services, media, telecommunications, technology, and the
+  public sector. Include synthetic tool-calling examples and evaluation criteria.
+- Validate chat JSONL and tool-call references, deduplicate records, and split
+  related prompt/source groups deterministically without cross-split overlap.
+- Record dataset hashes and training status; verify prepared data before BF16
+  LoRA SFT. Explicit previews require no ML imports, while execution requires CUDA.
+- Keep validation records held out for independent evaluation; examples do not
+  establish industry performance or replace representative training data.
+
+## [0.57.0] - 2026-10-07 — Small-model fine-tuning and tool-aware SFT
+
+### Small-model training
+
+- Add 18 small-model checkpoints across Gemma 4, Qwen, SmolLM3, Phi,
+  Ministral, Liquid, Granite, Llama, Olmo, and DeepSeek. Provide 17 GSPO
+  commands with LoRA/QLoRA profiles and isolate each variant's output directory.
+- Add FunctionGemma tool-calling SFT, preserving tool schemas and typed arguments,
+  with a commerce JSONL example. Conversational GSPO explicitly rejects it.
+- Fix Transformers 5 quantization loading, keep adapters out of vision/audio
+  encoders, avoid duplicate model loads, and preserve SFT EOS labels and chat
+  special tokens. Work around dense Granite's recurrent-cache generation error.
+- Validate tiny native architecture training and adapter reload locally.
+  Full pretrained checkpoint quality and GPU quantization remain unverified.
+
+### Added
+
+- Added a v0.5 private product-use transfer set with seed-varying support
+  conversations and a dependent ingest-to-grade task. Both static and
+  interactive evaluators verify its actual tool results and generated files.
+
+### Fixed
+
+- Refresh the development lock for fsspec, multidict, PyJWT, urllib3, and
+  virtualenv security advisories; require PyJWT 2.15 or newer for the API.
 - Made `SecureConfig` fail closed when encrypted secrets lack a configured key
   or the `cryptography` dependency; explicit plaintext storage remains available
   through `encrypt=False`.

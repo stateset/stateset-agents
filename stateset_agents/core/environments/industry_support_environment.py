@@ -13,10 +13,18 @@ from stateset_agents.core.environment_base import (
     EnvironmentState,
     EpisodeStatus,
 )
+from stateset_agents.core.environments.industry_admin_policies import (
+    ADMIN_FAMILIES,
+    ADMIN_FIELDS,
+    ADMIN_POLICIES,
+    admin_case,
+    admin_resolution,
+)
 from stateset_agents.core.environments.json_action import parse_json_action
 from stateset_agents.core.trajectory import ConversationTurn
 
 POLICIES = {
+    **ADMIN_POLICIES,
     "logistics": (
         "Apply these rules in order. If verified is false, resolve request_verification. "
         "If status is lost, resolve escalate_lost. If cancel_requested, resolve "
@@ -72,6 +80,7 @@ POLICIES = {
     ),
 }
 FAMILIES = {
+    **ADMIN_FAMILIES,
     "logistics": (
         "missing_verification",
         "processing",
@@ -127,6 +136,7 @@ FAMILIES = {
 # These allowlists are shared by validation and observation filtering. Private
 # teacher labels and family annotations never become tool results.
 _EXTRA_FIELDS = {
+    **ADMIN_FIELDS,
     "travel": (
         (
             "disruption",
@@ -165,6 +175,8 @@ _EXTRA_FIELDS = {
 
 
 def _additional_resolution(domain: str, row: dict[str, Any]) -> str:
+    if domain in ADMIN_POLICIES:
+        return admin_resolution(domain, row)
     if domain == "travel":
         if row["disruption"]:
             return "escalate_disruption"
@@ -215,6 +227,8 @@ def _additional_resolution(domain: str, row: dict[str, Any]) -> str:
 def _additional_case(
     domain: str, family: str, variant: int, rng: random.Random
 ) -> dict[str, Any]:
+    if domain in ADMIN_POLICIES:
+        return admin_case(domain, family, variant, rng)
     if domain == "travel":
         row: dict[str, Any] = {
             "disruption": False,

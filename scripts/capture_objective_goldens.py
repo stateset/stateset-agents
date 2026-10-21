@@ -215,7 +215,7 @@ def golden_gepo() -> dict:
 
 
 def golden_ppo() -> dict:
-    from stateset_agents.training.ppo_trainer import PPOConfig, PPOTrainer
+    from stateset_agents.experimental.ppo import PPOConfig, PPOTrainer
 
     cfg = PPOConfig(model_name="gpt2")
     tr = PPOTrainer(

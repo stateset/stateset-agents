@@ -3,6 +3,7 @@ import copy
 import json
 import logging
 import uuid
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -109,11 +110,16 @@ class TrainingService:
     """Service for managing training jobs."""
 
     def __init__(
-        self, *, max_concurrent_jobs: int = 1, queue_path: str | Path | None = None
+        self,
+        *,
+        max_concurrent_jobs: int = 1,
+        queue_path: str | Path | None = None,
+        output_root: str | Path | None = None,
     ) -> None:
         if type(max_concurrent_jobs) is not int or max_concurrent_jobs < 1:
             raise ValueError("max_concurrent_jobs must be a positive integer")
         self._max_concurrent_jobs = max_concurrent_jobs
+        self._output_root = output_root
         self.training_jobs: dict[str, dict[str, Any]] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
@@ -165,13 +171,75 @@ class TrainingService:
         owner = job.get("user_id")
         return owner is None or owner == user_id
 
+    def output_root(self) -> Path:
+        """Resolved directory that holds every API job's outputs."""
+        root = self._output_root
+        if root is None:
+            from ..config import get_config
+
+            root = get_config().training_output_root
+        return Path(root).expanduser().resolve()
+
+    def _resolve_resume(self, value: str, user_id: str | None, root: Path) -> str:
+        """Map ``resume_from_checkpoint`` to a path inside ``root``.
+
+        Authenticated callers may use a visible job ID or a path inside that
+        job's directory. Internal administrative callers (``user_id=None``)
+        may use any path under the root. Resolved symlinks must stay confined.
+        """
+        job = self.get_training_status(value, user_id)
+        if job is not None:
+            directory = job.get("metrics", {}).get("artifact_directory") or job.get(
+                "output_dir"
+            )
+            if not directory:
+                raise ValueError(f"Training job {value!r} is not resumable")
+            candidate = Path(directory)
+        else:
+            candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = root / candidate
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root):
+            raise ValueError(
+                "resume_from_checkpoint must be a training job id or a path "
+                "under the server's training output root"
+            )
+        if user_id is not None:
+            parts = resolved.relative_to(root).parts
+            if not parts or self.get_training_status(parts[0], user_id) is None:
+                raise ValueError("Checkpoint is not inside an accessible training job")
+        return str(resolved)
+
     async def start_training(
         self,
         request: TrainingRequest,
         user_id: str | None = None,
         idempotency_key: str | None = None,
+        *,
+        roles: list[str] | None = None,
     ) -> str:
         """Start a training job."""
+        if self._closing:
+            raise ServiceUnavailableError("Training service is shutting down")
+        request = request.model_copy(deep=True)
+        accepted_config = copy.deepcopy(request.model_dump())
+        from ..model_policy import client_model_uses_stub
+
+        use_stub_model = client_model_uses_stub(
+            request.agent_config.model_name, roles=roles
+        )
+        root = self.output_root()
+        resume_owner = None if roles is not None and "admin" in roles else user_id
+        resume = (
+            await run_sync_owned(
+                self._resolve_resume, request.resume_from_checkpoint, resume_owner, root
+            )
+            if request.resume_from_checkpoint
+            else None
+        )
+        # Resume lookup may yield to a database thread. Shutdown must close
+        # admission before any submission or embedded worker is registered.
         if self._closing:
             raise ServiceUnavailableError("Training service is shutting down")
         from stateset_agents.training.configuration import resolve_training_config
@@ -182,7 +250,7 @@ class TrainingService:
                 profile=request.profile,
                 num_episodes=request.num_episodes,
                 config_overrides=request.training_config_overrides,
-                resume_from_checkpoint=request.resume_from_checkpoint,
+                resume_from_checkpoint=resume,
                 objective=None,
                 objective_overrides=None,
                 extra_config={"model_name": request.agent_config.model_name},
@@ -195,10 +263,15 @@ class TrainingService:
             # Freeze caller-owned nested data before yielding to the database
             # thread. Shutdown owns this operation until commit/rollback ends;
             # disconnecting the HTTP caller cannot detach an unknown write.
-            accepted_config = copy.deepcopy(request.model_dump())
             submission = asyncio.create_task(
                 run_sync_owned(
-                    self.queue.submit, accepted_config, user_id, idempotency_key
+                    self.queue.submit,
+                    accepted_config,
+                    user_id,
+                    idempotency_key,
+                    output_root=str(root),
+                    resume_from_checkpoint=resume,
+                    resume_user_id=resume_owner,
                 )
             )
             self._pending_submissions.add(submission)
@@ -225,15 +298,20 @@ class TrainingService:
             raise ResourceExhaustedError("training_jobs", self.max_concurrent_jobs)
         # The task can start after this coroutine returns. Own the accepted
         # inputs before constructors or caller code can mutate nested values.
-        request = request.model_copy(deep=True)
-        accepted_config = copy.deepcopy(request.model_dump())
         training_id = str(uuid.uuid4())
         now = datetime.utcnow()
+        output_dir = root / training_id
+        request.training_config_overrides = {
+            **(request.training_config_overrides or {}),
+            "output_dir": str(output_dir),
+        }
+        request.resume_from_checkpoint = resume
 
         # Create training configuration
         agent_config = AgentConfig(
             **request.agent_config.model_dump(), model_revision=config.model_revision
         )
+        agent_config = replace(agent_config, use_stub_model=use_stub_model)
         agent = MultiTurnAgent(agent_config)
 
         # Create environment
@@ -253,6 +331,7 @@ class TrainingService:
             "metrics": {},
             "error": None,
             "config": accepted_config,
+            "output_dir": str(output_dir),
         }
 
         # Create cancellation event and launch background task

@@ -37,6 +37,33 @@ from stateset_agents.training.river_refund import EVALUATION_SETTINGS
 from tests.unit.river_fakes import traced_refund_outcome
 
 
+@pytest.fixture(scope="module", autouse=True)
+def stable_source_identity():
+    """Fingerprint package sources once per module instead of ~100x per test.
+
+    ``package_implementation()`` reads and hashes every package ``.py`` file, and
+    each synthetic study plus audit recomputes it for every seed/arm manifest and
+    trace replay. That dominated these tests (4-8s alone, 60s+ under ``-n 8``
+    load). The sources cannot legitimately change during a test run, so the
+    real identity is computed once and served as fresh copies; drift detection
+    itself is covered by ``test_implementation_provenance.py``.
+    """
+    from stateset_agents.evaluation import agent_study, implementation, refund_trace
+    from stateset_agents.training import river_refund
+
+    identity = implementation.package_implementation()
+
+    def cached_identity():
+        return {**identity, "files": dict(identity["files"])}
+
+    with (
+        patch.object(agent_study, "package_implementation", cached_identity),
+        patch.object(river_refund, "package_implementation", cached_identity),
+        patch.object(refund_trace, "package_implementation", cached_identity),
+    ):
+        yield identity
+
+
 def small_config():
     return StudyConfig(
         train_count=8, validation_count=8, test_count=8, steps=2, sft_epochs=1
@@ -971,7 +998,10 @@ def test_packaged_entrypoint_prepares_offline_without_examples_import(tmp_path):
         cwd=tmp_path,
         capture_output=True,
         text=True,
-        timeout=30,
+        # Hang guard only (<1s alone). Keep it below the 60s pytest-timeout so a
+        # stall reports the child's output instead of a bare worker timeout, but
+        # well above interpreter start-up time on an oversubscribed CI host.
+        timeout=50,
     )
     assert result.returncode == 0, result.stderr
     assert (tmp_path / "run_manifest.json").exists()

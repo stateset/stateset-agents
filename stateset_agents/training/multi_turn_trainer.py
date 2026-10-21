@@ -21,6 +21,7 @@ from stateset_agents.core import trajectory as core_trajectory
 from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
+    _maybe_await,
     notify_checkpoint_saved,
     notify_episode_end,
     notify_evaluation_end,
@@ -60,6 +61,8 @@ from .multi_turn_scenarios import (
 from .profiling import TrainingProfiler, profile_learner_step
 from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_utils import (
+    apply_dropout_setting,
+    backward_training_loss,
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
@@ -73,6 +76,101 @@ MultiTurnTrajectory: TypeAlias = core_trajectory.MultiTurnTrajectory
 TrajectoryGroup: TypeAlias = core_trajectory.TrajectoryGroup
 
 logger = logging.getLogger(__name__)
+
+
+def _loss_scalars(loss_dict: Any) -> dict[str, float]:
+    """Scalar loss terms (finite or not), for diagnosing a bad update."""
+    scalars: dict[str, float] = {}
+    for key, value in dict(loss_dict).items():
+        try:
+            if hasattr(value, "detach") and value.numel() == 1:
+                scalars[key] = float(value.detach().float().item())
+            elif isinstance(value, (int, float)) and not isinstance(value, bool):
+                scalars[key] = float(value)
+        except (AttributeError, RuntimeError, TypeError, ValueError):
+            continue
+    return scalars
+
+
+def rollout_sampling_transforms(agent: Any) -> list[str]:
+    """Sampling settings that make rollouts differ from the policy's distribution.
+
+    Policy-gradient objectives assume each reply was sampled from the policy
+    itself (temperature 1, no top-p/top-k truncation, no repetition penalty).
+    Returns a description of every setting on ``agent.config`` that changes
+    that distribution; an empty list means rollouts are on-policy.
+    """
+    config = getattr(agent, "config", None)
+    if config is None:
+        return []
+    found: list[str] = []
+    if getattr(config, "do_sample", True) is False:
+        found.append("greedy decoding")
+        return found
+    temperature = getattr(config, "temperature", 1.0)
+    if isinstance(temperature, (int, float)) and float(temperature) != 1.0:
+        found.append(f"temperature={temperature}")
+    top_p = getattr(config, "top_p", 1.0)
+    if isinstance(top_p, (int, float)) and float(top_p) < 1.0:
+        found.append(f"top_p={top_p}")
+    top_k = getattr(config, "top_k", None)
+    if isinstance(top_k, int) and not isinstance(top_k, bool) and top_k > 0:
+        found.append(f"top_k={top_k}")
+    penalty = getattr(config, "repetition_penalty", 1.0)
+    if isinstance(penalty, (int, float)) and float(penalty) != 1.0:
+        found.append(f"repetition_penalty={penalty}")
+    return found
+
+
+def _warn_on_biased_rollout_sampling(agent: Any) -> None:
+    transforms = rollout_sampling_transforms(agent)
+    if transforms:
+        logger.warning(
+            "Rollouts are not sampled from the policy itself (%s), so the "
+            "on-policy gradient is biased toward the transformed distribution. "
+            "For unbiased RL set temperature=1.0, top_p=1.0, top_k=0, "
+            "repetition_penalty=1.0, do_sample=True on the agent.",
+            ", ".join(transforms),
+        )
+
+
+class AdapterDisabledReference:
+    """Frozen-base reference for a PEFT policy, without a second weight copy.
+
+    Calls run the policy with its adapters disabled, which is exactly the
+    pre-training model when adapters start as a no-op (LoRA's zero-initialized
+    ``B``). It owns no parameters, so optimizers and freezing loops skip it.
+    """
+
+    def __init__(self, model: Any) -> None:
+        self._model = model
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        with self._model.disable_adapter():
+            return self._model(*args, **kwargs)
+
+    def eval(self) -> AdapterDisabledReference:
+        return self
+
+    def parameters(self) -> Any:
+        return iter(())
+
+
+def build_reference_model(model: Any) -> Any:
+    """Return the frozen KL reference for ``model``.
+
+    PEFT policies reuse their base weights through ``disable_adapter``; any
+    other model is deep-copied, put in eval mode, and frozen.
+    """
+    if callable(getattr(model, "disable_adapter", None)):
+        return AdapterDisabledReference(model)
+    from copy import deepcopy
+
+    reference = deepcopy(model).eval()
+    for param in reference.parameters():
+        param.requires_grad = False
+    return reference
+
 
 MULTI_TRAINER_EXCEPTIONS = (
     RuntimeError,
@@ -91,6 +189,15 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
     This trainer implements Group Relative Policy Optimization specifically
     designed for multi-turn conversational agents, with full integration
     to HuggingFace ecosystem and Weights & Biases tracking.
+
+    Driving it by hand (``initialize`` then ``generate_trajectories`` and
+    ``training_step`` per batch) gets the same learning-rate schedule as
+    :meth:`train`; ``initialize`` builds it from ``num_episodes``. Mind two
+    ``TrainingConfig`` defaults in such loops: ``gradient_accumulation_steps``
+    is 4 (an optimizer step every fourth ``training_step``) and
+    ``entropy_coef`` is 0.01 (an entropy bonus is added). Inside
+    ``training_step`` the per-token loss is backpropagated one row chunk
+    (``generation_batch_size`` rows) at a time; see ``docs/OBJECTIVES.md``.
     """
 
     def __init__(
@@ -151,17 +258,14 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         if not hasattr(self.agent, "model") or self.agent.model is None:
             await self.agent.initialize()
 
+        apply_dropout_setting(self.config, getattr(self.agent, "model", None))
+        _warn_on_biased_rollout_sampling(self.agent)
+        self._apply_gradient_checkpointing()
+        self._warn_ignored_config_fields()
+
         # Set seeds for reproducibility if provided
         try:
-            import random
-
-            seed_value = getattr(self.config, "seed", None)
-            if seed_value is not None:
-                random.seed(seed_value)
-                np.random.seed(seed_value)
-                if torch.cuda.is_available():
-                    torch.cuda.manual_seed_all(seed_value)
-                torch.manual_seed(seed_value)
+            if self._seed_everything(torch):
                 torch.backends.cudnn.deterministic = True
                 torch.backends.cudnn.benchmark = False
         except MULTI_TRAINER_EXCEPTIONS as seed_err:
@@ -170,10 +274,14 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         # Initialize optimizer with HuggingFace best practices
         self._setup_optimizer()
 
-        # Initialize mixed precision scaler (CUDA only)
-        if torch.cuda.is_available() and (
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
-        ):
+        # Warmup/decay schedule for manual generate_trajectories + training_step
+        # loops; train() rebuilds it for its own step budget.
+        if self.lr_scheduler is None:
+            self._setup_default_scheduler()
+
+        # Loss scaling guards fp16's narrow exponent range only; bf16 shares
+        # fp32's range, and a GradScaler there just adds skipped steps.
+        if torch.cuda.is_available() and getattr(self.config, "fp16", False) is True:
             if amp is not None:
                 self.scaler = amp.GradScaler("cuda")
             else:  # pragma: no cover - AMP not available
@@ -253,6 +361,131 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             self.reference_model = reference
             logger.info("Reference model initialized for KL regularization")
 
+    def _planned_optimizer_steps(self) -> int:
+        """Optimizer-step budget implied by ``num_episodes`` (one rollout
+        batch per episode), accumulation and inner updates."""
+        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        return estimate_grpo_optimizer_steps(
+            num_episodes,
+            gradient_accumulation_steps=self._get_grad_accum_steps(),
+            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+        )
+
+    def _setup_default_scheduler(self) -> None:
+        """Build the configured schedule for :meth:`_planned_optimizer_steps`.
+
+        Called from :meth:`initialize` so loops that drive
+        :meth:`generate_trajectories` and :meth:`training_step` themselves get
+        the same warmup and decay as :meth:`train`. A loop with a different
+        step budget can call ``_setup_scheduler(n)`` afterwards.
+        """
+        if self.optimizer is None:
+            return
+        try:
+            steps = self._planned_optimizer_steps()
+        except (TypeError, ValueError) as err:
+            logger.warning("Could not size the learning-rate schedule: %s", err)
+            return
+        self._setup_scheduler(steps)
+
+    def _apply_gradient_checkpointing(self) -> bool:
+        """Honor ``config.gradient_checkpointing`` on the policy model.
+
+        Non-reentrant activation checkpointing (it composes with frozen base
+        weights and ``torch.no_grad`` reference passes). A PEFT policy's
+        embeddings are frozen, so their outputs are made to require grad;
+        otherwise checkpointed blocks would see no grad-requiring input and
+        the adapters would receive no gradient.
+        """
+        if getattr(self.config, "gradient_checkpointing", False) is not True:
+            return False
+        model = getattr(self.agent, "model", None)
+        enable = getattr(model, "gradient_checkpointing_enable", None)
+        if not callable(enable):
+            logger.warning(
+                "gradient_checkpointing=True but %s does not support it; "
+                "training without activation checkpointing",
+                type(model).__name__,
+            )
+            return False
+        try:
+            enable(gradient_checkpointing_kwargs={"use_reentrant": False})
+        except TypeError:  # older transformers: no kwargs
+            enable()
+        if getattr(model, "peft_config", None):
+            require_grads = getattr(model, "enable_input_require_grads", None)
+            if callable(require_grads):
+                require_grads()
+        logger.info("Gradient checkpointing enabled (non-reentrant)")
+        return True
+
+    # Fields of TrainingConfig this trainer cannot act on: the model, its LoRA
+    # adapters, sampling and the rollout engine belong to the agent (configure
+    # them on AgentConfig), and the rest describe other trainers' loops.
+    _IGNORED_CONFIG_FIELDS: tuple[str, ...] = (
+        "model_name",
+        "model_revision",
+        "num_epochs",
+        "per_device_train_batch_size",
+        "batch_size",
+        "use_cpu",
+        "use_lora",
+        "lora_r",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "temperature",
+        "top_p",
+        "top_k",
+        "repetition_penalty",
+        "use_vllm",
+        "vllm_gpu_memory_utilization",
+        "vllm_tensor_parallel_size",
+        "vllm_enable_prefix_caching",
+        "vllm_max_model_len",
+        "vllm_quantization",
+        "vllm_enable_chunked_prefill",
+        "gamma",
+        "gae_lambda",
+        "value_clip",
+    )
+
+    def _warn_ignored_config_fields(self) -> list[str]:
+        """Warn once about non-default config fields this trainer ignores."""
+        import dataclasses
+
+        if getattr(self, "_ignored_fields_warned", False):
+            return []
+        config = self.config
+        if config is None or not dataclasses.is_dataclass(config):
+            return []
+        defaults = {
+            f.name: (
+                f.default
+                if f.default is not dataclasses.MISSING
+                else (
+                    f.default_factory()
+                    if f.default_factory is not dataclasses.MISSING
+                    else dataclasses.MISSING
+                )
+            )
+            for f in dataclasses.fields(config)
+        }
+        changed = [
+            name
+            for name in self._IGNORED_CONFIG_FIELDS
+            if name in defaults and getattr(config, name, None) != defaults[name]
+        ]
+        self._ignored_fields_warned = True
+        if changed:
+            logger.warning(
+                "MultiTurnGRPOTrainer ignores TrainingConfig field(s) %s: the "
+                "policy model, LoRA adapters and sampling come from the agent "
+                "(AgentConfig), and the others belong to other trainers.",
+                ", ".join(changed),
+            )
+        return changed
+
     def _setup_scheduler(self, num_training_steps: int):
         """Setup learning rate scheduler"""
         require_transformers()
@@ -307,13 +540,69 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             self.last_rollout_sync = bool(sync())
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
-        return safe_optimizer_step(
-            self,
-            torch,
-            max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
-            scaler=self.scaler,
-            gradient_scale=gradient_scale,
+        skip_policy = getattr(self.config, "nonfinite_grad_policy", "raise") == "skip"
+        # safe_optimizer_step discards gradients before raising, so record which
+        # parameters were non-finite first (only when we will report and skip).
+        self._nonfinite_params = (
+            self._nonfinite_parameter_names() if skip_policy else []
         )
+        try:
+            applied = safe_optimizer_step(
+                self,
+                torch,
+                max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
+                scaler=self.scaler,
+                gradient_scale=gradient_scale,
+            )
+        except ValueError as error:
+            if "gradients must be finite" not in str(error) or not skip_policy:
+                raise
+            return self._skip_nonfinite_update(error)
+        if applied:
+            self._consecutive_nonfinite = 0
+        return applied
+
+    @property
+    def nonfinite_skips(self) -> int:
+        """Updates discarded because their gradients were non-finite."""
+        return int(getattr(self, "_nonfinite_skips", 0))
+
+    def _nonfinite_parameter_names(self) -> list[str]:
+        model = getattr(self.agent, "model", None)
+        bad: list[str] = []
+        if model is not None and hasattr(model, "named_parameters"):
+            for name, parameter in model.named_parameters():
+                grad = parameter.grad
+                if grad is not None and not bool(grad.isfinite().all()):
+                    bad.append(name)
+        return bad
+
+    def _skip_nonfinite_update(self, error: Exception) -> bool:
+        """Discard a non-finite update, logging where it came from."""
+        bad = list(getattr(self, "_nonfinite_params", []))
+        self._nonfinite_skips = self.nonfinite_skips + 1
+        self._consecutive_nonfinite = (
+            int(getattr(self, "_consecutive_nonfinite", 0)) + 1
+        )
+        logger.warning(
+            "Non-finite gradients at step %s (skip %d, %d consecutive): %d "
+            "parameter(s), first %s; loss terms %s",
+            getattr(self, "global_step", "?"),
+            self._nonfinite_skips,
+            self._consecutive_nonfinite,
+            len(bad),
+            bad[:8],
+            getattr(self, "_last_loss_scalars", {}),
+        )
+        if self.optimizer is not None:
+            self.optimizer.zero_grad(set_to_none=True)
+        limit = int(getattr(self.config, "max_consecutive_nonfinite_skips", 3))
+        if self._consecutive_nonfinite > limit:
+            raise ValueError(
+                f"{self._consecutive_nonfinite} consecutive non-finite updates "
+                f"(limit {limit})"
+            ) from error
+        return False
 
     def _flush_accumulation(self, torch: Any) -> bool:
         """Close pending accumulated work before a different update regime."""
@@ -388,17 +677,17 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                     return turn
             return await self.agent.generate_response(history, context)
 
-        for scenario in scenarios:
+        batched = await self._generate_batched_trajectories(scenarios, num_generations)
+
+        for index, scenario in enumerate(scenarios):
             # Generate multiple trajectories for the same scenario
             trajectories: list[MultiTurnTrajectory] = []
 
-            for _ in range(num_generations):
+            if batched is not None:
+                trajectories = batched[index]
+            for _ in range(num_generations if batched is None else 0):
                 try:
-                    reset_fn = getattr(self.agent, "reset", None)
-                    if callable(reset_fn):
-                        reset_result = reset_fn()
-                        if asyncio.iscoroutine(reset_result):
-                            await reset_result
+                    await self._reset_agent()
 
                     # Generate trajectory
                     with self.profiler.measure("environment_rollout"):
@@ -464,6 +753,68 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
         return trajectory_groups
 
+    async def _reset_agent(self) -> None:
+        reset_fn = getattr(self.agent, "reset", None)
+        if callable(reset_fn):
+            await _maybe_await(reset_fn())
+
+    async def _score_trajectory(
+        self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
+    ) -> None:
+        """Apply the trainer's reward function, if any, to a finished episode."""
+        if self.reward_fn:
+            context = scenario
+            if getattr(self.reward_fn, "requires_environment_context", False):
+                context = {**(trajectory.final_state or {}), "scenario": scenario}
+            with self.profiler.measure("reward_evaluation"):
+                result = await self.reward_fn.compute_reward(trajectory.turns, context)
+            score, breakdown = await self._coerce_reward_result(result)
+            trajectory.total_reward = score
+            trajectory.metadata["reward_breakdown"] = breakdown
+
+    async def _generate_batched_trajectories(
+        self, scenarios: list[dict[str, Any]], num_generations: int
+    ) -> list[list[MultiTurnTrajectory]] | None:
+        """Roll out every scenario x generation in lockstep, or return None.
+
+        Each conversation turn of all still-running episodes is one call to
+        ``agent.generate_turns_batch``; trajectories are identical to running
+        the episodes one by one. Returns None (use the sequential path) when
+        ``config.batched_rollouts`` is off, the agent or environment cannot
+        batch, or the batched rollout fails.
+        """
+        batch_turns = getattr(self.agent, "generate_turns_batch", None)
+        run_batched = getattr(self.environment, "run_episodes_batched", None)
+        if (
+            not getattr(self.config, "batched_rollouts", True)
+            or not inspect.iscoroutinefunction(batch_turns)
+            or not inspect.iscoroutinefunction(run_batched)
+            or getattr(self.environment, "supports_concurrent_episodes", False)
+            is not True
+        ):
+            return None
+        flat = [s for s in scenarios for _ in range(num_generations)]
+        try:
+            await self._reset_agent()
+            episodes = await run_batched(
+                lambda histories, contexts: batch_turns(histories, contexts), flat
+            )
+            for trajectory, scenario in zip(episodes, flat, strict=True):
+                await self._score_trajectory(trajectory, scenario)
+        except MULTI_TRAINER_EXCEPTIONS as e:
+            if getattr(self.reward_fn, "fail_on_error", False) or getattr(
+                self, "_stateset_native_rollout", False
+            ):
+                raise
+            logger.warning(
+                "Batched rollout failed (%s); rolling episodes out one at a time", e
+            )
+            return None
+        return [
+            list(episodes[i * num_generations : (i + 1) * num_generations])
+            for i in range(len(scenarios))
+        ]
+
     async def _coerce_reward_result(
         self, reward_result: Any
     ) -> tuple[float, dict[str, float]]:
@@ -477,13 +828,31 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         self,
         trajectory_groups: list[TrajectoryGroup],
         old_logprobs: list[Any] | None = None,
+        *,
+        reward_stats: tuple[float, int] | None = None,
+        update_stats: bool = True,
     ) -> dict[str, Any]:
-        """Compute GRPO loss from trajectory groups"""
+        """Compute GRPO loss from trajectory groups.
+
+        ``reward_stats`` pins the ``(mean, count)`` running-reward baseline and
+        ``update_stats=False`` keeps this batch out of it, so repeated inner
+        updates on one batch count it once and share one baseline.
+        """
+        baseline = self._reward_baseline_kwargs()
+        if reward_stats is not None:
+            baseline.update(
+                global_reward_mean=reward_stats[0],
+                global_reward_count=reward_stats[1],
+                global_reward_sum=None,
+            )
+        if not update_stats:
+            baseline["update_global_stats"] = None
         loss_dict: dict[str, Any] = compute_grpo_loss(
             trajectory_groups=trajectory_groups,
             config=self.config,
             agent=self.agent,
-            **self._reward_baseline_kwargs(),
+            **baseline,
+            backward_fn=getattr(self, "_loss_backward_fn", None),
             old_logprobs=old_logprobs,
         )
         return loss_dict
@@ -532,8 +901,21 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         trajectory_groups: list[TrajectoryGroup],
         beta: float = 0.0,
         old_logprobs: list[Any] | None = None,
+        *,
+        reward_stats: tuple[float, int] | None = None,
+        update_stats: bool = True,
     ) -> dict[str, Any]:
-        """Enhanced GRPO loss computation with KL penalty"""
+        """Enhanced GRPO loss computation with KL penalty (see
+        :meth:`compute_grpo_loss` for ``reward_stats``/``update_stats``)."""
+        baseline = self._reward_baseline_kwargs()
+        if reward_stats is not None:
+            baseline.update(
+                global_reward_mean=reward_stats[0],
+                global_reward_count=reward_stats[1],
+                global_reward_sum=None,
+            )
+        if not update_stats:
+            baseline["update_global_stats"] = None
         loss_dict: dict[str, Any] = compute_enhanced_grpo_loss(
             trajectory_groups=trajectory_groups,
             beta=beta,
@@ -541,7 +923,8 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             agent=self.agent,
             reference_model=self.reference_model,
             old_logprobs=old_logprobs,
-            **self._reward_baseline_kwargs(),
+            **baseline,
+            backward_fn=getattr(self, "_loss_backward_fn", None),
         )
         return loss_dict
 
@@ -739,7 +1122,11 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                     torch=torch,
                 )
 
-        with autocast_ctx:
+        grad_accum_steps = self._get_grad_accum_steps()
+        with (
+            autocast_ctx,
+            self._chunked_backward(torch, amp, device_type, grad_accum_steps),
+        ):
             if use_enhanced:
                 loss_dict = self.compute_enhanced_grpo_loss(
                     trajectory_groups, beta=base_beta
@@ -779,6 +1166,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
         def local() -> tuple[Any, Any]:
             loss = loss_dict["total_loss"]
+            self._last_loss_scalars = _loss_scalars(loss_dict)
             penalty = None
             if self.continual_manager is not None:
                 penalty = self.continual_manager.compute_ewc_penalty(self.agent)
@@ -788,6 +1176,42 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             return loss, penalty
 
         return run_token_local(self.agent.model, "regularizer", local)
+
+    @contextlib.contextmanager
+    def _chunked_backward(
+        self, torch: Any, amp: Any, device_type: str, divisor: int
+    ) -> Any:
+        """Stream chunks while preserving population and entropy gradient banks."""
+        from .grpo_accumulation import NativeChunkedBackward
+
+        previous = getattr(self, "_loss_backward_fn", None)
+        self._loss_backward_fn: Any = NativeChunkedBackward(
+            self, torch, steps=divisor, scaler=self.scaler
+        )
+        try:
+            yield self._loss_backward_fn
+        finally:
+            self._loss_backward_fn = previous
+
+    def _backward_remaining(
+        self,
+        loss_dict: dict[str, Any],
+        loss: Any,
+        ewc_penalty: Any | None,
+        torch: Any,
+        *,
+        divisor: int,
+    ) -> None:
+        """Backpropagate what the loss computation has not already."""
+        if loss_dict.get("backward_done"):
+            # The policy loss was backpropagated chunk by chunk; only the
+            # continual-learning penalty (if any) is left.
+            if ewc_penalty is not None:
+                backward_training_loss(
+                    self, ewc_penalty / divisor, torch, scaler=self.scaler
+                )
+            return
+        backward_training_loss(self, loss / divisor, torch, scaler=self.scaler)
 
     def _warn_inner_updates_unavailable(self) -> None:
         if getattr(self, "_inner_updates_warned", False):
@@ -819,18 +1243,24 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         optimizer_updates = accumulation_flush_updates
         loss_dict: dict[str, Any] = {}
         baseline = self._reward_baseline_kwargs()
+        amp = get_amp()
+        device_type = "cuda" if torch.cuda.is_available() else "cpu"
         for step_index in range(inner):
             with (
                 self._frozen_reward_baseline(baseline, update=step_index == 0),
                 autocast_ctx_factory(),
+                self._chunked_backward(torch, amp, device_type, 1),
             ):
                 if use_enhanced:
                     loss_dict = self.compute_enhanced_grpo_loss(
-                        trajectory_groups, beta=beta, old_logprobs=old_logprobs
+                        trajectory_groups,
+                        beta=beta,
+                        old_logprobs=old_logprobs,
                     )
                 else:
                     loss_dict = self.compute_grpo_loss(
-                        trajectory_groups, old_logprobs=old_logprobs
+                        trajectory_groups,
+                        old_logprobs=old_logprobs,
                     )
                 loss, ewc_penalty = self._regularized_loss(loss_dict)
             backward_accumulated_loss(
@@ -1285,6 +1715,57 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         )
         return evaluation
 
+    def _data_parallel_rank_world(self) -> tuple[int, int]:
+        """This process's data-parallel ``(rank, world_size)``; ``(0, 1)``
+        outside an initialized ``torch.distributed`` process group."""
+        try:
+            import torch.distributed as dist
+        except ImportError:  # pragma: no cover - torch is required to train
+            return 0, 1
+        if dist.is_available() and dist.is_initialized():
+            return int(dist.get_rank()), int(dist.get_world_size())
+        return 0, 1
+
+    def _seed_everything(self, torch: Any, step: int = 0) -> bool:
+        """Seed Python, NumPy and torch from ``config.seed``.
+
+        Each data-parallel rank gets its own stream (``seed + rank``) so ranks
+        sample different rollouts; a single process keeps ``config.seed``.
+        ``step`` moves to a fresh stream per optimizer step when a resumed
+        distributed run cannot restore every rank's saved generator state.
+        """
+        import random
+
+        seed_value = getattr(self.config, "seed", None)
+        if seed_value is None:
+            return False
+        rank, world = self._data_parallel_rank_world()
+        value = int(seed_value) + rank + world * int(step)
+        random.seed(value)
+        np.random.seed(value % (2**32))
+        if torch.cuda.is_available():
+            torch.cuda.manual_seed_all(value)
+        torch.manual_seed(value)
+        return True
+
+    def _restore_rng_on_resume(self) -> bool:
+        """Checkpoints carry the main process's generator state, which only
+        continues the right stream when there is a single process."""
+        return self._data_parallel_rank_world()[1] == 1
+
+    def _episode_scenario(
+        self, training_scenarios: list[dict[str, Any]], episode: int
+    ) -> dict[str, Any]:
+        """The scenario this rank trains on in ``episode``.
+
+        Ranks stride through the scenario list so data parallelism adds
+        distinct samples instead of repeating rank 0's.
+        """
+        rank, world = self._data_parallel_rank_world()
+        if world == 1:
+            return training_scenarios[episode]
+        return training_scenarios[(episode * world + rank) % len(training_scenarios)]
+
     def _get_training_scenarios(self) -> list[dict[str, Any]]:
         """Get training scenarios."""
         scenarios: list[dict[str, Any]] = build_training_scenarios(
@@ -1355,6 +1836,12 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             trainer_exceptions=MULTI_TRAINER_EXCEPTIONS,
             trusted=trusted,
         )
+        if loaded:
+            if not self._restore_rng_on_resume():
+                # Per-rank streams were not saved; continue on fresh,
+                # rank-distinct streams instead of replaying step 0's.
+                self._seed_everything(require_torch(), step=self.global_step)
+            # The transactional loader already published the restored policy.
         return loaded
 
 

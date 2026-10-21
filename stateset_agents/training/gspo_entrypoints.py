@@ -97,6 +97,38 @@ def _reward_is_identically_zero(metrics: Mapping[str, Any]) -> bool:
     )
 
 
+#: Trainer-config fields that drive rollout sampling, in AgentConfig terms.
+ROLLOUT_SAMPLING_FIELDS: tuple[str, ...] = (
+    "temperature",
+    "top_p",
+    "top_k",
+    "repetition_penalty",
+)
+
+
+def apply_rollout_sampling(agent: Any, config: Any) -> None:
+    """Make the trainer config's sampling settings drive the agent's rollouts.
+
+    Precedence: for GSPO training rollouts, ``config.temperature``,
+    ``top_p``, ``top_k`` and ``repetition_penalty`` override the agent's own
+    ``AgentConfig`` values (previously the agent's defaults silently won and
+    the configured temperature never reached generation). The generation
+    config is rebuilt afterwards. Agents without a tokenizer (stubs) keep
+    their generation config.
+    """
+    agent_config = getattr(agent, "config", None)
+    if agent_config is None:
+        return
+    for name in ROLLOUT_SAMPLING_FIELDS:
+        value = getattr(config, name, None)
+        if value is not None and hasattr(agent_config, name):
+            setattr(agent_config, name, value)
+    if getattr(agent, "tokenizer", None) is not None and callable(
+        getattr(agent, "_build_generation_config", None)
+    ):
+        agent.generation_config = agent._build_generation_config()
+
+
 async def train_with_gspo(
     config: GSPOConfig,
     agent: Agent,
@@ -174,7 +206,7 @@ async def train_with_gspo(
         model, tokenizer = model_manager.load_model_and_tokenizer()
         agent.model = model
         agent.tokenizer = tokenizer
-        agent.generation_config = agent._build_generation_config()
+    apply_rollout_sampling(agent, config)
 
     queries: list[Any] = list(train_queries) if train_queries else []
     if not queries:
@@ -288,8 +320,13 @@ async def train_customer_service_with_gspo(
     output_dir: str = "./outputs/gspo",
     **kwargs,
 ) -> Agent:
-    """Train a customer service agent using GSPO."""
+    """Train a customer service agent using GSPO.
+
+    GSPO runs ``num_outer_iterations`` rounds; ``num_episodes`` sets it unless
+    the caller passes ``num_outer_iterations`` explicitly.
+    """
     base_config = get_config_for_task("customer_service", model_name=model_name)
+    kwargs.setdefault("num_outer_iterations", num_episodes)
 
     config = GSPOConfig.from_training_config(
         base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs

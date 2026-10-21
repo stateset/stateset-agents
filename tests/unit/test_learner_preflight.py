@@ -200,3 +200,26 @@ def test_single_worker_ddp_preserves_local_execution(monkeypatch):
     monkeypatch.setattr(torch.distributed, "all_gather", unexpected_collective)
     trainer = SimpleNamespace(agent=SimpleNamespace(model=LocalDDP()))
     assert preflight.verify_ddp_learner_batch(trainer, []) is None
+
+
+def test_loss_admission_binds_dropout_and_the_selected_kl_estimator(tmp_path):
+    trainer = _worker(tmp_path)
+    trainer.config.objective = "gspo"
+    trainer.config.beta = 0.25
+    trainer.reference_model = object()
+    initial = preflight._loss(trainer)
+    assert initial["objective"]["kl"] == "k3_sequence"
+    assert initial["disable_dropout"] is False
+    trainer.config.disable_dropout = True
+    changed = preflight._loss(trainer)
+    assert changed != initial and changed["disable_dropout"] is True
+    trainer.config.objective_overrides = {"kl": "k3_token"}
+    assert preflight._loss(trainer)["objective"]["kl"] == "k3_token"
+
+
+@pytest.mark.parametrize("setting", [0, 1, None, "false"])
+def test_loss_admission_rejects_ambiguous_dropout_settings(tmp_path, setting):
+    trainer = _worker(tmp_path)
+    trainer.config.disable_dropout = setting
+    with pytest.raises(ValueError, match="disable_dropout"):
+        preflight._loss(trainer)

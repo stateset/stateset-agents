@@ -215,7 +215,14 @@ class TrainingQueue:
         return snapshot
 
     def submit(
-        self, request: dict[str, Any], owner: str | None, key: str | None = None
+        self,
+        request: dict[str, Any],
+        owner: str | None,
+        key: str | None = None,
+        *,
+        output_root: str | None = None,
+        resume_from_checkpoint: str | None = None,
+        resume_user_id: str | None = None,
     ) -> str:
         """Commit inputs before acknowledging; a reused key must bind identical inputs."""
         fingerprint = hashlib.sha256(
@@ -244,6 +251,12 @@ class TrainingQueue:
             "error": None,
             "config": request,
         }
+        if output_root is not None:
+            # Trusted service execution metadata is separate from client inputs
+            # and their idempotency fingerprint. The first accepted plan wins.
+            snapshot["output_dir"] = str(Path(output_root) / job_id)
+            snapshot["resume_from_checkpoint"] = resume_from_checkpoint
+            snapshot["resume_user_id"] = resume_user_id
         with self._transaction() as connection:
             existing = connection.execute(
                 "SELECT fingerprint FROM stateset_training_jobs WHERE id=?", (job_id,)

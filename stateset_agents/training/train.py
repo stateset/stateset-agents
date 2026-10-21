@@ -124,6 +124,17 @@ async def train(
                 f"Training {name} differs from the supplied agent configuration. "
                 "Set the model identity in AgentConfig before calling train()."
             )
+    # Fields the caller set explicitly (not filled in by the profile).
+    explicit_fields = set(config_overrides or {}) | set(kwargs)
+    explicit_fields |= {
+        name
+        for name, value in (
+            ("objective", objective),
+            ("objective_overrides", objective_overrides),
+            ("resume_from_checkpoint", resume_from_checkpoint),
+        )
+        if value is not None
+    }
 
     logger.info(f"Starting training with profile: {profile}")
 
@@ -162,6 +173,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "hybrid":
         return await _train_hybrid(
@@ -172,6 +184,7 @@ async def train(
             dataset,
             save_path,
             callbacks,
+            explicit_fields=explicit_fields,
         )
     elif training_mode == "multi_turn":
         trainer: Any = MultiTurnGRPOTrainer(
@@ -214,7 +227,7 @@ def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
     try:
         import importlib
 
-        importlib.import_module("stateset_agents.rewards.bayesian_reward_model")
+        importlib.import_module("stateset_agents.experimental.bayesian_reward_model")
 
         logger.info("Wrapping reward function with Bayesian uncertainty weighting")
         return UncertaintyWeightedReward(reward_fn)
@@ -350,6 +363,76 @@ def _load_dataset(dataset_path: str) -> Any:
         raise
 
 
+# Fields used by offline policy extraction and its checkpointed sampler.
+_OFFLINE_MAPPED_FIELDS = (
+    "model_name",
+    "model_revision",
+    "learning_rate",
+    "num_epochs",
+    "max_grad_norm",
+    "seed",
+    "max_prompt_length",
+    "max_completion_length",
+    "gradient_accumulation_steps",
+    "adam_beta1",
+    "adam_beta2",
+    "weight_decay",
+)
+_OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {
+    "batch_size",
+    "per_device_train_batch_size",
+    "resume_from_checkpoint",
+}
+
+
+def _offline_config(
+    config: Any, explicit_fields: set[str] | frozenset[str], *, strict: bool
+) -> Any:
+    """Build the offline trainer's config from a ``TrainingConfig``.
+
+    With ``strict`` (pure offline mode) an explicitly set field the offline
+    trainer would ignore raises instead of being silently dropped; in hybrid
+    mode such fields still apply to the online phase.
+    """
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOConfig
+
+    ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
+    if ignored and strict:
+        raise ValueError(
+            "offline training does not use "
+            + ", ".join(repr(name) for name in ignored)
+            + "; it honours only "
+            + ", ".join(sorted(_OFFLINE_HONOURED_FIELDS))
+        )
+    if ignored:
+        logger.info(
+            "Offline pre-training phase ignores %s (applied to the online phase)",
+            ", ".join(ignored),
+        )
+    return OfflineGRPOConfig(
+        **{name: getattr(config, name) for name in _OFFLINE_MAPPED_FIELDS},
+        batch_size=config.batch_size or config.per_device_train_batch_size,
+        offline_algorithm="iql",
+    )
+
+
+def _seed_offline(config: Any, explicit_fields: set[str] | frozenset[str]) -> None:
+    if "seed" not in explicit_fields:
+        return
+    import random
+
+    import numpy as np
+
+    seed = int(config.seed)
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+    try:
+        import torch
+    except ImportError:  # pragma: no cover - offline training needs torch
+        return
+    torch.manual_seed(seed)
+
+
 async def _train_offline(
     agent: Agent,
     config: Any,
@@ -357,6 +440,9 @@ async def _train_offline(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
+    strict: bool = True,
 ) -> Agent:
     """Train using offline RL from a dataset of logged conversations."""
     from stateset_agents.data.conversation_dataset import (
@@ -364,7 +450,7 @@ async def _train_offline(
         EmbeddingCache,
     )
 
-    from .offline_grpo_trainer import OfflineGRPOConfig, OfflineGRPOTrainer
+    from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
 
     if dataset is None:
         raise ValueError(
@@ -372,22 +458,18 @@ async def _train_offline(
             "Pass dataset= or dataset_path= to train()."
         )
 
+    offline_config = _offline_config(config, explicit_fields, strict=strict)
+    _seed_offline(config, explicit_fields)
     if getattr(agent, "model", None) is None:
         await agent.initialize()
-    settings = {
-        name: value
-        for name, value in config.to_dict().items()
-        if name in OfflineGRPOConfig.__dataclass_fields__
-    }
-    settings["batch_size"] = config.batch_size or config.per_device_train_batch_size
     if isinstance(dataset, ConversationDataset):
         if dataset.embedding_cache is None:
             dataset.embedding_cache = EmbeddingCache(
                 embedding_model=dataset.config.embedding_model
             )
         dimensions = dataset.embedding_cache.embedding_dim
-        settings.update(state_dim=dimensions, action_dim=dimensions)
-    offline_config = OfflineGRPOConfig(**settings)
+        offline_config.state_dim = dimensions
+        offline_config.action_dim = dimensions
 
     trainer = OfflineGRPOTrainer(
         config=offline_config,
@@ -432,13 +514,24 @@ async def _train_hybrid(
     dataset: Any,
     save_path: str | None,
     callbacks: list[Any] | None,
+    *,
+    explicit_fields: set[str] | frozenset[str] = frozenset(),
 ) -> Agent:
     """Hybrid training: offline pre-training then online fine-tuning."""
 
     # Phase 1: Offline pre-training (if dataset available)
     if dataset is not None:
         logger.info("Phase 1: Offline pre-training from dataset")
-        await _train_offline(agent, config, reward_fn, dataset, None, callbacks)
+        await _train_offline(
+            agent,
+            config,
+            reward_fn,
+            dataset,
+            None,
+            callbacks,
+            explicit_fields=explicit_fields,
+            strict=False,
+        )
 
     # Phase 2: Online fine-tuning
     logger.info("Phase 2: Online fine-tuning with environment")

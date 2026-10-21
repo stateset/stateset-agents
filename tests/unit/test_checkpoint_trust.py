@@ -320,7 +320,7 @@ LOADER_BATCH_SIZE = 3  # deliberately different, so a no-op load() is visible
 
 
 def _bcq(batch_size):
-    from stateset_agents.training.offline_rl_bcq import (
+    from stateset_agents.experimental.offline_rl.bcq import (
         BatchConstrainedQLearning,
         BCQConfig,
     )
@@ -331,7 +331,10 @@ def _bcq(batch_size):
 
 
 def _bear(batch_size):
-    from stateset_agents.training.offline_rl_bear import BEARConfig, ConversationalBEAR
+    from stateset_agents.experimental.offline_rl.bear import (
+        BEARConfig,
+        ConversationalBEAR,
+    )
 
     return ConversationalBEAR(
         state_dim=4,
@@ -342,7 +345,7 @@ def _bear(batch_size):
 
 
 def _decision_transformer(batch_size):
-    from stateset_agents.training.decision_transformer import (
+    from stateset_agents.experimental.offline_rl.decision_transformer import (
         DecisionTransformerConfig,
         DecisionTransformerTrainer,
     )
@@ -361,13 +364,16 @@ def _decision_transformer(batch_size):
 
 
 def _sim_to_real(batch_size):
-    from stateset_agents.training.sim_to_real import SimToRealConfig, SimToRealTransfer
+    from stateset_agents.experimental.sim_to_real.transfer import (
+        SimToRealConfig,
+        SimToRealTransfer,
+    )
 
     return SimToRealTransfer(SimToRealConfig(batch_size=batch_size), device="cpu")
 
 
 def _offline_grpo(batch_size):
-    from stateset_agents.training.offline_grpo_trainer import (
+    from stateset_agents.experimental.offline_rl.offline_grpo import (
         OfflineGRPOConfig,
         OfflineGRPOTrainer,
     )

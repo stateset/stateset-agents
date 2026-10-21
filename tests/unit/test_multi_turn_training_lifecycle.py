@@ -254,3 +254,51 @@ async def test_cancelled_training_owns_tracking_cleanup_through_repeated_cancell
             await asyncio.wait_for(task, 2)
     assert closed.is_set()
     trainer.save_checkpoint.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "per_episode,accum,expected",
+    [
+        # accumulation: global_step advances every other episode
+        (1, 2, [1, 2, 3]),
+        # several optimizer steps per episode: 3, 6, 9 cross every multiple of 2
+        (3, 1, [3, 6, 9]),
+    ],
+)
+async def test_eval_and_save_fire_once_per_crossed_interval(
+    lifecycle_trainer, per_episode, accum, expected
+):
+    trainer, _ = lifecycle_trainer
+    trainer.config.num_episodes = 6 if accum == 2 else 3
+    trainer.config.gradient_accumulation_steps = accum
+    every = 1 if accum == 2 else 2
+    trainer.config.eval_steps = every
+    trainer.config.save_steps = every
+    trainer.config.logging_steps = every
+    evals, saves = [], []
+
+    async def step(groups):
+        trainer._grad_accum_step += 1
+        if trainer._grad_accum_step % accum == 0:
+            trainer._grad_accum_step = 0
+            trainer.global_step += per_episode
+        return {"total_loss": 0.0}
+
+    async def evaluate(_):
+        evals.append(trainer.global_step)
+        return {"eval_reward": 0.0}
+
+    async def save():
+        saves.append(trainer.global_step)
+
+    trainer._get_training_scenarios = lambda: [{"id": str(i)} for i in range(6)]
+    trainer.training_step = step
+    trainer.evaluate = evaluate
+    trainer._log_eval_metrics = AsyncMock()
+    trainer._log_training_metrics = AsyncMock()
+    trainer.save_checkpoint.side_effect = save
+    await trainer.train()
+    assert evals == expected
+    assert saves[: len(expected)] == expected
+    assert trainer._log_training_metrics.await_count == len(expected)

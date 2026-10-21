@@ -288,7 +288,9 @@ class ConversationDataset(TorchDataset):
 
             for turn_data in data.get("turns", []):
                 turn = ConversationTurnData(
-                    role=turn_data.get("role", "user"),
+                    role=_canonical_role(
+                        turn_data.get("role", turn_data.get("from", "user"))
+                    ),
                     content=turn_data.get("content", ""),
                     reward=float(turn_data.get("reward", 0.0)),
                     timestamp=turn_data.get("timestamp"),
@@ -336,7 +338,9 @@ class ConversationDataset(TorchDataset):
                     if isinstance(conv, dict):
                         turns.append(
                             ConversationTurnData(
-                                role=str(conv.get("role", conv.get("from", "user"))),
+                                role=_canonical_role(
+                                    conv.get("role", conv.get("from", "user"))
+                                ),
                                 content=str(
                                     conv.get(
                                         "content",
@@ -680,7 +684,7 @@ class ConversationDataset(TorchDataset):
             )
         return rows
 
-    def to_offline_rl_format(self) -> dict[str, np.ndarray]:
+    def to_offline_rl_format(self) -> dict[str, Any]:
         """Embed the real logged transitions, in policy-training row order."""
         _require_torch()
         embedding_cache = self.embedding_cache
@@ -695,6 +699,7 @@ class ConversationDataset(TorchDataset):
             )
 
         states, actions, rewards, next_states, dones = [], [], [], [], []
+        contexts, responses = [], []
 
         def embed(identity: str, suffix: str, text: str) -> np.ndarray:
             assert embedding_cache is not None
@@ -711,13 +716,32 @@ class ConversationDataset(TorchDataset):
             next_states.append(embed(identity, "next", render(row["next_history"])))
             rewards.append(row["reward"])
             dones.append(float(row["done"]))
+            contexts.append(row["history"])
+            responses.append(row["action"])
         return {
             "states": np.asarray(states),
             "actions": np.asarray(actions),
             "rewards": np.asarray(rewards),
             "next_states": np.asarray(next_states),
             "dones": np.asarray(dones),
+            "contexts": contexts,
+            "responses": responses,
         }
+
+
+_ROLE_ALIASES = {
+    "human": "user",
+    "gpt": "assistant",
+    "bot": "assistant",
+    "model": "assistant",
+    "chatgpt": "assistant",
+}
+
+
+def _canonical_role(role: Any) -> str:
+    """Map ShareGPT-style speaker names onto user/assistant/system roles."""
+    name = str(role)
+    return _ROLE_ALIASES.get(name.lower(), name)
 
 
 class ConversationReplayBuffer:

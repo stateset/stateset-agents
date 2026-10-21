@@ -37,7 +37,7 @@ async def test_train_keeps_agent_identity_in_every_mode(monkeypatch, mode, sourc
         async def train(self):
             return agent
 
-    async def offline(agent, config, *args):
+    async def offline(agent, config, *args, **kwargs):
         observed.append(config)
         return agent
 
@@ -106,7 +106,8 @@ async def test_offline_config_retains_agent_model_revision(monkeypatch):
     trainer.train = AsyncMock()
     factory = MagicMock(return_value=trainer)
     monkeypatch.setattr(
-        "stateset_agents.training.offline_grpo_trainer.OfflineGRPOTrainer", factory
+        "stateset_agents.experimental.offline_rl.offline_grpo.OfflineGRPOTrainer",
+        factory,
     )
     agent = SimpleNamespace(model=object(), tokenizer=None)
     config = TrainingConfig(model_name="example/model", model_revision=REVISION)

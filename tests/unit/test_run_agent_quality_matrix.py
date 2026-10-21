@@ -9,11 +9,16 @@ from typing import Any
 
 import pytest
 
-from benchmarks.agent_quality_evidence import validate_run
+from benchmarks.agent_quality_evidence import (
+    REQUIRED_SUITES,
+    AgentQualityEvidenceError,
+    validate_run,
+)
 from benchmarks.run_agent_quality_matrix import (
     AgentQualityRunnerError,
     canonical_digest,
     load_manifest,
+    main,
     run_suite,
     validate_adapter_result,
     validate_execution_ready,
@@ -39,7 +44,9 @@ def _command() -> list[str]:
     ]
 
 
-def _manifest() -> dict[str, Any]:
+def _manifest(
+    suites: tuple[str, ...] = ("tau3-bench", "bfcl-v4", "swe-bench-verified"),
+) -> dict[str, Any]:
     return {
         "schema_version": 1,
         "kind": "stateset-agent-quality-manifest",
@@ -52,6 +59,10 @@ def _manifest() -> dict[str, Any]:
             "artifact_sha256": "c" * 64,
         },
         "evaluation_config": {"temperature": 0.0, "max_turns": 20},
+        "budget": {
+            "max_total_cost_usd": 100.0,
+            "estimated_cost_usd_per_attempt": 10.0,
+        },
         "seeds": [42, 1337, 2026],
         "suites": [
             {
@@ -60,9 +71,7 @@ def _manifest() -> dict[str, Any]:
                 "split": "test",
                 "command": _command(),
             }
-            for index, name in enumerate(
-                ("tau3-bench", "bfcl-v4", "swe-bench-verified"), start=1
-            )
+            for index, name in enumerate(suites, start=1)
         ],
     }
 
@@ -111,6 +120,75 @@ def test_manifest_requires_exact_roster_policy_digests_and_placeholders(
     path.write_text(json.dumps(invalid), encoding="utf-8")
     with pytest.raises(AgentQualityRunnerError, match="missing placeholders"):
         load_manifest(path)
+
+
+@pytest.mark.parametrize(
+    "suites",
+    [("tau3-bench", "bfcl-v4"), ("bfcl-v4", "tau3-bench", "swe-bench-verified")],
+)
+def test_manifest_roster_accepts_required_and_optional_suites(
+    tmp_path: Path, suites: tuple[str, ...]
+) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(_manifest(suites)), encoding="utf-8")
+    names = [suite["name"] for suite in load_manifest(path)["suites"]]
+    assert names == list(suites)
+
+
+@pytest.mark.parametrize(
+    ("suites", "message"),
+    [
+        (("tau3-bench",), "missing required suites"),
+        (("tau3-bench", "swe-bench-verified"), "missing required suites"),
+        (("tau3-bench", "bfcl-v4", "webarena"), "unsupported suites"),
+        (("tau3-bench", "bfcl-v4", "bfcl-v4"), "duplicate suites"),
+        ((), "non-empty list"),
+    ],
+)
+def test_manifest_roster_rejects_missing_unknown_and_duplicate_suites(
+    tmp_path: Path, suites: tuple[str, ...], message: str
+) -> None:
+    path = tmp_path / "manifest.json"
+    path.write_text(json.dumps(_manifest(suites)), encoding="utf-8")
+    with pytest.raises(AgentQualityRunnerError, match=message):
+        load_manifest(path)
+
+
+def test_example_manifest_roster_is_required_suites() -> None:
+    root = Path(__file__).resolve().parents[2]
+    manifest = load_manifest(root / "benchmarks/agent_quality_manifest.example.json")
+    assert [suite["name"] for suite in manifest["suites"]] == list(REQUIRED_SUITES)
+
+
+def test_matrix_gate_requires_evidence_for_every_rostered_optional_suite(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(_manifest()), encoding="utf-8")
+    captured: dict[str, Any] = {}
+
+    def fake_run_suite(manifest: Any, suite: Any, seed: int, **_: Any) -> Path:
+        evidence = tmp_path / f"{suite['name']}-{seed}.json"
+        evidence.write_text(json.dumps({"evaluation_cost_usd": 1.0}), "utf-8")
+        return evidence
+
+    def fake_validate_matrix(runs: Any, **kwargs: Any) -> None:
+        captured.update(kwargs)
+        raise AgentQualityEvidenceError("suite matrix mismatch")
+
+    module = "benchmarks.run_agent_quality_matrix"
+    monkeypatch.setattr(f"{module}.validate_execution_ready", lambda *_: None)
+    monkeypatch.setattr(f"{module}.git_commit", lambda _root: "f" * 40)
+    monkeypatch.setattr(f"{module}.run_suite", fake_run_suite)
+    monkeypatch.setattr(f"{module}.load_runs", lambda _inputs: [])
+    monkeypatch.setattr(f"{module}.validate_matrix", fake_validate_matrix)
+    code = main([str(manifest_path), "--output-dir", str(tmp_path / "out")])
+    assert code == 2
+    assert captured["expected_suites"] == [
+        "tau3-bench",
+        "bfcl-v4",
+        "swe-bench-verified",
+    ]
 
 
 def test_manifest_validates_embedded_official_pipeline_contract(

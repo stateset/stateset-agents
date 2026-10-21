@@ -19,7 +19,12 @@ from stateset_agents.utils.security import SecurityMonitor
 
 from ..cache import METRICS_CACHE_TTL_SECONDS, get_cache
 from ..constants import API_VERSION
-from ..dependencies import AuthenticatedUser, get_security_monitor, require_role
+from ..dependencies import (
+    AuthenticatedUser,
+    get_current_user,
+    get_security_monitor,
+    require_role,
+)
 from ..resilience import HealthStatus
 from ..schemas import ErrorResponse
 
@@ -178,16 +183,29 @@ async def healthz() -> dict[str, str]:
 # ============================================================================
 
 
+async def _metrics_scrape_access(request: Request) -> None:
+    """Require credentials for ``/metrics`` when auth is on, unless the
+    operator publishes it for credential-less scrapers (API_PUBLIC_METRICS)."""
+    from ..config import get_config
+
+    config = get_config()
+    if config.security.require_auth and not config.public_metrics:
+        await get_current_user(request)
+
+
 @router.get(
     "/metrics",
     summary="Prometheus Metrics",
     description="Prometheus text exposition format metrics.",
     responses={
         200: {"description": "Prometheus metrics"},
+        401: {"description": "Authentication required", "model": ErrorResponse},
         404: {"description": "Prometheus not installed"},
     },
 )
-async def prometheus_metrics() -> PlainTextResponse:
+async def prometheus_metrics(
+    _access: None = Depends(_metrics_scrape_access),
+) -> PlainTextResponse:
     """Expose Prometheus-format metrics for scraping."""
     if not HAS_PROMETHEUS:  # pragma: no cover
         raise HTTPException(status_code=404, detail="Prometheus client not installed")

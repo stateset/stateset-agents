@@ -37,6 +37,8 @@ from stateset_agents.core.generation_mode import inference_mode
 from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
 
+from .trainer_utils import apply_dropout_setting
+
 logger = logging.getLogger(__name__)
 
 
@@ -111,7 +113,7 @@ class SharedModelManager:
         # Load tokenizer
         self.tokenizer = tokenizer_cls.from_pretrained(
             self.config.model_name,
-            trust_remote_code=getattr(self.config, "trust_remote_code", True),
+            trust_remote_code=getattr(self.config, "trust_remote_code", False),
             padding_side="left",
             revision=getattr(self.config, "model_revision", None),
         )
@@ -126,7 +128,7 @@ class SharedModelManager:
                 else (torch.bfloat16 if self.config.bf16 else torch.float32)
             ),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": getattr(self.config, "trust_remote_code", True),
+            "trust_remote_code": getattr(self.config, "trust_remote_code", False),
             "revision": getattr(self.config, "model_revision", None),
         }
         self._prepare_model_kwargs(model_kwargs)
@@ -145,6 +147,8 @@ class SharedModelManager:
             self.model = self._apply_lora(base_model)
         else:
             self.model = base_model
+
+        apply_dropout_setting(self.config, self.model)
 
         # Optionally load a frozen reference model
         self._load_reference_model(resolved_model_cls, model_kwargs)

@@ -120,9 +120,7 @@ def _worker(rank, directory):
                         kind == "global_mean_normalized"
                         and expected.std(correction=0) > 0
                     ):
-                        expected = (expected - expected.mean()) / (
-                            expected.std(correction=0) + 1e-8
-                        )
+                        expected = expected / (expected.std(correction=0) + 1e-8)
                 actual = _token_batch_advantages(
                     [groups[rank]],
                     config,
@@ -242,6 +240,49 @@ def _worker(rank, directory):
             )
         (root / f"advantage-edge-{rank}.json").write_text(
             json.dumps(edge_cases, indent=2) + "\n"
+        )
+
+        # Direct callers can initialize a running baseline with mean=None.
+        # Every rank, including an empty contributor, must observe the same
+        # complete population rather than initialize from its local shard.
+        initializations = []
+        for clip, partition in itertools.product([None, 3.0], ["uneven", "empty"]):
+            initial_config = copy.deepcopy(config)
+            initial_config.objective = None
+            initial_config.baseline_type = "global_mean"
+            initial_config.advantage_normalization = False
+            initial_config.reward_clip = clip
+            groups = _groups()
+            all_rewards = torch.tensor(
+                [t.total_reward for group in groups for t in group.trajectories],
+                dtype=torch.float32,
+            )
+            if clip is not None:
+                all_rewards = all_rewards.clamp(-clip, clip)
+            local_groups = (
+                [groups[rank]] if partition == "uneven" else groups if rank == 0 else []
+            )
+            observed = []
+            _token_batch_advantages(
+                local_groups,
+                initial_config,
+                _token_objective(initial_config),
+                "cpu",
+                model=trainer.agent.model,
+                global_reward_mean=None,
+                update_global_stats=lambda mean, count, sink=observed: sink.append(
+                    (mean, count)
+                ),
+            )
+            assert len(observed) == 1
+            mean, count = observed[0]
+            assert count == len(all_rewards)
+            assert mean == pytest.approx(float(all_rewards.double().mean()), abs=1e-14)
+            initializations.append(
+                {"clip": clip, "partition": partition, "mean": mean, "count": count}
+            )
+        (root / f"advantage-initialization-{rank}.json").write_text(
+            json.dumps(initializations, indent=2) + "\n"
         )
 
         # Corrupt only rank 1. Every rejection must leave baseline/model untouched,
@@ -365,4 +406,9 @@ def test_ddp_reward_populations_and_frozen_rollout_baselines(tmp_path):
     guards = json.loads((tmp_path / "advantage-guards-0.json").read_text())
     assert guards == json.loads((tmp_path / "advantage-guards-1.json").read_text())
     assert sum(row["rejected"] for row in guards) == 12
+    initialized = json.loads((tmp_path / "advantage-initialization-0.json").read_text())
+    assert len(initialized) == 4
+    assert initialized == json.loads(
+        (tmp_path / "advantage-initialization-1.json").read_text()
+    )
     assert guards[-1] == {"case": "recovery", "rejected": False}

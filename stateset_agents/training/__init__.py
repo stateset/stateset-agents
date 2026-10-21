@@ -8,17 +8,9 @@ Includes state-of-the-art RL algorithms:
 - DAPO: Decoupled Clip and Dynamic Sampling Policy Optimization (best for reasoning)
 - VAPO: Value-Augmented Policy Optimization (SOTA: 60.4 on AIME 2024)
 
-Offline RL algorithms:
-- CQL: Conservative Q-Learning
-- IQL: Implicit Q-Learning
-- BCQ: Batch-Constrained Q-Learning
-- BEAR: Bootstrapping Error Accumulation Reduction
-- Decision Transformer: Sequence modeling approach
-
-Sim-to-Real Transfer:
-- Domain Randomization: Persona, topic, and style randomization
-- System Identification: Learn user behavior models
-- Progressive Transfer: Gradual sim-to-real transition
+PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR, Decision Transformer, offline
+GRPO) and sim-to-real transfer live in :mod:`stateset_agents.experimental`
+(moved in v0.64.0; the re-exports from this package were removed in v0.65.0).
 
 Generation backends:
 - vLLM: 5-20x faster generation with automatic log probability extraction

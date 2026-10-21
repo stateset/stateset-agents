@@ -141,6 +141,9 @@ def parse_text_sft_records(
                         "travel",
                         "services",
                         "telecommunications",
+                        "media",
+                        "healthcare",
+                        "public-sector",
                     }
                     or len(metadata["case_sha256"]) != 64
                     or any(

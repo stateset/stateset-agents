@@ -26,6 +26,7 @@ from typing import Any
 from stateset_agents.training.sft import (
     generate_completions,
     gpu_available,
+    is_sharded_across_devices,
     load_base_model_for_sft,
 )
 
@@ -72,7 +73,13 @@ __all__ = ["main", "merge_adapter"]
 PROBE_PROMPT = "Reply with one sentence: what can you help me with?"
 
 
-def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
+def merge_adapter(
+    base_model: str,
+    adapter_dir: Path,
+    output_dir: Path,
+    *,
+    revision: str | None = None,
+) -> Path:
     """Load base + adapter, merge, save the full checkpoint to ``output_dir``.
 
     The tokenizer is saved alongside the weights so the output directory is
@@ -83,16 +90,19 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
     the pair lands in ``merge_probe.json``. Identical completions mean the
     adapter changed nothing observable — the exact silent no-op this module
     exists to prevent — and raise rather than serve a lie.
+
+    ``revision`` pins the base checkpoint; pass the revision the adapter was
+    trained against, or the merge applies it to whatever the hub's HEAD is.
     """
     import json
 
     from peft import PeftModel
     from transformers import AutoTokenizer
 
-    tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
-    model = _load_full_checkpoint(base_model)
-    if gpu_available():
-        model = model.to("cuda")
+    tokenizer = AutoTokenizer.from_pretrained(  # nosec: B615
+        base_model, revision=revision
+    )
+    model = _place_on_gpu(_load_full_checkpoint(base_model, revision=revision))
     (base_completion,) = generate_completions(
         model, tokenizer, [PROBE_PROMPT], max_new_tokens=48
     )
@@ -113,9 +123,9 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
     try:
         from transformers import AutoProcessor
 
-        AutoProcessor.from_pretrained(base_model).save_pretrained(  # nosec: B615
-            str(output_dir)
-        )
+        AutoProcessor.from_pretrained(  # nosec: B615
+            base_model, revision=revision
+        ).save_pretrained(str(output_dir))
         logger.info("processor artifacts saved alongside the merged weights")
     except Exception as exc:  # noqa: BLE001 - text-only models land here
         logger.info("no processor saved (%s) — fine for text-only models", exc)
@@ -140,7 +150,19 @@ def merge_adapter(base_model: str, adapter_dir: Path, output_dir: Path) -> Path:
     return output_dir
 
 
-def _load_full_checkpoint(base_model: str) -> Any:
+def _place_on_gpu(model: Any) -> Any:
+    """Move ``model`` to the GPU unless accelerate already sharded it.
+
+    A checkpoint loaded with ``device_map="auto"`` across several GPUs must
+    stay where accelerate placed it; ``.to("cuda")`` would collapse every
+    shard onto ``cuda:0`` and run out of memory.
+    """
+    if gpu_available() and not is_sharded_across_devices(model):
+        return model.to("cuda")
+    return model
+
+
+def _load_full_checkpoint(base_model: str, *, revision: str | None = None) -> Any:
     """Load the checkpoint in its OWN architecture, composite included.
 
     ``load_base_model_for_sft`` (via ``AutoModelForCausalLM``) extracts the
@@ -152,13 +174,15 @@ def _load_full_checkpoint(base_model: str) -> Any:
     """
     from transformers import AutoConfig
 
-    config = AutoConfig.from_pretrained(base_model)  # nosec: B615
+    config = AutoConfig.from_pretrained(base_model, revision=revision)  # nosec: B615
     architectures = config.architectures or []
     if any("ConditionalGeneration" in a for a in architectures):
         from transformers import AutoModelForImageTextToText
 
-        return AutoModelForImageTextToText.from_pretrained(base_model)  # nosec: B615
-    return load_base_model_for_sft(base_model)
+        return AutoModelForImageTextToText.from_pretrained(  # nosec: B615
+            base_model, revision=revision
+        )
+    return load_base_model_for_sft(base_model, revision=revision)
 
 
 def _adapter_for_model(model: Any, adapter_dir: Path) -> Path:
@@ -196,6 +220,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--base-model", required=True)
     parser.add_argument("--adapter", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--revision",
+        default=None,
+        help="base-model revision the adapter was trained against",
+    )
     parser.add_argument("--dry-run", action="store_true")
     return parser
 
@@ -208,8 +237,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"  base_model: {args.base_model}")
         print(f"  adapter:    {args.adapter}")
         print(f"  output_dir: {args.output_dir}")
+        if args.revision:
+            print(f"  revision:   {args.revision}")
         return 0
-    merge_adapter(args.base_model, args.adapter, args.output_dir)
+    merge_adapter(
+        args.base_model, args.adapter, args.output_dir, revision=args.revision
+    )
     return 0
 
 

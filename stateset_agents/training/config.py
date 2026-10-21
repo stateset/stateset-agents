@@ -88,8 +88,20 @@ class TrainingConfig:
     per_device_train_batch_size: int = 1
     # Aliases for compatibility with some tests/configs
     batch_size: int | None = None
+    # Note for manual generate_trajectories/training_step loops: only every
+    # 4th training_step takes an optimizer step by default.
     gradient_accumulation_steps: int = 4
     num_generations: int = 16  # GRPO: trajectories per scenario
+    # Roll every group out in lockstep, one batched generate per conversation
+    # turn, when the agent has generate_turns_batch and the environment
+    # supports concurrent episodes. False forces one episode at a time.
+    batched_rollouts: bool = True
+    # What MultiTurnGRPOTrainer does when a step's gradients are non-finite:
+    # "raise" (fail fast) or "skip" (log which parameters and loss terms were
+    # non-finite, discard that update, and abort after
+    # max_consecutive_nonfinite_skips consecutive skips).
+    nonfinite_grad_policy: str = "raise"
+    max_consecutive_nonfinite_skips: int = 3
     generation_batch_size: int = 4
     # Rollout/evaluation parallelism (requires environments that support clone()).
     rollout_concurrency: int = 1
@@ -154,7 +166,9 @@ class TrainingConfig:
     # clips this quantity at ~3e-4/4e-4 instead; see `gspo_config.py`.
     seq_clip_ratio: float = 3e-4  # Sequence-mean ratio clip (GSPO scale)
     value_clip: float = 0.2  # Value function clipping
-    entropy_coef: float = 0.01  # Entropy bonus coefficient
+    # Entropy bonus coefficient. On by default (0.01); set 0.0 for the plain
+    # objective (the token path then skips the full-vocabulary softmax).
+    entropy_coef: float = 0.01
 
     # Continual learning (replay + LwF + EWC)
     continual_strategy: str = "none"  # "none", "replay", "lwf", "ewc", combos
@@ -247,11 +261,30 @@ class TrainingConfig:
     # Keyword-only so existing positional calls to derived configs also retain
     # their field order. Zero disables the consecutive-zero-advantage guard.
     zero_signal_patience: int = field(default=5, kw_only=True)
+    # Zero every dropout module (including LoRA dropout) in the policy before
+    # RL training, so separately scored old/reference log-probs and the
+    # learner's forward pass agree (TRL's ``disable_dropout``). Keyword-only
+    # so subclasses keep their positional arguments.
+    disable_dropout: bool = field(default=False, kw_only=True)
+    # Run Python shipped inside the model's Hugging Face repo when loading it.
+    # Off by default: only enable for a repo you trust whose architecture is
+    # not native to transformers (curated presets opt in explicitly).
+    trust_remote_code: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
+        if self.nonfinite_grad_policy not in ("raise", "skip"):
+            raise ValueError(
+                "nonfinite_grad_policy must be 'raise' or 'skip', got "
+                f"{self.nonfinite_grad_policy!r}"
+            )
+        if self.max_consecutive_nonfinite_skips < 0:
+            raise ValueError("max_consecutive_nonfinite_skips must be >= 0")
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)
+        # The alias is applied once; keeping it would re-impose this value on
+        # every replace()/from_dict() copy and undo later batch-size changes.
+        self.batch_size = None
         if self.wandb_run_name is not None and self.run_name is None:
             self.run_name = self.wandb_run_name
 
@@ -693,9 +726,25 @@ def create_config_from_args(
 ) -> TrainingConfig:
     """Create configuration from command line arguments"""
 
-    # Start with task-specific config or profile
+    # Start with task-specific config or profile. A non-balanced profile is
+    # layered over a task config (its tuning keys win); "balanced" is the
+    # default and leaves the task's own tuning in place.
     if task_type != "general":
         config = get_config_for_task(task_type)
+        if TrainingProfile(profile) != TrainingProfile.BALANCED:
+            neutral = TrainingConfig().to_dict()
+            # Every profile sets the same tuning keys; find them by diffing
+            # each profile against the plain defaults.
+            profile_keys = {
+                name
+                for member in TrainingProfile
+                for name, value in TrainingConfig.from_profile(member).to_dict().items()
+                if value != neutral[name]
+            }
+            tuned = TrainingConfig.from_profile(TrainingProfile(profile)).to_dict()
+            config_dict = config.to_dict()
+            config_dict.update({name: tuned[name] for name in profile_keys})
+            config = TrainingConfig.from_dict(config_dict)
     else:
         config = TrainingConfig.from_profile(TrainingProfile(profile))
 

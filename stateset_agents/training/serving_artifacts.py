@@ -62,7 +62,7 @@ def export_merged_model_for_serving(
     base_model_name: str,
     adapter_dir: str,
     output_dir: str,
-    trust_remote_code: bool = True,
+    trust_remote_code: bool = False,
 ) -> str:
     """
     Merge a PEFT adapter into its base model and persist tokenizer/processor assets.

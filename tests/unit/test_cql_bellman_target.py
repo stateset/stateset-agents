@@ -7,7 +7,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from stateset_agents.training.offline_rl_algorithms import (  # noqa: E402
+from stateset_agents.experimental.offline_rl.algorithms import (  # noqa: E402
     ConservativeQLearning,
     CQLConfig,
 )

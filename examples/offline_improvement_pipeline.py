@@ -20,11 +20,11 @@ from stateset_agents.data.conversation_dataset import (
     ConversationDataset,
     ConversationDatasetConfig,
 )
-from stateset_agents.training.improvement_pipeline import run_improvement_pipeline
-from stateset_agents.training.offline_grpo_trainer import (
+from stateset_agents.experimental.offline_rl.offline_grpo import (
     OfflineGRPOConfig,
     OfflineGRPOTrainer,
 )
+from stateset_agents.training.improvement_pipeline import run_improvement_pipeline
 from stateset_agents.training.sampled_workflow import workflow_tokenizer
 
 logger = logging.getLogger(__name__)

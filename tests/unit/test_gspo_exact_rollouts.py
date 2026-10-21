@@ -22,7 +22,7 @@ from stateset_agents.training import loss_computation as lc  # noqa: E402
 from tests._tiny_tokenizer import tiny_tokenizer  # noqa: E402
 
 
-def _tiny_hf_agent(max_new_tokens: int = 6):
+def _tiny_hf_agent(max_new_tokens: int = 6, stop_sequences: list[str] | None = None):
     from transformers import GPT2Config, GPT2LMHeadModel
 
     torch.manual_seed(0)
@@ -46,6 +46,7 @@ def _tiny_hf_agent(max_new_tokens: int = 6):
             temperature=1.0,
             do_sample=True,
             use_chat_template=False,
+            stop_sequences=list(stop_sequences or []),
         )
     )
     agent.model = model
@@ -285,7 +286,7 @@ def test_stop_criteria_is_per_row():
 
 @pytest.mark.asyncio
 async def test_batched_rows_stop_independently_and_never_record_padding(monkeypatch):
-    agent = _tiny_hf_agent(max_new_tokens=8)
+    agent = _tiny_hf_agent(max_new_tokens=8, stop_sequences=["\n\n"])
     tok = agent.tokenizer
     stop = tok.encode("\n\n", add_special_tokens=False)
     eos = tok.eos_token_id

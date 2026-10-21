@@ -201,7 +201,7 @@ async def demo_multi_agent_coordination():
 # ============================================================================
 
 try:
-    from stateset_agents.training.offline_rl_algorithms import (
+    from stateset_agents.experimental.offline_rl.algorithms import (
         CQLConfig,
         IQLConfig,
         OfflineRLTrainer,
@@ -296,7 +296,7 @@ async def demo_offline_rl():
 # ============================================================================
 
 try:
-    from stateset_agents.rewards.bayesian_reward_model import (
+    from stateset_agents.experimental.bayesian_reward_model import (
         ActiveLearningSelector,
         BayesianRewardConfig,
         BayesianRewardFunction,

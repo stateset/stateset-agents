@@ -609,6 +609,78 @@ def _require_version(values: Sequence[Any], expected: str, gate: str) -> None:
         )
 
 
+AGENT_QUALITY_HARNESS_CONFIG = (
+    Path(__file__).resolve().parent / "agent_quality_harnesses.json"
+)
+
+
+def pinned_suite_revisions(
+    harness_config: Path = AGENT_QUALITY_HARNESS_CONFIG,
+) -> dict[str, str]:
+    """Return the committed official upstream revision for each suite."""
+    try:
+        raw = json.loads(harness_config.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise APlusGateError(f"{harness_config}: unreadable harness pins") from exc
+    pins: dict[str, str] = {}
+    for suite, config in raw.get("suites", {}).items():
+        upstream = config.get("upstream") if isinstance(config, Mapping) else None
+        if isinstance(upstream, Mapping) and isinstance(upstream.get("revision"), str):
+            pins[str(suite)] = upstream["revision"]
+    return pins
+
+
+def _require_pinned_suite_revisions(
+    runs: Sequence[Mapping[str, Any]], pins: Mapping[str, str]
+) -> None:
+    """Reject evidence collected against anything but the pinned upstreams.
+
+    Evidence from a dry run (stub suites, fake endpoint) is shaped exactly like
+    a measured run; the immutable official upstream revision is what tells
+    them apart, so it must equal the committed pin for every suite.
+    """
+    for run in runs:
+        suite = str(run.get("suite"))
+        pinned = pins.get(suite)
+        if pinned is None:
+            raise APlusGateError(
+                f"agent quality suite {suite!r} has no pinned official upstream"
+            )
+        if run.get("suite_revision") != pinned:
+            raise APlusGateError(
+                f"agent quality {suite} evidence revision {run.get('suite_revision')} "
+                f"is not the pinned official upstream {pinned}"
+            )
+
+
+def validate_agent_quality(
+    evidence: Path,
+    expected_commit: str,
+    expected_version: str,
+    *,
+    pins: Mapping[str, str] | None = None,
+) -> dict[str, Any]:
+    """Revalidate the agent-quality bundle exactly as the A+ gate requires."""
+    quality_runs = agent_quality_evidence.load_runs([evidence])
+    agent_quality_evidence.validate_matrix(
+        quality_runs, min_seeds=3, minimum_mean_improvement=0.03
+    )
+    _require_commit(
+        [run["harness_commit"] for run in quality_runs],
+        expected_commit,
+        "agent quality",
+    )
+    _require_version(
+        [run["framework_version"] for run in quality_runs],
+        expected_version,
+        "agent quality",
+    )
+    _require_pinned_suite_revisions(
+        quality_runs, pinned_suite_revisions() if pins is None else pins
+    )
+    return agent_quality_evidence.summarize(quality_runs)
+
+
 def _multi_node_scaling(runs: Sequence[Any]) -> dict[str, Any]:
     """Require the largest strong-scaling topology to span physical nodes."""
     summary = scaling_comparison.summarize_scaling(runs)
@@ -1129,21 +1201,9 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
         expected_version=__version__,
     )
 
-    quality_runs = agent_quality_evidence.load_runs([args.agent_quality_evidence])
-    agent_quality_evidence.validate_matrix(
-        quality_runs, min_seeds=3, minimum_mean_improvement=0.03
+    gates["agent_quality"] = validate_agent_quality(
+        args.agent_quality_evidence, expected_commit, __version__
     )
-    _require_commit(
-        [run["harness_commit"] for run in quality_runs],
-        expected_commit,
-        "agent quality",
-    )
-    _require_version(
-        [run["framework_version"] for run in quality_runs],
-        __version__,
-        "agent quality",
-    )
-    gates["agent_quality"] = agent_quality_evidence.summarize(quality_runs)
 
     flagship_manifest = run_flagship_matrix.load_manifest(args.flagship_manifest)
     _require_version([flagship_manifest["framework_version"]], __version__, "flagship")

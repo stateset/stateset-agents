@@ -1213,15 +1213,29 @@ class RiverExecutor(RemoteExecutor):
                 f"(LoRA rank {spec.lora_r}, attn+mlp)"
             )
 
-            size = max(1, spec.per_device_batch_size)
+            if spec.lora_alpha != 2 * spec.lora_r:
+                logs.append(
+                    f"River LoRA exposes no alpha; lora_alpha={spec.lora_alpha} "
+                    "is not applied (River uses its own scaling)"
+                )
+            # One optimizer step per ``per_device_batch_size *
+            # gradient_accumulation_steps`` rows, the same effective batch a
+            # pod run uses. The fused ``train_step`` takes the whole effective
+            # batch; the older surface accumulates micro-batches and steps once
+            # per window, flushing a partial window at each epoch end.
+            micro = max(1, spec.per_device_batch_size)
+            accumulation = max(1, spec.gradient_accumulation_steps)
+            fused = hasattr(model, "train_step")
+            size = micro * accumulation if fused else micro
             tokens = 0
             for epoch in range(spec.num_epochs):
                 epoch_data = list(data)
                 if options["shuffle"]:
                     rng.shuffle(epoch_data)
+                pending = 0
                 for start in range(0, len(data), size):
                     chunk = epoch_data[start : start + size]
-                    if hasattr(model, "train_step"):
+                    if fused:
                         # The SDK's preferred complete step: forward+backward
                         # and the optimizer step pipelined server-side.
                         result, _ = model.train_step(
@@ -1234,8 +1248,16 @@ class RiverExecutor(RemoteExecutor):
                         job.final_loss = float(loss)
                         if not math.isfinite(job.final_loss):
                             raise ValueError("River SFT returned a nonfinite loss")
-                    if not hasattr(model, "train_step"):
+                    counted = _extract(result, "num_tokens", "tokens", "total_tokens")
+                    if counted is not None:
+                        tokens += int(counted)
+                    if not fused:
+                        pending += 1
+                        last = start + size >= len(data)
+                        if pending < accumulation and not last:
+                            continue
                         model.optim_step(lr=spec.learning_rate)
+                        pending = 0
                     job.steps += 1
                     if job.steps % 10 == 0:
                         _verbose_log(
@@ -1246,9 +1268,6 @@ class RiverExecutor(RemoteExecutor):
                                 else ""
                             )
                         )
-                    counted = _extract(result, "num_tokens", "tokens", "total_tokens")
-                    if counted is not None:
-                        tokens += int(counted)
                 logs.append(
                     f"epoch {epoch + 1}/{spec.num_epochs} complete "
                     f"({job.steps} steps"
@@ -1477,11 +1496,7 @@ class RiverExecutor(RemoteExecutor):
                 dataset_rows=rows,
                 hyperparameters={
                     "provider": self.name,
-                    "lora_r": spec.lora_r,
-                    "num_epochs": spec.num_epochs,
-                    "learning_rate": spec.learning_rate,
-                    "max_length": spec.max_length,
-                    "per_device_batch_size": spec.per_device_batch_size,
+                    **_sft_hyperparameters(spec),
                     "river_checkpoint": job.checkpoint_uri,
                     "steps": job.steps,
                     **(
@@ -1513,6 +1528,23 @@ class RiverExecutor(RemoteExecutor):
         job = self._job(handle)
         if not job.status.is_terminal:
             job.status = JobStatus.CANCELLED
+
+
+def _sft_hyperparameters(spec: RemoteJobSpec) -> dict[str, Any]:
+    """The training hyperparameters River applies, for the adapter manifest.
+
+    Gradient accumulation shapes only the SFT loop, so only SFT records it.
+    """
+    params: dict[str, Any] = {
+        "lora_r": spec.lora_r,
+        "num_epochs": spec.num_epochs,
+        "learning_rate": spec.learning_rate,
+        "max_length": spec.max_length,
+        "per_device_batch_size": spec.per_device_batch_size,
+    }
+    if spec.job_kind == "sft":
+        params["gradient_accumulation_steps"] = spec.gradient_accumulation_steps
+    return params
 
 
 def _is_set(spec: RemoteJobSpec, field_name: str) -> bool:

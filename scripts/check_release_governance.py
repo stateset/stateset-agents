@@ -19,6 +19,7 @@ DEFAULT_SECURITY_DOC = REPO_ROOT / "SECURITY.md"
 
 REQUIRED_COMPONENT_IDS = {
     "api-serving",
+    "bayesian-reward-model",
     "core-agents",
     "deployment-assets",
     "distributed-rollouts",
@@ -28,7 +29,7 @@ REQUIRED_COMPONENT_IDS = {
     "grpo-training",
     "memory",
     "offline-rl",
-    "ppo-reference-updates",
+    "ppo-rlaif-trainers",
     "provider-control-plane",
     "research-modules",
     "reward-learning-rlaif",

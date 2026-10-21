@@ -41,23 +41,20 @@ assert not any(name in sys.modules for name in ('torch', 'transformers', 'river_
 
 
 @pytest.mark.parametrize(
-    "package,submodule,export",
+    "package,provider,export",
     [
-        ("examples", "customer_service_agent", "CustomerServiceAgent"),
-        ("stateset_agents.evaluation", "sim_to_real_metrics", "SimToRealEvaluator"),
+        ("examples", "examples.customer_service_agent", "CustomerServiceAgent"),
     ],
 )
 def test_lazy_package_exports_preserve_public_api(
-    monkeypatch, package, submodule, export
+    monkeypatch, package, provider, export
 ):
     import importlib
 
     module = importlib.import_module(package)
     sentinel = object()
     monkeypatch.delitem(module.__dict__, export, raising=False)
-    monkeypatch.setitem(
-        sys.modules, f"{package}.{submodule}", SimpleNamespace(**{export: sentinel})
-    )
+    monkeypatch.setitem(sys.modules, provider, SimpleNamespace(**{export: sentinel}))
     try:
         assert getattr(module, export) is sentinel
         with pytest.raises(AttributeError):

@@ -158,6 +158,28 @@ class RunPodApi:
         assert last is not None  # pragma: no cover - loop always sets it
         raise last
 
+    def account_balance(self) -> float | None:
+        """The account's prepaid credit in USD, or None if it cannot be read.
+
+        RunPod refuses to create pods when the balance is exhausted and reports
+        that as a generic HTTP 500, so callers check this first to fail with a
+        clear message instead.
+        """
+        import requests
+
+        try:
+            response = requests.post(
+                "https://api.runpod.io/graphql",
+                json={"query": "query { myself { clientBalance } }"},
+                headers=self._headers(),
+                timeout=30,
+            )
+            response.raise_for_status()
+            value = response.json()["data"]["myself"]["clientBalance"]
+            return float(value)
+        except Exception:  # noqa: BLE001 - unknown balance never blocks a run
+            return None
+
     def create_pod(
         self,
         *,
@@ -233,6 +255,66 @@ class RunPodApi:
                 provider="runpod",
                 attempts=1,
                 request_id=request_id,
+            ) from exc
+        return dict(response.json())
+
+    def create_cpu_pod(
+        self,
+        *,
+        name: str,
+        image: str,
+        cpu_flavor_id: str,
+        vcpu_count: int,
+        ports: list[str],
+        env: dict[str, str],
+        container_disk_gb: int = 20,
+        support_public_ip: bool = True,
+        data_center_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Create a CPU-only pod (``computeType=CPU``) on the REST API.
+
+        CPU pods are Secure Cloud only and are sized by flavor (``cpu3c``,
+        ``cpu5g``...) and vCPU count; memory follows the flavor's RAM
+        multiplier. Creation is never retried after an ambiguous transport
+        error, for the same reason as :meth:`create_pod`.
+        """
+        import requests
+
+        if isinstance(vcpu_count, bool) or not isinstance(vcpu_count, int):
+            raise ValueError("vcpu_count must be an integer")
+        if vcpu_count < 1:
+            raise ValueError("vcpu_count must be positive")
+        payload: dict[str, Any] = {
+            "name": name,
+            "imageName": image,
+            "computeType": "CPU",
+            "cpuFlavorIds": [cpu_flavor_id],
+            "cpuFlavorPriority": "availability",
+            "vcpuCount": vcpu_count,
+            "cloudType": "SECURE",
+            "supportPublicIp": support_public_ip,
+            "containerDiskInGb": container_disk_gb,
+            "ports": ports,
+            "env": env,
+        }
+        if data_center_id:
+            payload["dataCenterIds"] = [data_center_id]
+        try:
+            response = self._send(
+                lambda: requests.post(
+                    f"{self.root}/pods",
+                    headers=self._headers(),
+                    json=payload,
+                    timeout=60,
+                )
+            )
+        except requests.RequestException as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            detail = f" (HTTP {status})" if status is not None else ""
+            raise RemoteExecutionError(
+                "RunPod CPU pod creation failed after retries" + detail,
+                provider="runpod",
+                attempts=_HTTP_ATTEMPTS,
             ) from exc
         return dict(response.json())
 

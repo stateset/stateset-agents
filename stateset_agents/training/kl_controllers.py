@@ -117,20 +117,20 @@ class AdaptiveKLController(KLController):
         self.horizon = horizon
         self.min_kl_coef = min_kl_coef
         self.max_kl_coef = max_kl_coef
+        self._last_step: int | None = None
 
     def update(self, current_kl: float, step: int) -> float:
         """Adjust KL coefficient based on current KL divergence."""
         self.stats.update(current_kl)
 
-        # Proportional error — clamped to prevent explosion when target_kl
-        # is very small (e.g. 0.001) or current_kl far from target.
+        # Ziegler et al. / InstructGPT: proportional error clipped to +-0.2,
+        # scaled by the steps elapsed since the previous update.
         proportional_error = (current_kl - self.target_kl) / max(self.target_kl, 1e-8)
-        proportional_error = max(-2.0, min(2.0, proportional_error))
+        proportional_error = max(-0.2, min(0.2, proportional_error))
 
-        # Adjust coefficient
-        # Using a multiplicative update scaled by progress through horizon
-        n_steps = min(step, self.horizon)
-        mult = 1.0 + proportional_error * n_steps / self.horizon
+        elapsed = 1 if self._last_step is None else max(1, step - self._last_step)
+        self._last_step = step
+        mult = 1.0 + proportional_error * min(elapsed, self.horizon) / self.horizon
 
         self.kl_coef = self.kl_coef * mult
 
@@ -201,8 +201,9 @@ class CosineKLScheduler(KLController):
         """Apply cosine annealing to KL coefficient."""
         self.stats.update(current_kl)
 
-        progress = step / self.total_steps
-        cosine_value = math.cos(math.pi * self.num_cycles * progress)
+        progress = min(step / self.total_steps, 1.0)
+        # num_cycles=0.5 is one half-cosine: init_kl_coef -> min_kl_coef
+        cosine_value = math.cos(math.pi * self.num_cycles * 2.0 * progress)
 
         # Map cosine from [-1, 1] to [min_kl_coef, init_kl_coef]
         self.kl_coef = self.min_kl_coef + 0.5 * (
@@ -282,6 +283,7 @@ class HybridKLController(KLController):
         self.max_kl_coef = max_kl_coef
         self.total_steps = total_steps
         self.adaptation_strength = adaptation_strength
+        self.init_kl_coef = init_kl_coef
 
         # Scheduled component (cosine decay)
         self.scheduled_coef = init_kl_coef
@@ -291,14 +293,16 @@ class HybridKLController(KLController):
         self.stats.update(current_kl)
 
         # Scheduled component: cosine decay
-        progress = step / self.total_steps
+        # Decay from the initial coefficient; self.kl_coef already carries the
+        # previous adaptive adjustment and would compound every update.
+        progress = min(step / self.total_steps, 1.0)
         self.scheduled_coef = self.min_kl_coef + 0.5 * (
-            self.kl_coef - self.min_kl_coef
+            self.init_kl_coef - self.min_kl_coef
         ) * (1 + math.cos(math.pi * progress))
 
-        # Adaptive component
+        # Adaptive component (sample KL estimates can be negative)
         if self.target_kl > 0:
-            kl_ratio = current_kl / self.target_kl
+            kl_ratio = max(current_kl, 0.0) / self.target_kl
             adaptive_multiplier = kl_ratio**self.adaptation_strength
         else:
             adaptive_multiplier = 1.0

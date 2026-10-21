@@ -152,9 +152,14 @@ mechanism used for learner and optimizer state.
 `DistributedRolloutControlPlane` adds the worker lifecycle that a remote
 transport needs without coupling correctness to HTTP, Ray, Kubernetes, or a
 specific GPU provider. A registration returns a renewable `WorkerLease` with a
-generation, deadline, and exact policy assignment. Re-registering the same
+generation, deadline, and current policy assignment. Re-registering the same
 worker fences its prior generation, so a delayed process cannot submit after a
-replacement takes ownership.
+replacement takes ownership. A heartbeat moves the assignment to the newest
+policy; a rollout started under an earlier version is still admitted (its
+artifact digest is checked against the version it claims) and is discarded only
+when it exceeds `max_policy_lag`. A record claiming a version newer than its
+assignment is rejected. Checkpoints never wait on producers blocked by
+backpressure, since only the learner can free that capacity.
 
 ```python
 import time

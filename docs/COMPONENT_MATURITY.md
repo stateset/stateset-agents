@@ -22,6 +22,7 @@ and `make release-governance` validates it on every pull request and release.
 | Component ID | Maturity |
 |---|---|
 | `api-serving` | Stable |
+| `bayesian-reward-model` | Experimental |
 | `core-agents` | Stable |
 | `deployment-assets` | Beta |
 | `distributed-rollouts` | Beta |
@@ -31,13 +32,24 @@ and `make release-governance` validates it on every pull request and release.
 | `grpo-training` | Stable |
 | `memory` | Beta |
 | `offline-rl` | Experimental |
-| `ppo-reference-updates` | Experimental |
+| `ppo-rlaif-trainers` | Experimental |
 | `provider-control-plane` | Beta |
 | `research-modules` | Experimental |
 | `reward-learning-rlaif` | Beta |
 | `rust-acceleration` | Beta |
-| `sim-to-real` | Beta |
+| `sim-to-real` | Experimental |
 | `vapo` | Experimental |
+
+Since v0.64.0 the code for the `offline-rl`, `ppo-rlaif-trainers`,
+`sim-to-real`, and `bayesian-reward-model` components lives under the
+`stateset_agents.experimental` namespace, so the import path itself signals
+that no stability guarantee applies. The previous `stateset_agents.training`,
+`stateset_agents.evaluation`, `stateset_agents.environments`, and
+`stateset_agents.rewards` paths were deprecated in v0.64.0 and removed in
+v0.65.0. The four root sim-to-real exports (`stateset_agents.SimToRealMetrics`,
+`SimToRealEvaluator`, `ConversationSimulator`, `ConversationSimulatorConfig`)
+are stable v1-contract names, so they stay deprecated through v0.65.x and are
+removed in v0.66.0.
 
 The JSON manifest supplies each component's owner, documentation, tests,
 retained evidence, limitations, graduation criteria, and stable-contract

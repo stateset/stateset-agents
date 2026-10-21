@@ -918,8 +918,12 @@ class TestAuthentication:
         for key in list(security_monitor.auth_tracker.failures):
             security_monitor.auth_tracker.clear_failures(key)
 
-    def test_lockout_resets_after_successful_auth(self, auth_required_client):
-        """Successful authentication should clear previous failure history for that client."""
+    def test_successful_auth_does_not_reset_other_credentials(
+        self, auth_required_client
+    ):
+        """A valid key must not clear the failure history of a different
+        credential from the same client (that would defeat brute-force
+        lockout for anyone holding any valid key)."""
         security_monitor = get_api_security_monitor()
         for key in list(security_monitor.auth_tracker.lockouts):
             security_monitor.auth_tracker.clear_failures(key)
@@ -946,14 +950,15 @@ class TestAuthentication:
         )
         assert success.status_code == 200
 
-        # Same bad key should not be locked out immediately after reset.
+        # The bad key's failures survive the other key's success: one more
+        # failure reaches the lockout threshold.
         rebound = auth_required_client.post(
             "/api/v1/conversations",
             json=payload,
             headers=bad_headers,
         )
         assert rebound.status_code == 401
-        assert "Retry-After" not in rebound.headers
+        assert "Retry-After" in rebound.headers
 
         for key in list(security_monitor.auth_tracker.lockouts):
             security_monitor.auth_tracker.clear_failures(key)

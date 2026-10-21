@@ -211,6 +211,7 @@ class CompositeReward(RewardFunction):
             )
 
         results: list[tuple[RewardFunction, RewardResult]] = []
+        failed: list[str] = []
         for reward_fn in self.reward_functions:
             try:
                 child_context = context
@@ -229,6 +230,7 @@ class CompositeReward(RewardFunction):
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
                 logger.warning(f"Reward function {reward_fn.name} failed: {e}")
+                failed.append(str(reward_fn.name))
                 # Continue with other reward functions
                 continue
 
@@ -246,6 +248,13 @@ class CompositeReward(RewardFunction):
         if self.normalize_weights and sum(component_weights) > 0:
             weight_sum = float(sum(component_weights))
             component_weights = [w / weight_sum for w in component_weights]
+        elif failed and sum(component_weights) > 0:
+            # Spread a failed component's weight over the survivors so the
+            # score keeps its scale; otherwise a failure scores as 0 and
+            # biases advantages within the group.
+            configured = float(sum(float(rf.weight) for rf in self.reward_functions))
+            scale = configured / float(sum(component_weights))
+            component_weights = [w * scale for w in component_weights]
 
         if self.combination_method == "weighted_sum":
             total_score = sum(
@@ -286,6 +295,7 @@ class CompositeReward(RewardFunction):
                 "component_metadata": [r.metadata for _, r in results],
                 "combination_method": self.combination_method,
                 "normalize_weights": self.normalize_weights,
+                "failed_components": failed,
             },
         )
 

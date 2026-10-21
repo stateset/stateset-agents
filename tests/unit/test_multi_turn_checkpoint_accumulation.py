@@ -88,6 +88,30 @@ def assert_equal(left, right):
 
 
 @pytest.mark.asyncio
+async def test_dropout_setting_cannot_change_on_native_resume(
+    tmp_path, trainer_factory
+):
+    source = trainer_factory(tmp_path / "source")
+    source.config.disable_dropout = False
+    accumulate(source, [1, 2])
+    await source.save_checkpoint(checkpoint_name="saved")
+    checkpoint = tmp_path / "source" / "saved"
+    state = torch.load(checkpoint / "training_state.pt", weights_only=True)
+    assert state["config"]["disable_dropout"] is False
+    target = trainer_factory(tmp_path / "target")
+    target.config.disable_dropout = True
+    before = copy.deepcopy(target.agent.model.state_dict())
+    with pytest.raises(ValueError, match="configuration differs: disable_dropout"):
+        target.load_checkpoint(checkpoint)
+    assert_equal(target.agent.model.state_dict(), before)
+    assert target.global_step == target._grad_accum_step == 0
+    assert not getattr(target, "_runtime_checkpoint_poisoned", False)
+    target.config.disable_dropout = False
+    assert target.load_checkpoint(checkpoint)
+    assert target._grad_accum_step == source._grad_accum_step == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("amp", [False, True])
 @pytest.mark.parametrize("pending", [False, True])
 async def test_real_checkpoint_resume_matches_uninterrupted_updates(

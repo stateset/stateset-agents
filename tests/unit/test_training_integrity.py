@@ -8,16 +8,16 @@ import numpy as np
 import pytest
 import torch
 
+from stateset_agents.experimental.offline_rl.offline_grpo import (
+    OfflineGRPOConfig,
+    OfflineGRPOTrainer,
+)
 from stateset_agents.training.advanced_training_orchestrator import (
     TrainingJob,
     TrainingJobSpec,
     TrainingRunResult,
     TrainingStatus,
     TrainingWorker,
-)
-from stateset_agents.training.offline_grpo_trainer import (
-    OfflineGRPOConfig,
-    OfflineGRPOTrainer,
 )
 
 

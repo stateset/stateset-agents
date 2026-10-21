@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
 import pytest
 
@@ -709,3 +710,12 @@ def test_backends_send_fixed_system_message(monkeypatch: pytest.MonkeyPatch) -> 
 
 def test_imported_rubric_matches_the_pr109_pin() -> None:
     assert rubric_revision() == "25fa6b2a9551e8901a566245965c3b2beb7f044b"
+
+
+def test_flagship_manifests_pin_the_v3_rubric_and_new_judge() -> None:
+    root = Path(__file__).resolve().parents[2] / "benchmarks"
+    for name in ("flagship_manifest.json", "flagship_preflight_manifest.json"):
+        judge = json.loads((root / name).read_text(encoding="utf-8"))["judge"]
+        assert judge["model"] == "mistralai/Mistral-Small-24B-Instruct-2501"
+        assert judge["revision"] == "9527884be6e5616bdd54de542f9ae13384489724"
+        assert judge["rubric_revision"] == rubric_revision()

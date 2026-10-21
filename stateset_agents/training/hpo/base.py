@@ -336,6 +336,11 @@ class HPOBackend(ABC):
         """
         pass
 
+    def worst_metric(self) -> float:
+        """The value a failed trial reports: worst for ``direction``, so a
+        crash can never be selected as the best trial."""
+        return float("-inf") if self.direction == "maximize" else float("inf")
+
     def _notify_trial_start(self, trial_id: str, params: dict[str, Any]):
         """Notify callbacks of trial start."""
         for callback in self.callbacks:

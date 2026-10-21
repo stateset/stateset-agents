@@ -328,10 +328,12 @@ class GSPOModelManager(SharedModelManager):
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
                 trust_remote_code=self.config.trust_remote_code,
-                revision=self.config.model_revision,
+                revision=getattr(self.config, "model_revision", None),
             )
             if self.ref_model is not None:
                 self.ref_model.eval()
+                for param in self.ref_model.parameters():
+                    param.requires_grad = False
 
     def load_model_and_tokenizer(self) -> tuple[Any, Any]:
         """Load model and tokenizer with LoRA if specified"""
@@ -404,7 +406,12 @@ class GSPOTrainer(TrainingRuntime):
                 "GSPOTrainer requires a model with at least one trainable "
                 "parameter; got a parameterless model."
             )
-        self.optimizer = torch.optim.AdamW(params, lr=config.learning_rate)
+        self.optimizer = torch.optim.AdamW(
+            params,
+            lr=config.learning_rate,
+            betas=(float(config.adam_beta1), float(config.adam_beta2)),
+            weight_decay=float(config.weight_decay),
+        )
 
         # Cosine schedule over the optimizer steps actually taken: train_step
         # makes exactly one per outer iteration. Progress is clamped so steps
@@ -707,7 +714,14 @@ class GSPOTrainer(TrainingRuntime):
         nonzero_advantages = 0
         advantage_count = 0
         zero_advantage_groups = 0
-        for query in queries[:num_groups]:
+        step_queries = list(queries[:num_groups])
+        # Every group of the step is sampled in one batched generate before any
+        # scoring; weights only change at the optimizer step after the loop.
+        step_groups = await self.generator.generate_groups_batch(
+            [_query_prompt(query) for query in step_queries],
+            self.config.num_generations,
+        )
+        for query, group_responses in zip(step_queries, step_groups, strict=True):
             processed_groups += 1
             if isinstance(query, dict):
                 prompt = str(query.get("prompt", ""))
@@ -719,11 +733,6 @@ class GSPOTrainer(TrainingRuntime):
                 query_context = {}
             prompt_value = prompt
             query_context_value = dict(query_context)
-
-            # Generate group of responses for this query
-            group_responses = await self.generator.generate_group_responses(
-                prompt, self.config.num_generations
-            )
 
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]
@@ -1000,3 +1009,10 @@ __all__ = [
     "train_with_gspo",
     "train_customer_service_with_gspo",
 ]
+
+
+def _query_prompt(query: Any) -> str:
+    """The prompt text of a query (a string or ``{"prompt": ..., ...}``)."""
+    if isinstance(query, dict):
+        return str(query.get("prompt", ""))
+    return str(query)

@@ -17,7 +17,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Generic, TypeVar, cast
 
 import torch
@@ -193,6 +193,8 @@ class BaseTrainerConfig(TrainingConfig):
     # Model identification
     model_name: str = "gpt2"
     model_revision: str | None = None
+    # See TrainingConfig.trust_remote_code; keyword-only keeps positions.
+    trust_remote_code: bool = field(default=False, kw_only=True)
 
     # Generation parameters
     max_prompt_length: int = 256
@@ -318,7 +320,7 @@ class BaseModelManager(SharedModelManager):
         kwargs = {
             "torch_dtype": self._get_dtype(),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": True,
+            "trust_remote_code": bool(getattr(self.config, "trust_remote_code", False)),
             "revision": self.config.model_revision,
         }
 
@@ -393,6 +395,7 @@ class BaseModelManager(SharedModelManager):
             revision=self.config.model_revision,
             torch_dtype=model_kwargs["torch_dtype"],
             device_map="auto" if torch.cuda.device_count() > 1 else None,
+            trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
         )
         self.ref_model.eval()
         for param in self.ref_model.parameters():

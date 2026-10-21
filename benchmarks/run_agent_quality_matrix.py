@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import subprocess
@@ -22,13 +23,13 @@ try:
         load_pipeline_config,
     )
     from .agent_quality_evidence import (
-        REQUIRED_SUITES,
         AgentQualityEvidenceError,
         hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
+        validate_suite_roster,
     )
     from .benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 except ImportError:  # pragma: no cover - direct script execution
@@ -37,13 +38,13 @@ except ImportError:  # pragma: no cover - direct script execution
         load_pipeline_config,
     )
     from agent_quality_evidence import (
-        REQUIRED_SUITES,
         AgentQualityEvidenceError,
         hash_artifact,
         load_runs,
         summarize,
         validate_matrix,
         validate_run,
+        validate_suite_roster,
     )
     from benchmark_provenance import BenchmarkProvenanceError, resolve_harness_commit
 
@@ -134,8 +135,8 @@ def load_manifest(path: Path) -> dict[str, Any]:
         )
 
     suites = raw.get("suites")
-    if not isinstance(suites, list) or len(suites) != len(REQUIRED_SUITES):
-        raise AgentQualityRunnerError("manifest must configure every required suite")
+    if not isinstance(suites, list) or not suites:
+        raise AgentQualityRunnerError("manifest.suites must be a non-empty list")
     names: list[str] = []
     for index, suite in enumerate(suites):
         label = f"manifest.suites[{index}]"
@@ -157,14 +158,14 @@ def load_manifest(path: Path) -> dict[str, Any]:
                 f"{label}.command is missing placeholders: "
                 + ", ".join(sorted(missing))
             )
-    if set(names) != set(REQUIRED_SUITES) or len(names) != len(set(names)):
-        raise AgentQualityRunnerError(
-            f"suite roster must be exactly {sorted(REQUIRED_SUITES)}"
-        )
+    try:
+        validate_suite_roster(names)
+    except AgentQualityEvidenceError as exc:
+        raise AgentQualityRunnerError(f"invalid suite roster: {exc}") from exc
     if "official_suite_pipelines" in config:
         contract_dir = path.parent.resolve() / ".agent-quality-contract"
         try:
-            for suite in REQUIRED_SUITES:
+            for suite in names:
                 load_pipeline_config(config, suite, contract_dir / suite)
         except OfficialPipelineError as exc:
             raise AgentQualityRunnerError(
@@ -217,6 +218,61 @@ def validate_execution_ready(
             "manifest.framework_version must match the installed StateSet version "
             f"({expected_framework_version})"
         )
+    validate_budget(manifest)
+
+
+def _positive_amount(budget: Mapping[str, Any], key: str) -> float:
+    value = budget.get(key)
+    if (
+        isinstance(value, bool)
+        or not isinstance(value, (int, float))
+        or not math.isfinite(float(value))
+        or float(value) <= 0
+    ):
+        raise AgentQualityRunnerError(
+            f"manifest.budget.{key} must be a positive finite USD amount"
+        )
+    return float(value)
+
+
+def validate_budget(manifest: Mapping[str, Any]) -> float:
+    """Require an explicit spend ceiling at or above the planned worst case.
+
+    Measured collection spends real money (GPU endpoint time plus any paid
+    user simulator), so the operator must approve a ceiling that covers
+    ``estimated_cost_usd_per_attempt`` for every suite/seed attempt. Returns
+    the ceiling, which the runner also enforces against metered spend.
+    """
+    budget = manifest.get("budget")
+    if not isinstance(budget, Mapping):
+        raise AgentQualityRunnerError(
+            "manifest.budget with max_total_cost_usd and "
+            "estimated_cost_usd_per_attempt is required for measured execution"
+        )
+    ceiling = _positive_amount(budget, "max_total_cost_usd")
+    per_attempt = _positive_amount(budget, "estimated_cost_usd_per_attempt")
+    attempts = len(manifest["seeds"]) * len(manifest["suites"])
+    worst_case = per_attempt * attempts
+    if worst_case > ceiling:
+        raise AgentQualityRunnerError(
+            f"manifest.budget.max_total_cost_usd ({ceiling:.2f}) is below the "
+            f"planned worst case ({attempts} attempts x {per_attempt:.2f} = "
+            f"{worst_case:.2f})"
+        )
+    return ceiling
+
+
+def _budget_ceiling(manifest: Mapping[str, Any]) -> float | None:
+    """The approved ceiling when declared (validate_budget enforces presence)."""
+    budget = manifest.get("budget")
+    if not isinstance(budget, Mapping):
+        return None
+    return validate_budget(manifest)
+
+
+def _evidence_cost(path: Path) -> float:
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    return float(raw["evaluation_cost_usd"])
 
 
 def git_commit(root: Path) -> str:
@@ -345,6 +401,7 @@ def run_suite(
         "evaluation_config_json": config_json,
         "adapter_output": str(adapter_output.resolve()),
         "artifact_dir": str(artifact_dir.resolve()),
+        "python": sys.executable,
     }
     command = _format_command(suite["command"], values)
     started = time.monotonic()
@@ -503,11 +560,26 @@ def main(argv: Sequence[str] | None = None) -> int:
 
         validate_execution_ready(manifest, __version__)
         commit = git_commit(args.root)
+        ceiling = _budget_ceiling(manifest)
+        spent = 0.0
         args.output_dir.mkdir(parents=True, exist_ok=True)
         attempts: list[dict[str, Any]] = []
         for seed in seeds:
             for suite in manifest["suites"]:
                 suite_name = str(suite["name"])
+                if ceiling is not None and spent >= ceiling:
+                    attempts.append(
+                        {
+                            "suite": suite_name,
+                            "seed": seed,
+                            "status": "failed",
+                            "error": (
+                                f"not started: metered spend {spent:.2f} reached "
+                                f"the approved ceiling {ceiling:.2f}"
+                            ),
+                        }
+                    )
+                    continue
                 try:
                     evidence = run_suite(
                         manifest,
@@ -528,14 +600,18 @@ def main(argv: Sequence[str] | None = None) -> int:
                         }
                     )
                     continue
-                attempts.append(
-                    {
-                        "suite": suite_name,
-                        "seed": seed,
-                        "status": "completed",
-                        "evidence": str(evidence),
-                    }
-                )
+                attempt: dict[str, Any] = {
+                    "suite": suite_name,
+                    "seed": seed,
+                    "status": "completed",
+                    "evidence": str(evidence),
+                }
+                if ceiling is not None:
+                    cost = _evidence_cost(evidence)
+                    spent += cost
+                    attempt["evaluation_cost_usd"] = cost
+                    attempt["cumulative_cost_usd"] = spent
+                attempts.append(attempt)
         write_accounting(
             args.output_dir,
             mode="preflight" if args.preflight else "measured",
@@ -543,6 +619,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             attempts=attempts,
         )
         failures = sum(item["status"] == "failed" for item in attempts)
+        if ceiling is not None and spent > ceiling:
+            raise AgentQualityRunnerError(
+                f"metered spend {spent:.2f} exceeded the approved ceiling "
+                f"{ceiling:.2f}"
+            )
         if failures:
             raise AgentQualityRunnerError(
                 f"matrix completed {len(attempts) - failures}/{len(attempts)} attempts"
@@ -553,6 +634,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 runs,
                 min_seeds=len(manifest["seeds"]),
                 minimum_mean_improvement=args.minimum_mean_improvement,
+                expected_suites=[str(suite["name"]) for suite in manifest["suites"]],
             )
             report = summarize(runs)
             report_path = args.output_dir / "report.json"

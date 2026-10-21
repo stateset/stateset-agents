@@ -206,16 +206,31 @@ class LengthAdaptiveGAE:
         self.gamma = gamma
         self.lambda_critic = lambda_critic
         self.lambda_policy_alpha = lambda_policy_alpha
+        self._warned_zero_lambda = False
 
     def compute_lambda_policy(self, sequence_length: int) -> float:
         """
-        Compute length-adaptive lambda for policy.
+        Compute length-adaptive lambda for policy (VAPO eq. 7).
 
-        lambda = 1 - 1/(alpha * length + 1)
-
-        This ensures lambda is in (0, 1) and increases with sequence length.
+        lambda = 1 - 1/(alpha * length), so the GAE coefficients sum to about
+        ``alpha * length``. Lengths with ``alpha * length <= 1`` would give a
+        non-positive lambda; they use 0 (one-step TD advantages).
         """
-        return 1.0 - 1.0 / (self.lambda_policy_alpha * sequence_length + 1.0)
+        scaled = self.lambda_policy_alpha * sequence_length
+        if scaled <= 1.0:
+            if not self._warned_zero_lambda:
+                self._warned_zero_lambda = True
+                logger.warning(
+                    "VAPO length-adaptive lambda is 0 for a %d-token completion "
+                    "(lambda_policy_alpha * length = %.3g <= 1): policy advantages "
+                    "fall back to one-step TD and rely entirely on the critic. "
+                    "For short completions raise lambda_policy_alpha (e.g. above "
+                    "1 / typical_length).",
+                    sequence_length,
+                    scaled,
+                )
+            return 0.0
+        return 1.0 - 1.0 / scaled
 
     def compute_gae(
         self,
@@ -361,6 +376,12 @@ class LengthAdaptiveGAE:
         return critic_advantages, policy_advantages, returns
 
 
+def _shares(sizes: list[float]) -> list[float]:
+    """Each entry's fraction of the total (all zeros when the total is 0)."""
+    total = sum(sizes)
+    return [size / total if total > 0 else 0.0 for size in sizes]
+
+
 class VAPOTrainer(TrainingRuntime):
     """
     Value-Augmented Policy Optimization (VAPO) Trainer
@@ -432,7 +453,7 @@ class VAPOTrainer(TrainingRuntime):
 
         # Initialize GAE computer
         self.gae_computer = LengthAdaptiveGAE(
-            gamma=0.99,
+            gamma=float(config.gamma),
             lambda_critic=config.lambda_critic,
             lambda_policy_alpha=config.lambda_policy_alpha,
         )
@@ -507,8 +528,12 @@ class VAPOTrainer(TrainingRuntime):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
-        """Extract hidden states from model"""
-        with torch.set_grad_enabled(self.model.training):
+        """Extract hidden states from model.
+
+        Grad follows the caller: an outer ``torch.no_grad()`` is honoured even
+        while the model is in train mode.
+        """
+        with torch.set_grad_enabled(self.model.training and torch.is_grad_enabled()):
             outputs = self.model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -523,15 +548,35 @@ class VAPOTrainer(TrainingRuntime):
         input_ids: torch.Tensor,
         attention_mask: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute values for a sequence"""
-        hidden_states = self.get_hidden_states(input_ids, attention_mask)
+        """Compute values for a sequence.
+
+        VAPO trains a separate critic, so the value loss must only update the
+        value head: the backbone features are taken without gradient, and the
+        policy is moved by the policy and positive-LM losses alone.
+        """
+        with torch.no_grad():
+            hidden_states = self.get_hidden_states(input_ids, attention_mask)
         # Keep the critic in fp32 for stable regression while allowing the
         # policy backbone to run in bf16/fp16.  Linear layers require matching
-        # dtypes; an explicit differentiable cast avoids the live CUDA
-        # ``BFloat16 and Float`` matmul failure without severing actor grads.
+        # dtypes (the live CUDA ``BFloat16 and Float`` matmul failure).
         value_dtype = next(self.value_head.parameters()).dtype
-        values = self.value_head(hidden_states.to(dtype=value_dtype))
+        values = self.value_head(hidden_states.detach().to(dtype=value_dtype))
         return values.squeeze(-1)
+
+    def compute_rollout_values(
+        self,
+        input_ids: torch.Tensor,
+        attention_mask: torch.Tensor,
+    ) -> torch.Tensor:
+        """Rollout-time values (GAE baseline and value-clip anchor), taken with
+        value-head dropout off so they are not a random draw of the critic."""
+        was_training = self.value_head.training
+        self.value_head.eval()
+        try:
+            with torch.no_grad():
+                return self.compute_values(input_ids, attention_mask)
+        finally:
+            self.value_head.train(was_training)
 
     def compute_token_log_probs(
         self,
@@ -893,7 +938,9 @@ class VAPOTrainer(TrainingRuntime):
                 old_log_probs = self.compute_token_log_probs(
                     batch_input_ids, batch_attention_mask, batch_response_mask
                 )
-                old_values = self.compute_values(batch_input_ids, batch_attention_mask)
+                old_values = self.compute_rollout_values(
+                    batch_input_ids, batch_attention_mask
+                )
 
             # GAE runs in the shifted *action* frame shared by the log-probs,
             # values and loss masks: column t is the action at state t that
@@ -942,6 +989,26 @@ class VAPOTrainer(TrainingRuntime):
         # path (only dropout RNG ordering differs).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
 
+        # Every term aggregates over the whole batch, not per prompt: each
+        # prompt's loss is a mean over its own rows/tokens, so weighting it by
+        # its share of the batch's tokens (rows for seq_mean) makes the
+        # accumulated gradient the batch-level loss. Averaging prompts equally
+        # instead would weight a token by 1/(its group's length), the length
+        # bias token-level loss exists to remove. Matches DAPO.
+        policy_sizes, value_sizes, positive_sizes = [], [], []
+        for rollout in rollouts:
+            action_tokens = float(rollout["response_mask"][:, 1:].sum())
+            policy_sizes.append(
+                action_tokens
+                if self._objective.aggregate == "token_mean"
+                else float(rollout["response_mask"].shape[0])
+            )
+            value_sizes.append(action_tokens)
+            positive_sizes.append(float(rollout["positive_mask"].sum()))
+        policy_weights = _shares(policy_sizes)
+        value_weights = _shares(value_sizes)
+        positive_weights = _shares(positive_sizes)
+
         for _ in range(num_updates):
             prompt_count = len(rollouts)
             all_policy_losses: list[float] = []
@@ -953,7 +1020,7 @@ class VAPOTrainer(TrainingRuntime):
                 self.actor_optimizer.zero_grad()
                 self.critic_optimizer.zero_grad()
 
-            for rollout in rollouts:
+            for index, rollout in enumerate(rollouts):
                 batch_input_ids = rollout["input_ids"]
                 batch_attention_mask = rollout["attention_mask"]
                 batch_response_mask = rollout["response_mask"]
@@ -985,15 +1052,17 @@ class VAPOTrainer(TrainingRuntime):
                     rollout["positive_mask"],
                 )
 
-                # Backpropagate each prompt's normalized contribution
+                # Backpropagate each prompt's weighted contribution
                 # immediately, then step once after the loop. This is gradient
-                # accumulation with the same mean objective, but it releases
+                # accumulation of the batch-level objective, but it releases
                 # each pair of large policy/value forward graphs before the
                 # next prompt instead of retaining the whole batch in VRAM.
-                total_loss = (
-                    policy_loss
-                    + self.config.value_loss_coef * value_loss
-                    + self.config.positive_lm_weight * positive_lm_loss
+                weighted_loss = (
+                    policy_weights[index] * policy_loss
+                    + self.config.value_loss_coef * value_weights[index] * value_loss
+                    + self.config.positive_lm_weight
+                    * positive_weights[index]
+                    * positive_lm_loss
                 )
 
                 all_policy_losses.append(policy_loss.item())
@@ -1011,7 +1080,8 @@ class VAPOTrainer(TrainingRuntime):
                             explained_var = 1 - var_residual / var_returns
                             all_explained_variances.append(explained_var.item())
 
-                (total_loss / prompt_count).backward()
+                if weighted_loss.requires_grad:
+                    weighted_loss.backward()
 
             # A single optimizer update consumes the mean gradient accumulated
             # across prompts without requiring their graphs to coexist.

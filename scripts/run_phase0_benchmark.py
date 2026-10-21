@@ -371,6 +371,44 @@ def _build_env_reward(
     return env, reward_fn, scenarios
 
 
+def protocol_sampling(protocol_config: dict[str, Any]) -> dict[str, Any]:
+    """The exact rollout sampling a matched shootout leg uses.
+
+    Plain temperature/top-p sampling as the TRL leg does it: no top-k, no
+    repetition penalty, no stop strings (a blank-line stop truncated GSM8K
+    chain-of-thought). Recorded in ``algorithm_config`` so a mismatch is
+    visible in the evidence.
+    """
+    return {
+        "temperature": float(protocol_config.get("temperature", 0.7)),
+        "top_p": float(protocol_config.get("top_p", 0.9)),
+        "top_k": 0,
+        "repetition_penalty": 1.0,
+        "stop_sequences": [],
+    }
+
+
+def native_agent_config(
+    model_name: str,
+    model_revision: str | None,
+    max_new_tokens: int,
+    sampling: dict[str, Any],
+) -> Any:
+    """``AgentConfig`` for a native leg that samples exactly ``sampling``."""
+    from stateset_agents.core.agent import AgentConfig
+
+    return AgentConfig(
+        model_name=model_name,
+        model_revision=model_revision,
+        max_new_tokens=max_new_tokens,
+        temperature=float(sampling["temperature"]),
+        top_p=float(sampling["top_p"]),
+        top_k=int(sampling["top_k"]),
+        repetition_penalty=float(sampling["repetition_penalty"]),
+        stop_sequences=list(sampling["stop_sequences"]),
+    )
+
+
 def build_algorithm_config(
     trainer: str, protocol_config: dict[str, Any]
 ) -> dict[str, Any]:
@@ -406,6 +444,7 @@ def build_algorithm_config(
             "objective": "gspo-sequence",
             "clip_range_left": 3e-4,
             "clip_range_right": 4e-4,
+            "sampling": protocol_sampling(protocol_config),
         }
     if trainer == "dapo":
         return {
@@ -437,6 +476,84 @@ def build_algorithm_config(
             "use_reference_model": False,
         }
     raise ValueError(f"Unknown trainer: {trainer}")
+
+
+SHOOTOUT_BASE_KEYS = frozenset(
+    {
+        "num_train_examples",
+        "num_eval_examples",
+        "max_steps",
+        "per_device_train_batch_size",
+        "gradient_accumulation_steps",
+        "learning_rate",
+        "adam_beta1",
+        "adam_beta2",
+        "weight_decay",
+        "max_grad_norm",
+        "warmup_ratio",
+        "lr_scheduler_type",
+        "num_train_epochs",
+        "num_generations",
+        "num_iterations",
+        "max_prompt_length",
+        "max_completion_length",
+        "temperature",
+        "top_p",
+        "beta",
+        "lora_r",
+        "lora_alpha",
+        "lora_dropout",
+        "lora_target_modules",
+        "gradient_checkpointing",
+        "bf16",
+    }
+)
+# Protocol v4 states the matched objective explicitly. The native GSPO leg
+# does not take these as inputs; it verifies they describe what it runs.
+SHOOTOUT_V4_OBJECTIVE_KEYS = frozenset(
+    {
+        "objective",
+        "importance_sampling_level",
+        "epsilon",
+        "epsilon_high",
+        "loss_type",
+        "scale_rewards",
+        "trl_version",
+    }
+)
+
+
+def validate_shootout_config(trainer: str, config: Any) -> str | None:
+    """Return why ``config`` cannot drive ``trainer``, or ``None`` if it can.
+
+    Accepts the v3 key set, or v3 plus the v4 objective keys, which must match
+    the native trainer's own objective exactly (never silently ignored).
+    """
+    if not isinstance(config, dict):
+        return "has an unsupported schema"
+    keys = set(config)
+    if keys == SHOOTOUT_BASE_KEYS:
+        return None
+    if keys != SHOOTOUT_BASE_KEYS | SHOOTOUT_V4_OBJECTIVE_KEYS:
+        return "has an unsupported schema"
+    if trainer != "gspo":
+        return f"states a v4 GSPO objective but --trainer is {trainer!r}"
+    native = build_algorithm_config(trainer, config)
+    expected = {
+        "objective": native["objective"],
+        "importance_sampling_level": "sequence",
+        "epsilon": native["clip_range_left"],
+        "epsilon_high": native["clip_range_right"],
+        "loss_type": "grpo",
+        "scale_rewards": "group",
+    }
+    mismatched = sorted(k for k, v in expected.items() if config[k] != v)
+    if mismatched:
+        detail = ", ".join(
+            f"{k}={config[k]!r} (native {expected[k]!r})" for k in mismatched
+        )
+        return f"objective does not match the native GSPO trainer: {detail}"
+    return None
 
 
 def _prompt_reward(
@@ -570,8 +687,13 @@ def train_with_trainer(
                 tools=SAMPLE_TOOLS,
             )
         else:
+            sampling = algorithm_config.get("sampling")
             trainer_agent = MultiTurnAgent(
-                AgentConfig(
+                native_agent_config(
+                    model_name, model_revision, adapter.max_new_tokens, sampling
+                )
+                if sampling is not None
+                else AgentConfig(
                     model_name=model_name,
                     model_revision=model_revision,
                     max_new_tokens=adapter.max_new_tokens,
@@ -612,8 +734,10 @@ def train_with_trainer(
                 num_epochs=int(protocol.get("num_train_epochs", 1)),
                 max_prompt_length=algorithm_config["max_prompt_length"],
                 max_completion_length=algorithm_config["max_completion_length"],
-                temperature=algorithm_config["temperature"],
-                top_p=algorithm_config["top_p"],
+                temperature=algorithm_config["sampling"]["temperature"],
+                top_p=algorithm_config["sampling"]["top_p"],
+                top_k=algorithm_config["sampling"]["top_k"],
+                repetition_penalty=algorithm_config["sampling"]["repetition_penalty"],
                 beta=algorithm_config["beta"],
                 use_lora=bool(protocol.get("use_lora", True)),
                 lora_r=int(protocol.get("lora_r", 16)),
@@ -1187,36 +1311,9 @@ def main() -> int:
             shootout_config = json.loads(args.shootout_config_json)
         except json.JSONDecodeError as exc:
             parser.error(f"--shootout-config-json is invalid JSON: {exc}")
-        required = {
-            "num_train_examples",
-            "num_eval_examples",
-            "max_steps",
-            "per_device_train_batch_size",
-            "gradient_accumulation_steps",
-            "learning_rate",
-            "adam_beta1",
-            "adam_beta2",
-            "weight_decay",
-            "max_grad_norm",
-            "warmup_ratio",
-            "lr_scheduler_type",
-            "num_train_epochs",
-            "num_generations",
-            "num_iterations",
-            "max_prompt_length",
-            "max_completion_length",
-            "temperature",
-            "top_p",
-            "beta",
-            "lora_r",
-            "lora_alpha",
-            "lora_dropout",
-            "lora_target_modules",
-            "gradient_checkpointing",
-            "bf16",
-        }
-        if not isinstance(shootout_config, dict) or set(shootout_config) != required:
-            parser.error("--shootout-config-json has an unsupported schema")
+        schema_error = validate_shootout_config(args.trainer, shootout_config)
+        if schema_error is not None:
+            parser.error(f"--shootout-config-json {schema_error}")
         if (
             args.num_train_examples != shootout_config["num_train_examples"]
             or args.num_eval_examples != shootout_config["num_eval_examples"]

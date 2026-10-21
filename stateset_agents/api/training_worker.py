@@ -7,6 +7,7 @@ import asyncio
 import copy
 import logging
 import threading
+from dataclasses import replace
 from datetime import datetime
 from pathlib import Path
 
@@ -19,7 +20,12 @@ from .training_queue import TrainingLeaseLostError, TrainingQueue
 logger = logging.getLogger(__name__)
 
 
-async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
+async def work_once(
+    queue: TrainingQueue,
+    *,
+    lease_seconds: float = 60,
+    output_root: str | Path | None = None,
+) -> bool:
     """Execute one claimed job; heartbeat independently of model/event-loop stalls."""
     claim = queue.claim(lease_seconds=lease_seconds)
     if claim is None:
@@ -28,7 +34,8 @@ async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
     stop = threading.Event()
     cancel = asyncio.Event()
     loop = asyncio.get_running_loop()
-    service = TrainingService()
+    service = TrainingService(output_root=output_root)
+    service.queue = queue
     service.training_jobs[job_id] = snapshot
     lost_lease: list[BaseException] = []
 
@@ -56,21 +63,47 @@ async def work_once(queue: TrainingQueue, *, lease_seconds: float = 60) -> bool:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
 
+        from .model_policy import client_model_uses_stub
+
         request = TrainingRequest.model_validate(snapshot["config"])
+        use_stub_model = client_model_uses_stub(
+            request.agent_config.model_name, roles=None
+        )
         overrides = dict(request.training_config_overrides or {})
         # A lease owns a distinct output directory. A stale process cannot replace
         # the artifacts of a later explicitly resumed job.
-        root = Path(overrides.get("output_dir", "./outputs/api-training"))
-        overrides["output_dir"] = str(root / job_id / token)
+        root = service.output_root()
+        job_dir = (root / job_id).resolve()
+        declared_dir = Path(snapshot.get("output_dir", job_dir)).resolve()
+        if declared_dir != job_dir or not job_dir.is_relative_to(root):
+            raise ValueError(
+                "Queued training output directory is outside the worker's configured root"
+            )
+        overrides["output_dir"] = str(job_dir / token)
         request.training_config_overrides = overrides
+        request.resume_from_checkpoint = snapshot.get(
+            "resume_from_checkpoint", request.resume_from_checkpoint
+        )
+        if request.resume_from_checkpoint:
+            # Resolve ownership and symlinks again immediately before execution;
+            # API admission does not authorize arbitrary later filesystem reads.
+            request.resume_from_checkpoint = await run_sync_owned(
+                service._resolve_resume,
+                request.resume_from_checkpoint,
+                snapshot.get("resume_user_id", snapshot.get("user_id")),
+                root,
+            )
         if queue.heartbeat(job_id, token, lease_seconds=lease_seconds):
             cancel.set()
         await service._run_training(
             job_id,
             MultiTurnAgent(
-                AgentConfig(
-                    **request.agent_config.model_dump(),
-                    model_revision=overrides.get("model_revision"),
+                replace(
+                    AgentConfig(
+                        **request.agent_config.model_dump(),
+                        model_revision=overrides.get("model_revision"),
+                    ),
+                    use_stub_model=use_stub_model,
                 )
             ),
             ConversationEnvironment(scenarios=request.environment_scenarios),

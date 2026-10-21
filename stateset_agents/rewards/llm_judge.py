@@ -452,7 +452,7 @@ class LLMJudgeBase(ABC):
             return {"score": score, "reasoning": "Extracted from response"}
 
         # Default
-        return {"score": 0.5, "reasoning": "Failed to parse response"}
+        return {"score": None, "judge_error": "Failed to parse response"}
 
     def _build_criteria_text(self) -> str:
         """Build criteria description text."""
@@ -507,10 +507,10 @@ class OpenAIJudge(LLMJudgeBase):
             return str(response.choices[0].message.content or "")
         except asyncio.TimeoutError:
             logger.warning("OpenAI API call timed out")
-            return '{"score": 0.5, "reasoning": "Timeout"}'
+            return '{"score": null, "judge_error": "Timeout"}'
         except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"OpenAI API error: {e}")
-            return '{"score": 0.5, "reasoning": "API error"}'
+            return '{"score": null, "judge_error": "API error"}'
 
 
 class AnthropicJudge(LLMJudgeBase):
@@ -562,10 +562,10 @@ class AnthropicJudge(LLMJudgeBase):
             return str(response.content[0].text)
         except asyncio.TimeoutError:
             logger.warning("Anthropic API call timed out")
-            return '{"score": 0.5, "reasoning": "Timeout"}'
+            return '{"score": null, "judge_error": "Timeout"}'
         except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"Anthropic API error: {e}")
-            return '{"score": 0.5, "reasoning": "API error"}'
+            return '{"score": null, "judge_error": "API error"}'
 
 
 class LocalJudge(LLMJudgeBase):
@@ -579,7 +579,7 @@ class LocalJudge(LLMJudgeBase):
     async def _call_api(self, messages: list[dict[str, str]]) -> str:
         """Generate using local model."""
         if self.model is None or self.tokenizer is None:
-            return '{"score": 0.5, "reasoning": "Local model not configured"}'
+            return '{"score": null, "judge_error": "Local model not configured"}'
 
         try:
             import torch
@@ -619,7 +619,7 @@ class LocalJudge(LLMJudgeBase):
 
         except LLM_JUDGE_EXCEPTIONS as e:
             logger.error(f"Local model error: {e}")
-            return '{"score": 0.5, "reasoning": "Generation error"}'
+            return '{"score": null, "judge_error": "Generation error"}'
 
 
 class LLMJudge:
@@ -730,7 +730,18 @@ class LLMJudge:
 
         # Parse result
         result = self.backend._parse_json_response(result_text)
-        score = float(result.get("score", 0.5))
+        if result.get("judge_error") or result.get("score") is None:
+            # No verdict (timeout, API or parse error): neutral midpoint of the
+            # output scale, and never cached so a transient outage does not
+            # pin this pair's reward for the rest of the run.
+            logger.warning(
+                "LLM judge returned no score (%s); using neutral midpoint",
+                result.get("judge_error", "missing score"),
+            )
+            if self.config.normalize_scores:
+                return 0.5
+            return (self.config.score_min + self.config.score_max) / 2.0
+        score = float(result["score"])
 
         # Normalize
         if self.config.normalize_scores:

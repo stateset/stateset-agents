@@ -38,6 +38,9 @@ DOMAINS = {
     "travel": "travel",
     "services": "services",
     "telecommunications": "telecommunications",
+    "media": "media",
+    "healthcare": "healthcare",
+    "public-sector": "public-sector",
 }
 GENERATOR_VERSION = "industry-policy-simulations-v1"
 

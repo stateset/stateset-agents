@@ -2273,6 +2273,16 @@
               "name": "persona"
             },
             {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "system_prompt"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "end_on_farewell"
+            },
+            {
               "kind": "VAR_KEYWORD",
               "name": "kwargs"
             }
@@ -3395,6 +3405,11 @@
               "default": 0.0,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "overall_gap"
+            },
+            {
+              "default": 0.0,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "reward_distribution_gap"
             }
           ]
         }
@@ -3583,6 +3598,21 @@
               "default": 16,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "num_generations"
+            },
+            {
+              "default": true,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "batched_rollouts"
+            },
+            {
+              "default": "raise",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "nonfinite_grad_policy"
+            },
+            {
+              "default": 3,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "max_consecutive_nonfinite_skips"
             },
             {
               "default": 4,
@@ -4023,6 +4053,16 @@
               "default": 5,
               "kind": "KEYWORD_ONLY",
               "name": "zero_signal_patience"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "disable_dropout"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "trust_remote_code"
             }
           ]
         }
@@ -4630,6 +4670,33 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "training_queue_path"
+            },
+            {
+              "default": "outputs/api-training",
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_output_root"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_external_models"
+            },
+            {
+              "default": {
+                "repr": "<factory>"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "model_allowlist"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "public_metrics"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "lab_ws_query_token"
             }
           ]
         }

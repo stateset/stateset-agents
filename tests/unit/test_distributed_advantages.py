@@ -195,7 +195,9 @@ async def test_pending_flush_does_not_reobserve_inner_rollout(
     await _run(trainer, _groups()[1:])
     assert trainer._global_reward_count == 8
     assert trainer._global_reward_mean == pytest.approx(3.5 / 8)
-    assert len(seen) == (4 if kind is SingleTurnGRPOTrainer else 3)
+    # The old-policy snapshot precedes the flush; the streamed learner then
+    # scores exactly one batch for each inner update, with no discarded pass.
+    assert len(seen) == 3
     assert all((mean, count) == (0.5, 5) for mean, count, _ in seen)
     assert sum(updating for _, _, updating in seen) == 1
     assert trainer.global_step == 4  # one pending flush, then three inner steps

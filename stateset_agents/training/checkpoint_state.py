@@ -44,6 +44,22 @@ _NATIVE_COUNTER_KEYS = {
 _NATIVE_REQUIRED_COUNTERS = set(_NATIVE_COUNTER_KEYS) - {"_next_episode"}
 
 
+def unwrap_model(model: Any) -> Any:
+    """The underlying model of a DDP/Accelerate-style ``.module`` wrapper.
+
+    Checkpoints hold the bare model's weight names so a resumed run can load
+    them whether or not it wraps the model again.
+    """
+    # Wrappers (DDP, Accelerate, DeepSpeed) register the model as the
+    # ``module`` submodule; anything else is returned unchanged.
+    for _ in range(8):
+        submodules = getattr(model, "_modules", None)
+        if not isinstance(submodules, dict) or submodules.get("module") is None:
+            break
+        model = submodules["module"]
+    return model
+
+
 def _native_components(trainer: Any) -> dict[str, Any]:
     return {
         name: getattr(trainer, name)
@@ -401,7 +417,7 @@ def save_training_checkpoint(
 def _write_training_checkpoint(
     trainer: Any, checkpoint_path: Path, torch: Any, accumulation: dict[str, Any]
 ) -> None:
-    trainer.agent.model.save_pretrained(checkpoint_path)
+    unwrap_model(trainer.agent.model).save_pretrained(checkpoint_path)
     if getattr(trainer.agent, "tokenizer", None) is not None:
         trainer.agent.tokenizer.save_pretrained(checkpoint_path)
 
@@ -593,6 +609,7 @@ def _load_training_checkpoint(
                 "old_logprobs_source",
                 "allow_sequence_fallback",
                 "allow_missing_sampler_logprobs",
+                "disable_dropout",
                 "rollout_sync",
                 "num_generations",
             ):
@@ -632,7 +649,11 @@ def _load_training_checkpoint(
         trainer._runtime_checkpoint_poisoned = True
         try:
             weights_loaded = load_model_checkpoint(
-                model, model_dir, torch_module=torch, trusted=trusted, strict=resumable
+                unwrap_model(model),
+                model_dir,
+                torch_module=torch,
+                trusted=trusted,
+                strict=resumable,
             )
         except trainer_exceptions as exc:
             if resumable:

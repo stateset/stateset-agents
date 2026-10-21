@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 import torch
 
-from stateset_agents.training.offline_grpo_trainer import (
+from stateset_agents.experimental.offline_rl.offline_grpo import (
     OfflineGRPOConfig,
     OfflineGRPOTrainer,
 )

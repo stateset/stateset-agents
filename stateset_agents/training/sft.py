@@ -265,10 +265,11 @@ _LORA_TARGET_CANDIDATES = (
 
 
 def _trust_remote_code(model_name: str) -> bool:
-    """Use native implementations for presets that explicitly request them."""
+    """Run repo-shipped model code only for curated presets that require it;
+    any other model loads with the native transformers implementation."""
     return next(
         (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
-        True,
+        False,
     )
 
 
@@ -294,7 +295,7 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     }
 
 
-_warned_unmasked_sft = False
+_WARNED_ONCE: set[str] = set()
 
 
 def tokenize_sft_row(
@@ -308,16 +309,15 @@ def tokenize_sft_row(
     token left is dropped (``None``). Templates whose renders rewrite earlier
     turns fall back to full-sequence labels with a one-time warning.
     """
-    global _warned_unmasked_sft
     tools = _row_tools(row)
     masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
     if masked is None:
-        if not _warned_unmasked_sft:
+        if "unmasked_sft" not in _WARNED_ONCE:
             logger.warning(
                 "Chat template rewrites earlier turns; SFT labels fall back to "
                 "every token for affected rows."
             )
-            _warned_unmasked_sft = True
+            _WARNED_ONCE.add("unmasked_sft")
         text = _render_sft_row(tokenizer, row)["text"]
         ids = list(
             tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
@@ -392,7 +392,7 @@ def model_load_kwargs() -> dict[str, Any]:
     loads exactly as before and the Trainer places it itself.
     """
     kwargs: dict[str, Any] = {
-        "trust_remote_code": True,
+        "trust_remote_code": False,
         "torch_dtype": "bfloat16",
     }
     n_gpus = cuda_device_count()

@@ -10,7 +10,7 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
-from stateset_agents.training import ppo_trainer as ppo  # noqa: E402
+from stateset_agents.experimental import ppo  # noqa: E402
 
 
 class TinyPolicy(torch.nn.Module):

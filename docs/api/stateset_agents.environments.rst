@@ -4,14 +4,6 @@ stateset\_agents.environments package
 Submodules
 ----------
 
-stateset\_agents.environments.conversation\_simulator module
-------------------------------------------------------------
-
-.. automodule:: stateset_agents.environments.conversation_simulator
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.environments.symbolic\_physics module
 ------------------------------------------------------
 

@@ -81,7 +81,7 @@ def _reference(trainer: Any) -> tuple[Any, float]:
 
 
 def _loss(trainer: Any) -> dict[str, Any]:
-    from .loss_computation import _token_objective
+    from .loss_computation import _token_kl_objective, _token_objective
 
     config = trainer.config
     reference, beta = _reference(trainer)
@@ -89,7 +89,10 @@ def _loss(trainer: Any) -> dict[str, Any]:
         entropy_coef=float(getattr(config, "entropy_coef", 0.0))
     )
     if beta > 0 and reference is not None:
-        objective = objective.with_(kl="k3_token", kl_coef=beta)
+        objective = _token_kl_objective(objective, config, beta=beta)
+    disable_dropout = getattr(config, "disable_dropout", False)
+    if type(disable_dropout) is not bool:
+        raise ValueError("Learner disable_dropout must be a boolean")
     clip = getattr(config, "reward_clip", None)
     if clip is not None and (not math.isfinite(float(clip)) or float(clip) < 0):
         raise ValueError("Learner reward clipping must be finite and nonnegative")
@@ -107,6 +110,7 @@ def _loss(trainer: Any) -> dict[str, Any]:
         ),
         "reward_clip": None if clip is None else float(clip),
         "max_prompt_length": getattr(config, "max_prompt_length", None),
+        "disable_dropout": disable_dropout,
         "beta": beta,
         "enhanced": beta > 0
         or bool(getattr(config, "use_reference_model", False))

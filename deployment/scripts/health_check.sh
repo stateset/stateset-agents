@@ -40,7 +40,13 @@ check_http_endpoint() {
     local expected_code=${2:-200}
     local timeout=${3:-10}
 
-    local response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $timeout "$url" || echo "000")
+    # /metrics requires auth when API_REQUIRE_AUTH is on (unless the server
+    # sets API_PUBLIC_METRICS=true); pass HEALTH_CHECK_API_KEY to send one.
+    local auth_args=()
+    if [ -n "${HEALTH_CHECK_API_KEY:-}" ]; then
+        auth_args=(-H "X-API-Key: $HEALTH_CHECK_API_KEY")
+    fi
+    local response_code=$(curl -s -o /dev/null -w "%{http_code}" --connect-timeout $timeout "${auth_args[@]}" "$url" || echo "000")
 
     if [ "$response_code" = "$expected_code" ]; then
         log_success "✓ $url (HTTP $response_code)"
@@ -270,7 +276,11 @@ check_performance_metrics() {
     log_info "Checking performance metrics..."
 
     local metrics_url="http://$API_HOST:$API_PORT/metrics"
-    local metrics_response=$(curl -s "$metrics_url" || echo "")
+    local auth_args=()
+    if [ -n "${HEALTH_CHECK_API_KEY:-}" ]; then
+        auth_args=(-H "X-API-Key: $HEALTH_CHECK_API_KEY")
+    fi
+    local metrics_response=$(curl -s "${auth_args[@]}" "$metrics_url" || echo "")
 
     if [ -n "$metrics_response" ]; then
         log_success "✓ Metrics endpoint is responding"

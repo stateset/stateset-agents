@@ -20,6 +20,15 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from benchmarks.agent_quality_evidence import (  # noqa: E402
+    REQUIRED_SUITES,
+    SUPPORTED_SUITES,
+)
+
 
 class PairedHarnessError(ValueError):
     """Raised when paired upstream evidence is incomplete or untrustworthy."""
@@ -61,6 +70,21 @@ def _load_object(path: Path, *, label: str) -> dict[str, Any]:
     return dict(value)
 
 
+def configured_suites(path: Path) -> tuple[str, ...]:
+    """Return the configured suites, requiring every required suite."""
+    config = _load_object(path, label="harness config")
+    suites = config.get("suites")
+    if not isinstance(suites, Mapping):
+        raise PairedHarnessError("harness config suites must be an object")
+    unknown = sorted(set(suites).difference(SUPPORTED_SUITES))
+    if unknown:
+        raise PairedHarnessError(f"harness config defines unsupported suites {unknown}")
+    missing = [suite for suite in REQUIRED_SUITES if suite not in suites]
+    if missing:
+        raise PairedHarnessError(f"harness config does not define {missing}")
+    return tuple(suite for suite in SUPPORTED_SUITES if suite in suites)
+
+
 def load_suite_config(path: Path, suite: str) -> dict[str, Any]:
     """Load and validate one suite's pinned command configuration."""
     config = _load_object(path, label="harness config")
@@ -96,6 +120,33 @@ def load_suite_config(path: Path, suite: str) -> dict[str, Any]:
     if value.get("cost_source") not in ALLOWED_COST_SOURCES:
         raise PairedHarnessError(f"harness config for {suite} has invalid cost_source")
     return dict(value)
+
+
+def resolve_repository_path(raw: str) -> Path:
+    """Expand ``${VAR}`` references in a checkout path, failing closed.
+
+    Committed harness configs name checkouts relative to an operator-chosen
+    root (for example ``${STATESET_AQ_UPSTREAM_ROOT}/tau2-bench``) so no
+    machine-specific path is checked in. An unset variable is an error, never
+    an empty string.
+    """
+    names = re.findall(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}", raw)
+    missing = [name for name in names if not os.environ.get(name)]
+    if missing:
+        raise PairedHarnessError(
+            "repository_path references unset environment variable(s): "
+            + ", ".join(missing)
+        )
+    expanded = re.sub(
+        r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}",
+        lambda match: os.environ[match.group(1)],
+        raw,
+    )
+    if "$" in expanded:
+        raise PairedHarnessError(
+            "repository_path may only reference variables as ${NAME}"
+        )
+    return Path(expanded)
 
 
 def verify_repository(path: Path, expected_revision: str) -> None:
@@ -243,7 +294,7 @@ def run_policy(
 
 def run(args: argparse.Namespace) -> dict[str, Any]:
     """Execute the policy pair and return the neutral matrix-runner payload."""
-    if args.suite not in {"tau3-bench", "bfcl-v4", "swe-bench-verified"}:
+    if args.suite not in SUPPORTED_SUITES:
         raise PairedHarnessError(f"unsupported suite: {args.suite}")
     try:
         evaluation_config = json.loads(args.evaluation_config_json)
@@ -253,7 +304,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         raise PairedHarnessError("evaluation config must be a non-empty object")
     config_path = Path(args.harness_config).resolve()
     suite_config = load_suite_config(config_path, args.suite)
-    repository_path = Path(suite_config["repository_path"])
+    repository_path = resolve_repository_path(suite_config["repository_path"])
     if not repository_path.is_absolute():
         repository_path = (config_path.parent / repository_path).resolve()
     verify_repository(repository_path, args.suite_revision)
@@ -270,6 +321,7 @@ def run(args: argparse.Namespace) -> dict[str, Any]:
         "official_suite_pipeline": Path(__file__)
         .with_name("official_suite_pipeline.py")
         .resolve(),
+        "python": sys.executable,
         "upstream_repository": repository_path,
     }
     command = suite_config["command"]
@@ -375,9 +427,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     try:
         if args.adapter_command == "validate":
             config_path = Path(args.harness_config).resolve()
-            for suite in ("tau3-bench", "bfcl-v4", "swe-bench-verified"):
+            suites = configured_suites(config_path)
+            for suite in suites:
                 load_suite_config(config_path, suite)
-            print("validated paired harness commands for 3 suites")
+            print(
+                f"validated paired harness commands for {len(suites)} suites: "
+                + ", ".join(suites)
+            )
             return 0
         result = run(args)
         output = Path(args.adapter_output)

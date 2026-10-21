@@ -89,6 +89,15 @@ def _check_ties(
                 )
 
 
+def _require_overlap(names: Any, model: Any) -> None:
+    """Non-strict loads still need at least one name the model recognises;
+    ``load_state_dict(strict=False)`` otherwise reports success while
+    changing nothing (e.g. ``module.``-prefixed keys from a DDP wrapper)."""
+    state_dict = getattr(model, "state_dict", None)
+    if names and callable(state_dict) and not set(names) & set(state_dict()):
+        raise ValueError("Model checkpoint weight names match no model parameter")
+
+
 def load_model_checkpoint(
     model: Any,
     directory: Path,
@@ -147,6 +156,8 @@ def load_model_checkpoint(
     ties = _tied_names(model, expected) if strict else []
     if not path.name.endswith(".index.json"):
         state = _read_weights(path, torch_module, trusted=trusted)
+        if not strict:
+            _require_overlap(state, model)
         if strict:
             aliases = _missing_aliases(set(state), expected, ties)
             _check_ties(state, set(), expected, ties, torch_module)
@@ -161,6 +172,8 @@ def load_model_checkpoint(
     weight_map = payload["weight_map"]
     if any(not isinstance(name, str) or not name for name in weight_map):
         raise ValueError("Checkpoint index requires nonempty weight names")
+    if not strict:
+        _require_overlap(weight_map, model)
     aliases = _missing_aliases(set(weight_map), expected, ties) if strict else {}
     files: dict[str, set[str]] = {}
     for name, filename in weight_map.items():

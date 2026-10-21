@@ -321,7 +321,9 @@ async def test_all_corpora_are_reproducible_and_trainable_without_ml(tmp_path):
         out, train_count=16, validation_count=8, test_count=8
     )
     assert manifest["domains"] == sorted(DOMAINS)
-    assert (await audit_industry_datasets(out))["verified_demonstrations"] == 192
+    assert (await audit_industry_datasets(out))["verified_demonstrations"] == len(
+        DOMAINS
+    ) * 32
     for domain in manifest["domains"]:
         ids = set()
         for split, count in (("train", 16), ("validation", 8), ("test", 8)):

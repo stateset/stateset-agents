@@ -66,7 +66,7 @@ exposed as `*_starter.py` modules with profile presets.
 | **Inkling-Small** | `thinkingmachines/Inkling-Small` | First-class Tinker remote-autograd SFT via `train-remote --provider tinker`. The result is a hosted sampler/state pointer rather than local Hugging Face weights. Integration is unit-tested; live certification is still pending. See [MANAGED_TRAINING_PROVIDERS.md](MANAGED_TRAINING_PROVIDERS.md). |
 | **Qwen 3.5 27B** | `Qwen/Qwen3.5-27B` | `examples/finetune_qwen3_5_27b_gspo.py`, `deployment/kubernetes/qwen3-5-27b-training-job.yaml`, `docs/QWEN3_5_27B_MINIMAL_HOSTING_PLAN.md` |
 | **Qwen 3** (general) | Qwen 3 family | `examples/finetune_qwen3_gspo.py`, `docs/QWEN3_FINETUNING_GUIDE.md` |
-| **Qwen 2.5 3B Instruct** | `Qwen/Qwen2.5-3B-Instruct` | Offline GRPO example in `training/offline_grpo_trainer.py` |
+| **Qwen 2.5 3B Instruct** | `Qwen/Qwen2.5-3B-Instruct` | Offline GRPO example in `experimental/offline_rl/offline_grpo.py` |
 | **Kimi-K2.5** | `moonshotai/Kimi-K2.5` | `examples/finetune_kimi_k2_5_gspo.py`, `deployment/kubernetes/kimi-k25-*.yaml`, `docs/KIMI_K25_GKE_AUTOPILOT.md`, `docs/KIMI_K25_GKE_STANDARD.md` |
 | **Gemma 3 / Gemma 2 27B IT** | `google/gemma-2-27b-it` | `examples/finetune_gemma3_gspo.py`, `docs/GEMMA3_FINETUNING_GUIDE.md` |
 | **Llama 3** | Llama 3 family | `examples/finetune_llama3_gspo.py` |
@@ -112,13 +112,13 @@ The text-model training paths integrate with the algorithms shipped in
 | GEPO | `gepo_trainer.py` |
 | DAPO | `dapo_trainer.py` |
 | VAPO | `vapo_trainer.py` |
-| PPO | `base_trainer.py` (PPO path) |
-| RLAIF | `rlaif_trainer.py` |
-| Offline GRPO | `offline_grpo_trainer.py` |
-| Decision Transformer | `decision_transformer.py` |
+| PPO (experimental) | `stateset_agents/experimental/ppo.py` |
+| RLAIF (experimental) | `stateset_agents/experimental/rlaif.py` |
+| Offline GRPO (experimental) | `stateset_agents/experimental/offline_rl/offline_grpo.py` |
+| Decision Transformer (experimental) | `stateset_agents/experimental/offline_rl/decision_transformer.py` |
 
-Offline RL variants (BCQ, BEAR, CQL, IQL) are available via the offline
-trainer; see `docs/OFFLINE_RL_GUIDE.md` if present.
+Offline RL variants (BCQ, BEAR, CQL, IQL) are available via the experimental
+offline trainer; see `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md`.
 
 ## Stub mode for tests
 

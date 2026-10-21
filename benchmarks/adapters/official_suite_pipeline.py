@@ -34,13 +34,14 @@ from benchmarks.adapters.official_result_normalizer import (  # noqa: E402
     normalize_tau3,
     write_jsonl,
 )
+from benchmarks.agent_quality_evidence import SUPPORTED_SUITES as _SUITES  # noqa: E402
 
 
 class OfficialPipelineError(ValueError):
     """Raised when an official suite pipeline is unsafe or incomplete."""
 
 
-SUPPORTED_SUITES = {"tau3-bench", "bfcl-v4", "swe-bench-verified"}
+SUPPORTED_SUITES = frozenset(_SUITES)
 REQUIRED_COMMAND_PLACEHOLDERS = {"{model}"}
 MODEL_REVISION_BINDINGS = {"command-argument", "local-marker"}
 IMMUTABLE_REVISION = re.compile(r"[0-9a-f]{40}")
@@ -57,7 +58,12 @@ RESERVED_VALUES = {
     "official_results",
     "official_scores",
     "cost_records",
+    "python",
+    "agent_quality_endpoint",
 }
+#: The StateSet endpoint shim that binds a served policy to its immutable
+#: revision before an upstream evaluator runs (see agent_quality_endpoint.py).
+AGENT_QUALITY_ENDPOINT = REPOSITORY_ROOT / "benchmarks" / "agent_quality_endpoint.py"
 
 
 def _canonical_digest(value: Any) -> str:
@@ -323,6 +329,8 @@ def execute_pipeline(args: argparse.Namespace) -> list[dict[str, Any]]:
         "split": args.split,
         "artifact_dir": str(artifact_dir),
         "upstream_repository": str(repository),
+        "python": sys.executable,
+        "agent_quality_endpoint": str(AGENT_QUALITY_ENDPOINT),
     }
     commands = [_format_command(command, values) for command in pipeline["commands"]]
     manifest = {

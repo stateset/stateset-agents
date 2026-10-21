@@ -388,7 +388,7 @@ Use cases: speeding up training when an LLM-judge reward is the bottleneck (a ho
 
 ### 4.5 RLAIF and Constitutional Critique
 
-`training/rlaif_trainer.py` (749 LOC) implements RLAIF [10] augmented with a Constitutional AI critique-revision loop [9]. The `ConstitutionalAI` class (lines 170-198) implements the three-step inner loop on every training sample:
+`experimental/rlaif.py` (749 LOC) implements RLAIF [10] augmented with a Constitutional AI critique-revision loop [9]. The `ConstitutionalAI` class (lines 170-198) implements the three-step inner loop on every training sample:
 
 1. **Generate** an initial response from the current policy.
 2. **Critique** the response against a domain-specific set of principles. The framework ships four principle sets — `general`, `assistant`, `coding`, `reasoning` — in `CONSTITUTIONAL_PRINCIPLES` (lines 146-167); custom principle sets can be plugged in via config.
@@ -1368,11 +1368,11 @@ The five design principles that anchor the framework are stated in **§1.0 (Desi
 | Multi-objective reward | `stateset_agents/rewards/multi_objective_reward.py` |
 | Memory | `stateset_agents/core/memory.py` |
 | Neural reward trainer | `stateset_agents/training/neural_reward_trainer.py` |
-| RLAIF trainer | `stateset_agents/training/rlaif_trainer.py` |
-| Offline GRPO trainer | `stateset_agents/training/offline_grpo_trainer.py` |
+| RLAIF trainer | `stateset_agents/experimental/rlaif.py` |
+| Offline GRPO trainer | `stateset_agents/experimental/offline_rl/offline_grpo.py` |
 | Continual learning | `stateset_agents/training/continual_learning.py` |
-| Sim-to-real | `stateset_agents/training/sim_to_real.py` |
-| Domain randomization | `stateset_agents/training/domain_randomization.py` |
+| Sim-to-real | `stateset_agents/experimental/sim_to_real/transfer.py` |
+| Domain randomization | `stateset_agents/experimental/sim_to_real/domain_randomization.py` |
 | Auto-research | `stateset_agents/training/auto_research/` |
 | Rust acceleration | `rust_core/` (crate `stateset-rl-core`) |
 | FastAPI app | `stateset_agents/api/main.py` |

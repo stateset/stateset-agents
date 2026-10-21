@@ -68,7 +68,10 @@ scenario duration that exceeds its independently measured wall time.
 
 Standard agent capability evidence is gated by
 `benchmarks/agent_quality_evidence.py`. It requires matched three-seed
-base-versus-trained evaluations on τ³-bench, BFCL V4, and SWE-bench Verified,
+base-versus-trained evaluations on the required suites, τ³-bench and BFCL V4.
+SWE-bench Verified is optional because it is out of domain for the
+customer-support / tool-use flagship. Any suite that is run, optional or not,
+must appear in the evidence and pass the same gate. The gate also requires
 immutable suite/model/harness revisions, identical evaluation configuration,
 retained artifacts, task and cost accounting, at least `+0.03` mean improvement
 per suite, and a paired 95% confidence bound above zero. Until those measured
@@ -78,12 +81,19 @@ Collection is executable rather than hand-authored. Copy
 `benchmarks/agent_quality_manifest.example.json` and
 `benchmarks/agent_quality_harnesses.example.json`, replace every model,
 artifact, upstream-suite revision, checkout path, user-simulator, provider
-meter, and coding-agent command with immutable experiment values. The included
+meter, and (for the optional SWE-bench Verified suite) coding-agent command
+with immutable experiment values. `benchmarks/README.md` shows how to add the
+optional suite. The included
 paired adapter and official-suite pipeline verify that each upstream checkout
 is clean and exactly matches its pinned revision, execute every official stage
 without a shell, reject stale/out-of-tree artifacts and checkout mutation, and
 retain execution manifests, per-command streams, normalized task records, raw
 artifacts, and failures before invoking the publication gate automatically:
+
+The concrete planned run (pinned upstreams, served base vs. trained adapter,
+endpoint binding shim, cost meter and spend ceiling) is
+`benchmarks/agent_quality_manifest.json`; `benchmarks/README.md` lists the
+exact operator commands.
 
 ```bash
 make benchmark-agent-quality-contract
@@ -171,6 +181,36 @@ GRPO orchestration preserves upstream behavior without material overhead.
 - [Validated report](../benchmark_results/framework_comparison/report/comparison.md)
 - [Six per-seed evidence documents](../benchmark_results/framework_comparison/evidence/)
 - Harness commit: `4173eee7be7187c0583390953b8ad79b55fb954f`
+
+### Matched 1.5B native GSPO vs direct TRL (protocol v5.1)
+
+Qwen2.5-1.5B-Instruct (pinned revision), GSM8K (pinned revision), 800
+training and 256 held-out problems, 200 steps, LoRA r=16, bf16, one NVIDIA
+L40S, three seeds per framework. Both legs train on 4 prompts × 4 completions
+per step and sample with temperature 0.7 and top-p 0.9 only (no top-k, no
+repetition penalty, no stop strings); the native leg records its sampling in
+`algorithm_config.sampling`.
+
+| Framework | Samples/s | Peak VRAM | Baseline | Final | Gain |
+|---|---:|---:|---:|---:|---:|
+| StateSet native GSPO (0.64.2 + #99 + #101) | 0.993 ± 0.028 | 10.2 GiB | 29.3% | 31.4% ± 1.5 | +2.1 ± 1.5 |
+| TRL 1.12 GRPOTrainer (GSPO ratio) | 0.999 ± 0.012 | 10.5 GiB | 29.3% | 31.1% ± 1.9 | +1.8 ± 1.9 |
+
+Paired per-seed differences are +3.5, −2.7 and 0.0 points (mean +0.26, 95% CI
+[−7.5, +8.0]): **parity, with no quality claim in either direction.** Both
+frameworks improve held-out accuracy by about two points in 200 steps.
+
+The protocol history matters for interpreting older numbers. v4 under-trained
+TRL (its batch counts completions, so it saw one prompt per step) and
+overstated its throughput 4×; v5 left the native leg on agent default sampling
+(temperature 0.8, top-k 50, repetition penalty 1.1, a blank-line stop that
+truncated reasoning). Both were stopped and retained only as diagnostics.
+Batching GSPO rollout generation reduced native training time for these 200
+steps from 6,032 s to 1,357 s.
+
+The harness (`b006aab`) predates the frozen release commit, so this matrix is
+not `a_plus_gate` evidence until rerun there. Cost $5.97 (5.5 h).
+[Evidence, validated report, and provider record](../benchmark_results/framework_comparison_v5_1/README.md).
 
 ### One-command matched comparison on RunPod (v2 protocol)
 

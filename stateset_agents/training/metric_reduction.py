@@ -8,7 +8,7 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
-METRIC_REDUCTION_PROTOCOL = "stateset-native-metrics-v2"
+METRIC_REDUCTION_PROTOCOL = "stateset-native-metrics-v3"
 _COUNTS = (
     "policy_count",
     "token_count",
@@ -57,6 +57,7 @@ class LossMetricReduction:
     clip_sum: float
     advantage_mean: float
     advantage_m2: float
+    kl_measure: str = "token"
 
     def valid(self) -> bool:
         """Validate the wire fields without raising before a peer handshake."""
@@ -71,6 +72,8 @@ class LossMetricReduction:
         return (
             isinstance(self.measure, str)
             and self.measure in {"trajectory", "token"}
+            and isinstance(self.kl_measure, str)
+            and self.kl_measure in {"trajectory", "token"}
             and all(type(value) is int and 0 <= value <= 2**63 - 1 for value in counts)
             and (
                 all(value > 0 for value in counts[:5])
@@ -106,15 +109,19 @@ def aggregate_loss_metrics(rows: list[LossMetricReduction]) -> dict[str, Any]:
     """Combine native means and population variance using their actual measures."""
     if not rows or not all(row.valid() for row in rows):
         raise ValueError("Invalid native metric reduction statistics")
-    if len({row.measure for row in rows}) != 1:
+    if len({(row.measure, row.kl_measure) for row in rows}) != 1:
         raise ValueError("Native metric reduction measures differ")
     counts = {name: sum(getattr(row, name) for row in rows) for name in _COUNTS}
+
+    def denominator(name: str) -> int:
+        if name == "policy_sum":
+            return int(counts["policy_count"])
+        if name == "kl_sum" and rows[0].kl_measure == "trajectory":
+            return int(counts["trajectory_count"])
+        return int(counts["token_count"])
+
     means = {
-        name: math.fsum(
-            getattr(row, name)
-            / max(counts["policy_count" if name == "policy_sum" else "token_count"], 1)
-            for row in rows
-        )
+        name: math.fsum(getattr(row, name) / max(denominator(name), 1) for row in rows)
         for name in _VALUES[:6]
     }
     count, mean, m2 = 0, 0.0, 0.0
@@ -203,6 +210,7 @@ def reduce_ddp_metrics(metrics: dict[str, Any], model: Any) -> dict[str, Any]:
             counts = [getattr(reduction, name) for name in _COUNTS]
             values.extend(getattr(reduction, name) for name in _VALUES)
             schema.append(("native_measure", "str", reduction.measure))
+            schema.append(("native_kl_measure", "str", reduction.kl_measure))
         digest = hashlib.sha256(
             json.dumps(schema, allow_nan=False, separators=(",", ":")).encode()
         ).digest()
@@ -239,6 +247,7 @@ def reduce_ddp_metrics(metrics: dict[str, Any], model: Any) -> dict[str, Any]:
         reductions = [
             LossMetricReduction(
                 measure=reduction.measure,
+                kl_measure=reduction.kl_measure,
                 **dict(zip(_COUNTS, row[3:9], strict=True)),
                 **dict(zip(_VALUES, peer[len(names) :], strict=True)),
             )

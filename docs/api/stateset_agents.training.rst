@@ -85,14 +85,6 @@ stateset\_agents.training.dapo\_trainer module
    :undoc-members:
    :show-inheritance:
 
-stateset\_agents.training.decision\_transformer module
-------------------------------------------------------
-
-.. automodule:: stateset_agents.training.decision_transformer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.training.diagnostics module
 --------------------------------------------
 
@@ -113,14 +105,6 @@ stateset\_agents.training.distributed\_trainer module
 -----------------------------------------------------
 
 .. automodule:: stateset_agents.training.distributed_trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.domain\_randomization module
-------------------------------------------------------
-
-.. automodule:: stateset_agents.training.domain_randomization
    :members:
    :undoc-members:
    :show-inheritance:
@@ -261,46 +245,6 @@ stateset\_agents.training.neural\_reward\_trainer module
    :undoc-members:
    :show-inheritance:
 
-stateset\_agents.training.offline\_grpo\_trainer module
--------------------------------------------------------
-
-.. automodule:: stateset_agents.training.offline_grpo_trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.offline\_rl\_algorithms module
---------------------------------------------------------
-
-.. automodule:: stateset_agents.training.offline_rl_algorithms
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.offline\_rl\_bcq module
--------------------------------------------------
-
-.. automodule:: stateset_agents.training.offline_rl_bcq
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.offline\_rl\_bear module
---------------------------------------------------
-
-.. automodule:: stateset_agents.training.offline_rl_bear
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.ppo\_trainer module
----------------------------------------------
-
-.. automodule:: stateset_agents.training.ppo_trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.training.preset\_training module
 -------------------------------------------------
 
@@ -325,26 +269,10 @@ stateset\_agents.training.reward\_calibration module
    :undoc-members:
    :show-inheritance:
 
-stateset\_agents.training.rlaif\_trainer module
------------------------------------------------
-
-.. automodule:: stateset_agents.training.rlaif_trainer
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
 stateset\_agents.training.serving\_artifacts module
 ---------------------------------------------------
 
 .. automodule:: stateset_agents.training.serving_artifacts
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.training.sim\_to\_real module
-----------------------------------------------
-
-.. automodule:: stateset_agents.training.sim_to_real
    :members:
    :undoc-members:
    :show-inheritance:

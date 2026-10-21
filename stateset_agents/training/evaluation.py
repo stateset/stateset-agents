@@ -138,17 +138,36 @@ async def evaluate_agent(
     if cfg.concurrency < 1:
         cfg = replace(cfg, concurrency=1)
 
-    shared_env_lock = asyncio.Lock()
     if cfg.concurrency > 1 and type(environment).clone is Environment.clone:
         logger.warning(
             "Environment clone() is not implemented; forcing sequential evaluation."
         )
         cfg = replace(cfg, concurrency=1)
 
+    # Seed for reproducible evaluation, but hand the caller's RNG streams back
+    # afterwards: re-seeding mid-training would replay the same environment
+    # randomness after every evaluation.
+    saved_rng = None
     if cfg.seed is not None:
+        saved_rng = (random.getstate(), np.random.get_state())
         random.seed(cfg.seed)
         np.random.seed(cfg.seed)
+    try:
+        return await _evaluate_seeded(agent, environment, scenarios, reward_fn, cfg)
+    finally:
+        if saved_rng is not None:
+            random.setstate(saved_rng[0])
+            np.random.set_state(saved_rng[1])
 
+
+async def _evaluate_seeded(
+    agent: Any,
+    environment: Environment,
+    scenarios: Sequence[dict[str, Any]] | None,
+    reward_fn: Any | None,
+    cfg: EvaluationConfig,
+) -> dict[str, float]:
+    shared_env_lock = asyncio.Lock()
     scenario_list: list[dict[str, Any]] = list(scenarios or [])
     required_reward = any(
         getattr(reward, "fail_on_error", False)

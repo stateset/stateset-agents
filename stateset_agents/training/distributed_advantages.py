@@ -133,7 +133,7 @@ def prepare_reward_batch(
                 "Reward estimator or running baseline differs across DDP ranks"
             )
         needs_global_moments = (explicit and objective.advantage == "batch_norm") or (
-            running and state is not None
+            running and (state is not None or updating)
         )
         if needs_global_moments:
             moments = torch.tensor([mean, m2], dtype=torch.float64, device=device)

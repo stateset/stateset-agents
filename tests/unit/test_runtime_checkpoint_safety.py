@@ -481,7 +481,7 @@ async def test_cpu_restored_state_is_owned_not_aliased_to_loader_cache(
 async def test_actual_adaptive_ppo_next_update_matches_uninterrupted(
     tmp_path, monkeypatch
 ):
-    from stateset_agents.training import ppo_trainer as ppo
+    from stateset_agents.experimental import ppo
     from tests.unit.test_ppo_safety import (
         CharacterTokenizer,
     )

@@ -6,8 +6,9 @@ MoE causal LM (``model_type: nemotron_h``) with 30B total and ~3B active
 parameters (A3B), 52 layers, 131072-token vocabulary, and 256K practical
 context (262144 max positions; 1M claimed). Weights are published on
 HuggingFace under OpenMDW-1.1. The presets below target QLoRA post-training
-of the BF16 checkpoint (the NVFP4 variant is inference-only); the custom
-architecture requires ``trust_remote_code=True``.
+of the BF16 checkpoint (the NVFP4 variant is inference-only). transformers
+implements ``nemotron_h`` natively, so the starter keeps
+``trust_remote_code=False``; set it only for a repo you trust.
 
 Built from a :class:`StarterSpec`; see ``starter_factory``.
 """

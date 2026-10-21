@@ -1278,13 +1278,6 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "ValueHead": (f"{_PKG}.vapo_trainer", "ValueHead"),
     "LengthAdaptiveGAE": (f"{_PKG}.vapo_trainer", "LengthAdaptiveGAE"),
     "train_with_vapo": (f"{_PKG}.vapo_trainer", "train_with_vapo"),
-    # PPO
-    "PPOConfig": (f"{_PKG}.ppo_trainer", "PPOConfig"),
-    "PPOTrainer": (f"{_PKG}.ppo_trainer", "PPOTrainer"),
-    "PPOValueHead": (f"{_PKG}.ppo_trainer", "PPOValueHead"),
-    "AdaptiveKLController": (f"{_PKG}.ppo_trainer", "AdaptiveKLController"),
-    "compute_gae": (f"{_PKG}.ppo_trainer", "compute_gae"),
-    "train_ppo": (f"{_PKG}.ppo_trainer", "train_ppo"),
     # KL controllers
     "KLController": (f"{_PKG}.kl_controllers", "KLController"),
     "FixedKLController": (f"{_PKG}.kl_controllers", "FixedKLController"),
@@ -1299,65 +1292,6 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "EMACallback": (f"{_PKG}.ema", "EMACallback"),
     "MultiEMA": (f"{_PKG}.ema", "MultiEMA"),
     "create_ema_model": (f"{_PKG}.ema", "create_ema_model"),
-    # RLAIF
-    "RLAIFConfig": (f"{_PKG}.rlaif_trainer", "RLAIFConfig"),
-    "RLAIFTrainer": (f"{_PKG}.rlaif_trainer", "RLAIFTrainer"),
-    "ConstitutionalAI": (f"{_PKG}.rlaif_trainer", "ConstitutionalAI"),
-    "train_rlaif": (f"{_PKG}.rlaif_trainer", "train_rlaif"),
-    # Offline RL - CQL/IQL
-    "CQLConfig": (f"{_PKG}.offline_rl_algorithms", "CQLConfig"),
-    "IQLConfig": (f"{_PKG}.offline_rl_algorithms", "IQLConfig"),
-    "ConservativeQLearning": (
-        f"{_PKG}.offline_rl_algorithms",
-        "ConservativeQLearning",
-    ),
-    "ImplicitQLearning": (f"{_PKG}.offline_rl_algorithms", "ImplicitQLearning"),
-    "OfflineRLTrainer": (f"{_PKG}.offline_rl_algorithms", "OfflineRLTrainer"),
-    # Offline RL - BCQ
-    "BCQConfig": (f"{_PKG}.offline_rl_bcq", "BCQConfig"),
-    "BatchConstrainedQLearning": (
-        f"{_PKG}.offline_rl_bcq",
-        "BatchConstrainedQLearning",
-    ),
-    "ConversationalVAE": (f"{_PKG}.offline_rl_bcq", "ConversationalVAE"),
-    "BCQTrainer": (f"{_PKG}.offline_rl_bcq", "BCQTrainer"),
-    # Offline RL - BEAR
-    "BEARConfig": (f"{_PKG}.offline_rl_bear", "BEARConfig"),
-    "ConversationalBEAR": (f"{_PKG}.offline_rl_bear", "ConversationalBEAR"),
-    "MMDKernel": (f"{_PKG}.offline_rl_bear", "MMDKernel"),
-    "BEARTrainer": (f"{_PKG}.offline_rl_bear", "BEARTrainer"),
-    # Decision Transformer
-    "DecisionTransformerConfig": (
-        f"{_PKG}.decision_transformer",
-        "DecisionTransformerConfig",
-    ),
-    "DecisionTransformer": (f"{_PKG}.decision_transformer", "DecisionTransformer"),
-    "DecisionTransformerTrainer": (
-        f"{_PKG}.decision_transformer",
-        "DecisionTransformerTrainer",
-    ),
-    "ConversationEmbedder": (
-        f"{_PKG}.decision_transformer",
-        "ConversationEmbedder",
-    ),
-    # Offline GRPO
-    "OfflineGRPOConfig": (f"{_PKG}.offline_grpo_trainer", "OfflineGRPOConfig"),
-    "OfflineGRPOTrainer": (f"{_PKG}.offline_grpo_trainer", "OfflineGRPOTrainer"),
-    "OfflineRLAlgorithm": (f"{_PKG}.offline_grpo_trainer", "OfflineRLAlgorithm"),
-    # Domain Randomization
-    "DomainRandomizationConfig": (
-        f"{_PKG}.domain_randomization",
-        "DomainRandomizationConfig",
-    ),
-    "DomainRandomizer": (f"{_PKG}.domain_randomization", "DomainRandomizer"),
-    "PersonaGenerator": (f"{_PKG}.domain_randomization", "PersonaGenerator"),
-    "ScenarioGenerator": (f"{_PKG}.domain_randomization", "ScenarioGenerator"),
-    "UserPersona": (f"{_PKG}.domain_randomization", "UserPersona"),
-    # Sim-to-Real Transfer
-    "SimToRealConfig": (f"{_PKG}.sim_to_real", "SimToRealConfig"),
-    "SimToRealTransfer": (f"{_PKG}.sim_to_real", "SimToRealTransfer"),
-    "UserBehaviorModel": (f"{_PKG}.sim_to_real", "UserBehaviorModel"),
-    "DomainAdaptationModule": (f"{_PKG}.sim_to_real", "DomainAdaptationModule"),
 }
 
 #: The full public surface of :mod:`stateset_agents.training`, in the order it

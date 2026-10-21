@@ -106,7 +106,10 @@ class TrainingCancelResponse(BaseModel):
         },
         400: {"description": "Invalid configuration", "model": ErrorResponse},
         401: {"description": "Authentication required", "model": ErrorResponse},
-        403: {"description": "Insufficient permissions", "model": ErrorResponse},
+        403: {
+            "description": "Insufficient permissions or model not permitted",
+            "model": ErrorResponse,
+        },
         409: {"description": "Idempotency key conflict", "model": ErrorResponse},
         429: {
             "description": "Training concurrency limit reached",
@@ -154,10 +157,15 @@ async def start_training(
 
         if idempotency_key is not None:
             training_id = await svc.start_training(
-                request, user_id=user.user_id, idempotency_key=idempotency_key
+                request,
+                user_id=user.user_id,
+                idempotency_key=idempotency_key,
+                roles=list(user.roles),
             )
         else:
-            training_id = await svc.start_training(request, user_id=user.user_id)
+            training_id = await svc.start_training(
+                request, user_id=user.user_id, roles=list(user.roles)
+            )
 
         persisted = (
             await svc.aget_training_status(training_id, user_id=user.user_id)

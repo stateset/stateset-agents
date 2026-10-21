@@ -80,6 +80,19 @@ def test_moment_merge_preserves_small_variance_at_large_offset():
     assert result["advantage_std"] == pytest.approx(math.sqrt(10.64), abs=1e-12)
 
 
+def test_sequence_kl_uses_trajectory_counts_independently_of_token_counts():
+    rows = [replace(row, kl_measure="trajectory") for row in _rows()]
+    result = aggregate_loss_metrics(rows)
+    assert result["kl_penalty"] == pytest.approx(4 / 5)
+    assert result["entropy"] == pytest.approx(56 / 16)
+
+
+def test_kl_reduction_measures_cannot_be_mixed():
+    first, second = _rows()
+    with pytest.raises(ValueError, match="measures differ"):
+        aggregate_loss_metrics([first, replace(second, kl_measure="trajectory")])
+
+
 @pytest.mark.parametrize(
     "change",
     [
@@ -90,6 +103,8 @@ def test_moment_merge_preserves_small_variance_at_large_offset():
         {"nonzero_advantages": 3},
         {"advantage_count": 1},
         {"measure": "unknown"},
+        {"kl_measure": "unknown"},
+        {"kl_measure": []},
         {"policy_count": 2**70},
         {"policy_sum": 2**2000},
     ],

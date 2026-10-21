@@ -16,6 +16,14 @@ from collections.abc import Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
+if str(REPOSITORY_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPOSITORY_ROOT))
+
+from benchmarks.agent_quality_evidence import (  # noqa: E402
+    SUPPORTED_SUITES,
+)
+
 
 class OfficialResultError(ValueError):
     """Raised when an official result artifact is incomplete or inconsistent."""
@@ -268,7 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--suite",
-        choices=("tau3-bench", "bfcl-v4", "swe-bench-verified"),
+        choices=SUPPORTED_SUITES,
         required=True,
     )
     parser.add_argument("--results", type=Path, required=True)

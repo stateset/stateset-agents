@@ -71,7 +71,7 @@
     "bytes": 73376,
     "sha256": "f49016d07b7eb987c0513f8f0005aef69844db530835a62983687e0fbeb7e91b"
   },
-  "attempt1/requirements-observed.txt": {
+  "attempt1/pip-freeze-observed.txt": {
     "bytes": 3599,
     "sha256": "8a0efd352e8b2f95e2273a78d992ea75ff9ac659143406df892140d80ebe4c2c"
   },
@@ -179,7 +179,7 @@
     "bytes": 73376,
     "sha256": "f49016d07b7eb987c0513f8f0005aef69844db530835a62983687e0fbeb7e91b"
   },
-  "attempt2/requirements-observed.txt": {
+  "attempt2/pip-freeze-observed.txt": {
     "bytes": 3599,
     "sha256": "8a0efd352e8b2f95e2273a78d992ea75ff9ac659143406df892140d80ebe4c2c"
   },
@@ -307,7 +307,7 @@
     "bytes": 73376,
     "sha256": "f49016d07b7eb987c0513f8f0005aef69844db530835a62983687e0fbeb7e91b"
   },
-  "attempt5/requirements-observed.txt": {
+  "attempt5/pip-freeze-observed.txt": {
     "bytes": 3599,
     "sha256": "8a0efd352e8b2f95e2273a78d992ea75ff9ac659143406df892140d80ebe4c2c"
   },

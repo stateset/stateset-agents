@@ -189,6 +189,117 @@ class NormalizedLoss(dict[str, Any]):
         self.metric_reduction = metric_reduction
 
 
+def _ensure_accumulation_window(
+    trainer: Any, metrics: NormalizedLoss, torch: Any, steps: int
+) -> None:
+    """Agree on complete batch counts before any rank enters its local chunks."""
+    from torch.nn.parallel import DistributedDataParallel
+
+    distributed = isinstance(trainer.agent.model, DistributedDataParallel)
+    if getattr(trainer, "_grpo_accumulation", None) is not None:
+        return
+    if (steps == 1 and not distributed) or trainer._grad_accum_step % steps:
+        return
+    policy_count, entropy_count, _ = _ddp_counts(
+        trainer,
+        torch,
+        metrics.policy_count,
+        metrics.token_count if metrics.entropy_loss is not None else 0,
+        measure=metrics.measure,
+        separate_entropy=metrics.entropy_loss is not None,
+    )
+    trainer._grpo_accumulation = {
+        "measure": metrics.measure,
+        "policy_count": 0,
+        "policy_normalizer": policy_count * steps,
+        "entropy_count": 0,
+        "entropy_normalizer": (
+            entropy_count * steps if metrics.entropy_loss is not None else 0
+        ),
+        "entropy_gradients": (
+            dict.fromkeys(dict(trainer.agent.model.named_parameters()))
+            if metrics.entropy_loss is not None
+            else {}
+        ),
+    }
+
+
+class NativeChunkedBackward:
+    """Backpropagate local chunks with one collective count agreement per batch.
+
+    Ranks may have different numbers of chunks or no local rows. Their local
+    backwards contain no collectives; the caller coordinates failures after
+    the complete local phase. Outer accumulation records batch counts once.
+    """
+
+    def __init__(
+        self, trainer: Any, torch: Any, *, steps: int, scaler: Any = None
+    ) -> None:
+        self.trainer, self.torch = trainer, torch
+        self.steps, self.scaler = steps, scaler
+
+    def prepare(
+        self,
+        *,
+        policy_count: int,
+        token_count: int,
+        measure: str,
+        separate_entropy: bool,
+    ) -> None:
+        if getattr(self.trainer.agent.model, "_stateset_token_forward", False) is True:
+            from .ddp_control import DDPControlGroup
+
+            DDPControlGroup(self.trainer, operation="token-loss").run(
+                "chunk-contract",
+                lambda: {
+                    "steps": self.steps,
+                    "measure": measure,
+                    "entropy": separate_entropy,
+                    "pending": self.trainer._grad_accum_step,
+                    "window": getattr(self.trainer, "_grpo_accumulation", None)
+                    is not None,
+                },
+                agree=True,
+            )
+        metrics = NormalizedLoss(
+            {},
+            policy_mean=None,
+            policy_count=policy_count,
+            measure=measure,
+            entropy_loss=True if separate_entropy else None,
+            token_count=token_count,
+        )
+        _ensure_accumulation_window(self.trainer, metrics, self.torch, self.steps)
+        if self.scaler is not None and self.scaler.is_enabled():
+            # Empty contributors still receive reduced gradients at the flush.
+            # Initialize GradScaler through its public API without inventing a
+            # local forward, backward, optimizer update or normalization count.
+            device = next(self.trainer.agent.model.parameters()).device
+            self.scaler.scale(self.torch.zeros((), device=device))
+
+    def backward_normalized(self, metrics: NormalizedLoss) -> None:
+        device = next(self.trainer.agent.model.parameters()).device.type
+        with self.torch.autocast(device_type=device, enabled=False):
+            backward_accumulated_loss(
+                self.trainer,
+                metrics["total_loss"],
+                metrics,
+                self.torch,
+                scaler=self.scaler,
+                accumulation_steps=self.steps,
+                local_chunk=True,
+                record_counts=False,
+            )
+
+    def __call__(self, share: Any) -> None:
+        """Retain the scalar callback contract for explicitly custom losses."""
+        from .trainer_utils import backward_training_loss
+
+        backward_training_loss(
+            self.trainer, share / self.steps, self.torch, scaler=self.scaler
+        )
+
+
 def backward_accumulated_loss(
     trainer: Any,
     loss: Any,
@@ -198,6 +309,8 @@ def backward_accumulated_loss(
     scaler: Any = None,
     regularizer: Any = None,
     accumulation_steps: int | None = None,
+    local_chunk: bool = False,
+    record_counts: bool = True,
 ) -> None:
     """Accumulate sums at fixed scales, releasing each microbatch's graph.
 
@@ -218,14 +331,20 @@ def backward_accumulated_loss(
     from torch.nn.parallel import DistributedDataParallel
 
     distributed = isinstance(trainer.agent.model, DistributedDataParallel)
-    if getattr(trainer.agent.model, "_stateset_token_forward", False) is True:
+    streamed = (
+        isinstance(metrics, NormalizedLoss) and metrics.get("backward_done") is True
+    )
+    if (
+        not local_chunk
+        and getattr(trainer.agent.model, "_stateset_token_forward", False) is True
+    ):
         from .ddp_control import DDPControlGroup
 
         def contract() -> dict[str, Any]:
             if (
                 not torch.is_tensor(loss)
                 or loss.ndim != 0
-                or not loss.requires_grad
+                or (not loss.requires_grad and not streamed)
                 or not bool(torch.isfinite(loss))
             ):
                 raise ValueError(
@@ -244,6 +363,46 @@ def backward_accumulated_loss(
         DDPControlGroup(trainer, operation="token-loss").run(
             "contract", contract, agree=True
         )
+
+    def run(phase: str, function: Any) -> Any:
+        return (
+            function()
+            if local_chunk
+            else run_token_local(trainer.agent.model, phase, function)
+        )
+
+    if streamed:
+        assert isinstance(metrics, NormalizedLoss)
+        if state is not None:
+            if state["measure"] != metrics.measure or bool(
+                state["entropy_normalizer"]
+            ) != (metrics.entropy_loss is not None):
+                raise ValueError("GRPO objective normalization changed within a window")
+            if regularizer is not None:
+                run(
+                    "regularizer-backward",
+                    lambda: backward_training_loss(
+                        trainer,
+                        regularizer
+                        * (metrics.policy_count / state["policy_normalizer"]),
+                        torch,
+                        scaler=scaler,
+                    ),
+                )
+            state["policy_count"] += metrics.policy_count
+            if metrics.entropy_loss is not None:
+                state["entropy_count"] += metrics.token_count
+        elif regularizer is not None:
+            run(
+                "regularizer-backward",
+                lambda: backward_training_loss(
+                    trainer,
+                    regularizer / steps,
+                    torch,
+                    scaler=scaler,
+                ),
+            )
+        return
     if steps == 1 and state is None and not distributed:
         backward_training_loss(trainer, loss, torch, scaler=scaler)
         return
@@ -253,8 +412,7 @@ def backward_accumulated_loss(
         if state is not None:
             _discard_gradients(trainer)
             raise ValueError("Cannot mix normalized and custom GRPO loss windows")
-        run_token_local(
-            trainer.agent.model,
+        run(
             "legacy-backward",
             lambda: backward_training_loss(trainer, loss / steps, torch, scaler=scaler),
         )
@@ -263,6 +421,10 @@ def backward_accumulated_loss(
     parameters = dict(trainer.agent.model.named_parameters())
     separate_entropy = metrics.entropy_loss is not None
     if state is None:
+        if local_chunk:
+            raise RuntimeError(
+                "Chunked normalization must be prepared before local backward"
+            )
         try:
             policy_count, entropy_count, _ = _ddp_counts(
                 trainer,
@@ -303,7 +465,7 @@ def backward_accumulated_loss(
                 retain_graph=separate_entropy,
             )
 
-        run_token_local(trainer.agent.model, "policy-backward", policy_backward)
+        run("policy-backward", policy_backward)
         if separate_entropy:
             # Use ordinary backward hooks for both terms. Restore the policy
             # bank even on failure; the outer handler then discards all banks.
@@ -321,9 +483,7 @@ def backward_accumulated_loss(
                         scaler=scaler,
                     )
 
-                run_token_local(
-                    trainer.agent.model, "entropy-backward", entropy_backward
-                )
+                run("entropy-backward", entropy_backward)
                 for name, parameter in parameters.items():
                     gradient = parameter.grad
                     if gradient is not None:
@@ -335,8 +495,10 @@ def backward_accumulated_loss(
             finally:
                 for name, parameter in parameters.items():
                     parameter.grad = policy_gradients[name]
-            state["entropy_count"] += metrics.token_count
-        state["policy_count"] += metrics.policy_count
+            if record_counts:
+                state["entropy_count"] += metrics.token_count
+        if record_counts:
+            state["policy_count"] += metrics.policy_count
     except BaseException:
         _discard_gradients(trainer)
         raise

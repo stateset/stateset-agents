@@ -33,7 +33,7 @@ from .callbacks import (
 )
 from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
-from .grpo_accumulation import backward_accumulated_loss
+from .grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from .loss_computation import (
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
@@ -55,7 +55,7 @@ from .single_turn_state import (
     resolve_task_id,
 )
 from .trainer_utils import (
-    backward_training_loss,
+    apply_dropout_setting,
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
@@ -162,6 +162,8 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         if not hasattr(self.agent, "model") or self.agent.model is None:
             await self.agent.initialize()
 
+        apply_dropout_setting(self.config, getattr(self.agent, "model", None))
+
         # Set seeds for reproducibility
         try:
             import random
@@ -238,8 +240,12 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             },
         ]
 
+        betas = (
+            float(getattr(self.config, "adam_beta1", 0.9)),
+            float(getattr(self.config, "adam_beta2", 0.999)),
+        )
         self.optimizer = torch.optim.AdamW(
-            optimizer_grouped_parameters, lr=learning_rate
+            optimizer_grouped_parameters, lr=learning_rate, betas=betas
         )
         logger.info(f"Optimizer initialized with lr={learning_rate}")
 
@@ -619,6 +625,35 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                     "global_reward_count": self._global_reward_count,
                     "global_reward_sum": getattr(self, "_global_reward_sum", None),
                 }
+                inner = max(
+                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
+                )
+                old_logprobs = None
+                if inner > 1:
+                    with autocast_ctx:
+                        old_logprobs = compute_token_old_logprobs(
+                            training_groups, self.config, self.agent
+                        )
+                    if old_logprobs is not None:
+                        self._flush_accumulation(torch, use_amp, max_grad_norm)
+                    else:
+                        logger.warning(
+                            "Inner updates require exact sampled tokens; applying one compatibility update"
+                        )
+                        inner = 1
+                streaming: dict[str, Any] = {
+                    "backward_fn": (
+                        NativeChunkedBackward(
+                            self,
+                            torch,
+                            steps=1 if inner > 1 else grad_accum_steps,
+                            scaler=self.scaler if use_amp else None,
+                        )
+                        if self.optimizer is not None
+                        else None
+                    ),
+                    "old_logprobs": old_logprobs,
+                }
                 with autocast_ctx:
                     if use_enhanced:
                         loss_dict = compute_enhanced_grpo_loss(
@@ -629,6 +664,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                             reference_model=self.reference_model,
                             **baseline,
                             update_global_stats=self._update_global_stats,
+                            **streaming,
                         )
                     else:
                         loss_dict = compute_grpo_loss(
@@ -637,6 +673,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                             agent=self.agent,
                             **baseline,
                             update_global_stats=self._update_global_stats,
+                            **streaming,
                         )
 
                     ewc_penalty = None
@@ -656,32 +693,16 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                     policy_loss = loss_dict.get("policy_loss")
 
                 # Backprop/update
-                inner = max(
-                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
-                )
                 if (
                     inner > 1
                     and self.optimizer is not None
                     and policy_loss is not None
                     and loss_dict.get("path") == "token"
                 ):
-                    # PPO/DAPO-style mini-epochs against the frozen old policy,
-                    # kept separate from any pending accumulated update.
-                    # Same precision as the inner-update losses (first ratio 1).
-                    with (
-                        amp.autocast(device_type=device_type, enabled=use_amp)
-                        if amp is not None
-                        else contextlib.nullcontext()
-                    ):
-                        old_logprobs = compute_token_old_logprobs(
-                            training_groups, self.config, self.agent
-                        )
-                    had_pending = bool(self._grad_accum_step % grad_accum_steps)
-                    self._flush_accumulation(torch, use_amp, max_grad_norm)
+                    # The old policy was frozen before flushing pending work;
+                    # the first streamed loss already sees the post-flush policy.
                     for step_idx in range(inner):
-                        # A flush may change weights after the initial forward;
-                        # rebuild that graph against the frozen pre-flush policy.
-                        if step_idx > 0 or had_pending:
+                        if step_idx > 0:
                             with autocast_ctx:
                                 loss_dict = (
                                     compute_enhanced_grpo_loss(
@@ -693,6 +714,12 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                                         old_logprobs=old_logprobs,
                                         **baseline,
                                         update_global_stats=None,
+                                        backward_fn=NativeChunkedBackward(
+                                            self,
+                                            torch,
+                                            steps=1,
+                                            scaler=self.scaler if use_amp else None,
+                                        ),
                                     )
                                     if use_enhanced
                                     else compute_grpo_loss(
@@ -701,6 +728,12 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                                         agent=self.agent,
                                         **baseline,
                                         update_global_stats=None,
+                                        backward_fn=NativeChunkedBackward(
+                                            self,
+                                            torch,
+                                            steps=1,
+                                            scaler=self.scaler if use_amp else None,
+                                        ),
                                         old_logprobs=old_logprobs,
                                     )
                                 )
@@ -715,11 +748,14 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                                         loss_dict["ewc_penalty"] = ewc_penalty
                                         policy_loss = policy_loss + ewc_penalty
                                         loss_dict["total_loss"] = policy_loss
-                        backward_training_loss(
+                        backward_accumulated_loss(
                             self,
                             policy_loss,
+                            loss_dict,
                             torch,
                             scaler=self.scaler if use_amp else None,
+                            regularizer=ewc_penalty,
+                            accumulation_steps=1,
                         )
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
                 elif self.optimizer is not None and policy_loss is not None:
@@ -909,4 +945,6 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             logger,
             trusted=trusted,
         )
+        # The transactional loader publishes restored weights once, after
+        # committing all policy/optimizer state, and quarantines sync failures.
         return loaded

@@ -34,9 +34,9 @@ StateSet Agents is a production‑oriented RL stack for training and serving LLM
 - **Environments** for conversational and task‑oriented episodes.
 - **Trajectories** and value/advantage utilities tailored to dialogue.
 - Composable **reward functions** (heuristic, domain, multi‑objective, neural, LLM‑judge, and a proof‑backed [StateSet NSR verifier](docs/NSR_INTEGRATION.md) for RLVR‑style verifiable rewards).
-- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
-- **Offline RL algorithms** for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
-- **Sim‑to‑Real transfer** for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
+- A family of **group‑based policy‑optimization trainers** (GRPO, GSPO, GEPO, DAPO, VAPO) plus experimental PPO and RLAIF; all trainers evaluate one declarative [`PolicyObjective`](docs/OBJECTIVES.md) (GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token, GEPO, RLOO, REINFORCE++-baseline, CISPO, PPO) verified against loop references, Hypothesis invariants, and TRL 1.12.
+- **Offline RL algorithms** (experimental, `stateset_agents.experimental.offline_rl`) for learning from logged conversations (BCQ, BEAR, CQL, IQL, Decision Transformer).
+- **Sim‑to‑Real transfer** (experimental, `stateset_agents.experimental.sim_to_real`) for training in simulation and deploying to real users (domain randomization, system identification, progressive transfer).
 - **Continual learning + long‑term planning** utilities (replay/LwF/EWC, plan context injection).
 - An **MCP server** so Claude Code/Desktop — or any MCP client — can drive the loop conversationally.
 - Optional **performance layers** (vLLM generation, Rust acceleration, distributed training, HPO, FastAPI service).
@@ -132,22 +132,19 @@ serving, and provider claims.
   full weights and a LoRA adapter: the engine-vs-policy log-prob gap of the
   sampled tokens returns to bf16 noise after the sync (retained in
   [`benchmark_results/vllm_rollout_check/`](benchmark_results/vllm_rollout_check/README.md)).
-- **Measured comparisons:** two retained three-seed A40 shootouts against
-  direct TRL at 0.5B (a four-step and a 48-step protocol) establish
-  throughput parity within run-to-run noise (StateSet's TRL-backed GRPO 7%
-  slower than direct TRL) and **no learning-quality signal for either
-  implementation at that scale** (see
-  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)). The native-GSPO rows of those
-  matrices are **withdrawn**: a harness bug trained them on a placeholder
-  prompt with a reward that never saw the ground truth (identically zero at
-  every step). Versions `0.53.0` and `0.54.0` fixed the prompt/reward wiring,
-  on-policy reference log-probs, batched sampling, inference-mode generation,
-  and zero-signal detection. The legacy 1.5B v3 matrix remains incomplete:
-  two direct-TRL seeds are retained, but no corrected native-GSPO seed is yet
-  publishable. Unreleased resume hardening now binds evidence to the exact
-  manifest and harness, so the corrected protocol will rerun every pair in a
-  fresh matrix rather than mix those legacy rows. No quality superiority is
-  claimed.
+- **Measured comparisons:** the matched 1.5B GSPO shootout (protocol v5.1,
+  Qwen2.5-1.5B, GSM8K, 200 steps, three seeds, one L40S) finds **parity with
+  direct TRL 1.12**: mean held-out gain +2.08 vs +1.82 points (paired
+  difference +0.26, 95% CI [−7.5, +8.0]) at 0.993 vs 0.999 samples/s
+  ([`benchmark_results/framework_comparison_v5_1/`](benchmark_results/framework_comparison_v5_1/README.md)).
+  Both legs do identical work per step and sample identically; earlier
+  protocols (v4, v5) were stopped when they proved unmatched, and native GSPO
+  was 4.4× slower until rollout generation was batched in `v0.65.0`. No quality
+  superiority is claimed. This run used a pre-release harness, so it is not
+  A+ gate evidence until repeated at the frozen release commit. The older 0.5B
+  A40 shootouts showed throughput parity and no learning signal at that scale;
+  their native-GSPO rows remain withdrawn (see
+  [`docs/BENCHMARKS.md`](docs/BENCHMARKS.md)).
 - **Auditable rented-compute cost:** schema-v2 comparison rows are bound to one
   exact shootout manifest. The publication gate can require every RunPod pod
   lifecycle record, verify its post-allocation rate, observed lifetime,
@@ -186,8 +183,8 @@ serving, and provider claims.
   [security response](contracts/security_response_v1.json) contracts. CI and
   package publication fail closed if evidence, limitations, graduation
   criteria, stable API references, or response targets drift.
-- **Standard agent benchmarks:** a manifest-driven τ³-bench, BFCL V4, and
-  SWE-bench Verified runner now executes paired base-versus-trained matrices,
+- **Standard agent benchmarks:** a manifest-driven τ³-bench and BFCL V4 runner
+  (SWE-bench Verified optional) now executes paired base-versus-trained matrices,
   drives multi-stage official suite commands without a shell, verifies clean
   pinned upstream checkouts and fresh confined artifacts, derives scores from
   identical ordered per-task records, proves that each evaluator receives its
@@ -223,9 +220,9 @@ credible path is:
    report throughput, peak memory, total provider cost, and quality together.
 3. Retain a multi-node training run, the complete fault matrix, and a 12-hour
    soak proving no lost or duplicate updates and bounded policy staleness.
-4. Execute the official τ³-bench, BFCL V4, and SWE-bench Verified pipelines on
-   base and trained policies rather than treating implemented adapters as
-   benchmark results.
+4. Execute the official τ³-bench and BFCL V4 pipelines (plus optional SWE-bench
+   Verified) on base and trained policies rather than treating implemented
+   adapters as benchmark results.
 5. Close npm, container, Fireworks, Modal, CoreWeave, and Nebius live evidence,
    then obtain an independent reproduction and security review.
 
@@ -493,6 +490,161 @@ coverage, live hardware attempts, and successful inference by provider.
 - Run training through durable SQLite/PostgreSQL queues and independent workers, with idempotency and fenced leases.
 - Add sampled CPU/GPU regressions, reviewed-case studies, installed-wheel compatibility checks, and rollout performance metrics.
 - Synthetic CPU/GPU checks pass. The pretrained synthetic refund diagnostic showed no lift; representative quality still requires reviewed cases.
+**Selected upstream changes from v0.65.0 and earlier:**
+
+- **Multi-turn RL that matches the conversation.** `ConversationEnvironment` now opens each episode with the scenario's first user message and replays scripted `user_turns`. Previously the agent spoke first and follow-ups were random filler.
+- **Rollout text is exactly what the policy sampled.** There are no default stop strings and no canned persona text, and stop-string display processing retains the complete sampled action for learning. `top_k=0` disables top-k, and a warning names any sampling setting that biases on-policy gradients.
+- **Faster, leaner training.**
+  - Lockstep batched multi-turn rollouts: one `generate` per conversation turn.
+  - Batched GSPO generation: 4.4x faster per run in the matched shootout.
+  - Chunked token-path backward bounds activation memory to one chunk; gradients are identical.
+- **Correct KL and references.** Reference models load at the policy's pinned revision, and selected objectives keep their own KL estimator (`gspo` uses sequence k3).
+- **Matched evidence.** GSPO on Qwen2.5-1.5B / GSM8K under protocol v5.1 (identical prompts x completions per step and identical sampling) runs at parity with TRL 1.12 so far: about 98% of TRL's throughput, with the same accuracy gains within noise.
+- **Breaking:** the v0.64.0 deprecation shims are removed (import from `stateset_agents.experimental`). See the CHANGELOG for the changed agent and environment defaults.
+
+**v0.64.2:**
+
+- **Security and correctness fixes from CodeQL and review.** Script-tag
+  injection detection catches unclosed and `</script >` tags; Training Lab
+  playground sessions are owner-scoped; `accelerate>=1.15.0` clears
+  PYSEC-2026-3804 (with a reachability guard, since the flaw remains upstream).
+- **Fixes.** `BayesianRewardFunction` initialises its reward base; checkpoint
+  publication works on Windows; Windows CI is green again.
+
+**v0.64.1:**
+
+- **Security hardening.** API training jobs are confined to a server-side
+  output root, agents and Training Lab experiments are owner-scoped, real model
+  loading is opt-in (`API_ALLOW_EXTERNAL_MODELS`, optional allow-list), and
+  `trust_remote_code` defaults to False. See the CHANGELOG upgrade notes.
+
+**v0.64.0:**
+
+- **Smaller stable surface.** PPO, RLAIF, offline RL (CQL/IQL, BCQ, BEAR,
+  Decision Transformer, offline GRPO), sim-to-real, and the Bayesian reward
+  model moved to `stateset_agents.experimental`; the old import paths were
+  removed in v0.65.0.
+- **Maturity contract.** These components are recorded as experimental with
+  explicit limitations and graduation criteria.
+- **Benchmark harness.** The native shootout leg accepts and verifies the v4
+  matched-objective protocol.
+
+**v0.63.1:**
+
+- **Publishable release gate.** v0.63.0's training-correctness audit,
+  plus CLI tests that pass under CI's forced colour so the tag-triggered
+  publish succeeds.
+
+**v0.63.0:**
+
+Training-correctness audit. A line-by-line audit of every trainer, reward,
+evaluation, rollout, checkpoint, HPO, CLI, and SFT path against the published
+algorithms fixed more than sixty silent correctness bugs, each pinned by a test
+that fails without the fix. New `tests/learning` require every RL, preference,
+and offline trainer to improve a toy task through its real entry point (with a
+sign-flipped control), and `disable_dropout` brings TRL parity for scoring. The ones most likely to have affected
+past runs:
+
+- **GRPO advantages.** `baseline_type="group_median"`/`"global_mean"` had no
+  effect under the default normalisation; the KL/reference-model loss path
+  ignored `reward_clip`, `baseline_type`, and the entropy bonus and masked KL
+  one token off; inner updates counted each batch several times in the running
+  reward mean.
+- **KL control.** PPO silently skipped its KL penalty without an explicit
+  reference model; the adaptive, cosine, and hybrid KL controllers did not
+  follow their documented schedules.
+- **DAPO/VAPO.** DAPO's overlong-length penalty could never fire with default
+  settings; VAPO now uses batch token-mean losses, an undiscounted critic
+  (`gamma=1.0`), the paper's length-adaptive λ, and keeps value-loss gradients
+  out of the policy.
+- **GEPO/GSPO.** GSPO-style ratios in the GEPO trainer use per-token averaged
+  log-ratios (almost every sample was clipped); the GSPO and single-turn
+  optimizers honour the configured Adam betas.
+- **Rewards.** The RULER judge always fell back to its heuristic; failed
+  composite components scored 0; the multi-objective geometric mean capped at
+  0.25; LLM-judge timeouts were cached as 0; untyped rewards were counted twice
+  per episode; `ConversationEnvironment` scored each reply against the
+  following user turn; trajectory totals were rounded to 0.1.
+- **Evaluation.** Post-training evaluation could report 0 reward, dropped
+  crashed episodes from averages, and reset the training RNG; the sim-to-real
+  "reward correlation" (unpaired, i.e. noise) is replaced by
+  `reward_distribution_gap`.
+- **Offline RL.** `OfflineGRPOTrainer.train()` trained on random noise and
+  bootstrapped Q incorrectly; Decision Transformer generation now matches its
+  training inputs; offline transitions keep terminal rewards; the enhanced
+  `DPOTrainer` can take a training step.
+- **PPO/RLAIF.** `PPOTrainer.train()` trained on a constant string instead of
+  sampled completions, and long prompts leaked into the action span; RLAIF
+  trained on padding, skipped the first completion token, and reinforced every
+  sample when rewards were equal.
+- **Distributed training and resume.** DDP/Accelerate checkpoints resumed with
+  no weights or optimizer state while reporting success; every rank generated
+  identical rollouts; the TRL wrapper ignored `resume_from_checkpoint`.
+- **Async rollouts.** Checkpointing with a full queue deadlocked, a cancelled
+  timed `next_batch` could lose a batch, and LoRA weight sync could hand the
+  engine unmerged weights.
+
+- **Offline GRPO, HPO, CLI.** `OfflineGRPOTrainer` never updated its policy;
+  every GRPO HPO trial scored -inf; `train --config` dropped most `training:`
+  values.
+
+Re-run experiments that depended on these paths before comparing them with new
+results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
+
+**v0.62.1:**
+
+- **Publishable release gate.** v0.62.0's training-math fixes, plus a
+  deterministic orchestrator shutdown test so the publish-readiness gate passes
+  on CI's Python 3.11.
+
+**v0.62.0:**
+
+- **Assistant-only supervision everywhere.** Sequence-path GRPO, local and
+  industry SFT, and River/Tinker SFT now train only on assistant tokens using
+  one faithful chat render (shared `core/chat_masking`), fixing corrupted
+  multi-turn rows on Qwen3/Qwen3.5 and keeping tool calls.
+- **Trainer math corrections.** DAPO dynamic sampling no longer discards every
+  group by default; VAPO GAE, PPO terminal rewards, GSPO long-prompt scoring
+  and LR schedule, CQL bootstrapping and Decision Transformer alignment fixed.
+- **Rollout correctness.** Batched groups stop per row, resumes resync the
+  rollout engine, and the TRL backend honours `TrainingConfig.objective`.
+
+**v0.61.0:**
+
+- Add River preflight checks with optional live model-access queries and JSON reports.
+- Make River clients close reliably and resume interrupted RL from committed optimizer state while preserving token accounting.
+- Add native River commerce environments, checkpoint selection, and reproducible evaluation and study tools.
+- Harden GRPO/GSPO optimizer updates, accumulation, checkpoint recovery, and training job admission and shutdown.
+
+**v0.60.0:**
+
+- Add reward-audit CLI and Python APIs to detect constant or unstable reward scores before RL training.
+- Check reviewed candidate rankings, retain failed calls, and include a model-free GSM8K example.
+
+**v0.59.0:**
+
+- Add paired base/adapter evaluation with immutable model revisions, source-group holdouts, and regression gates.
+- Retain real Qwen3.5 2B/4B GPU training and adapter-reload evidence, including failed attempts and confirmed cleanup. Synthetic examples do not certify industry quality.
+
+**v0.58.0:**
+
+- Add industry fine-tuning recipes for all nine sectors, with CLI and Python APIs.
+- Validate chat/tool data, keep related cases in one split, and record dataset hashes.
+- Preview without ML dependencies or run BF16 LoRA SFT on CUDA. Holdout evaluation
+  remains an independent step. See [the industry guide](docs/INDUSTRY_FINETUNING.md).
+
+**v0.57.0:**
+
+- Add 18 small-model checkpoints across Gemma 4, Qwen, SmolLM3, Phi,
+  Ministral, Liquid, Granite, Llama, Olmo, and DeepSeek. Provide 17 GSPO
+  commands with LoRA/QLoRA profiles and isolate each variant's output directory.
+- Add FunctionGemma tool-calling SFT, preserving tool schemas and typed arguments,
+  with a commerce JSONL example. Conversational GSPO explicitly rejects it.
+- Fix Transformers 5 quantization loading, keep adapters out of vision/audio
+  encoders, avoid duplicate model loads, and preserve SFT EOS labels and chat
+  special tokens. Work around dense Granite's recurrent-cache generation error.
+- Validate tiny native architecture training and adapter reload locally.
+  Full pretrained checkpoint quality and GPU quantization remain unverified.
 
 **v0.56.0:**
 
@@ -1323,9 +1475,10 @@ Reward functions can be evaluated per-step or only at episode end. Set
 - `RewardType.IMMEDIATE` or `RewardType.DENSE`: compute per-step rewards only.
 - `RewardType.CUMULATIVE` or `RewardType.SPARSE`: compute a final reward only.
 
-If you pass a custom reward without `reward_type`, the environment assumes legacy
-behavior and may compute both step and final rewards. For new rewards, always
-set `reward_type` explicitly to avoid double counting.
+A reward without `reward_type` is applied exactly once per decision: per step
+in environments that score steps (such as `ConversationEnvironment`, where each
+reply is scored against the conversation it answers), otherwise once at episode
+end. Set `reward_type` explicitly when you need a specific phase.
 
 ---
 
@@ -1828,7 +1981,10 @@ followup = await trained_agent.generate_response(
 
 ## Other training algorithms
 
-All algorithms are available under `stateset_agents.training` when training deps are installed:
+These algorithms are available when training deps are installed. GSPO, GEPO,
+DAPO, and VAPO live under `stateset_agents.training`; PPO and RLAIF are
+**experimental** and live under `stateset_agents.experimental` (since v0.64.0;
+the old `stateset_agents.training` import paths were removed in v0.65.0):
 
 - **GSPO**: stable sequence‑level GRPO variant (`GSPOTrainer`, `GSPOConfig`, `train_with_gspo`)
 - **GEPO**: expectation‑based group optimization for heterogeneous/distributed setups
@@ -1984,6 +2140,12 @@ See `benchmark_results/README.md` for the full pipeline reference.
 
 ## Offline RL: Learn from logged conversations
 
+> **Experimental.** The offline RL algorithms live in
+> `stateset_agents.experimental.offline_rl` (moved from `stateset_agents.training`
+> in v0.64.0; the old paths were removed in v0.65.0). They carry no API
+> stability guarantee until they pass a learning test on a realistic dialogue
+> task — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train agents from historical conversation logs without online interaction. Useful when:
 - You have existing customer service transcripts
 - Online training is expensive or risky
@@ -2003,7 +2165,7 @@ Train agents from historical conversation logs without online interaction. Usefu
 
 ```python
 from stateset_agents.data import ConversationDataset, ConversationDatasetConfig
-from stateset_agents.training import BCQTrainer, BCQConfig
+from stateset_agents.experimental.offline_rl.bcq import BCQConfig, BCQTrainer
 
 # Load historical conversations
 config = ConversationDatasetConfig(quality_threshold=0.7)
@@ -2019,20 +2181,21 @@ trainer = BCQTrainer(bcq_config)
 await trainer.train(dataset)
 ```
 
-### Hybrid Offline + Online Training
+### Offline Value Baselines
 
-Combine offline pretraining with online GRPO fine‑tuning:
+Fit value and Q functions to logged conversations, for use as baselines in
+online training:
 
 ```python
-from stateset_agents.training import OfflineGRPOTrainer, OfflineGRPOConfig
-
-config = OfflineGRPOConfig(
-    offline_algorithm="cql",
-    offline_pretrain_steps=1000,
-    online_ratio=0.3,  # 30% online, 70% offline
+from stateset_agents.experimental.offline_rl.offline_grpo import (
+    OfflineGRPOConfig,
+    OfflineGRPOTrainer,
 )
-trainer = OfflineGRPOTrainer(config)
-trained = await trainer.train(agent, env, reward_fn, offline_dataset=dataset)
+
+config = OfflineGRPOConfig(offline_algorithm="cql", pretrain_value_epochs=10)
+trainer = OfflineGRPOTrainer(config, dataset=dataset)  # dataset with an EmbeddingCache
+await trainer.pretrain_value_functions()
+value = trainer.get_value_estimate(state_embedding)  # one state -> float
 ```
 
 See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
@@ -2041,6 +2204,13 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 
 ## Sim‑to‑Real Transfer
 
+> **Experimental.** Sim-to-real lives in `stateset_agents.experimental.sim_to_real`
+> (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
+> v0.64.0; the old paths were removed in v0.65.0, and the deprecated root
+> `stateset_agents.SimToRealMetrics`/`SimToRealEvaluator`/`ConversationSimulator`/
+> `ConversationSimulatorConfig` exports are removed in v0.66.0). Public benchmark
+> evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
+
 Train in simulation, deploy to real users. The framework provides:
 
 ### Domain Randomization
@@ -2048,7 +2218,10 @@ Train in simulation, deploy to real users. The framework provides:
 Generate diverse training scenarios with randomized user personas:
 
 ```python
-from stateset_agents.training import DomainRandomizer, DomainRandomizationConfig
+from stateset_agents.experimental.sim_to_real.domain_randomization import (
+    DomainRandomizationConfig,
+    DomainRandomizer,
+)
 
 config = DomainRandomizationConfig(
     persona_variation=0.3,
@@ -2067,7 +2240,10 @@ scenario = randomizer.sample_scenario(topic="returns")
 Calibratable simulator with adjustable realism:
 
 ```python
-from stateset_agents.environments import ConversationSimulator, ConversationSimulatorConfig
+from stateset_agents.experimental.sim_to_real.conversation_simulator import (
+    ConversationSimulator,
+    ConversationSimulatorConfig,
+)
 
 simulator = ConversationSimulator(ConversationSimulatorConfig(
     base_model="gpt2",
@@ -2086,7 +2262,10 @@ gap = simulator.compute_sim_real_gap(real_data, sim_data)
 Gradually transition from simulation to real interactions:
 
 ```python
-from stateset_agents.training import SimToRealTransfer, SimToRealConfig
+from stateset_agents.experimental.sim_to_real.transfer import (
+    SimToRealConfig,
+    SimToRealTransfer,
+)
 
 transfer = SimToRealTransfer(SimToRealConfig(
     transfer_schedule="cosine",  # linear, exponential, step
@@ -2141,6 +2320,18 @@ async def politeness_reward(turns, context=None) -> float:
 ```
 
 Combine with built‑ins via `CompositeReward`.
+
+Before training, exercise the real reward on reviewed candidate groups:
+
+```bash
+stateset-agents reward-audit examples/data/reward_audit_gsm8k.json \
+  --reward stateset_agents.data.gsm8k:GSM8KReward \
+  --output reward-report.json
+```
+
+The [reward audit guide](docs/REWARD_AUDIT.md) covers constant rewards, unstable
+scores, failed calls, and expected rankings. This checks reward behavior on
+supplied examples; keep model quality evaluation independent.
 
 ---
 
