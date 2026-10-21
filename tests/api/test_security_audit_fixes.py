@@ -100,6 +100,10 @@ def captured_train(monkeypatch):
 
     async def fake_train(**kwargs: Any) -> Any:
         calls.append(kwargs)
+        # Stand in for the trainer's artifact publication, so the API can
+        # check real directory existence as well as resume ownership.
+        output = Path(kwargs["config_overrides"]["output_dir"])
+        (output / "checkpoint-0").mkdir(parents=True)
         return kwargs.get("agent")
 
     import importlib

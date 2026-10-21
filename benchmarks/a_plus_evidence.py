@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lay out, report on, and gate the A+ evidence bundle for one frozen commit.
 
-``a_plus_gate.py`` takes thirteen evidence paths that must all describe the
+``a_plus_gate.py`` takes evidence paths that must all describe the
 same clean commit. This helper fixes one directory layout under an evidence
 root, reports which gates are present, collects the gates that cost nothing
 (reliability on CPU and release readiness), and runs the gate with every path
@@ -42,6 +42,18 @@ class GateInput:
 
 
 LAYOUT: tuple[GateInput, ...] = (
+    GateInput(
+        "--native-quality-study",
+        "native_quality/study",
+        "native quality",
+        "stateset_agents.training.native_refund_study with independently reviewed splits and six seeds",
+    ),
+    GateInput(
+        "--native-gpu-recovery",
+        "native_gpu/recovery",
+        "native GPU recovery",
+        "benchmarks/native_gpu_checkpoint_contract.py on two CUDA/NCCL GPUs",
+    ),
     GateInput(
         "--framework-evidence",
         "framework",

@@ -84,7 +84,10 @@ async def test_idempotent_http_retry_reports_existing_terminal_status(tmp_path):
     snapshot.update(status="completed", completed_at=datetime.utcnow())
     api.queue.finish(job_id, token, snapshot)
     response = await start_training(
-        request, svc=api, user=SimpleNamespace(user_id="owner"), idempotency_key="one"
+        request,
+        svc=api,
+        user=SimpleNamespace(user_id="owner", roles=["trainer"]),
+        idempotency_key="one",
     )
     assert response.training_id == job_id and response.status == "completed"
     assert len(api.jobs) == 1
@@ -121,31 +124,36 @@ async def test_submission_survives_restart_and_worker_publishes_progress(
 
     monkeypatch.setattr(module, "train", train)
     path = tmp_path / "jobs.sqlite3"
-    api = TrainingService(queue_path=path)
+    api = TrainingService(queue_path=path, output_root=tmp_path / "artifacts")
     request = TrainingRequest(
         agent_config={"model_name": "test"},
         environment_scenarios=[{"id": "case", "expected_response": "done"}],
         reward_config={},
         num_episodes=2,
-        training_config_overrides={"output_dir": str(tmp_path / "artifacts")},
     )
     job_id = await api.start_training(request, "owner", idempotency_key="one")
     assert api._tasks == {} and api.get_training_status(job_id)["status"] == "queued"
     await api.aclose()
-    restarted = TrainingService(queue_path=path)
+    restarted = TrainingService(queue_path=path, output_root=tmp_path / "artifacts")
     assert (
         await restarted.start_training(request, "owner", idempotency_key="one")
         == job_id
     )
-    assert await work_once(restarted.queue, lease_seconds=1)
+    assert await work_once(
+        restarted.queue, lease_seconds=1, output_root=tmp_path / "artifacts"
+    )
     status = restarted.get_training_status(job_id, "owner")
-    assert status["status"] == "completed" and status["progress"] == 100
+    assert status["status"] == "completed" and status["progress"] == 100, status.get(
+        "error"
+    )
     assert status["completion_scope"] == "final_episode_reported"
     assert len(calls) == 1
     assert calls[0]["config_overrides"]["output_dir"].startswith(
         str(tmp_path / "artifacts" / job_id)
     )
-    assert not await work_once(restarted.queue, lease_seconds=1)
+    assert not await work_once(
+        restarted.queue, lease_seconds=1, output_root=tmp_path / "artifacts"
+    )
 
 
 @pytest.mark.asyncio
