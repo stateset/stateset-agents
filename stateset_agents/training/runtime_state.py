@@ -28,6 +28,7 @@ from .learning_state import (
     prepare_learning_state,
 )
 from .model_checkpoint import load_model_checkpoint
+from .profiling import _observed_assistant_tokens
 
 
 def _reject_unsupported_resume(config: Any, entry_point: str) -> None:
@@ -771,9 +772,7 @@ def _profile_phase(method: Any, name: str) -> Any:
                         successes += int(outcome)
                     else:
                         outcomes_known = False
-                    for turn in trajectory.turns:
-                        if turn.role == "assistant":
-                            tokens += len((turn.metadata or {}).get("token_ids", ()))
+                    tokens += _observed_assistant_tokens(trajectory)
             self._runtime_rollout_metrics = {
                 "rollout_seconds": seconds,
                 "generated_tokens": tokens,

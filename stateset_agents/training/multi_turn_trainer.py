@@ -58,7 +58,11 @@ from .multi_turn_scenarios import (
     get_environment_scenarios,
     split_scenarios,
 )
-from .profiling import TrainingProfiler, profile_learner_step
+from .profiling import (
+    TrainingProfiler,
+    _observed_assistant_tokens,
+    profile_learner_step,
+)
 from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_utils import (
     apply_dropout_setting,
@@ -686,6 +690,8 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             if batched is not None:
                 trajectories = batched[index]
             for _ in range(num_generations if batched is None else 0):
+                trajectory = None
+                accepted = False
                 try:
                     await self._reset_agent()
 
@@ -695,48 +701,19 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                             agent_fn, scenario
                         )
 
-                    # Apply reward function if provided
-                    if self.reward_fn:
-                        reward_context = scenario
-                        if getattr(
-                            self.reward_fn, "requires_environment_context", False
-                        ):
-                            reward_context = {
-                                **(trajectory.final_state or {}),
-                                "scenario": scenario,
-                            }
-                        with self.profiler.measure("reward_evaluation"):
-                            reward_result = await self.reward_fn.compute_reward(
-                                trajectory.turns, reward_context
-                            )
-                        score, breakdown = await self._coerce_reward_result(
-                            reward_result
-                        )
-                        trajectory.total_reward = score
-                        trajectory.metadata["reward_breakdown"] = breakdown
-
-                    evidence = (trajectory.final_state or {}).get("task_success")
-                    if type(evidence) is not bool:
-                        evidence = None
-                    self.profiler.record_rollout(
-                        accepted=True,
-                        success=evidence,
-                        tokens=sum(
-                            len(turn.metadata.get("token_ids", []))
-                            for turn in trajectory.turns
-                            if turn.role == "assistant"
-                        ),
-                    )
+                    await self._score_trajectory(trajectory, scenario)
                     trajectories.append(trajectory)
+                    accepted = True
 
                 except MULTI_TRAINER_EXCEPTIONS as e:
-                    self.profiler.record_rollout(accepted=False, success=None)
                     if getattr(self.reward_fn, "fail_on_error", False) or getattr(
                         self, "_stateset_native_rollout", False
                     ):
                         raise
                     logger.warning(f"Failed to generate trajectory: {e}")
                     continue
+                finally:
+                    self._record_rollout(trajectory, accepted=accepted)
 
             if trajectories:
                 group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(
@@ -752,6 +729,19 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                 trajectory_groups.append(group)
 
         return trajectory_groups
+
+    def _record_rollout(
+        self, trajectory: MultiTurnTrajectory | None, *, accepted: bool
+    ) -> None:
+        """Record collection acceptance and only explicitly observed token IDs."""
+        evidence = None
+        tokens = 0
+        if trajectory is not None:
+            evidence = (trajectory.final_state or {}).get("task_success")
+            if type(evidence) is not bool:
+                evidence = None
+            tokens = _observed_assistant_tokens(trajectory)
+        self.profiler.record_rollout(accepted=accepted, success=evidence, tokens=tokens)
 
     async def _reset_agent(self) -> None:
         reset_fn = getattr(self.agent, "reset", None)
@@ -794,13 +784,17 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         ):
             return None
         flat = [s for s in scenarios for _ in range(num_generations)]
+        episodes: list[MultiTurnTrajectory] = []
+        accepted = False
         try:
             await self._reset_agent()
-            episodes = await run_batched(
-                lambda histories, contexts: batch_turns(histories, contexts), flat
-            )
+            with self.profiler.measure("environment_rollout"):
+                episodes = await run_batched(
+                    lambda histories, contexts: batch_turns(histories, contexts), flat
+                )
             for trajectory, scenario in zip(episodes, flat, strict=True):
                 await self._score_trajectory(trajectory, scenario)
+            accepted = True
         except MULTI_TRAINER_EXCEPTIONS as e:
             if getattr(self.reward_fn, "fail_on_error", False) or getattr(
                 self, "_stateset_native_rollout", False
@@ -810,6 +804,16 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                 "Batched rollout failed (%s); rolling episodes out one at a time", e
             )
             return None
+        finally:
+            # A batch is accepted only after every score succeeds. Discarded
+            # work remains attempted even when sequential fallback succeeds.
+            for index in range(len(flat)):
+                observed = (
+                    episodes[index]
+                    if isinstance(episodes, list) and index < len(episodes)
+                    else None
+                )
+                self._record_rollout(observed, accepted=accepted)
         return [
             list(episodes[i * num_generations : (i + 1) * num_generations])
             for i in range(len(scenarios))

@@ -11,6 +11,22 @@ from functools import wraps
 from typing import Any
 
 
+def _observed_assistant_tokens(trajectory: Any) -> int:
+    """Count retained token sequences without estimating missing observations."""
+    tokens = 0
+    for turn in trajectory.turns:
+        if turn.role != "assistant":
+            continue
+        ids = (turn.metadata or {}).get("token_ids")
+        if ids is None or isinstance(ids, (str, bytes, dict)):
+            continue
+        try:
+            tokens += len(ids)
+        except TypeError:
+            continue
+    return tokens
+
+
 class TrainingProfiler:
     """Measure host stages without synchronizing GPU kernels or inferring success.
 
@@ -80,6 +96,8 @@ class TrainingProfiler:
             }
         return {
             "scope": "host_wall_timing; cost is caller-supplied, not provider-verified",
+            "acceptance_scope": "completed and scored rollout collection, not optimizer commits",
+            "generated_tokens_scope": "observed assistant token IDs; missing traces are not estimated",
             "elapsed_seconds": elapsed,
             "stages": stages,
             "attempted_rollouts": self.attempted,
