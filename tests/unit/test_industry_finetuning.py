@@ -277,7 +277,7 @@ def test_preview_and_catalog_do_not_import_ml_stack(prepared):
     code = """
 import sys
 from stateset_agents.training.industry import list_industry_recipes, train_industry_project
-assert len(list_industry_recipes()) == 10
+assert len(list_industry_recipes()) == 12
 assert train_industry_project(sys.argv[1])['status'] == 'planned'
 assert not {'torch', 'transformers', 'peft', 'datasets'} & set(sys.modules)
 """
@@ -289,7 +289,7 @@ def test_cli_end_to_end(tmp_path):
 
     runner = CliRunner()
     source, project = tmp_path / "source", tmp_path / "prepared"
-    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 10
+    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 12
     for args in (
         ["industry", "init", "healthcare", str(source)],
         ["industry", "validate", str(source / "examples.jsonl")],

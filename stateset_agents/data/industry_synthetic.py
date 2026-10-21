@@ -41,6 +41,9 @@ DOMAINS = {
     "media": "media",
     "healthcare": "healthcare",
     "public-sector": "public-sector",
+    "manufacturing": "manufacturing",
+    "financial-services": "financial-services",
+    "insurance": "insurance",
 }
 GENERATOR_VERSION = "industry-policy-simulations-v1"
 

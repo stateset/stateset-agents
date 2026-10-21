@@ -50,7 +50,7 @@ def generate_datasets(
         "all",
         help=(
             "all, ecommerce, logistics, saas, travel, services, telecommunications, "
-            "media, healthcare, or public-sector."
+            "media, healthcare, public-sector, manufacturing, financial-services, or insurance."
         ),
     ),
     output: Path = typer.Option(..., "--output", "-o", help="Fresh dataset directory."),
