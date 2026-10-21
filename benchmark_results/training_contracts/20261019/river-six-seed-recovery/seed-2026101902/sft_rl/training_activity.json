@@ -1,0 +1,9 @@
+{
+  "completed_batches": 2,
+  "observed_optimizer_updates": 1,
+  "observed_skipped_batches": 1,
+  "schema_version": 1,
+  "scope": "SDK-reported run activity; not proof of nonzero gradients, selected-checkpoint changes, learning gains, or provider cost",
+  "status": "updates_observed",
+  "unknown_update_batches": 0
+}

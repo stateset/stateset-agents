@@ -1,0 +1,91 @@
+{
+  "files": {
+    "stateset_agents/finetune_workspace.py": {
+      "stage": "/tmp/stateset-interrupted-stop-fixes",
+      "base_sha256": "529f119ebac373afb39bc923a900eac89497e73bfae7a826059a71502ab9b14d",
+      "staged_sha256": "68fa9e6d52a41fdcda11351b065824d4b8d8d4160188e52ae52233abe472fe2f"
+    },
+    "stateset_agents/tui.py": {
+      "stage": "/tmp/stateset-interrupted-stop-fixes",
+      "base_sha256": "10b7d686d5db9b3e17afa23e4042765dcf0575f09a1a9fc04615506f3873e166",
+      "staged_sha256": "2d05ee7ee82ccd8ee1b3959633bce58aaefb5b2ca8654723befd08e2f4418dba"
+    },
+    "stateset_agents/cli_finetune.py": {
+      "stage": "/tmp/stateset-interrupted-stop-fixes",
+      "base_sha256": "04cbf08e4f139e195cd5779f988c09fc03fcaef619d01cc8663fc057634a08f9",
+      "staged_sha256": "51d6f1f0dae3711ff717056617da85bb386496a7416dd963d5e0ccc6f957e9ef"
+    },
+    "stateset_agents/api/routers/finetune.py": {
+      "stage": "/tmp/stateset-interrupted-stop-fixes",
+      "base_sha256": "820eb1746e0ea99eb40056e76ed2d3e992992854c2cb25cd0b7ead6ffce64640",
+      "staged_sha256": "b54ff3af02f5400f42118e98f0c000783ac75c22ffd4d0f2f1c234aa41d4acff"
+    },
+    "tests/unit/test_finetune_interrupted_stop.py": {
+      "stage": "/tmp/stateset-interrupted-stop-fixes",
+      "base_sha256": null,
+      "staged_sha256": "113acfcf0fdb0479c5a57e902ff2f04aa6b08b01a77317e4be7d3f3c43318447"
+    },
+    "stateset_agents/finetune_worker.py": {
+      "stage": "/tmp/stateset-worker-ownership-fixes",
+      "base_sha256": "f3d20026bfd668d3ae96adea9e0863ea8dbd59b43521c91ab0e495287ee987f6",
+      "staged_sha256": "53349bc06174f01a8032142d824c852f085899943e2415958adea644e090d3e4"
+    },
+    "tests/unit/test_finetune_worker_ownership.py": {
+      "stage": "/tmp/stateset-worker-ownership-fixes",
+      "base_sha256": null,
+      "staged_sha256": "a159847031718b8c53b6e0a07e1332c779fdcab01fc6fc41707f5432a6fb6401"
+    },
+    "tests/unit/test_finetune_quality.py": {
+      "stage": "/tmp/stateset-worker-ownership-fixes",
+      "base_sha256": "8495293f6fd01c39aab6c4f927838eeb8296732917b1aa59d4db5140e20d732f",
+      "staged_sha256": "2c62e3afdf6f8c82e12de524c30030b31c6a6a36c1cf356796ce7fce6732b952"
+    },
+    "stateset_agents/training/checkpoint_state.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "5e658d18d75dc0ceab85cd0db4ff510d577735529b927f5eddd1f91795b84791",
+      "staged_sha256": "ef0832a358cde15280b3f0dae29ab271e3eb8f1b5725f5720aca50008e6962f7"
+    },
+    "stateset_agents/training/single_turn_trainer.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "8281a48e6f7da39ce397f49e162abb45674c07c147a73dd9dfe495665d7a5c8a",
+      "staged_sha256": "5b78d7d0f3d396dc6fac87be7abaf76efae29d3ef98b73d38bfff548c054048c"
+    },
+    "stateset_agents/training/multi_turn_trainer.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "c13c2894bfad86bde7b1886e9cff246b2c08b24ca80da73525a2d859c4b60eac",
+      "staged_sha256": "fbe41be7c1a871056e69df1f8ce1f427f868d2c016594c06a99b8afb3d783eea"
+    },
+    "tests/unit/test_native_checkpoint_safety.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": null,
+      "staged_sha256": "c36e02749c62352b9ed557148be5b9d8cef6ce7096ae57464081ec2899f921fe"
+    },
+    "tests/unit/test_resume_rollout_sync.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "57562678b75f1151b25c7163a058b70cf1b51f6f39dcdb48bd050d29900d3f43",
+      "staged_sha256": "4b41cf9551f6747c1eab7c20b1c99f249c10f86e2db026b102ae992accd3ea70"
+    },
+    "tests/unit/test_checkpoint_trust.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "bf331916fb64cee803553c2544b449c3986f6942d8495f49ce24dd2db621d8fa",
+      "staged_sha256": "97a623963d48c5ebaacba112ec44e899f81bc63322818fcf7d7a6c44a24f8f64"
+    },
+    "tests/unit/test_multi_turn_trainer.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "e5b553840604befca5cd4d30073f28a65fa62c8031a45126a0508fb30774a73c",
+      "staged_sha256": "4fa91839191bb2098d8288bf9f3998afa93e92ecb38a9ccf3f0f3857bb1aaaf8"
+    },
+    "tests/unit/test_training.py": {
+      "stage": "/tmp/stateset-native-checkpoint-fixes",
+      "base_sha256": "df3d34945e130bd086a8dc760ef290e471b4de2e2d335790ec367710153ce11e",
+      "staged_sha256": "c1a013bda8106ded2a60e56d730df9dc5f9b0e711e15082fe3c25d6674dd6e05"
+    }
+  },
+  "new_acceptance_modules": [
+    "tests/unit/test_finetune_worker_ownership.py",
+    "tests/unit/test_finetune_interrupted_stop.py",
+    "tests/unit/test_native_checkpoint_safety.py",
+    "tests/unit/test_resume_rollout_sync.py",
+    "tests/unit/test_multi_turn_trainer.py"
+  ]
+}

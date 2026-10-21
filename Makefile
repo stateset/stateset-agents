@@ -22,29 +22,20 @@ install-locked: ## Install from requirements-dev-lock.txt (reproducible, what CI
 	pip install -r requirements-dev-lock.txt
 	pip install -e . --no-deps
 
-lock: ## Regenerate requirements-lock.txt and requirements-dev-lock.txt from pyproject.toml
+.PHONY: install-training-locked
+install-training-locked: ## Install the Python 3.12 training/API runtime lock
+	pip install -r requirements-training-lock.txt
+	pip install -e . --no-deps
+
+lock: ## Regenerate core, development, and training/API dependency locks
 	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found. Run: pip install pip-tools" >&2; exit 1; }
 	pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml
 	pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml
-	@echo "Lock files regenerated. Commit both requirements-lock.txt and requirements-dev-lock.txt."
+	pip-compile --quiet --resolver=backtracking --extra=training --extra=api --constraint=requirements-dev-lock.txt --output-file=requirements-training-lock.txt pyproject.toml
+	@echo "Lock files regenerated. Commit all three requirements lock files."
 
 lock-check: ## Verify lock files are in sync with pyproject.toml (used in CI)
-	@command -v pip-compile >/dev/null 2>&1 || { echo "pip-compile not found. Run: pip install pip-tools" >&2; exit 1; }
-	@cp requirements-lock.txt requirements-lock.txt.bak
-	@cp requirements-dev-lock.txt requirements-dev-lock.txt.bak
-	@pip-compile --quiet --resolver=backtracking --output-file=requirements-lock.txt pyproject.toml >/dev/null
-	@pip-compile --quiet --resolver=backtracking --extra=dev --extra=api --output-file=requirements-dev-lock.txt pyproject.toml >/dev/null
-	@if ! $(PYTHON_BIN) scripts/check_lockfile_bodies.py \
-	    requirements-lock.txt.bak requirements-lock.txt \
-	    requirements-dev-lock.txt.bak requirements-dev-lock.txt; then \
-	  echo "::error:: Lock files are stale. Run 'make lock' and commit the result." >&2; \
-	  mv requirements-lock.txt.bak requirements-lock.txt; \
-	  mv requirements-dev-lock.txt.bak requirements-dev-lock.txt; \
-	  exit 1; \
-	fi
-	@mv requirements-lock.txt.bak requirements-lock.txt
-	@mv requirements-dev-lock.txt.bak requirements-dev-lock.txt
-	@echo "Lock files are in sync with pyproject.toml."
+	$(PYTHON_BIN) -m scripts.check_dependency_locks
 
 dev-setup: ## Install development dependencies and pre-commit hooks
 	$(MAKE) install-dev
@@ -390,6 +381,8 @@ benchmark-scaling-image-push: ## Build/push scaling image with provenance and SB
 		$(if $(OUTPUT),--output $(OUTPUT),)
 
 benchmark-a-plus-gate: ## Require every A+ evidence and release gate
+	@test -n "$(NATIVE_QUALITY_STUDY)" || { echo "NATIVE_QUALITY_STUDY is required" >&2; exit 2; }
+	@test -n "$(NATIVE_GPU_RECOVERY)" || { echo "NATIVE_GPU_RECOVERY is required" >&2; exit 2; }
 	@test -n "$(FRAMEWORK_EVIDENCE)" || { echo "FRAMEWORK_EVIDENCE is required" >&2; exit 2; }
 	@test -n "$(SCALING_EVIDENCE)" || { echo "SCALING_EVIDENCE is required" >&2; exit 2; }
 	@test -n "$(SCALING_PROVIDER_EVIDENCE)" || { echo "SCALING_PROVIDER_EVIDENCE is required" >&2; exit 2; }
@@ -402,6 +395,8 @@ benchmark-a-plus-gate: ## Require every A+ evidence and release gate
 	@test -n "$(FLAGSHIP_EVIDENCE)" || { echo "FLAGSHIP_EVIDENCE is required" >&2; exit 2; }
 	@test -n "$(RELEASE_READINESS)" || { echo "RELEASE_READINESS is required" >&2; exit 2; }
 	$(PYTHON_BIN) benchmarks/a_plus_gate.py \
+		--native-quality-study $(NATIVE_QUALITY_STUDY) \
+		--native-gpu-recovery $(NATIVE_GPU_RECOVERY) \
 		--framework-evidence $(FRAMEWORK_EVIDENCE) \
 		--scaling-evidence $(SCALING_EVIDENCE) \
 		--scaling-provider-evidence $(SCALING_PROVIDER_EVIDENCE) \

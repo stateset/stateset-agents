@@ -1,0 +1,29 @@
+{
+  "queue_job": "1e204ba66630",
+  "files": {
+    "stateset_agents/training/runtime_state.py": "ed07c60ba2f991b9eb134cf3eb2f6919fcaf8c33b6078e88107f1b4d57b451c6",
+    "tests/unit/test_runtime_checkpoint_safety.py": "a1b5c58bc5e87e09b3162692321668a7218932f13012d0a217555bf4ada7a11c",
+    "stateset_agents/training/gspo_entrypoints.py": "ac2305b9479e25a82b57f29fb878d29e9892da0016a37b3eacaa3c06065bb2ad",
+    "stateset_agents/training/gspo_token_trainer.py": "ad12a6b014e5a33b5e1d4c8d6e6bb679ac5557ade6bd2d537c33ee5113301796",
+    "stateset_agents/training/gepo_trainer.py": "e4d8678dcf77a03da29c5e5fa7b32bb1d19b8899d8cadae7fa5aa7d487b31885",
+    "stateset_agents/training/dapo_entrypoints.py": "00849bcd20e9fcde18b1b8bca59a0ec66c3e6ac1183142b5046543e75b11a422",
+    "tests/unit/test_dedicated_entrypoint_resume.py": "a151ae66781612b6ba041837b300e4a1b173c3fce4db754174bbb06ae4a433b8"
+  },
+  "new_regression_modules": [
+    "tests/unit/test_runtime_checkpoint_safety.py",
+    "tests/unit/test_runtime_state.py",
+    "tests/unit/test_dedicated_entrypoint_resume.py",
+    "tests/unit/test_training_resume_required.py",
+    "tests/unit/test_gspo_query_wiring.py",
+    "tests/unit/test_gspo_module_exports.py",
+    "tests/unit/test_dapo_module_exports.py",
+    "tests/unit/test_checkpoint_publication.py",
+    "tests/unit/test_model_checkpoint.py",
+    "tests/unit/test_learning_state_recovery.py",
+    "tests/unit/test_scheduler_identity.py",
+    "tests/unit/test_native_checkpoint_async.py",
+    "tests/unit/test_multi_turn_checkpoint_accumulation.py",
+    "tests/unit/test_ddp_checkpoint_state.py"
+  ],
+  "source_only_module": "tests/unit/test_checkpoint_trust.py"
+}

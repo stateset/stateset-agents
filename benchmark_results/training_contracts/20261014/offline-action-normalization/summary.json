@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-offline-action-normalization-regression",
+  "passed": true,
+  "package_version": "0.66.1",
+  "unreleased_checkout": true,
+  "wheel_sha256": "9c171125386978f17269def60c29740a79522ac5ba692343054ad745d08f8957",
+  "verification_job_id": "41d9180f92d3",
+  "full_suite": {
+    "passed": 8263,
+    "optional_skips": 57,
+    "seconds": 305.74
+  },
+  "type_checked_modules": 383,
+  "regression_file": "tests/unit/test_offline_policy_training.py",
+  "regression_file_sha256": "c7fef47fcced8df55d082dcf3fff0c823d1c6d49baf597c08726623228ce5900",
+  "combined_batch_equivalence": {
+    "passed_partitions": [
+      [
+        2,
+        1
+      ],
+      [
+        1,
+        2
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        1,
+        1,
+        1
+      ]
+    ],
+    "accumulation_steps": [
+      2,
+      2,
+      4,
+      4
+    ],
+    "rtol": 1e-06,
+    "atol": 1e-07,
+    "reference_optimizer": "real Torch SGD"
+  },
+  "pending_uneven_checkpoint_matches_combined_batch": true,
+  "legacy_completed_optimizer_checkpoint_loads": true,
+  "legacy_inflight_accumulation_rejected": true,
+  "invalid_pending_counts_rejected_before_policy_changes": true,
+  "partial_window_optimizer_metrics_verified": true,
+  "real_transformer_wheel_workflow_passed": true,
+  "cpu_exact_resume_verified": true,
+  "cpu_policy_artifact_revalidated": true,
+  "cpu_policy_artifact_sha256": "f798f5fea2871c8313a7ab6ca5a22a0d92583014e2b5da71002eec61390209ce",
+  "cuda_retested_for_this_change": false,
+  "paid_resources_allocated_for_this_change": false,
+  "representative_quality_demonstrated": false,
+  "production_approved": false
+}

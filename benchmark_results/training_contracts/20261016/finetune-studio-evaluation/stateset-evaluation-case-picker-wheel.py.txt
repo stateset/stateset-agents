@@ -1,0 +1,59 @@
+"""Verify the isolated candidate's actual wheel against its source and tests."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import shutil
+import subprocess
+import sys
+import zipfile
+import xml.etree.ElementTree as ET
+
+canonical=Path('/home/dom/stateset-agents')
+root=Path('/tmp/stateset-evaluation-case-picker-20261016')
+os.chdir(root)
+os.environ['PATH']=str(canonical/'.venv/bin')+os.pathsep+os.environ['PATH']
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1')
+base=json.loads((root/'candidate-base.json').read_text())
+validation=json.loads((root/'candidate-verification.json').read_text())
+assert validation['passed'] and [s['name'] for s in validation['stages']]==['ruff','tests','types']
+source={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['stateset_agents','traceforge_rl'] if (root/folder).exists() for p in (root/folder).rglob('*.py')}
+tests={p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+for name,digest in validation['changed_sha256'].items():
+    assert hashlib.sha256((root/name).read_bytes()).hexdigest()==digest
+def unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in {**source,**tests}.items()) and all(hashlib.sha256((canonical/name).read_bytes()).hexdigest()==digest for name,digest in base['base_source_and_tests_sha256'].items())
+assert unchanged()
+stages=[]
+def run(name,argv,cwd=root,env=None):
+    print('Stage:',name,flush=True)
+    with (root/(name+'.log')).open('w') as log:
+        process=subprocess.Popen(argv,cwd=cwd,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
+        for line in process.stdout:
+            log.write(line)
+            if name not in {'wheel-build','wheel-install'}: print(line,end='',flush=True)
+        code=process.wait()
+    stages.append({'name':name,'argv':argv,'exit_code':code})
+    assert code==0 and unchanged(), name
+run('wheel-build',[sys.executable,'-m','build','--wheel','--no-isolation','--outdir',str(root/'dist')])
+wheel=next((root/'dist').glob('*.whl'))
+with zipfile.ZipFile(wheel) as archive:
+    packed={name:hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.endswith('.py') and name.split('/')[0] in {'stateset_agents','traceforge_rl'}}
+    assert packed==source
+    for name in ['stateset_agents/evaluation/rubrics/support_rubric_v4.md','stateset_agents/config/presets/experiments/support_recovery_preflight6.json']:
+        assert archive.read(name)==(root/name).read_bytes()
+run('wheel-install',[sys.executable,'-m','pip','install','--no-deps','--target',str(root/'site-packages'),str(wheel)])
+checks=root/'wheel-checks'; checks.mkdir()
+shutil.copytree(root/'tests',checks/'tests',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
+shutil.copy2(root/'pytest.ini',checks/'pytest.ini')
+env=dict(os.environ,PYTHONPATH=str(root/'site-packages'))
+run('wheel-origin',[sys.executable,'-c','from pathlib import Path; import stateset_agents.tui as t,sys; assert Path(t.__file__).is_relative_to(Path(sys.argv[1])); print(t.__file__)',str(root/'site-packages')],cwd=checks,env=env)
+run('wheel-tests',[sys.executable,'-m','pytest','-q','-n0','-p','no:cacheprovider','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_evaluation_case_picker.py','tests/unit/test_finetune_evaluation.py','tests/unit/test_finetune_studio.py','--junitxml='+str(root/'picker-wheel.xml')],cwd=checks,env=env)
+def cases(path):
+    parsed=ET.parse(path).getroot()
+    assert all(not sum(int(s.get(k,0)) for k in ['failures','errors','skipped']) for s in parsed.iter('testsuite'))
+    return {(c.get('classname'),c.get('name')) for c in parsed.iter('testcase')}
+assert cases(root/'picker-tests.xml')==cases(root/'picker-wheel.xml')
+value={'passed':True,'canonical_unchanged':True,'candidate_unchanged':True,'source_sha256':source,'test_source_sha256':tests,'wheel_sha256':hashlib.sha256(wheel.read_bytes()).hexdigest(),'case_identities_match':True,'passed_tests':len(cases(root/'picker-wheel.xml')),'stages':stages}
+(root/'candidate-wheel-verification.json').write_text(json.dumps(value,indent=2)+'\n')
+print('Candidate wheel and source case identities match',flush=True)

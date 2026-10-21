@@ -17,6 +17,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
+import os
+import re
+import tempfile
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -24,6 +28,7 @@ from typing import Any
 
 #: Filename written into every adapter directory.
 MANIFEST_NAME = "stateset_manifest.json"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -47,6 +52,8 @@ class AdapterManifest:
     created_at: str = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
+    model_revision: str | None = None
+    reward_sha256: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -69,22 +76,52 @@ def hash_dataset(path: Path) -> tuple[str | None, int | None]:
     return (digest, rows)
 
 
-def write_manifest(output_dir: Path, manifest: AdapterManifest) -> Path:
+def write_manifest(
+    output_dir: Path, manifest: AdapterManifest, *, required: bool = False
+) -> Path:
     """Write ``manifest`` into ``output_dir``.
 
-    Never raises: provenance is valuable but an adapter that trained
-    successfully must not be reported as a failure because bookkeeping
-    could not be written.
+    Development preserves best-effort behavior. ``required=True`` propagates
+    bookkeeping failures and rejects incomplete production lineage.
     """
     target = Path(output_dir) / MANIFEST_NAME
+    if required and (
+        not isinstance(manifest.base_model, str)
+        or not manifest.base_model.strip()
+        or not re.fullmatch(
+            r"(?:[0-9a-f]{40}|[0-9a-f]{64})", str(manifest.model_revision)
+        )
+        or any(
+            not re.fullmatch(r"[0-9a-f]{64}", str(value))
+            for value in (manifest.dataset_sha256, manifest.reward_sha256)
+        )
+    ):
+        raise ValueError(
+            "Required lineage needs a base model, immutable model revision, dataset and reward hashes"
+        )
+    temporary = None
     try:
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(
-            json.dumps(manifest.to_dict(), indent=2, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-    except OSError:  # pragma: no cover - defensive
-        pass
+        with tempfile.NamedTemporaryFile(
+            mode="w", dir=target.parent, delete=False, encoding="utf-8"
+        ) as stream:
+            temporary = Path(stream.name)
+            stream.write(
+                json.dumps(
+                    manifest.to_dict(), indent=2, sort_keys=True, allow_nan=False
+                )
+                + "\n"
+            )
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary, target)
+    except OSError:
+        if required:
+            raise
+        logger.warning("Adapter lineage could not be persisted at %s", target)
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
     return target
 
 

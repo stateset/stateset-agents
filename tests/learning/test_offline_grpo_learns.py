@@ -81,6 +81,9 @@ def _trainer(seed: int, model=None, tokenizer=None):
         value_hidden_size=64,
         value_num_layers=2,
         value_learning_rate=1e-3,
+        # IQL uses positive exp(A / temperature) cloning weights. A sharp
+        # temperature makes this task test reward preference, not base-rate BC.
+        policy_temperature=0.1,
         pretrain_value_batch_size=32,
         pretrain_value_epochs=40,
         batch_size=16,

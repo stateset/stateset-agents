@@ -1,0 +1,14 @@
+IMPORT COMPLETE 422217.017708812
+test_real_evaluator_retains_complete_validation_case_evidence (test_river_native_sdk.NativeRiverIntegration.test_real_evaluator_retains_complete_validation_case_evidence) ... ENGINE EXIT START 140574253285984 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-6' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+ENGINE EXIT START 140574253288144 model CheckpointSampler groups 0 dispatcher <Task pending name='Task-13' coro=<dispatch() running at /tmp/stateset_river_cleanup_probe.py:13> wait_for=<Future pending cb=[Task.task_wakeup()] created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/base_events.py:448> created at /home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/asyncio/tasks.py:420>
+DISPATCH EXIT 140574253285984 CancelledError
+DISPATCH EXIT 140574253288144 CancelledError
+ENGINE EXIT FINISH 140574253285984
+ENGINE EXIT FINISH 140574253288144
+ok
+
+----------------------------------------------------------------------
+Ran 1 test in 0.104s
+
+OK
+RESULT True

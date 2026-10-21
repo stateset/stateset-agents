@@ -195,6 +195,8 @@ class NebiusExecutor(RemoteExecutor):
     """Run packaged StateSet SFT jobs on Nebius Serverless AI."""
 
     name = "nebius"
+    supports_sft_seed = True
+    uses_packaged_training = True
     supported_job_kinds = frozenset({"sft"})
     durable_handles = True
     managed_deployments = True

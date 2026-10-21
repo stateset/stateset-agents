@@ -45,6 +45,7 @@ from stateset_agents.evaluation.checkpoint_selection import (
 )
 from stateset_agents.evaluation.implementation import package_implementation
 from stateset_agents.evaluation.refund_trace import (
+    VALIDATION_SELECTION_POLICY,
     audit_refund_traces,
     select_replayed_validation_checkpoint,
 )
@@ -123,6 +124,7 @@ def run_manifest(args: argparse.Namespace, splits: dict[str, Any]) -> dict[str, 
     if getattr(args, "collect_only", False):
         manifest["collection"] = {"group_size": 8, "temperature": 1.0}
     elif not args.evaluate_only:
+        manifest["validation_selection_policy"] = VALIDATION_SELECTION_POLICY
         manifest["training_settings"] = {
             "loss": "cispo",
             "optimizer": "adam",
@@ -339,6 +341,7 @@ async def campaign(
     from river_client import Checkpoint, rl
 
     training_activity: dict[str, Any] | None = None
+    selection_activity: dict[str, Any] | None = None
     benchmark = getattr(args, "benchmark", "refund-v1")
     admission = (
         RolloutAdmissionBudget(
@@ -455,6 +458,11 @@ async def campaign(
         report["selected_validation_step"] = validation_step
         if training_activity is not None:
             report["training_activity"] = dict(training_activity)
+        if selection_activity is not None:
+            report["selected_training_activity"] = copy.deepcopy(
+                selection_activity["selected_training_activity"]
+            )
+            report["validation_selection_hash"] = content_hash(selection_activity)
         report["test_attempt_hash"] = content_hash(attempt)
         if admission is not None:
             report["rollout_budget"] = admission.snapshot()
@@ -700,7 +708,12 @@ async def campaign(
         cases=validation_cases,
         environment=benchmark,
         truncation_reward=EVALUATION_SETTINGS["truncation_reward"],
+        training_progress=progress.records,
+        recovery_receipts=progress.receipts,
+        run_manifest_hash=manifest_hash,
     )
+    selection_activity = best["selection_activity"]
+    atomic_json(args.output / "validation_selection.json", selection_activity)
     await evaluate_test(Checkpoint(**best["checkpoint"]), best["step"])
 
 
@@ -786,9 +799,11 @@ def execute_run(args: argparse.Namespace, splits: dict[str, Any]) -> None:
         ).ensure_available()
     require_native_runtime()
     import river_client as river
-    from river_client.renderers import get_renderer
 
     from stateset_agents.remote.river import _checkpoint_from_pointer
+    from stateset_agents.remote.river_renderers import (
+        get_river_renderer as get_renderer,
+    )
 
     initial_uri = _checkpoint_from_pointer(
         args.checkpoint, base_model=args.base_model, lora_rank=16

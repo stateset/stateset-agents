@@ -12,10 +12,8 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = all 378 packaged Python files (the whole package is gated). Lowered
-# from 390 in v0.65.0 only because the twelve v0.64.0 experimental-move shim
-# modules were deleted; no gated source file left the type check.
-ALLOWLIST_FLOOR = 379
+# Floor = the full packaged source, including native studies and durable workers.
+ALLOWLIST_FLOOR = 465
 
 
 def _allowlisted_files() -> list[str]:

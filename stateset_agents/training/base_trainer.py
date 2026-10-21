@@ -23,6 +23,10 @@ from typing import Any, Generic, TypeVar, cast
 import torch
 import torch.nn.functional as F
 
+from .config import TrainingConfig
+from .runtime_state import TrainingRuntime
+from .trainer_runtime import SharedModelManager
+
 logger = logging.getLogger(__name__)
 
 BASE_TRAINER_EXCEPTIONS = (
@@ -178,7 +182,7 @@ def _load_vllm_backend() -> bool:
 
 
 @dataclass
-class BaseTrainerConfig:
+class BaseTrainerConfig(TrainingConfig):
     """
     Base configuration shared by all RL trainers.
 
@@ -254,12 +258,10 @@ class BaseTrainerConfig:
     @classmethod
     def from_dict(cls, config_dict: dict[str, Any]) -> "BaseTrainerConfig":
         """Create config from dictionary."""
-        valid_fields = {f.name for f in cls.__dataclass_fields__.values()}
-        filtered = {k: v for k, v in config_dict.items() if k in valid_fields}
-        return cls(**filtered)
+        return cls(**config_dict)
 
 
-class BaseModelManager:
+class BaseModelManager(SharedModelManager):
     """
     Unified model and tokenizer management for all trainers.
 
@@ -273,80 +275,45 @@ class BaseModelManager:
     """
 
     def __init__(self, config: BaseTrainerConfig):
+        config.validate_for_training()
         self.config = config
         self.model: Any | None = None
         self.tokenizer: Any | None = None
         self.ref_model: Any | None = None
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
-        """Load model and tokenizer with all configured optimizations."""
-        logger.info(f"Loading model: {self.config.model_name}")
-
-        if not _load_transformers():
+    def _get_transformers(self) -> tuple[Any, Any]:
+        if (
+            not _load_transformers()
+            or _AutoTokenizer is None
+            or _AutoModelForCausalLM is None
+        ):
             raise ImportError("transformers is required but failed to load")
+        return _AutoTokenizer, _AutoModelForCausalLM
 
-        auto_tokenizer = _AutoTokenizer
-        auto_model = _AutoModelForCausalLM
-        if auto_tokenizer is None or auto_model is None:
-            raise ImportError("transformers exports are unavailable")
+    def _prepare_model_kwargs(self, model_kwargs: dict[str, Any]) -> None:
+        model_kwargs.update(self._build_model_kwargs())
 
-        # Load tokenizer
-        self.tokenizer = auto_tokenizer.from_pretrained(
-            self.config.model_name,
-            trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
-            padding_side="left",
-            revision=self.config.model_revision,
-        )
-        if self.tokenizer.pad_token is None:
-            self.tokenizer.pad_token = self.tokenizer.eos_token
-
-        # Build model loading kwargs
-        model_kwargs = self._build_model_kwargs()
-
-        # Load base model
-        base_model = auto_model.from_pretrained(self.config.model_name, **model_kwargs)
-
-        # Enable gradient checkpointing
+    def _prepare_base_model(self, base_model: Any) -> Any:
         if self.config.gradient_checkpointing:
-            if hasattr(base_model, "config") and hasattr(
-                base_model.config, "use_cache"
-            ):
+            if hasattr(base_model, "config"):
                 base_model.config.use_cache = False
             if hasattr(base_model, "gradient_checkpointing_enable"):
                 base_model.gradient_checkpointing_enable()
-            else:  # pragma: no cover
-                logger.warning(
-                    "gradient_checkpointing requested but model does not support it"
-                )
             if self.config.use_lora and not (
                 self.config.use_8bit or self.config.use_4bit
             ):
                 _enable_input_require_grads(base_model)
-
-        # Prepare for quantized training
         if self.config.use_8bit or self.config.use_4bit:
-            (
-                LoraConfig,
-                TaskType,
-                get_peft_model,
-                prepare_model_for_kbit_training,
-            ) = _load_peft()
-            if prepare_model_for_kbit_training:
-                base_model = prepare_model_for_kbit_training(base_model)
+            _, _, _, prepare = _load_peft()
+            if prepare is None:
+                raise ImportError("PEFT is required for quantized training")
+            base_model = prepare(base_model)
+        return base_model
 
-        # Apply LoRA
-        if self.config.use_lora:
-            self.model = self._apply_lora(base_model)
-        else:
-            self.model = base_model
-
-        # Load reference model if needed
-        if self.config.beta > 0 and self.config.use_reference_model:
-            self._load_reference_model(model_kwargs)
-
-        logger.info(f"Model loaded successfully on {self.device}")
-        return self.model, self.tokenizer
+    def load_model_and_tokenizer(self) -> tuple[Any, Any]:
+        """Load through the shared model-manager pipeline."""
+        return super().load_model_and_tokenizer()
 
     def _build_model_kwargs(self) -> dict[str, Any]:
         """Build kwargs for model loading."""
@@ -379,8 +346,7 @@ class BaseModelManager:
         LoraConfig, TaskType, get_peft_model, _ = _load_peft()
 
         if LoraConfig is None:
-            logger.warning("PEFT not available, skipping LoRA")
-            return base_model
+            raise ImportError("PEFT is required when use_lora=True")
 
         target_modules = self._get_lora_target_modules()
 
@@ -401,7 +367,7 @@ class BaseModelManager:
     def _get_lora_target_modules(self) -> list[str]:
         """Determine LoRA target modules based on model architecture."""
         if self.config.lora_target_modules:
-            return self.config.lora_target_modules
+            return list(self.config.lora_target_modules)
 
         model_name_lower = self.config.model_name.lower()
 
@@ -414,18 +380,22 @@ class BaseModelManager:
         else:
             return ["q_proj", "v_proj"]
 
-    def _load_reference_model(self, model_kwargs: dict[str, Any]) -> None:
+    def _load_reference_model(
+        self, model_cls: Any, model_kwargs: dict[str, Any]
+    ) -> None:
         """Load frozen reference model for KL penalty."""
+        if not (self.config.beta > 0 and self.config.use_reference_model):
+            return
         logger.info("Loading reference model for KL penalty...")
         auto_model = _AutoModelForCausalLM
         if auto_model is None:
             raise ImportError("transformers exports are unavailable")
         self.ref_model = auto_model.from_pretrained(
             self.config.model_name,
+            revision=self.config.model_revision,
             torch_dtype=model_kwargs["torch_dtype"],
             device_map="auto" if torch.cuda.device_count() > 1 else None,
             trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
-            revision=self.config.model_revision,
         )
         self.ref_model.eval()
         for param in self.ref_model.parameters():
@@ -503,7 +473,7 @@ class BaseTrajectoryGenerator:
         return self._vllm_initialized and self.vllm_generator is not None
 
 
-class BaseTrainer(ABC, Generic[ConfigT]):
+class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
     """
     Abstract base class for all RL trainers.
 
@@ -746,24 +716,7 @@ class BaseTrainer(ABC, Generic[ConfigT]):
                 self.config.output_dir, f"checkpoint-{self.global_step}"
             )
 
-        os.makedirs(path, exist_ok=True)
-
-        # Save model
-        self.model.save_pretrained(path)
-        self.tokenizer.save_pretrained(path)
-
-        # Save optimizer and scheduler state
-        torch.save(
-            {
-                "optimizer": self.optimizer.state_dict(),
-                "scheduler": self.scheduler.state_dict(),
-                "global_step": self.global_step,
-                "metrics_history": self.metrics_history,
-            },
-            os.path.join(path, "training_state.pt"),
-        )
-
-        logger.info(f"Checkpoint saved to {path}")
+        self.save_runtime_checkpoint(path)
         return path
 
     @abstractmethod

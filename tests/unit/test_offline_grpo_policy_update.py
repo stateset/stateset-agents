@@ -1,14 +1,13 @@
-"""OfflineGRPOTrainer updates its policy from logged responses.
+"""IQL policy extraction updates logged assistant tokens with detached weights.
 
-Each logged response's length-normalised log-likelihood (response tokens only)
-is weighted by its detached hybrid advantage; ``learning_rate`` drives a
-dedicated policy optimizer, and a batch with no advantage signal leaves the
-policy untouched.
+Value pre-training is a separate phase; zero advantages give unit cloning
+weights rather than silently skipping the optimizer.
 """
 
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 
@@ -56,6 +55,7 @@ def _trainer(model=None, tokenizer=None, **overrides):
         value_hidden_size=8,
         value_num_layers=1,
         learning_rate=overrides.pop("learning_rate", 1e-2),
+        gradient_accumulation_steps=1,
         bf16=False,
         use_lora=False,
         **overrides,
@@ -83,58 +83,113 @@ def _changed(before, model):
     )
 
 
+def _prepared(model, tok):
+    trainer = _trainer(model, tok)
+    data = _batch()
+    data["next_states"] = torch.zeros_like(data["states"])
+    data["dones"] = torch.ones(len(data["states"]))
+    asyncio.run(
+        trainer.pretrain_value_functions(
+            SimpleNamespace(to_offline_rl_format=lambda: data), num_steps=1
+        )
+    )
+    return trainer, data
+
+
+def _policy_batch(trainer, data):
+    rows = trainer._logged_policy_rows(data)
+    width = max(len(row["input_ids"]) for row in rows)
+    ids = torch.full(
+        (len(rows), width), trainer.tokenizer.pad_token_id, dtype=torch.long
+    )
+    labels = torch.full_like(ids, -100)
+    attention = torch.zeros_like(ids)
+    for i, row in enumerate(rows):
+        n = len(row["input_ids"])
+        ids[i, :n] = torch.tensor(row["input_ids"])
+        labels[i, :n] = torch.tensor(row["labels"])
+        attention[i, :n] = 1
+    return {
+        "input_ids": ids,
+        "labels": labels,
+        "attention_mask": attention,
+        "states": data["states"],
+        "actions": data["actions"],
+    }
+
+
 def test_train_step_updates_the_policy_with_logged_text():
     model, tok = _model(), tiny_tokenizer(103)
-    trainer = _trainer(model, tok)
+    trainer, data = _prepared(model, tok)
     before = _params(model)
-    metrics = asyncio.run(trainer.train_step(_batch()))
-    assert metrics["policy_updated"] == 1.0
+    metrics = asyncio.run(trainer.train_step(_policy_batch(trainer, data)))
+    assert metrics["optimizer_updates"] == 1.0
     assert _changed(before, model)
     assert trainer.policy_optimizer.param_groups[0]["lr"] == pytest.approx(1e-2)
 
 
-def test_zero_learning_rate_leaves_policy_unchanged():
+def test_zero_optimizer_learning_rate_leaves_policy_unchanged():
     model, tok = _model(), tiny_tokenizer(103)
-    trainer = _trainer(model, tok, learning_rate=0.0)
+    trainer, data = _prepared(model, tok)
+    trainer._setup_policy_optimizer()
+    for group in trainer.policy_optimizer.param_groups:
+        group["lr"] = 0.0
     before = _params(model)
-    asyncio.run(trainer.train_step(_batch()))
+    asyncio.run(trainer.train_step(_policy_batch(trainer, data)))
     assert not _changed(before, model)
 
 
-def test_zero_advantages_skip_the_policy_step(monkeypatch):
+def test_zero_iql_advantages_are_unit_weight_behavior_cloning(monkeypatch):
     model, tok = _model(), tiny_tokenizer(103)
-    trainer = _trainer(model, tok)
-    monkeypatch.setattr(
-        trainer, "_compute_hybrid_advantage", lambda r, v, q: torch.zeros_like(v)
-    )
+    trainer, data = _prepared(model, tok)
+    for network in (
+        trainer._offline_learner.value_net,
+        trainer._offline_learner.q1,
+        trainer._offline_learner.q2,
+    ):
+        monkeypatch.setattr(
+            network, "forward", lambda *args: torch.zeros(len(args[0]), 1)
+        )
     before = _params(model)
-    metrics = asyncio.run(trainer.train_step(_batch()))
-    assert metrics["policy_updated"] == 0.0
-    assert not _changed(before, model)
-    assert trainer.policy_optimizer is None
+    metrics = asyncio.run(trainer.train_step(_policy_batch(trainer, data)))
+    assert metrics["policy_weight_mean"] == 1.0
+    assert metrics["optimizer_updates"] == 1.0
+    assert _changed(before, model)
 
 
-def test_value_only_training_without_a_policy_is_unchanged():
+def test_policy_extraction_requires_an_initialized_policy():
     trainer = _trainer()
-    metrics = asyncio.run(trainer.train_step(_batch()))
-    assert "policy_loss" not in metrics
+    with pytest.raises(ValueError, match="initialized language model"):
+        asyncio.run(trainer.train_step(_batch()))
+    assert trainer.training_step == 0
 
 
-def test_policy_loss_scores_response_tokens_only():
+def test_policy_loss_scores_response_tokens_only_and_detaches_iql():
     model, tok = _model(), tiny_tokenizer(103)
-    trainer = _trainer(model, tok, learning_rate=0.0)
-    contexts = [[{"role": "user", "content": "hi"}]]
-    adv = torch.tensor([1.0])
-    out = trainer._policy_step(contexts, ["12"], adv)
-
-    prompt = tok("User: hi\nAssistant: ", add_special_tokens=False)["input_ids"]
-    response = tok("12", add_special_tokens=False)["input_ids"] + [tok.eos_token_id]
-    ids = torch.tensor([prompt + response])
+    trainer, data = _prepared(model, tok)
+    batch = _policy_batch(trainer, data)
     with torch.no_grad():
-        logits = model(input_ids=ids).logits[0, :-1]
-    lp = torch.log_softmax(logits, -1).gather(-1, ids[0, 1:, None]).squeeze(-1)
-    expected = -lp[len(prompt) - 1 :].mean()
-    assert out["policy_loss"] == pytest.approx(float(expected), rel=1e-5)
+        logits = model(
+            input_ids=batch["input_ids"], attention_mask=batch["attention_mask"]
+        ).logits
+        losses = torch.nn.functional.cross_entropy(
+            logits[:, :-1].transpose(1, 2),
+            batch["labels"][:, 1:],
+            ignore_index=-100,
+            reduction="none",
+        )
+        mask = batch["labels"][:, 1:] != -100
+        expected = ((losses * mask).sum(1) / mask.sum(1)).mean()
+    networks = (
+        trainer._offline_learner.value_net,
+        trainer._offline_learner.q1,
+        trainer._offline_learner.q2,
+    )
+    for network in networks:
+        network.zero_grad(set_to_none=True)
+    out = asyncio.run(trainer.train_step(batch))
+    assert out["nll"] == pytest.approx(float(expected), rel=1e-5)
+    assert all(p.grad is None for network in networks for p in network.parameters())
 
 
 def test_conversation_dataset_exposes_logged_text():

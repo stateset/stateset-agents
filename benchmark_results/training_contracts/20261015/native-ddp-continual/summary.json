@@ -1,0 +1,118 @@
+{
+  "passed": true,
+  "queue_job": "179066406bdd",
+  "protocol": "stateset-native-ddp-task-memory-v1",
+  "typed_modules": 409,
+  "source_modules": 409,
+  "source_unchanged": true,
+  "test_sources_unchanged": true,
+  "wheel_source_matches": true,
+  "wheel_sha256": "1956f0cfae6923ee966c1842738c46a2b99eec26511dbdc9c50d3c1bd5889eb3",
+  "regressions": {
+    "passed": 1965,
+    "skipped": 7,
+    "failed": 0
+  },
+  "source_distributed": {
+    "passed": 7,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_regressions": {
+    "passed": 674,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_distributed": {
+    "passed": 7,
+    "skipped": 0,
+    "failed": 0
+  },
+  "distributed": {
+    "source-distributed": {
+      "world_size": 2,
+      "backend": "gloo",
+      "task_memory_scenarios_per_peer": 46,
+      "population_scenarios": 36,
+      "fisher_applicable_population_scenarios": 24,
+      "lwf_applicable_population_scenarios": 24,
+      "rejection_recovery_scenarios": 8,
+      "complete_training_resume_scenarios": 2,
+      "existing_contract_counts": {
+        "rank-0.json": 294,
+        "advantages-0.json": 48,
+        "learner-preflight-0.json": 40,
+        "replica-consensus-0.json": 32,
+        "native-ddp-checkpoint-0.json": 98,
+        "ddp-evaluation-0.json": 28
+      }
+    },
+    "wheel-distributed": {
+      "world_size": 2,
+      "backend": "gloo",
+      "task_memory_scenarios_per_peer": 46,
+      "population_scenarios": 36,
+      "fisher_applicable_population_scenarios": 24,
+      "lwf_applicable_population_scenarios": 24,
+      "rejection_recovery_scenarios": 8,
+      "complete_training_resume_scenarios": 2,
+      "existing_contract_counts": {
+        "rank-0.json": 294,
+        "advantages-0.json": 48,
+        "learner-preflight-0.json": 40,
+        "replica-consensus-0.json": 32,
+        "native-ddp-checkpoint-0.json": 98,
+        "ddp-evaluation-0.json": 28
+      }
+    }
+  },
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.14.1",
+    "accelerate": "1.14.0",
+    "numpy": "2.3.5",
+    "tokenizers": "0.22.2"
+  },
+  "strategies": [
+    "lwf",
+    "ewc",
+    "replay_lwf_ewc"
+  ],
+  "local_populations": [
+    "uneven",
+    "empty_peer",
+    "all_empty",
+    "masked",
+    "cap",
+    "buffer"
+  ],
+  "semantics": {
+    "fisher": "accepted-example-weighted global empirical Fisher; zero valid samples preserve prior anchors",
+    "reduction": "FP64 prescaled bounded buckets, stored in FP32/FP64 masters",
+    "maximum_fisher_payload_bytes": 4194304,
+    "teacher": "unwrapped frozen supplied policy, with buffer-broadcast preference honored once",
+    "staged_state": "private replay/RNG and task memory commit only after peer validation",
+    "preserved_state": "pending policy/entropy banks, optimizer, policy, local buffers, module modes and global RNG during direct consolidation",
+    "task_windows": "flush prior-task pending update before capturing memory; scheduler horizon accounts for resolved task IDs",
+    "receipts": "task/policy-step/replay-sequence receipt persists in checkpoints and prevents duplicate completed-run consolidation",
+    "failures": "partial optimizer or memory application blocks training/saving until complete native reload; a fully committed flush remains committed if later estimation rejects",
+    "tokenizer": "temporary backend padding/truncation excluded from identity; vocabulary, template, added tokens and tokenizer sides stay pinned",
+    "missing_reference": "loading a generation with no teacher clears stale reference state"
+  },
+  "fisher_comparison": {
+    "rtol": 2e-06,
+    "atol": 1e-08
+  },
+  "resumed_next_parameters_and_optimizer": "exact",
+  "cpu_native_ddp_task_memory_verified": true,
+  "cpu_task_training_resume_verified": true,
+  "gpu_verified": false,
+  "multi_node_verified": false,
+  "fsdp_verified": false,
+  "deepspeed_verified": false,
+  "multi_rank_accelerate_verified": false,
+  "general_training_loop_phase_failures_verified": false,
+  "model_quality_improvement_verified": false,
+  "boundaries": "Every live native DDP peer enters the same task transition. Standard continual manager only. Generated tiny FP32 CPU model, real offline HF tokenizer and causal autograd loss. Serialized with training/global RNG consumers; external callback/environment state and lost processes remain outside the protocol.",
+  "count_note": "Overlapping targeted source/wheel tests. Seven actual distributed pytest contracts contain multiple scenarios; 46 new scenarios per peer are not separate pytest cases."
+}

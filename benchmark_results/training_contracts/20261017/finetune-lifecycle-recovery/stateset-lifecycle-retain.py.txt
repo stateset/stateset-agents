@@ -1,0 +1,128 @@
+"""Retain completed lifecycle source verification, independently of wheel acceptance."""
+from pathlib import Path
+import hashlib
+import json
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+import xml.etree.ElementTree as ET
+
+ROOT = Path('/home/dom/stateset-agents')
+OUT = ROOT/'benchmark_results/training_contracts/20261017/finetune-lifecycle-recovery'
+
+def read(path):
+    return json.loads(Path(path).read_text())
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+def inventory(directory):
+    return {p.relative_to(ROOT).as_posix():sha(p) for p in sorted((ROOT/directory).rglob('*.py'))}
+
+def job(handle):
+    v = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {k:v.get(k) for k in ('id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown','reason')}
+
+focused, full = job(sys.argv[1]), job('1e204ba66630')
+failed_root = Path('/tmp/stateset-lifecycle-failed-attempts')
+failed_jobs = [job(p.name) for p in sorted(failed_root.iterdir()) if p.is_dir()] if failed_root.exists() else []
+assert {'ffa225fcf41e','cf872924069f'} <= {row['id'] for row in failed_jobs}
+assert all(row['state']=='failed' and row['exit_code']!=0 for row in failed_jobs)
+assert focused['state']=='succeeded' and focused['exit_code']==0
+assert focused['argv']==['.venv/bin/python','/tmp/stateset-lifecycle-verify.py']
+result = read('/tmp/stateset-lifecycle-result.json')
+assert result['checked'] and result['passed'] and result['source_frozen']
+assert [s['name'] for s in result['stages']]==['format','types','native','operator','gates','governance','workflow']
+assert all(s['exit_code']==0 and focused['started']<=s['started']<=s['finished']<=focused['finished'] for s in result['stages'])
+frozen = read('/tmp/stateset-lifecycle-inputs.json')
+source, tests = inventory('stateset_agents'), inventory('tests')
+assert frozen['source_sha256']==source and frozen['test_source_sha256']==tests
+assert focused['started']<=frozen['captured_at']<=focused['finished']
+assert frozen['phase']=='after formatter; before verification'
+assert result['stages'][0]['started']<=frozen['captured_at']<=result['stages'][0]['finished']
+live = read('/tmp/stateset-hardening-live.json')
+assert live['focused_job']==focused['id'] and live['created_at']>=focused['finished']
+assert {'stateset_agents/'+p:h for p,h in live['source_sha256'].items()}==source
+assert live['test_source_sha256']==tests
+assert live['draft_preserved'] and not live['training_launched'] and live['before']==live['after']
+assert all((ROOT/p).stat().st_mtime<=focused['finished'] for p in {**source,**tests})
+counts = {}
+for name in ('native','operator','governance'):
+    path = Path('/tmp/stateset-lifecycle-'+name+'.xml')
+    assert focused['started']<=path.stat().st_mtime<=focused['finished']
+    tree = ET.parse(path).getroot()
+    assert not any(list(tree.iter(tag)) for tag in ('failure','error','skipped'))
+    counts[name] = len(list(tree.iter('testcase')))
+    assert counts[name]>0
+log = Path('/home/dom/.local/state/agent-builds/logs')/(focused['id']+'.log')
+assert int(re.findall(r'Success: no issues found in (\d+) source files',log.read_text())[-1])==len(source)
+summary = {'retained_at':time.time(),'focused_job':focused['id'],'focused_passed':True,'test_counts':counts,'total_tests':sum(counts.values()),'typed_modules':len(source),'source_tests_match_frozen_inputs_and_live':True,'live_pane':live['pane'],'draft_preserved':True,'training_launched':False,'full_acceptance_job':full['id'],'full_state_at_capture':full['state'],'installed_wheel_verified_by_this_receipt':False,'gpu_verified':False,'provider_training_verified':False,'model_quality_gain_verified':False}
+assert not OUT.exists()
+destination = OUT
+OUT.parent.mkdir(parents=True,exist_ok=True)
+OUT = Path(tempfile.mkdtemp(prefix='.finetune-lifecycle-recovery-',dir=OUT.parent))
+for filename, value in [('summary.json',summary),('queue-receipts.json',[*failed_jobs,focused,full]),('source-manifest.json',{'source_sha256':source,'test_source_sha256':tests})]:
+    (OUT/filename).write_text(json.dumps(value,indent=2)+'\n')
+for path in [Path('/tmp/stateset-lifecycle-'+name) for name in ('result.json','inputs.json','handoff.json','native.xml','operator.xml','governance.xml')]:
+    shutil.copy2(path,OUT/path.name)
+shutil.copy2(log,OUT/log.name)
+shutil.copy2('/tmp/stateset-hardening-live.json',OUT/'live-proof.json')
+shutil.copy2('/tmp/stateset-studio-mobile-live.txt',OUT/'live-screen.txt')
+for filename in ('stateset-lifecycle-verify.py','stateset-lifecycle-handoff.py','stateset-lifecycle-followup.py','stateset-lifecycle-lint-fix.py','stateset-lifecycle-retain.py','stateset-hardening-live.py','stateset-studio-mobile-format.py','stateset-studio-mobile-gates.py'):
+    shutil.copy2(Path('/tmp')/filename,OUT/(filename+'.txt'))
+for stage in ('interrupted-stop','worker-ownership','native-checkpoint','native-followup'):
+    directory = Path('/tmp/stateset-'+stage+'-fixes')
+    target = OUT/('staged-'+stage)
+    target.mkdir()
+    for name in ('manifest.json','README.md'):
+        shutil.copy2(directory/name,target/name)
+followup = read('/tmp/stateset-lifecycle-followup.json')
+shutil.copy2('/tmp/stateset-lifecycle-followup.json',OUT/'reviewed-followup.json')
+for name in sorted(set(read('/tmp/stateset-lifecycle-handoff.json')['files']) | set(followup['files'])):
+    target = OUT/'verified-files'/(name+'.txt')
+    target.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(ROOT/name,target)
+failed = Path('/tmp/stateset-lifecycle-failed-attempts')
+if failed.exists():
+    shutil.copytree(failed,OUT/'failed-attempts')
+(OUT/'README.md').write_text(f'''# Fine-tuning lifecycle and native recovery
+
+Buildr `{focused['id']}` passed {counts['native']} native/runtime regression
+tests, {counts['operator']} operator regression tests and {counts['governance']}
+governance tests, plus typing for {len(source)} package modules, formatting,
+Ruff, repository hygiene, stable API/release governance and workflow lint.
+No selected cases failed or skipped. This is a targeted source check, not a
+complete repository or installed-wheel test run.
+
+The changes prevent duplicate direct/supervised execution with exclusive
+admission and private child coordination; preserve cooperative local stop after
+supervisor loss with explicit uncertainty; and preflight native local learner
+state, retaining quarantine after late restore/publication failures. Regression
+tests include actual tiny CPU single/multi-turn continuation, pending/completed
+gradient windows and AMP state, malformed state and injected late failures,
+mixed admission races, and TUI/CLI/in-memory HTTP stop behavior. Provider work
+uses injected stubs; this run neither provisions nor validates remote training.
+
+Package/test hashes were frozen after formatting and held unchanged throughout
+verification. The refreshed live Herdr pane matches those hashes. Saved draft
+bytes, permissions and retained run history were preserved, and no training was
+launched during the refresh. Staged manifests describe historical preformatter
+inputs; current verified bytes are retained separately.
+
+Model-only imports can change weights and return False; they cannot establish
+learner recovery. Late failures are contained, not rolled back. Legacy complete
+checkpoints without RNG permit best-effort recovery with an explicit warning.
+Configured rollout synchronization opt-out remains supported. The collective
+native DDP protocol is separate; these source checks do not establish new GPU,
+distributed, provider or model-quality evidence.
+
+Broader source/wheel/CLI acceptance remains separate under `{full['id']}`
+(state at retention: {full['state']}); this bundle does not adopt its outcome.
+''')
+assert source==inventory('stateset_agents') and tests==inventory('tests')
+(OUT/'artifact-sha256.json').write_text(json.dumps({p.relative_to(OUT).as_posix():sha(p) for p in sorted(OUT.rglob('*')) if p.is_file()},indent=2)+'\n')
+OUT.rename(destination)
+print(json.dumps({'path':str(destination),'summary':summary},indent=2))

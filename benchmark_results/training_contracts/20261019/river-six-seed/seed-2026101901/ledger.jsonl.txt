@@ -1,0 +1,1 @@
+{"base_model": "Qwen/Qwen3.5-9B", "cost_per_hr": null, "cost_usd": null, "duration_s": 213.4, "gpu": "river-managed", "gpu_count": 0, "job_id": "river-1", "provider": "river", "recorded_at": "2026-10-19T15:10:28.741980+00:00", "status": "succeeded"}

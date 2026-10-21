@@ -1,0 +1,16 @@
+{
+  "files": {
+    "stateset_agents/finetune_workspace.py": {
+      "base_sha256": "bb5d815b468eebf60d12110d3f1616ec78805407035cee3c828711ae17713d77",
+      "staged_sha256": "c141a09bde9d8fb8a1669e12b72c8a97781db79dde1a48f113f476b2d297dea2"
+    },
+    "tests/unit/test_finetune_frontier_readiness.py": {
+      "base_sha256": null,
+      "staged_sha256": "277299618686b9b4c418f56bbee917db27564e8d14a07a108fbb0833f3542934"
+    }
+  },
+  "expected_new_test_cases": 37,
+  "canonical_files_modified": false,
+  "checks_run": false,
+  "provider_calls": false
+}

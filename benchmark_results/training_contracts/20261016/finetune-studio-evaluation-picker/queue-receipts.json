@@ -1,0 +1,122 @@
+[
+  {
+    "id": "d72f4e87a399",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-check.py"
+    ],
+    "created": 1792198036.5744154,
+    "started": 1792198036.5893555,
+    "finished": 1792198089.3870308,
+    "wait_seconds": 0.014940023422241211,
+    "elapsed_seconds": 52.797675371170044,
+    "usage": {
+      "cpu_seconds": 44.7273,
+      "sampled_peak_rss_gb": 0.9106636047363281,
+      "samples": 87,
+      "observed_seconds": 52.79205762100173,
+      "observed_at": 1792198089.386879,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "b1d6d1554573",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-wheel.py"
+    ],
+    "created": 1792198181.074579,
+    "started": 1792198181.1329877,
+    "finished": 1792198216.3008976,
+    "wait_seconds": 0.05840873718261719,
+    "elapsed_seconds": 35.16790986061096,
+    "usage": {
+      "cpu_seconds": 28.1595,
+      "sampled_peak_rss_gb": 0.864349365234375,
+      "samples": 58,
+      "observed_seconds": 35.162221086007776,
+      "observed_at": 1792198216.300717,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "9df080fce68d",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      "/home/dom/stateset-agents/.venv/bin/python",
+      "/tmp/stateset-evaluation-case-picker-terminal.py"
+    ],
+    "created": 1792198257.193706,
+    "started": 1792198257.2093282,
+    "finished": 1792198263.3456607,
+    "wait_seconds": 0.015622138977050781,
+    "elapsed_seconds": 6.1363325119018555,
+    "usage": {
+      "cpu_seconds": 1.5297,
+      "sampled_peak_rss_gb": 0.07674026489257812,
+      "samples": 11,
+      "observed_seconds": 6.130208817980019,
+      "observed_at": 1792198263.3455057,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "80f844255c06",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-picker-post-integration.py"
+    ],
+    "created": 1792198435.6706867,
+    "started": 1792198435.6821673,
+    "finished": 1792198439.0025551,
+    "wait_seconds": 0.011480569839477539,
+    "elapsed_seconds": 3.320387840270996,
+    "usage": {
+      "cpu_seconds": 3.2587,
+      "sampled_peak_rss_gb": 0.5203666687011719,
+      "samples": 6,
+      "observed_seconds": 3.3154491760069504,
+      "observed_at": 1792198439.0024588,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  },
+  {
+    "id": "0f94032359ed",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-evaluation-picker-current-check.py"
+    ],
+    "created": 1792198729.4648056,
+    "started": 1792198729.4754014,
+    "finished": 1792198796.4755561,
+    "wait_seconds": 0.01059579849243164,
+    "elapsed_seconds": 67.00015473365784,
+    "usage": {
+      "cpu_seconds": 51.0436,
+      "sampled_peak_rss_gb": 0.8753814697265625,
+      "samples": 110,
+      "observed_seconds": 66.99571965800715,
+      "observed_at": 1792198796.4753795,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    }
+  }
+]

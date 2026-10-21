@@ -116,12 +116,14 @@ _TRAINING_PROFILE_ALIASES = {"speed": "aggressive", "quality": "conservative"}
 
 # TrainingConfig fields a client may tune through the API. Everything else
 # (output/resume paths, run names, experiment trackers, data loading, model
-# identity, vLLM resources) is server-controlled.
+# repository identity, vLLM resources) is server-controlled. Model revisions
+# remain selectable within the permitted repository.
 API_TRAINING_OVERRIDE_KEYS = frozenset(
     {
         "num_episodes",
         "num_epochs",
         "learning_rate",
+        "model_revision",
         "adam_beta1",
         "adam_beta2",
         "weight_decay",

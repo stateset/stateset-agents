@@ -1,0 +1,450 @@
+"""Responsive local evaluation editor and monitor for the fine-tuning studio."""
+
+from __future__ import annotations
+
+import threading
+import time
+from collections.abc import Callable
+from dataclasses import asdict
+from pathlib import Path
+from queue import Empty, SimpleQueue
+from typing import Any
+
+from stateset_agents.finetune_evaluation import (
+    EVALUATION_FIELDS,
+    EvaluationConfig,
+    EvaluationReview,
+    inspect_evaluation,
+    launch_evaluation,
+    list_evaluations,
+    plan_evaluation,
+    prepare_evaluation,
+    read_evaluation,
+    stop_evaluation,
+)
+
+
+class EvaluationPanel:
+    """Capture one run; keep model work outside the UI and behind explicit review."""
+
+    def __init__(self, run: Path) -> None:
+        self.run = run
+        self.values: dict[str, Any] = asdict(EvaluationConfig())
+        self.mode = "list"
+        self.field = 0
+        self.index = 0
+        self.offset = 0
+        self.edit = ""
+        self.cursor = 0
+        self.busy = False
+        self.message = (
+            "n configures a local paired evaluation. No inference starts on inspection."
+        )
+        self.review: EvaluationReview | None = None
+        self.prepared_path: Path | None = None
+        self.rows: list[dict[str, Any]] = []
+        self.selected: dict[str, Any] | None = None
+        self.result: dict[str, Any] | None = None
+        self._results: SimpleQueue[tuple[str, str, Any]] = SimpleQueue()
+        self._last_poll = 0.0
+        self.refresh()
+
+    def refresh(self) -> None:
+        """Poll small metadata and collect owned background work without blocking."""
+        try:
+            operation, origin, result = self._results.get_nowait()
+        except Empty:
+            pass
+        else:
+            self.busy = False
+            if isinstance(result, dict) and "error" in result:
+                self.message = result["error"]
+            elif operation == "review":
+                self.review = result
+                self.prepared_path = None
+                if self.mode == origin:
+                    self.mode, self.offset = "review", 0
+                self.message = (
+                    "Inputs captured. Review the complete workload before submitting."
+                )
+            elif operation == "restore":
+                self.review, self.prepared_path = result
+                if self.mode == origin:
+                    self.mode, self.offset = "review", 0
+                self.message = (
+                    "Retained evaluation verified; review to submit this same ID."
+                )
+            elif operation == "launch":
+                self.selected = result
+                if self.mode == origin:
+                    self.mode, self.offset = "detail", 0
+                self.message = (
+                    "Submitted evaluation "
+                    + result["evaluation_id"]
+                    + "; training is unchanged."
+                )
+            elif operation == "verify":
+                self.result = result
+                self.message = (
+                    "Judge recording replay and current artifact binding verified."
+                )
+            elif operation == "stop":
+                self.message = "Evaluation stop requested; queue admission and current generation may still finish."
+                if self.mode == origin:
+                    self.mode = "detail"
+            self._last_poll = 0
+        if time.monotonic() - self._last_poll >= 2:
+            try:
+                self.rows = list_evaluations(self.run)
+                if self.selected:
+                    self.selected = next(
+                        (
+                            row
+                            for row in self.rows
+                            if row["evaluation_id"] == self.selected["evaluation_id"]
+                        ),
+                        self.selected,
+                    )
+                self.index = min(self.index, max(0, len(self.rows) - 1))
+            except (OSError, ValueError):
+                self.message = "Cannot read evaluation records; check workspace access."
+            self._last_poll = time.monotonic()
+
+    def _background(
+        self, operation: str, action: Callable[[], Any], *, owned: bool = False
+    ) -> None:
+        if self.busy:
+            return
+        origin = self.mode
+        self.busy = True
+        self.message = "Working in the background. Esc leaves the view; authorized submission/stop finishes before exit."
+
+        def work() -> None:
+            try:
+                result = action()
+            except (ValueError, TypeError) as error:
+                # Only our static validation errors belong in product output;
+                # model/library exceptions may contain private input values.
+                result = {
+                    "error": "Evaluation could not be verified or submitted. Check cases, pins, adapter, resources and queue availability. "
+                    + (
+                        str(error)
+                        if type(error) is ValueError
+                        and str(error).startswith(
+                            (
+                                "Choose ",
+                                "Pin ",
+                                "Declare ",
+                                "Evaluation requires ",
+                                "The trained model ",
+                                "Context tokens ",
+                            )
+                        )
+                        else "See the documented evaluation input format."
+                    )
+                }
+            except Exception:
+                result = {
+                    "error": "Evaluation operation failed; inspect retained state and logs before retrying."
+                }
+            self._results.put((operation, origin, result))
+
+        threading.Thread(
+            target=work, daemon=not owned, name="stateset-evaluation-" + operation
+        ).start()
+
+    def _config(self) -> EvaluationConfig:
+        values = dict(self.values)
+        defaults = asdict(EvaluationConfig())
+        for name, default in defaults.items():
+            if type(default) is int:
+                text = str(values[name])
+                if not text.isdecimal():
+                    raise ValueError(
+                        "Integer evaluation settings require decimal digits"
+                    )
+                values[name] = int(text)
+            elif type(default) is float:
+                values[name] = float(values[name])
+        config = EvaluationConfig(**values)
+        config.validate()
+        return config
+
+    def _launch(self) -> None:
+        review = self.review
+        if review is None or self.busy:
+            return
+        checksum = review.sha256
+
+        def launch() -> dict[str, Any]:
+            from stateset_agents.finetune_evaluation import evaluation_status
+
+            path = self.prepared_path or prepare_evaluation(
+                review, expected_plan_sha256=checksum
+            )
+            launch_evaluation(path, expected_plan_sha256=checksum)
+            return evaluation_status(path)
+
+        self._background("launch", launch, owned=True)
+
+    def handle(self, key: str) -> bool:
+        """Return true only when Esc should close this entire panel."""
+        if self.mode == "edit":
+            if key == "ESC":
+                self.mode = "form"
+            elif key == "ENTER":
+                self.values[EVALUATION_FIELDS[self.field][0]] = self.edit
+                self.review = None
+                self.mode = "form"
+            elif key == "CLEAR":
+                self.edit, self.cursor = "", 0
+            elif key == "BACKSPACE" and self.cursor:
+                self.edit = self.edit[: self.cursor - 1] + self.edit[self.cursor :]
+                self.cursor -= 1
+            elif key == "DELETE":
+                self.edit = self.edit[: self.cursor] + self.edit[self.cursor + 1 :]
+            elif key in {"LEFT", "RIGHT"}:
+                self.cursor = max(
+                    0, min(len(self.edit), self.cursor + (1 if key == "RIGHT" else -1))
+                )
+            elif key in {"HOME", "END"}:
+                self.cursor = 0 if key == "HOME" else len(self.edit)
+            elif len(key) == 1 and key.isprintable() and len(self.edit) < 4096:
+                self.edit = self.edit[: self.cursor] + key + self.edit[self.cursor :]
+                self.cursor += 1
+            return False
+        if key == "ESC":
+            if self.mode == "list":
+                return True
+            self.mode, self.offset = "list", 0
+            return False
+        if self.mode == "form":
+            if key in {"UP", "DOWN", "TAB"}:
+                self.field = (self.field + (1 if key in {"DOWN", "TAB"} else -1)) % len(
+                    EVALUATION_FIELDS
+                )
+            elif key == "ENTER":
+                self.edit = str(self.values[EVALUATION_FIELDS[self.field][0]])
+                self.cursor, self.mode = len(self.edit), "edit"
+            elif key == "r" and not self.busy:
+                try:
+                    config = self._config()
+                except (ValueError, TypeError, OverflowError) as error:
+                    del error
+                    self.message = "Invalid evaluation settings; check paths, model pins and numeric limits."
+                else:
+                    self._background(
+                        "review", lambda: plan_evaluation(self.run, config)
+                    )
+        elif self.mode == "review" and key == "ENTER":
+            self._launch()
+        elif self.mode == "list":
+            if key == "n" and not self.busy:
+                self.mode, self.offset = "form", 0
+                self.message = "Edit fields, then r captures a read-only review."
+            elif key in {"UP", "DOWN"}:
+                self.index = max(
+                    0,
+                    min(len(self.rows) - 1, self.index + (1 if key == "DOWN" else -1)),
+                )
+            elif key == "ENTER" and self.rows:
+                self.selected, self.result = self.rows[self.index], None
+                self.mode, self.offset = "detail", 0
+        elif self.mode == "detail" and self.selected:
+            path = self.run / "evaluations" / self.selected["evaluation_id"]
+            if key == "v" and not self.busy:
+                self._background("verify", lambda: inspect_evaluation(path))
+            elif (
+                key == "r"
+                and not self.busy
+                and self.selected["state"].get("status") == "prepared"
+            ):
+                self._background("restore", lambda: (read_evaluation(path), path))
+            elif (
+                key == "s"
+                and not self.busy
+                and self.selected["state"].get("status")
+                in {"prepared", "queued", "running"}
+            ):
+                self.mode = "stop"
+            elif key == "l":
+                from stateset_agents.finetune_workspace import log_tail
+
+                # Reuse bounded, redacted private-log handling; no shell pager.
+                self.message = "\n".join(log_tail(path, lines=12))
+        elif self.mode == "stop" and key == "ENTER" and self.selected:
+            path = self.run / "evaluations" / self.selected["evaluation_id"]
+            checksum = self.selected["plan_sha256"]
+            self._background(
+                "stop",
+                lambda: stop_evaluation(path, expected_plan_sha256=checksum),
+                owned=True,
+            )
+        if (
+            key in {"PAGEUP", "PAGEDOWN"}
+            or self.mode in {"detail", "review"}
+            and key in {"UP", "DOWN"}
+        ):
+            delta = 8 if key.startswith("PAGE") else 1
+            self.offset = max(
+                0, self.offset + (delta if key in {"DOWN", "PAGEDOWN"} else -delta)
+            )
+        return False
+
+    def lines(self) -> list[str]:
+        """Render private-data-free configuration, workload and retained outcomes."""
+        rows = [
+            "LOCAL PAIRED EVALUATION / base vs trained",
+            "Run: " + self.run.name,
+            "",
+        ]
+        if self.mode in {"form", "edit"}:
+            rows += [
+                (" > " if index == self.field else "   ")
+                + label
+                + ": "
+                + str(self.values[name])
+                for index, (name, label) in enumerate(EVALUATION_FIELDS)
+            ]
+            if self.mode == "edit":
+                rows += [
+                    "",
+                    "Edit: "
+                    + self.edit[: self.cursor]
+                    + "|"
+                    + self.edit[self.cursor :],
+                ]
+            rows += [
+                "",
+                "Cache-only local models; pinned base and independent judge required.",
+                "Cases: schema 1, split test, reviewer provenance and scripted user turns.",
+                "No endpoint calls, downloads or paid resources are provisioned.",
+            ]
+        elif self.mode == "review" and self.review:
+            plan = self.review.plan
+            rows += [
+                (
+                    "REVIEW / Enter submits this retained evaluation"
+                    if self.prepared_path
+                    else "REVIEW / Enter prepares and submits this evaluation"
+                ),
+                "Evaluation SHA256: " + self.review.sha256,
+                "Base: "
+                + plan["binding"]["model"]
+                + "@"
+                + plan["binding"]["model_revision"],
+                "Adapter SHA256: " + plan["binding"]["artifact_sha256"],
+                "Judge: "
+                + plan["config"]["judge_model"]
+                + "@"
+                + plan["config"]["judge_revision"],
+                "Cases SHA256: " + plan["cases_sha256"],
+                f"{plan['cases']} cases | {plan['reply_generations']} policy replies | at most {plan['max_judge_generations']} judge replies (2 passes + 1 retry)",
+                "Queue CPU/RAM/scratch: "
+                + " / ".join(
+                    str(plan["config"][k])
+                    for k in ("cpu_slots", "memory_gb", "scratch_gb")
+                ),
+                f"Timeout: {plan['config']['timeout_seconds']}s | context: {plan['config']['context_length']} tokens",
+                "Policy/judge reply limits: "
+                + str(plan["config"]["max_new_tokens"])
+                + " / "
+                + str(plan["config"]["judge_max_new_tokens"]),
+                "Three separate processes free policy memory before loading the judge.",
+                "Greedy scripted turns; overlong prompts fail, never silently truncate.",
+                "Success needs >=0.8 and every resolution, accuracy, policy and non-repetition check in BOTH judge passes.",
+                "Private transcripts and replayable judge recordings are retained.",
+                "Existing training and quality.json are preserved. This diagnostic selects no checkpoint and approves no deployment.",
+                "Esc returns without submission. Authorized submission finishes before exit.",
+            ]
+        elif self.mode in {"detail", "stop"} and self.selected:
+            selected = self.selected
+            rows += [
+                "Evaluation: " + selected["evaluation_id"],
+                "Plan SHA256: " + selected.get("plan_sha256", "unavailable"),
+                "State: " + str(selected["state"].get("status")),
+                "Phase: " + str(selected["state"].get("phase", "not started")),
+                "Completed cases in phase: "
+                + str(selected["state"].get("completed_cases", 0)),
+                "Stop requested: " + str(selected.get("stop_requested", False)),
+            ]
+            if selected["state"].get("error"):
+                rows += ["Error: " + selected["state"]["error"]]
+            queue = selected.get("queue", {})
+            if queue:
+                rows += [
+                    "Buildr job: " + queue["job_id"] + " | runner " + queue["state"],
+                    f"Sampled queue wait: {queue.get('wait_seconds', 0):.0f}s | sample age: {queue['sample_age_seconds']:.0f}s",
+                ]
+                if queue.get("waiting_for"):
+                    rows += ["Waiting for: " + queue["waiting_for"]]
+                    resources = queue.get("resources", {})
+                    for label, free, required in (
+                        ("Disk", "disk_free_gb", "required_free_gb"),
+                        ("RAM", "available_memory_gb", "required_memory_gb"),
+                    ):
+                        if free in resources and required in resources:
+                            rows += [
+                                f"{label}: {resources[free]:.1f} / {resources[required]:.1f} GiB free / required"
+                            ]
+                rows += [
+                    "Read-only queue inspection: buildr show --json " + queue["job_id"]
+                ]
+            elif selected["state"].get("status") in {"queued", "running"}:
+                rows += [
+                    "Waiting for a complete queue lifecycle event; open l for worker output."
+                ]
+            if self.mode == "stop":
+                rows += [
+                    "",
+                    "Enter requests cooperative stop of this evaluation only.",
+                    "Current generation and queue waits may finish; no training or other queue jobs are cancelled.",
+                ]
+            elif self.result:
+                summary = self.result["summary"]
+                scores = self.result["mean_judge_scores"]
+                pair = summary["pairs"][0]
+                rows += [
+                    "",
+                    "VERIFIED DIAGNOSTIC / judge recordings replayed",
+                    f"Judge mean: base {scores['baseline']:.4f} -> trained {scores['candidate']:.4f}",
+                    f"Success: {pair['baseline']['success_rate']:.1%} -> {pair['candidate']['success_rate']:.1%}",
+                    f"Wins: {pair['wins']} | regressions: {pair['regressions']}",
+                    f"Study gate: {'PASS' if summary['recorded_study_passed'] else 'NOT PASSED'} | 6 independent training seeds required",
+                    *self.result["notes"],
+                ]
+            else:
+                rows += [
+                    "",
+                    "v rehashes the artifact and replays judge recordings after success.",
+                    "paired-reports.json can be explicitly imported via e/f or the agent CLI.",
+                ]
+        else:
+            rows += [
+                (" > " if index == self.index else "   ")
+                + row["evaluation_id"]
+                + " | "
+                + str(row["state"].get("status"))
+                + " | "
+                + str(row["state"].get("phase", ""))
+                for index, row in enumerate(self.rows)
+            ] or ["No retained evaluations. Press n to configure one."]
+        return rows + [
+            "",
+            "Working..." if self.busy else "",
+            *self.message.splitlines(),
+        ]
+
+    def keys(self) -> list[str]:
+        """Return controls for the current screen, including narrow panes."""
+        if self.mode == "edit":
+            return ["Type | Arrows/Home/End | Enter save | Ctrl+U clear | Esc discard"]
+        if self.mode == "form":
+            return ["Up/Down/Tab field | Enter edit | f cases | r review | Esc back"]
+        if self.mode in {"review", "stop"}:
+            return ["Enter confirms reviewed action | PgUp/Dn scroll | Esc back"]
+        if self.mode == "detail":
+            return [
+                "r review prepared | v verify | s stop | l logs | PgUp/Dn | Esc back"
+            ]
+        return ["n new evaluation | Up/Down select | Enter details | Esc back"]

@@ -217,6 +217,9 @@ class TestProviderJobKindCapabilities:
             "result_kind": "hosted_pointer_or_local_artifacts",
             "compute_model": "managed-finetuning-and-serving",
             "verification_status": "code-complete-live-lifecycle-pending",
+            "sft_seed": False,
+            "uses_packaged_training": False,
+            "durable_submission_receipts": False,
         }
 
 

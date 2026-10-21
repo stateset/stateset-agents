@@ -19,9 +19,20 @@ from stateset_agents.core.model_presets import PRESETS, ModelPreset
 from stateset_agents.training.config import TrainingConfig
 from stateset_agents.training.gspo_config import GSPOConfig
 
-# Families without a native transformers implementation (they ship custom
-# modelling code), so their curated presets opt in explicitly.
-_REMOTE_CODE_FAMILIES = ("moonshotai/Kimi-", "zai-org/GLM-5", "meta-models/Muse-")
+# Review individual checkpoints: native support can differ within one family.
+# Keep this allowlist explicit so a newly enabled preset requires review.
+_REMOTE_CODE_MODELS = frozenset(
+    {
+        "meta-models/Muse-Glimmer-30B",
+        "moonshotai/Kimi-K3",
+        "moonshotai/Kimi-K2.5",
+        "moonshotai/Kimi-K2.6",
+        "zai-org/GLM-5.1",
+        "zai-org/GLM-5.2",
+        "XiaomiMiMo/MiMo-V2.6-Pro-RL",
+        "XiaomiMiMo/MiMo-V2.6-Pro-MOPD",
+    }
+)
 
 
 def test_training_config_defaults_off_and_is_keyword_only():
@@ -40,9 +51,9 @@ def test_model_preset_dataclass_defaults_off():
 
 
 @pytest.mark.parametrize("name", sorted(PRESETS))
-def test_only_non_native_preset_families_trust_remote_code(name):
+def test_only_reviewed_checkpoints_trust_remote_code(name):
     preset = PRESETS[name]
-    needs_remote = preset.model_id.startswith(_REMOTE_CODE_FAMILIES)
+    needs_remote = preset.model_id in _REMOTE_CODE_MODELS
     assert preset.trust_remote_code is needs_remote, preset.model_id
 
 

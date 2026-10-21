@@ -1,0 +1,7 @@
+[
+  {
+    "job": "10e920624d4e",
+    "kind": "implementation_and_fixture_failures",
+    "explanation": "11 checks passed and 6 failed. Real HF tokenizer preprocessing left transient backend padding/truncation in identity, preventing fresh restore. Clearing a missing teacher also retained a stale prepared reference, which was corrected. The scheduler fixture switched into an unstubbed enhanced loss after creating its teacher; both stub paths now use the same analytic loss. All three fixes have regressions."
+  }
+]

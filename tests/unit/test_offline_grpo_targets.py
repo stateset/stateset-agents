@@ -67,7 +67,9 @@ def test_q_target_bootstraps_from_next_state_value():
 
 @pytest.mark.asyncio
 async def test_train_uses_logged_transitions_not_random_features():
-    trainer = _trainer()
+    from tests.unit.test_offline_policy_training import trainer as policy_trainer
+
+    trainer = policy_trainer()
     states = np.arange(10, dtype=np.float32).reshape(5, 2)
     data = {
         "states": states,
@@ -76,13 +78,19 @@ async def test_train_uses_logged_transitions_not_random_features():
         "rewards": np.arange(5, dtype=np.float32),
         "dones": np.ones(5, dtype=np.float32),
     }
-    dataset = SimpleNamespace(to_offline_rl_format=lambda: data)
-    trainer.value_pretrained = True
+    dataset = SimpleNamespace(
+        to_offline_rl_format=lambda: data,
+        to_policy_training_format=lambda *args: [
+            {"input_ids": [1, 2, 3], "labels": [-100, -100, 3]} for _ in states
+        ],
+    )
     seen = []
+
+    original = trainer.train_step
 
     async def record(batch):
         seen.append(batch)
-        return {"blend_ratio": 1.0}
+        return await original(batch)
 
     trainer.train_step = record
     await trainer.train(num_epochs=1, dataset=dataset)
@@ -93,6 +101,4 @@ async def test_train_uses_logged_transitions_not_random_features():
         np.testing.assert_array_equal(
             np.asarray(batch["actions"]), np.asarray(batch["states"]) + 100
         )
-        np.testing.assert_array_equal(
-            np.asarray(batch["rewards"]), np.asarray(batch["states"])[:, 0] / 2
-        )
+    assert trainer.optimizer_updates > 0

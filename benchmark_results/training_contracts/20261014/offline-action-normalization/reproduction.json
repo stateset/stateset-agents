@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "kind": "offline-action-weighting-regression",
+  "baseline_source_inventory": "../native-offline-device/wheel_proof.json",
+  "baseline_wheel_sha256": "2c77b47e15e6089d3d893737c293ade7d9a56aef657e9976485c18c2478809b9",
+  "baseline_package_source_sha256": "1f25fcef704b61f11df80c0303a6efea00671072fb51d8c3c41b0e513dac3d28",
+  "changed_package_files": [
+    "training/offline_grpo_trainer.py"
+  ],
+  "reproduction_job_id": "e1605190b874",
+  "regression_test": "tests/unit/test_offline_policy_training.py::test_accumulation_matches_combined_action_objective",
+  "baseline_uneven_cases_failed": 3,
+  "baseline_equal_size_control_passed": 1,
+  "baseline_largest_recorded_parameter_difference": 0.0030199289321899414,
+  "reference": "One combined action batch using real Torch SGD; frozen shared IQL weights and identical initial policy parameters",
+  "microbatch_partitions": [
+    [
+      2,
+      1
+    ],
+    [
+      1,
+      2
+    ],
+    [
+      2,
+      1
+    ],
+    [
+      1,
+      1,
+      1
+    ]
+  ],
+  "accumulation_steps": [
+    2,
+    2,
+    4,
+    4
+  ],
+  "synthetic": true,
+  "representative_quality_demonstrated": false
+}

@@ -33,6 +33,7 @@ from .gspo_trainer import (
     _require_finite_vector,
     normalize_total_loss,
 )
+from .runtime_state import _reject_unsupported_resume
 
 logger = logging.getLogger(__name__)
 
@@ -395,6 +396,7 @@ async def train_with_gspo_token(
     Returns:
         Trained agent
     """
+    _reject_unsupported_resume(config, "train_with_gspo_token")
     import json
     import os
     from datetime import datetime

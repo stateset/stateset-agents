@@ -65,6 +65,7 @@ def load_checkpoint_file(
     map_location: Any = "cpu",
     trusted: bool = False,
     torch_module: Any = None,
+    mmap: bool = False,
 ) -> Any:
     """Load a torch checkpoint, refusing arbitrary pickled objects by default.
 
@@ -76,12 +77,17 @@ def load_checkpoint_file(
             Pass ``True`` only for a checkpoint whose source you control.
         torch_module: Torch module to use; imported lazily when omitted. Callers
             that already hold a torch handle (or inject one in tests) pass it in.
+        mmap: Privately map tensor storage from a local zip checkpoint instead
+            of allocating the entire payload in host memory.
 
     Raises:
         ModelError: The checkpoint holds pickled objects and ``trusted`` is
             ``False``.
         ImportError: Torch is not installed and no ``torch_module`` was given.
+        TypeError: ``trusted`` is not an explicit boolean.
     """
+    if type(trusted) is not bool:
+        raise TypeError("trusted must be an explicit boolean")
     if torch_module is not None:
         torch = torch_module
     else:
@@ -95,7 +101,12 @@ def load_checkpoint_file(
                 "Install the 'training' extra: pip install stateset-agents[training]"
             ) from exc
     try:
-        return torch.load(path, map_location=map_location, weights_only=not trusted)
+        options = {"mmap": True} if mmap else {}
+        # The only unsafe mode requires the caller's explicit trusted=True.
+        # All other loads use the weights-only unpickler; see checkpoint trust tests.
+        return torch.load(  # nosec B614
+            path, map_location=map_location, weights_only=not trusted, **options
+        )
     except pickle.UnpicklingError as exc:
         if trusted:
             raise

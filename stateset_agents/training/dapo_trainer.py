@@ -23,11 +23,11 @@ import torch
 
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
+from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
     hf_generate_group,
-    save_checkpoint_artifacts,
 )
 
 logger = logging.getLogger(__name__)
@@ -299,7 +299,7 @@ class DynamicSamplingBuffer:
         return len(self.buffer)
 
 
-class DAPOTrainer:
+class DAPOTrainer(TrainingRuntime):
     """
     Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) Trainer
 
@@ -333,6 +333,7 @@ class DAPOTrainer:
         # Ensure transformers is loaded for scheduler
         _load_transformers_dapo()
 
+        validate_training_config(config)
         self.config = config
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
@@ -913,20 +914,8 @@ class DAPOTrainer:
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:
-        """Save model checkpoint"""
-        save_checkpoint_artifacts(
-            self.model,
-            self.tokenizer,
-            output_dir,
-            training_state={
-                "global_step": self.global_step,
-                "rollout_samples_total": self.rollout_samples_total,
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "metrics_history": self.metrics_history,
-            },
-            config_dict=self.config.to_dict(),
-            config_filename="dapo_config.json",
-        )
+        """Publish a complete resumable checkpoint."""
+        self.save_runtime_checkpoint(output_dir)
 
 
 from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo

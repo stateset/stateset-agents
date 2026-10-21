@@ -1,0 +1,27 @@
+{
+  "model": "zai-org/GLM-5.3-Flash",
+  "revision": "46a050bec13002ad29ee795c16e61cf4fa3c4a9c",
+  "architecture": "Glm5NextForConditionalGeneration",
+  "loss": 3.4876880645751953,
+  "global_step": 1,
+  "attention_modules": [
+    "model.language_model.layers.0.self_attn.q_proj",
+    "model.language_model.layers.0.self_attn.k_proj",
+    "model.language_model.layers.0.self_attn.v_proj",
+    "model.language_model.layers.0.self_attn.forget_gate.f_a_proj",
+    "model.language_model.layers.0.self_attn.forget_gate.f_b_proj",
+    "model.language_model.layers.0.self_attn.b_proj",
+    "model.language_model.layers.0.self_attn.g_a_proj",
+    "model.language_model.layers.0.self_attn.g_b_proj",
+    "model.language_model.layers.0.self_attn.o_proj",
+    "model.language_model.layers.1.self_attn.q_a_proj",
+    "model.language_model.layers.1.self_attn.q_b_proj",
+    "model.language_model.layers.1.self_attn.kv_a_proj_with_mqa",
+    "model.language_model.layers.1.self_attn.kv_b_proj",
+    "model.language_model.layers.1.self_attn.o_proj"
+  ],
+  "frozen_parameters_unchanged": true,
+  "adapter_reload_equal": true,
+  "scope": "random tiny native CPU; synthetic tokenizer; no quantized checkpoint or distributed execution",
+  "full_size_training_verified": false
+}

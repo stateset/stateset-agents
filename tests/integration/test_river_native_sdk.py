@@ -37,11 +37,18 @@ from river_client import Checkpoint, Sample, rl
 from river_client.renderers.base import ParsedResponse, SamplePrompt
 from river_client.rl.advantages import build_batch
 
+from stateset_agents.core.environments.industry_support_environment import (
+    POLICIES,
+    IndustrySupportEnvironment,
+    support_cases,
+    support_resolution,
+)
 from stateset_agents.core.environments.refund_environment import RefundEnvironment
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.checkpoint_selection import (
     require_training_progress,
 )
+from stateset_agents.evaluation.environment_trace import replay_industry_trace
 from stateset_agents.evaluation.refund_trace import (
     audit_refund_traces,
     replay_refund_trace,
@@ -188,6 +195,59 @@ class ScriptedModel:
     def load_weights(self, checkpoint, *, load_optimizer=False):
         self.loaded_optimizer.append(load_optimizer)
         self.step = checkpoint.step
+
+
+class ScriptedIndustryModel(ScriptedModel):
+    """Synthetic policy transport for checking native industry rollout wiring."""
+
+    def __init__(self, domain, rows, *, mixed=False):
+        super().__init__(mixed=mixed)
+        self.domain = domain
+        self.rows = {row["record_id"]: row for row in rows}
+
+    async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+        outputs = []
+        for chunks, seed in zip(model_input, seeds, strict=True):
+            prompt = ScriptedRenderer.tokenizer.decode(
+                [t for c in chunks for t in c["tokens"]]
+            )
+            identity = next(key for key in self.rows if key in prompt)
+            row = self.rows[identity]
+            turn = prompt.count(STOP)
+            member_seed = (seed - turn * 104729) % (2**31)
+            if turn == 0:
+                action = {"tool": "lookup_record", "args": {"record_id": identity}}
+            elif turn == 1:
+                action = {
+                    "tool": "resolve",
+                    "args": {
+                        "record_id": identity,
+                        "resolution": (
+                            "unapproved_override"
+                            if self.mixed and member_seed % 2
+                            else support_resolution(self.domain, row)
+                        ),
+                    },
+                }
+            else:
+                action = {"tool": "finish", "args": {}}
+            tokens = ScriptedRenderer.tokenizer.encode(json.dumps(action) + STOP)
+            complete = len(tokens) <= max_tokens
+            tokens = tokens[:max_tokens]
+            self.sampled.append((identity, seed, list(tokens)))
+            outputs.append(
+                [
+                    Sample(
+                        tokens=tokens,
+                        text=ScriptedRenderer.tokenizer.decode(tokens),
+                        logprobs=[-0.1] * len(tokens),
+                        stop_reason="stop" if complete else "length",
+                        model_step=self.step,
+                        token_data_is_exact=True,
+                    )
+                ]
+            )
+        return outputs
 
 
 class ScriptedSession:
@@ -375,6 +435,316 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
             )
             for trajectory in group
         ]
+
+    async def test_industry_rollouts_replay_and_build_real_native_batches(self):
+        for domain in POLICIES:
+            with self.subTest(domain=domain):
+                rows = support_cases(domain, "train", 8, 42)
+                cases = {row["record_id"]: row for row in rows}
+                model = ScriptedIndustryModel(domain, rows, mixed=True)
+                engine = rl.RolloutEngine(
+                    model,
+                    env=river_environment_factory(
+                        lambda domain=domain: IndustrySupportEnvironment(domain),
+                        truncation_reward=-1.0,
+                        record_trace=True,
+                    ),
+                    renderer=ScriptedRenderer(),
+                    budget=rl.Budget(
+                        max_turns=4,
+                        max_generated_tokens=1024,
+                        max_context_tokens=32768,
+                        max_turn_tokens=256,
+                    ),
+                    schedule=rl.Schedule(concurrency=4),
+                    seed=42,
+                )
+                trajectories = await self.collect(engine, rows=rows)
+                self.assertEqual(len(trajectories), 16)
+                grouped = {key: [] for key in cases}
+                for trajectory in trajectories:
+                    identity = trajectory_case_identity(trajectory, cases=cases)
+                    grouped[identity["case_id"]].append(trajectory)
+                    trace = trajectory_environment_trace(trajectory)
+                    replay = await replay_industry_trace(
+                        domain, cases[identity["case_id"]], trace
+                    )
+                    self.assertEqual(replay["reward"], trajectory.reward)
+                    self.assertEqual(
+                        replay["success"], trajectory.metrics["task_success"] == 1
+                    )
+                    self.assertEqual(replay["tool_calls"], 3)
+                    self.assertIsNone(replay["truncated"])
+                self.assertTrue(
+                    all(
+                        sorted(t.reward for t in group) == [-1, 1]
+                        for group in grouped.values()
+                    )
+                )
+                self.assertEqual(
+                    Counter(tuple(tokens) for _, _, tokens in model.sampled),
+                    Counter(
+                        tuple(
+                            token for chunk in span.chunks for token in chunk["tokens"]
+                        )
+                        for trajectory in trajectories
+                        for span in trajectory.spans
+                        if span.kind == "generated"
+                    ),
+                )
+                data, metrics = build_batch(
+                    list(grouped.values()),
+                    estimator=rl.GroupCentered(),
+                    normalize="token",
+                    truncation=rl.Truncation(**TRUNCATION_POLICY),
+                    min_members=2,
+                    current_step=0,
+                    max_staleness=0,
+                )
+                self.assertTrue(data)
+                self.assertTrue(
+                    any(a > 0 for datum in data for a in datum["advantages"])
+                )
+                self.assertTrue(
+                    any(a < 0 for datum in data for a in datum["advantages"])
+                )
+                self.assertEqual(
+                    metrics["train/active_tokens"],
+                    sum(t.generated_tokens for t in trajectories),
+                )
+                self.assertEqual(
+                    sum(a != 0 for datum in data for a in datum["advantages"]),
+                    metrics["train/active_tokens"],
+                )
+                self.assertEqual(model.optimizer_calls, 0)
+
+    async def test_industry_truncation_preserves_failure_reward_in_native_batch(self):
+        for domain in POLICIES:
+            with self.subTest(domain=domain):
+                rows = support_cases(domain, "train", 8, 42)
+                model = ScriptedIndustryModel(domain, rows)
+                engine = rl.RolloutEngine(
+                    model,
+                    env=river_environment_factory(
+                        lambda domain=domain: IndustrySupportEnvironment(domain),
+                        truncation_reward=-1.0,
+                        record_trace=True,
+                    ),
+                    renderer=ScriptedRenderer(),
+                    budget=rl.Budget(
+                        max_turns=4,
+                        max_generated_tokens=12,
+                        max_context_tokens=32768,
+                        max_turn_tokens=12,
+                    ),
+                    schedule=rl.Schedule(concurrency=4),
+                    seed=42,
+                )
+                trajectories = await self.collect(engine, rows=rows)
+                for trajectory in trajectories:
+                    trace = trajectory_environment_trace(trajectory)
+                    case = next(
+                        row
+                        for row in rows
+                        if row["record_id"] == trajectory.stateset_episode_id
+                    )
+                    replay = await replay_industry_trace(domain, case, trace)
+                    self.assertFalse(replay["success"])
+                    self.assertEqual(replay["reward"], -1)
+                    self.assertIsNotNone(replay["truncated"])
+                data, metrics = build_batch(
+                    [
+                        trajectories[index : index + 2]
+                        for index in range(0, len(trajectories), 2)
+                    ],
+                    estimator=rl.GroupCentered(),
+                    normalize="token",
+                    truncation=rl.Truncation(**TRUNCATION_POLICY),
+                    min_members=2,
+                    current_step=0,
+                    max_staleness=0,
+                )
+                self.assertEqual(data, [])
+                self.assertEqual(model.optimizer_calls, 0)
+
+    async def test_delegated_tool_uses_real_engine_and_replays_separate_execution(self):
+        from stateset_agents.core.environments.refund_policy_environment import (
+            refund_policy_benchmark,
+        )
+        from stateset_agents.evaluation.refund_delegation_trace import (
+            replay_delegation_trace,
+        )
+        from stateset_agents.remote.river_refund_delegation import (
+            river_refund_delegation_factory,
+            trajectory_delegation_trace,
+        )
+
+        class IntentModel:
+            base_model = "scripted-delegation-contract"
+
+            async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+                results = []
+                for chunks in model_input:
+                    prompt = ScriptedRenderer.tokenizer.decode(
+                        [t for c in chunks for t in c["tokens"]]
+                    )
+                    action = (
+                        {"tool": "finish", "args": {}}
+                        if STOP in prompt
+                        else {
+                            "tool": "resolve_refund",
+                            "args": {"intent": "resolve_refund"},
+                        }
+                    )
+                    tokens = ScriptedRenderer.tokenizer.encode(
+                        json.dumps(action) + STOP
+                    )
+                    assert len(tokens) <= max_tokens
+                    results.append(
+                        [
+                            Sample(
+                                tokens=tokens,
+                                text=ScriptedRenderer.tokenizer.decode(tokens),
+                                logprobs=[-0.1] * len(tokens),
+                                stop_reason="stop",
+                                model_step=0,
+                                token_data_is_exact=True,
+                            )
+                        ]
+                    )
+                return results
+
+        cases = refund_policy_benchmark("train", count=8, seed=601)
+        engine = rl.RolloutEngine(
+            IntentModel(),
+            env=river_refund_delegation_factory(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=4,
+                max_generated_tokens=1024,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=4),
+            seed=42,
+        )
+        trajectories = await self.collect(engine, cases, group_size=1)
+        self.assertEqual(len(trajectories), 8)
+        by_id = {row["order_id"]: row for row in cases}
+        for trajectory in trajectories:
+            trace = trajectory_delegation_trace(trajectory)
+            replay = await replay_delegation_trace(by_id[trace["case_id"]], trace)
+            self.assertTrue(replay["success"])
+            self.assertEqual(replay["executed_tool_calls"], 3)
+            self.assertEqual(len(trace["steps"]), 2)
+
+    async def test_recovery_protocol_runs_every_fault_through_native_engine(self):
+        from stateset_agents.data.refund_recovery import (
+            reference_recovery_action,
+            refund_recovery_cases,
+        )
+        from stateset_agents.evaluation.refund_recovery_trace import (
+            replay_recovery_trace,
+        )
+        from stateset_agents.remote.river_refund_recovery import (
+            river_refund_recovery_factory,
+            trajectory_recovery_trace,
+        )
+
+        class RecoveryModel:
+            base_model = "scripted-recovery-contract"
+
+            async def sample(self, *, model_input, seeds, max_tokens, **kwargs):
+                results = []
+                for chunks in model_input:
+                    prompt = ScriptedRenderer.tokenizer.decode(
+                        [token for chunk in chunks for token in chunk["tokens"]]
+                    )
+                    latest = json.loads(prompt.rsplit("\n", 1)[-1])
+                    observations = [
+                        json.loads(message["content"])
+                        for message in latest
+                        if message["role"] == "user"
+                        and message["content"].startswith("{")
+                    ]
+                    observation = observations[-1] if observations else None
+                    action = reference_recovery_action(observation)
+                    tokens = ScriptedRenderer.tokenizer.encode(
+                        json.dumps(action) + STOP
+                    )
+                    assert len(tokens) <= max_tokens
+                    results.append(
+                        [
+                            Sample(
+                                tokens=tokens,
+                                text=ScriptedRenderer.tokenizer.decode(tokens),
+                                logprobs=[-0.1] * len(tokens),
+                                stop_reason="stop",
+                                model_step=0,
+                                token_data_is_exact=True,
+                            )
+                        ]
+                    )
+                return results
+
+        cases = refund_recovery_cases("train", count=20, seed=602)
+        engine = rl.RolloutEngine(
+            RecoveryModel(),
+            env=river_refund_recovery_factory(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=6,
+                max_generated_tokens=1536,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=4),
+            seed=42,
+        )
+        trajectories = await self.collect(engine, cases, group_size=1)
+        self.assertEqual(len(trajectories), 20)
+        by_id = {row["order_id"]: row for row in cases}
+        for trajectory in trajectories:
+            trace = trajectory_recovery_trace(trajectory)
+            replay = await replay_recovery_trace(by_id[trace["case_id"]], trace)
+            self.assertTrue(replay["success"], trace)
+            self.assertLessEqual(replay["resolution_count"], 1)
+
+    async def test_checkpoint_sampler_preserves_explicit_zero_temperature(self):
+        temperatures = []
+
+        class RecordingSession(ScriptedSession):
+            def submit_sample(self, **kwargs):
+                temperatures.append(kwargs["temperature"])
+                return super().submit_sample(**kwargs)
+
+        model = ScriptedModel()
+        sampler = rl.CheckpointSampler(
+            RecordingSession(model),
+            base_model=model.base_model,
+            checkpoint=Checkpoint(
+                path="river://scripted-fixed", step=0, checkpoint_type="inference"
+            ),
+            tokenizer=CharacterTokenizer(),
+        )
+        engine = rl.RolloutEngine(
+            sampler,
+            env=self.environment(),
+            renderer=ScriptedRenderer(),
+            budget=rl.Budget(
+                max_turns=4,
+                max_generated_tokens=1024,
+                max_context_tokens=8192,
+                max_turn_tokens=256,
+            ),
+            schedule=rl.Schedule(concurrency=2),
+            temperature=0,
+            seed=42,
+        )
+        trajectories = await self.collect(engine, group_size=1)
+        self.assertEqual(len(trajectories), 2)
+        self.assertTrue(temperatures)
+        self.assertTrue(all(value == 0 for value in temperatures))
 
     async def test_real_evaluator_retains_complete_validation_case_evidence(self):
         model = ScriptedModel()
@@ -568,6 +938,23 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(report["selected_validation_step"], 0)
                         self.assertEqual(report["passed"], 1)
                         self.assertEqual(report["training_activity"], activity)
+                        selection = json.loads(
+                            (output / "validation_selection.json").read_text()
+                        )
+                        self.assertEqual(selection["selected_validation_step"], 0)
+                        self.assertEqual(
+                            report["validation_selection_hash"], content_hash(selection)
+                        )
+                        self.assertEqual(
+                            report["selected_training_activity"]["status"],
+                            "initial_checkpoint",
+                        )
+                        self.assertEqual(
+                            report["selected_training_activity"][
+                                "observed_optimizer_updates"
+                            ],
+                            0,
+                        )
                         self.assertTrue(
                             (await audit_refund_traces(report, splits["test"]))[
                                 "passed"

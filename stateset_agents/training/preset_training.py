@@ -4,6 +4,7 @@ Scenario-specific training convenience helpers.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any
 
 from stateset_agents.core.agent import Agent
@@ -21,12 +22,12 @@ async def train_customer_service_agent(
     from ..core.reward import create_customer_service_reward
     from .train import train
 
-    agent_config = AGENT_CONFIGS["customer_service"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
+    agent_config = deepcopy(AGENT_CONFIGS["customer_service"])
+    agent_config.update(deepcopy(kwargs.pop("agent_config", {})))
 
     agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
 
-    env_config = CONVERSATION_CONFIGS["customer_service"].copy()
+    env_config = deepcopy(CONVERSATION_CONFIGS["customer_service"])
     if scenarios_file:
         import json
 
@@ -57,12 +58,14 @@ async def train_tutoring_agent(
     from ..core.reward import create_tutoring_reward
     from .train import train
 
-    agent_config = AGENT_CONFIGS["tutor"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
+    agent_config = deepcopy(AGENT_CONFIGS["tutor"])
+    agent_config.update(deepcopy(kwargs.pop("agent_config", {})))
 
     agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
 
-    env_config = CONVERSATION_CONFIGS["tutoring"].copy()
+    env_config = deepcopy(CONVERSATION_CONFIGS["tutoring"])
+    for scenario in env_config.get("scenarios", []):
+        scenario["subject"] = subject
     environment = ConversationEnvironment(**env_config)
     reward_fn = create_tutoring_reward()
 
@@ -87,12 +90,12 @@ async def train_task_agent(
     from ..core.reward import create_task_agent_reward
     from .train import train
 
-    agent_config = AGENT_CONFIGS["helpful_assistant"].copy()
-    agent_config.update(kwargs.get("agent_config", {}))
+    agent_config = deepcopy(AGENT_CONFIGS["helpful_assistant"])
+    agent_config.update(deepcopy(kwargs.pop("agent_config", {})))
 
     agent = create_agent(agent_type="multi_turn", model_name=model_name, **agent_config)
 
-    env_config = TASK_CONFIGS.get(task_type, TASK_CONFIGS["data_analysis"])
+    env_config = deepcopy(TASK_CONFIGS.get(task_type, TASK_CONFIGS["data_analysis"]))
 
     def success_criteria(turns: Any, context: dict[str, Any]) -> bool:
         return float(context.get("task_progress", 0.0)) >= 1.0

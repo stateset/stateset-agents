@@ -1,0 +1,26 @@
+{
+  "container_image": "runpod/pytorch@sha256:6b1e4c00dccf6003302a6ebc83d2e43bcb59b9defbccde978088d4a8730b184c",
+  "tag_observed": "1.1.0-cu1290-torch271-ubuntu2204",
+  "gpu_quotes": [
+    {
+      "id": "NVIDIA RTX A4000",
+      "displayName": "RTX A4000",
+      "secureCloud": true,
+      "communityCloud": true,
+      "securePrice": 0.25,
+      "communityPrice": 0.17
+    },
+    {
+      "id": "NVIDIA RTX A5000",
+      "displayName": "RTX A5000",
+      "secureCloud": true,
+      "communityCloud": true,
+      "securePrice": 0.27,
+      "communityPrice": 0.16
+    }
+  ],
+  "max_lifetime_seconds": 3600,
+  "compute_ceiling_usd": 1.0,
+  "total_initial_budget_usd": 10,
+  "allocates_resources": false
+}

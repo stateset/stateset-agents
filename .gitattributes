@@ -83,4 +83,6 @@ package-lock.json text
 benchmark_results/industry_pilot/** -text
 benchmark_results/industry_pilot/**/*.log whitespace=-blank-at-eol
 benchmark_results/industry_pilot/**/nvidia-smi.txt whitespace=-blank-at-eol
+# Retain training-contract artifacts byte-for-byte, including raw test output.
+benchmark_results/training_contracts/** -text -whitespace
 stateset_agents/evaluation/rubrics/*.md text eol=lf

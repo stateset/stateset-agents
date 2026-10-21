@@ -1,0 +1,1174 @@
+[
+  {
+    "case": "uneven",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "nonimprovement",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "tie",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "empty_peer",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "empty_all",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "error",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "cancel",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "policy",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "seed",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "counter",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "metric",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "save_error",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "buffer_error",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "operation",
+    "broadcast_buffers": false,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "uneven",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "nonimprovement",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "tie",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "empty_peer",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "empty_all",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": false,
+    "repaired": false,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "error",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "cancel",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "policy",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "seed",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "counter",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "metric",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "save_error",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        4
+      ],
+      [
+        "torch.float64",
+        3
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "buffer_error",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ],
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  },
+  {
+    "case": "operation",
+    "broadcast_buffers": true,
+    "global_metric_correct": true,
+    "coordinated_selection": true,
+    "rng_modes_gradients_buffers_preserved": true,
+    "rejected": true,
+    "repaired": true,
+    "typed_tensor_wire": [
+      [
+        "torch.int64",
+        66
+      ]
+    ]
+  }
+]

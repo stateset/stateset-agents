@@ -18,6 +18,7 @@ from stateset_agents.core.generation_mode import inference_mode
 
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import LEGACY_STOP_SEQUENCES, AgentConfig, ConfigValidationError
+from .muse_protocol import is_muse_spark, muse_spark_final_response
 from .trajectory import ConversationTurn
 from .transformers_compat import generation_compat_kwargs, load_generation_model
 
@@ -912,7 +913,8 @@ class MultiTurnAgent(Agent):
         as one left-padded batch; a stub backend generates them one by one.
         Each turn carries exactly what :meth:`generate_turn` would record for
         its conversation (``prompt_token_ids`` without padding, ``token_ids``,
-        ``sampler_log_probs``), and its ``content`` decodes from ``token_ids``.
+        ``sampler_log_probs``). Ordinary reply content decodes from ``token_ids``;
+        native Muse exposes its final channel while retaining all sampled IDs.
         """
         if contexts is None:
             contexts = [None] * len(histories)
@@ -1205,11 +1207,9 @@ class MultiTurnAgent(Agent):
         if pad_id is not None and pad_id != eos_id:
             while length and int(response_tokens[length - 1]) == int(pad_id):
                 length -= 1
-        # A row stopped by a stop string is cut before it (text and ids);
-        # with pad == eos that also drops the padding, which is not a
-        # sampled EOS.
-        kept, _, _ = self._truncate_at_stop([int(t) for t in response_tokens[:length]])
-        length = len(kept)
+        # Keep the sampled stop tokens. Later HF padding (including pad == eos)
+        # is not an action and must not receive a likelihood or policy loss.
+        length = self._sampled_stop_length([int(t) for t in response_tokens[:length]])
         response_tokens = response_tokens[:length]
         text = self._decode_reply([int(t) for t in response_tokens])
         details: dict[str, Any] = {"response": text}
@@ -1265,9 +1265,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS as e:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 # Fallback to manual formatting if chat template fails
                 logger.debug("Chat template failed, using manual formatting: %s", e)
                 prompt = self._format_conversation(recent_messages)
@@ -1451,26 +1456,45 @@ class MultiTurnAgent(Agent):
         return token_ids[:keep], kept_log_probs, True
 
     def _decode_reply(self, token_ids: list[int]) -> str:
-        """The reply text for sampled ids: their exact decode, nothing else."""
+        """Render user-facing text while retaining the sampled action separately."""
         if self.tokenizer is None:
             raise RuntimeError("Tokenizer must be available to decode replies")
-        return str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        if is_muse_spark(self.config.model_name, self.model):
+            text = self._decode_model_response(token_ids)
+        else:
+            text = str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        hits = [
+            text.find(stop)
+            for stop in (getattr(self.config, "stop_sequences", None) or [])
+            if stop and stop in text
+        ]
+        return text[: min(hits)] if hits else text
+
+    def _sampled_stop_length(self, token_ids: list[int]) -> int:
+        """Find the complete sampled prefix that triggered a configured stop."""
+        stops = [
+            stop
+            for stop in (getattr(self.config, "stop_sequences", None) or [])
+            if stop
+        ]
+        if not stops or self.tokenizer is None:
+            return len(token_ids)
+        full = str(self.tokenizer.decode(token_ids, skip_special_tokens=True))
+        if not any(stop in full for stop in stops):
+            return len(token_ids)
+        for length in range(1, len(token_ids) + 1):
+            prefix = str(
+                self.tokenizer.decode(token_ids[:length], skip_special_tokens=True)
+            )
+            if any(stop in prefix for stop in stops):
+                return length
+        return len(token_ids)
 
     def _faithful_backend_details(self, details: dict[str, Any]) -> dict[str, Any]:
-        """Apply stop sequences to a rollout-engine result, ids and text alike."""
+        """Render stop-aware text without rewriting the backend's sampled action."""
         if self.tokenizer is None or not getattr(self.config, "stop_sequences", None):
             return details
-        ids, log_probs, stopped = self._truncate_at_stop(
-            list(details["token_ids"]), list(details["sampler_log_probs"])
-        )
-        if stopped:
-            details = {
-                **details,
-                "token_ids": ids,
-                "sampler_log_probs": log_probs,
-                "response": self._decode_reply(ids),
-            }
-        return details
+        return {**details, "response": self._decode_reply(list(details["token_ids"]))}
 
     async def _generate_with_model(
         self, prompt: str, context: dict[str, Any] | None = None
@@ -1579,12 +1603,10 @@ class MultiTurnAgent(Agent):
         sequences = outputs.sequences[0]
         response_tokens = sequences[prompt_len:]
         if torch.is_tensor(response_tokens):
-            kept, _, stopped = self._truncate_at_stop([int(t) for t in response_tokens])
-            if stopped:
-                response_tokens = response_tokens[: len(kept)]
-        # The reply is the exact decode of the sampled ids: no stripping or
-        # speaker-label cutting, so text and recorded ``token_ids`` agree.
-        response = str(self.tokenizer.decode(response_tokens, skip_special_tokens=True))
+            length = self._sampled_stop_length([int(t) for t in response_tokens])
+            response_tokens = response_tokens[:length]
+        # Display processing never changes which complete tokens were sampled.
+        response = self._decode_reply([int(t) for t in response_tokens])
 
         details: dict[str, Any] = {"response": response}
         if backend_error:
@@ -1619,7 +1641,20 @@ class MultiTurnAgent(Agent):
             logger.debug("token capture skipped: %s", e)
         return details
 
-    def _clean_response(self, response: str) -> str:
+    def _decode_model_response(self, token_ids: Any) -> str:
+        """Keep native Muse channel boundaries while retaining the sampled IDs."""
+        tokenizer = self.tokenizer
+        if tokenizer is None:
+            raise RuntimeError("Model tokenizer is not initialized")
+        native = is_muse_spark(self.config.model_name, self.model)
+        response = str(tokenizer.decode(token_ids, skip_special_tokens=not native))
+        if native:
+            return self._clean_response(response, native_protocol=True)
+        return self._clean_response(response)
+
+    def _clean_response(
+        self, response: str, *, native_protocol: bool | None = None
+    ) -> str:
         """Clean up generated response by removing artifacts and stop tokens.
 
         Args:
@@ -1628,6 +1663,12 @@ class MultiTurnAgent(Agent):
         Returns:
             Cleaned response with artifacts removed
         """
+        if native_protocol is not False and is_muse_spark(
+            self.config.model_name, self.model
+        ):
+            response = muse_spark_final_response(
+                response, allow_plain=native_protocol is None
+            )
         # Remove common artifacts
         response = response.strip()
 
@@ -1727,9 +1768,14 @@ class MultiTurnAgent(Agent):
         ):
             try:
                 prompt = self.tokenizer.apply_chat_template(
-                    recent_messages, tokenize=False, add_generation_prompt=True
+                    recent_messages,
+                    tokenize=False,
+                    add_generation_prompt=True,
+                    **(self.config.chat_template_kwargs or {}),
                 )
             except CHAT_TEMPLATE_EXCEPTIONS:
+                if is_muse_spark(self.config.model_name, self.model):
+                    raise
                 prompt = self._format_conversation(recent_messages)
         else:
             prompt = self._format_conversation(recent_messages)
@@ -1737,7 +1783,18 @@ class MultiTurnAgent(Agent):
         response_text = ""
 
         # For stub backend, yield the full response in chunks
-        if self._is_stub_backend and isinstance(self.model, StubModel):
+        if (
+            is_muse_spark(self.config.model_name, self.model)
+            and not self._is_stub_backend
+        ):
+            # Native recipient headers must survive decoding. Buffer the full
+            # generation before emitting user-directed content; a generic
+            # streamer discards those headers and would expose private reasoning.
+            response_text = await self._generate_with_model(prompt, context)
+            for offset in range(0, len(response_text), 32):
+                yield response_text[offset : offset + 32]
+                await asyncio.sleep(0)
+        elif self._is_stub_backend and isinstance(self.model, StubModel):
             response = str(self.model.generate(prompt, context))
             # Simulate streaming by yielding word by word
             words = response.split()
@@ -1859,7 +1916,10 @@ class MultiTurnAgent(Agent):
                     await asyncio.sleep(0.01)
                 response_text = response
 
-        response_text = self._clean_response(response_text)
+        if is_muse_spark(self.config.model_name, self.model):
+            response_text = self._clean_response(response_text, native_protocol=False)
+        else:
+            response_text = self._clean_response(response_text)
         self.conversation_history.append(
             {"role": "assistant", "content": response_text}
         )

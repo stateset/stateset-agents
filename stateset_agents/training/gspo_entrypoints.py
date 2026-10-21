@@ -20,6 +20,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 from .callbacks import has_no_policy_signal
 from .config import get_config_for_task
 from .gspo_config import GSPOConfig
+from .runtime_state import _reject_unsupported_resume
 
 logger = logging.getLogger(__name__)
 
@@ -136,7 +137,8 @@ async def train_with_gspo(
     train_queries: list[str | dict[str, Any]] | None = None,
     callbacks: list[Any] | None = None,
 ) -> Agent:
-    """Main training function using GSPO."""
+    """Train fresh with dedicated GSPO; explicit resume is unsupported."""
+    _reject_unsupported_resume(config, "train_with_gspo")
     from .gspo_trainer import GSPOModelManager, GSPOTrainer, _require_wandb, wandb
 
     logger.info("Initializing GSPO training")
@@ -329,6 +331,7 @@ async def train_customer_service_with_gspo(
     config = GSPOConfig.from_training_config(
         base_config, num_episodes=num_episodes, output_dir=output_dir, **kwargs
     )
+    _reject_unsupported_resume(config, "train_customer_service_with_gspo")
 
     agent_config = AgentConfig(
         model_name=model_name,

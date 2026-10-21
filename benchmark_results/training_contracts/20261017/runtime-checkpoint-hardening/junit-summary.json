@@ -1,0 +1,32 @@
+{
+  "focused": {
+    "tests": 533,
+    "by_class": {
+      "tests.unit.test_checkpoint_publication": 31,
+      "tests.unit.test_checkpoint_trust": 28,
+      "tests.unit.test_dapo_module_exports": 1,
+      "tests.unit.test_ddp_checkpoint_state": 27,
+      "tests.unit.test_dedicated_entrypoint_resume": 56,
+      "tests.unit.test_gspo_module_exports": 1,
+      "tests.unit.test_gspo_query_wiring": 14,
+      "tests.unit.test_learning_state_recovery": 91,
+      "tests.unit.test_model_checkpoint": 18,
+      "tests.unit.test_multi_turn_checkpoint_accumulation": 86,
+      "tests.unit.test_native_checkpoint_async": 12,
+      "tests.unit.test_ppo_objective": 4,
+      "tests.unit.test_ppo_safety": 32,
+      "tests.unit.test_runtime_checkpoint_safety": 96,
+      "tests.unit.test_runtime_state": 10,
+      "tests.unit.test_scheduler_identity": 8,
+      "tests.unit.test_training_resume_required": 18
+    },
+    "sha256": "7a4259ccd7ba361d0a11b1ff6fcee6308ef921512c1f1e04c200040c4a48a05c"
+  },
+  "governance": {
+    "tests": 8,
+    "by_class": {
+      "tests.unit.test_release_governance": 8
+    },
+    "sha256": "4e7bb1a36d9256d6624434aefe35074e3a002c8d838315f1ff3607d829ac2a10"
+  }
+}

@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+KEYBOARD
+
+Up/Down choose a setting or run
+Enter edits a setting, opens run details, or confirms a reviewed launch
+Left/Right, Home/End move the text cursor; Delete removes a character
+Ctrl+U clears text; Esc discards an edit or closes a dialog
+a pins/unpins a reference run; x compares the selected run to it
+Comparison shows saved settings and latest metrics; it never ranks quality
+m searches the model catalog
+b selects local CUDA, RunPod, Modal or River (remote SFT)
+v lists all configuration issues; Enter jumps to the selected setting
+f browses JSON/JSONL datasets without reading their contents
+i checks local readiness in the background; it never contacts a provider
+u inspects dataset statistics; e explicitly reveals a bounded private
+sample
+w guides settings, dataset, runtime, review and quality with explicit next
+steps
+On Runs: e verifies/imports paired held-out quality evidence; k reviews a
+local stop request
+z inspects local recovery checkpoints; copying and launch require separate
+reviews
+j configures a local base/adapter/judge evaluation; review submits through
+Buildr
+Inside j: b compares completed checkpoint validations; g reopens the
+queued comparison
+p validates data and previews resources without provisioning
+r reviews exact inputs; on Runs it reviews the same prepared run
+s saves draft.json (credentials are never saved)
+Tab switches configuration / retained runs
+Enter or d opens run details; c copies settings into a NEW run
+/ searches runs; t cycles all/active/failed/succeeded; Backspace resets
+filters
+g shows measured progress and reported loss/reward/other metric samples
+l opens full logs; s switches sources, Space pauses, / filters, End
+follows
+PageUp/Down scrolls dialogs or recent logs; End follows log tail
+q exits the main screen; Ctrl+C exits from any screen
+
+--------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+PgUp/Dn scroll | Esc back | Ctrl+C exit

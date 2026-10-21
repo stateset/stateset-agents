@@ -1,0 +1,75 @@
+"""Apply reviewed staged files only against matching baselines under source lock."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import time
+
+ROOT = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+def sha(data):
+    return hashlib.sha256(data).hexdigest()
+pending = {}
+for directory in ['stateset-cli-record-fixes', 'stateset-ddp-publication-fixes', 'stateset-worker-terminal-fixes']:
+    stage = Path('/tmp')/directory
+    manifest = json.loads((stage/'manifest.json').read_text())
+    for name, record in manifest['files'].items():
+        target = ROOT/name
+        assert name not in pending
+        assert (sha(target.read_bytes()) if target.exists() else None) == record['base_sha256'], name
+        data = (stage/name).read_bytes()
+        assert sha(data) == record['staged_sha256'], name
+        pending[name] = data
+
+additions = ['tests/unit/test_finetune_worker_terminal.py', 'tests/unit/test_cli_finetune_records.py', 'stateset_agents/finetune_recovery.py', 'stateset_agents/training/ddp_checkpoint.py', 'tests/integration/test_ddp_checkpoint_publication.py']
+helpers = {}
+for filename in ['stateset-studio-mobile-format.py', 'stateset-studio-mobile-gates.py']:
+    path = Path('/tmp')/filename
+    content = path.read_text()
+    old = "'tests/unit/test_multi_turn_checkpoint_accumulation.py']"
+    assert old in content
+    helpers[path] = content.replace(old, "'tests/unit/test_multi_turn_checkpoint_accumulation.py', "+', '.join(repr(name) for name in additions)+']')
+
+for filename in ['stateset-studio-mobile-prepare.py', 'stateset-studio-mobile-finish.py']:
+    path = Path('/tmp')/filename
+    content = path.read_text()
+    for var in ['regressions', 'wheel_tests']:
+        marker = var+" = ['tests/"
+        assert content.count(marker)==1
+        content = content.replace(marker, var+" = ['tests/unit/test_finetune_worker_terminal.py', 'tests/unit/test_cli_finetune_records.py', 'tests/")
+    # Real collective checks run source-side and installed-wheel-side separately
+    # from unit shards; they are not implied by copying harness files.
+    if filename.endswith('prepare.py'):
+        marker = "    run('wheel-build',"
+        assert content.count(marker)==1
+        content = content.replace(marker, "    run('source-ddp-publication', pytest+['tests/integration/test_native_ddp_checkpoint.py', 'tests/integration/test_ddp_checkpoint_publication.py', '--junitxml='+str(out/'source-ddp-publication.xml')], environment=dict(env, STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(out/'source-ddp-publication')))\n"+marker)
+        marker = "    shutil.copy2(root/native_test, checks/native_test)"
+        assert content.count(marker)==1
+        content = content.replace(marker, marker+"\n    shutil.copy2(root/'tests/integration/test_ddp_checkpoint_publication.py', checks/'tests/integration/test_ddp_checkpoint_publication.py')")
+    else:
+        marker = "    run('reward-audit',"
+        assert content.count(marker)==1
+        content = content.replace(marker, "    run('wheel-ddp-publication', pytest+['tests/integration/test_native_ddp_checkpoint.py', 'tests/integration/test_ddp_checkpoint_publication.py', '--junitxml='+str(out/'wheel-ddp-publication.xml')], environment=dict(wheel_env, STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR=str(out/'wheel-ddp-publication')), cwd=checks)\n"+marker)
+    helpers[path] = content
+
+workflow = ROOT/'.github/workflows/training-contracts.yml'
+content = workflow.read_text()
+for existing, added in [('tests/integration/test_native_ddp_checkpoint.py', 'tests/integration/test_ddp_checkpoint_publication.py'), ('tests/unit/test_finetune_worker_ownership.py', 'tests/unit/test_finetune_worker_terminal.py'), ('tests/unit/test_cli_finetune.py', 'tests/unit/test_cli_finetune_records.py')]:
+    old = '          '+existing+'\n'
+    assert content.count(old)==1 and added not in content
+    content = content.replace(old, old+'          '+added+'\n')
+pending['.github/workflows/training-contracts.yml'] = content.encode()
+
+for name, data in pending.items():
+    target = ROOT/name
+    target.parent.mkdir(parents=True,exist_ok=True)
+    temporary = target.with_name('.'+target.name+'.publication-tmp')
+    temporary.write_bytes(data)
+    os.replace(temporary,target)
+for path, content in helpers.items():
+    path.write_text(content)
+receipt = {'applied_at':time.time(), 'files':{name:sha(data) for name,data in pending.items()}, 'helper_sha256':{str(path):sha(content.encode()) for path,content in helpers.items()}}
+Path('/tmp/stateset-publication-handoff.json').write_text(json.dumps(receipt,indent=2)+'\n')
+print(json.dumps({'applied':list(pending),'helpers_updated':list(map(str,helpers))},indent=2))

@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+TRAINING BACKENDS / no connection or allocation during selection
+
+ > Local CUDA / local
+   RunPod / runpod
+   Modal / modal
+   River / river
+
+Selected: Local CUDA
+Studio methods: sft, grpo, gspo, dapo
+Result: local_weights
+Billing: Your hardware; shared Buildr queue
+Setup: Local CUDA and stateset-agents[training].
+
+Remote native RL is not remapped to SFT. River RL uses the dedicated River
+workflow.
+Selection preserves training settings; incompatible settings must be fixed
+before launch.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+Up/Down select | Enter choose backend | PgUp/Dn details | Esc cancel

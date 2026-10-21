@@ -11,7 +11,6 @@ import asyncio
 import dataclasses
 import importlib
 import json
-import os
 import re
 from types import SimpleNamespace
 from unittest import mock
@@ -128,10 +127,8 @@ class _FakeOfflineTrainer:
     async def train(self, num_epochs=None, dataset=None):
         return {}
 
-    def save(self, path):
+    def save_checkpoint(self, path):
         self.saved.append(path)
-        with open(path, "w") as handle:
-            handle.write("ok")
 
 
 def _run_offline(tmp_path, **kwargs):
@@ -155,27 +152,34 @@ def _run_offline(tmp_path, **kwargs):
 
 def test_offline_mode_maps_fields_the_offline_trainer_reads(tmp_path):
     _, trainer = _run_offline(
-        tmp_path, max_grad_norm=0.3, advantage_normalization=False, num_epochs=2
+        tmp_path,
+        max_grad_norm=0.3,
+        num_epochs=2,
+        seed=17,
+        adam_beta1=0.8,
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=3,
     )
     cfg = trainer.config
     assert cfg.max_grad_norm == 0.3
-    assert cfg.advantage_normalization is False
+    assert cfg.seed == 17 and cfg.adam_beta1 == 0.8
+    assert cfg.batch_size == 2 and cfg.gradient_accumulation_steps == 3
     assert cfg.num_epochs == 2
-    assert cfg.num_episodes == 5
 
 
-@pytest.mark.parametrize("field,value", [("objective", "cispo"), ("clip_ratio", 0.1)])
+@pytest.mark.parametrize(
+    "field,value",
+    [("objective", "cispo"), ("clip_ratio", 0.1), ("advantage_normalization", False)],
+)
 def test_offline_mode_rejects_fields_it_would_ignore(tmp_path, field, value):
     with pytest.raises(ValueError, match=field):
         _run_offline(tmp_path, **{field: value})
 
 
-def test_offline_mode_persists_to_save_path(tmp_path):
+def test_offline_mode_dispatches_checkpoint_save_to_requested_directory(tmp_path):
     save = str(tmp_path / "ckpt")
-    agent, trainer = _run_offline(tmp_path, save_path=save)
-    assert trainer.saved and all(p.startswith(save) for p in trainer.saved)
-    assert os.path.exists(trainer.saved[0])
-    agent.model.save_pretrained.assert_called_once_with(save)
+    _, trainer = _run_offline(tmp_path, save_path=save)
+    assert trainer.saved == [save]
 
 
 # --- 3. GSPO customer-service entrypoint --------------------------------------------

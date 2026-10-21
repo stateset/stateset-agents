@@ -4,7 +4,7 @@ The token path backpropagates one row chunk at a time (``backward_fn``), so
 peak activation memory is bounded by one chunk instead of every chunk of every
 group. These tests pin that the chunked gradients equal the gradients of the
 original single-backward loss (one full-group forward, ``policy_loss`` on the
-whole group, mean over groups, one ``backward``) for every aggregation, with
+whole group, population reduction, one ``backward``) for every aggregation, with
 KL and entropy on and off, and that only one chunk's graph is alive at once.
 """
 
@@ -134,7 +134,16 @@ def _single_backward_reference(groups, config, model, *, beta, ref, old_logprobs
     use_kl = beta > 0 and ref is not None
     if use_kl:
         objective = lc._token_kl_objective(objective, config, beta=beta)
-    losses, kls, ents, ratios, clips = [], [], [], [], []
+    losses = []
+    totals = dict.fromkeys(
+        ("kl_penalty", "entropy", "ratio_mean", "clip_fraction"), 0.0
+    )
+    n_trajectories = sum(len(group.trajectories) for group in groups)
+    n_tokens = sum(
+        len(reply)
+        for group in groups
+        for _, reply, _ in lc._token_rows_for_group(group)
+    )
     for gi, group in enumerate(groups):
         rows = lc._token_rows_for_group(group)
         rewards = torch.tensor([float(t.total_reward) for t in group.trajectories])
@@ -166,19 +175,26 @@ def _single_backward_reference(groups, config, model, *, beta, ref, old_logprobs
             logp_old=None if old_logprobs is None else old_logprobs[gi],
             logp_ref=lp_ref,
             entropy=entropy,
+            total_rows=n_trajectories,
+            total_tokens=n_tokens,
         )
         losses.append(result.loss)
-        kls.append(result.metrics["kl"])
-        ents.append(result.metrics["entropy"])
-        ratios.append(result.metrics["ratio_mean"])
-        clips.append(result.metrics["clip_fraction"])
-    total = torch.stack(losses).mean()
+        token_count = int(mask.count_nonzero())
+        kl_weight = len(rows) if objective.kl == "k3_sequence" else token_count
+        totals["kl_penalty"] += result.metrics["kl"] * kl_weight
+        totals["entropy"] += result.metrics["entropy"] * token_count
+        totals["ratio_mean"] += result.metrics["ratio_mean"] * token_count
+        totals["clip_fraction"] += result.metrics["clip_fraction"] * token_count
+    total = torch.stack(losses).sum()
     total.backward()
     metrics = {
-        "kl_penalty": sum(kls) / len(kls),
-        "entropy": sum(ents) / len(ents),
-        "ratio_mean": sum(ratios) / len(ratios),
-        "clip_fraction": sum(clips) / len(clips),
+        key: value
+        / (
+            n_trajectories
+            if key == "kl_penalty" and objective.kl == "k3_sequence"
+            else n_tokens
+        )
+        for key, value in totals.items()
     }
     return total.detach(), metrics
 
@@ -490,6 +506,58 @@ def test_peak_graph_memory_is_bounded_by_one_chunk():
     chunked = _peak_saved_bytes(lambda part: part.backward())
     # 11 one-row chunks: the retained graph holds all of them at once.
     assert chunked * 4 < retained, (chunked, retained)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("steps", [1, 2])
+async def test_native_streaming_releases_chunks_and_counts_each_batch_once(
+    tmp_path, steps
+):
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    groups = _groups()
+    config = _config(
+        objective="gspo",
+        entropy_coef=0.05,
+        generation_batch_size=1,
+        gradient_accumulation_steps=steps,
+        max_grad_norm=100000.0,
+        bf16=False,
+        fp16=False,
+        beta=0.0,
+        zero_signal_patience=0,
+        output_dir=str(tmp_path),
+    )
+    reference = _tiny_model(0)
+    _single_backward_reference(
+        groups, config, reference, beta=0, ref=None, old_logprobs=None
+    )
+    model = _tiny_model(0)
+    trainer = MultiTurnGRPOTrainer(
+        SimpleNamespace(model=model), object(), config=config
+    )
+    trainer.optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
+    meter = _SavedTensorMeter()
+    with torch.autograd.graph.saved_tensors_hooks(meter.pack, meter.unpack):
+        await trainer.training_step(groups)
+    if steps > 1:
+        state = trainer._grpo_accumulation
+        assert state["policy_count"] == 7
+        assert state["entropy_count"] == sum(
+            len(reply)
+            for group in groups
+            for _, reply, _ in lc._token_rows_for_group(group)
+        )
+        trainer._flush_accumulation(torch)
+    for actual, expected in zip(
+        model.parameters(), reference.parameters(), strict=True
+    ):
+        torch.testing.assert_close(
+            actual, expected - 0.01 * expected.grad, atol=1e-10, rtol=0
+        )
+    assert trainer.global_step == 1
+    retained = _peak_saved_bytes(None)
+    assert meter.peak * 4 < retained, (meter.peak, retained)
 
 
 def test_backward_runs_after_every_chunk_forward():

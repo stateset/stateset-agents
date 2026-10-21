@@ -209,8 +209,9 @@ def test_no_gpu_is_an_execution_error_not_a_successful_preview(prepared, monkeyp
 
 
 @pytest.mark.parametrize("fail", [False, True])
+@pytest.mark.parametrize("training_seed", [0, 1729])
 def test_training_only_receives_training_split_and_records_outcome(
-    prepared, monkeypatch, fail
+    prepared, monkeypatch, fail, training_seed
 ):
     from stateset_agents.training import sft
 
@@ -222,27 +223,61 @@ def test_training_only_receives_training_split_and_records_outcome(
         captured.update(kwargs)
         if fail:
             raise RuntimeError("trainer failed")
+        from tests.sft_fixtures import write_sft_export
+
+        write_sft_export(
+            kwargs["output_dir"],
+            **{key: value for key, value in kwargs.items() if key != "output_dir"},
+        )
         return kwargs["output_dir"]
 
     monkeypatch.setattr(sft, "run_sft", train)
     if fail:
         with pytest.raises(RuntimeError, match="trainer failed"):
-            train_industry_project(prepared, dry_run=False)
+            train_industry_project(prepared, dry_run=False, training_seed=training_seed)
     else:
-        assert train_industry_project(prepared, dry_run=False)["status"] == "trained"
+        assert (
+            train_industry_project(
+                prepared, dry_run=False, training_seed=training_seed
+            )["status"]
+            == "trained"
+        )
+    assert captured["seed"] == training_seed
     assert captured["rows"] == load_finetuning_data(prepared / "train.jsonl")
     check_finetuning_overlap(
         captured["rows"], load_finetuning_data(prepared / "validation.jsonl")
     )
     run = json.loads((prepared / "adapter/industry_run.json").read_text())
     assert run["status"] == ("failed" if fail else "trained")
+    assert run["training_seed"] == training_seed
+    assert (
+        run["split_seed"]
+        == json.loads((prepared / "manifest.json").read_text())["seed"]
+    )
+
+
+def test_training_seed_changes_do_not_resplit_or_mutate_prepared_data(prepared):
+    before = {path.name: path.read_bytes() for path in prepared.iterdir()}
+    default = train_industry_project(prepared)
+    assert default["training_seed"] == 42
+    for seed in (0, 1729, 2**32 - 1):
+        plan = train_industry_project(prepared, training_seed=seed)
+        assert plan == {**default, "training_seed": seed}
+    assert {path.name: path.read_bytes() for path in prepared.iterdir()} == before
+
+
+@pytest.mark.parametrize("seed", [-1, 2**32, True, 1.5, "42"])
+def test_invalid_training_seed_rejected_before_artifact_creation(prepared, seed):
+    with pytest.raises(ValueError, match="training_seed"):
+        train_industry_project(prepared, training_seed=seed)
+    assert not (prepared / "adapter").exists()
 
 
 def test_preview_and_catalog_do_not_import_ml_stack(prepared):
     code = """
 import sys
 from stateset_agents.training.industry import list_industry_recipes, train_industry_project
-assert len(list_industry_recipes()) == 9
+assert len(list_industry_recipes()) == 12
 assert train_industry_project(sys.argv[1])['status'] == 'planned'
 assert not {'torch', 'transformers', 'peft', 'datasets'} & set(sys.modules)
 """
@@ -254,7 +289,7 @@ def test_cli_end_to_end(tmp_path):
 
     runner = CliRunner()
     source, project = tmp_path / "source", tmp_path / "prepared"
-    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 9
+    assert len(json.loads(runner.invoke(app, ["industry", "list"]).stdout)) == 12
     for args in (
         ["industry", "init", "healthcare", str(source)],
         ["industry", "validate", str(source / "examples.jsonl")],
@@ -265,11 +300,13 @@ def test_cli_end_to_end(tmp_path):
             str(source / "examples.jsonl"),
             str(project),
         ],
-        ["industry", "train", str(project), "--dry-run"],
+        ["industry", "train", str(project), "--dry-run", "--seed", "1729"],
     ):
         result = runner.invoke(app, args)
         assert result.exit_code == 0, result.output
     assert json.loads(result.stdout)["status"] == "planned"
+    assert json.loads(result.stdout)["training_seed"] == 1729
+    assert json.loads(result.stdout)["split_seed"] == 42
     assert runner.invoke(app, ["industry", "show", "unknown"]).exit_code == 2
 
 
@@ -297,7 +334,17 @@ def test_pinned_revision_reaches_trainer_and_plan(tmp_path, monkeypatch):
     assert train_industry_project(project)["model_revision"] == "a" * 40
     captured = {}
     monkeypatch.setattr(sft, "gpu_available", lambda: True)
-    monkeypatch.setattr(sft, "run_sft", lambda **kwargs: captured.update(kwargs))
+
+    def train(**kwargs):
+        from tests.sft_fixtures import write_sft_export
+
+        captured.update(kwargs)
+        write_sft_export(
+            kwargs["output_dir"],
+            **{key: value for key, value in kwargs.items() if key != "output_dir"},
+        )
+
+    monkeypatch.setattr(sft, "run_sft", train)
     train_industry_project(project, dry_run=False)
     assert captured["model_revision"] == "a" * 40
 
@@ -309,7 +356,8 @@ def test_sft_model_loader_forwards_revision(monkeypatch):
     captured = {}
     sentinel = object()
 
-    def load(cls, name, kwargs):
+    def load(cls, name, kwargs, *, for_training=False):
+        assert for_training is True
         captured.update(kwargs)
         return sentinel, cls
 

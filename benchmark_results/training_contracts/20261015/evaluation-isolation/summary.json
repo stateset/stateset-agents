@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "kind": "synthetic-evaluation-integrity-regression",
+  "passed": true,
+  "package_version": "0.66.1",
+  "release_status": "unreleased-checkout",
+  "wheel_sha256": "9d7ed1c1042608f27428a171408a4808a217162099057594482eab5518617f9c",
+  "job_id": "3c1600dfacec",
+  "full_suite": {
+    "passed": 8615,
+    "skipped": 57,
+    "warnings": 1743,
+    "seconds": 403.93
+  },
+  "focused_tests_passed": 831,
+  "immutable_wheel_contract_tests_passed": 217,
+  "typed_modules": 386,
+  "regression_files": {
+    "tests/unit/test_native_evaluation_isolation.py": "c005c7cad6d15244b3f2ede42b089b06d535c023eb3e628415f2079f16212c8d",
+    "tests/unit/test_evaluation_integrity.py": "ab12e1fd782093dd64f6231ea9128e56f1c2c26bc5d967c2d30f6d5fcf5ee147"
+  },
+  "baseline": {
+    "job_id": "1751f228201b",
+    "failed": 15
+  },
+  "verified": {
+    "training_rng_and_dropout_update_preserved": true,
+    "case_order_and_preceding_episode_consumption_isolated": true,
+    "mixed_module_modes_and_pending_gradients_preserved": true,
+    "error_and_actual_task_cancellation_restore_state": true,
+    "overlapping_task_and_thread_contexts_rejected": true,
+    "local_transformer_sampling_reproduced": true,
+    "cuda_rng_api_simulated": true,
+    "reviewed_duplicate_annotations_rejected": true,
+    "validation_reports_rejected_by_test_comparison": true,
+    "selection_receipt_and_initial_validation_retained": true,
+    "zero_progress_keeps_candidate_test_sealed": true,
+    "failed_shared_evaluation_attempts_accounted": true,
+    "required_rewards_and_oom_propagate": true,
+    "concurrent_evaluation_tasks_drained": true
+  },
+  "cpu_contract": {
+    "artifact_sha256": "a94dbc5e0dea1a3c1e93f71cf2e4e2eb63eda8f6d8f2e3bc83e2bd9c70bc163a",
+    "resumed_weights_match_uninterrupted": true,
+    "reload_inference_finite": true
+  },
+  "native_workflow": {
+    "seeds": [
+      42,
+      43,
+      44
+    ],
+    "rollout_batches_per_seed": 160,
+    "gradient_accumulation_steps": 2,
+    "optimizer_updates_per_seed": 80,
+    "reload_verified": true,
+    "scope": "synthetic sampled-training regression only"
+  },
+  "cuda_retested": false,
+  "paid_compute_allocated": false,
+  "representative_quality_demonstrated": false,
+  "a_plus_achieved": false,
+  "production_approved": false,
+  "new_regression_cases": 87,
+  "focused_confirmation_job": "010afda17bb8"
+}

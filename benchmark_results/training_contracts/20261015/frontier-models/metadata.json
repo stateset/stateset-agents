@@ -1,0 +1,481 @@
+[
+  {
+    "key": "mimo-v2.6-pro",
+    "model_id": "XiaomiMiMo/MiMo-V2.6-Pro-RL",
+    "revision": "b61f21852680ee02a29e946e18cf8697f4844061",
+    "architecture": "MiMoV2ForCausalLM",
+    "model_type": "mimo_v2",
+    "attention_prefix": "model\\.layers",
+    "attention_targets": [
+      "qkv_proj",
+      "o_proj"
+    ],
+    "checkpoint_format": "mixed-mxfp4-fp8",
+    "checkpoint_bytes": 566027990784,
+    "license": "mit",
+    "blockers": [
+      "The index declares MXFP4 packed experts but config declares FP8; the published Transformers code has no MXFP4 expert unpacker. A validated checkpoint converter or upstream training loader is required before training these released weights."
+    ],
+    "trust_remote_code": true,
+    "lora_regex": "model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:qkv_proj|o_proj)",
+    "source": "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-RL/tree/b61f21852680ee02a29e946e18cf8697f4844061",
+    "training_path_available": false,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "a9dc00e2a0c2c172efd198f42e81e41c95472021b57c65366c06587d44038b62",
+    "index_sha256": "e855ee9dd7ae748a6258b0725ca217d382a93561d17fc3dbf84d83a152deb54b",
+    "index_metadata": {
+      "save_format": "mxfp4",
+      "total_size": 566027990784,
+      "tp_size": 8
+    },
+    "attention_module_count": 140,
+    "representative_attention_modules": [
+      "model.layers.0.self_attn.qkv_proj",
+      "model.layers.0.self_attn.o_proj"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 10647286656,
+        "F32": 26496,
+        "F8_E4M3": 13378781184,
+        "U8": 1000190509056
+      },
+      "total": 1024216603392
+    },
+    "license_metadata": {
+      "license": "mit"
+    }
+  },
+  {
+    "key": "mimo-v2.6-pro-mopd",
+    "model_id": "XiaomiMiMo/MiMo-V2.6-Pro-MOPD",
+    "revision": "6a7f202e8dbd0e57b3fe1da03917d08d75abc4b8",
+    "architecture": "MiMoV2ForCausalLM",
+    "model_type": "mimo_v2",
+    "attention_prefix": "model\\.layers",
+    "attention_targets": [
+      "qkv_proj",
+      "o_proj"
+    ],
+    "checkpoint_format": "mixed-mxfp4-fp8",
+    "checkpoint_bytes": 566027990784,
+    "license": "mit",
+    "blockers": [
+      "The index declares MXFP4 packed experts but config declares FP8; the published Transformers code has no MXFP4 expert unpacker. A validated checkpoint converter or upstream training loader is required before training these released weights."
+    ],
+    "trust_remote_code": true,
+    "lora_regex": "model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:qkv_proj|o_proj)",
+    "source": "https://huggingface.co/XiaomiMiMo/MiMo-V2.6-Pro-MOPD/tree/6a7f202e8dbd0e57b3fe1da03917d08d75abc4b8",
+    "training_path_available": false,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "a9dc00e2a0c2c172efd198f42e81e41c95472021b57c65366c06587d44038b62",
+    "index_sha256": "e855ee9dd7ae748a6258b0725ca217d382a93561d17fc3dbf84d83a152deb54b",
+    "index_metadata": {
+      "save_format": "mxfp4",
+      "total_size": 566027990784,
+      "tp_size": 8
+    },
+    "attention_module_count": 140,
+    "representative_attention_modules": [
+      "model.layers.0.self_attn.qkv_proj",
+      "model.layers.0.self_attn.o_proj"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 10647286656,
+        "F32": 26496,
+        "F8_E4M3": 13378781184,
+        "U8": 1000190509056
+      },
+      "total": 1024216603392
+    },
+    "license_metadata": {
+      "license": "mit"
+    }
+  },
+  {
+    "key": "glm5.3",
+    "model_id": "zai-org/GLM-5.3",
+    "revision": "ba32f8c19c8738e2c57c71798c601d477a7bf844",
+    "architecture": "GlmMoeDsaForCausalLM",
+    "model_type": "glm_moe_dsa",
+    "attention_prefix": "model\\.layers",
+    "attention_targets": [
+      "q_a_proj",
+      "q_b_proj",
+      "kv_a_proj_with_mqa",
+      "kv_b_proj",
+      "o_proj"
+    ],
+    "checkpoint_format": "fp8",
+    "checkpoint_bytes": 755617140416,
+    "license": "glm-5.3",
+    "blockers": [],
+    "trust_remote_code": false,
+    "lora_regex": "model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj|o_proj)",
+    "source": "https://huggingface.co/zai-org/GLM-5.3/tree/ba32f8c19c8738e2c57c71798c601d477a7bf844",
+    "training_path_available": true,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "3ac72612095574542f7fff847ada8e59d9199dd8af44bdf625d7e02615572e69",
+    "index_sha256": "e0fe7f28c1f853d4824e4d796374e3dacf1fe470988773952c79b063768134bf",
+    "index_metadata": {
+      "total_size": 755617140416
+    },
+    "attention_module_count": 395,
+    "representative_attention_modules": [
+      "model.layers.0.self_attn.q_b_proj",
+      "model.layers.0.self_attn.q_a_proj",
+      "model.layers.0.self_attn.o_proj",
+      "model.layers.0.self_attn.kv_b_proj",
+      "model.layers.0.self_attn.kv_a_proj_with_mqa"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 2103729152,
+        "F8_E4M3": 751226191872,
+        "F32": 19456
+      },
+      "total": 753329940480
+    },
+    "license_metadata": {
+      "license": "other",
+      "license_name": "glm-5.3"
+    }
+  },
+  {
+    "key": "kimi-k3",
+    "model_id": "moonshotai/Kimi-K3",
+    "revision": "f831ab66814297da540d832a5235f8e904f29d06",
+    "architecture": "KimiK3ForConditionalGeneration",
+    "model_type": "kimi_k3",
+    "attention_prefix": "language_model\\.model\\.layers",
+    "attention_targets": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "f_a_proj",
+      "f_b_proj",
+      "g_proj",
+      "b_proj",
+      "q_a_proj",
+      "q_b_proj",
+      "kv_a_proj_with_mqa",
+      "kv_b_proj"
+    ],
+    "checkpoint_format": "mxfp4-pack-quantized",
+    "checkpoint_bytes": 1560860324864,
+    "license": "kimi-k3",
+    "blockers": [
+      "Released experts use compressed-tensors mxfp4-pack-quantized. This exact format needs a validated training/decompression loader and the custom KDA backward kernels; generic bitsandbytes QLoRA is not a compatible replacement."
+    ],
+    "trust_remote_code": true,
+    "lora_regex": "language_model\\.model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:q_proj|k_proj|v_proj|o_proj|f_a_proj|f_b_proj|g_proj|b_proj|q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj)",
+    "source": "https://huggingface.co/moonshotai/Kimi-K3/tree/f831ab66814297da540d832a5235f8e904f29d06",
+    "training_path_available": false,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "9710e121a58d03ac92c8d6da287a19541994319afbbe6d6202af001ffd379213",
+    "index_sha256": "a1c5210650ce71d2d3ae9ec5a101ac4afd3cf4b10091be589853437eb967febd",
+    "index_metadata": {
+      "total_size": 1560860324864
+    },
+    "attention_module_count": 696,
+    "representative_attention_modules": [
+      "language_model.model.layers.47.self_attn.q_a_proj",
+      "language_model.model.layers.12.self_attn.o_proj",
+      "language_model.model.layers.12.self_attn.g_proj",
+      "language_model.model.layers.47.self_attn.q_b_proj",
+      "language_model.model.layers.47.self_attn.kv_a_proj_with_mqa",
+      "language_model.model.layers.47.self_attn.kv_b_proj",
+      "language_model.model.layers.12.self_attn.q_proj",
+      "language_model.model.layers.12.self_attn.k_proj",
+      "language_model.model.layers.12.self_attn.v_proj",
+      "language_model.model.layers.12.self_attn.b_proj",
+      "language_model.model.layers.12.self_attn.f_a_proj",
+      "language_model.model.layers.12.self_attn.f_b_proj"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "F32": 11122432,
+        "BF16": 57179884544,
+        "U8": 2722740830208
+      },
+      "total": 2779931837184
+    },
+    "license_metadata": {
+      "license": "other",
+      "license_name": "kimi-k3"
+    }
+  },
+  {
+    "key": "glm5.3-flash",
+    "model_id": "zai-org/GLM-5.3-Flash",
+    "revision": "46a050bec13002ad29ee795c16e61cf4fa3c4a9c",
+    "architecture": "Glm5NextForConditionalGeneration",
+    "model_type": "glm5_next",
+    "attention_prefix": "model\\.language_model\\.layers",
+    "attention_targets": [
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "f_a_proj",
+      "f_b_proj",
+      "g_a_proj",
+      "g_b_proj",
+      "b_proj",
+      "q_a_proj",
+      "q_b_proj",
+      "kv_a_proj_with_mqa",
+      "kv_b_proj"
+    ],
+    "checkpoint_format": "fp8",
+    "checkpoint_bytes": 328326771576,
+    "license": "mit",
+    "blockers": [],
+    "trust_remote_code": false,
+    "lora_regex": "model\\.language_model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:q_proj|k_proj|v_proj|o_proj|f_a_proj|f_b_proj|g_a_proj|g_b_proj|b_proj|q_a_proj|q_b_proj|kv_a_proj_with_mqa|kv_b_proj)",
+    "source": "https://huggingface.co/zai-org/GLM-5.3-Flash/tree/46a050bec13002ad29ee795c16e61cf4fa3c4a9c",
+    "training_path_available": true,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "bb8f01c42cb92a52ca72e65afb4d5bd8d11aef083cd210e8de25dfb904f23e9f",
+    "index_sha256": "3c3f40366a53c3fd7974b4eab7881a365a98c2a4329150befebab99fe7c18b05",
+    "index_metadata": {
+      "total_size": 328326771576
+    },
+    "attention_module_count": 366,
+    "representative_attention_modules": [
+      "model.language_model.layers.0.self_attn.v_proj",
+      "model.language_model.layers.0.self_attn.q_proj",
+      "model.language_model.layers.45.self_attn.o_proj",
+      "model.language_model.layers.0.self_attn.k_proj",
+      "model.language_model.layers.0.self_attn.g_b_proj",
+      "model.language_model.layers.0.self_attn.g_a_proj",
+      "model.language_model.layers.0.self_attn.f_b_proj",
+      "model.language_model.layers.0.self_attn.f_a_proj",
+      "model.language_model.layers.0.self_attn.b_proj",
+      "model.language_model.layers.45.self_attn.q_b_proj",
+      "model.language_model.layers.45.self_attn.q_a_proj",
+      "model.language_model.layers.45.self_attn.kv_b_proj",
+      "model.language_model.layers.45.self_attn.kv_a_proj_with_mqa"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 6926096640,
+        "F8_E4M3": 314396639232,
+        "F32": 295518
+      },
+      "total": 321323031390
+    },
+    "license_metadata": {
+      "license": "mit"
+    }
+  },
+  {
+    "key": "deepseek-v4.1-flash",
+    "model_id": "deepseek-ai/DeepSeek-V4.1-Flash",
+    "revision": "5254448103b6254fc646dacbca1cbbf20e9216c1",
+    "architecture": "DeepseekV41ForCausalLM",
+    "model_type": "deepseek_v41",
+    "attention_prefix": "layers",
+    "attention_targets": [
+      "wq_a",
+      "wq_b",
+      "wkv",
+      "wo_a",
+      "wo_b"
+    ],
+    "checkpoint_format": "fp8-custom-layout",
+    "checkpoint_bytes": 510286023000,
+    "license": "mit",
+    "blockers": [
+      "Released tensors use the inference layout (layers.*.attn.*, .scale tensors). No deepseek_v41 implementation exists in the audited Transformers 5.20 release. A differentiable CED/CSA2 loader and validated weight mapping are required."
+    ],
+    "trust_remote_code": false,
+    "lora_regex": "layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:wq_a|wq_b|wkv|wo_a|wo_b)",
+    "source": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash/tree/5254448103b6254fc646dacbca1cbbf20e9216c1",
+    "training_path_available": false,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879",
+    "index_sha256": "74b0686a3d2891980d5e303251b075a3bccae2c2ff650747db2620a649b98fa8",
+    "index_metadata": {
+      "total_size": 510286023000
+    },
+    "attention_module_count": 208,
+    "representative_attention_modules": [
+      "layers.6.attn.wo_b",
+      "layers.6.attn.wkv",
+      "layers.6.attn.wo_a",
+      "layers.6.attn.wq_b",
+      "layers.6.attn.wq_a",
+      "layers.14.attn.indexer.wq_b"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 1976441856,
+        "F32": 42307282,
+        "F8_E4M3": 204015223296,
+        "I8": 557171343360
+      },
+      "total": 763205315794
+    },
+    "license_metadata": {
+      "license": "mit"
+    }
+  },
+  {
+    "key": "qwen3.8-2.4t-a95b",
+    "model_id": "Qwen/Qwen3.8-2.4T-A95B",
+    "revision": "207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+    "architecture": "Qwen3_5MoeForCausalLM",
+    "model_type": "qwen3_5_moe_text",
+    "attention_prefix": "model\\.layers",
+    "attention_targets": [
+      "in_proj_qkv",
+      "in_proj_z",
+      "in_proj_a",
+      "in_proj_b",
+      "out_proj",
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj"
+    ],
+    "checkpoint_format": "bfloat16",
+    "checkpoint_bytes": 4892365451008,
+    "license": "qwen3.8-max",
+    "blockers": [],
+    "trust_remote_code": false,
+    "lora_regex": "model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:in_proj_qkv|in_proj_z|in_proj_a|in_proj_b|out_proj|q_proj|k_proj|v_proj|o_proj)",
+    "source": "https://huggingface.co/Qwen/Qwen3.8-2.4T-A95B/tree/207bd685a7e3696cfaff12ded7c6a7ea0f88c996",
+    "training_path_available": true,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "4e3819548967e319ab435d044a3a331dbe3b078590ce822e9d74b79430533987",
+    "index_sha256": "e36c40d4e99b2714fff821218a0433bda2dec46afdb1ebee8ce96ced997928ee",
+    "index_metadata": {
+      "total_size": 4892365451008.0
+    },
+    "attention_module_count": 437,
+    "representative_attention_modules": [
+      "model.layers.11.self_attn.v_proj",
+      "model.layers.11.self_attn.q_proj",
+      "model.layers.11.self_attn.o_proj",
+      "model.layers.11.self_attn.k_proj",
+      "model.layers.0.linear_attn.out_proj",
+      "model.layers.0.linear_attn.in_proj_z",
+      "model.layers.0.linear_attn.in_proj_qkv",
+      "model.layers.0.linear_attn.in_proj_b",
+      "model.layers.0.linear_attn.in_proj_a"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 2446182725504
+      },
+      "total": 2446182725504
+    },
+    "license_metadata": {
+      "license": "other",
+      "license_name": "qwen3.8-max",
+      "license_link": "LICENSE"
+    }
+  },
+  {
+    "key": "qwen3.8-flash-next",
+    "model_id": "Qwen/Qwen3.8-Flash-Next",
+    "revision": "de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "architecture": "Qwen4ExpForConditionalGeneration",
+    "model_type": "qwen4_exp",
+    "attention_prefix": "model\\.language_model\\.layers",
+    "attention_targets": [
+      "in_proj_qkv",
+      "in_proj_z",
+      "in_proj_a",
+      "in_proj_b",
+      "out_proj",
+      "q_proj",
+      "k_proj",
+      "v_proj",
+      "o_proj",
+      "index_qk_proj"
+    ],
+    "checkpoint_format": "bfloat16",
+    "checkpoint_bytes": 359999963128,
+    "license": "qwen-community-1.0",
+    "blockers": [],
+    "trust_remote_code": false,
+    "lora_regex": "model\\.language_model\\.layers\\.\\d+\\.(?:self_attn|linear_attn|attn)\\.(?:indexer\\.)?(?:in_proj_qkv|in_proj_z|in_proj_a|in_proj_b|out_proj|q_proj|k_proj|v_proj|o_proj|index_qk_proj)",
+    "source": "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/tree/de4b8e4d43b917e7706784d8bb445c9af86a3540",
+    "training_path_available": true,
+    "full_size_training_verified": false,
+    "multimodal_training_verified": false,
+    "optimizer_resume_supported": false,
+    "training_dtype": "bfloat16",
+    "memory_note": "Checkpoint bytes describe stored tensors, not training memory. Dequantized base weights, adapters, activations and sharding buffers must fit; active parameter counts do not determine capacity.",
+    "audit_date": "2026-10-15",
+    "config_sha256": "889658f2508e8c61d409b02e70e0d78d8d4452ec65aaafbe129805d213d2e74b",
+    "index_sha256": "99e815241ef03325536b0aaa4441deea45174c17fae31e10f0bb456410c590de",
+    "index_metadata": {
+      "total_size": 359999963128.0
+    },
+    "attention_module_count": 240,
+    "representative_attention_modules": [
+      "model.language_model.layers.0.linear_attn.out_proj",
+      "model.language_model.layers.0.linear_attn.in_proj_z",
+      "model.language_model.layers.0.linear_attn.in_proj_qkv",
+      "model.language_model.layers.0.linear_attn.in_proj_b",
+      "model.language_model.layers.0.linear_attn.in_proj_a",
+      "model.language_model.layers.11.self_attn.v_proj",
+      "model.language_model.layers.11.self_attn.q_proj",
+      "model.language_model.layers.11.self_attn.o_proj",
+      "model.language_model.layers.11.self_attn.k_proj",
+      "model.language_model.layers.11.self_attn.indexer.index_qk_proj"
+    ],
+    "published_safetensors": {
+      "parameters": {
+        "BF16": 179999981424,
+        "I64": 35
+      },
+      "total": 179999981459
+    },
+    "license_metadata": {
+      "license": "other",
+      "license_name": "qwen-community-1.0",
+      "license_link": "LICENSE"
+    }
+  }
+]

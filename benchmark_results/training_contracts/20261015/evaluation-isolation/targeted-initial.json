@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "job_id": "3f83598cdefb",
+  "exit_code": 0,
+  "description": "Initial isolation checks",
+  "log_sha256": "8b0302152bad4865faa46c9f45558b42085a95b4a174b33e0e3b50a49cc5fec0",
+  "output": "$ env OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python -m pytest -q -n0 -o addopts= --timeout=90 tests/unit/test_native_evaluation_isolation.py tests/unit/test_native_refund_study.py tests/unit/test_generation_mode.py --tb=short\n......................                                                   [100%]\n22 passed in 8.24s\n"
+}

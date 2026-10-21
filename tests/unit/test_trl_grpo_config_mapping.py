@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import dataclasses
+import os
+import subprocess
+import sys
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
@@ -88,3 +92,35 @@ def test_train_without_checkpoint_starts_fresh(tmp_path):
     wrapper.trainer = MagicMock()
     wrapper.train()
     wrapper.trainer.train.assert_called_once_with(resume_from_checkpoint=None)
+
+
+def test_config_preview_survives_unavailable_optional_trainer(tmp_path):
+    script = """
+import builtins
+real_import = builtins.__import__
+def without_trainer(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == "trl" and "GRPOTrainer" in fromlist:
+        raise RuntimeError("optional trainer backend unavailable")
+    return real_import(name, globals, locals, fromlist, level)
+builtins.__import__ = without_trainer
+from stateset_agents.training import trl_grpo_trainer as module
+from stateset_agents.training.trl_grpo_config import TRLGRPOConfig
+assert module.GRPOConfig is not None
+assert module.TRLGRPOTrainer is None and module.TRL_GRPO_AVAILABLE is False
+wrapper = object.__new__(module.TRLGRPOTrainerWrapper)
+wrapper.config = TRLGRPOConfig(output_dir="preview", bf16=False, fp16=False, report_to="none")
+assert wrapper._create_grpo_config().output_dir == "preview"
+try:
+    module._require_trl_grpo()
+except ImportError:
+    pass
+else:
+    raise AssertionError("training must still reject an unavailable backend")
+"""
+    subprocess.run(
+        [sys.executable, "-c", script],
+        cwd=tmp_path,
+        env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])},
+        check=True,
+        timeout=30,
+    )

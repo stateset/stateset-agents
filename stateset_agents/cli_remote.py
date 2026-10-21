@@ -636,6 +636,11 @@ def train_remote(
         "omitted on RunPod, the model catalog selects a count.",
     ),
     timeout: int = typer.Option(3600, "--timeout", help="Job timeout in seconds."),
+    seed: int | None = typer.Option(
+        None,
+        "--seed",
+        help="Explicit SFT initialization/training seed (0–4294967295); providers must declare support. Omit to keep provider defaults.",
+    ),
     package_version: str | None = typer.Option(
         None,
         "--package-version",
@@ -835,6 +840,7 @@ def train_remote(
             cloud_type=cloud_type,
             network_volume_id=network_volume_id,
             max_cost_usd=max_cost_usd,
+            seed=seed,
         )
     except ValueError as exc:
         _echo(f"Invalid job: {exc}", err=True)
@@ -1358,6 +1364,13 @@ def inference_deploy(
         None, "--zone", help="CoreWeave zone used when creating a gateway."
     ),
     runtime_version: str | None = typer.Option(None, "--runtime-version"),
+    production: bool = typer.Option(
+        False,
+        "--production",
+        help="Require artifact-bound quality and lineage evidence.",
+    ),
+    promotion_receipt: Path | None = typer.Option(None, "--promotion-receipt"),
+    artifact_directory: Path | None = typer.Option(None, "--artifact-directory"),
 ) -> None:
     """Deploy complete model weights to managed OpenAI-compatible inference."""
     import json
@@ -1368,22 +1381,25 @@ def inference_deploy(
     if max_replicas < min_replicas:
         _echo("--max-replicas must be >= --min-replicas", err=True)
         raise typer.Exit(code=2)
-    spec = DeploymentSpec(
-        name=name,
-        model_name=model_name,
-        weights_uri=weights_uri,
-        gpu=gpu,
-        gpu_count=gpu_count,
-        min_replicas=min_replicas,
-        max_replicas=max_replicas,
-        runtime=runtime,
-        runtime_version=runtime_version,
-        gateway_id=gateway_id,
-        zone=zone,
-    )
     try:
+        spec = DeploymentSpec(
+            name=name,
+            model_name=model_name,
+            weights_uri=weights_uri,
+            gpu=gpu,
+            gpu_count=gpu_count,
+            min_replicas=min_replicas,
+            max_replicas=max_replicas,
+            runtime=runtime,
+            runtime_version=runtime_version,
+            gateway_id=gateway_id,
+            zone=zone,
+            production=production,
+            promotion_receipt=str(promotion_receipt) if promotion_receipt else None,
+            artifact_directory=str(artifact_directory) if artifact_directory else None,
+        )
         handle = get_deployment_provider(provider).deploy(spec)
-    except (StateSetError, ValueError) as exc:
+    except (StateSetError, ValueError, OSError) as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     _echo(json.dumps(handle.__dict__, indent=2, sort_keys=True))

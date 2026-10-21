@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "publication_eligible": false,
+  "scope": "Development mechanics checks; synthetic cases; not representative domain-quality evidence",
+  "cpu_source_identity": "Mutable development checkout; no immutable release identity claimed",
+  "cuda_wheel_sha256": "6e59c08ad4f0611417ee3cd153c95120ec8d62f6a1e28962ece91d3d666c76d5",
+  "pretrained_diagnostic_wheel_sha256": "81e8096cac29cd4d62248c21114118aa58b181fe1e0681abc91eb8132525128a",
+  "cuda_versions": "2.8.0+cu129 5.19.0 0.21.2",
+  "cpu_versions": {
+    "torch": "2.6.0",
+    "transformers": "4.44.2",
+    "peft": "0.17.1",
+    "numpy": "1.26.4"
+  },
+  "known_failures": [
+    {
+      "attempt": "A40 REST v1",
+      "status": "allocation HTTP 500; no allocated pod observed"
+    },
+    {
+      "attempt": "A4000 REST v1",
+      "status": "allocation HTTP 500; no allocated pod observed"
+    },
+    {
+      "attempt": "A5000 REST v2",
+      "status": "no capacity; no allocated pod"
+    },
+    {
+      "attempt": "pretrained refund initial",
+      "status": "configuration rejected top_k=0; corrected validation and reran"
+    },
+    {
+      "attempt": "pretrained refund rerun",
+      "status": "completed; quality gate failed; zero of eight held-out cases succeeded before or after; synthetic one-seed diagnostic"
+    }
+  ],
+  "artifacts_omitted": "Model weights and optimizer tensors are retained in local /tmp run directories, not checked into the repository"
+}

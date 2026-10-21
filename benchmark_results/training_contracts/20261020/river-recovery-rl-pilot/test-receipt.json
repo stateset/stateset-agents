@@ -1,0 +1,23 @@
+{
+  "command": ".venv/bin/python outputs/river-recovery-rl-pilot-20261020/test_study.py -v",
+  "duration_seconds": 8.29,
+  "errors": 0,
+  "failures": 0,
+  "passed": true,
+  "plan_hash": "c9a700053dd385fe1f23785c767ba3caa4e434e3ef5374ee98dfdf81a3158b2e",
+  "provider_transport": "scripted; grpc secure/insecure channels blocked by tests",
+  "skipped": 0,
+  "source_sha256": {
+    ".venv/lib/python3.12/site-packages/river_client/client.py": "b504b743800e123434d58df0b1a01a0259b5d847f63ef3b60aeec69b2d463f78",
+    ".venv/lib/python3.12/site-packages/river_client/rl/advantages.py": "d587510dba6f35fccaf0d661301e402c582ca90b58d5dbe6990baac6cdd6c7dc",
+    ".venv/lib/python3.12/site-packages/river_client/rl/config.py": "8ce9f1fdece1c054f8e0c53465a390969cce6a53c205382520c3f3d62b94892a",
+    ".venv/lib/python3.12/site-packages/river_client/rl/engine.py": "03f95175ba23698affd93ad2c074b9eef69b81561483930248ac3ec6c9413409",
+    ".venv/lib/python3.12/site-packages/river_client/rl/trainer.py": "f30028e7dbd475530ae669fcb9e3b87bf89f070a25146c1e9da31b9bb0bed568",
+    ".venv/lib/python3.12/site-packages/river_client/rl/trajectory.py": "387e1c395e5d736022c86a3ece31f05cf2c552ec6bfed01a8c4d7e90acdde065",
+    ".venv/lib/python3.12/site-packages/river_client/types.py": "8707d01f0e64a80063449e4879d8b685928cf18fe68d1853675f398b85a616be",
+    "outputs/river-recovery-rl-pilot-20261020/experiment.py": "de8786143a6ece760d869aafea9a79a0d10cb59d7f3a4510c9afc12ea15395c5",
+    "outputs/river-recovery-rl-pilot-20261020/test_study.py": "b545d0ea7717ce962321f0bc6e5937c7d2f751b3c5b1eeccfaa75f978d140524",
+    "tests/integration/test_river_native_sdk.py": "ff196a7902ddb63ba1e383007a34885b6448b3b99bd9e8f4f6165ccff7680727"
+  },
+  "tests": 14
+}

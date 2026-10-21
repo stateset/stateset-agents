@@ -128,7 +128,11 @@ def test_failure_closes_owned_client_and_leaves_terminal_status(
     with pytest.raises(expected[stage]):
         executor.submit(spec)
     assert executor.status(JobHandle("river", "river-1")) is JobStatus.FAILED
-    assert client.calls[-1] == {"call": "client_close"}
+    if stage == "dataset":
+        # Captured input validation fails before constructing an owned client.
+        assert not client.calls
+    else:
+        assert client.calls[-1] == {"call": "client_close"}
     assert executor._client is None
     if stage == "training":
         assert client.calls[-2] == {"call": "session_close"}

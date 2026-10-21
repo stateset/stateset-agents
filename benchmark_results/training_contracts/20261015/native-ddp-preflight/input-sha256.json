@@ -1,0 +1,22 @@
+{
+  "stateset_agents/training/learner_preflight.py": "2be982feb84fb478ecf8e9d2d2fdbe16530ca81624aabe3a5824838f68ad6917",
+  "stateset_agents/training/distributed.py": "21b52314ac88281329b5f0afdb55f4dc0b00257f441ddcdae26840b3bcb3be6c",
+  "stateset_agents/training/distributed_advantages.py": "66ba1de61f7b3605c0f2efb42ce0910ecb811309b0a6a851d0015a4daa38e3bf",
+  "stateset_agents/training/loss_computation.py": "6375a109ebad59f66fcef4bfce7d6ad7e504cedcb1a04fd9b165a219367d4d65",
+  "stateset_agents/training/grpo_accumulation.py": "a829c4953b466983435e7a40031ea33ef0f002a404414e507ddf856f69e2fbf0",
+  "stateset_agents/training/metric_reduction.py": "47d5808a05673759247f92f1e6fccc1612aaa39701bcfa54352ea872977d442f",
+  "stateset_agents/training/multi_turn_trainer.py": "b68500e91d8b43cbf835a298a069617de7a13ea87e2158839af078b23e5d2e27",
+  "stateset_agents/training/single_turn_trainer.py": "8281a48e6f7da39ce397f49e162abb45674c07c147a73dd9dfe495665d7a5c8a",
+  "tests/unit/test_learner_preflight.py": "296cda4e8dea4ad2b56288fff676a39b7cf4d550b7e9459c6bca176f294c6f86",
+  "tests/integration/test_learner_preflight.py": "47d1ed2d541ec924ae3eb8ff6abb3c131409ceb709586158992286313ce83bd6",
+  "tests/unit/test_distributed_advantages.py": "91888e6d79846e8a6095c8b966664c28ca0df99a939b6afc5e6776ab54763d67",
+  "tests/integration/test_distributed_advantages.py": "748077bbf038b2b7c0c268c3dfb54b5a9e2bd6562365beb5eb71c23d1e53d32f",
+  "tests/unit/test_token_group_aggregation.py": "2dca34e9d23eadfee6b56ed8c2aca23c1bbe36a758097543f83cbe466d968b8b",
+  "tests/integration/test_distributed_grpo_weighting.py": "6a98a32eeca75169d6ede7a934ff2355888e352df019e397b5b64150d4091740",
+  "tests/unit/test_mypy_allowlist_ratchet.py": "99cfbe1978d93de481792ae4a62149d81e2eab550b85b36ffba3abd6832d545c",
+  ".github/workflows/training-contracts.yml": "07ed947c5ae5d93da5ca9ef21edf6db6c38c580b750bfdae938d408948671cc8",
+  "pyproject.toml": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9",
+  "docs/OBJECTIVES.md": "89ce13f72f924759b177dbf7c63d6fc5ca725ed4d51bb956834d620497d6b346",
+  "docs/ROADMAP.md": "d99dec4ae9a634c48d6604e5f41d4e6436b9cbe2d23ff2900a85bb5b724b7994",
+  "CHANGELOG.md": "bbf497cc63e20eb5e051ea62f601686e157c83fb9b4955ffedfde2de85d81dd1"
+}

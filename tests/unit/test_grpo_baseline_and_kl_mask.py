@@ -90,7 +90,7 @@ def _config(**kwargs):
         "fp16": False,
     }
     base.update(kwargs)
-    return TrainingConfig(**base)
+    return TrainingConfig(allow_sequence_fallback=True, **base)
 
 
 TEXT = "User: hi\nAssistant: ok\n"

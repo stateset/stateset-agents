@@ -79,17 +79,21 @@ def trains_for_real(monkeypatch):
     that whatever the job produces actually reaches the caller.
     """
     from stateset_agents.training import sft
+    from tests.sft_fixtures import write_sft_export
+
+    exported = {}
 
     def fake_run_sft(*, output_dir, base_model, **kwargs):
-        output_dir.mkdir(parents=True, exist_ok=True)
-        (output_dir / "adapter_config.json").write_text(
-            json.dumps({"base_model_name_or_path": base_model, "r": kwargs["lora_r"]})
-        )
-        (output_dir / "adapter_model.safetensors").write_bytes(b"WEIGHTS")
+        write_sft_export(output_dir, base_model=base_model, **kwargs)
+        config = json.loads((output_dir / "adapter_config.json").read_text())
+        config["base_model_name_or_path"] = base_model
+        (output_dir / "adapter_config.json").write_text(json.dumps(config))
+        exported["weights"] = (output_dir / "adapter_model.safetensors").read_bytes()
         return output_dir
 
     monkeypatch.setattr(sft, "gpu_available", lambda: True)
     monkeypatch.setattr(sft, "run_sft", fake_run_sft)
+    return exported
 
 
 class TestMissingSdk:
@@ -265,7 +269,7 @@ class TestSuccessfulJob:
         assert (spec.output_dir / "adapter_config.json").exists()
         assert (
             spec.output_dir / "adapter_model.safetensors"
-        ).read_bytes() == b"WEIGHTS"
+        ).read_bytes() == trains_for_real["weights"]
         assert not (spec.output_dir / "curated.jsonl").exists()
 
     def test_adapter_contents_survive_the_round_trip(
@@ -396,7 +400,12 @@ class TestFailingJob:
         result = executor.wait(executor.submit(spec))
 
         assert result.status is JobStatus.FAILED
-        assert any("no artifacts" in line.lower() for line in result.logs)
+        assert result.output_dir is None
+        assert any(
+            "Invalid or missing SFT export metadata: adapter_config.json" in line
+            for line in result.logs
+        )
+        assert not fake_modal.FakeVolume._instances
 
     def test_provider_errors_are_wrapped_with_the_cause(
         self, executor, spec, monkeypatch

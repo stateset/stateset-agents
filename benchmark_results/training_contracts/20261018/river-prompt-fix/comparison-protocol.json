@@ -1,0 +1,13 @@
+{
+  "previous_seed": 20261018,
+  "fresh_seed": 20261019,
+  "changed_package_files": [
+    "core/environments/refund_policy_environment.py"
+  ],
+  "overlapping_case_ids": 0,
+  "overlapping_case_fact_fingerprints": 0,
+  "previous_case_count": 48,
+  "fresh_case_count": 48,
+  "historical_source_snapshot": "outputs/river-integration-review-20261018-live/source-before-prompt-fix",
+  "matched_comparison": "Within each run, baseline and trained checkpoints use identical validation cases. Different seeds preclude a controlled old/new prompt effect estimate."
+}

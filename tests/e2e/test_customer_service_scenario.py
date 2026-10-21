@@ -188,6 +188,7 @@ class TestCustomerServiceE2E:
                 reward_fn=reward_fn,
                 num_episodes=2,
                 profile="balanced",
+                config_overrides={"allow_sequence_fallback": True},
             )
 
         # Step 5: Test the trained agent with a real conversation

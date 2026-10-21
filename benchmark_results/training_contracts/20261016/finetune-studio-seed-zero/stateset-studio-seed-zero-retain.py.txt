@@ -1,0 +1,85 @@
+"""Retain final GUI correction separately from the broader seed baseline."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents')
+prefix='stateset-studio-seed-zero'
+receipt=json.loads(Path('/tmp',prefix+'-pipeline-receipt.json').read_text())
+assert receipt['passed'] and len(receipt['stages'])==6
+assert all(stage['exit_code']==0 for stage in receipt['stages'])
+source=Path(receipt['finished'])
+verified=json.loads((source/'verification.json').read_text())
+assert verified['passed'] and verified['source_unchanged'] and verified['tests_unchanged']
+baseline=root/'benchmark_results/training_contracts/20261016/finetune-studio-seeds'
+old=json.loads((baseline/'verification.json').read_text())
+for base,key in [(root/'stateset_agents','source_sha256'),(root,'test_source_sha256')]:
+    assert all(hashlib.sha256((base/name).read_bytes()).hexdigest()==digest for name,digest in verified[key].items())
+changes={key:sorted(name for name in old[key].keys() | verified[key].keys() if old[key].get(name)!=verified[key].get(name)) for key in ['source_sha256','test_source_sha256']}
+assert changes=={'source_sha256':['tui.py'],'test_source_sha256':['tests/unit/test_finetune_seeds.py']}
+assert 'Success: no issues found in 429 source files' in (source/'types.log').read_text()
+
+def count(filename):
+    tree=ET.parse(source/filename).getroot()
+    suites=list(tree.iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    assert len([c for c in tree.iter('testcase') if c.get('name','').startswith('test_configure_displays_valid_zero_in_rows_and_selected_help')])==12
+    return sum(int(s.get('tests',0)) for s in suites)
+
+job=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json','d808523574bf'],text=True))
+assert job['state']=='succeeded' and job['exit_code']==0
+public_job={key:job.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown']}
+draft=Path('/tmp',prefix+'-draft.json')
+live=Path('/tmp',prefix+'-live.txt')
+assert json.loads(draft.read_text())['draft_preserved'] and 'Training seed' in live.read_text()
+summary=dict(passed=True,scope='Final rendering correction with current source/wheel TUI and agent regressions',source_tests=count('regressions.xml'),installed_wheel_tests=count('wheel.xml'),seed_cases=63,zero_rendering_cases=12,typed_modules=429,queue_job=job['id'],wheel_sha256=verified['wheel_sha256'],source_and_test_python_unchanged=True,wheel_case_identities_match_source=True,broader_seed_baseline='../finetune-studio-seeds/summary.json',baseline_source_tests=1839,baseline_wheel_tests=1728,changes_from_baseline=changes,live_herdr_refreshed=True,draft_preserved=True,paid_run_launched=False,gpu_verified=False,quality_gain_verified=False,count_note='Source and wheel cases overlap; broader baseline is for the preceding version before the isolated rendering correction.')
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-seed-zero'
+out.mkdir(exist_ok=False)
+for name,value in [('summary.json',summary),('queue-receipt.json',public_job),('pipeline-receipt.json',receipt)]:
+    (out/name).write_text(json.dumps(value,indent=2)+'\n')
+for pattern in ['*.log','*.xml']:
+    for path in source.glob(pattern):
+        shutil.copy2(path,out/path.name)
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['format','gates','prepare','wheel','finish','pipeline','retain']:
+    path=Path('/tmp',prefix+'-'+suffix+'.py')
+    shutil.copy2(path,out/(path.name+'.txt'))
+shutil.copy2(live,out/'herdr-live.txt')
+shutil.copy2(draft,out/'herdr-draft.json')
+(out/'README.md').write_text(f'''# Final training-seed display acceptance
+
+The broader [seed-feature baseline](../finetune-studio-seeds/README.md) passed
+1,839 source tests and 1,728 installed-wheel tests. Final inspection then found
+numeric zero rendered as not set in Configure. Only `tui.py` and the seed test
+module changed from that baseline; the exact hash delta is retained.
+
+The formatter now distinguishes absent values from numeric zero. Seed zero,
+checkpoint interval zero and automatic GPU count zero are visible in the field
+row and selected help, in narrow and two-column layouts. Twelve cases cover
+72x22, 74x44, 110x32 and 140x40 without mutating settings or creating a workspace.
+
+The final code passed {summary['source_tests']} targeted source tests and
+{summary['installed_wheel_tests']} matching installed-wheel tests, including all
+63 seed cases. Counts overlap. Buildr job `{job['id']}` also passed typing for
+429 modules, repository lint/hygiene, API/release governance, serial formatting,
+workflow lint, actual wheel/source identities and installed CLI acceptance.
+The selected source/wheel case identities match without skips or failures.
+Source/test Python and packaged assets stayed frozen through verification.
+
+Coverage retains actual tiny CPU SFT seed comparisons, native initialization
+controls, provider seed boundary tests, exact recovery, separate training/eval
+seed binding, recorded judge replay and real terminal edit/review/save/exit.
+Provider/judge boundaries are injected; no live provider, GPU or quality gain
+is certified. Earlier development corrections and the missing curation-script
+harness repair remain in the broader baseline, with their actual queue handles.
+
+The idle Herdr split was refreshed to the final code, its private draft bytes
+and permissions preserved, and the new Training seed setting is visible. No
+synthetic live run or paid training was launched. Automatic checkpoint selection
+and a reviewed independent quality study remain separate work.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

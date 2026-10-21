@@ -1,0 +1,34 @@
+{"arm": "base", "split": "validation", "passed": 55, "total": 64}
+[river] River account advertises model access: Qwen/Qwen3.5-9B
+Traceback (most recent call last):
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 316, in <module>
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/study_runner.py", line 211, in worker
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 369, in submit
+    return self._submit_with_cleanup(spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 387, in _submit_with_cleanup
+    return self._submit_job(handle, job, spec)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 445, in _submit_job
+    tokenizer = self._get_tokenizer(spec.base_model)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/outputs/river-six-seed-20261019/runtime/stateset_agents/remote/river.py", line 296, in _get_tokenizer
+    tokenizer = AutoTokenizer.from_pretrained(base_model)  # nosec: B615
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/models/auto/tokenization_auto.py", line 815, in from_pretrained
+    return tokenizer_class.from_pretrained(pretrained_model_name_or_path, *inputs, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 1747, in from_pretrained
+    return cls._from_pretrained(
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 1940, in _from_pretrained
+    init_kwargs = cls.convert_to_native_format(**init_kwargs)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/transformers/tokenization_utils_tokenizers.py", line 122, in convert_to_native_format
+    tokenizer_json = json.load(tokenizer_handle)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/dom/.local/share/uv/python/cpython-3.12.12-linux-x86_64-gnu/lib/python3.12/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+                 ^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+KeyboardInterrupt

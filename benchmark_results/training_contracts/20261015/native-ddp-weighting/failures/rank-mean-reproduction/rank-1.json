@@ -1,0 +1,10 @@
+[
+  {
+    "objective": "grpo",
+    "entropy": 0.0,
+    "steps": 1,
+    "microbatches": 1,
+    "max_parameter_error": 0.004463672637939453,
+    "optimizer_steps": 1
+  }
+]

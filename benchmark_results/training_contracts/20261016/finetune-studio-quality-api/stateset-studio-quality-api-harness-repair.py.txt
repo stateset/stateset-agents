@@ -1,0 +1,26 @@
+from pathlib import Path
+import hashlib,json,shutil
+root=Path('/home/dom/stateset-agents')
+out=Path('/tmp/stateset-studio-quality-api-20261016-retry3')
+v=json.loads((out/'verification.json').read_text())
+assert v['passed'] and v['source_unchanged'] and v['tests_unchanged']
+assert {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}==v['source_sha256']
+assert {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}==v['test_source_sha256']
+prior=out/'wheel-attempts'/'missing-root-fixtures'
+prior.mkdir(parents=True,exist_ok=False)
+shutil.copy2('/tmp/stateset-quality-wheel-earlier-receipts.json',prior/'queue-receipts.json')
+for index in range(1,4):
+    for suffix in ['xml','log']:
+        shutil.copy2(out/f'wheel-shard-{index}.{suffix}',prior/f'wheel-shard-{index}.{suffix}')
+shutil.copy2('/tmp/stateset-studio-quality-api-prepare.py',out/'executed-prepare.py')
+config=json.loads((out/'wheel-test-configuration.json').read_text())
+config['shared_fixture_sha256']={}
+for name in ['tests/conftest.py','tests/_module_stubs.py']:
+    digest=hashlib.sha256((root/name).read_bytes()).hexdigest()
+    assert digest==v['test_source_sha256'][name]
+    shutil.copy2(root/name,out/'checks'/name)
+    config['shared_fixture_sha256'][name]=digest
+config['reason']='Match frozen source pytest configuration, shared API development environment, module restoration and cost-ledger isolation.'
+(out/'wheel-test-configuration.json').write_text(json.dumps(config,indent=2)+'\n')
+(out/'wheel-harness-repair.json').write_text(json.dumps({'package_source_unchanged':True,'test_sources_unchanged':True,'prior_failure':'Isolated API test omitted shared root fixtures and attempted loading its placeholder model; offline mode rejected it.','action':'Copy unchanged frozen shared test fixtures; rerun all three wheel groups offline.','prior_evidence':'wheel-attempts/missing-root-fixtures','fixture_sha256':config['shared_fixture_sha256']},indent=2)+'\n')
+print('Frozen shared fixtures copied; earlier wheel results preserved.')

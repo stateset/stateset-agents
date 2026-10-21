@@ -1,0 +1,17 @@
+[
+  {
+    "job": "b65d19480bb2",
+    "kind": "fixture_failure",
+    "explanation": "Eight checks passed, including the real two-rank contract. Two unit cases supplied an incompatible reference architecture (the policy alone had an extra nonpersistent buffer); corrected the fixture to give both architectures that buffer."
+  },
+  {
+    "job": "b79dfe365d46",
+    "kind": "lint_failure",
+    "explanation": "The first gate run rejected three loop closures without explicit bindings. Bound the original functions explicitly before rerunning."
+  },
+  {
+    "job": "3e88eccbbb81",
+    "kind": "typing_failure",
+    "explanation": "The 406-module gate reported four new Any/narrowing errors. Added precise result casts and a payload dictionary annotation, without weakening typing rules."
+  }
+]

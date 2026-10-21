@@ -1,0 +1,55 @@
+{
+  "accepted": true,
+  "cost_usd": null,
+  "historical_source_files": 142,
+  "passed": true,
+  "plan_hash": "a1012cc429d0842cf0a186b30eed1b6a20c32fa758cb4c27ba378d0a6d58a8a3",
+  "previous_unattempted_test_cases": 308,
+  "prior_artifacts_unchanged": 637,
+  "provider_calls_during_review": 0,
+  "reconstructed_fresh_cases": 244,
+  "replayed_outcomes": 488,
+  "summaries": {
+    "delegated-test": {
+      "executed_tool_calls": 510.0,
+      "generated_tokens": 5270,
+      "passed": 170,
+      "tool_calls": 340,
+      "total": 170,
+      "trajectory_seconds": 1022.5012192750582,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    },
+    "delegated-validation": {
+      "executed_tool_calls": 222.0,
+      "generated_tokens": 2294,
+      "passed": 74,
+      "tool_calls": 148,
+      "total": 74,
+      "trajectory_seconds": 490.35033933003433,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    },
+    "raw-test": {
+      "executed_tool_calls": 510.0,
+      "generated_tokens": 16922,
+      "passed": 170,
+      "tool_calls": 510,
+      "total": 170,
+      "trajectory_seconds": 1560.586873170454,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    },
+    "raw-validation": {
+      "executed_tool_calls": 222.0,
+      "generated_tokens": 7432,
+      "passed": 74,
+      "tool_calls": 222,
+      "total": 74,
+      "trajectory_seconds": 722.791217710881,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.0
+    }
+  },
+  "training_updates": 0
+}

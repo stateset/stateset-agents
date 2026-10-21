@@ -1,0 +1,29 @@
+{
+  "retained_at": 1792248199.7667265,
+  "focused_job": "0de5107bf1dc",
+  "focused_passed": true,
+  "test_counts": {
+    "native": 260,
+    "operator": 824,
+    "distributed": 3,
+    "wheel": 93,
+    "governance": 8
+  },
+  "total_test_executions": 1188,
+  "source_tests": 1095,
+  "typed_modules": 431,
+  "source_tests_match_frozen_inputs_and_live": true,
+  "live_pane": "w1:p1A",
+  "draft_preserved": true,
+  "training_launched": false,
+  "two_worker_cpu_gloo_verified": true,
+  "new_publication_scenarios_per_api_per_rank": 7,
+  "full_acceptance_job": "1e204ba66630",
+  "full_state_at_capture": "succeeded",
+  "full_acceptance_matches_current_source_and_tests": false,
+  "installed_wheel_focused_verified": true,
+  "wheel_sha256": "dfe4359b49ca2e49650f9e85a8cca32aea1e9f0af8de5ea9ab06e0665e8a40d3",
+  "gpu_verified": false,
+  "provider_training_verified": false,
+  "model_quality_gain_verified": false
+}

@@ -1,0 +1,15 @@
+{
+  "tested": false,
+  "canonical_files_changed": false,
+  "notes": "Staged only; no tests/checks/builds/formatters executed. Low-level apply_payload and normal optimizer sync semantics unchanged. Parent must apply under source lock and verify through Buildr.",
+  "files": {
+    "stateset_agents/training/ddp_checkpoint.py": {
+      "base_sha256": "96bfe1e53eda810b340b6fa30226ddab060ed31ab6661eeb3e2ce9c5dc81cc42",
+      "staged_sha256": "2f6ba9739ad92defc695b45ae7778e971ba600b4d00dbdaec46491133d7a3847"
+    },
+    "tests/integration/test_ddp_checkpoint_publication.py": {
+      "base_sha256": null,
+      "staged_sha256": "6bd4c9f6e07effcd1b465499179af145e1bb5b1ff1bf8a34996a13da2f33a680"
+    }
+  }
+}

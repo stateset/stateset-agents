@@ -1,0 +1,87 @@
+from pathlib import Path
+import hashlib
+import importlib.metadata
+import json
+import shutil
+import sys
+import xml.etree.ElementTree as ET
+import zipfile
+
+root = Path('/home/dom/stateset-agents')
+source, job = Path(sys.argv[1]), sys.argv[2]
+report = json.loads((source/'verification.json').read_text())
+assert report['passed'] and report['source_unchanged'] and report['tests_unchanged']
+current = {p.relative_to(root/'stateset_agents').as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'stateset_agents').rglob('*.py'))}
+tests = {p.relative_to(root).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((root/'tests').rglob('*.py'))}
+assert current == report['source_sha256'] and tests == report['test_source_sha256']
+wheel = next((source/'dist').glob('*.whl'))
+with zipfile.ZipFile(wheel) as archive:
+    packed = {name.removeprefix('stateset_agents/'): hashlib.sha256(archive.read(name)).hexdigest() for name in archive.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}
+assert packed == current
+
+def counts(file):
+    suites = list(ET.parse(file).getroot().iter('testsuite'))
+    total = sum(int(suite.get('tests', '0')) for suite in suites)
+    skipped = sum(int(suite.get('skipped', '0')) for suite in suites)
+    failures = sum(int(suite.get('failures', '0')) + int(suite.get('errors', '0')) for suite in suites)
+    assert failures == 0
+    return dict(passed=total-skipped, skipped=skipped, failed=failures)
+
+baseline = None
+distributed = {}
+for stage in ['source-distributed', 'wheel-distributed']:
+    rows = [json.loads((source/stage/f'native-ddp-checkpoint-{rank}.json').read_text()) for rank in [0, 1]]
+    assert len(rows[0]) == len(rows[1]) == 98
+    assert rows[0] == rows[1]
+    if baseline is None: baseline = rows[0]
+    else: assert baseline == rows[0]
+    resumes = [row for row in rows[0] if row.get('resumed')]
+    faults = [row for row in rows[0] if row.get('coordinated_rejection')]
+    assert len(resumes) == 84 and len(faults) == 14
+    assert all(row['next_update_equal'] and row['rank_local_rng_equal'] for row in resumes)
+    assert all(row['reloaded'] for row in faults)
+    existing = {}
+    for filename, expected in [('rank-0.json',294), ('advantages-0.json',48), ('learner-preflight-0.json',40), ('replica-consensus-0.json',32)]:
+        existing[filename] = len(json.loads((source/stage/filename).read_text()))
+        assert existing[filename] == expected
+    distributed[stage] = dict(world_size=2, backend='gloo', resume_scenarios_per_peer=84,
+        rejection_recovery_scenarios_per_peer=14, exact_next_parameter_and_optimizer_equality=True,
+        rank_local_python_numpy_torch_rng_equality=True, existing_contract_counts_per_peer=existing)
+
+summary = dict(passed=True, queue_job=job, protocol='stateset-native-ddp-checkpoint-v1',
+    source_modules=len(current), source_unchanged=True, test_sources_unchanged=True, wheel_source_matches=True,
+    wheel_sha256=report['wheel_sha256'], regressions=counts(source/'regressions.xml'),
+    source_distributed_tests=counts(source/'source-distributed.xml'), wheel_regressions=counts(source/'wheel.xml'),
+    wheel_distributed_tests=counts(source/'wheel-distributed.xml'), typed_modules=406, distributed=distributed,
+    runtime={name:importlib.metadata.version(name) for name in ['torch','transformers','accelerate','numpy']},
+    checkpoint_apis=['save/load_runtime_checkpoint','async save_checkpoint / load_checkpoint'],
+    optimizers=['SGD with momentum','AdamW'], objectives=[None,'grpo','dr_grpo','dapo','cispo','rloo','gspo'],
+    checkpoint_shared_state=['policy parameters','optimizer slots/groups','scheduler state/implementation/bindings','reference parameters'],
+    checkpoint_local_state=['pending policy and entropy gradients/counts','persistent/nonpersistent buffers','Python/NumPy/Torch RNGs','global baseline history','replay/private RNG/EWC/task/reference relationship','counters','AMP state','rollout publication version'],
+    cpu_continual_replay_ewc_lwf_unit_verified=True,
+    validation_failures_preserve_live_state=True, apply_failures_block_training_and_saving_until_reload=True,
+    failed_save_preserves_published_generation=True,
+    boundaries='Same exact ordered process-group ranks, Python/Torch versions, device family, supplied architecture/tokenizer/config, shared absolute filesystem path; all peers enter the same operation. Not an HF export or process/network failure recovery protocol.',
+    cpu_native_ddp_pending_window_recovery_verified=True, gpu_verified=False, cuda_amp_verified=False,
+    multi_node_verified=False, multi_rank_accelerate_verified=False, fsdp_verified=False, deepspeed_verified=False,
+    quality_improvement_verified=False,
+    count_note='Overlapping targeted source/wheel regressions. Five real distributed pytest contracts contain multiple scenarios; 98 new scenarios per peer are not 98 separate pytest cases.')
+output = root/'benchmark_results/training_contracts/20261015/native-ddp-checkpoint'
+output.mkdir(exist_ok=False)
+(output/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+for name in ['verification.json','regressions.xml','source-distributed.xml','wheel.xml','wheel-distributed.xml','gates.log','types.log','source-distributed.log','wheel-distributed.log','wheel-origin.log']:
+    shutil.copy2(source/name, output/name)
+for stage in ['source-distributed','wheel-distributed']:
+    shutil.copytree(source/stage,output/stage)
+for script in ['/tmp/stateset-ddp-checkpoint-verify.py', '/tmp/stateset-platform-gates.py', '/tmp/stateset-retain-ddp-checkpoint.py']:
+    shutil.copy2(script, output/Path(script).name)
+failures = output/'failures'
+failures.mkdir()
+contexts = [
+ dict(job='b65d19480bb2',kind='fixture_failure',explanation='Eight checks passed, including the real two-rank contract. Two unit cases supplied an incompatible reference architecture (the policy alone had an extra nonpersistent buffer); corrected the fixture to give both architectures that buffer.'),
+ dict(job='b79dfe365d46',kind='lint_failure',explanation='The first gate run rejected three loop closures without explicit bindings. Bound the original functions explicitly before rerunning.'),
+ dict(job='3e88eccbbb81',kind='typing_failure',explanation='The 406-module gate reported four new Any/narrowing errors. Added precise result casts and a payload dictionary annotation, without weakening typing rules.')]
+for context in contexts:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(context['job']+'.log'), failures/(context['job']+'.log'))
+(failures/'context.json').write_text(json.dumps(contexts,indent=2)+'\n')
+print(json.dumps(summary,indent=2))

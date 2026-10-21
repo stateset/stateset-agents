@@ -1,0 +1,35 @@
+{
+  "passed": true,
+  "out": "/tmp/stateset-remote-frontier-wheel-r4h8dqn2",
+  "wheel_sha256": "0af19cd951760d85098b1e5a4447000a7c14bca36bcca3781d653c089fee6d3d",
+  "wheel_source_matches": true,
+  "module_origins_verified": true,
+  "case_identities_match_source": true,
+  "test_count": 202,
+  "selection": [
+    "tests/unit/test_remote_frontier_readiness.py",
+    "tests/unit/test_finetune_frontier_readiness.py",
+    "tests/unit/test_frontier_models.py",
+    "tests/unit/test_transformers_compat.py",
+    "tests/unit/test_remote_job.py",
+    "tests/unit/test_deepseek_v41_1017.py"
+  ],
+  "argv": [
+    "/home/dom/stateset-agents/.venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-n0",
+    "-o",
+    "addopts=",
+    "--timeout=140",
+    "--tb=short",
+    "tests/unit/test_remote_frontier_readiness.py",
+    "tests/unit/test_finetune_frontier_readiness.py",
+    "tests/unit/test_frontier_models.py",
+    "tests/unit/test_transformers_compat.py",
+    "tests/unit/test_remote_job.py",
+    "tests/unit/test_deepseek_v41_1017.py",
+    "--junitxml=/tmp/stateset-remote-frontier-wheel.xml"
+  ]
+}

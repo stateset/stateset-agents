@@ -1,0 +1,13 @@
+from pathlib import Path
+import os,subprocess,sys
+import black,isort
+root=Path('/home/dom/stateset-agents'); os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1')
+os.environ['PATH']=str(root/'.venv/bin')+os.pathsep+os.environ['PATH']
+files=['stateset_agents/cli_remote.py', 'stateset_agents/finetune_workspace.py', 'stateset_agents/finetune_worker.py', 'stateset_agents/tui.py', 'stateset_agents/training/sft.py', 'stateset_agents/remote/job.py', 'stateset_agents/remote/river.py', 'stateset_agents/remote/executor.py', 'stateset_agents/remote/runpod.py', 'stateset_agents/remote/local.py', 'stateset_agents/remote/modal.py', 'stateset_agents/remote/huggingface.py', 'stateset_agents/remote/coreweave.py', 'stateset_agents/remote/nebius.py', 'stateset_agents/finetune_evaluation.py', 'stateset_agents/finetune_evaluation_worker.py', 'stateset_agents/finetune_quality.py', 'tests/unit/test_finetune_seeds.py', 'tests/unit/test_remote_job.py', 'tests/unit/test_finetune_quality.py', 'stateset_agents/finetune_evaluation_tui.py']
+for name in files:
+    isort.file(root/name)
+    black.format_file_in_place(root/name,fast=False,mode=black.Mode(),write_back=black.WriteBack.YES)
+subprocess.run(['ruff','check',*files],check=True)
+if '--format-only' not in sys.argv:
+    subprocess.run([sys.executable,'-m','pytest','-q','-n0','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_finetune_seeds.py','--junitxml=/tmp/stateset-seeds-development.xml'],check=True)

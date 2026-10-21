@@ -39,7 +39,10 @@ jobs:
         HF_HUB_OFFLINE: "1"
         TRANSFORMERS_OFFLINE: "1"
       run: |
+        python scripts/check_asyncio_wakeup.py
         python -m unittest discover -s tests/integration -p test_river_native_sdk.py -v
+        pip install pytest pytest-asyncio pytest-xdist pytest-timeout
+        pytest --confcutdir=tests/unit -n 0 -o addopts='' tests/unit/test_river_nemotron.py
 
   npm-client:
     runs-on: ubuntu-latest
@@ -150,6 +153,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13"]
 
@@ -196,8 +200,11 @@ jobs:
     - name: Run tests
       # Coverage threshold (`fail_under`) is set in pyproject.toml's
       # [tool.coverage.report] section — pytest-cov reads it automatically.
+      env:
+        PYTHONFAULTHANDLER: '1'
+        STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR: ${{ runner.temp }}/native-ddp-contract
       run: |
-        pytest --cov=stateset_agents --cov-report=xml --cov-report=term
+        pytest --cov=stateset_agents --cov-report=xml --cov-report=term --junitxml=pytest-linux-${{ matrix.python-version }}.xml
 
     - name: Coverage ratchet
       # fail_under tracks the measured floor, never an aspiration. When
@@ -250,6 +257,16 @@ jobs:
         name: codecov-umbrella
         fail_ci_if_error: false
 
+    - name: Retain Linux test and distributed worker results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: linux-tests-${{ matrix.python-version }}
+        path: |
+          pytest-linux-${{ matrix.python-version }}.xml
+          ${{ runner.temp }}/native-ddp-contract
+        if-no-files-found: warn
+
   test-windows:
     runs-on: windows-latest
     # The full ~4.7k-test suite can take about 42 minutes on hosted Windows,
@@ -257,6 +274,7 @@ jobs:
     # headroom for normal runner variance and post-test cleanup.
     timeout-minutes: 60
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.10", "3.13"]
 
@@ -275,7 +293,15 @@ jobs:
 
     - name: Run tests
       run: |
-        pytest --tb=short
+        pytest -v --tb=short --junitxml=pytest-windows-${{ matrix.python-version }}.xml
+
+    - name: Retain Windows test results
+      if: always()
+      uses: actions/upload-artifact@v7
+      with:
+        name: windows-tests-${{ matrix.python-version }}
+        path: pytest-windows-${{ matrix.python-version }}.xml
+        if-no-files-found: warn
 
   security:
     runs-on: ubuntu-latest

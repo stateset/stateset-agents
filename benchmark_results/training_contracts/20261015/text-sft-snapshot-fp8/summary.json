@@ -1,0 +1,40 @@
+{
+  "passed": true,
+  "source_modules": 397,
+  "regressions": {
+    "passed": 1700,
+    "skipped": 4,
+    "failed": 0
+  },
+  "native_contracts": {
+    "passed": 105,
+    "skipped": 0,
+    "failed": 0
+  },
+  "isolated_wheel_contracts": {
+    "passed": 104,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_sha256": "bfd3ee07ca0546a3094a471c818e7b3a386fa0e3220a4e753ff4b999873b407e",
+  "wheel_source_matches": true,
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.20.0",
+    "trl": "1.14.0",
+    "peft": "0.21.0",
+    "accelerate": "1.15.0",
+    "datasets": "5.1.0",
+    "huggingface-hub": "1.31.0",
+    "tokenizers": "0.23.3",
+    "fsspec": "2026.6.0",
+    "safetensors": "0.8.0"
+  },
+  "dependency_errors": [],
+  "source_unchanged": true,
+  "queue_job": "62d7a6d2aa80",
+  "gpu_training_verified": false,
+  "released_weights_loaded": false,
+  "scope": "Per-file source capture and provenance, old Torch rejection, native CPU tiny-model SFT, actual cached tokenizers, locally serialized FP8 attention/per-expert dequantization and BF16 adapter update/reload; no distributed or GPU certification",
+  "overlap_note": "Counts overlap across stages; one unpackaged-example test is deselected from wheel checks."
+}

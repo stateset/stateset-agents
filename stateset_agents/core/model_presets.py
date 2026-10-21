@@ -19,7 +19,9 @@ now a backwards-compatible re-export shim over this one.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+
+from stateset_agents.core.frontier_models import FRONTIER_MODELS
 
 
 @dataclass(frozen=True)
@@ -93,6 +95,11 @@ class ModelPreset:
     cli_default_output_dir: str | None = None
     """Optional per-variant output directory when variants share a starter."""
 
+    model_revision: str | None = None
+    """Immutable checkpoint revision when the preset declares a verified pin."""
+    chat_template_kwargs: tuple[tuple[str, str | bool], ...] = ()
+    """Immutable scalar template options copied into the agent configuration."""
+
     def __post_init__(self) -> None:
         if self.cli_command is None:
             return
@@ -117,6 +124,32 @@ class ModelPreset:
 
 
 PRESETS: dict[str, ModelPreset] = {
+    "muse-spark-open": ModelPreset(
+        model_id="meta-models/Muse-Spark-Open-816B-A42B",
+        tokenizer_id="meta-models/Muse-Spark-Open-816B-A42B",
+        model_revision="0fb02478b02565b2ce7fc57e6051c91172774ac9",
+        chat_template_kwargs=(
+            ("reasoning_effort", "low"),
+            ("current_date", "2026-10-15"),
+        ),
+        trust_remote_code=False,
+        lora_target_modules=("q_proj", "k_proj", "v_proj", "o_proj"),
+        max_prompt_length=2048,
+        max_completion_length=1024,
+        learning_rate=1e-6,
+        num_generations=2,
+        use_4bit=False,
+        use_8bit=False,
+        notes=(
+            "Gated Muse Spark Open BF16, native muse_spark conditional-generation "
+            "architecture. Requires [muse-spark]. Text-only native GSPO integration; "
+            "full-size GPU/RL conformance is unverified. Language attention targets "
+            "come from the released Transformers implementation; encoders are excluded "
+            "by text_lora_targets. 816B total weights must fit independently of the "
+            "42B active count. The CLI muse-spark-open provides the separate upstream "
+            "load-time FSDP/EP SFT path. NVFP4 is not a BF16 training footprint."
+        ),
+    ),
     "granite4-micro": ModelPreset(
         model_id="ibm-granite/granite-4.0-micro",
         tokenizer_id="ibm-granite/granite-4.0-micro",
@@ -1254,6 +1287,47 @@ PRESETS: dict[str, ModelPreset] = {
         ),
     ),
 }
+
+
+# Checkpoint-specific attention targets replace provisional family guesses. These
+# entries are configurations, not full-size training certifications. Use
+# frontier-models/frontier-sft for readiness and distributed SFT.
+for _frontier in FRONTIER_MODELS:
+    if _frontier.key in PRESETS:
+        PRESETS[_frontier.key] = replace(
+            PRESETS[_frontier.key],
+            model_revision=_frontier.revision,
+            chat_template_kwargs=_frontier.chat_template_options,
+            trust_remote_code=_frontier.trust_remote_code,
+            lora_target_modules=_frontier.attention_targets,
+            use_4bit=False,
+            use_8bit=False,
+            notes=(
+                f"Pinned {_frontier.architecture}; {_frontier.checkpoint_format}. "
+                "Text attention targets audited against the released index. "
+                "Full-size training unverified. Use frontier-sft for distributed SFT. "
+                + " ".join(_frontier.blockers)
+            ),
+        )
+    else:
+        PRESETS[_frontier.key] = ModelPreset(
+            model_id=_frontier.model_id,
+            tokenizer_id=_frontier.model_id,
+            model_revision=_frontier.revision,
+            chat_template_kwargs=_frontier.chat_template_options,
+            trust_remote_code=_frontier.trust_remote_code,
+            lora_target_modules=_frontier.attention_targets,
+            max_prompt_length=2048,
+            max_completion_length=1024,
+            learning_rate=1e-6,
+            num_generations=2,
+            notes=(
+                f"Pinned {_frontier.architecture}; {_frontier.checkpoint_format}. "
+                "Full-size GPU training unverified; use frontier-sft. "
+                + " ".join(_frontier.blockers)
+            ),
+        )
+del _frontier
 
 
 def list_preset_names() -> list[str]:

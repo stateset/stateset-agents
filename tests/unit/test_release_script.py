@@ -47,6 +47,7 @@ Intro text.
 README_FIXTURE = """# StateSet Agents
 
 - **Current Python release:** `stateset-agents==0.25.0`, published from a tag.
+- **Latest verified PyPI release:** `stateset-agents==0.25.0`, checked independently.
 
 ## What's new
 
@@ -82,6 +83,11 @@ def fixture_repo(tmp_path: Path) -> Path:
     pkg = tmp_path / "stateset_agents"
     pkg.mkdir()
     (pkg / "__init__.py").write_text('__version__ = "0.25.0"\n', encoding="utf-8")
+    experiments = pkg / "config" / "presets" / "experiments"
+    experiments.mkdir(parents=True)
+    (experiments / "support_recovery_preflight6.json").write_text(
+        '{"framework_version": "0.25.0"}\n', encoding="utf-8"
+    )
 
     npm = tmp_path / "npm"
     npm.mkdir()
@@ -128,6 +134,7 @@ def fixture_repo(tmp_path: Path) -> Path:
     for name in (
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
+        "agent_quality_manifest.json",
         "distributed_async_manifest.json",
         "distributed_async_local_manifest.json",
     ):
@@ -227,16 +234,16 @@ def test_plain_bump_counts():
 
 def test_readme_rewrite_promotes_and_demotes():
     out = release.rewrite_readme(README_FIXTURE, "0.25.0", "0.26.0", "- New bullet.\n")
-    assert (
-        "**v0.26.0 (latest release — [live on PyPI](https://pypi.org/project/stateset-agents/)):**"
-        in out
-    )
+    assert "**v0.26.0 (latest candidate; publication pending):**" in out
     assert "- New bullet.\n\n**v0.25.0:**" in out
     assert "- Old latest bullet one." in out  # old block content preserved
-    assert "# latest release (v0.26.0)" in out
-    assert "latest release `v0.26.0`" in out
-    assert "**Current Python release:** `stateset-agents==0.26.0`" in out
-    assert 'pip install "stateset-agents==0.26.0" # current stable release' in out
+    assert "# latest published release" in out
+    assert "latest candidate `v0.26.0`" in out
+    assert "**Current Python candidate:** `stateset-agents==0.26.0`" in out
+    assert "**Latest verified PyPI release:** `stateset-agents==0.25.0`" in out
+    assert 'pip install "stateset-agents==0.25.0" # current stable release' in out
+    assert 'pip install "stateset-agents==0.26.0"' not in out
+    assert "live on PyPI" not in out
     assert "stateset-agents.git@v0.26.0" in out
     assert "v0.23.0" not in out
 
@@ -244,6 +251,16 @@ def test_readme_rewrite_promotes_and_demotes():
 def test_readme_rewrite_todo_when_no_notes():
     out = release.rewrite_readme(README_FIXTURE, "0.25.0", "0.26.0", None)
     assert "- TODO: describe this release." in out
+
+
+def test_readme_repeated_candidate_bumps_preserve_published_version():
+    first = release.rewrite_readme(README_FIXTURE, "0.25.0", "0.26.0", None)
+    second = release.rewrite_readme(first, "0.26.0", "0.27.0", None)
+    assert "**Current Python candidate:** `stateset-agents==0.27.0`" in second
+    assert "**v0.27.0 (latest candidate; publication pending):**" in second
+    assert "**Latest verified PyPI release:** `stateset-agents==0.25.0`" in second
+    assert 'pip install "stateset-agents==0.25.0" # current stable release' in second
+    assert "stateset-agents.git@v0.27.0" in second
 
 
 def test_readme_rewrite_requires_latest_heading():
@@ -269,7 +286,10 @@ def test_build_plan_full(fixture_repo: Path):
     )
     assert "0.26.0" in plan.changes["deployment/helm/stateset-agents/values.yaml"]
     assert "## [0.26.0] - 2026-08-12 — the title" in plan.changes["CHANGELOG.md"]
-    assert "**v0.26.0 (latest release" in plan.changes["README.md"]
+    assert (
+        "**v0.26.0 (latest candidate; publication pending):**"
+        in plan.changes["README.md"]
+    )
     # zero-occurrence file warned about, not rewritten
     assert any("deployment/kubernetes/deployment.yaml" in w for w in plan.warnings)
     assert "deployment/kubernetes/deployment.yaml" not in plan.changes
@@ -329,6 +349,7 @@ def test_build_plan_bumps_current_evidence_manifests(fixture_repo: Path) -> None
     for name in (
         "flagship_manifest.json",
         "flagship_preflight_manifest.json",
+        "agent_quality_manifest.json",
         "distributed_async_manifest.json",
         "distributed_async_local_manifest.json",
     ):

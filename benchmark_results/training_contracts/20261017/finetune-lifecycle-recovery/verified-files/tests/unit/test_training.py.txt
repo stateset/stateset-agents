@@ -1,0 +1,512 @@
+"""
+Comprehensive tests for training modules
+"""
+
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+import torch
+
+from stateset_agents.core.environment import (
+    Environment,
+    EnvironmentState,
+    EpisodeStatus,
+)
+from stateset_agents.training.config import (
+    TrainingConfig,
+    TrainingProfile,
+    get_config_for_task,
+)
+from stateset_agents.training.trainer import SingleTurnGRPOTrainer
+
+# ===========================
+# TrainingConfig Tests
+# ===========================
+
+
+class TestTrainingConfig:
+    """Test training configuration"""
+
+    def test_training_config_defaults(self):
+        """Test default training configuration"""
+        config = TrainingConfig()
+        assert config.num_episodes > 0
+        assert config.learning_rate > 0
+        assert hasattr(config, "per_device_train_batch_size")
+
+    def test_training_config_custom_values(self):
+        """Test custom training configuration"""
+        config = TrainingConfig(
+            num_episodes=50,
+            learning_rate=1e-4,
+            per_device_train_batch_size=16,
+            max_grad_norm=1.5,
+            bf16=True,
+        )
+        assert config.num_episodes == 50
+        assert config.learning_rate == 1e-4
+        assert config.per_device_train_batch_size == 16
+        assert config.max_grad_norm == 1.5
+        assert config.bf16 is True
+
+    def test_training_config_serialization(self):
+        """Test training config serialization"""
+        config = TrainingConfig(num_episodes=25, learning_rate=5e-5)
+        config_dict = config.to_dict()
+
+        assert isinstance(config_dict, dict)
+        assert config_dict["num_episodes"] == 25
+        assert config_dict["learning_rate"] == 5e-5
+
+    def test_training_config_validation(self):
+        """Test training config validation"""
+        # Valid config
+        config = TrainingConfig(num_episodes=10, learning_rate=1e-4)
+        assert config.num_episodes > 0
+        assert config.learning_rate > 0
+
+    def test_training_profile_enum(self):
+        """Test TrainingProfile enum values"""
+        assert hasattr(TrainingProfile, "CONSERVATIVE")
+        assert hasattr(TrainingProfile, "BALANCED")
+        assert hasattr(TrainingProfile, "AGGRESSIVE")
+
+    def test_get_config_for_task(self):
+        """Test getting config for specific task"""
+        config = get_config_for_task("customer_service")
+        assert isinstance(config, TrainingConfig)
+        assert config.num_episodes > 0
+
+    def test_get_config_for_task_returns_valid_config(self):
+        """Test that task-specific configs have reasonable training parameters."""
+        config = get_config_for_task("customer_service")
+        assert isinstance(config, TrainingConfig)
+        assert config.num_episodes > 0
+        assert config.learning_rate > 0
+        # max_steps_per_episode is optional (None means unlimited)
+        if config.max_steps_per_episode is not None:
+            assert config.max_steps_per_episode > 0
+
+
+# ===========================
+# SingleTurnGRPOTrainer Tests
+# ===========================
+
+
+class TestSingleTurnGRPOTrainer:
+    """Test SingleTurnGRPOTrainer functionality"""
+
+    @pytest.fixture
+    def mock_agent(self):
+        """Create a mock agent with real parameters the optimizer can use."""
+        agent = MagicMock()
+        # Use real tensors so torch.optim.AdamW works
+        param_weight = torch.nn.Parameter(torch.randn(4, 4))
+        param_bias = torch.nn.Parameter(torch.randn(4))
+        agent.model = MagicMock()
+        agent.model.device = torch.device("cpu")
+        agent.model.side_effect = lambda **kwargs: SimpleNamespace(
+            loss=param_weight.square().mean() + param_bias.square().mean()
+        )
+        agent.tokenizer = MagicMock()
+        agent.generate_response = AsyncMock(return_value="Test response")
+        agent.model.named_parameters = MagicMock(
+            return_value=[
+                ("layer.weight", param_weight),
+                ("bias", param_bias),
+            ]
+        )
+        agent.model.parameters = MagicMock(
+            side_effect=lambda: iter([param_weight, param_bias])
+        )
+        return agent
+
+    @pytest.fixture
+    def mock_environment(self):
+        """Create a mock environment"""
+        env = AsyncMock()
+        env.reset = AsyncMock(return_value={"prompt": "Hello", "step": 0})
+        env.step = AsyncMock(
+            return_value={"state": {"step": 1}, "reward": 0.8, "done": False}
+        )
+        return env
+
+    @pytest.fixture
+    def mock_reward_fn(self):
+        """Create a mock reward function"""
+        reward_fn = AsyncMock()
+        reward_result = MagicMock()
+        reward_result.score = 0.75
+        reward_fn.compute_reward = AsyncMock(return_value=reward_result)
+        return reward_fn
+
+    @pytest.fixture
+    def training_config(self):
+        """Create a test training config"""
+        return TrainingConfig(
+            allow_sequence_fallback=True,
+            # Constant mock rewards deliberately have no within-group signal.
+            zero_signal_patience=0,
+            num_episodes=2,
+            max_steps_per_episode=3,
+            learning_rate=1e-5,
+            seed=42,
+        )
+
+    def test_single_turn_trainer_initialization(
+        self, mock_agent, mock_environment, training_config
+    ):
+        """Test SingleTurnGRPOTrainer initialization"""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent, environment=mock_environment, config=training_config
+        )
+
+        assert trainer.agent == mock_agent
+        assert trainer.environment == mock_environment
+        assert trainer.config == training_config
+        assert trainer.global_step == 0
+        assert trainer.current_epoch == 0
+
+    def test_single_turn_trainer_with_reward_function(
+        self, mock_agent, mock_environment, mock_reward_fn, training_config
+    ):
+        """Test trainer with reward function"""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            reward_fn=mock_reward_fn,
+            config=training_config,
+        )
+
+        assert trainer.reward_fn == mock_reward_fn
+
+    def test_single_turn_trainer_with_callbacks(
+        self, mock_agent, mock_environment, training_config
+    ):
+        """Test trainer with callbacks"""
+        callback = MagicMock()
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            config=training_config,
+            callbacks=[callback],
+        )
+
+        assert len(trainer.callbacks) == 1
+        assert trainer.callbacks[0] == callback
+
+    def test_single_turn_trainer_add_callback(
+        self, mock_agent, mock_environment, training_config
+    ):
+        """Test adding callback to trainer"""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent, environment=mock_environment, config=training_config
+        )
+
+        callback = MagicMock()
+        trainer.add_callback(callback)
+
+        assert len(trainer.callbacks) == 1
+        assert trainer.callbacks[0] == callback
+
+    def test_single_turn_trainer_uses_environment_scenarios(
+        self, mock_agent, training_config
+    ):
+        """Trainer should prefer environment scenarios when available."""
+        env = MagicMock()
+        env.scenarios = [{"prompt": "Hello"}, {"prompt": "Hi"}]
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=env,
+            config=training_config,
+        )
+
+        scenario0 = trainer._get_episode_scenario(0)
+        scenario1 = trainer._get_episode_scenario(1)
+
+        assert scenario0["prompt"] == "Hello"
+        assert scenario1["prompt"] == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_initialize(
+        self, mock_agent, mock_environment, training_config
+    ):
+        """Test trainer initialization sets up optimizer and state."""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent, environment=mock_environment, config=training_config
+        )
+
+        await trainer.initialize()
+
+        assert trainer.agent.model is not None
+        assert trainer.global_step == 0
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_train(
+        self,
+        mock_agent,
+        mock_environment,
+        mock_reward_fn,
+        training_config,
+    ):
+        """Test training loop runs and increments global step."""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            reward_fn=mock_reward_fn,
+            config=training_config,
+        )
+
+        await trainer.initialize()
+        result = await trainer.train()
+
+        assert result == mock_agent
+        assert trainer.global_step > 0
+        assert trainer.current_epoch >= 1
+
+    async def test_single_turn_stops_on_measured_zero_advantages(
+        self, mock_agent, mock_environment, mock_reward_fn, training_config
+    ):
+        from stateset_agents.training.diagnostics import TrainingSignalError
+
+        training_config.zero_signal_patience = 2
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            reward_fn=mock_reward_fn,
+            config=training_config,
+        )
+        await trainer.initialize()
+        with pytest.raises(TrainingSignalError, match="No policy advantage signal"):
+            await trainer.train()
+        assert trainer.diagnostics.zero_steps == 2
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_emits_replay_metrics(
+        self, mock_agent, mock_environment
+    ):
+        """Ensure replay metrics are emitted when continual learning is enabled."""
+
+        config = TrainingConfig(
+            num_episodes=1,
+            max_steps_per_episode=2,
+            num_generations=1,
+            learning_rate=1e-5,
+            seed=123,
+            bf16=False,
+            continual_strategy="replay",
+            replay_ratio=1.0,
+            replay_min_size=0,
+            replay_buffer_size=10,
+        )
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            config=config,
+        )
+
+        with (
+            patch(
+                "stateset_agents.training.single_turn_trainer.compute_grpo_loss"
+            ) as mock_loss,
+            patch(
+                "stateset_agents.training.single_turn_trainer.notify_episode_end",
+                new=AsyncMock(),
+            ) as mock_notify,
+        ):
+            mock_loss.return_value = {
+                "policy_loss": None,
+                "total_loss": None,
+                "mean_advantage": 0.0,
+            }
+
+            await trainer.initialize()
+            await trainer.train()
+
+        assert mock_notify.await_count >= 1
+        metrics = mock_notify.call_args.kwargs.get("metrics", {})
+        assert "replay_group_count" in metrics
+        assert "replay_buffer_size" in metrics
+        assert metrics["replay_buffer_size"] >= 1
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_accepts_environment_state(
+        self, mock_agent, training_config
+    ):
+        """Ensure EnvironmentState-compatible environments work in the train loop."""
+
+        class StateEnv(Environment):
+            async def reset(self, scenario=None):
+                return EnvironmentState(
+                    episode_id="ep1",
+                    turn_count=0,
+                    status=EpisodeStatus.ONGOING,
+                    context={"prompt": "Hello"},
+                )
+
+            async def step(self, state, action):
+                new_state = state.copy()
+                new_state.status = EpisodeStatus.COMPLETED
+                return new_state, 0.0, True, {}
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=StateEnv(max_turns=1),
+            config=training_config,
+        )
+
+        with patch(
+            "stateset_agents.training.single_turn_trainer.compute_grpo_loss"
+        ) as mock_loss:
+            mock_loss.return_value = {"policy_loss": None, "mean_advantage": 0.0}
+            await trainer.initialize()
+            result = await trainer.train()
+
+        assert result == mock_agent
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_preserves_scenario_context_for_dict_states(
+        self,
+        mock_agent,
+        training_config,
+        mock_reward_fn,
+    ):
+        """Dict-based env states should retain selected scenario context across steps."""
+        env = AsyncMock()
+        env.scenarios = [{"id": "scenario_1", "context": "Need help with my order"}]
+        env.reset = AsyncMock(return_value={"step": 0})
+        env.step = AsyncMock(
+            side_effect=[
+                {"state": {"step": 1}, "reward": 0.5, "done": False},
+                {"state": {"step": 2}, "reward": 0.5, "done": True},
+            ]
+        )
+        mock_agent.generate_response = AsyncMock(
+            side_effect=["First response", "Second response"]
+        )
+        training_config.num_episodes = 1
+        training_config.max_steps_per_episode = 2
+        training_config.num_generations = 1
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=env,
+            reward_fn=mock_reward_fn,
+            config=training_config,
+        )
+
+        with patch(
+            "stateset_agents.training.single_turn_trainer.compute_grpo_loss"
+        ) as mock_loss:
+            mock_loss.return_value = {"policy_loss": None, "mean_advantage": 0.0}
+            await trainer.initialize()
+            await trainer.train()
+
+        prompts = [
+            call.args[0] for call in mock_agent.generate_response.await_args_list
+        ]
+        assert prompts == [
+            "Need help with my order",
+            "Need help with my order",
+        ]
+
+    def test_single_turn_trainer_setup_optimizer(
+        self, mock_agent, mock_environment, training_config
+    ):
+        """Test optimizer setup"""
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent, environment=mock_environment, config=training_config
+        )
+
+        trainer._setup_optimizer()
+
+        # Verify optimizer was created (real torch.optim.AdamW)
+        assert trainer.optimizer is not None
+
+    @pytest.mark.asyncio
+    async def test_single_turn_trainer_save_checkpoint(
+        self, mock_agent, mock_environment, training_config, tmp_path
+    ):
+        """Test checkpoint saving"""
+        # Set output_dir in config to tmp_path
+        training_config.output_dir = str(tmp_path)
+
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent, environment=mock_environment, config=training_config
+        )
+
+        await trainer.save_checkpoint(checkpoint_name="checkpoint")
+
+        # Verify checkpoint directory was created under output_dir
+        checkpoint_path = tmp_path / "checkpoint"
+        assert checkpoint_path.exists()
+
+    def test_single_turn_trainer_load_checkpoint(
+        self, mock_agent, mock_environment, training_config, tmp_path
+    ):
+        """Incomplete metadata cannot claim resume or alter learner state."""
+        import copy
+
+        mock_agent.model = torch.nn.Linear(2, 1)
+        mock_agent.tokenizer = None
+        trainer = SingleTurnGRPOTrainer(
+            agent=mock_agent,
+            environment=mock_environment,
+            config=training_config,
+        )
+
+        trainer.optimizer = torch.optim.SGD(trainer.agent.model.parameters(), lr=0.1)
+        trainer.lr_scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, 1)
+
+        checkpoint_path = tmp_path / "checkpoint"
+        checkpoint_path.mkdir()
+        torch.save({"global_step": 5}, checkpoint_path / "training_state.pt")
+        model = copy.deepcopy(trainer.agent.model.state_dict())
+        optimizer = copy.deepcopy(trainer.optimizer.state_dict())
+        scheduler = copy.deepcopy(trainer.lr_scheduler.state_dict())
+        assert trainer.load_checkpoint(checkpoint_path) is False
+        assert trainer.global_step == 0
+        assert trainer.current_epoch == 0
+        for name, value in trainer.agent.model.state_dict().items():
+            torch.testing.assert_close(value, model[name], rtol=0, atol=0)
+        assert trainer.optimizer.state_dict() == optimizer
+        assert trainer.lr_scheduler.state_dict() == scheduler
+        assert not getattr(trainer, "_runtime_checkpoint_poisoned", False)
+
+
+# ===========================
+# Training Utilities Tests
+# ===========================
+
+
+class TestTrainingUtilities:
+    """Test training utility functions"""
+
+    def test_training_config_from_dict(self):
+        """Test creating config from dictionary"""
+        config_dict = {
+            "num_episodes": 30,
+            "learning_rate": 2e-4,
+            "per_device_train_batch_size": 8,
+        }
+
+        config = TrainingConfig(**config_dict)
+        assert config.num_episodes == 30
+        assert config.learning_rate == 2e-4
+        assert config.per_device_train_batch_size == 8
+
+    def test_training_config_merge(self):
+        """Test merging training configs"""
+        override_config = TrainingConfig(num_episodes=20, learning_rate=1e-4)
+
+        # Override base config values
+        merged = TrainingConfig(
+            num_episodes=override_config.num_episodes,
+            learning_rate=override_config.learning_rate,
+        )
+
+        assert merged.num_episodes == 20
+        assert merged.learning_rate == 1e-4

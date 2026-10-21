@@ -1,0 +1,130 @@
+"""Retain frozen recovery contracts and compact sanitized queue receipts."""
+from pathlib import Path
+import hashlib,json,shutil,subprocess,sys,xml.etree.ElementTree as ET,zipfile
+root=Path('/home/dom/stateset-agents')
+source=Path(sys.argv[1])
+final_job,prepare_job,*wheel_jobs=sys.argv[2:]
+assert len(wheel_jobs)==3
+v=json.loads((source/'verification.json').read_text())
+p=json.loads((source/'prepare-verification.json').read_text())
+assert v['passed'] and v['phase']=='complete' and p['passed']
+package={f.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in (root/'stateset_agents').rglob('*.py')}
+tests={f.relative_to(root).as_posix():hashlib.sha256(f.read_bytes()).hexdigest() for f in (root/'tests').rglob('*.py')}
+assert package==v['source_sha256']==p['source_sha256']
+assert tests==v['test_source_sha256']==p['test_source_sha256']
+assert 'Success: no issues found in 426 source files' in (source/'types.log').read_text()
+wheel=next((source/'dist').glob('*.whl'))
+assert hashlib.sha256(wheel.read_bytes()).hexdigest()==v['wheel_sha256']
+with zipfile.ZipFile(wheel) as z:
+    assert {name.removeprefix('stateset_agents/'):hashlib.sha256(z.read(name)).hexdigest() for name in z.namelist() if name.startswith('stateset_agents/') and name.endswith('.py')}==package
+
+def counts(name):
+    suites=list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    return {'passed':sum(int(s.get('tests',0)) for s in suites),'skipped':0}
+
+receipts=[]
+for handle in [prepare_job,*wheel_jobs,final_job,'b6722dd2777c','f2cbe9eae6fe']:
+    j=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    assert j['state']=='succeeded' and j['exit_code']==0
+    receipts.append({k:j.get(k) for k in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason']})
+live=Path('/tmp/stateset-studio-recovery-live.txt')
+draft=Path('/tmp/stateset-studio-recovery-draft.txt')
+assert not json.loads((source/'preflight6-plan.json').read_text())['ready_for_paid_execution']
+summary={'passed':True,'prepare_queue_job':prepare_job,'wheel_queue_jobs':wheel_jobs,'final_queue_job':final_job,'source_regressions':counts('regressions.xml'),'wheel_regressions':counts('wheel.xml'),'typed_modules':426,'source_unchanged':True,'test_sources_unchanged':True,'wheel_source_matches':True,'wheel_case_identities_match':True,'shared_test_fixtures_match':True,'wheel_sha256':v['wheel_sha256'],'real_cpu_sft_resume_matches_uninterrupted':True,'real_cpu_native_checkpoint_resume_verified':True,'real_terminal_recovery_reviews_verified':True,'operator_checkpoint_inspection_verified':True,'live_herdr_refreshed':live.exists(),'draft_preserved':json.loads(draft.read_text())['draft_preserved'] if draft.exists() else None,'gpu_verified':False,'quality_gain_verified':False,'remote_recovery_verified':False,'paid_run_launched':False,'count_note':'Targeted source/wheel counts overlap. Real CPU SFT/native checks use tiny synthetic models; provider boundaries use mocks.'}
+out=root/'benchmark_results/training_contracts/20261016/finetune-studio-recovery'
+out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+for name in ['verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','regressions.xml','wheel.xml','wheel-shards.json','wheel-shard-1.xml','wheel-shard-2.xml','wheel-shard-3.xml','wheel-shard-1.log','wheel-shard-2.log','wheel-shard-3.log','regressions.log','gates.log','types.log','wheel-origin.log','wheel-test-configuration.json','workflow-lint.log','reward-audit.json','preflight6-plan.json','free-recovery-plan.log','studio-snapshot.log','studio-narrow-snapshot.log','agent-schema.log','agent-models.log','agent-validation.log','agent-invalid-validation.log','agent-data-inspection.log','agent-data-samples.log','agent-data-invalid.log','agent-workflow.log','operator-fixture.log','agent-quality-import.log','agent-quality-reverify.log','agent-stop-stale.log','agent-stop.log','agent-stop-repeat.log','recovery-fixture.log','agent-checkpoints.log','agent-recovery-stale.log','agent-recovery-prepare.log','agent-recovery-status.log']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['prepare','finish','gates','wheel','retain']:
+    name='stateset-studio-recovery-'+suffix+'.py'
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+for path,name in [(live,'herdr-live.txt'),(draft,'herdr-draft.txt'),(Path('/tmp/stateset-recovery-focused-initial.xml'),'focused-initial.xml'),(Path('/tmp/stateset-recovery-focused.xml'),'focused-final.xml')]:
+    if path.exists(): shutil.copy2(path,out/name)
+for previous in sorted(Path('/tmp').glob('stateset-studio-recovery-20261016*')):
+    if previous==source or not (previous/'verification.json').exists(): continue
+    prior=json.loads((previous/'verification.json').read_text())
+    if prior.get('passed'): continue
+    attempt=out/'verification-attempts'/previous.name
+    attempt.mkdir(parents=True)
+    for name in ['verification.json','stage-checkpoint.json','regressions.log','regressions.xml','types.log','gates.log']:
+        if (previous/name).exists(): shutil.copy2(previous/name,attempt/name)
+failed_receipts=[]
+for handle in ['cc1ce6254d10','d1c59c7e693a']:
+    j=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    assert j['state']=='failed' and j['exit_code'] != 0
+    failed_receipts.append({k:j.get(k) for k in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason']})
+(out/'verification-attempts').mkdir(exist_ok=True)
+(out/'verification-attempts/queue-receipts.json').write_text(json.dumps(failed_receipts,indent=2)+'\n')
+(out/'README.md').write_text(f'''# Fine-tuning checkpoint recovery: acceptance
+
+{summary['source_regressions']['passed']} targeted source tests and
+{summary['wheel_regressions']['passed']} installed-wheel tests passed with no
+skips or failures (counts overlap). All 426 package modules passed typing.
+Ruff, serial formatting of eleven changed Python files, repository hygiene,
+release governance, stable API compatibility and workflow lint passed.
+
+Preparation `{prepare_job}` froze package/test Python and packaged assets,
+ran source contracts and built the byte-matching wheel. Three queued wheel
+groups use the same frozen root fixtures and pytest configuration and cover
+exactly the selected source case identities. Final job `{final_job}` rechecked
+frozen identities and completed real installed CLI and offline audit checks.
+Sanitized queue receipts retain argv, IDs, outcomes and timings.
+
+## Recovery behavior
+
+Workers publish checkpoint receipts only after complete saves. Receipts bind
+parent plan, training settings, dataset, progress and checkpoint inventory.
+Recovery requires Linux, one local training process, matching code, a pinned
+model commit, a terminal parent, no live supervisor/executor and remaining
+original training budget. Model-only exports and older unbound artifacts are
+unavailable. Native publications and SFT optimizer/scheduler/RNG files must be
+complete. Inspections never unpickle checkpoint state or load models.
+
+The `z` picker hashes in the background and remains bound to its captured run.
+Checkpoint review authorizes only a private copy into a new linked run. A
+separate prepared-run review authorizes launch. Source artifacts, stop requests
+and configuration drafts are preserved. Preparation publishes no partial run on
+failure; copies use separate private files, not hardlinks. Launch and execution
+rehash the copied input and refuse changed training settings or dataset bytes.
+Resuming preserves original total epochs/updates, with no fresh-training fallback.
+Read-only inspections may be abandoned; authorized copy/launch work is owned
+until it finishes. Existing prepared recovery reviews and launch validation
+also run in the background.
+
+Unit fixtures cover stale checksums, tampered receipts/weights, missing state,
+symlinks/FIFOs, empty weights, incomplete native publication, changed code or
+configuration, live and unverifiable processes, multi-process contexts,
+exhausted budgets, byte/file limits, insufficient headroom and failed copy
+cleanup. Independent snapshots survive later parent/source changes. CLI status
+returns bounded recovery lineage. Strict admin HTTP inspection shares the owned
+inspection slot and offers no HTTP preparation or launch route.
+
+## Direct evidence and limits
+
+A real tiny CPU HF/PEFT SFT run stops after its first update, publishes a
+checkpoint, copies it into a recovery run and finishes the original epoch
+budget. Its final adapter tensors exactly equal uninterrupted training with the
+same synthetic model/data/settings. A real native CPU checkpoint restores
+optimizer state, RNG and episode cursor through the copied snapshot, then
+matches subsequent model/optimizer/scheduler updates. These are software
+recovery contracts, not GPU performance or quality studies.
+
+Real PTYs at 74x44 and 110x32 inspect a synthetic checkpoint, Escape the copy
+review without writing a child, then explicitly prepare a child and Escape its
+launch review without a worker or stop receipt. Narrow rendering is also
+covered at 72x22. The installed CLI refuses a stale recovery checksum without
+creating a run, prepares an exact private snapshot without launching and returns
+its lineage/status. Existing guides, quality, stop, dataset, backend, worker,
+reward and checkpoint-publication contracts provide regressions.
+
+The live Herdr split was refreshed: {summary['live_herdr_refreshed']}; its private
+draft was preserved: {summary['draft_preserved']}. It has no retained runs or
+configured dataset; recovery interactions use isolated synthetic test runs.
+No paid training, GPU recovery certification, remote recovery, judge execution
+or independent quality gain occurred. The free recovery-study planner still
+blocks paid execution. Broad historical distributed matrices were not repeated.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

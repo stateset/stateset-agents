@@ -1,0 +1,37 @@
+{
+  "files": {
+    "stateset_agents/training/checkpoint_state.py": {
+      "base_sha256": "9737fdcad1465c6ce213ab6c2c7eb163b3ce323099dcb5ab58fbf64bdfde4e53",
+      "staged_sha256": "99429f8c7840efd65f865ed07b1653270dc9c952ba9d7a8fbeb6125eec5fdce4"
+    },
+    "stateset_agents/training/runtime_state.py": {
+      "base_sha256": "e893af69fddb61a35c97d4c182724726840cd3a57c76d5e7fb71d94b18257e56",
+      "staged_sha256": "ed330c58d895e047e317a281daa7b7e4df1444933951ff2c68781ffe0154bb51"
+    },
+    "tests/unit/test_checkpoint_rng_publication.py": {
+      "base_sha256": null,
+      "staged_sha256": "f3ddb1b3fd282330e3f6231a1a026ad6d06eded0ab56dc71035ac0e1fa2ca4a4"
+    },
+    "tests/unit/test_native_checkpoint_metadata.py": {
+      "base_sha256": null,
+      "staged_sha256": "3d2ff25cc906bfd17a95612c47ec60e149e030443efe01e6bc9ac57662741c11"
+    },
+    "tests/unit/test_native_checkpoint_safety.py": {
+      "base_sha256": "df5e8722224e80dd8adb7fa10e6b0277dde62e3b9bb9880c2802f1f736efe721",
+      "staged_sha256": "b0b3b903ae745df1323c3ac4f3e7091b72e2c5c52c0029cdd41f7c2c37d0678c"
+    },
+    "tests/unit/test_learning_state_recovery.py": {
+      "base_sha256": "5f29e543f013f1ba1b58a7ae1bbf4bc8161ba587fddbcce87de829a95f756ba2",
+      "staged_sha256": "0b147b9407fda47cceeeb241b20d79a6bb8080b529ed8378dbbcd65e1adc6709"
+    },
+    "tests/unit/test_multi_turn_checkpoint_accumulation.py": {
+      "base_sha256": "a4e439942f626a131534a77790eb31947964630122b5e51764c20c93bc59440a",
+      "staged_sha256": "65b039f242275ccf1ab74284983a72631abf3e8780d5951473ec2d31602ef3a9"
+    }
+  },
+  "stage": "/tmp/stateset-native-followup-fixes",
+  "new_acceptance_modules": [
+    "tests/unit/test_checkpoint_rng_publication.py",
+    "tests/unit/test_native_checkpoint_metadata.py"
+  ]
+}

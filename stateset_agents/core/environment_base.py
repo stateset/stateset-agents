@@ -5,6 +5,7 @@ Base environment abstractions and state containers.
 from __future__ import annotations
 
 import asyncio
+import copy
 import inspect
 import logging
 from abc import ABC, abstractmethod
@@ -162,7 +163,13 @@ class Environment(ABC):
         Override to start an episode with, for example, the user's first
         message, so the agent replies to it instead of speaking first.
         """
-        return []
+        return [
+            ConversationTurn(
+                role=message.get("role", "user"), content=message["content"]
+            )
+            for message in state.context.get("messages", [])
+            if isinstance(message, dict) and isinstance(message.get("content"), str)
+        ]
 
     def clone(self) -> Environment:
         """Return a new environment instance with the same configuration."""
@@ -179,7 +186,12 @@ class Environment(ABC):
                 if not turns and hasattr(trajectory, "__iter__"):
                     turns = list(trajectory)
 
-                result = await self.reward_fn.compute_reward(turns)
+                if getattr(self.reward_fn, "requires_environment_context", False):
+                    result = await self.reward_fn.compute_reward(
+                        turns, getattr(trajectory, "final_state", None)
+                    )
+                else:
+                    result = await self.reward_fn.compute_reward(turns)
                 if hasattr(result, "score"):
                     return float(result.score)
                 if isinstance(result, dict) and "score" in result:
@@ -189,10 +201,26 @@ class Environment(ABC):
                 logger.warning("Unexpected reward result type: %s", type(result))
                 return 0.5
             except ENVIRONMENT_EXCEPTIONS as e:
+                if getattr(self.reward_fn, "fail_on_error", False):
+                    raise
                 logger.warning("Failed to compute reward from reward_fn: %s", e)
                 return 0.5
 
         return 0.5
+
+    def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
+        """Expose public context while retaining evaluator references privately."""
+        context = dict(state.context)
+        private = {"expected_response", "expected_tool_calls"}
+        for key in private:
+            context.pop(key, None)
+        if isinstance(context.get("scenario"), dict):
+            context["scenario"] = {
+                key: value
+                for key, value in context["scenario"].items()
+                if key not in private
+            }
+        return context
 
     #: Whether ``reset``/``step`` keep all per-episode state in the
     #: ``EnvironmentState`` they return, so several episodes can be advanced
@@ -211,7 +239,8 @@ class Environment(ABC):
         episode = await self._start_episode(scenario)
         for _ in range(max_turns):
             history = [{"role": t.role, "content": t.content} for t in episode.turns]
-            agent_response = await agent_fn(history, episode.state.context)
+            policy_context = copy.deepcopy(self.observation_context(episode.state))
+            agent_response = await agent_fn(history, policy_context)
             if await self._advance_episode(episode, agent_response):
                 break
         return await self._finish_episode(episode)
@@ -253,7 +282,9 @@ class Environment(ABC):
                 for e in active
             ]
             replies = await _batch_replies(
-                batch_agent_fn, histories, [e.state.context for e in active]
+                batch_agent_fn,
+                histories,
+                [copy.deepcopy(self.observation_context(e.state)) for e in active],
             )
             still_running = []
             for episode, reply in zip(active, replies, strict=True):
@@ -274,6 +305,8 @@ class Environment(ABC):
         try:
             initial_prompt = await self.get_initial_prompt(prompt_scenario)
         except ENVIRONMENT_EXCEPTIONS:
+            if getattr(self.reward_fn, "fail_on_error", False):
+                raise
             pass
         if initial_prompt:
             episode.turns.append(
@@ -295,11 +328,20 @@ class Environment(ABC):
         )
         episode.turns.append(agent_turn)
         raw_step_result = await self.step(episode.state, agent_turn)
-        new_state, step_reward, done, env_response = _parse_step_result(raw_step_result)
+        new_state, step_reward, done, env_response, info = _parse_step_result(
+            raw_step_result
+        )
         episode.total_reward += float(step_reward)
         episode.turn_rewards.append(float(step_reward))
         if isinstance(env_response, ConversationTurn):
             episode.turns.append(env_response)
+        for message in info.get("messages", []):
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                episode.turns.append(
+                    ConversationTurn(
+                        role=message.get("role", "user"), content=message["content"]
+                    )
+                )
         episode.state = new_state
         return bool(done or new_state.status != EpisodeStatus.ONGOING)
 
@@ -323,6 +365,8 @@ class Environment(ABC):
                     else:
                         turn_rewards.append(final_value)
             except ENVIRONMENT_EXCEPTIONS:
+                if getattr(self.reward_fn, "fail_on_error", False):
+                    raise
                 pass
 
         return MultiTurnTrajectory(
@@ -356,8 +400,8 @@ def _is_reward(value: Any) -> bool:
 
 def _parse_step_result(
     raw_step_result: Any,
-) -> tuple[EnvironmentState, float, bool, ConversationTurn | None]:
-    """Normalize ``Environment.step`` returns to ``(state, reward, done, reply)``.
+) -> tuple[EnvironmentState, float, bool, ConversationTurn | None, dict[str, Any]]:
+    """Normalize step returns to ``(state, reward, done, reply, info)``.
 
     Accepts ``(state, reward, done, info)`` and the legacy
     ``(state, env_response, reward, done)``.
@@ -375,17 +419,30 @@ def _parse_step_result(
         maybe = info.get("env_response")
         if isinstance(maybe, ConversationTurn):
             env_response = maybe
-        return step_result[0], float(step_result[1]), bool(step_result[2]), env_response
+        return (
+            step_result[0],
+            float(step_result[1]),
+            bool(step_result[2]),
+            env_response,
+            info,
+        )
     if _is_reward(step_result[2]) and isinstance(step_result[3], bool):
         if isinstance(step_result[1], ConversationTurn):
             env_response = step_result[1]
-        return step_result[0], float(step_result[2]), bool(step_result[3]), env_response
+        return (
+            step_result[0],
+            float(step_result[2]),
+            bool(step_result[3]),
+            env_response,
+            {},
+        )
     if isinstance(step_result[1], ConversationTurn):
         return (
             step_result[0],
             float(step_result[2]),
             bool(step_result[3]),
             step_result[1],
+            {},
         )
     logger.warning(
         "Ambiguous Environment.step() return signature; "
@@ -395,7 +452,13 @@ def _parse_step_result(
     maybe = info.get("env_response")
     if isinstance(maybe, ConversationTurn):
         env_response = maybe
-    return step_result[0], float(step_result[1]), bool(step_result[2]), env_response
+    return (
+        step_result[0],
+        float(step_result[1]),
+        bool(step_result[2]),
+        env_response,
+        info,
+    )
 
 
 async def _batch_replies(

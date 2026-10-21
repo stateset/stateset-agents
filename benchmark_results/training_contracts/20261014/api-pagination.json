@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "scope": "Synthetic SQLite job-history listing; instrumented timing and Python heap only",
+  "python": "3.12.12",
+  "sqlite": "3.50.4",
+  "jobs": 10000,
+  "page_size": 20,
+  "payload_chars": 2048,
+  "pages_equal": true,
+  "queue_source_sha256": "7161deb577020515f1b365a0efeb5d37f8f6e6cb240e9b813646128cb409c91b",
+  "benchmark_source_sha256": "f4165ebf150c71cc8ae6b99875727b61e846a535226acc0359c561d7d304a84c",
+  "legacy": {
+    "samples": [
+      {
+        "seconds": 3.978401931002736,
+        "peak_python_bytes": 32704056
+      },
+      {
+        "seconds": 4.917865198000072,
+        "peak_python_bytes": 32704032
+      },
+      {
+        "seconds": 4.358766240002296,
+        "peak_python_bytes": 32704032
+      }
+    ],
+    "median_seconds": 4.358766240002296,
+    "median_peak_python_bytes": 32704032
+  },
+  "paginated": {
+    "samples": [
+      {
+        "seconds": 0.4155115800022031,
+        "peak_python_bytes": 115265
+      },
+      {
+        "seconds": 0.32558723800320877,
+        "peak_python_bytes": 115241
+      },
+      {
+        "seconds": 0.3257105489974492,
+        "peak_python_bytes": 115241
+      }
+    ],
+    "median_seconds": 0.3257105489974492,
+    "median_peak_python_bytes": 115241
+  }
+}

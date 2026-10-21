@@ -1,0 +1,55 @@
+"""Retain focused evidence without representing the queued full suite as passed."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+
+root = Path('/home/dom/stateset-agents')
+typed = json.loads(Path('/tmp/stateset-evaluation-quick-types.json').read_text())
+focused = json.loads(Path('/tmp/stateset-evaluation-current-focused.json').read_text())
+package = {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert typed['passed'] and typed['source_sha256']==package
+assert focused['passed'] and focused['source_and_tests_sha256']=={**{'stateset_agents/'+name:digest for name,digest in package.items()},**tests}
+assert focused['counts']=={'tests':70,'failures':0,'errors':0,'skipped':0}
+assert all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in typed['gate_inputs_sha256'].items())
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-evaluation-pending'
+out.mkdir(parents=True,exist_ok=False)
+receipts = []
+for handle in ['718917e810ad','32140640143e','16e925fa033f','b10d3c8b4284']:
+    job = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    if handle in {'718917e810ad','32140640143e'}:
+        assert job['state']=='succeeded' and job['exit_code']==0
+        shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(handle+'.log'),out/(handle+'.log'))
+    receipts.append({key:job.get(key) for key in ['id','state','exit_code','argv','reason','created','started','finished','wait_seconds','elapsed_seconds','usage']})
+(out/'queue-receipts.json').write_text(json.dumps(receipts,indent=2)+'\n')
+(out/'summary.json').write_text(json.dumps({'phase':'focused_acceptance_only','focused_tests':70,'typed_modules':429,'source_unchanged':True,'full_acceptance_verified':False,'full_pipeline_queue_job':'16e925fa033f','gpu_verified':False,'paid_run_launched':False,'quality_gain_verified':False},indent=2)+'\n')
+for name in ['stateset-evaluation-current-focused.xml','stateset-evaluation-current-focused.json','stateset-evaluation-quick-types.json','stateset-studio-evaluation-live.txt','stateset-studio-evaluation-draft.txt']:
+    shutil.copy2(Path('/tmp')/name,out/name)
+for name in ['stateset-evaluation-quick-focused.py','stateset-evaluation-quick-types.py','stateset-evaluation-retain-pending.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+(out/'README.md').write_text('''# Paired evaluation: focused verification, full acceptance pending
+
+The exact current package/test sources passed 70 focused evaluation tests with
+no skips/failures and the complete 429-file type gate. Source identities, JUnit,
+queue receipts and logs are retained. These results include real tiny CPU model
+and safe-adapter generation, pin/cache collision checks, actual terminal review
+flows, controlled launch/queue boundaries, critical judge success gates and
+bounded private queue metadata. Positive judge scoring uses injected synthetic
+replies through the real recorder and replay; it is not live judge quality proof.
+
+The read-only type check used its own queue resource key and no cache writes.
+Focused tests used isolated temporary outputs, no pytest cache and no bytecode
+writes. Both quick jobs retained unchanged source fingerprints. The earlier
+default-lock type job remains queued behind the full pipeline; it was not
+cancelled. Jobs and budgets outside this task were not changed.
+
+Full pipeline `16e925fa033f` is not certified by this record. Whole repository
+gates, broader source regressions, installed-wheel identity/tests and installed
+CLI checks must still finish. Its receipt here is only a point-in-time queue
+snapshot. No paid run, GPU, remote evaluation, multi-seed study or independent
+quality gain is certified. The live split preserves its private draft and has
+no completed run; isolated fixtures were not inserted into the live workspace.
+''')
+print(out)

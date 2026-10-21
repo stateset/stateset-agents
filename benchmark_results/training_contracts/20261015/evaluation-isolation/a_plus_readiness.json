@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "kind": "a-plus-gap-assessment",
+  "a_plus_achieved": false,
+  "top_level_gate_executed": false,
+  "scope": "Local engineering improvements cannot certify representative quality, competitive efficiency or distributed reliability.",
+  "remaining_requirements": [
+    {
+      "requirement": "Representative held-out quality",
+      "required_evidence": "Human-reviewed disjoint cases; prespecified paired multi-seed results with validation-only selection, raw outcomes and artifact-bound policy identities."
+    },
+    {
+      "requirement": "Matched framework efficiency",
+      "required_evidence": "Retained native, TRL, verl, NeMo RL and OpenRLHF measurements on the matched protocol, with GPU conformance and provider-derived costs."
+    },
+    {
+      "requirement": "Distributed scale and recovery",
+      "required_evidence": "Multi-node scaling, fault recovery without lost or duplicate updates, and a 12-hour soak."
+    },
+    {
+      "requirement": "Release and independent trust",
+      "required_evidence": "One clean immutable release commit, current provider canaries and release artifacts, plus independent reproduction and security review as required by the roadmap."
+    }
+  ],
+  "acceptance_gate": "benchmarks/a_plus_gate.py",
+  "roadmap": "docs/ROADMAP.md",
+  "paid_compute_allocated": false,
+  "spend_ceiling_increase_approved": false
+}

@@ -13,6 +13,7 @@ import ast
 import pickle
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -20,6 +21,7 @@ from tests.unit._paths import rel_posix
 
 torch = pytest.importorskip("torch")
 
+from stateset_agents.core import checkpoint_io as checkpoint_io_module  # noqa: E402
 from stateset_agents.core.errors import ModelError  # noqa: E402
 from stateset_agents.training.multi_turn_checkpointing import (  # noqa: E402
     load_multi_turn_checkpoint,
@@ -36,6 +38,18 @@ TRAINER_EXCEPTIONS = (
     KeyError,
     OSError,
 )
+
+
+@pytest.mark.parametrize("trusted", ["false", "true", 0, 1, None, [], object()])
+def test_checkpoint_trust_requires_explicit_boolean_before_loading(trusted, tmp_path):
+    from stateset_agents.core.checkpoint_io import load_checkpoint_file
+
+    backend = Mock()
+    with pytest.raises(TypeError, match="explicit boolean"):
+        load_checkpoint_file(
+            tmp_path / "untrusted.pt", trusted=trusted, torch_module=backend
+        )
+    backend.load.assert_not_called()
 
 
 def _evil_payload() -> dict[str, object]:
@@ -102,8 +116,10 @@ def test_training_state_load_accepts_pickled_payload_when_trusted(loader, tmp_pa
     torch.save(_evil_payload(), tmp_path / "training_state.pt")
     trainer = _make_trainer()
 
-    assert loader(trainer, tmp_path, trusted=True) is True
-    assert trainer.global_step == 7
+    assert loader(trainer, tmp_path, trusted=True) is False
+    # Trust permits unpickling; a partial metadata record still cannot stand
+    # in for recovered model/optimizer/cursor state.
+    assert trainer.global_step == 0
 
 
 @pytest.mark.parametrize("loader", CHECKPOINT_LOADERS)
@@ -126,8 +142,9 @@ def test_model_weights_load_accepts_pickled_payload_when_trusted(loader, tmp_pat
         load_state_dict=lambda sd, **k: seen.update(sd)
     )
 
-    loader(trainer, tmp_path, trusted=True)
+    assert loader(trainer, tmp_path, trusted=True) is False
     assert seen["global_step"] == 7
+    assert trainer._runtime_checkpoint_poisoned
 
 
 def _value_function():
@@ -221,12 +238,9 @@ def _torch_load_calls(source: str) -> list[ast.Call]:
 
 
 # The module that is allowed to call torch.load, plus the shim re-exporting it.
-_CHECKPOINT_IO = Path(__file__).resolve().parents[2] / (
-    "stateset_agents/core/checkpoint_io.py"
-)
-_CHECKPOINT_IO_SHIM = Path(__file__).resolve().parents[2] / (
-    "stateset_agents/training/checkpoint_io.py"
-)
+_CHECKPOINT_IO = Path(checkpoint_io_module.__file__).resolve()
+_PACKAGE_ROOT = _CHECKPOINT_IO.parents[1]
+_CHECKPOINT_IO_SHIM = _PACKAGE_ROOT / "training/checkpoint_io.py"
 
 
 @pytest.mark.parametrize(
@@ -266,9 +280,11 @@ def test_only_checkpoint_io_calls_torch_load():
     Centralising it is what makes the ``weights_only`` default enforceable: a
     new ``torch.load`` anywhere else in the package fails this test.
     """
-    root = Path(__file__).resolve().parents[2] / "stateset_agents"
+    root = _PACKAGE_ROOT
+    sources = sorted(root.rglob("*.py"))
+    assert _CHECKPOINT_IO in sources and _CHECKPOINT_IO_SHIM in sources
     offenders = []
-    for py in sorted(root.rglob("*.py")):
+    for py in sources:
         if py == _CHECKPOINT_IO:
             continue
         for call in _torch_load_calls(py.read_text(encoding="utf-8")):

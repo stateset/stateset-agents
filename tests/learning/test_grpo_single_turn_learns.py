@@ -91,6 +91,9 @@ def _train(
         bf16=False,
         fp16=False,
         report_to="none",
+        # Keep the fixed-budget negative control running after sampling
+        # saturates; do not change production signal-guard defaults.
+        zero_signal_patience=0,
         seed=seed,
     )
     trainer = stt.SingleTurnGRPOTrainer(

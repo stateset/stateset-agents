@@ -1,0 +1,25 @@
+{
+  "passed": true,
+  "installed_origin": "/tmp/stateset-evaluation-case-picker-20261016/site-packages/stateset_agents/tui.py",
+  "candidate_unchanged": true,
+  "checks": [
+    {
+      "width": 74,
+      "height": 44,
+      "passed": true,
+      "draft_preserved": true,
+      "evaluation_created": false,
+      "worker_launched": false,
+      "private_case_text_hidden": true
+    },
+    {
+      "width": 110,
+      "height": 32,
+      "passed": true,
+      "draft_preserved": true,
+      "evaluation_created": false,
+      "worker_launched": false,
+      "private_case_text_hidden": true
+    }
+  ]
+}

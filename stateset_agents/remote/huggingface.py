@@ -45,6 +45,8 @@ class HuggingFaceJobsExecutor(RemoteExecutor):
     """Run the packaged StateSet worker on Hugging Face Jobs."""
 
     name = "huggingface"
+    supports_sft_seed = True
+    uses_packaged_training = True
     supported_job_kinds = frozenset({"sft", "harvest"})
     durable_handles = True
     result_kind = "hosted_pointer"

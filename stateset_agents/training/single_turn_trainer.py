@@ -33,11 +33,13 @@ from .callbacks import (
 )
 from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
+from .grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from .loss_computation import (
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
     compute_token_old_logprobs,
 )
+from .runtime_state import TrainingRuntime, validate_training_config
 from .single_turn_checkpointing import (
     load_checkpoint_artifacts,
     resolve_checkpoint_path,
@@ -54,7 +56,6 @@ from .single_turn_state import (
 )
 from .trainer_utils import (
     apply_dropout_setting,
-    backward_training_loss,
     get_amp,
     get_cosine_schedule_with_warmup,
     get_linear_schedule_with_warmup,
@@ -101,7 +102,7 @@ async def _call_environment(method: Any, *argument_forms: tuple[Any, ...]) -> An
     raise TypeError("Environment method does not accept a supported argument form")
 
 
-class SingleTurnGRPOTrainer:
+class SingleTurnGRPOTrainer(TrainingRuntime):
     """
     GRPO trainer for single-turn agents with HuggingFace and W&B integration
 
@@ -122,6 +123,7 @@ class SingleTurnGRPOTrainer:
         self.agent = agent
         self.environment = environment
         self.reward_fn = reward_fn
+        validate_training_config(config)
         self.config = config
         self.wandb_logger = wandb_logger
         self.callbacks = callbacks or []
@@ -132,6 +134,7 @@ class SingleTurnGRPOTrainer:
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
         self._grad_accum_step = 0
+        self._grpo_accumulation: dict[str, Any] | None = None
 
         # HuggingFace components
         self.optimizer: Any | None = None
@@ -367,11 +370,17 @@ class SingleTurnGRPOTrainer:
 
     def _update_global_stats(self, batch_mean: float, batch_size: int) -> None:
         """Update running reward statistics for global baselines."""
-        self._global_reward_mean = (
-            self._global_reward_mean * self._global_reward_count
-            + batch_mean * batch_size
-        ) / max(1, self._global_reward_count + batch_size)
+        if not hasattr(self, "_global_reward_sum"):
+            self._global_reward_sum = (
+                self._global_reward_mean * self._global_reward_count
+            )
+        self._global_reward_sum += batch_mean * batch_size
         self._global_reward_count += batch_size
+        self._global_reward_mean = (
+            self._global_reward_sum / self._global_reward_count
+            if self._global_reward_count > 0
+            else 0.0
+        )
 
     async def _compute_reward_for_turns(
         self,
@@ -490,6 +499,7 @@ class SingleTurnGRPOTrainer:
                         "Could not discard pending gradients: %s", cleanup_error
                     )
             self._grad_accum_step = 0
+            self._grpo_accumulation = None
             raise
         finally:
             try:
@@ -610,9 +620,40 @@ class SingleTurnGRPOTrainer:
                     else contextlib.nullcontext()
                 )
 
-                # Inner updates below reuse this baseline and do not re-count
-                # the batch in the running reward statistics.
-                reward_stats = (self._global_reward_mean, self._global_reward_count)
+                baseline: dict[str, Any] = {
+                    "global_reward_mean": self._global_reward_mean,
+                    "global_reward_count": self._global_reward_count,
+                    "global_reward_sum": getattr(self, "_global_reward_sum", None),
+                }
+                inner = max(
+                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
+                )
+                old_logprobs = None
+                if inner > 1:
+                    with autocast_ctx:
+                        old_logprobs = compute_token_old_logprobs(
+                            training_groups, self.config, self.agent
+                        )
+                    if old_logprobs is not None:
+                        self._flush_accumulation(torch, use_amp, max_grad_norm)
+                    else:
+                        logger.warning(
+                            "Inner updates require exact sampled tokens; applying one compatibility update"
+                        )
+                        inner = 1
+                streaming: dict[str, Any] = {
+                    "backward_fn": (
+                        NativeChunkedBackward(
+                            self,
+                            torch,
+                            steps=1 if inner > 1 else grad_accum_steps,
+                            scaler=self.scaler if use_amp else None,
+                        )
+                        if self.optimizer is not None
+                        else None
+                    ),
+                    "old_logprobs": old_logprobs,
+                }
                 with autocast_ctx:
                     if use_enhanced:
                         loss_dict = compute_enhanced_grpo_loss(
@@ -621,18 +662,18 @@ class SingleTurnGRPOTrainer:
                             config=self.config,
                             agent=self.agent,
                             reference_model=self.reference_model,
-                            global_reward_mean=self._global_reward_mean,
-                            global_reward_count=self._global_reward_count,
+                            **baseline,
                             update_global_stats=self._update_global_stats,
+                            **streaming,
                         )
                     else:
                         loss_dict = compute_grpo_loss(
                             trajectory_groups=training_groups,
                             config=self.config,
                             agent=self.agent,
-                            global_reward_mean=self._global_reward_mean,
-                            global_reward_count=self._global_reward_count,
+                            **baseline,
                             update_global_stats=self._update_global_stats,
+                            **streaming,
                         )
 
                     ewc_penalty = None
@@ -652,32 +693,16 @@ class SingleTurnGRPOTrainer:
                     policy_loss = loss_dict.get("policy_loss")
 
                 # Backprop/update
-                inner = max(
-                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
-                )
                 if (
                     inner > 1
                     and self.optimizer is not None
                     and policy_loss is not None
                     and loss_dict.get("path") == "token"
                 ):
-                    # PPO/DAPO-style mini-epochs against the frozen old policy,
-                    # kept separate from any pending accumulated update.
-                    # Same precision as the inner-update losses (first ratio 1).
-                    with (
-                        amp.autocast(device_type=device_type, enabled=use_amp)
-                        if amp is not None
-                        else contextlib.nullcontext()
-                    ):
-                        old_logprobs = compute_token_old_logprobs(
-                            training_groups, self.config, self.agent
-                        )
-                    had_pending = bool(self._grad_accum_step % grad_accum_steps)
-                    self._flush_accumulation(torch, use_amp, max_grad_norm)
+                    # The old policy was frozen before flushing pending work;
+                    # the first streamed loss already sees the post-flush policy.
                     for step_idx in range(inner):
-                        # A flush may change weights after the initial forward;
-                        # rebuild that graph against the frozen pre-flush policy.
-                        if step_idx > 0 or had_pending:
+                        if step_idx > 0:
                             with autocast_ctx:
                                 loss_dict = (
                                     compute_enhanced_grpo_loss(
@@ -687,18 +712,28 @@ class SingleTurnGRPOTrainer:
                                         agent=self.agent,
                                         reference_model=self.reference_model,
                                         old_logprobs=old_logprobs,
-                                        global_reward_mean=reward_stats[0],
-                                        global_reward_count=reward_stats[1],
+                                        **baseline,
                                         update_global_stats=None,
+                                        backward_fn=NativeChunkedBackward(
+                                            self,
+                                            torch,
+                                            steps=1,
+                                            scaler=self.scaler if use_amp else None,
+                                        ),
                                     )
                                     if use_enhanced
                                     else compute_grpo_loss(
                                         trajectory_groups=training_groups,
                                         config=self.config,
                                         agent=self.agent,
-                                        global_reward_mean=reward_stats[0],
-                                        global_reward_count=reward_stats[1],
+                                        **baseline,
                                         update_global_stats=None,
+                                        backward_fn=NativeChunkedBackward(
+                                            self,
+                                            torch,
+                                            steps=1,
+                                            scaler=self.scaler if use_amp else None,
+                                        ),
                                         old_logprobs=old_logprobs,
                                     )
                                 )
@@ -713,25 +748,51 @@ class SingleTurnGRPOTrainer:
                                         loss_dict["ewc_penalty"] = ewc_penalty
                                         policy_loss = policy_loss + ewc_penalty
                                         loss_dict["total_loss"] = policy_loss
-                        backward_training_loss(
+                        backward_accumulated_loss(
                             self,
                             policy_loss,
+                            loss_dict,
                             torch,
                             scaler=self.scaler if use_amp else None,
+                            regularizer=ewc_penalty,
+                            accumulation_steps=1,
                         )
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
                 elif self.optimizer is not None and policy_loss is not None:
-                    scaled_loss = policy_loss / grad_accum_steps
-                    backward_training_loss(
+                    backward_accumulated_loss(
                         self,
-                        scaled_loss,
+                        policy_loss,
+                        loss_dict,
                         torch,
                         scaler=self.scaler if use_amp else None,
+                        regularizer=ewc_penalty,
                     )
 
                     self._grad_accum_step += 1
                     if self._grad_accum_step % grad_accum_steps == 0:
                         self._apply_optimizer_step(torch, use_amp, max_grad_norm)
+
+                from .diagnostics import DiagnosticsMonitor
+
+                if getattr(self, "diagnostics", None) is None:
+                    self.diagnostics = DiagnosticsMonitor(self.config)
+                self._diagnostic_observations = (
+                    getattr(self, "_diagnostic_observations", 0) + 1
+                )
+                self.diagnostics(
+                    "step_end",
+                    {
+                        **{
+                            name: (
+                                value.detach().item()
+                                if torch.is_tensor(value) and value.numel() == 1
+                                else value
+                            )
+                            for name, value in loss_dict.items()
+                        },
+                        "step": self._diagnostic_observations,
+                    },
+                )
 
                 # Progress environment once using best response
                 action_turn = ConversationTurn(
@@ -869,6 +930,12 @@ class SingleTurnGRPOTrainer:
             checkpoint_path: Directory written by :meth:`save_checkpoint`.
             trusted: Pass ``True`` only for checkpoints from a source you
                 control; the default unpickles with ``weights_only=True``.
+
+        A model-only or metadata-only import returns ``False``. Imported agent
+        weights remain available for inference, but a mutated learner stays
+        quarantined until full recovery. Construct a fresh trainer for a
+        deliberate warm start. Full recovery includes rollout publication unless
+        ``rollout_sync=False`` explicitly opts out.
         """
         loaded: bool = load_checkpoint_artifacts(
             self,
@@ -878,7 +945,6 @@ class SingleTurnGRPOTrainer:
             logger,
             trusted=trusted,
         )
-        if loaded:
-            # An attached rollout engine still holds the pre-resume weights.
-            self._sync_rollout_backend()
+        # The transactional loader publishes restored weights once, after
+        # committing all policy/optimizer state, and quarantines sync failures.
         return loaded

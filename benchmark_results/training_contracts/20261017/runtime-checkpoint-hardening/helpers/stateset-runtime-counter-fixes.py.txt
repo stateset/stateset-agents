@@ -1,0 +1,98 @@
+"""Apply checkpoint counter ownership fixes with the acceptance source lock."""
+from pathlib import Path
+import fcntl
+import shutil
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+archive = Path('/tmp/stateset-runtime-first-verification')
+archive.mkdir(exist_ok=True)
+for name in ('stateset-runtime-verify.xml', 'stateset-runtime-governance.xml', 'stateset-runtime-verify-result.json'):
+    shutil.copyfile(Path('/tmp') / name, archive / name)
+shutil.copyfile('/home/dom/.local/state/agent-builds/logs/4e29516f5cf6.log', archive/'4e29516f5cf6.log')
+
+path = root/'stateset_agents/training/runtime_state.py'
+source = path.read_text().replace('from numbers import Real', 'from numbers import Integral, Real', 1)
+marker = '\ndef _validate_rollout_state(state: Any) -> None:\n'
+assert source.count(marker) == 1
+source = source.replace(marker, '''
+def _plain_counter_snapshot(counters: dict[str, Any]) -> dict[str, Any]:
+    """Own validated counter data using weights-only-safe Python values."""
+    def plain(value: Any) -> Any:
+        if value is None or isinstance(value, bool):
+            return value
+        if isinstance(value, Integral):
+            return int(value)
+        if isinstance(value, Real):
+            return float(value)
+        if isinstance(value, str):
+            return str(value)
+        if isinstance(value, list):
+            return [plain(item) for item in value]
+        if isinstance(value, dict):
+            return {str(key): plain(item) for key, item in value.items()}
+        raise ValueError("Invalid checkpoint counter value")
+
+    return cast(dict[str, Any], plain(counters))
+
+''' + marker, 1)
+needle = '        _validate_counters(state["counters"], self)\n'
+assert source.count(needle) == 1
+source = source.replace(needle, needle + '        state["counters"] = _plain_counter_snapshot(state["counters"])\n', 1)
+needle = 'json.dumps(self.training_metrics, indent=2, allow_nan=False)'
+assert source.count(needle) == 1
+source = source.replace(needle, 'json.dumps(state["counters"]["training_metrics"], indent=2, allow_nan=False)', 1)
+needle = '            _validate_counters(state.get("counters"), self)\n'
+assert source.count(needle) == 1
+source = source.replace(needle, needle + '            counters = _plain_counter_snapshot(state["counters"])\n', 1)
+source = source.replace('            for name, value in state["counters"].items():\n', '            for name, value in counters.items():\n', 1)
+path.write_text(source)
+
+for name in ('test_training_resume_required.py', 'test_dedicated_entrypoint_resume.py'):
+    path = root/'tests/unit'/name
+    source = path.read_text()
+    needle = '        trainer.current_epoch = 1\n        trainer.global_step = 7\n'
+    assert source.count(needle) == 1
+    source = source.replace(needle, '        trainer.current_epoch = 1\n        if hasattr(trainer, "_next_episode"):\n            trainer._next_episode = 2\n        trainer.global_step = 7\n', 1)
+    path.write_text(source)
+
+path = root/'tests/unit/test_runtime_checkpoint_safety.py'
+source = path.read_text().replace('import copy\n', 'import copy\nimport json\n', 1)
+marker = '@pytest.mark.asyncio\nasync def test_numpy_metric_history_round_trips_with_weights_only_loading('
+assert source.count(marker) == 1
+source = source[:source.index(marker)] + '''@pytest.mark.asyncio
+@pytest.mark.parametrize("best", [0.5, float("inf"), -float("inf")])
+async def test_numpy_metric_history_round_trips_with_weights_only_loading(
+    checkpoint, tmp_path, best
+):
+    trainer, _ = checkpoint
+    large_integer = 2**63 - 1
+    values = [np.float64(0.5), np.float32(0.25), np.int64(large_integer)]
+    trainer.training_metrics["mixed"] = values
+    trainer.metrics_history = {"mixed": list(values)}
+    histories = trainer.metrics_history
+    metrics = trainer.training_metrics
+    trainer.best_eval_metric = np.float64(best)
+    path = tmp_path / "numpy-metrics"
+    trainer.save_runtime_checkpoint(str(path))
+    assert trainer.training_metrics is metrics
+    assert trainer.training_metrics["mixed"] is values
+    assert trainer.metrics_history is histories
+    assert [type(item) for item in values] == [np.float64, np.float32, np.int64]
+    assert type(trainer.best_eval_metric) is np.float64
+    expected = [0.5, 0.25, large_integer]
+    assert json.loads((path / "training_metrics.json").read_text())["mixed"] == expected
+    saved = torch.load(path / "training_state.pt", weights_only=True)
+    assert saved["counters"]["training_metrics"]["mixed"] == expected
+    target = TinyRuntime()
+    assert target.load_runtime_checkpoint(str(path))
+    assert target.training_metrics["mixed"] == expected
+    assert target.metrics_history["mixed"] == expected
+    for history in (target.training_metrics, target.metrics_history):
+        assert [type(item) for item in history["mixed"]] == [float, float, int]
+    assert target.best_eval_metric == best
+    assert type(target.best_eval_metric) is float
+'''
+path.write_text(source)
+print('Applied owned plain counter snapshots, lossless NumPy metric serialization, and complete resume fixtures')

@@ -37,7 +37,7 @@ def _training_config(**over):
         "report_to": "none",
         "reward_clip": None,
         "max_completion_length": 16,
-        "seed": None,
+        "seed": 0,
         "lr_scheduler_type": "constant",
     }
     base.update(over)
@@ -51,6 +51,19 @@ def _trainer(config, model=None):
     trainer = mtt.MultiTurnGRPOTrainer(agent, environment=object(), config=config)
     asyncio.run(trainer.initialize())
     return trainer
+
+
+def _pending_grads(trainer):
+    """Read both pending banks without finalizing or changing accumulation."""
+    gradients = _grads(trainer.agent.model)
+    state = getattr(trainer, "_grpo_accumulation", None) or {}
+    entropy = state.get("entropy_gradients", {})
+    for gradient, (name, _) in zip(
+        gradients, trainer.agent.model.named_parameters(), strict=True
+    ):
+        if entropy.get(name) is not None:
+            gradient.add_(entropy[name])
+    return gradients
 
 
 @pytest.mark.parametrize("objective", [None, "gspo", "dapo"])
@@ -71,7 +84,7 @@ def test_training_step_backpropagates_chunks_scaled_for_accumulation(objective):
         groups, ref_config, reference, beta=0.0, ref=None, old_logprobs=None
     )
     want = [g / 2 for g in _grads(reference)]
-    assert _max_abs_diff(_grads(trainer.agent.model), want) < 1e-10
+    assert _max_abs_diff(_pending_grads(trainer), want) < 1e-10
     assert metrics["total_loss"] == pytest.approx(float(want_loss), abs=1e-10)
 
 
@@ -100,7 +113,30 @@ def test_training_step_backpropagates_the_ewc_penalty_separately():
     ref_first = next(reference.parameters())
     ref_first.square().sum().backward()
     want = [g / 2 for g in _grads(reference)]
-    assert _max_abs_diff(_grads(model), want) < 1e-10
+    assert _max_abs_diff(_pending_grads(trainer), want) < 1e-10
+
+
+@pytest.mark.parametrize("objective", [None, "gspo", "dapo"])
+def test_complete_accumulation_matches_single_full_batch_update(objective):
+    config = _training_config(objective=objective, max_grad_norm=100.0)
+    trainer = _trainer(config)
+    trainer.optimizer = torch.optim.SGD(trainer.agent.model.parameters(), lr=0.03)
+    reference = _tiny_model(0)
+    _single_backward_reference(
+        _groups(),
+        _config(objective=objective, entropy_coef=0.05, generation_batch_size=2),
+        reference,
+        beta=0.0,
+        ref=None,
+        old_logprobs=None,
+    )
+    torch.optim.SGD(reference.parameters(), lr=0.03).step()
+    assert not asyncio.run(trainer.training_step(_groups()))["optimizer_step"]
+    assert asyncio.run(trainer.training_step(_groups()))["optimizer_step"]
+    for actual, expected in zip(
+        trainer.agent.model.parameters(), reference.parameters(), strict=True
+    ):
+        torch.testing.assert_close(actual, expected, rtol=0, atol=1e-10)
 
 
 def test_inner_updates_use_chunked_backward_and_step():

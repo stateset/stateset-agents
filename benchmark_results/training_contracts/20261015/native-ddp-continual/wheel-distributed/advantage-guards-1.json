@@ -1,0 +1,54 @@
+[
+  {
+    "case": "reward_nan",
+    "rejected": true
+  },
+  {
+    "case": "reward_inf_clipped",
+    "rejected": true
+  },
+  {
+    "case": "reward_fp32_overflow",
+    "rejected": true
+  },
+  {
+    "case": "clip",
+    "rejected": true
+  },
+  {
+    "case": "estimator",
+    "rejected": true
+  },
+  {
+    "case": "normalization",
+    "rejected": true
+  },
+  {
+    "case": "mean",
+    "rejected": true
+  },
+  {
+    "case": "count",
+    "rejected": true
+  },
+  {
+    "case": "sum",
+    "rejected": true
+  },
+  {
+    "case": "update",
+    "rejected": true
+  },
+  {
+    "case": "overflow",
+    "rejected": true
+  },
+  {
+    "case": "computed_overflow",
+    "rejected": true
+  },
+  {
+    "case": "recovery",
+    "rejected": false
+  }
+]

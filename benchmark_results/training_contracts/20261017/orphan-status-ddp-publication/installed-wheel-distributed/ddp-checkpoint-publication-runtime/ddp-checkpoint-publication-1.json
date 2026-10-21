@@ -1,0 +1,58 @@
+[
+  {
+    "api": "runtime",
+    "mode": "true",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "none",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "absent",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "disabled",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": false,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "false",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "exception",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  },
+  {
+    "api": "runtime",
+    "mode": "rng",
+    "rank_local_rng_equal": true,
+    "next_update_equal": true,
+    "coordinated_rejection": true,
+    "reloaded": true
+  }
+]

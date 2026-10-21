@@ -1,0 +1,186 @@
+{
+  "passed": true,
+  "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+  "seeds": {
+    "1070261101": {
+      "evidence_sha256": {
+        "final-model.json": "e254b92bb59f92bf82bd3f59e70735d173217ff027afa002958a5e08e915bdea",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "fbfc061f72e403b6d421e584eed1c8a6c6b6bdd29b3173ea1af3bdd147499994",
+        "parent-greedy-validation.json": "4b794febfe7f7fa937b08acaa07932635b317fdc4d77e4c33d2005493db3f0bf",
+        "parent-stochastic-validation.json": "634239100105e67db5c91647d13264b76f145193f122633b1f15c477c0f05e23",
+        "rl-checkpoint.json": "b673b5994282264949c3c4baf28229ecd83aa7cf96911e29a95bf50f3d3292f8",
+        "rl-greedy-validation.json": "a4700beccafbc5c574822819484ace729bed7672a74b9707b759fff8b9e73661",
+        "rl-stochastic-validation.json": "dd189618e925a44ece7d87eeb2ea4ae82cd8964e0236140fb989fa56f734866e",
+        "stochastic-validation-decision.json": "817f35d72cf5f24e2786761fbfb01e031735f9f032829138f07cb26494104793",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "6ce695e9a357fd745834a079e57e3fbc002e6acd306a2ac76213715da3c2fe10"
+      },
+      "execution": {
+        "elapsed_seconds": 485.50563360902015,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 1070261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    },
+    "1420261101": {
+      "evidence_sha256": {
+        "final-model.json": "81db0b1c3a322dc33fa7cf68fc73e0887fe38350432d9fa9a590e7671734cb83",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "5e5ee42b02cb6a10253be2e045bec89e97ce9903135a928b74ea3c0ff8411388",
+        "parent-greedy-validation.json": "307f8557eab87a9962fcaa14e75e17a9c95226f3d38785b9bbc1152a285dffc2",
+        "parent-stochastic-validation.json": "ba91ff465159a80945725e069662b33dbff5d3403a97ee6bee69cde673498bf4",
+        "rl-checkpoint.json": "ca3867a305e56f5b2faf813ee446d91b470b5e38eb496c60c042a92acbb1a545",
+        "rl-greedy-validation.json": "ff19d0c2fdf8868e282557f351b12aa78b24f1f2f1cca8a5787ea771f806c43e",
+        "rl-stochastic-validation.json": "3ae5688d0f91629b553d4fcb15730a83993b72ab68e20cddd5e52afe3af06f98",
+        "stochastic-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "57395f0f05d45076e12d4e9731eb0b47fdb61c6d07709861f43af7de4bf5b9aa"
+      },
+      "execution": {
+        "elapsed_seconds": 481.43066051602364,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 1420261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    },
+    "1770261101": {
+      "evidence_sha256": {
+        "final-model.json": "4fa817f3acd39db85317ff502283be80f729f46ac0a12b31b7d916af50553117",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "82a83122b7ed7c5a8868d84d37a34fc6a0424f3ecea48256b09ddd666c48e47d",
+        "parent-greedy-validation.json": "d16f3b57a2da4a3cbe0e795debdc2f6c1fd937568ecba0a859450ce75ff3083f",
+        "parent-stochastic-validation.json": "bed7d68640327059e2b7db1a56f2c8860c0331f4cc406a37718dd850371dcbcf",
+        "rl-checkpoint.json": "4a2f0125017e5269aeb1c322b646e6cdfd4b1498208653668ec0968b687bd6ca",
+        "rl-greedy-validation.json": "5889eeeb4b1646cf406ec54777b39e36b93173d3610d7dca5c61e7a8817cf7cb",
+        "rl-stochastic-validation.json": "9c4ef4a34ecef6b61af57dea7ff6f48488f3ae9dfed671592947fb9b66932bca",
+        "stochastic-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "1bcbebc59e5466a44b2e5b62f73e65c78452099e6ac2fd3e9e7696d9de7f7a29"
+      },
+      "execution": {
+        "elapsed_seconds": 517.0383529870305,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 1770261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    },
+    "20261101": {
+      "evidence_sha256": {
+        "final-model.json": "4225a9f6a9dbd7fe3c91fb428e441a5406787bc4ec66572da62dbbdfdd3545d2",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "c9a6f22227ef0ee4f73a5b0de2c6d9fd8dc358af8831289194498e402d712f95",
+        "parent-greedy-validation.json": "7a2e9d1ee950d6a37ac7f44dddd391bc3f68b8bffb55d7a372b9eb625f9bcb83",
+        "parent-stochastic-validation.json": "03f3e5deece8c3f11cd3ae72e057967d4b3867912ca6c3e9db7974a516c54f75",
+        "rl-checkpoint.json": "f9dadf5e2d85d55f984629cfd28bdfa6b6ea79d3696b854e4678fa32781bf9c4",
+        "rl-greedy-validation.json": "7ddf76f6b69a956aeb4ab7d30be062d42cf2adade1760004a857563c5816ffd8",
+        "rl-stochastic-validation.json": "b3a954764bae9fd30c34dd7c43ba213df91825a0348d1c65abdfc7b86a79febf",
+        "stochastic-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "83b065011e23c1bb47d398469d96301afd7f7bfae82761142e8f7009cc9f717f"
+      },
+      "execution": {
+        "elapsed_seconds": 528.580699712038,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 20261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    },
+    "370261101": {
+      "evidence_sha256": {
+        "final-model.json": "670f20471db08c6edca41b14cb12000d42f9eb43d6163503f097ad188129ed72",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "e2f7e85e1a55609bd5599e39efdf79e98321a073336ea3b97da2064003cd8f11",
+        "parent-greedy-validation.json": "8a1b0eaee65426e1a2fde7e3e3224e7828268a1b533405c696eb45f09afe9d40",
+        "parent-stochastic-validation.json": "d6d45c11ef946f65b02c5d47eaa9b15f761f88c66b9b02243cb2771d724d9248",
+        "rl-checkpoint.json": "caa47901139eef4b74e41b88f1051b380c4673e1a1755cdf988673c5f7c0ec3a",
+        "rl-greedy-validation.json": "30a7bf0480be74ab83928e3b1d52c10b0f1abd922d1c6c99f76bec33a03902e9",
+        "rl-stochastic-validation.json": "35021751d5fff6f7cc588eef294ecc86084eb01f1dd7a54ff398788c9db27750",
+        "stochastic-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "4063ef54231dd4d2929e6ce33df2bea8c7ec063ee9b55a9c5f0914853444edd2"
+      },
+      "execution": {
+        "elapsed_seconds": 487.53549263696186,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 370261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    },
+    "720261101": {
+      "evidence_sha256": {
+        "final-model.json": "25db9a63fcb18bab7caceea4e0bc86fe0aa15b517ba258b090d13fb2217f3ec0",
+        "greedy-validation-decision.json": "cdf55d55ffd0e66368ad555c6e738aae70dda39fe1cd0c853ef5fa55ea72d141",
+        "initial-model.json": "7fc407d45b9a1903edf4520dc043bc3d10c9969832b3ab456f325f64305418fb",
+        "parent-greedy-validation.json": "5458dbe2c542f5f64e84163a54fa5237db938dc555b7cea98982d4f7a4b0c1e3",
+        "parent-stochastic-validation.json": "d6ee7388df90d33f60bf2ce4896b4882d1faaaa6066a89680f3e24debfb638cf",
+        "rl-checkpoint.json": "c3d23f780f9ff5d9c77a36f0124f720df9dc8000a537bbdf85938c44edda01a6",
+        "rl-greedy-validation.json": "372e695d12c49167335ed5d3429df25c49579c0e0f9889520d792061a2a9b336",
+        "rl-stochastic-validation.json": "9da1161fc17520742323c667fd30b679716eb6fe85f467a2c03f827929069f27",
+        "stochastic-validation-decision.json": "0da49b6dab2060be428f7ea3af2ec6cfa9b1fc134a44c2a84753c5892a0e91d9",
+        "training-activity.json": "0564ba873364d86ea5274cac50363f47a8b4e596c4f235028b598f2ff1ce309a",
+        "training-steps.json": "b59157a4336dcc0ff436b85965d4456a227099395cc61a2e3a5fb9fb3687c17b"
+      },
+      "execution": {
+        "elapsed_seconds": 519.6141579179675,
+        "exit_code": 0,
+        "phase": "train-validation",
+        "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+        "seed": 720261101,
+        "timed_out": false
+      },
+      "qualified": true,
+      "result": {
+        "rl_updates": 1,
+        "sft_updates": 0,
+        "status": "validation_passed",
+        "test_attempted": false
+      }
+    }
+  }
+}

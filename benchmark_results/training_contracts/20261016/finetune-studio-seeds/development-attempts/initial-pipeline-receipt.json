@@ -1,0 +1,50 @@
+{
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-seeds-format.py",
+        "--format-only"
+      ],
+      "started": 1792202178.3774133,
+      "finished": 1792202180.6823199,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-seeds-prepare.py"
+      ],
+      "started": 1792202180.6825962,
+      "finished": 1792202417.626277,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-1",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-seeds-wheel.py",
+        "/tmp/stateset-studio-seeds-20261016-retry1",
+        "1"
+      ],
+      "started": 1792202417.6338832,
+      "finished": 1792202432.003989,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-2",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-seeds-wheel.py",
+        "/tmp/stateset-studio-seeds-20261016-retry1",
+        "2"
+      ],
+      "started": 1792202432.0042884,
+      "finished": 1792202554.2661207,
+      "exit_code": 1
+    }
+  ],
+  "passed": false
+}

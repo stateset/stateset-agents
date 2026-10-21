@@ -1,0 +1,15 @@
+{
+  "receipt": {
+    "protocol": "stateset-native-learner-preflight-v2",
+    "components": {
+      "loss": "ccaf149cc23a7b344f922ec23b638b83b6295960ab49e73cd6b85ea4c0e1b894",
+      "schedule": "8578419a1c597bdfb987bd7bcc92265433dac1004f4473ea286a0e6fb57ff4ac",
+      "model": "5adc7a6703187a77e9684b26d6cbb03c6881fa58b0b25f7c567befd180852c9c",
+      "optimization": "bf9b0c79d252317e687ca042ceb73413453ef787db6b815bfcd84d9fbe6e8159",
+      "estimator": "5c7fb53416e0436a8f3bf8f1e7edad8e1f3c7fb56413212b042ea5dc1cb14178",
+      "rollouts": "f70186ca5c5b29bee5670df73cdc5e62a4ade5ccf968f98d667b48733dbc30ec"
+    }
+  },
+  "global_step": 1152921504606846979,
+  "calls": 9
+}

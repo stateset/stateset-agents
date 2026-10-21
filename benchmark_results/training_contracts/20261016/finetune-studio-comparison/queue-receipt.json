@@ -1,0 +1,15 @@
+{
+  "id": "e3db43feb339",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    ".venv/bin/python",
+    "/tmp/stateset-studio-comparison-finish.py"
+  ],
+  "created": 1792182522.105365,
+  "started": 1792182539.775958,
+  "finished": 1792182557.2972639,
+  "wait_seconds": 17.67059302330017,
+  "elapsed_seconds": 17.521305799484253,
+  "reason": ""
+}

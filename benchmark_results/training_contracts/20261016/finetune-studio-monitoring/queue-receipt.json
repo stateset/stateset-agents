@@ -1,0 +1,18 @@
+{
+  "id": "411c4af837e7",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "/tmp/stateset-studio-monitoring-verify.py"
+  ],
+  "created": 1792169943.036472,
+  "started": 1792174533.1456838,
+  "finished": 1792174724.0370648,
+  "wait_seconds": 4590.109211683273,
+  "elapsed_seconds": 190.89138102531433
+}

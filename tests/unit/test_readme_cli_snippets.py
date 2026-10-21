@@ -210,8 +210,8 @@ def test_expected_snippet_count() -> None:
     per_doc = {name: sum(1 for s, _, _ in SNIPPETS if s == name) for name in DOCS}
     # QUICKSTART was simplified in the "golden path" update; it now contains
     # fewer direct CLI snippets. Keep this guard aligned with the current doc.
-    # Includes industry preparation/training and the reward-audit example.
-    assert per_doc == {"README.md": 29, "QUICKSTART.md": 2}, per_doc
+    # Includes the industry workflow and candidate reward-audit example.
+    assert per_doc == {"README.md": 31, "QUICKSTART.md": 2}, per_doc
 
 
 def test_help_stays_plain_when_the_environment_forces_color(

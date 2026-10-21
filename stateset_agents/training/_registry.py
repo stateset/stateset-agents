@@ -8,6 +8,15 @@ is data only and must not import anything heavy.
 _PKG = __name__.rpartition(".")[0]
 
 OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
+    "FrontierSFTConfig": (f"{_PKG}.frontier_sft", "FrontierSFTConfig"),
+    "describe_frontier_sft": (f"{_PKG}.frontier_sft", "describe_frontier_sft"),
+    "train_frontier_sft": (f"{_PKG}.frontier_sft", "train_frontier_sft"),
+    "MuseSparkSFTConfig": (f"{_PKG}.muse_spark", "MuseSparkSFTConfig"),
+    "describe_muse_spark": (f"{_PKG}.muse_spark", "describe_muse_spark"),
+    "train_muse_spark": (f"{_PKG}.muse_spark", "train_muse_spark"),
+    "NemotronVLConfig": (f"{_PKG}.nemotron_vl", "NemotronVLConfig"),
+    "describe_nemotron_vl": (f"{_PKG}.nemotron_vl", "describe_nemotron_vl"),
+    "train_nemotron_vl": (f"{_PKG}.nemotron_vl", "train_nemotron_vl"),
     # Core training surface (lazy so that importing this package stays
     # torch-free; every one of these modules imports torch transitively).
     "TrainingConfig": (f"{_PKG}.config", "TrainingConfig"),
@@ -1290,6 +1299,15 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
 #: served lazily by :data:`OPTIONAL_EXPORTS`, the rest are module-level
 #: availability flags defined eagerly in ``__init__``.
 PUBLIC_NAMES: tuple[str, ...] = (
+    "FrontierSFTConfig",
+    "describe_frontier_sft",
+    "train_frontier_sft",
+    "MuseSparkSFTConfig",
+    "describe_muse_spark",
+    "train_muse_spark",
+    "NemotronVLConfig",
+    "describe_nemotron_vl",
+    "train_nemotron_vl",
     "GRPOTrainer",
     "MultiTurnGRPOTrainer",
     "SingleTurnGRPOTrainer",

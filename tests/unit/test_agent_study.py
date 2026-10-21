@@ -28,6 +28,9 @@ from stateset_agents.evaluation.agent_study import (
     build_plan,
     prepare_study,
 )
+from stateset_agents.evaluation.refund_trace import (
+    select_replayed_validation_checkpoint,
+)
 from stateset_agents.remote.rollout_budget import RolloutAdmissionBudget
 from stateset_agents.training.river_progress import summarize_training_activity
 from stateset_agents.training.river_refund import EVALUATION_SETTINGS
@@ -75,6 +78,35 @@ def write_json(path, value):
     """Write synthetic or deliberately corrupted evidence, without crash guarantees."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value, allow_nan=False) + "\n")
+
+
+async def synthetic_selection(directory, report):
+    """Keep invented fixtures consistent with the current selection protocol."""
+    run = read(directory / "run_manifest.json")
+    receipts_path = directory / "recovery_receipts.json"
+    best = await select_replayed_validation_checkpoint(
+        read(directory / "validation_results.json"),
+        steps=run["steps"],
+        cases={
+            r["order_id"]: r for r in read(directory.parent / "data/validation.json")
+        },
+        environment=run["environment"],
+        training_progress=read(directory / "training_metrics.json"),
+        recovery_receipts=read(receipts_path) if receipts_path.exists() else {},
+        run_manifest_hash=content_hash(run),
+    )
+    selection = best["selection_activity"]
+    write_json(directory / "validation_selection.json", selection)
+    report["selected_checkpoint"] = best["checkpoint"]
+    report["selected_validation_step"] = best["step"]
+    report["selected_training_activity"] = selection["selected_training_activity"]
+    report["validation_selection_hash"] = content_hash(selection)
+    attempt = read(directory / "test_attempt.json")
+    attempt.update(
+        selected_checkpoint=best["checkpoint"], selected_validation_step=best["step"]
+    )
+    write_json(directory / "test_attempt.json", attempt)
+    report["test_attempt_hash"] = content_hash(attempt)
 
 
 def synthetic_budget(directory, config, run, artifact, admitted):
@@ -275,6 +307,7 @@ async def synthetic_study(root, config=None):
                     directory / arm / "training_activity.json",
                     report["training_activity"],
                 )
+                await synthetic_selection(directory / arm, report)
             write_json(directory / arm / "test_results.json", report)
     return config
 
@@ -729,6 +762,7 @@ def test_audit_accepts_recovered_commits_only_with_matching_receipts(study):
     write_json(root / "training_activity.json", activity)
     report = read(root / "test_results.json")
     report["training_activity"] = activity
+    asyncio.run(synthetic_selection(root, report))
     write_json(root / "test_results.json", report)
     result = asyncio.run(audit_study(study))
     assert result["passed"]
@@ -754,6 +788,7 @@ def _refresh_activity(root):
     write_json(root / "training_activity.json", activity)
     report = read(root / "test_results.json")
     report["training_activity"] = activity
+    asyncio.run(synthetic_selection(root, report))
     write_json(root / "test_results.json", report)
     return activity
 
@@ -869,6 +904,40 @@ def test_audit_preserves_mixed_and_unknown_training_activity(study, recovered):
     assert activity["unknown_update_batches"] == (2 if recovered else 0)
     assert activity["observed_skipped_batches"] == (0 if recovered else 1)
     assert activity["status"] == ("unknown" if recovered else "updates_observed")
+
+
+@pytest.mark.parametrize(
+    "mutation", ["missing", "file", "report_hash", "selected_count", "excluded_steps"]
+)
+def test_audit_recomputes_selected_checkpoint_activity(study, mutation):
+    root = study / "seed-42/rl"
+    path = root / "validation_selection.json"
+    selection = read(path)
+    report = read(root / "test_results.json")
+    if mutation == "missing":
+        path.unlink()
+    elif mutation == "file":
+        selection["selected_training_activity"]["observed_optimizer_updates"] = 200
+        write_json(path, selection)
+    elif mutation == "report_hash":
+        report["validation_selection_hash"] = "0" * 64
+        write_json(root / "test_results.json", report)
+    elif mutation == "selected_count":
+        # Even a locally rehashed, mutually consistent claim must match metrics.
+        selection["selected_training_activity"]["observed_optimizer_updates"] = 200
+        report["selected_training_activity"] = selection["selected_training_activity"]
+        report["validation_selection_hash"] = content_hash(selection)
+        write_json(path, selection)
+        write_json(root / "test_results.json", report)
+    else:
+        selection["excluded_skipped_batches"] = [1]
+        report["validation_selection_hash"] = content_hash(selection)
+        write_json(path, selection)
+        write_json(root / "test_results.json", report)
+    result = asyncio.run(audit_study(study))
+    assert not result["passed"]
+    assert result["comparison"] is None
+    assert any(issue.get("arm") == "rl" for issue in result["issues"])
 
 
 @pytest.mark.parametrize("arm", ["base", "sft", "rejection_sft"])

@@ -234,6 +234,7 @@ class TestGRPOTrainer:
 
         # Create training config
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             num_episodes=10,
             learning_rate=1e-5,
             per_device_train_batch_size=1,
@@ -263,7 +264,9 @@ class TestGRPOTrainer:
         reward_fn = create_customer_service_reward()
 
         # Test group_mean baseline
-        train_config = TrainingConfig(baseline_type="group_mean")
+        train_config = TrainingConfig(
+            allow_sequence_fallback=True, baseline_type="group_mean"
+        )
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
 
         trajectory = MultiTurnTrajectory()
@@ -301,7 +304,7 @@ class TestGRPOTrainer:
         env = ConversationEnvironment(scenarios=scenarios, max_turns=2)
         reward_fn = create_customer_service_reward()
 
-        train_config = TrainingConfig(num_generations=2)
+        train_config = TrainingConfig(allow_sequence_fallback=True, num_generations=2)
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
 
         await trainer.initialize()
@@ -327,6 +330,7 @@ class TestGRPOTrainer:
 
         # Enable reference model and KL penalty
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             beta=0.1,  # KL penalty coefficient
             use_reference_model=True,
         )
@@ -364,6 +368,7 @@ class TestGRPOTrainer:
         reward_fn = create_customer_service_reward()
 
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             learning_rate=1e-5,
             clip_ratio=0.2,
             gradient_accumulation_steps=1,
@@ -410,7 +415,9 @@ class TestPolicyGradientComputation:
         )
         reward_fn = create_customer_service_reward()
 
-        train_config = TrainingConfig()
+        train_config = TrainingConfig(
+            allow_sequence_fallback=True,
+        )
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
         await trainer.initialize()
 
@@ -443,7 +450,7 @@ class TestPolicyGradientComputation:
         reward_fn = create_customer_service_reward()
 
         # Set explicit clip ratio
-        train_config = TrainingConfig(clip_ratio=0.2)
+        train_config = TrainingConfig(allow_sequence_fallback=True, clip_ratio=0.2)
         trainer = MultiTurnGRPOTrainer(agent, env, reward_fn, train_config)
         await trainer.initialize()
 
@@ -490,6 +497,7 @@ class TestIntegration:
 
         # Create training config
         train_config = TrainingConfig(
+            allow_sequence_fallback=True,
             num_episodes=2,  # Small for testing
             num_generations=2,
             learning_rate=1e-5,

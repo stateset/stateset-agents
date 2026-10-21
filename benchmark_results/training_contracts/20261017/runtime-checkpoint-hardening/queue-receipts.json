@@ -1,0 +1,492 @@
+[
+  {
+    "id": "1e204ba66630",
+    "state": "queued",
+    "exit_code": null,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-mobile-pipeline.py"
+    ],
+    "created": 1792215389.438823,
+    "started": null,
+    "finished": null,
+    "wait_seconds": 27021.72890138626,
+    "elapsed_seconds": 0,
+    "reason": "heavy job budget",
+    "usage": {},
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 113.45785617828369,
+        "heavy_capacity": 24682.665111780167,
+        "priority": 1.5456953048706055,
+        "job_capacity": 2219.8050634860992,
+        "ram_headroom": 4.25517463684082
+      },
+      "total_seconds": 27021.72890138626,
+      "observed_seconds": 26908.271045207977,
+      "coverage": 0.9958012362350189,
+      "current_category": "heavy_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792242409.4449077,
+      "transitions": [
+        {
+          "at": 1792240725.1812136,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240726.7754402,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240739.4664855,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240757.3761442,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240779.5230727,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240818.8650157,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240819.7821784,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240956.7300267,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792240957.3522928,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241023.733255,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241025.5548341,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241101.4616573,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241102.3817744,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241105.725721,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241226.431556,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241229.4774318,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241330.0205805,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241413.015583,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241425.7954795,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241457.6833622,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241458.905122,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241521.80354,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241522.124797,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241587.7456272,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241588.9724255,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241592.0263796,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241606.283901,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241611.1549075,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241665.7472444,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241705.1767626,
+          "category": "ram_headroom",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241707.2994192,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241720.9789584,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241722.5090501,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241744.4296012,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241744.7455652,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241749.0032606,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241805.1417363,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241816.7134423,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241821.5831645,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241824.3177607,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241828.8727412,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241829.790536,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241846.4531958,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241938.7073693,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792241939.6365135,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242017.7368329,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242019.2571073,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242030.365758,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242031.2852745,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242116.9611802,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242117.5810862,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242195.7418077,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242197.2664027,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242199.7080064,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242200.0391395,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242230.165767,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242242.9561222,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242296.972392,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242298.2063913,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242370.5351396,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242371.1507494,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242377.2173629,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242377.8318508,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        },
+        {
+          "at": 1792242392.1506543,
+          "category": "heavy_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 165,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "e53e8c2ec61e",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-runtime-verify.py"
+    ],
+    "created": 1792241963.3215106,
+    "started": 1792241990.647607,
+    "finished": 1792241998.9289138,
+    "wait_seconds": 27.326096534729004,
+    "elapsed_seconds": 8.281306743621826,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 7.0048,
+      "sampled_peak_rss_gb": 0.07486343383789062,
+      "samples": 14,
+      "observed_seconds": 8.27278704100172,
+      "observed_at": 1792241998.928782,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.01691412925720215,
+        "job_capacity": 27.3091824054718
+      },
+      "total_seconds": 27.326096534729004,
+      "observed_seconds": 27.3091824054718,
+      "coverage": 0.9993810265130365,
+      "current_category": "job_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792241990.647607,
+      "transitions": [
+        {
+          "at": 1792241963.3384247,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 1,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "4e29516f5cf6",
+    "state": "failed",
+    "exit_code": 1,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-runtime-verify.py"
+    ],
+    "created": 1792242028.9171226,
+    "started": 1792242031.0502324,
+    "finished": 1792242139.1904457,
+    "wait_seconds": 2.1331098079681396,
+    "elapsed_seconds": 108.14021325111389,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 77.3773,
+      "sampled_peak_rss_gb": 0.9009475708007812,
+      "samples": 179,
+      "observed_seconds": 108.08824690800975,
+      "observed_at": 1792242139.1901202,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.31616663932800293,
+        "job_capacity": 1.8169431686401367
+      },
+      "total_seconds": 2.1331098079681396,
+      "observed_seconds": 1.8169431686401367,
+      "coverage": 0.8517813578340055,
+      "current_category": "job_capacity",
+      "current_blocker": null,
+      "last_observed_at": 1792242031.0502324,
+      "transitions": [
+        {
+          "at": 1792242029.2332892,
+          "category": "job_capacity",
+          "blocking_job_id": null
+        }
+      ],
+      "transition_count": 1,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  },
+  {
+    "id": "9f2ecdceb8b0",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-runtime-verify.py"
+    ],
+    "created": 1792242242.36456,
+    "started": 1792242242.3888693,
+    "finished": 1792242380.4157634,
+    "wait_seconds": 0.024309396743774414,
+    "elapsed_seconds": 138.02689409255981,
+    "reason": "",
+    "usage": {
+      "cpu_seconds": 82.1945,
+      "sampled_peak_rss_gb": 0.9749336242675781,
+      "samples": 227,
+      "observed_seconds": 137.99361431098077,
+      "observed_at": 1792242380.4156156,
+      "source": "local_process_tree",
+      "complete": true,
+      "limitations": "Sampled RSS may miss short peaks and count shared pages more than once; CPU may miss unobserved descendants."
+    },
+    "wait_breakdown": {
+      "recorded": true,
+      "seconds": {
+        "unobserved": 0.024309396743774414
+      },
+      "total_seconds": 0.024309396743774414,
+      "observed_seconds": 0,
+      "coverage": 0.0,
+      "current_category": "unobserved",
+      "current_blocker": null,
+      "last_observed_at": 1792242242.3888693,
+      "transitions": [],
+      "transition_count": 0,
+      "note": "Blockers are sampled by the runner. Gaps over five seconds and legacy waits are unobserved; only the primary admission blocker is counted."
+    }
+  }
+]

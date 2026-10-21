@@ -14,11 +14,84 @@ __all__ = [
     "split_finetuning_data",
     "check_finetuning_overlap",
     "group_finetuning_data",
+    "parse_finetuning_json",
+    "validate_finetuning_split",
+    "validate_finetuning_source_split",
 ]
 
 
 def _reject_constant(value: str) -> None:
     raise ValueError(f"Non-finite JSON number: {value}")
+
+
+def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("Duplicate JSON object keys are not allowed")
+        result[key] = value
+    return result
+
+
+def parse_finetuning_json(line: str) -> Any:
+    """Decode JSON without silently overwriting declarations or accepting NaN."""
+    return json.loads(
+        line, object_pairs_hook=_unique_object, parse_constant=_reject_constant
+    )
+
+
+def validate_finetuning_split(row: Any, *, expected_split: str | None = None) -> None:
+    """Check top-level and metadata split declarations without altering the row.
+
+    Unannotated records remain compatible. Declarations cannot establish actual
+    provenance or detect annotations removed or changed before this boundary.
+    With no expected split, this validates declarations for general data reads.
+    """
+    allowed = {"train", "validation", "test"}
+    if expected_split is not None and expected_split not in allowed:
+        raise ValueError("Expected split must be train, validation, or test")
+    if not isinstance(row, dict):
+        return
+    declarations = [row["split"]] if "split" in row else []
+    metadata = row.get("metadata")
+    if isinstance(metadata, dict) and "split" in metadata:
+        declarations.append(metadata["split"])
+    for split in declarations:
+        if not isinstance(split, str) or split not in allowed:
+            raise ValueError(
+                "Dataset split declaration must be train, validation, or test"
+            )
+        if expected_split is not None and split != expected_split:
+            raise ValueError(
+                f"Declared dataset split does not match requested {expected_split} split"
+            )
+    if len(set(declarations)) > 1:
+        raise ValueError("Conflicting dataset split declarations")
+
+
+def validate_finetuning_source_split(
+    path: str | Path, *, expected_split: str = "train"
+) -> None:
+    """Preflight every JSONL declaration before provider setup or allocation.
+
+    This does not validate message structure or replace validation of the staged
+    training input. Callers must keep source files stable during submission.
+    """
+    validate_finetuning_split({}, expected_split=expected_split)
+    with Path(path).open(encoding="utf-8") as stream:
+        for number, line in enumerate(stream, 1):
+            if not line.strip():
+                continue
+            try:
+                row = parse_finetuning_json(line)
+                validate_finetuning_split(row, expected_split=expected_split)
+            except ValueError as exc:
+                message = (
+                    "Invalid JSON record"
+                    if isinstance(exc, json.JSONDecodeError)
+                    else str(exc)
+                )
+                raise ValueError(f"line {number}: {message}") from None
 
 
 def _json(value: Any) -> str:
@@ -133,15 +206,19 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     return row
 
 
-def load_finetuning_data(path: str | Path) -> list[dict[str, Any]]:
-    """Read UTF-8 JSONL, failing with a line number on any malformed record."""
+def load_finetuning_data(
+    path: str | Path, *, expected_split: str | None = None
+) -> list[dict[str, Any]]:
+    """Read strict UTF-8 JSONL, optionally enforcing its intended split role."""
+    validate_finetuning_split({}, expected_split=expected_split)
     rows = []
     with Path(path).open(encoding="utf-8") as stream:
         for line_number, line in enumerate(stream, 1):
             if not line.strip():
                 continue
             try:
-                row = json.loads(line, parse_constant=_reject_constant)
+                row = parse_finetuning_json(line)
+                validate_finetuning_split(row, expected_split=expected_split)
                 rows.append(validate_finetuning_row(row))
             except (ValueError, TypeError) as exc:
                 raise ValueError(f"{path}: line {line_number}: {exc}") from exc

@@ -367,6 +367,8 @@ def resolve_starter_config(
 
 def create_agent_config(config: Any, **extra_kwargs: Any) -> AgentConfig:
     """Create the matching AgentConfig for a starter config."""
+    if getattr(config, "model_revision", None) is not None:
+        extra_kwargs.setdefault("model_revision", config.model_revision)
     return AgentConfig(
         model_name=config.model_name,
         system_prompt=config.system_prompt,
@@ -424,7 +426,7 @@ def build_gspo_overrides(config: Any) -> dict[str, Any]:
         overrides["use_reference_model"] = config.use_reference_model
     # Policy objective selection (docs/OBJECTIVES.md); absent or None keeps
     # the native GSPO objective.
-    for key in ("objective", "objective_overrides"):
+    for key in ("objective", "objective_overrides", "model_revision"):
         value = getattr(config, key, None)
         if value is not None:
             overrides[key] = value

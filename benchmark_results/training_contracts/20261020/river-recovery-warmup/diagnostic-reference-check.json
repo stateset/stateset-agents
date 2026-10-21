@@ -1,0 +1,21 @@
+{
+  "passed": true,
+  "prior_train_probe": {
+    "completion_outcome": 0,
+    "format": 3,
+    "premature_finish": 0,
+    "reconciliation": 0,
+    "tool_contract": 0,
+    "unsafe_retry": 0
+  },
+  "prior_validation": {
+    "completion_outcome": 5,
+    "format": 0,
+    "premature_finish": 0,
+    "reconciliation": 0,
+    "tool_contract": 0,
+    "unsafe_retry": 0
+  },
+  "provider_calls": 0,
+  "replayed_outcomes": 80
+}

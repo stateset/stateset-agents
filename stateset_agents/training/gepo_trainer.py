@@ -25,12 +25,15 @@ import torch
 import torch.nn.functional as F
 
 from . import objectives, rl_losses
-from .checkpoint_io import load_checkpoint_file
 from .config import TrainingConfig
+from .runtime_state import (
+    TrainingRuntime,
+    _reject_unsupported_resume,
+    validate_training_config,
+)
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
-    save_checkpoint_artifacts,
 )
 
 # Configure logging
@@ -189,7 +192,7 @@ class GEPOModelManager(SharedModelManager):
         return LoraConfig, TaskType, get_peft_model
 
 
-class GEPOTrainer:
+class GEPOTrainer(TrainingRuntime):
     """
     Group Expectation Policy Optimization (GEPO) Trainer
 
@@ -217,6 +220,7 @@ class GEPOTrainer:
         # Ensure transformers is loaded for scheduler
         _load_transformers_gepo()
 
+        validate_training_config(config)
         if float(getattr(config, "beta", 0.0) or 0.0) > 0:
             raise ValueError(
                 "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
@@ -684,44 +688,12 @@ class GEPOTrainer:
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:
-        """Save model checkpoint"""
-        save_checkpoint_artifacts(
-            self.model,
-            self.tokenizer,
-            output_dir,
-            training_state={
-                "global_step": self.global_step,
-                "rollout_samples_total": self.rollout_samples_total,
-                "optimizer_state_dict": self.optimizer.state_dict(),
-                "scheduler_state_dict": self.scheduler.state_dict(),
-                "metrics_history": self.metrics_history,
-            },
-            config_dict=self.config.to_dict(),
-            config_filename="gepo_config.json",
-        )
+        """Publish a complete resumable checkpoint."""
+        self.save_runtime_checkpoint(output_dir)
 
-    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> None:
-        """Load model checkpoint.
-
-        Args:
-            checkpoint_dir: Directory written by :meth:`save_checkpoint`.
-            trusted: Pass ``True`` only for checkpoints from a source you
-                control; the default unpickles with ``weights_only=True`` so a
-                malicious checkpoint cannot execute code.
-        """
-        state_path = os.path.join(checkpoint_dir, "training_state.pt")
-        if os.path.exists(state_path):
-            state = load_checkpoint_file(
-                state_path, map_location=self.device, trusted=trusted
-            )
-            self.global_step = state["global_step"]
-            self.rollout_samples_total = int(
-                state.get("rollout_samples_total", self.rollout_samples_total)
-            )
-            self.optimizer.load_state_dict(state["optimizer_state_dict"])
-            self.scheduler.load_state_dict(state["scheduler_state_dict"])
-            self.metrics_history = state.get("metrics_history", self.metrics_history)
-            logger.info(f"Checkpoint loaded from {checkpoint_dir}")
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> bool:
+        """Restore policy weights and all training components."""
+        return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
 
 async def train_with_gepo(
@@ -748,16 +720,13 @@ async def train_with_gepo(
     Returns:
         Tuple of (model, tokenizer, metrics_history)
     """
+    if config is None:
+        config = GEPOConfig(model_name=model_name, output_dir=output_dir)
+    _reject_unsupported_resume(config, "train_with_gepo")
+
     logger.info("=" * 60)
     logger.info("GEPO Training - Group Expectation Policy Optimization")
     logger.info("=" * 60)
-
-    # Create config if not provided
-    if config is None:
-        config = GEPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
-        )
 
     # Initialize W&B
     if use_wandb and wandb_project:

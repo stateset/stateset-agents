@@ -1,0 +1,28 @@
+"""Run one frozen wheel contract group under the shared queue allocation."""
+from pathlib import Path
+import json
+import os
+import subprocess
+import sys
+
+out = Path(sys.argv[1])
+index = int(sys.argv[2])
+groups = json.loads((out / 'wheel-shards.json').read_text())
+assert 1 <= index <= len(groups)
+env = dict(os.environ, PYTHONPATH=str(out / 'site-packages'), OMP_NUM_THREADS='1',
+           MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1',
+           RAYON_NUM_THREADS='2', TOKENIZERS_PARALLELISM='false',
+           HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+argv = [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=',
+        '--timeout=150', '--tb=short', *groups[index - 1],
+        '--junitxml=' + str(out / f'wheel-shard-{index}.xml')]
+print('Wheel group:', index, flush=True)
+with (out / f'wheel-shard-{index}.log').open('w') as log:
+    child = subprocess.Popen(argv, cwd=out / 'checks', env=env, text=True,
+                             stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    for line in child.stdout:
+        log.write(line)
+        log.flush()
+        print(line, end='', flush=True)
+    code = child.wait()
+raise SystemExit(code)

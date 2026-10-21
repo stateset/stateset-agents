@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "sha256": "6282e875d1cd172246257a47f08906e7c3803e5d2f25ec55513b77f596e3a56b",
+  "output": "{\"kind\": \"synthetic-offline-cuda-contract\", \"passed\": true, \"gpu_name\": \"NVIDIA RTX A5000\"}\n"
+}

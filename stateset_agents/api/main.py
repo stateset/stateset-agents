@@ -21,6 +21,7 @@ from .resilience import HealthChecker, HealthStatus, get_all_circuit_stats
 from .routers import (
     agents,
     distributed_rollouts,
+    finetune,
     messages,
     metrics,
     openai,
@@ -170,7 +171,8 @@ async def lifespan(app: FastAPI):
 
         if training_service is None:
             training_service = TrainingService(
-                max_concurrent_jobs=getattr(config, "training_max_concurrent_jobs", 1)
+                max_concurrent_jobs=getattr(config, "training_max_concurrent_jobs", 1),
+                queue_path=getattr(config, "training_queue_path", None),
             )
             app.state.training_service = training_service
 
@@ -246,6 +248,7 @@ def create_app() -> FastAPI:
     app.include_router(agents.router)
     app.include_router(agents.conversation_router)
     app.include_router(training.router)
+    app.include_router(finetune.router)
     app.include_router(metrics.router)
     app.include_router(v1.router)
     app.include_router(messages.router)

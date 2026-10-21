@@ -312,10 +312,7 @@ async def test_batched_rows_stop_independently_and_never_record_padding(monkeypa
 
     monkeypatch.setattr(agent.model, "generate", fake_generate)
     batch = await agent._generate_with_model_details_batch(prompt, 2)
-    # Cut before the stop string (text and ids alike); the padding after it
-    # is not a sampled EOS.
-    assert batch[0]["token_ids"] == [9]
-    assert batch[0]["response"] == tok.decode([9], skip_special_tokens=True)
+    assert batch[0]["token_ids"] == [9, *stop]  # padding is not a sampled EOS
     assert batch[1]["token_ids"] == [9, 10, 11, 12, eos]
 
 

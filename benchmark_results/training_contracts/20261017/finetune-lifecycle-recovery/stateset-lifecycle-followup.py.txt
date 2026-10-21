@@ -1,0 +1,62 @@
+"""Apply reviewed recovery follow-ups after the completed development run."""
+from pathlib import Path
+import ast
+import fcntl
+import hashlib
+import json
+
+ROOT = Path('/home/dom/stateset-agents')
+stage = Path('/tmp/stateset-native-followup-fixes')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+manifest = json.loads((stage/'manifest.json').read_text())
+
+def sha(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else None
+
+updates = {}
+for name, row in manifest['files'].items():
+    assert sha(ROOT/name)==row['base_sha256'], 'Canonical changed: '+name
+    assert sha(stage/name)==row['staged_sha256'], 'Staged changed: '+name
+    updates[ROOT/name] = (stage/name).read_bytes()
+
+formatter = Path('/tmp/stateset-studio-mobile-format.py')
+source = formatter.read_text()
+node = next(n for n in ast.parse(source).body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='files' for t in n.targets))
+values = list(dict.fromkeys([*ast.literal_eval(node.value), *manifest['files']]))
+updates[formatter] = source.replace(ast.get_source_segment(source,node),'files = '+repr(values),1).encode()
+gates = Path('/tmp/stateset-studio-mobile-gates.py')
+source = gates.read_text()
+node = next(n for n in ast.parse(source).body if isinstance(n,ast.For) and isinstance(n.target,ast.Name) and n.target.id=='name')
+values = list(dict.fromkeys([*ast.literal_eval(node.iter), *manifest['files']]))
+updates[gates] = source.replace(ast.get_source_segment(source,node.iter),repr(values),1).encode()
+
+new_modules = ['tests/unit/test_checkpoint_rng_publication.py','tests/unit/test_native_checkpoint_metadata.py']
+for filename in ('stateset-studio-mobile-prepare.py','stateset-studio-mobile-finish.py'):
+    path = Path('/tmp')/filename
+    source = path.read_text()
+    nodes = [n for n in ast.parse(source).body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id in {'regressions','wheel_tests'} for t in n.targets) and isinstance(n.value,ast.List)]
+    replacements = [(ast.get_source_segment(source,n.value),repr(list(dict.fromkeys([*new_modules,*ast.literal_eval(n.value)])))) for n in nodes]
+    assert replacements
+    for old,new in replacements:
+        assert old in source
+        source = source.replace(old,new,1)
+    updates[path] = source.encode()
+
+path = Path('/tmp/stateset-lifecycle-verify.py')
+source = path.read_text()
+node = next(n for n in ast.parse(source).body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='NATIVE' for t in n.targets))
+values = list(dict.fromkeys([*[Path(n).stem for n in new_modules],*ast.literal_eval(node.value)]))
+updates[path] = source.replace(ast.get_source_segment(source,node),'NATIVE = '+repr(values),1).encode()
+
+path = ROOT/'.github/workflows/training-contracts.yml'
+source = path.read_text()
+marker = '          tests/unit/test_native_checkpoint_safety.py\n'
+assert source.count(marker)==1
+updates[path] = source.replace(marker,''.join('          '+n+'\n' for n in new_modules)+marker,1).encode()
+
+for path, content in updates.items():
+    path.parent.mkdir(parents=True,exist_ok=True)
+    path.write_bytes(content)
+Path('/tmp/stateset-lifecycle-followup.json').write_text(json.dumps({'files':manifest['files'],'stage':str(stage),'new_acceptance_modules':new_modules},indent=2)+'\n')
+print('Applied',len(manifest['files']),'reviewed follow-up files; updated all verification selections')

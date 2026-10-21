@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+=========================================================================
+Model: Qwen/Qwen3.5-0.8B
+SFT / local | Inputs not validated
+
+ > Training            sft
+   Compute             local
+   Model               Qwen/Qwen3.5-0.8B
+   Model commit        (not set)
+   Dataset             (not set)
+   Epochs              3
+   Learning rate       1e-05
+   LoRA rank           16
+   Context tokens      1024
+   Timeout seconds     3600
+   Queue CPUs          2
+   Queue RAM GiB       4.0
+   Queue scratch GiB   5.0
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Training: sft
+SFT learns replies; RL optimizes the support conversation reward.
+-------------------------------------------------------------------------
+Choose a model and dataset. Preview is free.
+Arrows/Enter edit | m models | p preview | r review
+f files | i readiness | s save | Tab runs | ? help | q quit

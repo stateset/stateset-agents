@@ -109,6 +109,23 @@ def assistant_token_mask(
     if located is None:
         return None
     full, spans = located
+    return _token_mask_for_spans(tokenizer, full, spans)
+
+
+def last_assistant_token_mask(
+    tokenizer: Any, messages: Sequence[dict[str, Any]]
+) -> tuple[list[int], list[bool]] | None:
+    """Locate only the last assistant action for transition-weighted offline RL."""
+    located = assistant_char_spans(chat_template_render(tokenizer), messages)
+    if located is None or not located[1] or messages[-1].get("role") != "assistant":
+        return None
+    full, spans = located
+    return _token_mask_for_spans(tokenizer, full, spans[-1:])
+
+
+def _token_mask_for_spans(
+    tokenizer: Any, full: str, spans: list[tuple[int, int]]
+) -> tuple[list[int], list[bool]] | None:
     try:
         encoded = tokenizer(full, add_special_tokens=False, return_offsets_mapping=True)
         ids = [int(t) for t in encoded["input_ids"]]
@@ -146,4 +163,9 @@ def _mask_by_prefix_encoding(
     return ids, mask
 
 
-__all__ = ["assistant_char_spans", "assistant_token_mask", "chat_template_render"]
+__all__ = [
+    "assistant_char_spans",
+    "assistant_token_mask",
+    "chat_template_render",
+    "last_assistant_token_mask",
+]

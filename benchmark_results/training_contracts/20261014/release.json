@@ -1,0 +1,20 @@
+{
+  "schema_version": 1,
+  "version": "0.66.0",
+  "tag": "v0.66.0",
+  "wheel_sha256": "fee2d663d0eac69ebc74cb760c0a15ef3fbff5b9af5bb60dd46324eb0830b7da",
+  "prior_implementation_validation": "validation.json",
+  "runtime_source_changes_since_prior_validation": [
+    "stateset_agents/__init__.py"
+  ],
+  "runtime_source_change_scope": "Package version string only",
+  "release_guard_tests_passed": 51,
+  "checks": {
+    "wheel_build": "passed",
+    "twine": "passed",
+    "ruff": "passed",
+    "repo_hygiene": "passed",
+    "release_governance": "passed"
+  },
+  "representative_quality": "Pending reviewed cases; synthetic evidence remains ineligible for representative quality claims"
+}

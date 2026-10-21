@@ -1,0 +1,45 @@
+{
+  "config": {
+    "checkpoint_every": 0,
+    "context_length": 1024,
+    "cost_policy": "require_cap",
+    "cpu_slots": 2,
+    "dataset": "/home/dom/stateset-agents/outputs/industry-datasets-20261019/ecommerce/train.jsonl",
+    "epochs": 3,
+    "generations": 4,
+    "gpu": "",
+    "gpu_count": 0,
+    "kl_coefficient": 0.1,
+    "learning_rate": 1e-05,
+    "lora_rank": 16,
+    "max_cost_usd": 10.0,
+    "max_new_tokens": 192,
+    "max_turns": 4,
+    "memory_gb": 4.0,
+    "method": "sft",
+    "model": "Qwen/Qwen3.5-2B",
+    "provider": "local",
+    "revision": "",
+    "scratch_gb": 5.0,
+    "seed": 42,
+    "steps": 50,
+    "timeout_seconds": 3600
+  },
+  "cwd": "/home/dom/stateset-agents",
+  "dataset_sha256": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+  "examples": 512,
+  "framework_version": "0.66.1",
+  "notes": [
+    "Dataset: 512 declared synthetic industry examples; not independently reviewed. Source bytes and provenance are retained.",
+    "Completion is not evidence of a quality gain.",
+    "Training seed: 42. Controls initialization and training randomness; identical GPU results are not guaranteed.",
+    "Model revision is mutable; set a commit for reproducibility."
+  ],
+  "package_implementation_sha256": "dfffa7164b0c8cfa59ce2717b7502cc6dd49a5307a61c6143350c36b48a71278",
+  "quality_gain_verified": false,
+  "resources": {
+    "cuda_required": true,
+    "provider": "local"
+  },
+  "schema_version": 1
+}

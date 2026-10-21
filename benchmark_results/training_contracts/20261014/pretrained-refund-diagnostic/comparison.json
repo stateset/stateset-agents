@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "protocol": {
+    "environment": "refund-policy-v2",
+    "base_model": "Qwen/Qwen2.5-0.5B-Instruct",
+    "settings": {
+      "model_revision": "7ae557604adf67be50417f59c2c2f167def9a775",
+      "temperature": 1.0,
+      "max_new_tokens": 192,
+      "max_turns": 4
+    },
+    "implementation": null
+  },
+  "passed": false,
+  "gates": {
+    "enough_seeds": false,
+    "mean_success_gain": false,
+    "improved_every_seed": false,
+    "no_violation_regression": true,
+    "no_truncation_regression": true,
+    "seed_significance": false,
+    "distinct_candidate_checkpoints": true
+  },
+  "thresholds": {
+    "min_seeds": 6,
+    "min_gain": 0.03,
+    "require_significance": true,
+    "alpha": 0.05,
+    "comparisons": 1
+  },
+  "inference": {
+    "method": "exact_one_sided_seed_sign_test",
+    "unit": "paired_run_seed",
+    "positive_seeds": 0,
+    "negative_seeds": 0,
+    "tied_seeds": 1,
+    "p_value": 1.0,
+    "bonferroni_adjusted_p_value": 1.0,
+    "alpha": 0.05,
+    "planned_comparisons": 1,
+    "rejects_null": false,
+    "distinct_candidate_checkpoints": true,
+    "assumptions": "Independent training runs; seed set, comparisons and protocol fixed before test inspection. Distinct checkpoint paths alone do not prove independence. Tests direction consistency, not mean effect size or safety."
+  },
+  "resource_usage_scope": "Descriptive held-out rollout usage, including failed attempts. Tokens per success are null when no case succeeds. Positive deltas mean more candidate usage. Trajectory seconds sum individual latencies, not wall-clock duration. Excludes training, input tokens, provider billing and unrecorded retries; usage is not independently verified. These measurements do not change the learning or safety gates.",
+  "mean_success_gain": 0.0,
+  "seed_gain_stddev": null,
+  "pairs": [
+    {
+      "seed": 42,
+      "baseline": {
+        "total": 8,
+        "passed": 0,
+        "success_rate": 0.0,
+        "success_wilson_95": [
+          0.0,
+          0.32440756488388023
+        ],
+        "violation_rate": 1.0,
+        "truncation_rate": 1.0,
+        "mean_reward": -1.0,
+        "generated_tokens": 2497,
+        "tool_calls": 32,
+        "mean_tool_calls": 4.0,
+        "trajectory_seconds": 52.81749095674604
+      },
+      "candidate": {
+        "total": 8,
+        "passed": 0,
+        "success_rate": 0.0,
+        "success_wilson_95": [
+          0.0,
+          0.32440756488388023
+        ],
+        "violation_rate": 1.0,
+        "truncation_rate": 1.0,
+        "mean_reward": -1.0,
+        "generated_tokens": 2497,
+        "tool_calls": 32,
+        "mean_tool_calls": 4.0,
+        "trajectory_seconds": 53.555785140022635
+      },
+      "resource_usage": {
+        "baseline": {
+          "generated_tokens_per_case": 312.125,
+          "generated_tokens_per_success": null
+        },
+        "candidate": {
+          "generated_tokens_per_case": 312.125,
+          "generated_tokens_per_success": null
+        },
+        "candidate_minus_baseline": {
+          "generated_tokens": 0,
+          "tool_calls": 0,
+          "trajectory_seconds": 0.7382941832765937
+        }
+      },
+      "checkpoints": {
+        "baseline": {
+          "path": "hf://Qwen/Qwen2.5-0.5B-Instruct@7ae557604adf67be50417f59c2c2f167def9a775"
+        },
+        "candidate": {
+          "path": "/workspace/stateset-improvements-native-attempt2/seed-42/selected",
+          "inventory_sha256": "1f3e3b62c03ced22d93df1f9fa94cd3006ce6b66f5c1792971e5660731b4491e"
+        }
+      },
+      "evidence_hashes": {
+        "baseline": "28efb559839da8d85a0c440003e2ec02ac287a9898ee4db9dc3bf366f6dd68df",
+        "candidate": "0a0bb4ec5967439e3fd47c906bf5ff06720abf9831d9252b953e67dc9758a583"
+      },
+      "success_gain": 0.0,
+      "wins": 0,
+      "regressions": 0
+    }
+  ],
+  "interpretation": "Engineering gates with a conditional seed-level sign test; not production certification. Review training provenance and test isolation.",
+  "representative_cases": false
+}

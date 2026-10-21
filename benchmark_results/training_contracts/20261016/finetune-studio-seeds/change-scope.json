@@ -1,0 +1,30 @@
+{
+  "baseline": "../finetune-studio-checkpoint-evaluation/verification.json",
+  "changed": {
+    "source_sha256": [
+      "cli_remote.py",
+      "finetune_evaluation.py",
+      "finetune_evaluation_tui.py",
+      "finetune_evaluation_worker.py",
+      "finetune_quality.py",
+      "finetune_worker.py",
+      "finetune_workspace.py",
+      "remote/coreweave.py",
+      "remote/executor.py",
+      "remote/huggingface.py",
+      "remote/job.py",
+      "remote/local.py",
+      "remote/modal.py",
+      "remote/nebius.py",
+      "remote/river.py",
+      "remote/runpod.py",
+      "training/sft.py",
+      "tui.py"
+    ],
+    "test_source_sha256": [
+      "tests/unit/test_finetune_quality.py",
+      "tests/unit/test_finetune_seeds.py",
+      "tests/unit/test_remote_job.py"
+    ]
+  }
+}

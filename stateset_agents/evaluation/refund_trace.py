@@ -3,23 +3,26 @@
 from __future__ import annotations
 
 import copy
-import math
 from typing import Any
 
-from stateset_agents.core.environment_base import EpisodeStatus
 from stateset_agents.core.environments.refund_environment import RefundEnvironment
 from stateset_agents.core.environments.refund_policy_environment import (
     RefundPolicyEnvironment,
 )
-from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash, validate_report
-from stateset_agents.evaluation.checkpoint_selection import select_validation_checkpoint
+from stateset_agents.evaluation.checkpoint_selection import (
+    require_training_progress,
+    select_validation_checkpoint,
+)
+from stateset_agents.evaluation.environment_trace import replay_environment_trace
 from stateset_agents.evaluation.implementation import package_implementation
 
 _ENVIRONMENTS = {
     "refund-v1": RefundEnvironment,
     "refund-policy-v2": RefundPolicyEnvironment,
 }
+
+VALIDATION_SELECTION_POLICY = "initial_and_unskipped_batches_v1"
 
 
 async def select_replayed_validation_checkpoint(
@@ -29,13 +32,35 @@ async def select_replayed_validation_checkpoint(
     cases: dict[str, Any],
     environment: str,
     truncation_reward: float = -1.0,
+    training_progress: Any = None,
+    recovery_receipts: dict[str, Any] | None = None,
+    run_manifest_hash: str | None = None,
 ) -> dict[str, Any]:
     """Select only after every planned validation reward passes sandbox replay.
 
     All steps are checked, including checkpoints that would not win selection.
-    No test cases or provider calls are used by this selection gate.
+    No test cases or provider calls are used by this selection gate. When native
+    training progress is supplied, confirmed skipped batches cannot promote a
+    fresh resampling of unchanged weights. Unknown recovery activity remains
+    eligible and explicit, rather than being invented as an update or a skip.
     """
-    selected = select_validation_checkpoint(evaluations, steps=steps, cases=cases)
+    skipped_steps: tuple[int, ...] = ()
+    if training_progress is not None:
+        require_training_progress(
+            training_progress,
+            steps=steps,
+            recovery_receipts=recovery_receipts,
+            run_manifest_hash=run_manifest_hash,
+        )
+        skipped_steps = tuple(
+            entry["step"]
+            for entry in training_progress
+            if isinstance(entry.get("metrics"), dict)
+            and entry["metrics"].get("train/updated") == 0
+        )
+    selected = select_validation_checkpoint(
+        evaluations, steps=steps, cases=cases, skipped_steps=skipped_steps
+    )
     for evaluation in evaluations:
         for outcome in evaluation["outcomes"]:
             case_id = outcome["case_id"]
@@ -52,12 +77,29 @@ async def select_replayed_validation_checkpoint(
                 raise ValueError(
                     f"Validation replay failed at step {evaluation['step']}, case {case_id}: {exc}"
                 ) from exc
-    return selected
+    if training_progress is None:
+        return selected
+    from stateset_agents.training.river_progress import summarize_training_activity
 
-
-def _same(actual: Any, recorded: Any, description: str) -> None:
-    if content_hash(actual) != content_hash(recorded):
-        raise ValueError(f"Trace replay mismatch: {description}")
+    activity = summarize_training_activity(training_progress[: selected["step"]])
+    if selected["step"] == 0:
+        activity["status"] = "initial_checkpoint"
+    selection = {
+        "schema_version": 1,
+        "policy": VALIDATION_SELECTION_POLICY,
+        "run_manifest_hash": run_manifest_hash,
+        "selected_validation_step": selected["step"],
+        "selected_checkpoint": copy.deepcopy(selected["checkpoint"]),
+        "eligible_validation_steps": [
+            step for step in range(steps + 1) if step not in skipped_steps
+        ],
+        "excluded_skipped_batches": list(skipped_steps),
+        "selected_training_activity": activity,
+        "validation_results_hash": content_hash(evaluations),
+        "training_progress_hash": content_hash(training_progress),
+        "recovery_receipts_hash": content_hash(recovery_receipts or {}),
+    }
+    return {**selected, "selection_activity": selection}
 
 
 async def replay_refund_trace(
@@ -67,119 +109,23 @@ async def replay_refund_trace(
     *,
     truncation_reward: float = -1.0,
 ) -> dict[str, Any]:
-    """Re-execute sandbox actions and verify every recorded state transition.
+    """Re-execute refund sandbox actions and verify every recorded transition.
 
-    External truncation is treated as a declared stop, never proof that a token
-    or time limit was reached. The configured failure reward must still match.
+    External stops remain declarations, not proof of a token/time-limit trigger.
     No model calls, SDK clients, or real refund services are used.
     """
     if environment not in _ENVIRONMENTS:
         raise ValueError("Unsupported refund trace environment")
-    try:
-        valid_reward = (
-            not isinstance(truncation_reward, bool)
-            and isinstance(truncation_reward, (int, float))
-            and math.isfinite(truncation_reward)
-        )
-    except OverflowError:
-        valid_reward = False
-    if not valid_reward:
-        raise ValueError("Truncation reward must be finite")
-    if (
-        not isinstance(trace, dict)
-        or set(trace)
-        != {
-            "schema_version",
-            "case_id",
-            "case_hash",
-            "initial_messages",
-            "steps",
-            "terminal",
-        }
-        or type(trace["schema_version"]) is not int
-        or trace["schema_version"] != 1
-        or trace["case_id"] != case.get("order_id")
-        or trace["case_hash"] != content_hash(case)
-    ):
+    identity = case.get("order_id") if isinstance(case, dict) else None
+    if not isinstance(identity, str) or not identity:
         raise ValueError("Missing trace or mismatched trace case identity")
-    content_hash(trace)
-    env = _ENVIRONMENTS[environment]()
-    state = await env.reset(copy.deepcopy(case))
-    _same(state.context["messages"], trace["initial_messages"], "initial messages")
-    steps, terminal = trace["steps"], trace["terminal"]
-    if not isinstance(steps, list) or len(steps) > env.max_turns:
-        raise ValueError("Invalid trace step count")
-    if not isinstance(terminal, dict):
-        raise ValueError("Missing trace terminal outcome")
-    metrics: dict[str, Any] = {
-        "task_success": 0,
-        "policy_violations": 0,
-        "tool_calls": 0,
-    }
-    total_reward = 0.0
-    done = False
-    for index, recorded in enumerate(steps):
-        if done:
-            raise ValueError("Trace contains actions after environment completion")
-        action = recorded.get("action") if isinstance(recorded, dict) else None
-        if not isinstance(action, dict) or action.get("role") != "assistant":
-            raise ValueError("Trace action must be an assistant message")
-        state, reward, done, info = await env.step(
-            state,
-            ConversationTurn(
-                role="assistant",
-                content=action.get("content", ""),
-                tool_calls=copy.deepcopy(action.get("tool_calls")),
-            ),
-        )
-        _same(
-            {
-                "action": action,
-                "reward": reward,
-                "done": done,
-                "status": state.status.value,
-                "observations": info.get("messages", []),
-                "metrics": info.get("metrics", {}),
-            },
-            recorded,
-            f"step {index + 1}",
-        )
-        total_reward += reward
-        metrics.update(info.get("metrics", {}))
-    cause = terminal.get("truncated", "missing")
-    external_stop = not done
-    if done:
-        expected_cause = (
-            "environment_timeout" if state.status == EpisodeStatus.TIMEOUT else None
-        )
-        if cause != expected_cause:
-            raise ValueError("Trace completion and truncation disagree")
-    else:
-        if (
-            not isinstance(cause, str)
-            or not cause
-            or cause in {"missing", "environment_timeout"}
-        ):
-            raise ValueError("Incomplete trace requires a declared external stop")
-        total_reward = float(truncation_reward)
-        state.status = EpisodeStatus.TIMEOUT
-        metrics["task_success"] = 0
-    _same(
-        {"reward": total_reward, "status": state.status.value, "truncated": cause},
-        terminal,
-        "terminal outcome",
+    return await replay_environment_trace(
+        _ENVIRONMENTS[environment],
+        case,
+        trace,
+        case_id=identity,
+        truncation_reward=truncation_reward,
     )
-    return {
-        "case_id": trace["case_id"],
-        "case_hash": trace["case_hash"],
-        "reward": total_reward,
-        "success": metrics["task_success"] == 1,
-        "policy_violations": metrics["policy_violations"],
-        "tool_calls": metrics["tool_calls"],
-        "truncated": cause,
-        "trace_hash": content_hash(trace),
-        "external_stop_declared": external_stop,
-    }
 
 
 async def audit_refund_traces(

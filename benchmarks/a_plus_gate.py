@@ -25,6 +25,9 @@ from email.parser import Parser
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from stateset_agents.evaluation import acceptance as native_acceptance
+from stateset_agents.evaluation.implementation import package_implementation
+
 try:
     from . import (
         agent_quality_evidence,
@@ -1093,6 +1096,15 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     expected_commit = _commit(args.expected_commit, "expected commit")
     validate_repository_state(Path(__file__).resolve().parents[1], expected_commit)
     gates: dict[str, Any] = {}
+    implementation = package_implementation()
+    gates["native_quality"] = native_acceptance.audit_native_quality(
+        args.native_quality_study, expected_implementation=implementation
+    )
+    gates["native_gpu_recovery"] = native_acceptance.audit_native_gpu_recovery(
+        args.native_gpu_recovery,
+        expected_implementation=implementation,
+        expected_harness=native_acceptance.native_gpu_harness_identity(ROOT),
+    )
 
     framework_runs = framework_comparison.load_evidence([args.framework_evidence])
     framework_comparison.validate_comparison(
@@ -1210,6 +1222,8 @@ def evaluate(args: argparse.Namespace) -> dict[str, Any]:
     gates["release_readiness"] = validate_release_readiness(
         args.release_readiness, expected_commit, __version__
     )
+    if package_implementation() != implementation:
+        raise APlusGateError("Package implementation changed during acceptance")
     return {
         "schema_version": 1,
         "kind": "stateset-a-plus-evidence-report",
@@ -1226,6 +1240,8 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     root = Path(__file__).resolve().parents[1]
     parser.add_argument("--expected-commit", default=current_commit(root))
     parser.add_argument("--framework-evidence", type=Path, required=True)
+    parser.add_argument("--native-quality-study", type=Path, required=True)
+    parser.add_argument("--native-gpu-recovery", type=Path, required=True)
     parser.add_argument("--scaling-evidence", type=Path, required=True)
     parser.add_argument("--scaling-provider-evidence", type=Path, required=True)
     parser.add_argument("--scaling-image-attestation", type=Path, required=True)

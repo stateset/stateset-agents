@@ -386,6 +386,9 @@ jobs:
             exit_code, output = ssh.run(
                 "set -o pipefail; "
                 f"pip install --quiet '{pin}' && "
+                "python -m stateset_agents.training.sampled_workflow "
+                "--output /workspace/gpu_verify_sampled --device cuda "
+                "--seeds 42 43 44 && "
                 "python -m stateset_agents.training.gpu_verify_rl"
             )
             print(output)
@@ -401,6 +404,16 @@ jobs:
                 raise RuntimeError(f"RL verification did not use CUDA: {summary}")
             if not summary.get("converged"):
                 raise RuntimeError(f"RL verification did not converge: {summary}")
+            ssh.download_dir(
+                "/workspace/gpu_verify_sampled",
+                Path("outputs/gpu_verify_rl/sampled"),
+            )
+            sampled = json.loads(
+                Path("outputs/gpu_verify_rl/sampled/summary.json").read_text()
+            )
+            if not sampled.get("passed"):
+                raise RuntimeError("Sampled workflow learning/reload gate failed")
+            summary["sampled_workflow"] = sampled
         finally:
             # Unconditional: an orphaned pod bills by the hour.
             api.terminate_pod(pod_id)

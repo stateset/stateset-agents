@@ -1,0 +1,21 @@
+"""Regression probe: a recommendation must restore exactly the compared protocol."""
+import copy
+from stateset_agents import finetune_validation as comparison
+from stateset_agents import finetune_workspace as ws
+from stateset_agents.finetune_evaluation_tui import EvaluationPanel
+from tests.unit.test_finetune_validation_comparison import cohort, queued
+
+
+def test_changed_anchor_cannot_replace_the_compared_protocol(tmp_path, monkeypatch):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    queued(monkeypatch, execute=True)
+    comparison.submit_comparison(run, paths[0].name)
+    panel = EvaluationPanel(run)
+    panel.handle('g')
+    before = copy.deepcopy(panel.values)
+    plan = ws.read_json(paths[0]/'plan.json')
+    plan['config']['judge_model'] = 'changed/judge'
+    ws.write_json(paths[0]/'plan.json',plan)
+    panel.handle('c')
+    assert panel.values == before
+    assert panel.mode == 'comparison'

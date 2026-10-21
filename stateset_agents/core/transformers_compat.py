@@ -29,6 +29,8 @@ def load_generation_model(
     causal_model_cls: Any,
     model_name: str,
     model_kwargs: dict[str, Any],
+    *,
+    for_training: bool = False,
 ) -> tuple[Any, Any]:
     """Load a causal LM, falling back to Transformers' multimodal auto classes.
 
@@ -38,8 +40,40 @@ def load_generation_model(
     though text-only generation and post-training remain valid.
 
     Returns the loaded model and the auto-model class that accepted it.  The
-    latter lets RL trainers load a matching frozen reference model.
+    latter lets RL trainers load a matching frozen reference model. Training
+    callers set ``for_training=True`` to reject unsupported packed layouts;
+    inference preserves the caller's native quantization settings.
     """
+    from stateset_agents.core.frontier_models import (
+        get_frontier_model,
+        require_frontier_training,
+    )
+
+    try:
+        frontier = get_frontier_model(model_name)
+    except ValueError:
+        frontier = None
+    if frontier is not None:
+        if for_training:
+            require_frontier_training(frontier, generic_loader=True)
+        transformers = importlib.import_module("transformers")
+        if not frontier.trust_remote_code and not hasattr(
+            transformers, frontier.architecture
+        ):
+            raise RuntimeError(
+                f"{frontier.architecture} requires a compatible Transformers runtime; "
+                "install stateset-agents[frontier]"
+            )
+        model_kwargs = dict(model_kwargs)
+        if model_kwargs.get("revision") is None:
+            model_kwargs["revision"] = frontier.revision
+    if model_name.startswith("meta-models/Muse-Spark-Open-"):
+        transformers = importlib.import_module("transformers")
+        if not hasattr(transformers, "MuseSparkForConditionalGeneration"):
+            raise RuntimeError(
+                "Muse Spark Open requires transformers>=5.20.0; "
+                "install stateset-agents[muse-spark] in the training environment"
+            )
     try:
         return (
             causal_model_cls.from_pretrained(model_name, **model_kwargs),

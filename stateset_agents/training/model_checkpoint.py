@@ -116,6 +116,8 @@ def load_model_checkpoint(
     candidates = [
         directory / name
         for name in (
+            "adapter_model.safetensors",
+            "adapter_model.bin",
             "pytorch_model.bin",
             "model.safetensors",
             "pytorch_model.bin.index.json",
@@ -130,6 +132,26 @@ def load_model_checkpoint(
     path = candidates[0]
     if path.is_symlink() or not path.is_file():
         raise ValueError("Model checkpoint must be a regular local file")
+    if path.name.startswith("adapter_model."):
+        from peft import get_peft_model_state_dict, set_peft_model_state_dict
+
+        adapter = getattr(model, "active_adapter", "default")
+        if not isinstance(adapter, str) or not hasattr(model, "peft_config"):
+            raise ValueError("Adapter checkpoints require a matching PEFT model")
+        state = _read_weights(path, torch_module, trusted=trusted)
+        expected_adapter = get_peft_model_state_dict(model, adapter_name=adapter)
+        if set(state) != set(expected_adapter):
+            raise ValueError("Adapter checkpoint parameter names differ from model")
+        for name, tensor in state.items():
+            target = expected_adapter[name]
+            if tensor.shape != target.shape or not bool(
+                torch_module.isfinite(tensor).all()
+            ):
+                raise ValueError(f"Invalid adapter checkpoint tensor: {name}")
+        result = set_peft_model_state_dict(model, state, adapter_name=adapter)
+        if result.unexpected_keys:
+            raise ValueError("Adapter checkpoint has unexpected parameters")
+        return True
     expected = model.state_dict() if strict else {}
     ties = _tied_names(model, expected) if strict else []
     if not path.name.endswith(".index.json"):

@@ -1,0 +1,79 @@
+{
+  "analysis_seed": 2026110201,
+  "bootstrap_replicates": 10000,
+  "candidate_passed": 960,
+  "delta_rate": 0.00625,
+  "exact_two_sided_seed_sign_flip_p": 0.125,
+  "expected_seeds": [
+    20261101,
+    370261101,
+    720261101,
+    1070261101,
+    1420261101,
+    1770261101
+  ],
+  "negative_seeds": 0,
+  "parent_passed": 954,
+  "positive_seeds": 4,
+  "rollouts_per_arm": 960,
+  "rollouts_per_case": 4,
+  "schema_version": 1,
+  "scope": "Conditional on the shared cases; seed sign exchangeability and seed/case resampling assumptions apply. Repeated rollouts are aggregated within case. Not production or independent merchant evidence.",
+  "seed_and_family_case_bootstrap_95": [
+    0.0,
+    0.014583333333333334
+  ],
+  "seed_results": [
+    {
+      "candidate_passed": 160,
+      "delta_count": 1,
+      "delta_rate": 0.00625,
+      "parent_passed": 159,
+      "rollouts_per_arm": 160,
+      "seed": 20261101
+    },
+    {
+      "candidate_passed": 160,
+      "delta_count": 0,
+      "delta_rate": 0.0,
+      "parent_passed": 160,
+      "rollouts_per_arm": 160,
+      "seed": 370261101
+    },
+    {
+      "candidate_passed": 160,
+      "delta_count": 0,
+      "delta_rate": 0.0,
+      "parent_passed": 160,
+      "rollouts_per_arm": 160,
+      "seed": 720261101
+    },
+    {
+      "candidate_passed": 160,
+      "delta_count": 2,
+      "delta_rate": 0.0125,
+      "parent_passed": 158,
+      "rollouts_per_arm": 160,
+      "seed": 1070261101
+    },
+    {
+      "candidate_passed": 160,
+      "delta_count": 2,
+      "delta_rate": 0.0125,
+      "parent_passed": 158,
+      "rollouts_per_arm": 160,
+      "seed": 1420261101
+    },
+    {
+      "candidate_passed": 160,
+      "delta_count": 1,
+      "delta_rate": 0.00625,
+      "parent_passed": 159,
+      "rollouts_per_arm": 160,
+      "seed": 1770261101
+    }
+  ],
+  "shared_case_clusters": 40,
+  "tied_seeds": 2,
+  "training_seeds": 6
+}

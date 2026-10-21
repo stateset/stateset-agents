@@ -10,7 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import random
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
@@ -46,6 +48,7 @@ class EvaluationConfig:
     max_turns: int | None = None
     seed: int | None = 42
     concurrency: int = 4  # Default to parallel evaluation for better performance
+    fail_on_error: bool = True
 
 
 async def _compute_reward(
@@ -65,12 +68,41 @@ async def _compute_reward(
         result = await result
 
     if hasattr(result, "score"):
-        return float(result.score)
-    if isinstance(result, dict) and "score" in result:
-        return float(result["score"])
-    if isinstance(result, (int, float)):
-        return float(result)
-    raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+        value = float(result.score)
+    elif isinstance(result, dict) and "score" in result:
+        value = float(result["score"])
+    elif isinstance(result, (int, float)):
+        value = float(result)
+    else:
+        raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+    if not math.isfinite(value):
+        raise ValueError("Evaluation reward must be finite")
+    return value
+
+
+class _EvaluationMetrics(dict[str, float]):
+    """JSON-compatible metrics retaining the exact integer success count."""
+
+    def __init__(self, values: dict[str, float], *, successes: int) -> None:
+        super().__init__(values)
+        self.successes = successes
+
+
+def _empty_metrics(*, attempted: int = 0) -> dict[str, float]:
+    return _EvaluationMetrics(
+        {
+            "eval_reward": 0.0,
+            "eval_reward_std": 0.0,
+            "eval_episode_length": 0.0,
+            "eval_success_rate": 0.0,
+            "eval_num_episodes": 0.0,
+            "eval_attempted_episodes": float(attempted),
+            "eval_failed_episodes": float(attempted),
+            "eval_error_rate": float(attempted > 0),
+            "eval_complete": 0.0,
+        },
+        successes=0,
+    )
 
 
 async def evaluate_agent(
@@ -89,17 +121,19 @@ async def evaluate_agent(
           ``environment.clone()`` to avoid shared mutable state between episodes.
           The agent object is still shared; only enable concurrency if your agent
           backend is safe for concurrent calls.
+        - Errors abort evaluation by default. ``fail_on_error=False`` is a
+          diagnostic mode: failed attempts remain in coverage and success-rate
+          denominators; reward/length means describe valid samples only.
+          Required reward failures and OOM always propagate.
+        - ``eval_success_rate`` remains the reward > 0.5 heuristic, not verified
+          tool success. Use held-out outcome reports for quality claims.
     """
 
     cfg = config or EvaluationConfig()
+    if type(cfg.fail_on_error) is not bool:
+        raise ValueError("fail_on_error must be boolean")
     if cfg.num_episodes <= 0:
-        return {
-            "eval_reward": 0.0,
-            "eval_reward_std": 0.0,
-            "eval_episode_length": 0.0,
-            "eval_success_rate": 0.0,
-            "eval_num_episodes": 0.0,
-        }
+        return _empty_metrics()
 
     if cfg.concurrency < 1:
         cfg = replace(cfg, concurrency=1)
@@ -134,11 +168,23 @@ async def _evaluate_seeded(
     cfg: EvaluationConfig,
 ) -> dict[str, float]:
     shared_env_lock = asyncio.Lock()
-    failed_episodes = 0
     scenario_list: list[dict[str, Any]] = list(scenarios or [])
+    required_reward = any(
+        getattr(reward, "fail_on_error", False)
+        for reward in (reward_fn, getattr(environment, "reward_fn", None))
+    )
+
+    def must_raise(exc: BaseException) -> bool:
+        # Detect Torch OOM without importing the optional training stack.
+        oom = getattr(sys.modules.get("torch"), "OutOfMemoryError", None)
+        return (
+            cfg.fail_on_error
+            or required_reward
+            or isinstance(exc, MemoryError)
+            or (isinstance(oom, type) and isinstance(exc, oom))
+        )
 
     async def _run_one(episode_idx: int) -> list[dict[str, Any]] | None:
-        nonlocal failed_episodes
         scenario: dict[str, Any] | None = None
         if scenario_list:
             scenario = scenario_list[episode_idx % len(scenario_list)]
@@ -186,20 +232,38 @@ async def _evaluate_seeded(
                         max_turns=cfg.max_turns,
                     )
             except EVAL_ENV_EXCEPTIONS as exc:
-                failed_episodes += 1
+                if must_raise(exc):
+                    raise
                 logger.warning("Evaluation episode %s failed: %s", episode_idx, exc)
                 continue
 
-            reward = float(getattr(trajectory, "total_reward", 0.0))
-            if reward_fn is not None:
-                try:
-                    reward = await _compute_reward(
-                        reward_fn, list(getattr(trajectory, "turns", [])), scenario
+            try:
+                reward = float(getattr(trajectory, "total_reward", 0.0))
+                if reward_fn is not None:
+                    context = (
+                        getattr(trajectory, "final_state", None)
+                        if getattr(reward_fn, "requires_environment_context", False)
+                        else scenario
                     )
-                except EVAL_REWARD_EXCEPTIONS as exc:
-                    logger.debug("Reward override failed: %s", exc)
-
-            episode_length = float(getattr(trajectory, "episode_length", 0))
+                    reward = await _compute_reward(
+                        reward_fn, list(getattr(trajectory, "turns", [])), context
+                    )
+                episode_length = float(getattr(trajectory, "episode_length", 0))
+                if (
+                    not math.isfinite(reward)
+                    or not math.isfinite(episode_length)
+                    or episode_length < 0
+                ):
+                    raise ValueError(
+                        "Evaluation reward and episode length must be finite"
+                    )
+            except EVAL_REWARD_EXCEPTIONS + (OverflowError,) as exc:
+                if must_raise(exc):
+                    raise
+                logger.warning(
+                    "Evaluation scoring failed for episode %s: %s", episode_idx, exc
+                )
+                continue
             samples.append({"reward": reward, "episode_length": episode_length})
 
         return samples or None
@@ -213,9 +277,14 @@ async def _evaluate_seeded(
             async with sem:
                 return await _run_one(i)
 
-        results = await asyncio.gather(
-            *[_run_guarded(i) for i in range(cfg.num_episodes)]
-        )
+        tasks = [asyncio.create_task(_run_guarded(i)) for i in range(cfg.num_episodes)]
+        try:
+            results = await asyncio.gather(*tasks)
+        except BaseException:
+            for task in tasks:
+                task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+            raise
 
     rewards: list[float] = []
     lengths: list[float] = []
@@ -226,30 +295,29 @@ async def _evaluate_seeded(
             rewards.append(sample["reward"])
             lengths.append(sample["episode_length"])
 
+    attempted = cfg.num_episodes * max(1, cfg.num_generations)
     if not rewards:
-        return {
-            "eval_reward": 0.0,
-            "eval_reward_std": 0.0,
-            "eval_episode_length": 0.0,
-            "eval_success_rate": 0.0,
-            "eval_num_episodes": 0.0,
-            "eval_failed_episodes": float(failed_episodes),
-        }
+        return _empty_metrics(attempted=attempted)
 
-    rewards_arr = np.array(rewards, dtype=float)
-    lengths_arr = (
-        np.array(lengths, dtype=float) if lengths else np.array([0.0], dtype=float)
+    scale = max(abs(reward) for reward in rewards)
+    reward_std = (
+        float(np.std(np.array(rewards, dtype=float) / scale)) * scale if scale else 0.0
     )
 
-    return {
-        "eval_reward": float(rewards_arr.mean()),
-        "eval_reward_std": float(rewards_arr.std()),
-        "eval_episode_length": float(lengths_arr.mean()),
-        # A crashed episode is not a success: count it in the denominator so
-        # the rate cannot rise as the agent fails more often.
-        "eval_success_rate": float(
-            (rewards_arr > 0.5).sum() / (len(rewards) + failed_episodes)
-        ),
-        "eval_num_episodes": float(len(rewards)),
-        "eval_failed_episodes": float(failed_episodes),
-    }
+    successes = sum(reward > 0.5 for reward in rewards)
+    return _EvaluationMetrics(
+        {
+            "eval_reward": math.fsum(reward / len(rewards) for reward in rewards),
+            "eval_reward_std": reward_std,
+            "eval_episode_length": math.fsum(
+                length / len(lengths) for length in lengths
+            ),
+            "eval_success_rate": successes / attempted,
+            "eval_num_episodes": float(len(rewards)),
+            "eval_attempted_episodes": float(attempted),
+            "eval_failed_episodes": float(attempted - len(rewards)),
+            "eval_error_rate": float((attempted - len(rewards)) / attempted),
+            "eval_complete": float(len(rewards) == attempted),
+        },
+        successes=successes,
+    )

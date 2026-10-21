@@ -33,6 +33,7 @@ from typing import Any
 
 import torch
 
+from stateset_agents.core.generation_mode import inference_mode
 from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
 
@@ -66,6 +67,10 @@ class SharedModelManager:
     _loaded_message = "Model loaded on {device}"
 
     def __init__(self, config: Any) -> None:
+        from .config import TrainingConfig
+
+        if isinstance(config, TrainingConfig):
+            config.validate_for_training()
         self.config = config
         self.model: Any | None = None
         self.tokenizer: Any | None = None
@@ -133,6 +138,7 @@ class SharedModelManager:
             model_cls,
             self.config.model_name,
             model_kwargs,
+            for_training=True,
         )
         base_model = self._prepare_base_model(base_model)
 
@@ -212,7 +218,7 @@ async def hf_generate_group(
     group_size: int,
 ) -> list[dict[str, Any]]:
     """
-    Sequential HuggingFace ``generate`` fallback for group rollouts.
+    Batched HuggingFace ``generate`` fallback for group rollouts.
 
     Produces the response-dict schema shared by the DAPO and VAPO trainers:
     ``response``, ``input_ids``, ``attention_mask``, ``response_mask``,
@@ -228,9 +234,12 @@ async def hf_generate_group(
     )
     prompt_length = prompt_tokens["input_ids"].shape[1]
 
-    model.eval()
-    with torch.no_grad():
-        for _ in range(group_size):
+    if type(group_size) is not int or group_size < 1:
+        raise ValueError("group_size must be a positive integer")
+    chunk_size = max(1, int(getattr(config, "generation_batch_size", group_size)))
+    with inference_mode(model), torch.no_grad():
+        for start in range(0, group_size, chunk_size):
+            count = min(chunk_size, group_size - start)
             input_ids = prompt_tokens["input_ids"].to(device)
             attention_mask = prompt_tokens["attention_mask"].to(device)
 
@@ -242,31 +251,32 @@ async def hf_generate_group(
                 top_p=config.top_p,
                 do_sample=True,
                 pad_token_id=tokenizer.pad_token_id,
+                num_return_sequences=count,
             )
-
-            full_ids = outputs[0]
-            response_length = len(full_ids) - prompt_length
-
-            # Create response mask (1 for response tokens, 0 for prompt)
-            response_mask = torch.zeros(len(full_ids), device=device)
-            response_mask[prompt_length:] = 1.0
-
-            response_text = tokenizer.decode(
-                full_ids[prompt_length:], skip_special_tokens=True
-            )
-
-            responses.append(
-                {
-                    "response": response_text,
-                    "input_ids": full_ids,
-                    "attention_mask": torch.ones_like(full_ids),
-                    "response_mask": response_mask,
-                    "sequence_length": response_length,
-                    "prompt_length": prompt_length,
-                }
-            )
-
-    model.train()
+            if len(outputs) != count:
+                raise ValueError("Generator returned an incomplete response group")
+            for full_ids in outputs:
+                # Exclude batch padding after EOS, including when pad == EOS.
+                eos = getattr(tokenizer, "eos_token_id", None)
+                response_ids = full_ids[prompt_length:]
+                ends = (response_ids == eos).nonzero() if eos is not None else []
+                if len(ends):
+                    full_ids = full_ids[: prompt_length + int(ends[0].item()) + 1]
+                response_length = len(full_ids) - prompt_length
+                response_mask = torch.zeros(len(full_ids), device=device)
+                response_mask[prompt_length:] = 1.0
+                responses.append(
+                    {
+                        "response": tokenizer.decode(
+                            full_ids[prompt_length:], skip_special_tokens=True
+                        ),
+                        "input_ids": full_ids,
+                        "attention_mask": torch.ones_like(full_ids),
+                        "response_mask": response_mask,
+                        "sequence_length": response_length,
+                        "prompt_length": prompt_length,
+                    }
+                )
     return responses
 
 
@@ -288,24 +298,36 @@ def save_checkpoint_artifacts(
     - ``config_dict`` is written to ``config_filename`` as indented JSON.
     - ``extra_json`` maps additional filenames to JSON-serializable objects.
     """
-    os.makedirs(output_dir, exist_ok=True)
+    from pathlib import Path
 
-    model.save_pretrained(output_dir)
-    tokenizer.save_pretrained(output_dir)
+    from .checkpoint_publication import checkpoint_write
 
-    if training_state is not None:
-        torch.save(training_state, os.path.join(output_dir, "training_state.pt"))
+    with checkpoint_write(Path(output_dir)) as staging:
+        output_dir = str(staging)
+        model.save_pretrained(output_dir)
+        tokenizer.save_pretrained(output_dir)
 
-    if config_dict is not None and config_filename:
-        with open(
-            os.path.join(output_dir, config_filename), "w", encoding="utf-8"
-        ) as f:
-            json.dump(config_dict, f, indent=2)
+        torch.save(
+            (
+                training_state
+                if training_state is not None
+                else {"artifact_kind": "model_export"}
+            ),
+            os.path.join(output_dir, "training_state.pt"),
+        )
 
-    if extra_json:
-        for filename, obj in extra_json.items():
-            with open(os.path.join(output_dir, filename), "w", encoding="utf-8") as f:
-                json.dump(obj, f, indent=2)
+        if config_dict is not None and config_filename:
+            with open(
+                os.path.join(output_dir, config_filename), "w", encoding="utf-8"
+            ) as f:
+                json.dump(config_dict, f, indent=2)
+
+        if extra_json:
+            for filename, obj in extra_json.items():
+                with open(
+                    os.path.join(output_dir, filename), "w", encoding="utf-8"
+                ) as f:
+                    json.dump(obj, f, indent=2)
 
     logger.info(f"{log_label} saved to {output_dir}")
 

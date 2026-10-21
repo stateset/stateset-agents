@@ -14,8 +14,18 @@ from importlib import import_module
 from typing import Any
 
 _LAZY_EXPORTS: dict[str, str] = {
+    "NemotronVLDataset": "nemotron_vl",
+    "NemotronVLCollator": "nemotron_vl",
+    "TextSFTSnapshot": "text_sft",
+    "load_text_sft_snapshot": "text_sft",
+    "parse_text_sft_records": "text_sft",
+    "read_text_conversations": "text_sft",
+    "load_text_sft_data": "text_sft",
     "load_finetuning_data": "finetuning",
     "validate_finetuning_row": "finetuning",
+    "parse_finetuning_json": "finetuning",
+    "validate_finetuning_split": "finetuning",
+    "validate_finetuning_source_split": "finetuning",
     "split_finetuning_data": "finetuning",
     "check_finetuning_overlap": "finetuning",
     "group_finetuning_data": "finetuning",

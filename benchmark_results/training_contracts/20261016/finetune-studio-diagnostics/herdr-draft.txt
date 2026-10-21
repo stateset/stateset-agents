@@ -1,0 +1,1 @@
+{"draft_preserved": true, "mode": "0600", "live_scan_status_verified": true, "no_training_started": true}

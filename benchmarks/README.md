@@ -4,6 +4,47 @@ This directory separates measured evidence from smoke tests and synthetic
 component tests. Only the strict evidence tools below may support comparative
 performance claims.
 
+## Online PPO CPU contract
+
+```bash
+python benchmarks/ppo_online_contract.py --output /tmp/stateset-ppo-online-contract
+```
+
+This downloads no model. It trains a tiny randomly initialized GPT-2 on a
+synthetic one-action reward for 48 updates, then reloads update 24 and requires
+the remaining sampled actions and final learner state to match exactly. The
+learning check requires the target-action probability to exceed 80% and improve
+by more than 50 percentage points. The output retains raw sampled records,
+commit receipts, a midpoint checkpoint and source-bound `contract.json`.
+This is a CPU mechanics and learning-direction check; it does not certify
+language quality, held-out generalization, GPU performance or A+ readiness.
+
+## Native offline policy device check
+
+Run the installed package's logged-policy update, complete checkpoint resume,
+and reloaded inference on a visible CUDA device:
+
+```bash
+OMP_NUM_THREADS=2 HF_HUB_OFFLINE=1 TRANSFORMERS_OFFLINE=1 \
+  python benchmarks/offline_policy_device_contract.py \
+  --device cuda --output /tmp/stateset-native-device-check
+```
+
+Install the training extra first. The output directory must be new. The runner
+uses a tiny local GPT-2 and tokenizer without model downloads, checks actual
+parameter updates, and requires resumed weights to equal uninterrupted weights.
+It records the installed package's source inventory, device, optimizer counts,
+artifact hash and inference result in `device_contract.json`. CUDA is the
+default and missing CUDA fails; `--device cpu` explicitly selects a CPU preflight.
+These synthetic checks verify execution mechanics. They do not establish model
+quality, production readiness, external-backend conformance or comparative
+performance. Provider lifetime, charges and resource cleanup must be recorded
+separately by the launcher.
+
+The [retained CPU and RTX A5000 checks](../benchmark_results/training_contracts/20261014/native-offline-device/README.md)
+include the initial CUDA RNG restore failure, its regression fix, a passing
+rerun from the rebuilt wheel, artifact revalidation and confirmed pod cleanup.
+
 ## Public product-use benchmark
 
 The starter benchmark for teaching and evaluating agent interaction with the
@@ -295,11 +336,30 @@ is suitable for validating orchestration and failure behavior, but is not
 presented as a likely path to the A+ efficiency threshold; use high-bandwidth
 cluster nodes for publication.
 
+The decision also requires a reviewed native study from
+`python -m stateset_agents.training.native_refund_study`: at least six seeds,
+32 distinct reviewed cases per train/validation/test split, a pinned model
+revision, validation-only checkpoint selection and a significant held-out gain.
+The gate replays retained actions against the refund ledger and rechecks the
+selected checkpoint bytes. Reviewer provenance remains an attestation; artifact
+hashes do not independently prove execution or semantic split isolation.
+
+Produce the native recovery bundle on a two-GPU worker using
+`python benchmarks/native_gpu_checkpoint_contract.py --output NEW_DIRECTORY`.
+CUDA/NCCL is mandatory by default. Both checkpoint APIs, pending accumulation,
+FP32/FP16, rank-local RNG and late-publication failure containment are exercised.
+`--device cpu` runs a local Gloo diagnostic that cannot satisfy GPU acceptance.
+This tiny contract does not establish multi-node scaling, killed-peer recovery,
+released-model quality or provider execution. Existing broad evidence remains
+required.
+
 Once every measured bundle exists for one immutable release commit, run the
 single leadership decision gate:
 
 ```bash
 make benchmark-a-plus-gate \
+  NATIVE_QUALITY_STUDY=benchmark_results/native-reviewed-study \
+  NATIVE_GPU_RECOVERY=benchmark_results/native-gpu-checkpoints \
   FRAMEWORK_EVIDENCE=benchmark_results/framework_comparison/evidence \
   SCALING_EVIDENCE=benchmark_results/scaling/multi_node/evidence \
   SCALING_PROVIDER_EVIDENCE=benchmark_results/scaling/multi_node/kubernetes-provider \

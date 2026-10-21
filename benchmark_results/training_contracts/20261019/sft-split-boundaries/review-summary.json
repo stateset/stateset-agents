@@ -1,0 +1,152 @@
+{
+  "audit": {
+    "domains": [
+      "ecommerce",
+      "logistics",
+      "saas"
+    ],
+    "passed": true,
+    "quality_certification": false,
+    "source": "industry-policy-simulations-v1",
+    "verified_demonstrations": 2112
+  },
+  "dataset_manifest_sha256": "00784efcc4fa3e25368dbb22375535aee5c5ce9f330c0e5fe99282d006c7cfd3",
+  "domains": [
+    {
+      "declared_synthetic_rows": 512,
+      "domain": "ecommerce",
+      "held_out_rejections": [
+        {
+          "boundary": "provider_preflight",
+          "split": "validation"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "validation"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "validation"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "validation"
+        },
+        {
+          "boundary": "provider_preflight",
+          "split": "test"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "test"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "test"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "test"
+        }
+      ],
+      "output_created": false,
+      "test_rows": 128,
+      "train_rows": 512,
+      "train_sha256": "3183f1bb2de62479d14c5ad6fdc2d4261574f0d119fecd20216b94f164f15aef",
+      "validation_rows": 64,
+      "worker_dry_run_returncode": 0
+    },
+    {
+      "declared_synthetic_rows": 512,
+      "domain": "logistics",
+      "held_out_rejections": [
+        {
+          "boundary": "provider_preflight",
+          "split": "validation"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "validation"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "validation"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "validation"
+        },
+        {
+          "boundary": "provider_preflight",
+          "split": "test"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "test"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "test"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "test"
+        }
+      ],
+      "output_created": false,
+      "test_rows": 128,
+      "train_rows": 512,
+      "train_sha256": "15569aabb497976aedc70956e76af87fea21960904f7b077ec08ada0e361bd3b",
+      "validation_rows": 64,
+      "worker_dry_run_returncode": 0
+    },
+    {
+      "declared_synthetic_rows": 512,
+      "domain": "saas",
+      "held_out_rejections": [
+        {
+          "boundary": "provider_preflight",
+          "split": "validation"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "validation"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "validation"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "validation"
+        },
+        {
+          "boundary": "provider_preflight",
+          "split": "test"
+        },
+        {
+          "boundary": "sft_loader",
+          "split": "test"
+        },
+        {
+          "boundary": "industry_training_read",
+          "split": "test"
+        },
+        {
+          "boundary": "packaged_worker",
+          "split": "test"
+        }
+      ],
+      "output_created": false,
+      "test_rows": 128,
+      "train_rows": 512,
+      "train_sha256": "fba5fa8e6bceed34eb76126c61bdaddf16b1da34780629eb4010dc86fbfec2fd",
+      "validation_rows": 64,
+      "worker_dry_run_returncode": 0
+    }
+  ],
+  "model_updates": 0,
+  "provider_calls": 0,
+  "quality_certification": false,
+  "scope": "Declared split checks, dataset reconstruction, CPU SFT previews; no model evaluation"
+}

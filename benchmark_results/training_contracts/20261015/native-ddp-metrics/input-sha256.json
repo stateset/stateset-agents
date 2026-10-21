@@ -1,0 +1,13 @@
+{
+  "stateset_agents/training/metric_reduction.py": "47d5808a05673759247f92f1e6fccc1612aaa39701bcfa54352ea872977d442f",
+  "stateset_agents/training/grpo_accumulation.py": "a829c4953b466983435e7a40031ea33ef0f002a404414e507ddf856f69e2fbf0",
+  "stateset_agents/training/distributed.py": "b734cc6c9cfd9028c181d54cc344f8d7e9a4acb108be55e9a507efcf9270ea6b",
+  "stateset_agents/training/multi_turn_trainer.py": "d497d54d6b0ec2daae8db4457b96d7388c78309144be397fec0e4c055d531930",
+  "stateset_agents/training/loss_computation.py": "a7cde80f0f261d9b549afe8f5bdffdfdd312c01bacdf0cc99698754dcae0c197",
+  "tests/unit/test_metric_reduction.py": "47b3604bdfa024b574dabed4947b564182d7472584dc83c5cffa9f6aba798a84",
+  "tests/integration/test_distributed_grpo_weighting.py": "6a98a32eeca75169d6ede7a934ff2355888e352df019e397b5b64150d4091740",
+  "tests/unit/test_mypy_allowlist_ratchet.py": "1bab22124af236cf514cbaf8b8130425c0f46d0156f13949568b75cf79708603",
+  "tests/unit/test_token_group_aggregation.py": "158e276b2d67dacddbe6fae6848fd7051b14ad3671a40d8833a3e7f340a70748",
+  ".github/workflows/training-contracts.yml": "079bc470ef12d787efa016260ea04da02e0b1b8277a18868ef64221391fbc466",
+  "pyproject.toml": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9"
+}

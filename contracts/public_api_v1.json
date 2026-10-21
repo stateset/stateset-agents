@@ -4036,6 +4036,26 @@
             },
             {
               "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_sequence_fallback"
+            },
+            {
+              "default": false,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "allow_missing_sampler_logprobs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "compute_cost_per_hour"
+            },
+            {
+              "default": 5,
+              "kind": "KEYWORD_ONLY",
+              "name": "zero_signal_patience"
+            },
+            {
+              "default": false,
               "kind": "KEYWORD_ONLY",
               "name": "disable_dropout"
             },
@@ -4645,6 +4665,11 @@
               "default": 1,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "training_max_concurrent_jobs"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "training_queue_path"
             },
             {
               "default": "outputs/api-training",

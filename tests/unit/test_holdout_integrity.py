@@ -2,11 +2,13 @@
 
 import asyncio
 import json
+import os
 import subprocess
 import sys
 import textwrap
 import threading
 from dataclasses import dataclass
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -832,6 +834,18 @@ def test_hard_process_exit_cannot_reopen_test(tmp_path):
     result = subprocess.run(
         [sys.executable, "-c", code, str(tmp_path)],
         cwd=tmp_path,
+        env={
+            **os.environ,
+            "PYTHONPATH": os.pathsep.join(
+                filter(
+                    None,
+                    (
+                        str(Path(__file__).resolve().parents[2]),
+                        os.environ.get("PYTHONPATH"),
+                    ),
+                )
+            ),
+        },
         capture_output=True,
         text=True,
         timeout=60,

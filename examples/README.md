@@ -58,6 +58,40 @@ python examples/quick_start.py
 
 ## 🎓 Training Examples
 
+### Refund resolution tool
+
+[`refund_resolution_tool.py`](refund_resolution_tool.py) delegates an explicit
+refund intent to a tool that selects the synthetic policy action and exact cents
+from trusted facts. Run `python -m examples.refund_resolution_tool` for 128 local
+sandbox contract checks and an intent/action trace. No model or provider is used.
+See the [backend contract](../docs/REFUND_RESOLUTION_TOOL.md) for authorization,
+atomic fact checks, idempotency, and uncertain-outcome handling.
+
+[`river_refund_delegation_study.py`](river_refund_delegation_study.py) prepares a
+fresh, bounded comparison of the raw-model and delegated-tool protocols through
+River. Preparation and replay audit are offline; launch uses paid inference and
+a hidden credential prompt. It freezes both inputs and runtime before sampling.
+
+[`refund_recovery.py`](refund_recovery.py) prepares and audits train-only
+fine-tuning transcripts for ten synthetic authorization and recovery scenarios,
+including lost acknowledgments, safe retry fences, and reconciliation handoffs.
+It runs locally without model calls and keeps validation/test cases separate.
+
+### Logged-policy improvement loop
+
+[`offline_improvement_pipeline.py`](offline_improvement_pipeline.py) runs trace
+curation, real SFT and IQL policy updates, paired synthetic evaluation, reusable
+exports, and reload for local inference with a tiny transformer and no downloads.
+Install the training extra, then run:
+
+```bash
+OMP_NUM_THREADS=1 python examples/offline_improvement_pipeline.py --output /tmp/offline-improvement
+```
+
+The result verifies mechanics and explicitly records no production approval.
+See the [pipeline guide](../docs/IMPROVEMENT_PIPELINE.md) for reviewed data and
+promotion requirements.
+
 ### Small Gemma models: E2B and E4B
 
 The `gemma4-e2b` and `gemma4-e4b` presets target
@@ -459,6 +493,20 @@ thin forwarder of the same shape for the `muse-glimmer` preset
 `finetune_nemotron_3_5_gspo.py` is a thin forwarder of the same shape for the
 `nemotron-3-5` preset (`nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16`);
 prefer `python examples/finetune_gspo.py --model nemotron-3-5` directly.
+
+For **Nemotron 3.5 Super VL and Bolt**, use the separate image-conditioned SFT
+path: `stateset-agents nemotron-3-5-super-vl` or
+`stateset-agents nemotron-3-5-bolt`. The example
+`python examples/finetune_nemotron_vl.py --config bolt.json --execute` uses the
+same implementation. See [the setup and dataset guide](../docs/NEMOTRON_3_5_VL.md).
+
+For **Muse Spark Open**, `stateset-agents muse-spark-open` configures distributed
+text LoRA SFT. `python examples/finetune_muse_spark.py --config muse-spark.json
+--execute` delegates to the packaged implementation. The unified driver also
+has a separate `muse-spark-open` text GSPO preset. See
+[the Muse Spark guide](../docs/MUSE_SPARK_OPEN.md) for gated access, cluster
+memory, and verification limits.
+
 `finetune_qwen3_8_27b_gspo.py` is a thin forwarder of the same shape for the
 `qwen3.8-27b` preset (`Qwen/Qwen3.8-27B`); prefer
 `python examples/finetune_gspo.py --model qwen3.8-27b` directly.
@@ -889,3 +937,8 @@ See [LICENSE](../LICENSE) for details.
 ---
 
 **Made with ❤️ by the StateSet Team**
+
+`finetune_frontier.py --config FILE` previews the pinned frontier SFT path;
+add `--execute` under `torchrun` only on a configured BF16 cluster. Generate
+configs with `stateset-agents frontier-sft --model glm5.3 --write-config FILE`.
+See [readiness and blockers](../docs/FRONTIER_FINETUNING.md).

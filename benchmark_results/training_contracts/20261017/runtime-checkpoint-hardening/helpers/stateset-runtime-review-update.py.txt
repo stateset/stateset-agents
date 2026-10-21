@@ -1,0 +1,40 @@
+from pathlib import Path
+import ast
+import fcntl
+
+root = Path('/home/dom/stateset-agents')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+path = root/'stateset_agents/training/runtime_state.py'
+source = path.read_text()
+tree = ast.parse(source)
+cls = next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='TrainingRuntime')
+init = next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='__init_subclass__')
+profiled = next(n for n in init.body if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='profiled' for t in n.targets))
+values = ast.literal_eval(profiled.value)
+assert 'train_step_token_level' in values
+source = source.replace(ast.get_source_segment(source,profiled),'profiled = '+repr(tuple(v for v in values if v!='train_step_token_level')),1)
+tree = ast.parse(source)
+cls = next(n for n in tree.body if isinstance(n,ast.ClassDef) and n.name=='TrainingRuntime')
+init = next(n for n in cls.body if isinstance(n,ast.FunctionDef) and n.name=='__init_subclass__')
+guard = next(n for n in init.body if isinstance(n,ast.For) and isinstance(n.iter,ast.Tuple) and '_apply_optimizer_step' in ast.literal_eval(n.iter))
+source = source.replace(ast.get_source_segment(source,guard.iter),repr(('train_step_token_level',*ast.literal_eval(guard.iter))),1)
+path.write_text(source)
+path = root/'tests/unit/test_runtime_checkpoint_safety.py'
+source = path.read_text()
+assert 'test_numpy_metric_history_round_trips_with_weights_only_loading' not in source
+source += '''\n\n@pytest.mark.asyncio
+async def test_numpy_metric_history_round_trips_with_weights_only_loading(checkpoint, tmp_path):
+    trainer, _ = checkpoint
+    trainer.training_metrics["mixed"] = [np.float64(0.5), np.float32(0.25), np.int64(2)]
+    trainer.best_eval_metric = np.float64(0.5)
+    path = tmp_path / "numpy-metrics"
+    trainer.save_runtime_checkpoint(str(path))
+    target = TinyRuntime()
+    assert target.load_runtime_checkpoint(str(path))
+    assert target.training_metrics["mixed"] == [0.5, 0.25, 2]
+    assert all(type(item) in (int, float) for item in target.training_metrics["mixed"])
+    assert type(target.best_eval_metric) is float
+'''
+path.write_text(source)
+print('Preserved token-step profiling behavior; added NumPy checkpoint roundtrip regression')

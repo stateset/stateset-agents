@@ -1,0 +1,6 @@
+{
+  "checkpoint_type": "inference",
+  "path": "river://39bc764f-0a77-4b63-a2cc-cb63e2fe1cd9/sampler_weights/base-comparison",
+  "policy_version": null,
+  "step": 0
+}

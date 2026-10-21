@@ -1,0 +1,11 @@
+# Industry datasets in Studio
+
+Connected the generated ecommerce, logistics and SaaS training datasets to Studio and the source-bound text SFT loader. Each has 512 training, 64 validation and 128 reserved test conversations. All 2,112 demonstrations passed deterministic policy reconstruction; full-corpus inspection and launch plans succeeded for all three domains without preparing or starting a job.
+
+The parser accepts a narrow, typed synthetic-industry provenance schema. Only normalized messages enter model inputs and semantic content hashes; complete source bytes, source hashes and declared provenance remain in the saved snapshot. Inspection and launch notes explicitly report synthetic, not independently reviewed examples. Validation/test declarations are rejected for training even after file renaming. Duplicate JSON keys and nonfinite values fail before parsing can hide a split. Plain text conversations retain their existing normalization and privacy behavior.
+
+These are declared provenance checks, not independent attestation of review or origin. Stripping or replacing annotations in an isolated file cannot be detected by that file parser. Full `industry audit-datasets` reconstruction verifies the complete generated bundle separately. The existing industry evaluator still rejects synthetic data for its quality gate. Training completion is not evidence of a quality gain.
+
+304 unique Studio, dataset, inspection, SFT and UI tests passed; full-package mypy passed for 443 files. Ruff, Black, isort, repository hygiene and whitespace checks passed. Black was checked outside the known sandbox worker-IPC restriction. The source archive and full source identity bind this snapshot; the datasets archive contains the updated bundle including Studio guidance. The earlier industry-dataset-factory review remains unchanged and accurately predates this integration.
+
+Use the retained `ecommerce-config.json`, `logistics-config.json` or `saas-config.json` with `stateset-agents tui --config PATH --workspace outputs/finetune`. The snapshot text files show dataset inspection and launch review. Model revisions in these starter configs remain unpinned. No CUDA run, model update, provider call, held-out model evaluation or A+ certification is claimed.

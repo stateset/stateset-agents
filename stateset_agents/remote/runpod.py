@@ -12,10 +12,10 @@ than restarting from scratch. The volume is caller-managed (and bills
 monthly until the caller deletes it) — this executor never creates or
 deletes volumes.
 
-**The pod is terminated on every exit path**, including exceptions and the
-never-becomes-reachable case. A leaked pod bills by the hour until someone
-notices, which makes termination the most important behaviour in this file —
-not an afterthought in a happy-path ``finally``.
+Termination is requested on every exit path after a usable pod ID returns,
+including exceptions and the never-becomes-reachable case. An acknowledged
+request does not independently verify billing stopped. A leaked pod bills
+until someone notices, so uncertain cleanup retains its identity and warning.
 
 Uses ``requests`` (already a dependency) and the system ``ssh``/``scp``
 binaries, so there is no extra install beyond ``[training]``.
@@ -23,18 +23,27 @@ binaries, so there is no extra install beyond ``[training]``.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 import os
+import re
 import shlex
+import stat
 import subprocess
+import sys
 import time
 import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
-from stateset_agents.remote.executor import RemoteExecutionError, RemoteExecutor
+from stateset_agents.remote.executor import (
+    RemoteExecutionError,
+    RemoteExecutor,
+    SubmissionReceiptError,
+)
 from stateset_agents.remote.job import JobHandle, JobStatus, RemoteJobSpec
 from stateset_agents.remote.ledger import (
     BudgetExceeded,
@@ -45,6 +54,26 @@ from stateset_agents.remote.ledger import (
 )
 
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
+
+_MAX_REVIEWED_WHEEL_BYTES = 64 * 1024**2
+_REVIEWED_WHEEL_CHECK = """import hashlib, os, stat, sys
+descriptor = os.open(sys.argv[1], os.O_RDONLY | getattr(os, 'O_NOFOLLOW', 0) | getattr(os, 'O_NONBLOCK', 0))
+with os.fdopen(descriptor, 'rb') as source:
+    info = os.fstat(source.fileno())
+    expected = int(sys.argv[3])
+    if not stat.S_ISREG(info.st_mode) or info.st_size != expected:
+        sys.exit('Reviewed wheel size or file type differs')
+    digest = hashlib.sha256()
+    remaining = expected
+    while remaining:
+        chunk = source.read(min(1024 * 1024, remaining))
+        if not chunk:
+            sys.exit('Reviewed wheel changed while reading')
+        remaining -= len(chunk)
+        digest.update(chunk)
+    if source.read(1) or digest.hexdigest() != sys.argv[2]:
+        sys.exit('Reviewed wheel checksum differs')
+"""
 
 _API_ROOT = "https://rest.runpod.io/v1"
 _HTTP_ATTEMPTS = 5
@@ -104,14 +133,12 @@ class RunPodApi:
         attempts: int = _HTTP_ATTEMPTS,
         backoff_s: float = _HTTP_BACKOFF_S,
     ) -> Any:
-        """Issue ``request()`` retrying transient HTTP answers.
+        """Issue ``request()`` with the caller-selected retry policy.
 
-        RunPod's REST API intermittently answers 500 on /v1/pods (observed
-        repeatedly live; one such 500 killed a whole serve attempt during
-        provisioning). Retry 429 and 5xx with a bounded exponential backoff;
-        permanent 4xx responses still raise immediately. Transport errors are
-        deliberately not retried here: after an ambiguous POST disconnect we
-        cannot know whether a billable pod was created.
+        Safe reads may retry 429 and 5xx with bounded exponential backoff;
+        permanent 4xx and transport errors raise immediately. Non-idempotent
+        allocation callers must use ``attempts=1``: even an HTTP 500 or 429
+        can leave creation ambiguous, so a repeat may rent another pod.
         """
         import requests
 
@@ -213,7 +240,8 @@ class RunPodApi:
                     headers=self._headers(),
                     json=payload,
                     timeout=60,
-                )
+                ),
+                attempts=1,
             )
         except requests.RequestException as exc:
             status = exc.response.status_code if exc.response is not None else None
@@ -222,9 +250,10 @@ class RunPodApi:
             if exc.response is not None:
                 request_id = exc.response.headers.get("x-request-id")
             raise RemoteExecutionError(
-                "RunPod pod creation failed after retries" + detail,
+                "RunPod pod creation failed; allocation may exist, so inspect provider records before retrying"
+                + detail,
                 provider="runpod",
-                attempts=_HTTP_ATTEMPTS,
+                attempts=1,
                 request_id=request_id,
             ) from exc
         return dict(response.json())
@@ -352,14 +381,110 @@ class RunPodApi:
         response.raise_for_status()
 
 
-class SshTransport:
-    """File and command transport over the system ``ssh``/``scp`` binaries."""
+class _SshTimeout(RemoteExecutionError):
+    """A bounded SSH operation ended without establishing its remote outcome."""
 
-    def __init__(self, user: str = "root", key_path: Path | None = None) -> None:
+
+class SshTransport:
+    """SSH/SCP transport with finite client waits and optional job deadlines.
+
+    Client timeouts do not prove a remote command stopped or billing ended.
+    Built-in executor attempts use independent transports with shared deadlines;
+    injected transports remain responsible for their own blocking operations.
+    """
+
+    def __init__(
+        self,
+        user: str = "root",
+        key_path: Path | None = None,
+        *,
+        operation_timeout_s: float = 3600.0,
+    ) -> None:
         self.user = user
         self.key_path = key_path
+        self.operation_timeout_s = self._positive_timeout(operation_timeout_s)
+        self._deadline: float | None = None
         self._host: str | None = None
         self._port: int | None = None
+
+    @staticmethod
+    def _positive_timeout(value: float) -> float:
+        if (
+            type(value) not in (int, float)
+            or value <= 0
+            or value > 7 * 24 * 3600
+            or not math.isfinite(value)
+        ):
+            raise ValueError("SSH timeout must be finite and in (0, 604800] seconds")
+        return float(value)
+
+    def _for_deadline(self, deadline: float) -> SshTransport:
+        """Give an attempt its own endpoint and deadline without mutating a peer."""
+        if type(deadline) not in (int, float) or not math.isfinite(deadline):
+            raise ValueError("SSH deadline must be finite")
+        transport = SshTransport(
+            self.user, self.key_path, operation_timeout_s=self.operation_timeout_s
+        )
+        transport._deadline = deadline
+        return transport
+
+    def _timeout(
+        self, requested: float | None = None, *, command: bool = False
+    ) -> float:
+        timeout = (
+            self.operation_timeout_s
+            if requested is None
+            else self._positive_timeout(requested)
+        )
+        if self._deadline is not None:
+            remaining = self._deadline - time.monotonic()
+            if remaining <= 0:
+                raise _SshTimeout(
+                    "RunPod transport deadline expired before starting an operation",
+                    provider="runpod",
+                    stage="ssh_timeout",
+                    outcome_unknown=False,
+                )
+            # The foreground training command may use the remaining job budget;
+            # ordinary transfers retain their per-operation limit as well.
+            timeout = (
+                min(remaining, 7 * 24 * 3600)
+                if command and requested is None
+                else min(timeout, remaining)
+            )
+        return timeout
+
+    def _invoke(
+        self,
+        argv: list[str],
+        *,
+        operation: str,
+        timeout_s: float | None = None,
+        command: bool = False,
+        input_text: str | None = None,
+    ) -> subprocess.CompletedProcess[str]:
+        timeout = self._timeout(timeout_s, command=command)
+        kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "text": True,
+            "check": False,
+            "timeout": timeout,
+        }
+        if input_text is None:
+            kwargs["stdin"] = subprocess.DEVNULL
+        else:
+            kwargs["input"] = input_text
+        try:
+            return subprocess.run(argv, **kwargs)
+        except subprocess.TimeoutExpired:
+            # TimeoutExpired can retain command arguments and captured output.
+            # Do not expose those (or streamed credentials) in the error chain.
+            raise _SshTimeout(
+                f"RunPod {operation} exceeded {timeout:g}s; remote outcome is unknown",
+                provider="runpod",
+                stage="ssh_timeout",
+                outcome_unknown=True,
+            ) from None
 
     def _base_opts(self) -> list[str]:
         opts = [
@@ -371,6 +496,10 @@ class SshTransport:
             "UserKnownHostsFile=/dev/null",
             "-o",
             "LogLevel=ERROR",
+            "-o",
+            "BatchMode=yes",
+            "-o",
+            "ConnectTimeout=10",
             # Without keepalives a dead peer (pod crash/restart mid-job —
             # observed live: RunPod restarted a pod under a running job and
             # its IP changed) leaves the blocking ssh read hung for hours.
@@ -384,31 +513,40 @@ class SshTransport:
             opts += ["-i", str(self.key_path)]
         return opts
 
-    def wait_until_reachable(self, host: str, port: int, timeout_s: int) -> None:
+    def wait_until_reachable(self, host: str, port: int, timeout_s: float) -> None:
         """Block until sshd answers, or raise once ``timeout_s`` elapses."""
         self._host, self._port = host, port
+        timeout_s = self._positive_timeout(timeout_s)
         deadline = time.monotonic() + timeout_s
+        if self._deadline is not None:
+            deadline = min(deadline, self._deadline)
         last_error = ""
         while time.monotonic() < deadline:
-            probe = subprocess.run(
-                [
-                    "ssh",
-                    *self._base_opts(),
-                    "-p",
-                    str(port),
-                    "-o",
-                    "ConnectTimeout=10",
-                    f"{self.user}@{host}",
-                    "true",
-                ],
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            if probe.returncode == 0:
-                return
-            last_error = (probe.stderr or "").strip()
-            time.sleep(5)
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            try:
+                probe = self._invoke(
+                    [
+                        "ssh",
+                        *self._base_opts(),
+                        "-p",
+                        str(port),
+                        f"{self.user}@{host}",
+                        "true",
+                    ],
+                    operation="SSH readiness probe",
+                    timeout_s=min(10.0, remaining),
+                )
+            except _SshTimeout:
+                last_error = "SSH readiness probe timed out"
+            else:
+                if probe.returncode == 0 and time.monotonic() <= deadline:
+                    return
+                last_error = (probe.stderr or "").strip()
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(min(5.0, remaining))
         raise RemoteExecutionError(
             f"pod ssh at {host}:{port} did not answer within {timeout_s}s: "
             f"{last_error}",
@@ -421,7 +559,7 @@ class SshTransport:
     def upload_secret(self, secret: str, remote: str) -> None:
         """Stream a secret to a root-only remote file without local storage."""
         command = f"umask 077; cat > {shlex.quote(remote)}"
-        result = subprocess.run(
+        result = self._invoke(
             [
                 "ssh",
                 *self._base_opts(),
@@ -430,14 +568,12 @@ class SshTransport:
                 f"{self.user}@{self._host}",
                 command,
             ],
-            input=secret,
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="secret upload",
+            input_text=secret,
         )
         if result.returncode != 0:
             raise RemoteExecutionError(
-                f"secret upload failed: {(result.stderr or '').strip()}",
+                f"secret upload failed (ssh exit {result.returncode})",
                 provider="runpod",
             )
 
@@ -479,14 +615,15 @@ class SshTransport:
         if recursive:
             cmd.append("-r")
         cmd += [src, dest]
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = self._invoke(cmd, operation="SCP transfer")
         if result.returncode != 0:
             raise RemoteExecutionError(
                 f"scp failed: {(result.stderr or '').strip()}", provider="runpod"
             )
 
-    def run(self, command: str) -> tuple[int, str]:
-        result = subprocess.run(
+    def run(self, command: str, *, timeout_s: float | None = None) -> tuple[int, str]:
+        """Run one remote command, bounding the client wait without retrying it."""
+        result = self._invoke(
             [
                 "ssh",
                 *self._base_opts(),
@@ -495,9 +632,9 @@ class SshTransport:
                 f"{self.user}@{self._host}",
                 command,
             ],
-            capture_output=True,
-            text=True,
-            check=False,
+            operation="SSH command",
+            timeout_s=timeout_s,
+            command=True,
         )
         return result.returncode, (result.stdout or "") + (result.stderr or "")
 
@@ -527,6 +664,9 @@ class RunPodExecutor(RemoteExecutor):
     """Executes the job on a RunPod GPU pod, over SSH."""
 
     name = "runpod"
+    supports_sft_seed = True
+    uses_packaged_training = True
+    durable_submission_receipts = True
     supported_job_kinds = frozenset({"sft", "harvest"})
     compute_model = "rented-gpu-machine"
     verification_status = "live-end-to-end"
@@ -548,6 +688,9 @@ class RunPodExecutor(RemoteExecutor):
         lease_dir: Path | None = None,
         poll_interval_s: float = 10.0,
         max_provision_attempts: int = 2,
+        allow_environment_wheel: bool = True,
+        reviewed_wheel_sha256: str | None = None,
+        reviewed_wheel_bytes: int | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
@@ -559,10 +702,15 @@ class RunPodExecutor(RemoteExecutor):
         #: argument wins) — discovered live: the flywheel's first spin died
         #: with "No module named stateset_agents.training.harvest" because
         #: the pod installed the release, which predated the module.
-        if wheel is None:
+        if wheel is None and allow_environment_wheel:
             env_wheel = os.environ.get("STATESET_AGENTS_WHEEL", "").strip()
             wheel = Path(env_wheel) if env_wheel else None
         self.wheel = Path(wheel) if wheel else None
+        self._validate_wheel_binding(
+            self.wheel, reviewed_wheel_sha256, reviewed_wheel_bytes
+        )
+        self.reviewed_wheel_sha256 = reviewed_wheel_sha256
+        self.reviewed_wheel_bytes = reviewed_wheel_bytes
         self.image = image
         #: Container disk for the pod. The default fits small models; a 30B
         #: BF16 checkpoint alone is ~60GB, so size this at roughly 2.5x the
@@ -584,6 +732,149 @@ class RunPodExecutor(RemoteExecutor):
         self._jobs: dict[str, _RunPodJob] = {}
         self._last_duration_s: float | None = None
         self._last_cost_usd: float | None = None
+        self._submission_started = False
+
+    @staticmethod
+    def _validate_wheel_binding(
+        wheel: Path | None, sha256: str | None, size_bytes: int | None
+    ) -> None:
+        if sha256 is not None or size_bytes is not None:
+            if (
+                not isinstance(sha256, str)
+                or not re.fullmatch(r"[0-9a-f]{64}", sha256)
+                or type(size_bytes) is not int
+                or not 0 < size_bytes <= _MAX_REVIEWED_WHEEL_BYTES
+                or wheel is None
+            ):
+                raise ValueError(
+                    "Reviewed wheel requires a wheel, SHA256 and a positive byte count within 64 MiB"
+                )
+
+    def bind_reviewed_wheel(
+        self, wheel: Path | None, *, sha256: str | None, size_bytes: int | None
+    ) -> None:
+        """Replace ambient installation choices before the first submission only."""
+        if self._submission_started or self._jobs:
+            raise ValueError(
+                "Reviewed wheel binding cannot change after submission starts"
+            )
+        selected = Path(wheel) if wheel is not None else None
+        if selected is not None and (sha256 is None or size_bytes is None):
+            raise ValueError(
+                "Reviewed wheel binding requires both SHA256 and byte count"
+            )
+        self._validate_wheel_binding(selected, sha256, size_bytes)
+        self.wheel = selected
+        self.reviewed_wheel_sha256 = sha256
+        self.reviewed_wheel_bytes = size_bytes
+
+    def _reviewed_commands(self, commands: list[str]) -> list[str]:
+        if self.reviewed_wheel_sha256 is None:
+            return commands
+        assert self.wheel is not None and self.reviewed_wheel_bytes is not None
+        return [
+            shlex.join(
+                [
+                    "python",
+                    "-c",
+                    _REVIEWED_WHEEL_CHECK,
+                    f"{_REMOTE_WORKDIR}/{self.wheel.name}",
+                    self.reviewed_wheel_sha256,
+                    str(self.reviewed_wheel_bytes),
+                ]
+            ),
+            *commands,
+        ]
+
+    def _verify_reviewed_wheel(self) -> None:
+        if self.reviewed_wheel_sha256 is None:
+            return
+        try:
+            if self.wheel is None or self.wheel.is_symlink():
+                raise ValueError("Reviewed wheel is unavailable")
+            descriptor = os.open(
+                self.wheel,
+                os.O_RDONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+                | getattr(os, "O_NONBLOCK", 0),
+            )
+            with os.fdopen(descriptor, "rb") as source:
+                before = os.fstat(source.fileno())
+                if (
+                    not stat.S_ISREG(before.st_mode)
+                    or before.st_size != self.reviewed_wheel_bytes
+                ):
+                    raise ValueError("Reviewed wheel size or type differs")
+                digest = hashlib.sha256()
+                remaining = before.st_size
+                while remaining:
+                    chunk = source.read(min(1024 * 1024, remaining))
+                    if not chunk:
+                        raise ValueError("Reviewed wheel changed while reading")
+                    remaining -= len(chunk)
+                    digest.update(chunk)
+                after = os.fstat(source.fileno())
+                if (
+                    source.read(1)
+                    or (before.st_size, before.st_mtime_ns)
+                    != (after.st_size, after.st_mtime_ns)
+                    or digest.hexdigest() != self.reviewed_wheel_sha256
+                ):
+                    raise ValueError("Reviewed wheel checksum differs")
+        except (OSError, ValueError) as exc:
+            raise RemoteExecutionError(
+                "Reviewed wheel bytes are unavailable or changed; prepare a fresh review before allocating compute",
+                provider=self.name,
+                stage="reviewed_wheel",
+            ) from exc
+
+    def _observe_pod(
+        self,
+        job_id: str,
+        event: str,
+        pod_id: str | None = None,
+        *,
+        attempt: int,
+    ) -> None:
+        self._observe_submission(
+            {
+                "job_id": job_id,
+                "event": event,
+                "resource_kind": "pod",
+                "resource_id": pod_id,
+                "resource_name": f"stateset-sft-{job_id}",
+                "attempt": attempt,
+            }
+        )
+
+    def _cleanup_submission_pod(
+        self, api: Any, pod_id: str, job_id: str, logs: list[str], *, attempt: int
+    ) -> None:
+        """Retain cleanup evidence without masking an existing primary failure."""
+        primary_error = sys.exc_info()[1]
+        try:
+            api.terminate_pod(pod_id)
+        except Exception as exc:
+            logs.append(
+                f"could not confirm termination of pod {pod_id}: {exc}; "
+                "cleanup lease retained; billing may still be active"
+            )
+            event = "cleanup_unconfirmed"
+            self._submission_cleanup_unconfirmed = True
+        else:
+            event = "cleanup_acknowledged"
+            try:
+                self._lease_path(pod_id).unlink(missing_ok=True)
+            except OSError:
+                logs.append("Could not remove the acknowledged pod cleanup lease")
+        try:
+            self._observe_pod(job_id, event, pod_id, attempt=attempt)
+        except SubmissionReceiptError:
+            if primary_error is None:
+                raise
+            logs.append(
+                "Could not retain pod cleanup evidence; inspect retained resources"
+            )
 
     # -- crash-recovery leases -------------------------------------------
 
@@ -738,64 +1029,74 @@ class RunPodExecutor(RemoteExecutor):
             adapter_remote = (
                 _REMOTE_ADAPTER if (spec.harvest or {}).get("adapter_dir") else None
             )
-            harvest_args = " ".join(
-                shlex.quote(a)
-                for a in spec.harvest_cli_args(adapter_dir=adapter_remote)
+            harvest_argv = spec.harvest_cli_args(adapter_dir=adapter_remote)
+            # Replace the path values before shell rendering so an identical
+            # model/adapter argument is never accidentally rewritten.
+            # Generated arguments are option/value pairs plus an optional
+            # trailing --dry-run; inspect option positions only.
+            for index in range(0, len(harvest_argv) - 1, 2):
+                if harvest_argv[index] == "--prompts-file":
+                    harvest_argv[index + 1] = dataset_remote
+                elif harvest_argv[index] == "--output-dir":
+                    harvest_argv[index + 1] = _REMOTE_OUTPUT
+            harvest_args = shlex.join(harvest_argv)
+            return self._reviewed_commands(
+                [
+                    f"pip install --quiet {shlex.quote(pin)}",
+                    f"python -m stateset_agents.training.harvest {harvest_args}",
+                ]
             )
-            # The spec's local paths are meaningless on the pod: re-point the
-            # prompts file and output dir at the uploaded/remote locations.
-            harvest_args = harvest_args.replace(
-                shlex.quote(str(spec.dataset)), shlex.quote(dataset_remote), 1
-            ).replace(shlex.quote(str(spec.output_dir)), _REMOTE_OUTPUT, 1)
-            return [
-                f"pip install --quiet '{pin}'",
-                f"python -m stateset_agents.training.harvest {harvest_args}",
-            ]
-        args = " ".join(
-            [
-                "--dataset",
-                dataset_remote,
-                "--base-model",
-                spec.base_model,
-                "--output-dir",
-                _REMOTE_OUTPUT,
-                "--num-epochs",
-                str(spec.num_epochs),
-                "--lora-r",
-                str(spec.lora_r),
-                "--lora-alpha",
-                str(spec.lora_alpha),
-                "--learning-rate",
-                str(spec.learning_rate),
-                "--max-length",
-                str(spec.max_length),
-                "--per-device-batch-size",
-                str(spec.per_device_batch_size),
-                "--gradient-accumulation-steps",
-                str(spec.gradient_accumulation_steps),
-            ]
-        )
+        sft_argv = [
+            "--dataset",
+            dataset_remote,
+            "--base-model",
+            spec.base_model,
+            "--output-dir",
+            _REMOTE_OUTPUT,
+            "--num-epochs",
+            str(spec.num_epochs),
+            "--lora-r",
+            str(spec.lora_r),
+            "--lora-alpha",
+            str(spec.lora_alpha),
+            "--learning-rate",
+            str(spec.learning_rate),
+            "--max-length",
+            str(spec.max_length),
+            "--per-device-batch-size",
+            str(spec.per_device_batch_size),
+            "--gradient-accumulation-steps",
+            str(spec.gradient_accumulation_steps),
+        ]
+        if spec.seed is not None:
+            sft_argv += ["--seed", str(spec.seed)]
         if spec.dry_run:
-            args += " --dry-run"
+            sft_argv.append("--dry-run")
         if spec.resume or force_resume:
             # Only meaningful when checkpoints already exist remotely: a
             # network-volume retry (``force_resume``), or a caller-passed
             # ``--resume``. A fresh pod without a volume has an empty output
             # dir, so the job logs it and trains from scratch — harmless
             # either way; passed through for parity with the local provider.
-            args += " --resume"
+            sft_argv.append("--resume")
         if spec.eval_prompts:
-            # The command travels through ssh + bash, so the JSON blob must
-            # survive a real shell — hence shlex.quote, not manual quoting.
-            args += f" --eval-prompts-json {shlex.quote(json.dumps(spec.eval_prompts))}"
-            args += f" --eval-max-new-tokens {spec.eval_max_new_tokens}"
-        return [
-            f"pip install --quiet '{pin}'",
-            f"python -m stateset_agents.training.sft {args}",
+            sft_argv += [
+                "--eval-prompts-json",
+                json.dumps(spec.eval_prompts),
+                "--eval-max-new-tokens",
+                str(spec.eval_max_new_tokens),
+            ]
+        commands = [
+            f"pip install --quiet {shlex.quote(pin)}",
+            f"python -m stateset_agents.training.sft {shlex.join(sft_argv)}",
         ]
+        return self._reviewed_commands(commands)
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
         self.validate_spec(spec)
+        self._submission_observer_failed = False
+        self._submission_started = True
+        self._verify_reviewed_wheel()
         api = self._require_api()
         public_key = self._require_public_key()
         ssh = self._require_ssh()
@@ -815,7 +1116,13 @@ class RunPodExecutor(RemoteExecutor):
                 f"({data_center_id}) at {_REMOTE_WORKDIR}"
             )
 
+        total_duration_s = 0.0
+        total_cost_usd: float | None = 0.0
         for attempt in range(1, self.max_provision_attempts + 1):
+            self._last_duration_s = None
+            self._last_cost_usd = None
+            self._submission_cleanup_unconfirmed = False
+            status = JobStatus.FAILED
             try:
                 status = self._run_attempt(
                     api,
@@ -828,8 +1135,20 @@ class RunPodExecutor(RemoteExecutor):
                     # A retry only sees prior checkpoints when they landed on
                     # a network volume; without one they died with the pod.
                     force_resume=bool(spec.network_volume_id) and attempt > 1,
+                    attempt=attempt,
                 )
             except _PodDiedMidJob as exc:
+                if (
+                    getattr(self, "_submission_observer", None) is not None
+                    and self._submission_cleanup_unconfirmed
+                ):
+                    raise RemoteExecutionError(
+                        "RunPod cleanup is unconfirmed; inspect the retained allocation and provider account before starting replacement work",
+                        provider=self.name,
+                        stage="cleanup_unconfirmed",
+                    ) from exc
+                if self._submission_observer_failed:
+                    raise
                 logs.append(str(exc))
                 if attempt >= self.max_provision_attempts:
                     raise RemoteExecutionError(
@@ -859,38 +1178,64 @@ class RunPodExecutor(RemoteExecutor):
                         f"{self.max_provision_attempts})"
                     )
                 continue
+            finally:
+                # One row per returned allocation, including attempts that
+                # fail before SSH or are followed by a successful replacement.
+                # The callee fills these nullable measurements. Snapshot the
+                # declared types rather than retaining pre-call None narrowing.
+                attempt_duration_s = cast(float | None, self._last_duration_s)
+                attempt_cost_usd = cast(float | None, self._last_cost_usd)
+                if attempt_duration_s is not None:
+                    total_duration_s += attempt_duration_s
+                    if total_cost_usd is None or attempt_cost_usd is None:
+                        total_cost_usd = None
+                    else:
+                        total_cost_usd += attempt_cost_usd
+                    try:
+                        self._record_cost(spec, job_id, status)
+                    except Exception:
+                        # Accounting must not replace the original receipt,
+                        # transport, budget or lease diagnosis.
+                        logs.append(
+                            "Could not retain RunPod attempt cost; inspect provider records"
+                        )
             self._jobs[job_id] = _RunPodJob(
                 spec,
                 status,
                 logs,
-                duration_s=self._last_duration_s,
-                cost_usd=self._last_cost_usd,
-            )
-            record_entry(
-                CostEntry(
-                    provider=self.name,
-                    job_id=job_id,
-                    base_model=spec.base_model,
-                    gpu=spec.gpu or self.DEFAULT_GPU,
-                    gpu_count=spec.gpu_count,
-                    cost_per_hr=(
-                        round(self._last_cost_usd / (self._last_duration_s / 3600), 4)
-                        if self._last_cost_usd and self._last_duration_s
-                        else None
-                    ),
-                    duration_s=(
-                        round(self._last_duration_s, 1)
-                        if self._last_duration_s is not None
-                        else None
-                    ),
-                    cost_usd=self._last_cost_usd,
-                    status=status.value,
+                duration_s=total_duration_s,
+                cost_usd=(
+                    round(total_cost_usd, 4) if total_cost_usd is not None else None
                 ),
-                path=self.ledger_path,
             )
             return handle
 
         raise AssertionError("unreachable")  # pragma: no cover
+
+    def _record_cost(self, spec: RemoteJobSpec, job_id: str, status: JobStatus) -> None:
+        """Retain one allocation's quote-derived observed cost, even on failure."""
+        record_entry(
+            CostEntry(
+                provider=self.name,
+                job_id=job_id,
+                base_model=spec.base_model,
+                gpu=spec.gpu or self.DEFAULT_GPU,
+                gpu_count=spec.gpu_count,
+                cost_per_hr=(
+                    round(self._last_cost_usd / (self._last_duration_s / 3600), 4)
+                    if self._last_cost_usd and self._last_duration_s
+                    else None
+                ),
+                duration_s=(
+                    round(self._last_duration_s, 1)
+                    if self._last_duration_s is not None
+                    else None
+                ),
+                cost_usd=self._last_cost_usd,
+                status=status.value,
+            ),
+            path=self.ledger_path,
+        )
 
     def _run_attempt(
         self,
@@ -903,14 +1248,17 @@ class RunPodExecutor(RemoteExecutor):
         *,
         data_center_id: str | None = None,
         force_resume: bool = False,
+        attempt: int = 1,
     ) -> JobStatus:
         """One full provision → upload → run → download cycle on a new pod.
 
         Raises :class:`_PodDiedMidJob` when the pod fails *under* the job —
         the caller may then retry on a fresh pod. Every other outcome is
         terminal: a returned :class:`JobStatus`, or a plain
-        :class:`RemoteExecutionError`. The pod is terminated on every path.
+        :class:`RemoteExecutionError`. Cleanup is requested for every known
+        allocation, without claiming that an acknowledgement ends billing.
         """
+        self._observe_pod(job_id, "allocation_intent", attempt=attempt)
         pod = api.create_pod(
             name=f"stateset-sft-{job_id}",
             image=self.image,
@@ -924,178 +1272,193 @@ class RunPodExecutor(RemoteExecutor):
             volume_mount_path=_REMOTE_WORKDIR if spec.network_volume_id else None,
             data_center_id=data_center_id,
         )
-        pod_id = str(pod["id"])
-        # Billing starts at creation, so the clock does too.
+        pod_id = pod.get("id") if isinstance(pod, dict) else None
+        if (
+            not isinstance(pod_id, str)
+            or not pod_id
+            or pod_id != pod_id.strip()
+            or len(pod_id) > 256
+            or any(not character.isprintable() for character in pod_id)
+        ):
+            raise RemoteExecutionError(
+                "RunPod returned no usable pod identity; allocation may exist, so inspect provider records before retrying",
+                provider=self.name,
+            )
+        # Lease timestamps use wall time; elapsed accounting uses monotonic
+        # time from the returned identity through the cleanup request. Neither
+        # boundary independently verifies the provider's actual billing window.
         pod_started_at = time.time()
-        try:
-            self._write_lease(pod_id, job_id, spec, pod_started_at)
-        except Exception:
-            # A pod we cannot track after caller death is unsafe to keep.
-            try:
-                api.terminate_pod(pod_id)
-            finally:
-                raise
+        pod_started_monotonic = time.monotonic()
         cost_per_hr = pod.get("costPerHr")
         try:
             cost_per_hr = float(cost_per_hr) if cost_per_hr is not None else None
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             cost_per_hr = None
-        logs.append(
-            f"created pod {pod_id} "
-            f"({spec.gpu_count}x {spec.gpu or self.DEFAULT_GPU}, "
-            f"{spec.cloud_type}"
-            + (f", ${cost_per_hr}/hr)" if cost_per_hr is not None else ")")
-        )
-
-        # A ceiling is checked before a single second of work: refusing costs
-        # only the seconds this pod has existed, which we then terminate.
+        if cost_per_hr is not None and (
+            not math.isfinite(cost_per_hr) or cost_per_hr < 0
+        ):
+            cost_per_hr = None
         try:
-            check_budget(
-                cost_per_hr,
-                spec.timeout_s,
-                spec.max_cost_usd,
-                # RunPod reports the effective price for the entire Pod,
-                # not a per-GPU rate. Confirmed against a live 4x H100 Pod
-                # on 2026-08-26 ($13.16/hr total).
-                gpu_count=1,
+            self._write_lease(pod_id, job_id, spec, pod_started_at)
+            self._observe_pod(job_id, "allocated", pod_id, attempt=attempt)
+            logs.append(
+                f"created pod {pod_id} "
+                f"({spec.gpu_count}x {spec.gpu or self.DEFAULT_GPU}, "
+                f"{spec.cloud_type}"
+                + (f", ${cost_per_hr}/hr)" if cost_per_hr is not None else ")")
             )
-        except BudgetExceeded as exc:
+
+            if type(ssh) is SshTransport:
+                # Keep transport construction inside the allocation's cleanup
+                # boundary, after retaining its identity and lease.
+                ssh = ssh._for_deadline(pod_started_monotonic + spec.timeout_s)
+
+            # Refuse before work, retaining the allocated pod's observed cost.
+            # Failed or ambiguous termination can still leave billing active.
             try:
-                api.terminate_pod(pod_id)
-            except Exception:  # pragma: no cover - defensive
-                pass
-            else:
-                self._lease_path(pod_id).unlink(missing_ok=True)
-            raise RemoteExecutionError(
-                str(exc), provider=self.name, pod_id=pod_id
-            ) from exc
-
-        # Everything from here must terminate the pod, whatever happens.
-        try:
-            host, port = self._wait_for_ssh_endpoint(api, pod_id)
-            logs.append(f"pod reachable at {host}:{port}")
-            ssh.wait_until_reachable(host, port, self.ready_timeout_s)
-
-            # The job phase: any transport failure past this point means the
-            # pod (or its network) died under us — the retryable case.
-            try:
-                dataset_remote = f"{_REMOTE_WORKDIR}/{spec.dataset.name}"
-                ssh.upload(spec.dataset, dataset_remote)
-                logs.append(f"uploaded {spec.dataset.name}")
-
-                adapter_dir = (spec.harvest or {}).get("adapter_dir")
-                if spec.job_kind == "harvest" and adapter_dir:
-                    self._upload_adapter(ssh, Path(adapter_dir))
-                    logs.append(f"uploaded adapter {adapter_dir} -> {_REMOTE_ADAPTER}")
-
-                if self.wheel:
-                    ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
-                    logs.append(f"uploaded {self.wheel.name}")
-
-                exit_code = 0
-                commands = self._remote_commands(
-                    spec, dataset_remote, force_resume=force_resume
+                check_budget(
+                    cost_per_hr,
+                    spec.timeout_s,
+                    spec.max_cost_usd,
+                    # RunPod quotes the whole Pod, not each GPU separately.
+                    gpu_count=1,
                 )
-                for command in commands:
-                    exit_code, output = ssh.run(command)
-                    logs.extend(output.splitlines())
-                    if exit_code != 0:
-                        break
-
-                if exit_code == 255:
-                    # 255 is ssh's OWN exit code (the client failed), not the
-                    # remote command's: keepalive-detected pod death lands
-                    # here. Observed live — RunPod restarted a pod under a
-                    # running job and its IP changed.
-                    raise _PodDiedMidJob(
-                        f"ssh transport to pod {pod_id} died mid-job (ssh exit 255)",
-                        provider=self.name,
-                    )
-            except _PodDiedMidJob:
-                raise
-            except Exception as exc:
-                raise _PodDiedMidJob(
-                    f"pod {pod_id} failed mid-job: {exc}", provider=self.name
+            except BudgetExceeded as exc:
+                raise RemoteExecutionError(
+                    str(exc), provider=self.name, pod_id=pod_id
                 ) from exc
 
-            if exit_code != 0:
-                logs.append(f"remote job exited {exit_code}")
-                # The eval gate fails a job AFTER saving its artifacts, so a
-                # failed run may still hold the adapter + eval_results.json —
-                # and the pod is terminated on the way out, so this is the
-                # last chance to save them. Observed live: wait()'s
-                # fetch-on-failure was defeated by fetch()'s own
-                # success-only guard, and a trained gen-2 adapter died with
-                # its pod. Download best-effort; the failure stands.
-                try:
-                    salvaged = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
-                    if salvaged:
-                        logs.append(
-                            f"salvaged {len(salvaged)} artifact file(s) "
-                            f"from the failed job to {spec.output_dir}"
-                        )
-                except Exception as exc:  # noqa: BLE001 - salvage must not mask
-                    logs.append(f"could not salvage artifacts: {exc}")
-                return JobStatus.FAILED
+            # Everything from here must terminate the pod, whatever happens.
+            try:
+                host, port = self._wait_for_ssh_endpoint(api, pod_id)
+                logs.append(f"pod reachable at {host}:{port}")
+                ssh.wait_until_reachable(host, port, self.ready_timeout_s)
 
-            if spec.dry_run:
+                # The job phase: any transport failure past this point means the
+                # pod (or its network) died under us — the retryable case.
+                try:
+                    dataset_remote = f"{_REMOTE_WORKDIR}/{spec.dataset.name}"
+                    ssh.upload(spec.dataset, dataset_remote)
+                    logs.append(f"uploaded {spec.dataset.name}")
+
+                    adapter_dir = (spec.harvest or {}).get("adapter_dir")
+                    if spec.job_kind == "harvest" and adapter_dir:
+                        self._upload_adapter(ssh, Path(adapter_dir))
+                        logs.append(
+                            f"uploaded adapter {adapter_dir} -> {_REMOTE_ADAPTER}"
+                        )
+
+                    if self.wheel:
+                        ssh.upload(self.wheel, f"{_REMOTE_WORKDIR}/{self.wheel.name}")
+                        logs.append(f"uploaded {self.wheel.name}")
+
+                    exit_code = 0
+                    commands = self._remote_commands(
+                        spec, dataset_remote, force_resume=force_resume
+                    )
+                    for command in commands:
+                        exit_code, output = ssh.run(command)
+                        logs.extend(output.splitlines())
+                        if exit_code != 0:
+                            break
+
+                    if exit_code == 255:
+                        # 255 is ssh's OWN exit code (the client failed), not the
+                        # remote command's: keepalive-detected pod death lands
+                        # here. Observed live — RunPod restarted a pod under a
+                        # running job and its IP changed.
+                        raise _PodDiedMidJob(
+                            f"ssh transport to pod {pod_id} died mid-job (ssh exit 255)",
+                            provider=self.name,
+                        )
+                except (SubmissionReceiptError, _PodDiedMidJob, _SshTimeout):
+                    raise
+                except Exception as exc:
+                    raise _PodDiedMidJob(
+                        f"pod {pod_id} failed mid-job: {exc}", provider=self.name
+                    ) from exc
+
+                self._observe_pod(job_id, "execution_finished", pod_id, attempt=attempt)
+                if exit_code != 0:
+                    logs.append(f"remote job exited {exit_code}")
+                    # The eval gate fails a job AFTER saving its artifacts, so a
+                    # failed run may still hold the adapter + eval_results.json —
+                    # and the pod is terminated on the way out, so this is the
+                    # last chance to save them. Observed live: wait()'s
+                    # fetch-on-failure was defeated by fetch()'s own
+                    # success-only guard, and a trained gen-2 adapter died with
+                    # its pod. Download best-effort; the failure stands.
+                    try:
+                        salvaged = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+                        if salvaged:
+                            logs.append(
+                                f"salvaged {len(salvaged)} artifact file(s) "
+                                f"from the failed job to {spec.output_dir}"
+                            )
+                    except Exception as exc:  # noqa: BLE001 - salvage must not mask
+                        logs.append(f"could not salvage artifacts: {exc}")
+                    return JobStatus.FAILED
+
+                if spec.dry_run:
+                    return JobStatus.SUCCEEDED
+
+                try:
+                    downloaded = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+                except Exception as exc:
+                    # Reported, not raised (and not retried — a rerun would burn
+                    # a full training run to fix a copy): by this point the job
+                    # itself has already succeeded, and raising would discard
+                    # every line of its output — leaving a stack trace and no
+                    # evidence.
+                    logs.append(f"failed to download adapter: {exc}")
+                    return JobStatus.FAILED
+
+                if not downloaded:
+                    logs.append(
+                        "job exited cleanly but produced no artifacts — "
+                        f"nothing was written to {_REMOTE_OUTPUT}"
+                    )
+                    return JobStatus.FAILED
+
+                logs.append(
+                    f"downloaded {len(downloaded)} file(s) to {spec.output_dir}"
+                )
                 return JobStatus.SUCCEEDED
 
-            try:
-                downloaded = ssh.download_dir(_REMOTE_OUTPUT, spec.output_dir)
+            except RemoteExecutionError:
+                raise
             except Exception as exc:
-                # Reported, not raised (and not retried — a rerun would burn
-                # a full training run to fix a copy): by this point the job
-                # itself has already succeeded, and raising would discard
-                # every line of its output — leaving a stack trace and no
-                # evidence.
-                logs.append(f"failed to download adapter: {exc}")
-                return JobStatus.FAILED
-
-            if not downloaded:
-                logs.append(
-                    "job exited cleanly but produced no artifacts — "
-                    f"nothing was written to {_REMOTE_OUTPUT}"
-                )
-                return JobStatus.FAILED
-
-            logs.append(f"downloaded {len(downloaded)} file(s) to {spec.output_dir}")
-            return JobStatus.SUCCEEDED
-
-        except RemoteExecutionError:
-            raise
-        except Exception as exc:
-            raise RemoteExecutionError.wrap(
-                exc, "RunPod job failed", provider=self.name, pod_id=pod_id
-            ) from exc
+                raise RemoteExecutionError.wrap(
+                    exc, "RunPod job failed", provider=self.name, pod_id=pod_id
+                ) from exc
         finally:
             # Unconditional: an orphaned pod bills by the hour.
             try:
-                api.terminate_pod(pod_id)
-            except Exception as exc:  # never mask the original failure
+                self._cleanup_submission_pod(api, pod_id, job_id, logs, attempt=attempt)
+            finally:
+                # This is the observed interval, not proof that billing ended.
+                # Retain it even when cleanup evidence cannot be persisted.
+                self._last_duration_s = time.monotonic() - pod_started_monotonic
+                self._last_cost_usd = estimate_cost_usd(
+                    cost_per_hr, self._last_duration_s
+                )
                 logs.append(
-                    f"could not confirm termination of pod {pod_id}: {exc}; "
-                    "cleanup lease retained"
+                    f"pod {pod_id} observed for {self._last_duration_s:.0f}s through cleanup request"
+                    + (
+                        f" (~${self._last_cost_usd:.2f})"
+                        if self._last_cost_usd is not None
+                        else " (cost unknown)"
+                    )
                 )
-            else:
-                self._lease_path(pod_id).unlink(missing_ok=True)
-            # Bookkeeping last: the money was spent whether or not the job
-            # worked, so the ledger records failures too.
-            self._last_duration_s = time.time() - pod_started_at
-            self._last_cost_usd = estimate_cost_usd(cost_per_hr, self._last_duration_s)
-            logs.append(
-                f"pod {pod_id} ran {self._last_duration_s:.0f}s"
-                + (
-                    f" (~${self._last_cost_usd:.2f})"
-                    if self._last_cost_usd is not None
-                    else " (cost unknown)"
-                )
-            )
 
     # -- executor interface -----------------------------------------------
 
     def job_cost(self, handle: JobHandle) -> tuple[float | None, float | None]:
-        """Measured pod lifetime and spend for a finished RunPod job."""
+        """Observed allocation time and estimated cost across finished attempts.
+
+        Cleanup acknowledgement does not prove billing stopped. Cost remains
+        unknown if any allocated attempt had no usable provider quote.
+        """
         job = self._job(handle)
         return (job.duration_s, job.cost_usd)
 

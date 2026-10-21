@@ -13,6 +13,7 @@ from typing import Any
 import numpy as np
 
 from .dapo_config import DAPOConfig
+from .runtime_state import _reject_unsupported_resume
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,10 @@ async def train_with_dapo(
 
     DAPO is optimized for long chain-of-thought reasoning tasks like math.
     """
+    if config is None:
+        config = DAPOConfig(model_name=model_name, output_dir=output_dir)
+    _reject_unsupported_resume(config, "train_with_dapo")
+
     from .dapo_trainer import DAPOModelManager, DAPOTrainer, _require_wandb, wandb
 
     logger.info("=" * 60)
@@ -40,12 +45,6 @@ async def train_with_dapo(
     logger.info(
         "Key techniques: Clip-Higher, Dynamic Sampling, Token-Level Loss, Overlong Shaping"
     )
-
-    if config is None:
-        config = DAPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
-        )
 
     wandb_enabled = use_wandb and wandb_project is not None
     if use_wandb and not wandb_enabled:
@@ -152,6 +151,16 @@ async def train_reasoning_with_dapo(
     **kwargs,
 ) -> tuple[Any, Any, dict]:
     """Train a reasoning model using DAPO."""
+    config = DAPOConfig(
+        model_name=model_name,
+        output_dir=output_dir,
+        use_dynamic_sampling=True,
+        use_overlong_shaping=True,
+        use_token_level_loss=True,
+        **kwargs,
+    )
+    _reject_unsupported_resume(config, "train_reasoning_with_dapo")
+
     prompts = [problem["problem"] for problem in math_problems]
     answers = {problem["problem"]: problem["answer"] for problem in math_problems}
 
@@ -163,15 +172,6 @@ async def train_reasoning_with_dapo(
         if verifier(prompt, response):
             return 1.0
         return 0.0
-
-    config = DAPOConfig(
-        model_name=model_name,
-        output_dir=output_dir,
-        use_dynamic_sampling=True,
-        use_overlong_shaping=True,
-        use_token_level_loss=True,
-        **kwargs,
-    )
 
     return await train_with_dapo(
         model_name=model_name,

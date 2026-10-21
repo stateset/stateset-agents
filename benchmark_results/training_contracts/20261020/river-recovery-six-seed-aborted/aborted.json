@@ -1,0 +1,19 @@
+{
+  "admitted_trajectories": 24,
+  "admitted_trajectories_by_seed": {
+    "2026110001": 6,
+    "2026110002": 18,
+    "2026110003": 0,
+    "2026110004": 0,
+    "2026110005": 0,
+    "2026110006": 0
+  },
+  "cost_usd": null,
+  "evaluation_attempted": false,
+  "optimizer_updates_submitted": 0,
+  "plan_hash": "513f51ce99b4bd11e46798c5bd92d24d90756c16bd0dd40d1ba691a4b6f6d70d",
+  "reason": "Consecutive run seeds overlap River member-offset sampling streams; stopped rather than treating correlated streams as independent replication.",
+  "reserved_output_tokens": 24576,
+  "scope": "Each worker admitted fewer than the required 76 trajectories. Frozen validate_batch must receive all 76 before any forward/backward or optimizer submission. No batch or optimizer acknowledgement was published. No held-out cases were sampled.",
+  "status": "aborted_sampler_seed_overlap"
+}

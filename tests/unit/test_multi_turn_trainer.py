@@ -112,48 +112,38 @@ class TestMultiTurnGRPOTrainer:
             mock_agent.initialize.assert_called_once()
 
     def test_trainer_load_checkpoint(self, trainer, tmp_path):
-        """Test loading checkpoint training state."""
-        trainer.optimizer = MagicMock()
-        trainer.lr_scheduler = MagicMock()
+        """Metadata alone must not claim resume or change a real learner."""
+        import copy
 
+        torch = pytest.importorskip("torch")
+        trainer.agent.model = torch.nn.Linear(2, 1)
+        trainer.optimizer = torch.optim.SGD(trainer.agent.model.parameters(), lr=0.1)
+        trainer.lr_scheduler = torch.optim.lr_scheduler.StepLR(trainer.optimizer, 1)
+        trainer.agent.tokenizer = None
+        trainer.config = SimpleNamespace(gradient_accumulation_steps=1)
         checkpoint_path = tmp_path / "checkpoint"
         checkpoint_path.mkdir()
-        (checkpoint_path / "training_state.pt").write_text("placeholder")
-
-        state = {
-            "global_step": 7,
-            "current_epoch": 3,
-            "best_eval_metric": 0.2,
-            "steps_without_improvement": 2,
-            "grad_accum_step": 4,
-            "optimizer_state_dict": {"opt": 1},
-            "scheduler_state_dict": {"sched": 2},
-        }
-
-        with patch(
-            "stateset_agents.training.multi_turn_trainer.require_torch"
-        ) as mock_torch:
-            mock_torch.return_value = MagicMock(load=MagicMock(return_value=state))
-            loaded = trainer.load_checkpoint(checkpoint_path)
-
-        assert loaded is True
-        assert trainer.global_step == 7
-        assert trainer.current_epoch == 3
-        trainer.optimizer.load_state_dict.assert_called_once_with(
-            state["optimizer_state_dict"]
-        )
-        trainer.lr_scheduler.load_state_dict.assert_called_once_with(
-            state["scheduler_state_dict"]
-        )
+        torch.save({"global_step": 7}, checkpoint_path / "training_state.pt")
+        model = copy.deepcopy(trainer.agent.model.state_dict())
+        optimizer = copy.deepcopy(trainer.optimizer.state_dict())
+        scheduler = copy.deepcopy(trainer.lr_scheduler.state_dict())
+        assert trainer.load_checkpoint(checkpoint_path) is False
+        assert trainer.global_step == 0
+        assert trainer.current_epoch == 0
+        for name, value in trainer.agent.model.state_dict().items():
+            torch.testing.assert_close(value, model[name], rtol=0, atol=0)
+        assert trainer.optimizer.state_dict() == optimizer
+        assert trainer.lr_scheduler.state_dict() == scheduler
+        assert not getattr(trainer, "_runtime_checkpoint_poisoned", False)
 
     @pytest.mark.asyncio
     async def test_trainer_save_checkpoint_without_optimizer(self, tmp_path):
         """Checkpoint saves should still work before optimizer setup."""
         from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+        from tests.unit.test_multi_turn_checkpoint_accumulation import TinyModel
 
-        agent = MagicMock()
-        agent.model = MagicMock()
-        agent.tokenizer = MagicMock()
+        torch = pytest.importorskip("torch")
+        agent = SimpleNamespace(model=TinyModel(), tokenizer=None)
 
         config = SimpleNamespace(
             output_dir=str(tmp_path), gradient_accumulation_steps=1
@@ -165,24 +155,14 @@ class TestMultiTurnGRPOTrainer:
             config=config,
         )
 
-        with (
-            patch(
-                "stateset_agents.training.multi_turn_trainer.require_torch"
-            ) as mock_torch,
-            patch(
-                "stateset_agents.training.multi_turn_trainer.notify_checkpoint_saved",
-                new=AsyncMock(),
-            ),
-        ):
-            import torch
-
-            torch_module = MagicMock(wraps=torch)
-            mock_torch.return_value = torch_module
-
-            await trainer.save_checkpoint(checkpoint_name="checkpoint")
-
-        saved_state = torch_module.save.call_args.args[0]
+        await trainer.save_checkpoint(checkpoint_name="checkpoint")
+        checkpoint_path = tmp_path / "checkpoint"
+        saved_state = torch.load(
+            checkpoint_path / "training_state.pt", weights_only=True
+        )
         assert "optimizer_state_dict" not in saved_state
+        assert saved_state["global_step"] == 0
+        assert (checkpoint_path / "pytorch_model.bin").is_file()
 
     @pytest.mark.asyncio
     async def test_trainer_does_not_mask_training_error_with_final_checkpoint_failure(

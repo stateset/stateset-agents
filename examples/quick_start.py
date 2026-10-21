@@ -121,6 +121,7 @@ async def basic_example():
         num_episodes=4,  # Keep the quick start genuinely quick
         profile="balanced",
         training_mode="single_turn",
+        zero_signal_patience=0,  # Stub lifecycle demonstration, not policy learning.
     )
 
     logger.info("Training completed!")
@@ -199,6 +200,7 @@ async def auto_training_example():
         agent=agent,
         environment=environment,
         num_episodes=4,  # Fast smoke-sized demo
+        zero_signal_patience=0,  # Stub lifecycle demonstration, not policy learning.
     )
 
     logger.info("Automatic training completed!")
@@ -282,6 +284,7 @@ async def custom_reward_example():
         reward_fn=reward_fn,
         num_episodes=4,
         profile="conservative",  # More stable for custom rewards
+        zero_signal_patience=0,  # Stub lifecycle demonstration, not policy learning.
     )
 
     logger.info("Custom reward training completed!")

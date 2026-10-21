@@ -1,0 +1,12 @@
+[
+  {
+    "job": "279d1cee3712",
+    "kind": "fixture_failure",
+    "explanation": "27 tests passed, including the existing native checkpoint contract. The new fixture recorded mixed module modes before a warm-up training step reset them. Record the actual pre-evaluation modes after warm-up instead."
+  },
+  {
+    "job": "aca4f3ad7eff",
+    "kind": "gate_failure",
+    "explanation": "Repository lint/formatting caught an unused import and prior retained runner scripts added as unformatted Python sources. Removed the import and archived exact runner inputs as .py.txt data; no lint policy was weakened."
+  }
+]

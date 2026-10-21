@@ -47,7 +47,8 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
-from .trainer_runtime import SharedModelManager, save_checkpoint_artifacts
+from .runtime_state import TrainingRuntime, validate_training_config
+from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
 
@@ -357,7 +358,7 @@ def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> flo
     return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
 
-class GSPOTrainer:
+class GSPOTrainer(TrainingRuntime):
     #: Preset evaluated when ``config.objective`` is unset; the token variant
     #: overrides this instead of reassigning ``_objective`` after ``__init__``.
     _native_objective = "gspo"
@@ -378,6 +379,7 @@ class GSPOTrainer:
         reward_model: MultiObjectiveReward,
         ref_model: Any | None = None,
     ):
+        validate_training_config(config)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -977,15 +979,17 @@ class GSPOTrainer:
         sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
         return sequence_log_probs
 
+    def save_checkpoint(self, output_dir: str) -> None:
+        """Publish a complete resumable checkpoint."""
+        self.save_runtime_checkpoint(output_dir)
+
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> bool:
+        """Restore policy weights and all training components."""
+        return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
+
     def save_model(self, output_dir: str) -> None:
-        """Save the trained model"""
-        save_checkpoint_artifacts(
-            self.model,
-            self.tokenizer,
-            output_dir,
-            extra_json={"training_metrics.json": self.training_metrics},
-            log_label="Model",
-        )
+        """Publish a complete resumable model checkpoint."""
+        self.save_runtime_checkpoint(output_dir)
 
 
 from .gspo_entrypoints import train_customer_service_with_gspo, train_with_gspo

@@ -1,0 +1,87 @@
+"""Retain completed focused checks separately from queued wheel acceptance."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import time
+import xml.etree.ElementTree as ET
+
+root = Path('/home/dom/stateset-agents')
+def job(handle):
+    value = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {k:value.get(k) for k in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','reason','usage','wait_breakdown']}
+dev = job('66077d002339')
+gates = job('783c846d1757')
+full = job('1e204ba66630')
+assert dev['state']=='succeeded' and dev['exit_code']==0
+assert json.loads(Path('/tmp/stateset-hardening-dev-result.json').read_text()) == {'checked':True,'passed':True}
+assert gates['state']=='succeeded' and gates['exit_code']==0
+log = Path('/home/dom/.local/state/agent-builds/logs/66077d002339.log').read_text()
+assert 'Success: no issues found in 431 source files' in log
+def cases(path):
+    tree = ET.parse(path).getroot()
+    assert not list(tree.iter('failure')) and not list(tree.iter('error')) and not list(tree.iter('skipped'))
+    return list(tree.iter('testcase'))
+focused = cases('/tmp/stateset-hardening-dev.xml')
+governance = cases('/tmp/stateset-hardening-governance.xml')
+assert len(focused)==228
+assert len([c for c in focused if c.get('classname')=='tests.unit.test_ppo_safety'])==32
+source = {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+live = json.loads(Path('/tmp/stateset-hardening-live.json').read_text())
+assert live['draft_preserved'] and not live['training_launched']
+assert source==live['source_sha256'] and tests==live['test_source_sha256']
+changed_after_checks = [str(p.relative_to(root)) for base in ['stateset_agents','tests'] for p in (root/base).rglob('*.py') if p.stat().st_mtime > dev['finished']]
+assert not changed_after_checks, changed_after_checks
+summary = {'retained_at':time.time(),'scope':'Focused source hardening; broader installed-wheel acceptance separately queued', 'focused_passed':True,'focused_tests':len(focused),'governance_tests':len(governance),'typed_modules':431,'ppo_safety_cases':32,'focused_job':dev['id'],'governance_job':gates['id'],'full_acceptance_job':full['id'],'full_state_at_capture':full['state'],'source_manifest_matches_refreshed_live_code':True,'source_or_tests_modified_after_focused_checks':False,'live_pane':live['pane'],'draft_preserved':True,'paid_training_launched':False,'provider_calls_made':False,'gpu_verified':False,'quality_gain_verified':False,'limitations':['Online PPO collection unavailable; reference text updates remain experimental','Exact sampled BPE boundaries and behavior-policy provenance not established by text PPO','Per-inner-update guards do not roll back previous updates or make two optimizers atomic','Remote release pin is not remote source/dependency attestation','Phone behavior does not certify physical phone hardware']}
+out = root/'benchmark_results/training_contracts/20261017/rl-operator-hardening'
+out.mkdir(parents=True,exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipts.json').write_text(json.dumps([dev,gates,full,job('c0e0a6acf3be')],indent=2)+'\n')
+(out/'source-manifest.json').write_text(json.dumps({'source_sha256':source,'test_source_sha256':tests},indent=2)+'\n')
+for path in ['/tmp/stateset-hardening-dev.xml','/tmp/stateset-hardening-governance.xml','/tmp/stateset-hardening-live.json','/tmp/stateset-hardening-live-before.json','/tmp/stateset-studio-mobile-live.txt']:
+    shutil.copy2(path,out/Path(path).name)
+for row in [dev,gates]:
+    shutil.copy2(Path('/home/dom/.local/state/agent-builds/logs')/(row['id']+'.log'),out/(row['id']+'.log'))
+for name in ['stateset-hardening-handoff.py','stateset-hardening-kl-handoff.py','stateset-hardening-governance-handoff.py','stateset-hardening-dev.py','stateset-hardening-gates.py','stateset-hardening-live.py','stateset-hardening-retain.py']:
+    shutil.copy2(Path('/tmp')/name,out/(name+'.txt'))
+(out/'README.md').write_text(f'''# RL and fine-tuning operator hardening
+
+{len(focused)} focused source tests and {len(governance)} release-governance tests
+passed through shared Buildr jobs `{dev['id']}` and `{gates['id']}`. Package-wide
+typing passed for 431 modules. Checks include repository Ruff, hygiene,
+API/release governance, serial formatting for changed Python and workflow lint.
+
+The fixes prevent fabricated high-level PPO runs, reject invalid reference
+updates before the affected optimizer commit, preserve adaptive KL state on
+rejection and require a reference for positive KL penalties. All 32 PPO safety
+cases exercise a tiny local PyTorch policy, including successful updates;
+the objective's existing numeric contracts remain covered. Online PPO is
+explicitly unavailable. Exact sampled BPE boundaries/on-policy provenance,
+rollback of prior inner updates and atomic dual-optimizer exceptions remain
+outside the reference text path's guarantees.
+
+HTTP clients can obtain a safe plan checksum and review queued/running status
+before a cooperative local stop, including during unrelated weight inspection.
+Tests use HTTP for the review and cover stale checksums, auth and privacy.
+Both metrics files reject symlinks, FIFOs and directories without blocking;
+bounded reads preserve fallback, partial-tail and concurrent-append behavior.
+Studio remote jobs carry the reviewed release version; RunPod commands preserve
+literal model/path/install arguments and harvest rewrites only path values.
+Command tests inspect inert strings and injected transports, never a provider.
+Release pinning does not attest exact remote source bytes or dependencies.
+
+The idle Herdr split was refreshed without changing draft bytes, mode or run
+history. Its now-small viewport correctly shows the resize pause. Source/test
+hashes match the refreshed code; their mtimes precede completion of focused
+checks. No pane was resized and no training, paid compute or provider call
+was started. Phone hardware and model quality gains are not certified.
+
+Broader source/installed-wheel/CLI acceptance remains separate, under
+`{full['id']}` (state at capture: **{full['state']}**). This receipt does not
+claim that pending run passed. The initial mobile acceptance stopped on a type
+error in an optional selection variable; it was renamed before the successful
+431-module type check. Its failed receipt is retained rather than discarded.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

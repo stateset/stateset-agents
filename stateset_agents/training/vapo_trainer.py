@@ -17,7 +17,6 @@ Reference: https://arxiv.org/abs/2504.05118
 """
 
 import logging
-import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -29,12 +28,11 @@ import torch.nn.functional as F
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
-from .checkpoint_io import load_checkpoint_file
+from .runtime_state import TrainingRuntime, validate_training_config
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
     hf_generate_group,
-    save_checkpoint_artifacts,
 )
 from .vapo_config import VAPOConfig
 
@@ -384,7 +382,7 @@ def _shares(sizes: list[float]) -> list[float]:
     return [size / total if total > 0 else 0.0 for size in sizes]
 
 
-class VAPOTrainer:
+class VAPOTrainer(TrainingRuntime):
     """
     Value-Augmented Policy Optimization (VAPO) Trainer
 
@@ -412,6 +410,7 @@ class VAPOTrainer:
         # Ensure transformers is loaded for scheduler
         _load_transformers_vapo()
 
+        validate_training_config(config)
         self.config = config
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
@@ -1135,68 +1134,12 @@ class VAPOTrainer:
         return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:
-        """Save model checkpoint"""
-        os.makedirs(output_dir, exist_ok=True)
+        """Publish actor, critic, optimizer and RNG state together."""
+        self.save_runtime_checkpoint(output_dir)
 
-        # Save value head
-        torch.save(
-            self.value_head.state_dict(), os.path.join(output_dir, "value_head.pt")
-        )
-
-        save_checkpoint_artifacts(
-            self.model,
-            self.tokenizer,
-            output_dir,
-            training_state={
-                "global_step": self.global_step,
-                "rollout_samples_total": self.rollout_samples_total,
-                "value_warmup_complete": self.value_warmup_complete,
-                "actor_optimizer_state_dict": self.actor_optimizer.state_dict(),
-                "critic_optimizer_state_dict": self.critic_optimizer.state_dict(),
-                "actor_scheduler_state_dict": self.actor_scheduler.state_dict(),
-                "critic_scheduler_state_dict": self.critic_scheduler.state_dict(),
-                "metrics_history": self.metrics_history,
-            },
-            config_dict=self.config.to_dict(),
-            config_filename="vapo_config.json",
-        )
-
-    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> None:
-        """Load checkpoint.
-
-        Args:
-            checkpoint_dir: Directory written by :meth:`save_checkpoint`.
-            trusted: Pass ``True`` only for checkpoints from a source you
-                control; the default unpickles with ``weights_only=True`` so a
-                malicious checkpoint cannot execute code.
-        """
-        # Load value head
-        value_head_path = os.path.join(checkpoint_dir, "value_head.pt")
-        if os.path.exists(value_head_path):
-            self.value_head.load_state_dict(
-                load_checkpoint_file(
-                    value_head_path, map_location=self.device, trusted=trusted
-                )
-            )
-
-        # Load training state
-        state_path = os.path.join(checkpoint_dir, "training_state.pt")
-        if os.path.exists(state_path):
-            state = load_checkpoint_file(
-                state_path, map_location=self.device, trusted=trusted
-            )
-            self.global_step = state["global_step"]
-            self.rollout_samples_total = int(
-                state.get("rollout_samples_total", self.rollout_samples_total)
-            )
-            self.value_warmup_complete = state.get("value_warmup_complete", True)
-            self.actor_optimizer.load_state_dict(state["actor_optimizer_state_dict"])
-            self.critic_optimizer.load_state_dict(state["critic_optimizer_state_dict"])
-            self.actor_scheduler.load_state_dict(state["actor_scheduler_state_dict"])
-            self.critic_scheduler.load_state_dict(state["critic_scheduler_state_dict"])
-            self.metrics_history = state.get("metrics_history", self.metrics_history)
-
-        logger.info(f"Checkpoint loaded from {checkpoint_dir}")
+    def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> bool:
+        """Restore policy, value head and all training components."""
+        return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
 
 from .vapo_entrypoints import train_with_vapo

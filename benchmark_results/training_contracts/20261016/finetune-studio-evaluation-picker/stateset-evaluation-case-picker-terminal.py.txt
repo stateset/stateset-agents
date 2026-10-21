@@ -1,0 +1,75 @@
+"""Exercise installed picker keys in real PTYs without inference or live runs."""
+from pathlib import Path
+import fcntl
+import hashlib
+import json
+import os
+import pty
+import select
+import struct
+import subprocess
+import sys
+import termios
+import time
+
+root=Path('/tmp/stateset-evaluation-case-picker-20261016')
+site=root/'site-packages'; checks=root/'wheel-checks'
+os.environ.update(PYTHONPATH=str(site)+os.pathsep+str(checks),OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1')
+sys.path[:0]=[str(site),str(checks)]
+import stateset_agents.tui as tui
+from tests.unit.test_finetune_evaluation import make_evaluation
+assert Path(tui.__file__).is_relative_to(site)
+verified=json.loads((root/'candidate-wheel-verification.json').read_text())
+assert verified['passed']
+def unchanged():
+    return all(hashlib.sha256((root/name).read_bytes()).hexdigest()==digest for name,digest in {**verified['source_sha256'],**verified['test_source_sha256']}.items())
+assert unchanged()
+results=[]
+for width,height in [(74,44),(110,32)]:
+    fixture=root/'terminal'/f'{width}x{height}'
+    fixture.mkdir(parents=True)
+    run,config=make_evaluation(fixture)
+    studio=tui.Studio(run.parent); studio.handle('s')
+    draft=(run.parent/'draft.json').read_bytes()
+    terminal,child=pty.openpty()
+    fcntl.ioctl(terminal,termios.TIOCSWINSZ,struct.pack('HHHH',height,width,0,0))
+    process=subprocess.Popen([sys.executable,'-m','stateset_agents.cli','tui','--workspace',str(run.parent)],cwd=checks,stdin=child,stdout=child,stderr=child,env=dict(os.environ,TERM='xterm-256color',COLUMNS=str(width),LINES=str(height)))
+    os.close(child)
+    captured=bytearray(); full=bytearray()
+    def wait_for(marker):
+        deadline=time.monotonic()+20
+        while time.monotonic()<deadline:
+            if marker.encode() in captured: return
+            ready,_,_=select.select([terminal],[],[],0.1)
+            if ready:
+                try: chunk=os.read(terminal,65536)
+                except OSError: break
+                captured.extend(chunk); full.extend(chunk)
+        raise AssertionError('Missing terminal marker: '+marker)
+    def send(keys,marker):
+        captured.clear(); os.write(terminal,keys); wait_for(marker)
+    try:
+        wait_for('FINE-TUNING STUDIO')
+        send(b'\tj','LOCAL PAIRED EVALUATION')
+        send(b'n','Held-out cases JSON')
+        os.write(terminal,b'\r\x15'+str(config.cases).encode()+b'\r')
+        time.sleep(0.15)
+        send(b'f','HELD-OUT CASE PICKER')
+        os.write(terminal,b'held-out.json')
+        time.sleep(0.15)
+        send(b'\r','Held-out cases selected')
+        send(b'\x1b','n new evaluation')
+        send(b'\x1b','j evaluate')
+        os.write(terminal,b'q')
+        assert process.wait(timeout=15)==0
+        assert (run.parent/'draft.json').read_bytes()==draft
+        assert not (run/'evaluations').exists()
+        assert b'PRIVATE package' not in full
+        assert unchanged()
+        (root/f'terminal-{width}x{height}.log').write_bytes(full)
+        results.append({'width':width,'height':height,'passed':True,'draft_preserved':True,'evaluation_created':False,'worker_launched':False,'private_case_text_hidden':True})
+    finally:
+        os.close(terminal)
+        if process.poll() is None: process.kill(); process.wait()
+(root/'terminal-verification.json').write_text(json.dumps({'passed':True,'installed_origin':str(tui.__file__),'candidate_unchanged':True,'checks':results},indent=2)+'\n')
+print(json.dumps({'passed':True,'real_terminal_checks':len(results),'training_or_evaluation_launched':False}))

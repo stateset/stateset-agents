@@ -339,6 +339,7 @@ class APIConfig:
     observability: ObservabilityConfig = field(default_factory=ObservabilityConfig)
     enable_training_lab: bool = False
     training_max_concurrent_jobs: int = 1
+    training_queue_path: str | None = None
     # Server-controlled root for every API training job's outputs; clients
     # can neither choose output directories nor resume from outside it.
     training_output_root: str = "outputs/api-training"
@@ -384,6 +385,15 @@ class APIConfig:
             training_max_concurrent_jobs=_get_int(
                 "API_TRAINING_MAX_CONCURRENT_JOBS", 1, min_val=1
             ),
+            training_queue_path=os.getenv(
+                "API_TRAINING_QUEUE_PATH",
+                (
+                    "./outputs/api-training.sqlite3"
+                    if environment == Environment.PRODUCTION
+                    else ""
+                ),
+            )
+            or None,
             training_output_root=os.getenv(
                 "API_TRAINING_OUTPUT_ROOT", "outputs/api-training"
             ),

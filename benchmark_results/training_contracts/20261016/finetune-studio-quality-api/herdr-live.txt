@@ -1,0 +1,44 @@
+STATESET / FINE-TUNING STUDIO
+[CONFIGURE] Runs | Tab switches views
+==========================================================================
+GUIDED SETUP / check, repair, review, evaluate
+
+ > [BLOCKED] Settings
+   [BLOCKED] Dataset
+   [UNCHECKED] Runtime
+   [BLOCKED] Review launch
+   [UNCHECKED] Evaluate quality
+
+Set the dataset path first
+
+Read-only setup snapshot; recheck after editing. Launch revalidates data
+and resources.
+Remote studio backends currently support SFT. Dedicated RL workflows use
+their own reviewed contracts.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+--------------------------------------------------------------------------
+Setup snapshot ready; Enter opens the selected step.
+Up/Down select | Enter open | w recheck | PgUp/Dn scroll | Esc back

@@ -1,0 +1,43 @@
+{
+  "analysis_unit_tests": {
+    "failed": 0,
+    "passed": 34
+  },
+  "cohort_tests": {
+    "command": ".venv/bin/python outputs/river-recovery-replication-20261020/test_study.py -v",
+    "failed": 0,
+    "passed": 7
+  },
+  "package_type_check": {
+    "passed": true,
+    "sources": 456
+  },
+  "plan_hash": "136559aa6815bb4ce5180f8f9814b6ea2ca42a6c315e5976ac86bbca1e81a649",
+  "provider_calls_during_checks": 0,
+  "regression_tests": {
+    "failed": 0,
+    "passed": 136
+  },
+  "source_sha256": {
+    ".venv/lib/python3.12/site-packages/river_client/client.py": "b504b743800e123434d58df0b1a01a0259b5d847f63ef3b60aeec69b2d463f78",
+    ".venv/lib/python3.12/site-packages/river_client/rl/advantages.py": "d587510dba6f35fccaf0d661301e402c582ca90b58d5dbe6990baac6cdd6c7dc",
+    ".venv/lib/python3.12/site-packages/river_client/rl/config.py": "8ce9f1fdece1c054f8e0c53465a390969cce6a53c205382520c3f3d62b94892a",
+    ".venv/lib/python3.12/site-packages/river_client/rl/engine.py": "03f95175ba23698affd93ad2c074b9eef69b81561483930248ac3ec6c9413409",
+    ".venv/lib/python3.12/site-packages/river_client/rl/trainer.py": "f30028e7dbd475530ae669fcb9e3b87bf89f070a25146c1e9da31b9bb0bed568",
+    ".venv/lib/python3.12/site-packages/river_client/rl/trajectory.py": "387e1c395e5d736022c86a3ece31f05cf2c552ec6bfed01a8c4d7e90acdde065",
+    ".venv/lib/python3.12/site-packages/river_client/types.py": "8707d01f0e64a80063449e4879d8b685928cf18fe68d1853675f398b85a616be",
+    "outputs/river-recovery-replication-20261020/experiment.py": "e697f36edfd95d96638bc736ddb75ae48e0f88943518d95632a901d61ff79cc7",
+    "outputs/river-recovery-replication-20261020/test_study.py": "62f0b79b85dc6f24e77e2054927019239f7a58853fd0ce4076c6a5946698fee3",
+    "outputs/river-recovery-replication-20261020/test_timeouts.py": "4e4da953c1cda91cd4b7c38174ecadd40e74fbaee0d0834d598e2b55f7169e89",
+    "stateset_agents/evaluation/replication.py": "8be53cab94c9b2085b620ac0911c2c8d25fddc149c08ba4ee88d79b993806dba",
+    "tests/unit/test_agent_study.py": "a9abc6299ea61c34c302292ca28d917fd833409dc2525a68fec0acead3810fc2",
+    "tests/unit/test_case_separation.py": "0fd87d6ef2f4050ba12b61e6a96daaf66abc7d3bfac78b0be6c62689d512bdc9",
+    "tests/unit/test_replication.py": "cd51381dbd053a5924f939c3c6666a98bb99bd6c33d7abd703f1f742d78f76cd"
+  },
+  "supervisor_tests": {
+    "failed": 0,
+    "passed": 3,
+    "provider_calls": 0,
+    "scope": "Offline timeout/kill qualification checks, performed during provider execution without changing frozen code"
+  }
+}

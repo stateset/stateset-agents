@@ -7,12 +7,13 @@ for training offline RL algorithms on conversation data.
 
 import asyncio
 import dataclasses
+import hashlib
 import json
 import logging
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import TYPE_CHECKING, Any, Optional, cast
 
 import numpy as np
 
@@ -607,72 +608,122 @@ class ConversationDataset(TorchDataset):
             self._derive(val_trajectories),
         )
 
-    def to_offline_rl_format(self) -> dict[str, Any]:
-        """
-        Convert to format expected by offline RL algorithms.
+    def policy_transitions(self) -> list[dict[str, Any]]:
+        """Return ordered logged actions and their complete next observations.
 
-        Returns:
-            Dictionary with numpy arrays for states, actions, rewards,
-            next_states, and dones, plus the logged text of each decision:
-            ``contexts`` (the role/content messages before the reply) and
-            ``responses`` (the reply), as lists aligned with the rows.
+        User/tool observations between assistant actions belong to the next state.
+        Terminal rewards after the last assistant action stay on that transition.
         """
-        _require_torch()
-
-        if not self.embedding_cache:
+        transitions = []
+        for trajectory in self.trajectories:
+            messages = [
+                {"role": turn.role, "content": turn.content}
+                for turn in trajectory.turns
+            ]
+            positions = [
+                i for i, turn in enumerate(trajectory.turns) if turn.role == "assistant"
+            ]
+            for offset, index in enumerate(positions):
+                if index == 0:
+                    raise ValueError(
+                        "Offline assistant actions require a preceding observation"
+                    )
+                end = (
+                    positions[offset + 1]
+                    if offset + 1 < len(positions)
+                    else len(messages)
+                )
+                transitions.append(
+                    {
+                        "transition_id": f"{trajectory.trajectory_id}:{index}",
+                        "messages": messages[: index + 1],
+                        "history": messages[:index],
+                        "action": messages[index]["content"],
+                        "next_history": messages[:end],
+                        "reward": float(sum(trajectory.turn_rewards[index:end])),
+                        "done": offset == len(positions) - 1,
+                    }
+                )
+        if not transitions:
             raise ValueError(
-                "Embedding cache required for offline RL format. "
-                "Initialize with EmbeddingCache."
+                "Offline dataset requires at least one logged assistant action"
+            )
+        return transitions
+
+    def to_policy_training_format(
+        self, tokenizer: Any, max_length: int
+    ) -> list[dict[str, Any]]:
+        """Tokenize logged actions with only the current assistant action supervised.
+
+        Overlong examples are rejected rather than truncating the action silently.
+        Feature and token rows share the exact ``policy_transitions`` ordering.
+        """
+        from stateset_agents.core.chat_masking import last_assistant_token_mask
+
+        if type(max_length) is not int or max_length < 2:
+            raise ValueError("max_length must be an integer of at least two")
+        rows = []
+        for transition in self.policy_transitions():
+            encoded = last_assistant_token_mask(tokenizer, transition["messages"])
+            if encoded is None:
+                raise ValueError(
+                    "Tokenizer cannot faithfully mask logged assistant actions"
+                )
+            ids, mask = encoded
+            if len(ids) > max_length or len(ids) < 2 or not any(mask[1:]):
+                raise ValueError("Offline action is empty or exceeds max_length")
+            rows.append(
+                {
+                    "transition_id": transition["transition_id"],
+                    "input_ids": ids,
+                    "labels": [
+                        token if selected else -100
+                        for token, selected in zip(ids, mask, strict=True)
+                    ],
+                }
+            )
+        return rows
+
+    def to_offline_rl_format(self) -> dict[str, Any]:
+        """Embed the real logged transitions, in policy-training row order."""
+        _require_torch()
+        embedding_cache = self.embedding_cache
+        if embedding_cache is None:
+            raise ValueError(
+                "Embedding cache required for offline RL format. Initialize with EmbeddingCache."
             )
 
-        states = []
-        actions = []
-        rewards = []
-        next_states = []
-        dones = []
-        contexts: list[list[dict[str, str]]] = []
-        responses: list[str] = []
+        def render(messages: list[dict[str, str]]) -> str:
+            return "".join(
+                f"{message['role']}: {message['content']}\n" for message in messages
+            )
 
-        cache = self.embedding_cache
-        for traj in self.trajectories:
-            # One transition per assistant turn (a decision). s is the
-            # conversation before the reply; s' is the state at the next
-            # decision (so V is bootstrapped on states it is trained on); the
-            # reward covers every turn from the reply up to that decision; the
-            # last decision is terminal.
-            turn_rewards = list(traj.turn_rewards or [])
-            decisions = [i for i, t in enumerate(traj.turns) if t.role == "assistant"]
-            prefixes = [""]
-            for turn in traj.turns:
-                prefixes.append(prefixes[-1] + f"{turn.role}: {turn.content}\n")
+        states, actions, rewards, next_states, dones = [], [], [], [], []
+        contexts, responses = [], []
 
-            def state_at(index: int, traj: Any = traj, prefixes: Any = prefixes) -> Any:
-                return cache.get_or_compute(
-                    f"{traj.trajectory_id}_s_{index}", prefixes[index]
-                )
+        def embed(identity: str, suffix: str, text: str) -> np.ndarray:
+            assert embedding_cache is not None
+            digest = hashlib.sha256(text.encode()).hexdigest()
+            value = embedding_cache.get_or_compute(
+                f"{identity}_{suffix}_{digest}", text
+            )
+            return cast(np.ndarray, np.asarray(value.detach().cpu().numpy()))
 
-            for k, i in enumerate(decisions):
-                is_last = k == len(decisions) - 1
-                stop = len(traj.turns) if is_last else decisions[k + 1]
-                action_emb = cache.get_or_compute(
-                    f"{traj.trajectory_id}_a_{i}", traj.turns[i].content
-                )
-                states.append(state_at(i).numpy())
-                actions.append(action_emb.numpy())
-                rewards.append(float(sum(turn_rewards[i:stop])))
-                next_states.append(state_at(stop).numpy())
-                dones.append(float(is_last))
-                contexts.append(
-                    [{"role": t.role, "content": t.content} for t in traj.turns[:i]]
-                )
-                responses.append(traj.turns[i].content)
-
+        for row in self.policy_transitions():
+            identity = row["transition_id"]
+            states.append(embed(identity, "state", render(row["history"])))
+            actions.append(embed(identity, "action", row["action"]))
+            next_states.append(embed(identity, "next", render(row["next_history"])))
+            rewards.append(row["reward"])
+            dones.append(float(row["done"]))
+            contexts.append(row["history"])
+            responses.append(row["action"])
         return {
-            "states": np.array(states),
-            "actions": np.array(actions),
-            "rewards": np.array(rewards),
-            "next_states": np.array(next_states),
-            "dones": np.array(dones),
+            "states": np.asarray(states),
+            "actions": np.asarray(actions),
+            "rewards": np.asarray(rewards),
+            "next_states": np.asarray(next_states),
+            "dones": np.asarray(dones),
             "contexts": contexts,
             "responses": responses,
         }

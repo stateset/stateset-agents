@@ -535,8 +535,8 @@ def test_cli_kimi_k3_memory_profile_json():
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["config"]["starter_profile"] == "memory"
-    assert payload["summary"]["quantization_mode"] == "4bit"
-    assert payload["gspo_overrides"]["use_4bit"] is True
+    assert payload["summary"]["quantization_mode"] == "none"
+    assert payload["gspo_overrides"]["use_4bit"] is False
     assert payload["gspo_overrides"]["num_generations"] == 2
     assert payload["gspo_overrides"]["num_outer_iterations"] == 10
 
@@ -551,7 +551,7 @@ def test_cli_kimi_k3_list_profiles_json():
     payload = json.loads(result.stdout)
     assert payload["task"] == "sales"
     assert payload["default_profile"] == "balanced"
-    assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "4bit"
+    assert payload["profiles"]["memory"]["summary"]["quantization_mode"] == "none"
     assert payload["profiles"]["quality"]["summary"]["num_generations"] == 6
 
 
@@ -563,7 +563,7 @@ def test_cli_kimi_k3_list_profiles_text():
     assert "- balanced:" in result.stdout
     assert "- memory:" in result.stdout
     assert "- quality:" in result.stdout
-    assert "quantization=4bit" in result.stdout
+    assert "quantization=none" in result.stdout
 
 
 def test_cli_kimi_k3_rejects_unknown_task():
@@ -1207,7 +1207,7 @@ def test_cli_init_kimi_k3_preset_json(tmp_path):
     assert loaded["model_name"] == "moonshotai/Kimi-K3"
     assert loaded["task"] == "customer_service"
     assert loaded["trust_remote_code"] is True
-    assert loaded["use_4bit"] is True
+    assert loaded["use_4bit"] is False
     assert loaded["attn_implementation"] == "sdpa"
 
 
@@ -1254,7 +1254,7 @@ def test_cli_init_kimi_k3_preset_memory_profile_json(tmp_path):
     assert result.exit_code == 0
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
     assert loaded["starter_profile"] == "memory"
-    assert loaded["use_4bit"] is True
+    assert loaded["use_4bit"] is False
     assert loaded["max_prompt_length"] == 2048
 
 

@@ -51,6 +51,13 @@ def test_presets_registry_has_expected_models():
         "ministral3-8b",
         "lfm2.5-2.6b",
         "muse-glimmer",
+        "muse-spark-open",
+        "mimo-v2.6-pro",
+        "mimo-v2.6-pro-mopd",
+        "glm5.3",
+        "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017",
+        "qwen3.8-2.4t-a95b",
         "nemotron-3-5",
         "qwen3.8-27b",
         "qwen3.8-flash-next",
@@ -224,7 +231,7 @@ def test_glm5_3_flash_preset_matches_official_hybrid_architecture():
     )
     assert "gate_proj" not in preset.lora_target_modules
     assert preset.use_4bit is False
-    assert "vision tower" in preset.notes
+    assert "Full-size training unverified" in preset.notes
 
 
 def test_qwen3_8_flash_next_preset_matches_official_hybrid_architecture():
@@ -236,8 +243,8 @@ def test_qwen3_8_flash_next_preset_matches_official_hybrid_architecture():
     )
     assert "gate_up_proj" not in preset.lora_target_modules
     assert "down_proj" not in preset.lora_target_modules
-    assert preset.use_4bit is True
-    assert "512-expert" in preset.notes
+    assert preset.use_4bit is False
+    assert "Full-size training unverified" in preset.notes
 
 
 def test_starter_profile_matches_packaged_starter_config(capsys):

@@ -1,0 +1,133 @@
+"""Retain a frozen checkpoint-validation acceptance, without private datasets."""
+from pathlib import Path
+import hashlib
+import json
+import shutil
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+root = Path('/home/dom/stateset-agents')
+prefix = 'stateset-studio-seeds'
+pipeline = json.loads(Path('/tmp', prefix+'-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and len(pipeline['stages']) == 6
+assert all(s['exit_code'] == 0 for s in pipeline['stages'])
+source = Path(pipeline['finished'])
+verification = json.loads((source/'verification.json').read_text())
+assert verification['passed'] and verification['source_unchanged'] and verification['tests_unchanged']
+package = {p.relative_to(root/'stateset_agents').as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'stateset_agents').rglob('*.py')}
+tests = {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for p in (root/'tests').rglob('*.py')}
+assert package == verification['source_sha256'] and tests == verification['test_source_sha256']
+assert 'Success: no issues found in 429 source files' in (source/'types.log').read_text()
+
+def count(name):
+    suites = list(ET.parse(source/name).getroot().iter('testsuite'))
+    assert not sum(int(s.get(k,0)) for s in suites for k in ['errors','failures','skipped'])
+    return sum(int(s.get('tests',0)) for s in suites)
+
+def receipt(handle):
+    value=json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',handle],text=True))
+    return {key:value.get(key) for key in ['id','state','exit_code','argv','created','started','finished','wait_seconds','elapsed_seconds','usage','wait_breakdown']}
+
+job = receipt(sys.argv[1])
+assert job['state']=='succeeded' and job['exit_code']==0
+live = Path('/tmp', prefix+'-live.txt')
+draft = Path('/tmp', prefix+'-draft.json')
+# Live refresh is deferred until the zero-value rendering correction.
+summary = dict(passed=True,source_tests=count('regressions.xml'),installed_wheel_tests=count('wheel.xml'),typed_modules=429,queue_job=job['id'],wheel_sha256=verification['wheel_sha256'],source_and_tests_unchanged=True,wheel_bytes_match_source=True,wheel_case_identities_match_source=True,real_cpu_same_seed_adapter_identity_verified=True,real_cpu_different_seed_adapter_difference_verified=True,training_vs_evaluation_seed_binding_verified=True,provider_seed_boundaries_mocked=True,real_pty_seed_editor_sizes=[[74,44],[110,32]],live_herdr_refreshed=False,draft_preservation_verified_in_this_stage=False,live_judge_verified=False,gpu_verified=False,remote_evaluation_verified=False,quality_gain_verified=False,paid_run_launched=False,count_note='Source and installed-wheel cases overlap; synthetic judge replies and provider/process mocks do not establish model quality.')
+out = root/'benchmark_results/training_contracts/20261016/finetune-studio-seeds'
+summary['source_and_first_wheel_job']=pipeline.get('reused_source_job')
+out.mkdir(exist_ok=False)
+(out/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+(out/'queue-receipt.json').write_text(json.dumps(job,indent=2)+'\n')
+(out/'pipeline-receipt.json').write_text(json.dumps(pipeline,indent=2)+'\n')
+previous=json.loads((root/'benchmark_results/training_contracts/20261016/finetune-studio-checkpoint-evaluation/verification.json').read_text())
+delta={key:sorted(name for name in previous[key].keys() | verification[key].keys() if previous[key].get(name)!=verification[key].get(name)) for key in ['source_sha256','test_source_sha256']}
+assert len(delta['source_sha256'])==18 and delta['test_source_sha256']==['tests/unit/test_finetune_quality.py','tests/unit/test_finetune_seeds.py','tests/unit/test_remote_job.py']
+(out/'change-scope.json').write_text(json.dumps({'baseline':'../finetune-studio-checkpoint-evaluation/verification.json','changed':delta},indent=2)+'\n')
+for pattern in ['*.log','*.xml']:
+    for path in source.glob(pattern):
+        shutil.copy2(path,out/path.name)
+for name in ['harness-repair.json','verification.json','prepare-verification.json','frozen-inventory.json','stage-checkpoint.json','wheel-test-configuration.json','wheel-shards.json','reward-audit.json','preflight6-plan.json']:
+    shutil.copy2(source/name,out/name)
+for suffix in ['format','gates','prepare','wheel','finish','pipeline','resume','retain']:
+    path=Path('/tmp',prefix+'-'+suffix+'.py')
+    shutil.copy2(path,out/(path.name+'.txt'))
+# Final rendering acceptance will retain the live refresh separately.
+attempts=out/'development-attempts'; attempts.mkdir()
+handles=['105e35b9f053','3d0028297085','3437ffc4484e','a2af1f6f2ec0','9e52ccc3d947','0901d605abfd']
+if len(sys.argv)>2:
+    handles.extend(sys.argv[2:])
+(attempts/'queue-receipts.json').write_text(json.dumps([receipt(h) for h in handles],indent=2)+'\n')
+for handle in handles:
+    path=Path('/home/dom/.local/state/agent-builds/logs',handle+'.log')
+    shutil.copy2(path,attempts/path.name)
+shutil.copy2('/tmp/stateset-studio-seeds-initial-pipeline-receipt.json',attempts/'initial-pipeline-receipt.json')
+shutil.copy2('/tmp/stateset-studio-seeds-prepare-initial.py.txt',attempts/'prepare-initial.py.txt')
+shutil.copy2('/tmp/stateset-studio-seeds-20261016/types.log',attempts/'9e52ccc3d947-types.log')
+(out/'README.md').write_text(f'''# Retained training seeds: acceptance
+
+{summary['source_tests']} targeted source tests and {summary['installed_wheel_tests']}
+installed-wheel tests passed without skips or failures. Counts overlap. All 429
+package modules passed typing. Job `0901d605abfd` passed formatting, repository
+lint/hygiene, release/API governance, source regressions, wheel build/install
+and the first wheel group. Its second group exposed a missing curation-script
+fixture in the isolated harness. The unchanged script was copied and hashed;
+package/test Python stayed frozen. Job `{job['id']}` resumed the affected second
+group, remaining third group, workflow lint and real CLI checks. Passed source
+and first-group evidence is reused with explicit stage provenance. Frozen package
+and test inventories, actual wheel bytes and selected test identities match.
+Twenty-one changed Python files pass serial Black/isort checks.
+
+The studio exposes Training seed (default 42, inclusive range 0–4294967295).
+Drafts, immutable plans, launch reviews, details, comparisons and recovery retain
+it. Old drafts use the default without silent rewriting; old runs lacking an
+actual seed remain unknown. Invalid values produce field-addressable errors
+without reading training data or echoing private values.
+
+Local SFT seeds before model/adapter initialization and passes training/data
+seeds to HF Trainer; manifests retain them. A real tiny CPU GPT2/PEFT test runs
+three SFT fits from the same fixed base. Repeated seed 17 produces exactly equal
+final adapter tensors; seed 29 produces different tensors. Nonzero trained LoRA
+B tensors and manifests are checked. This establishes the controlled CPU
+fixture, not GPU identity or pretrained-model quality.
+
+Native RL applies Python/NumPy/Torch seeding before agent initialization and
+passes the chosen value to its trainer. Controlled agent/trainer boundaries
+verify startup draws and settings; existing actual native CPU checkpoint tests
+remain in the broader suite. Exact recovery preserves seed settings and rejects
+changes. No live large-model RL or provider training was run for this update.
+
+The shared RemoteJobSpec seed round-trips through JSON and supported transports.
+RunPod commands parse through the actual SFT argument parser; Modal/object-store
+payloads and local/Hugging Face CLI paths retain it. River recording fakes verify
+LoRA seed and retained pointer options. Unsupported providers reject an explicit
+seed before upload/allocation; conflicting legacy/top-level River seeds fail
+before creating a client. None preserves legacy provider defaults. Provider and
+SDK boundaries are mocked, not live certification. Remote worker packages must
+contain the feature; local source edits do not update an installed cloud image.
+
+Report labels bind to the recorded training seed. Evaluation randomness is
+retained separately in protocol settings, so repeated evaluation seeds cannot
+manufacture independent training runs. The real rubric/recorder/replay pipeline
+with injected judge replies tests training seed 17 and evaluation seed 99.
+A mismatched bound quality report is rejected; unknown historical seeds cannot
+pass the recorded study gate. Other seed artifacts remain recorded claims that
+need independent provenance review.
+
+This is the seed-feature baseline. A subsequent rendering-only correction
+fixes numeric zero displayed as not set; see the final seed-zero acceptance.
+
+Actual curses terminals at 74x44 and 110x32 load a seed-17 draft, edit to zero,
+review without preparing or launching, save and exit. Narrow-pane checks and
+existing evaluation/recovery workflows remain covered. Live Herdr refresh is
+deferred to the final zero-value rendering acceptance. No live runs were created. Development lint, draft-harness, curses
+redraw-marker and typing failures/corrections are retained separately; they
+were implementation/harness failures, not queue failures. The original failed
+wheel group and missing-script repair receipt are retained.
+
+No paid run, live provider/GPU certification or independent model-quality gain
+was established. Automatic checkpoint ranking/nomination, fresh test of selected
+intermediates and inline judge-guided training remain separate work.
+''')
+print(json.dumps({'path':str(out),'summary':summary},indent=2))

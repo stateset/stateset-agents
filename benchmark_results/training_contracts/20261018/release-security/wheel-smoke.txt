@@ -1,0 +1,8 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 15), got 50256. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 15), got 50256. This may result in unexpected behavior.
+/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/tuners/lora/layer.py:2631: UserWarning: fan_in_fan_out is set to False but the target module is `Conv1D`. Setting fan_in_fan_out to True.
+  warnings.warn(
+[transformers] `loss_type=None` was set in the config but it is unrecognized. Using the default loss: `ForCausalLMLoss`.
+/home/dom/stateset-agents/.venv/lib/python3.12/site-packages/peft/utils/save_and_load.py:438: UserWarning: Could not find a config file in  - will assume that the vocabulary was not modified.
+  warnings.warn(
+{"package": "0.66.1", "extra": "training", "path": "/tmp/stateset-a-plus-20261018/site-packages/stateset_agents/__init__.py", "passed": true}

@@ -1,0 +1,30 @@
+"""Run bounded local hardening checks under one shared queue allocation."""
+from pathlib import Path
+import fcntl
+import json
+import os
+import subprocess
+import sys
+
+root = Path('/home/dom/stateset-agents')
+os.chdir(root)
+os.environ.update(OMP_NUM_THREADS='1', MKL_NUM_THREADS='1', OPENBLAS_NUM_THREADS='1', NUMEXPR_NUM_THREADS='1', RAYON_NUM_THREADS='1', TOKENIZERS_PARALLELISM='false', HF_HUB_OFFLINE='1', TRANSFORMERS_OFFLINE='1')
+lock = Path('/tmp/stateset-studio-mobile-source.lock').open('a')
+try:
+    fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    print('Full acceptance already owns the frozen source; these checks are included there.', flush=True)
+    Path('/tmp/stateset-hardening-dev-result.json').write_text(json.dumps({'checked':False,'delegated_to_full_acceptance':True})+'\n')
+    raise SystemExit(0)
+for command in [
+    [sys.executable, '/tmp/stateset-studio-mobile-format.py', '--format-only'],
+    [sys.executable, 'scripts/check_types.py', '--all'],
+    [sys.executable, '-m', 'pytest', '-q', '-n0', '-o', 'addopts=', '--timeout=90', '--tb=short',
+     'tests/unit/test_ppo_safety.py', 'tests/unit/test_ppo_objective.py',
+     'tests/api/test_finetune_operator.py', 'tests/unit/test_finetune_inspection.py',
+     'tests/unit/test_finetune_backends.py', 'tests/unit/test_remote_runpod_executor.py',
+     '--junitxml=/tmp/stateset-hardening-dev.xml'],
+]:
+    print('Checking:', ' '.join(command), flush=True)
+    subprocess.run(command, check=True)
+Path('/tmp/stateset-hardening-dev-result.json').write_text(json.dumps({'checked':True,'passed':True})+'\n')

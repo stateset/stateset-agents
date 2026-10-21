@@ -16,6 +16,7 @@ Formulas and citations: ``docs/OBJECTIVES.md``.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
@@ -80,10 +81,16 @@ class PolicyObjective:
             "kl_coef",
             "entropy_coef",
         ):
-            if float(getattr(self, fname)) < 0:
+            if (
+                not math.isfinite(float(getattr(self, fname)))
+                or float(getattr(self, fname)) < 0
+            ):
                 raise ValueError(f"{fname} must be >= 0")
         for fname in ("is_cap", "ratio_clamp"):
-            if float(getattr(self, fname)) <= 0:
+            if (
+                not math.isfinite(float(getattr(self, fname)))
+                or float(getattr(self, fname)) <= 0
+            ):
                 raise ValueError(f"{fname} must be > 0")
         if self.delta is not None and float(self.delta) <= 0:
             raise ValueError("delta must be > 0 or None")

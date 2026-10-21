@@ -3,6 +3,7 @@
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -19,6 +20,33 @@ def read(path):
     with publication.checkpoint_read(path):
         assert publication.validate_checkpoint_publication(path, required=True)
         return (path / "training_state.pt").read_bytes()
+
+
+def test_windows_staged_sync_uses_write_access_but_validation_is_read_only(
+    tmp_path, monkeypatch
+):
+    artifact = tmp_path / "training_state.pt"
+    artifact.write_bytes(b"retained weights")
+    opened_modes = {}
+    opened, synced = Path.open, []
+
+    def open_file(path, mode="r", *args, **kwargs):
+        stream = opened(path, mode, *args, **kwargs)
+        opened_modes[stream.fileno()] = mode
+        return stream
+
+    def sync_file(descriptor):
+        assert opened_modes[descriptor] == "r+b"
+        synced.append(descriptor)
+
+    monkeypatch.setattr(Path, "open", open_file)
+    monkeypatch.setattr(publication, "os", SimpleNamespace(name="nt", fsync=sync_file))
+    published = publication._inventory(tmp_path, sync=True)
+    assert len(synced) == 1
+    opened_modes.clear()
+    assert publication._inventory(tmp_path) == published
+    assert set(opened_modes.values()) == {"rb"}
+    assert artifact.read_bytes() == b"retained weights"
 
 
 @pytest.mark.parametrize("overwrite", [False, True])
@@ -136,6 +164,27 @@ def test_reader_excludes_writer_without_overwriting_checkpoint(tmp_path):
         with pytest.raises(ValueError, match="busy"):
             read(path)
     assert read(path) == b"original"
+
+    if sys.platform == "win32":
+        assert (tmp_path / publication.LOCK_FILE).read_bytes() == b"0"
+
+
+def test_internal_lock_metadata_does_not_change_checkpoint_inventory(tmp_path):
+    path = tmp_path / "saved"
+    save(path, b"original")
+    (path / publication.LOCK_FILE).write_bytes(b"0")
+    assert read(path) == b"original"
+    (path / "model.safetensors").write_bytes(b"changed weights")
+    with pytest.raises(ValueError, match="differ"):
+        read(path)
+
+
+def test_internal_lock_symlink_is_not_exempt_from_integrity_checks(tmp_path):
+    path = tmp_path / "saved"
+    save(path, b"original")
+    (path / publication.LOCK_FILE).symlink_to(path / "training_state.pt")
+    with pytest.raises(ValueError, match="symlinks"):
+        read(path)
 
 
 def test_new_directory_replaces_stale_weight_layout(tmp_path):

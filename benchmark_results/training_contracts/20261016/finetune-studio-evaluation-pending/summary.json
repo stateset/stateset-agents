@@ -1,0 +1,11 @@
+{
+  "phase": "focused_acceptance_only",
+  "focused_tests": 70,
+  "typed_modules": 429,
+  "source_unchanged": true,
+  "full_acceptance_verified": false,
+  "full_pipeline_queue_job": "16e925fa033f",
+  "gpu_verified": false,
+  "paid_run_launched": false,
+  "quality_gain_verified": false
+}

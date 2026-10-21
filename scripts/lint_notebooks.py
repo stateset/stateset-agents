@@ -45,9 +45,8 @@ BUNDLED_NOTEBOOKS = [
     "improve_your_agent_5min.ipynb",
 ]
 
-# Pattern → human-readable diagnostic. False positives can be suppressed
-# in-cell with a `# noqa: notebook-lint` comment (NOT YET IMPLEMENTED; the
-# canonical fix is to not write the foot-gun in the first place).
+# Pattern → human-readable diagnostic. Cell-level suppressions are not
+# implemented; fix the flagged pattern in the notebook itself.
 PATTERNS = [
     (
         re.compile(r"\basyncio\.run\s*\("),

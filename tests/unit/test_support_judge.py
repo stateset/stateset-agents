@@ -550,7 +550,11 @@ def test_rubric_identity_ignores_crlf_checkouts(tmp_path, monkeypatch) -> None:
     lf_revision = support_judge.rubric_revision()
     lf_sections = support_judge._load_rubric()
     crlf = tmp_path / "support_rubric_v3.md"
-    crlf.write_bytes(support_judge.RUBRIC_PATH.read_bytes().replace(b"\n", b"\r\n"))
+    crlf.write_bytes(
+        support_judge.RUBRIC_PATH.read_text(encoding="utf-8")
+        .encode()
+        .replace(b"\n", b"\r\n")
+    )
     monkeypatch.setattr(support_judge, "RUBRIC_PATH", crlf)
 
     assert support_judge.rubric_revision() == lf_revision
@@ -702,6 +706,10 @@ def test_backends_send_fixed_system_message(monkeypatch: pytest.MonkeyPatch) -> 
         ]
     ]
     assert "today" not in JUDGE_SYSTEM_PROMPT.lower()
+
+
+def test_imported_rubric_matches_the_pr109_pin() -> None:
+    assert rubric_revision() == "25fa6b2a9551e8901a566245965c3b2beb7f044b"
 
 
 def test_flagship_manifests_pin_the_v3_rubric_and_new_judge() -> None:

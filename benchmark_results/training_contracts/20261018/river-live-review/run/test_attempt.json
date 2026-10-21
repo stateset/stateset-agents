@@ -1,0 +1,12 @@
+{
+  "run_manifest_hash": "515acd76d7a9193b99627201d7d550d02badec51eae9adfba66d30879b0cfb0b",
+  "schema_version": 1,
+  "selected_checkpoint": {
+    "checkpoint_type": "inference",
+    "path": "river://2a1dd6b6-470c-4aa7-aa1d-f73843c761cf/sampler_weights/rl-eval-00000001",
+    "policy_version": null,
+    "step": 1
+  },
+  "selected_validation_step": 1,
+  "test_split_hash": "aaf7d370af8a86ce55ce54955bf114a543010f5aafdf194be3078ba59f889a41"
+}

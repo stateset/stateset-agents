@@ -50,6 +50,7 @@ class TestTrainingPipelineIntegration:
     def training_config(self):
         """Create a test training configuration."""
         return TrainingConfig(
+            allow_sequence_fallback=True,
             num_episodes=2,  # Very small for testing
             max_steps_per_episode=3,
             learning_rate=1e-5,
@@ -159,6 +160,7 @@ class TestTrainingPipelineIntegration:
                 reward_fn=reward_fn,
                 num_episodes=1,  # Very small for integration test
                 profile="conservative",
+                config_overrides={"allow_sequence_fallback": True},
             )
 
         # Verify the training completed

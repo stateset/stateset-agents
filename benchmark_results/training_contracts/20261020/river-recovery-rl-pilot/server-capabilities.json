@@ -1,0 +1,27 @@
+{
+  "features": [
+    "bounded_kv_v1",
+    "full_weight_rl_v1",
+    "full_weight_v1",
+    "gradient_scale_v1",
+    "image_handles_v1",
+    "policy_versions_v1",
+    "prompt_token_echo_v1",
+    "retained_kv_v1",
+    "sampling_batch_v1",
+    "sampling_latest_snapshot_v1",
+    "sampling_policy_pinning_v1",
+    "session_image_handles_v1",
+    "temporary_checkpoints_v1"
+  ],
+  "model_features": {
+    "Qwen/Qwen3.5-9B": [
+      "bounded_kv_v1",
+      "prompt_token_echo_v1",
+      "retained_kv_v1"
+    ]
+  },
+  "supported_models": [
+    "Qwen/Qwen3.5-9B"
+  ]
+}

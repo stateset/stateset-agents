@@ -1,0 +1,122 @@
+[
+  {
+    "backend_error": "Finish outcome is not supported by backend knowledge",
+    "case_id": "recovery-19c798697720a162d8644e13",
+    "family": "clean",
+    "first_invalid_action": {
+      "content": "{\"args\": {\"outcome\": \"unauthorized\"}, \"tool\": \"finish\"}",
+      "role": "assistant"
+    },
+    "previous_public_observation": {
+      "receipt": {
+        "action": {
+          "args": {
+            "order_id": "recovery-19c798697720a162d8644e13",
+            "reason": "chargeback"
+          },
+          "tool": "escalate"
+        },
+        "applied": true
+      },
+      "status": "applied"
+    },
+    "resolution_count": 1.0,
+    "split": "validation"
+  },
+  {
+    "backend_error": "Finish outcome is not supported by backend knowledge",
+    "case_id": "recovery-6a7c6f7c80cc624ae68984f6",
+    "family": "clean",
+    "first_invalid_action": {
+      "content": "{\"args\": {\"outcome\": \"unauthorized\"}, \"tool\": \"finish\"}",
+      "role": "assistant"
+    },
+    "previous_public_observation": {
+      "receipt": {
+        "action": {
+          "args": {
+            "order_id": "recovery-6a7c6f7c80cc624ae68984f6",
+            "reason": "outside_window"
+          },
+          "tool": "deny"
+        },
+        "applied": true
+      },
+      "status": "applied"
+    },
+    "resolution_count": 1.0,
+    "split": "validation"
+  },
+  {
+    "backend_error": "Finish outcome is not supported by backend knowledge",
+    "case_id": "recovery-cf09ae5fbcf657ff15e9b9ce",
+    "family": "lost_ack_not_applied",
+    "first_invalid_action": {
+      "content": "{\"args\": {\"outcome\": \"unauthorized\"}, \"tool\": \"finish\"}",
+      "role": "assistant"
+    },
+    "previous_public_observation": {
+      "receipt": {
+        "action": {
+          "args": {
+            "order_id": "recovery-cf09ae5fbcf657ff15e9b9ce",
+            "reason": "not_delivered"
+          },
+          "tool": "deny"
+        },
+        "applied": true
+      },
+      "status": "applied"
+    },
+    "resolution_count": 1.0,
+    "split": "validation"
+  },
+  {
+    "backend_error": "Finish outcome is not supported by backend knowledge",
+    "case_id": "recovery-d263869c54a4addc7387144f",
+    "family": "lookup_transient",
+    "first_invalid_action": {
+      "content": "{\"args\": {\"outcome\": \"unauthorized\"}, \"tool\": \"finish\"}",
+      "role": "assistant"
+    },
+    "previous_public_observation": {
+      "receipt": {
+        "action": {
+          "args": {
+            "order_id": "recovery-d263869c54a4addc7387144f",
+            "reason": "outside_window"
+          },
+          "tool": "deny"
+        },
+        "applied": true
+      },
+      "status": "applied"
+    },
+    "resolution_count": 1.0,
+    "split": "validation"
+  },
+  {
+    "backend_error": "Finish outcome is not supported by backend knowledge",
+    "case_id": "recovery-f9bddcc382c13176472e4ea6",
+    "family": "lookup_transient",
+    "first_invalid_action": {
+      "content": "{\"args\": {\"outcome\": \"unauthorized\"}, \"tool\": \"finish\"}",
+      "role": "assistant"
+    },
+    "previous_public_observation": {
+      "receipt": {
+        "action": {
+          "args": {
+            "order_id": "recovery-f9bddcc382c13176472e4ea6",
+            "reason": "outside_window"
+          },
+          "tool": "deny"
+        },
+        "applied": true
+      },
+      "status": "applied"
+    },
+    "resolution_count": 1.0,
+    "split": "validation"
+  }
+]

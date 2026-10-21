@@ -1,0 +1,54 @@
+{
+  "passed": true,
+  "source_modules": 398,
+  "regressions": {
+    "passed": 1705,
+    "skipped": 4,
+    "failed": 0
+  },
+  "native_contracts": {
+    "passed": 110,
+    "skipped": 0,
+    "failed": 0
+  },
+  "isolated_wheel_contracts": {
+    "passed": 109,
+    "skipped": 0,
+    "failed": 0
+  },
+  "isolated_wheel_distributed": {
+    "passed": 1,
+    "skipped": 0,
+    "failed": 0
+  },
+  "wheel_sha256": "22f16648e25b7415e130c013511bc141d9922d69869ed9ec400bbeb965968892",
+  "wheel_source_matches": true,
+  "runtime": {
+    "torch": "2.11.0",
+    "transformers": "5.20.0",
+    "trl": "1.14.0",
+    "peft": "0.21.0",
+    "accelerate": "1.15.0",
+    "datasets": "5.1.0",
+    "huggingface-hub": "1.31.0",
+    "tokenizers": "0.23.3",
+    "fsspec": "2026.6.0",
+    "safetensors": "0.8.0"
+  },
+  "dependency_errors": [],
+  "source_unchanged": true,
+  "queue_jobs": {
+    "serial_verification": "1f3022c247f2",
+    "source_two_rank_contract": "26200180ac4a",
+    "wheel_two_rank_contract": "d3579c0d556a",
+    "initial_style_failure": "32c9723ec1ec"
+  },
+  "consensus_cases_per_rank": 17,
+  "consensus_rejections_per_rank": 15,
+  "gpu_training_verified": false,
+  "nccl_consensus_verified": false,
+  "fsdp_training_verified": false,
+  "released_weights_loaded": false,
+  "scope": "Source-bound pre-weight SFT identity agreement: two real local CPU Gloo ranks, same rejection on both ranks, recovery after errors and installed-wheel verification; native tiny-model/tokenizer/serialized-FP8 contracts only, no full-size GPU or distributed sharding certification",
+  "overlap_note": "Test counts overlap across stages. One unpackaged-example case is deselected from the wheel stage. A two-rank test exercises 17 scenarios, not 17 pytest cases."
+}

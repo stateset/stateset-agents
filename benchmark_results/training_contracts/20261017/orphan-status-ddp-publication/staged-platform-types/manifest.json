@@ -1,0 +1,23 @@
+{
+  "files": {
+    "stateset_agents/finetune_worker.py": {
+      "base_sha256": "5b84506f461d6b684fbb418f1f5e108e26ee7b69c1839cbb57af7d6e0093b0a0",
+      "staged_sha256": "15ec15e0c194938ca47f2fa721a26096e73c66c61bbc510bf57be7b35c40c447"
+    },
+    "stateset_agents/finetune_workspace.py": {
+      "base_sha256": "fb8dc6578fe1f8128aa96bf6d8600b3118476207600a1b15aab31b7e420d2a1d",
+      "staged_sha256": "bb5d815b468eebf60d12110d3f1616ec78805407035cee3c828711ae17713d77"
+    },
+    "tests/unit/test_finetune_quality.py": {
+      "base_sha256": "2c62e3afdf6f8c82e12de524c30030b31c6a6a36c1cf356796ce7fce6732b952",
+      "staged_sha256": "8d533a1dbf2f2b9cecab0480f4a2be73bfca01aafd19802adb0e0f30a6e1d66e"
+    },
+    "tests/api/test_finetune_operator.py": {
+      "base_sha256": "44d3fedc8a6e64f5829368f6fce762c6f18a7c421f77075ba0c7d2e62ff47f64",
+      "staged_sha256": "a5287166e0e8c731a027cb57de4f8481ac771ab1cdb82050b7ed7c8be7955273"
+    }
+  },
+  "canonical_files_modified": false,
+  "checks_run": false,
+  "provider_calls": false
+}

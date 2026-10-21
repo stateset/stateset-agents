@@ -1,0 +1,124 @@
+{
+  "schema_version": 1,
+  "collected_at": "2026-10-17T15:16:46.772010+00:00",
+  "model_id": "deepseek-ai/DeepSeek-V4.1-Flash-1017",
+  "requested_revision": "1bae0e1088993b9b82de08f59de5be5a34e42170",
+  "api_revision": "1bae0e1088993b9b82de08f59de5be5a34e42170",
+  "public": true,
+  "gated": false,
+  "fetch_method": "curl --fail --location --connect-timeout 15 --max-time 45 --max-filesize 12582912; public URLs; no authentication",
+  "downloaded_bytes": 7643621,
+  "weights_downloaded": false,
+  "upstream_code_executed": false,
+  "tests_or_builds_run": false,
+  "canonical_files_modified": false,
+  "source_files": [
+    {
+      "filename": "LICENSE",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/LICENSE",
+      "sha256": "f2c6c602815669d292889e5be8c802f2ed950653b77999b1584e8e6aed25d040",
+      "bytes": 1084,
+      "git_blob_id": "d62e3bef9f054f21b7fc616365850fbf879a99ff"
+    },
+    {
+      "filename": "README.md",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/README.md",
+      "sha256": "b72b796e4f4c739eca5d0ad360a7679b39118ca7eb64891f7151a527b292c42a",
+      "bytes": 5231,
+      "git_blob_id": "3b2d135a2f20a462d773716575d793dcb0c71e84"
+    },
+    {
+      "filename": "config.json",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/config.json",
+      "sha256": "8be45ce0476004a3f529fd896115a4a2e800a129ad2d3ec05b16050f52e21879",
+      "bytes": 3311,
+      "git_blob_id": "09917a9139b22d5bf8be52132787f435147b1020"
+    },
+    {
+      "filename": "encoding/README.md",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/encoding/README.md",
+      "sha256": "a34a5ca98c65e5b5b2bedd693cc2e18e732fe50192723fb6937ae07219c23739",
+      "bytes": 12164,
+      "git_blob_id": "1d094a2c20234cf6c04bcd1b4627cc30f42297d5"
+    },
+    {
+      "filename": "encoding/encoding.py",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/encoding/encoding.py",
+      "sha256": "13231c592e958fb39e2af6001dae69d90e7a36b265702b9b390236fb387599e2",
+      "bytes": 37962,
+      "git_blob_id": "3c7c357dc9ae3ed37adacb8572a2e9498b7d1bcb"
+    },
+    {
+      "filename": "inference/README.md",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/inference/README.md",
+      "sha256": "2834402823199ee24e9a42bdf36a0fc6daf94448f444cb062c042a057a798f1c",
+      "bytes": 2029,
+      "git_blob_id": "e0b1d6ddfb4ab06a0dc9b4542826e6d7aa07a77c"
+    },
+    {
+      "filename": "inference/config.json",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/inference/config.json",
+      "sha256": "2e84f45cf1dac8c7fcbb200e96667d4b913275690668ed496f24c7747207a809",
+      "bytes": 1982,
+      "git_blob_id": "7a915cc69e21abbc6d7fb939cef5d09c72aa0d24"
+    },
+    {
+      "filename": "inference/model.py",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/inference/model.py",
+      "sha256": "e5decd76fe70fd56ef2f10124d245c6f64fb6a0003cc9068a1d3182a168b8d2d",
+      "bytes": 61669,
+      "git_blob_id": "46cc8310bb64852f3c36c9cc5dd13d47acabf6ee"
+    },
+    {
+      "filename": "inference/requirements.txt",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/inference/requirements.txt",
+      "sha256": "be82bcd5775ccf8361ddd22cac53ef7b3b83434697fc3c61c75870450fb9437e",
+      "bytes": 98,
+      "git_blob_id": "0ac24b86509757adc25e0d7518b16fffbf81a5b1"
+    },
+    {
+      "filename": "model-api.json",
+      "source_url": "https://huggingface.co/api/models/deepseek-ai/DeepSeek-V4.1-Flash-1017/revision/1bae0e1088993b9b82de08f59de5be5a34e42170",
+      "sha256": "60653bcec0f7edd06d582187971600cba16a1d200556ca1690aef54e03c18f02",
+      "bytes": 5582
+    },
+    {
+      "filename": "model-tree.json",
+      "source_url": "https://huggingface.co/api/models/deepseek-ai/DeepSeek-V4.1-Flash-1017/tree/1bae0e1088993b9b82de08f59de5be5a34e42170?recursive=true&expand=false",
+      "sha256": "a00735cc257c5bfea80cb44c80a0efc5bde7c7d3e02217093e699cb53a1ba763",
+      "bytes": 19933
+    },
+    {
+      "filename": "model.safetensors.index.json",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/model.safetensors.index.json",
+      "sha256": "74b0686a3d2891980d5e303251b075a3bccae2c2ff650747db2620a649b98fa8",
+      "bytes": 7470294,
+      "git_blob_id": "54c85064dd92c8550471302e9ae59bedbbf96ca4"
+    },
+    {
+      "filename": "previous-model-tree.json",
+      "source_url": "https://huggingface.co/api/models/deepseek-ai/DeepSeek-V4.1-Flash/tree/5254448103b6254fc646dacbca1cbbf20e9216c1?recursive=true&expand=false",
+      "sha256": "3ababfc7326ad5271e87ba18e53c5341500ef7f1e1ca8de526633cbc630d0442",
+      "bytes": 21481
+    },
+    {
+      "filename": "tokenizer_config.json",
+      "source_url": "https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash-1017/resolve/1bae0e1088993b9b82de08f59de5be5a34e42170/tokenizer_config.json",
+      "sha256": "6ac8c8dc065ed118161d02dd532749ae3f52c243deac27872134fae2f50d8547",
+      "bytes": 801,
+      "git_blob_id": "f3dad388a2bbfd6a8605bd02754acd86d9ca5112"
+    }
+  ],
+  "derived_files": {
+    "metadata.json": {
+      "sha256": "7ecbc70ae58c2d8a8edaf482fb2d78fbec0a33c54cec0b1ab90f3f7de733be63",
+      "bytes": 11586
+    },
+    "README.md": {
+      "sha256": "282d70a2a789c21ab5d47a76193d868a4c66033374be8a31365bbaf1f3b113bb",
+      "bytes": 2736
+    }
+  },
+  "tokenizer_json_downloaded": false,
+  "tokenizer_config_downloaded": true
+}

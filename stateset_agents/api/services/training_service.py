@@ -11,10 +11,16 @@ from typing import Any
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
-from stateset_agents.utils.async_calls import drain_owned_operation
+from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
 
-from ..errors import ResourceExhaustedError, ServiceUnavailableError
+from ..errors import ConflictError, ResourceExhaustedError, ServiceUnavailableError
 from ..schemas import TrainingRequest
+from ..training_queue import (
+    MAX_PENDING_JOBS,
+    TrainingIdempotencyConflictError,
+    TrainingQueue,
+    TrainingQueueFullError,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -104,17 +110,26 @@ class TrainingService:
     """Service for managing training jobs."""
 
     def __init__(
-        self, *, max_concurrent_jobs: int = 1, output_root: str | None = None
+        self,
+        *,
+        max_concurrent_jobs: int = 1,
+        queue_path: str | Path | None = None,
+        output_root: str | Path | None = None,
     ) -> None:
         if type(max_concurrent_jobs) is not int or max_concurrent_jobs < 1:
             raise ValueError("max_concurrent_jobs must be a positive integer")
         self._max_concurrent_jobs = max_concurrent_jobs
-        # None: read API_TRAINING_OUTPUT_ROOT from the API config per job.
         self._output_root = output_root
         self.training_jobs: dict[str, dict[str, Any]] = {}
         self._cancel_events: dict[str, asyncio.Event] = {}
         self._tasks: dict[str, asyncio.Task[None]] = {}
+        self._pending_submissions: set[asyncio.Task[str]] = set()
         self._closing = False
+        self.queue = (
+            None
+            if queue_path is None
+            else TrainingQueue(queue_path, max_concurrent_jobs=max_concurrent_jobs)
+        )
 
     @property
     def max_concurrent_jobs(self) -> int:
@@ -127,7 +142,7 @@ class TrainingService:
         return self._closing
 
     async def aclose(self) -> None:
-        """Cancel cooperatively and own all workers until their cleanup finishes.
+        """Drain accepted submissions and cancel embedded workers cooperatively.
 
         Repeated or concurrent calls are safe. Caller cancellation is propagated
         only after workers exit. Unresponsive trainers can delay shutdown; this
@@ -135,18 +150,19 @@ class TrainingService:
         """
         self._closing = True
         tasks = tuple(self._tasks.values())
+        submissions = tuple(self._pending_submissions)
         for training_id in tuple(self._tasks):
             self.cancel_training(training_id)
 
         async def finish() -> None:
-            await asyncio.gather(*tasks, return_exceptions=True)
+            await asyncio.gather(*tasks, *submissions, return_exceptions=True)
 
         await drain_owned_operation(finish())
 
     @property
     def jobs(self) -> dict[str, dict[str, Any]]:
         """Compatibility alias used by some router/tests."""
-        return self.training_jobs
+        return self.queue.jobs() if self.queue is not None else self.training_jobs
 
     @staticmethod
     def _can_access_job(job: dict[str, Any], user_id: str | None) -> bool:
@@ -167,16 +183,20 @@ class TrainingService:
     def _resolve_resume(self, value: str, user_id: str | None, root: Path) -> str:
         """Map ``resume_from_checkpoint`` to a path inside ``root``.
 
-        Accepts the id of a job this caller can access (its output directory)
-        or a path that resolves under the training root; anything else is a
-        ``ValueError`` (400), so clients cannot load server files.
+        Authenticated callers may use a visible job ID or a path inside that
+        job's directory. Internal administrative callers (``user_id=None``)
+        may use any path under the root. Resolved symlinks must stay confined.
         """
-        job = self.training_jobs.get(value)
+        job = self.get_training_status(value, user_id)
         if job is not None:
-            if not self._can_access_job(job, user_id) or not job.get("output_dir"):
+            directory = job.get("metrics", {}).get("artifact_directory") or job.get(
+                "output_dir"
+            )
+            if not directory:
                 raise ValueError(f"Training job {value!r} is not resumable")
-            return str(job["output_dir"])
-        candidate = Path(value).expanduser()
+            candidate = Path(directory)
+        else:
+            candidate = Path(value).expanduser()
         if not candidate.is_absolute():
             candidate = root / candidate
         resolved = candidate.resolve()
@@ -185,23 +205,92 @@ class TrainingService:
                 "resume_from_checkpoint must be a training job id or a path "
                 "under the server's training output root"
             )
+        if user_id is not None:
+            parts = resolved.relative_to(root).parts
+            if not parts or self.get_training_status(parts[0], user_id) is None:
+                raise ValueError("Checkpoint is not inside an accessible training job")
         return str(resolved)
 
     async def start_training(
         self,
         request: TrainingRequest,
         user_id: str | None = None,
+        idempotency_key: str | None = None,
         *,
         roles: list[str] | None = None,
     ) -> str:
-        """Start a training job.
-
-        Outputs always go to ``<training output root>/<training_id>``; the
-        client cannot choose output paths or resume from outside that root.
-        ``roles`` feed the model-loading policy (``None``: already checked).
-        """
+        """Start a training job."""
         if self._closing:
             raise ServiceUnavailableError("Training service is shutting down")
+        request = request.model_copy(deep=True)
+        accepted_config = copy.deepcopy(request.model_dump())
+        from ..model_policy import client_model_uses_stub
+
+        use_stub_model = client_model_uses_stub(
+            request.agent_config.model_name, roles=roles
+        )
+        root = self.output_root()
+        resume_owner = None if roles is not None and "admin" in roles else user_id
+        resume = (
+            await run_sync_owned(
+                self._resolve_resume, request.resume_from_checkpoint, resume_owner, root
+            )
+            if request.resume_from_checkpoint
+            else None
+        )
+        # Resume lookup may yield to a database thread. Shutdown must close
+        # admission before any submission or embedded worker is registered.
+        if self._closing:
+            raise ServiceUnavailableError("Training service is shutting down")
+        from stateset_agents.training.configuration import resolve_training_config
+
+        # Validate accepted overrides before committing work or allocating a model.
+        try:
+            config = resolve_training_config(
+                profile=request.profile,
+                num_episodes=request.num_episodes,
+                config_overrides=request.training_config_overrides,
+                resume_from_checkpoint=resume,
+                objective=None,
+                objective_overrides=None,
+                extra_config={"model_name": request.agent_config.model_name},
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"Invalid training configuration: {exc}") from exc
+        config.validate_for_training()
+        reward_fn = build_reward(request.reward_config)
+        if self.queue is not None:
+            # Freeze caller-owned nested data before yielding to the database
+            # thread. Shutdown owns this operation until commit/rollback ends;
+            # disconnecting the HTTP caller cannot detach an unknown write.
+            submission = asyncio.create_task(
+                run_sync_owned(
+                    self.queue.submit,
+                    accepted_config,
+                    user_id,
+                    idempotency_key,
+                    output_root=str(root),
+                    resume_from_checkpoint=resume,
+                    resume_user_id=resume_owner,
+                )
+            )
+            self._pending_submissions.add(submission)
+
+            async def wait_for_submission() -> str:
+                return await submission
+
+            try:
+                return await drain_owned_operation(wait_for_submission())
+            except TrainingIdempotencyConflictError as exc:
+                raise ConflictError(str(exc)) from exc
+            except TrainingQueueFullError as exc:
+                raise ResourceExhaustedError(
+                    "training_queue", MAX_PENDING_JOBS
+                ) from exc
+            finally:
+                self._pending_submissions.discard(submission)
+        if idempotency_key is not None:
+            raise ValueError("Idempotency keys require API_TRAINING_QUEUE_PATH")
         # Submission contains no await between this check and task registration,
         # so admission is atomic for this service's event loop. Count owned tasks,
         # including cancellation cleanup, rather than mutable public status labels.
@@ -209,52 +298,24 @@ class TrainingService:
             raise ResourceExhaustedError("training_jobs", self.max_concurrent_jobs)
         # The task can start after this coroutine returns. Own the accepted
         # inputs before constructors or caller code can mutate nested values.
-        request = request.model_copy(deep=True)
-        accepted_config = copy.deepcopy(request.model_dump())
         training_id = str(uuid.uuid4())
         now = datetime.utcnow()
-
-        # Server-controlled paths: a job-specific output directory under the
-        # training root, and a resume target confined to that root.
-        root = self.output_root()
         output_dir = root / training_id
-        overrides = dict(request.training_config_overrides or {})
-        overrides["output_dir"] = str(output_dir)
-        resume = (
-            self._resolve_resume(request.resume_from_checkpoint, user_id, root)
-            if request.resume_from_checkpoint
-            else None
-        )
-        request = request.model_copy(
-            update={
-                "training_config_overrides": overrides,
-                "resume_from_checkpoint": resume,
-            }
-        )
+        request.training_config_overrides = {
+            **(request.training_config_overrides or {}),
+            "output_dir": str(output_dir),
+        }
+        request.resume_from_checkpoint = resume
 
-        # Create training configuration; client-named models follow the
-        # server's model policy (403 when refused).
-        from ..model_policy import client_model_uses_stub
-
-        agent_config = AgentConfig(**request.agent_config.model_dump())
-        agent_config = replace(
-            agent_config,
-            use_stub_model=client_model_uses_stub(agent_config.model_name, roles=roles),
+        # Create training configuration
+        agent_config = AgentConfig(
+            **request.agent_config.model_dump(), model_revision=config.model_revision
         )
+        agent_config = replace(agent_config, use_stub_model=use_stub_model)
         agent = MultiTurnAgent(agent_config)
 
         # Create environment
         environment = ConversationEnvironment(scenarios=request.environment_scenarios)
-
-        # Create reward function
-        reward_fn = CompositeReward(
-            [
-                HelpfulnessReward(
-                    weight=request.reward_config.get("helpfulness_weight", 0.7)
-                ),
-                SafetyReward(weight=request.reward_config.get("safety_weight", 0.3)),
-            ]
-        )
 
         # Create job record
         self.training_jobs[training_id] = {
@@ -311,7 +372,7 @@ class TrainingService:
         training_id: str,
         agent: MultiTurnAgent,
         environment: ConversationEnvironment,
-        reward_fn: CompositeReward,
+        reward_fn: Any,
         request: TrainingRequest,
         cancel_event: asyncio.Event,
     ) -> None:
@@ -379,6 +440,8 @@ class TrainingService:
         Terminal jobs remain unchanged. Repeated requests are idempotent; a
         trainer that has not reached a cancellation boundary stays cancelling.
         """
+        if self.queue is not None:
+            return self.queue.cancel(training_id, user_id)
         job = self.training_jobs.get(training_id)
         if not job or not self._can_access_job(job, user_id):
             return False
@@ -396,7 +459,80 @@ class TrainingService:
         self, training_id: str, user_id: str | None = None
     ) -> dict[str, Any] | None:
         """Return a detached status snapshot, or None if missing/inaccessible."""
+        if self.queue is not None:
+            return self.queue.get(training_id, user_id)
         job = self.training_jobs.get(training_id)
         if not job or not self._can_access_job(job, user_id):
             return None
         return copy.deepcopy(job)
+
+    async def aget_training_status(
+        self, training_id: str, user_id: str | None = None
+    ) -> dict[str, Any] | None:
+        """Read durable status off-loop while preserving the synchronous API."""
+        if self.queue is not None:
+            return await run_sync_owned(self.get_training_status, training_id, user_id)
+        return self.get_training_status(training_id, user_id)
+
+    async def acancel_training(
+        self, training_id: str, user_id: str | None = None
+    ) -> bool:
+        """Drain a durable cancellation write before propagating caller cancellation."""
+        if self.queue is not None:
+            return await run_sync_owned(self.cancel_training, training_id, user_id)
+        return self.cancel_training(training_id, user_id)
+
+    async def list_training_jobs(
+        self,
+        *,
+        page: int = 1,
+        page_size: int = 20,
+        status: str | None = None,
+        user_id: str | None = None,
+    ) -> tuple[list[tuple[str, dict[str, Any]]], int]:
+        """Return one detached, authorized page and total without loading all payloads."""
+        if type(page) is not int or page < 1:
+            raise ValueError("page must be a positive integer")
+        if type(page_size) is not int or not 1 <= page_size <= 100:
+            raise ValueError("page_size must be an integer between 1 and 100")
+        if status is not None and not isinstance(status, str):
+            raise ValueError("status must be a string or None")
+        offset = (page - 1) * page_size
+        if self.queue is not None:
+            return await run_sync_owned(
+                self.queue.page,
+                owner=user_id,
+                status=status,
+                limit=page_size,
+                offset=offset,
+            )
+        jobs = [
+            (job_id, job)
+            for job_id, job in self.training_jobs.items()
+            if self._can_access_job(job, user_id)
+            and (not status or job.get("status") == status)
+        ]
+        jobs.sort(
+            key=lambda item: (item[1].get("created_at") or datetime.min, item[0]),
+            reverse=True,
+        )
+        return copy.deepcopy(jobs[offset : offset + page_size]), len(jobs)
+
+
+def build_reward(config: dict[str, Any]) -> Any:
+    """Select outcome rewards by default; heuristics require explicit starter mode."""
+    mode = config.get("mode", "outcome")
+    if mode == "environment":
+        return None
+    if mode == "outcome":
+        from stateset_agents.rewards.task_outcome import TaskOutcomeReward
+
+        return TaskOutcomeReward()
+    if mode == "heuristic":
+        return CompositeReward(
+            [
+                HelpfulnessReward(weight=config.get("helpfulness_weight", 0.7)),
+                SafetyReward(weight=config.get("safety_weight", 0.3)),
+            ]
+        )
+    raise ValueError("reward_config.mode must be outcome, environment, or heuristic")

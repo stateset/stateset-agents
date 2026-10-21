@@ -1,0 +1,39 @@
+{
+  "passed": true,
+  "source_modules": 397,
+  "regressions": {
+    "total": 1695,
+    "passed": 1691,
+    "failed": 0,
+    "skipped": 4
+  },
+  "native_contracts": {
+    "total": 94,
+    "passed": 94,
+    "failed": 0,
+    "skipped": 0
+  },
+  "isolated_wheel_contracts": {
+    "total": 93,
+    "passed": 93,
+    "failed": 0,
+    "skipped": 0
+  },
+  "wheel_sha256": "71aa1a79e3ed68e1f57231fa9902ccb3354817a62d1d4773ab58c9d69650de70",
+  "pyproject_sha256": "5eaaebdaa2c22e3adf21cc51ef7a939b18ed27d9890366b9f376649508f7c3b9",
+  "source_unchanged": true,
+  "wheel_packaged_source_matches": true,
+  "full_size_gpu_training_verified": false,
+  "released_model_weights_loaded": false,
+  "actual_pinned_tokenizers_verified": 4,
+  "framework_loader_blockers": [
+    "MiMo-V2.6-Pro (RL and MOPD)",
+    "Kimi-K3",
+    "DeepSeek-V4.1-Flash"
+  ],
+  "queue_jobs": {
+    "source_regressions": "5a2372c09029",
+    "final_runtime_and_wheel": "6bd0f2d6961e"
+  },
+  "overlap_note": "Test counts are per stage and overlap; they are not a unique combined total."
+}

@@ -1,0 +1,61 @@
+"""Prepare or verify a real detached installed-wheel comparison, without nesting queues."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import time
+import uuid
+
+prefix = Path('/tmp/stateset-studio-validation-compare')
+pipeline = json.loads(Path(str(prefix)+'-pipeline-receipt.json').read_text())
+assert pipeline['passed'] and len(pipeline['stages']) == 6
+finished = Path(pipeline['finished'])
+site = finished/'site-packages'
+sys.path.insert(0, str(site))
+from stateset_agents import finetune_validation as comparison
+from stateset_agents.finetune_workspace import read_json, write_json
+assert Path(comparison.__file__).is_relative_to(site)
+fixture = read_json(finished/'synthetic-validation-comparison-fixture/metadata.json')
+run = Path(fixture['workspace'])/fixture['run_id']
+metadata = Path(str(prefix)+'-real-worker-request.json')
+
+def inventory():
+    return {p.relative_to(run).as_posix():hashlib.sha256(p.read_bytes()).hexdigest()
+            for p in run.rglob('*') if p.is_file() and comparison.DIRECTORY not in p.relative_to(run).parts}
+
+if sys.argv[1] == 'prepare':
+    plan = comparison.comparison_plan(run, fixture['anchor_id'])
+    before = inventory()
+    directory = run/comparison.DIRECTORY
+    directory.mkdir(mode=0o700)
+    request = directory/(time.strftime('%Y%m%d-%H%M%S', time.gmtime())+'-'+uuid.uuid4().hex[:8])
+    request.mkdir(mode=0o700)
+    write_json(request/'plan.json', plan)
+    write_json(request/'state.json', {'status':'queued','created_at':time.time()})
+    value = {'request':str(request), 'run':str(run), 'site':str(site), 'checks':str(finished/'checks'), 'before':before, 'fixture':fixture}
+    metadata.write_text(json.dumps(value,indent=2)+'\n')
+    print(json.dumps({k:v for k,v in value.items() if k not in {'before','fixture'}}))
+else:
+    value = read_json(metadata)
+    request = Path(value['request'])
+    worker_job, acceptance_job = sys.argv[2:4]
+    write_json(request/'submission.json', {'status':'submitted','job_id':worker_job})
+    job = json.loads(subprocess.check_output(['/home/dom/agent-builds/buildr','show','--json',worker_job],text=True))
+    assert job['state']=='succeeded' and job['exit_code']==0
+    environment = os.environ.copy()
+    environment['PYTHONPATH'] = str(site)
+    command = [sys.executable,'-m','stateset_agents.cli','finetune','validation-comparison-status',run.name,request.name,'--workspace',fixture['workspace']]
+    process = subprocess.run(command,cwd=finished/'checks',env=environment,text=True,capture_output=True,check=True)
+    status = json.loads(process.stdout)
+    assert status['ok'] and status['result']['state']['status']=='succeeded', status
+    assert status['result']['result']['recommendation']['checkpoint']==fixture['expected_checkpoint']
+    assert status['result']['result']['quality_gain_verified'] is False
+    origin = Path(read_json(request/'execution.json')['module_path'])
+    assert origin.is_relative_to(site)
+    assert inventory()==value['before']
+    assert 'PRIVATE' not in process.stdout
+    report = {'passed':True,'parent_unchanged':True,'installed_origin_verified':True,'acceptance_job':acceptance_job,'worker_job':worker_job,'request_id':request.name,'request':str(request),'worker_module':str(origin),'status_cli':status,'scope':fixture['scope'],'inference_started':False,'quality_gain_verified':False}
+    Path(str(prefix)+'-real-worker-verification.json').write_text(json.dumps(report,indent=2)+'\n')
+    print(json.dumps({'passed':True,'request_id':request.name,'worker_job':worker_job,'recommendation':fixture['expected_checkpoint']}))

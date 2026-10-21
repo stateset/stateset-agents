@@ -1,0 +1,28 @@
+{
+  "id": "7f298205438e",
+  "state": "succeeded",
+  "exit_code": 0,
+  "argv": [
+    "env",
+    "OMP_NUM_THREADS=1",
+    "MKL_NUM_THREADS=1",
+    "OPENBLAS_NUM_THREADS=1",
+    "RAYON_NUM_THREADS=2",
+    "TOKENIZERS_PARALLELISM=false",
+    ".venv/bin/python",
+    "-m",
+    "pytest",
+    "-q",
+    "-n0",
+    "-o",
+    "addopts=",
+    "--timeout=150",
+    "--tb=short",
+    "tests/unit/test_finetune_backends.py"
+  ],
+  "created": 1792177803.7964647,
+  "started": 1792177885.216156,
+  "finished": 1792177892.1713905,
+  "wait_seconds": 81.41969132423401,
+  "elapsed_seconds": 6.955234527587891
+}

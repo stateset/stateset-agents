@@ -35,7 +35,11 @@ class ExperimentRecord:
     proof_path: str | None = None
     timestamp: float = 0.0
 
-    def __post_init__(self):
+    def __post_init__(self) -> None:
+        # Evaluation results may carry private evidence on a dict subclass.
+        # Persist the public metric mapping without reconstructing that subclass
+        # through dataclasses.asdict (its constructor may require evidence).
+        self.metrics = dict(self.metrics)
         try:
             finite = math.isfinite(self.objective_value)
         except (TypeError, ValueError, OverflowError) as exc:

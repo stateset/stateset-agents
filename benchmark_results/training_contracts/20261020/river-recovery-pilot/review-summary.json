@@ -1,0 +1,248 @@
+{
+  "cost_usd": null,
+  "evaluations": {
+    "validation": {
+      "families": {
+        "authorization_revoked": {
+          "generated_tokens": 132,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 8,
+          "total": 4,
+          "trajectory_seconds": 22.69776655291207,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "clean": {
+          "generated_tokens": 130,
+          "mean_reward": 0.0,
+          "mean_tool_calls": 2.0,
+          "passed": 2,
+          "success_rate": 0.5,
+          "success_wilson_95": [
+            0.15003898915214947,
+            0.8499610108478506
+          ],
+          "tool_calls": 8,
+          "total": 4,
+          "trajectory_seconds": 23.886654695961624,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.5
+        },
+        "lookup_transient": {
+          "generated_tokens": 226,
+          "mean_reward": 0.0,
+          "mean_tool_calls": 3.0,
+          "passed": 2,
+          "success_rate": 0.5,
+          "success_wilson_95": [
+            0.15003898915214947,
+            0.8499610108478506
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 35.44947448198218,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.5
+        },
+        "lost_ack_applied": {
+          "generated_tokens": 184,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 33.20358701393707,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "lost_ack_not_applied": {
+          "generated_tokens": 265,
+          "mean_reward": 0.5,
+          "mean_tool_calls": 4.0,
+          "passed": 3,
+          "success_rate": 0.75,
+          "success_wilson_95": [
+            0.30064184258240184,
+            0.9544127391902995
+          ],
+          "tool_calls": 16,
+          "total": 4,
+          "trajectory_seconds": 47.13451167009771,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.25
+        },
+        "reconcile_pending": {
+          "generated_tokens": 188,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 36.631316749961115,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "reconcile_unavailable": {
+          "generated_tokens": 192,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 34.899259670986794,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "stale_chargeback": {
+          "generated_tokens": 224,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 35.125385777966585,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "stale_refund": {
+          "generated_tokens": 212,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 3.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 12,
+          "total": 4,
+          "trajectory_seconds": 35.02211154001998,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        },
+        "unauthorized": {
+          "generated_tokens": 132,
+          "mean_reward": 1.0,
+          "mean_tool_calls": 2.0,
+          "passed": 4,
+          "success_rate": 1.0,
+          "success_wilson_95": [
+            0.5101091635454027,
+            1.0
+          ],
+          "tool_calls": 8,
+          "total": 4,
+          "trajectory_seconds": 21.938961879117414,
+          "truncation_rate": 0.0,
+          "violation_rate": 0.0
+        }
+      },
+      "generated_tokens": 1885,
+      "passed": 35,
+      "total": 40,
+      "truncation_rate": 0.0,
+      "violation_rate": 0.125
+    }
+  },
+  "nonzero_variance_groups": 3,
+  "passed": true,
+  "plan_hash": "3a3148b24ea6586d99c8e83b651f7db30671911eb9592076198a968595229305",
+  "previous_arithmetic_test_cases_unattempted": 308,
+  "prior_artifacts_unchanged": 652,
+  "probe_families": {
+    "authorization_revoked": {
+      "passed": 3,
+      "policy_violating_trajectories": 1,
+      "reward_variance": 0.75,
+      "total": 4
+    },
+    "clean": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "lookup_transient": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "lost_ack_applied": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "lost_ack_not_applied": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "reconcile_pending": {
+      "passed": 3,
+      "policy_violating_trajectories": 1,
+      "reward_variance": 0.75,
+      "total": 4
+    },
+    "reconcile_unavailable": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "stale_chargeback": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    },
+    "stale_refund": {
+      "passed": 3,
+      "policy_violating_trajectories": 1,
+      "reward_variance": 0.75,
+      "total": 4
+    },
+    "unauthorized": {
+      "passed": 4,
+      "policy_violating_trajectories": 0,
+      "reward_variance": 0.0,
+      "total": 4
+    }
+  },
+  "probe_passed": 37,
+  "probe_total": 40,
+  "provider_calls_during_review": 0,
+  "replayed_outcomes": 80,
+  "replayed_train_teachers": 160,
+  "test_attempted": false,
+  "training_updates": 0
+}

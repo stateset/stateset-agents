@@ -1,0 +1,32 @@
+[
+  {
+    "id": "cc03b0298bb5",
+    "state": "succeeded",
+    "exit_code": 0,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-mobile-editor-verify.py"
+    ],
+    "created": 1792208983.9150643,
+    "started": 1792209031.8309407,
+    "finished": 1792209037.9284823,
+    "wait_seconds": 47.915876388549805,
+    "elapsed_seconds": 6.097541570663452,
+    "reason": ""
+  },
+  {
+    "id": "c0e0a6acf3be",
+    "state": "queued",
+    "exit_code": null,
+    "argv": [
+      ".venv/bin/python",
+      "/tmp/stateset-studio-mobile-pipeline.py"
+    ],
+    "created": 1792208571.1486866,
+    "started": null,
+    "finished": null,
+    "wait_seconds": 1042.1916236877441,
+    "elapsed_seconds": 0,
+    "reason": "heavy job budget"
+  }
+]

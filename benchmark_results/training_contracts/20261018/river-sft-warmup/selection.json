@@ -1,0 +1,14 @@
+{
+  "base_validation_passed": 25,
+  "checkpoint": {
+    "checkpoint_type": "inference",
+    "path": "river://18d69a44-6b61-4fa6-8469-3188bf8c8e6f/sampler_weights/sft",
+    "policy_version": null,
+    "step": 8
+  },
+  "criterion": "Higher validation success count; ties retain base",
+  "plan_hash": "e22201422a46451d5a78cd91e23ab0b4031a0ffbccd77dc24554c1780efa5195",
+  "selected_arm": "sft",
+  "sft_validation_passed": 26,
+  "validation_total": 32
+}

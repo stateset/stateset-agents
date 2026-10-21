@@ -297,6 +297,7 @@ def golden_grpo_enhanced() -> dict:
     ref = deterministic_weights(tiny_model(), seed=1)
     agent = SimpleNamespace(tokenizer=_Tok(), model=model)
     cfg = SimpleNamespace(
+        allow_sequence_fallback=True,
         max_prompt_length=32,
         max_completion_length=32,
         clip_ratio=0.2,

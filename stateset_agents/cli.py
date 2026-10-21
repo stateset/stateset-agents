@@ -23,6 +23,10 @@ from stateset_agents.exceptions import (  # noqa: E402 — must follow the sys.m
 
 app = typer.Typer(add_completion=False, help="StateSet Agents CLI")
 
+from stateset_agents.cli_finetune import app as finetune_app  # noqa: E402
+
+app.add_typer(finetune_app, name="finetune")
+
 CLI_IMPORT_EXCEPTIONS = (AttributeError, ImportError, OSError, RuntimeError)
 CLI_CONFIG_EXCEPTIONS = (OSError, TypeError, ValueError)
 CLI_TRAIN_EXCEPTIONS = INFERENCE_EXCEPTIONS
@@ -808,8 +812,12 @@ def starter(
 from stateset_agents import cli_benchmark  # noqa: E402, F401 — benchmark sub-app
 from stateset_agents import cli_chat  # noqa: E402, F401 — chat
 from stateset_agents import cli_flywheel  # noqa: E402, F401 — autonomous loop
+from stateset_agents import cli_frontier  # noqa: E402, F401 — frontier readiness/SFT
+from stateset_agents import cli_industry  # noqa: E402, F401 — industry fine-tuning
 from stateset_agents import cli_ingest  # noqa: E402, F401 — ingest third-party logs
 from stateset_agents import cli_mcp  # noqa: E402, F401 — run the MCP server
+from stateset_agents import cli_muse  # noqa: E402, F401 — distributed Muse SFT
+from stateset_agents import cli_nemotron  # noqa: E402, F401 — multimodal fine-tuning
 from stateset_agents import cli_remote  # noqa: E402, F401 — train-remote
 from stateset_agents import cli_research  # noqa: E402, F401 — auto-research, fine-tune
 from stateset_agents import (  # noqa: E402, F401 — grade -> curate -> retrain loop; noqa: E402, F401 — train, qwen3-5-0-8b, kimi-k2-6, gemma-4-31b; noqa: E402, F401 — doctor, preflight, publish-check
@@ -848,6 +856,65 @@ def _register_advanced_cli() -> None:
 
 
 _register_advanced_cli()
+
+
+@app.command("tui")
+def finetune_studio(
+    workspace: Path = typer.Option(
+        Path("outputs/finetune"),
+        "--workspace",
+        "-w",
+        help="Retained runs, logs, and the saved studio draft.",
+    ),
+    config: Path | None = typer.Option(
+        None,
+        "--config",
+        "-c",
+        help="Saved studio draft JSON. Defaults to workspace/draft.json when present.",
+    ),
+    snapshot: bool = typer.Option(
+        False,
+        "--snapshot",
+        help="Print a static screen without a terminal or launching training.",
+    ),
+    columns: int | None = typer.Option(
+        None,
+        "--columns",
+        min=32,
+        max=300,
+        help="Snapshot width in terminal cells; requires --snapshot.",
+    ),
+    rows: int | None = typer.Option(
+        None,
+        "--rows",
+        min=16,
+        max=120,
+        help="Snapshot height in rows; requires --snapshot.",
+    ),
+) -> None:
+    """Fine-tune agents interactively in a Herdr pane or another terminal."""
+    from stateset_agents.finetune_workspace import FinetuneConfig, read_json
+    from stateset_agents.tui import Studio, run_studio
+
+    try:
+        if not snapshot and (columns is not None or rows is not None):
+            raise ValueError(
+                "Explicit dimensions require --snapshot; interactive mode follows the terminal size"
+            )
+        draft = config or workspace.expanduser() / "draft.json"
+        if config is not None or draft.exists():
+            settings = FinetuneConfig(**read_json(draft))
+        else:
+            settings = FinetuneConfig()
+        if snapshot:
+            typer.echo(
+                "\n".join(Studio(workspace, settings).lines(columns or 110, rows or 32))
+            )
+        else:
+            run_studio(workspace, settings)
+    except (OSError, ValueError, TypeError, ImportError) as error:
+        _echo(f"Could not open fine-tuning studio: {error}", err=True)
+        raise typer.Exit(code=2) from error
 
 
 def run() -> None:

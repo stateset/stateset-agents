@@ -1,0 +1,75 @@
+{
+  "stages": [
+    {
+      "name": "format",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-evaluation-check.py",
+        "--format-only"
+      ],
+      "started": 1792198770.6955998,
+      "finished": 1792198773.9424303,
+      "exit_code": 0
+    },
+    {
+      "name": "prepare",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-evaluation-prepare.py"
+      ],
+      "started": 1792198773.942866,
+      "finished": 1792198922.6022131,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-1",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-evaluation-wheel.py",
+        "/tmp/stateset-studio-evaluation-20261016-retry2",
+        "1"
+      ],
+      "started": 1792198922.6114163,
+      "finished": 1792198976.416066,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-2",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-evaluation-wheel.py",
+        "/tmp/stateset-studio-evaluation-20261016-retry2",
+        "2"
+      ],
+      "started": 1792198976.4165072,
+      "finished": 1792198986.524667,
+      "exit_code": 0
+    },
+    {
+      "name": "wheel-3",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-evaluation-wheel.py",
+        "/tmp/stateset-studio-evaluation-20261016-retry2",
+        "3"
+      ],
+      "started": 1792198986.525043,
+      "finished": 1792199032.1140609,
+      "exit_code": 0
+    },
+    {
+      "name": "finish",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-studio-evaluation-finish.py",
+        "/tmp/stateset-studio-evaluation-20261016-retry2"
+      ],
+      "started": 1792199032.1144412,
+      "finished": 1792199054.0926812,
+      "exit_code": 0
+    }
+  ],
+  "passed": true,
+  "prepared": "/tmp/stateset-studio-evaluation-20261016-retry2",
+  "finished": "/tmp/stateset-studio-evaluation-20261016-final"
+}

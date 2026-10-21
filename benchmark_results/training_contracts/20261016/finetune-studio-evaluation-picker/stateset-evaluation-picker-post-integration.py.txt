@@ -1,0 +1,27 @@
+"""Check integrated picker behavior and exact identity with its verified wheel."""
+from pathlib import Path
+import hashlib
+import json
+import os
+import subprocess
+import sys
+import xml.etree.ElementTree as ET
+
+root=Path('/home/dom/stateset-agents'); candidate=Path('/tmp/stateset-evaluation-case-picker-20261016')
+os.chdir(root)
+os.environ['PATH']=str(root/'.venv/bin')+os.pathsep+os.environ['PATH']
+os.environ['PYTHONPATH']=str(root)
+os.environ.update(OMP_NUM_THREADS='1',MKL_NUM_THREADS='1',OPENBLAS_NUM_THREADS='1',NUMEXPR_NUM_THREADS='1',RAYON_NUM_THREADS='1',TOKENIZERS_PARALLELISM='false',HF_HUB_OFFLINE='1',TRANSFORMERS_OFFLINE='1',PYTHONDONTWRITEBYTECODE='1')
+wheel=json.loads((candidate/'candidate-wheel-verification.json').read_text())
+expected={name:digest for name,digest in wheel['source_sha256'].items() if name.startswith('stateset_agents/')}
+expected.update(wheel['test_source_sha256'])
+def matches():
+    return {p.relative_to(root).as_posix():hashlib.sha256(p.read_bytes()).hexdigest() for folder in ['stateset_agents','tests'] for p in (root/folder).rglob('*.py')}==expected
+assert matches()
+xml=candidate/'canonical-picker.xml'
+code=subprocess.call([sys.executable,'-m','pytest','-q','-n0','-p','no:cacheprovider','-o','addopts=','--timeout=150','--tb=short','tests/unit/test_evaluation_case_picker.py','--junitxml='+str(xml)])
+suites=list(ET.parse(xml).getroot().iter('testsuite'))
+assert code==0 and matches() and all(not sum(int(s.get(k,0)) for k in ['failures','errors','skipped']) for s in suites)
+value={'passed':True,'source_matches_verified_candidate':True,'source_unchanged':True,'picker_tests':sum(int(s.get('tests',0)) for s in suites)}
+(candidate/'canonical-picker-verification.json').write_text(json.dumps(value,indent=2)+'\n')
+print(json.dumps(value))

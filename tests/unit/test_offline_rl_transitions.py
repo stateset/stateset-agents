@@ -47,13 +47,13 @@ def test_next_state_is_the_next_decision_state():
     assert data["dones"].tolist() == [0.0, 1.0]
 
 
-def test_assistant_first_trajectory_does_not_reuse_previous_state():
+def test_assistant_first_trajectory_is_rejected_without_an_observation():
     first = TrajectoryData(
         "a", _turns(("user", "long prompt text"), ("assistant", "x")), 0.0, [0.0, 0.0]
     )
     second = TrajectoryData("b", _turns(("assistant", "hello")), 0.0, [0.0])
-    data = _dataset([first, second]).to_offline_rl_format()
-    assert data["states"][1].tolist() == [0.0]
+    with pytest.raises(ValueError, match="preceding observation"):
+        _dataset([first, second]).to_offline_rl_format()
 
 
 def test_sharegpt_roles_are_canonicalised():

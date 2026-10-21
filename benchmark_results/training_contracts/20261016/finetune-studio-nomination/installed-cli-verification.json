@@ -1,0 +1,249 @@
+{
+  "passed": true,
+  "parent_unchanged": true,
+  "installed_origin_verified": true,
+  "acceptance_job": "c818dde808c0",
+  "worker_job": "0d03edf06f50",
+  "request_id": "20261017-031530-8d1e82af",
+  "request": "/tmp/stateset-studio-nomination-20261016-final/synthetic-validation-comparison-fixture/workspace/20261017-031457-6c645df1/validation-comparisons/20261017-031530-8d1e82af",
+  "worker_module": "/tmp/stateset-studio-nomination-20261016-final/site-packages/stateset_agents/finetune_validation.py",
+  "status_cli": {
+    "schema_version": 1,
+    "ok": true,
+    "command": "validation-comparison-status",
+    "result": {
+      "comparison_id": "20261017-031530-8d1e82af",
+      "anchor_id": "20261017-031503-c32f680b",
+      "state": {
+        "status": "succeeded",
+        "completed": 3,
+        "total": 3
+      },
+      "job_id": "0d03edf06f50",
+      "result": {
+        "schema_version": 1,
+        "run_id": "20261017-031457-6c645df1",
+        "anchor_id": "20261017-031503-c32f680b",
+        "protocol_sha256": "0e528fc9a14e8d06caf9cd5e4d75591b8257c72aa8e14ded16cc944aefcc584b",
+        "case_count": 2,
+        "comparison_plan_sha256": "5a43a636ccff25e3f69c39686a7cb27d3e35ca352c7228d57ef7de864ec3e351",
+        "comparison_complete": true,
+        "verified_at": 1792206936.1217632,
+        "baseline": {
+          "success_rate": 0.5,
+          "judge_score": 0.98
+        },
+        "rows": [
+          {
+            "evaluation_id": "20261017-031457-b3cc7a7f",
+            "checkpoint": "checkpoint-1",
+            "step": 1,
+            "artifact_sha256": "b5182a4c580f9403063da4baa209b23926c499a7048fe56191ff2fa3c8c33d01",
+            "success_rate": 1.0,
+            "judge_score": 1.0,
+            "regressions": 0,
+            "guards": {
+              "no_success_regressions": true,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": true
+            },
+            "replicates": 1,
+            "eligible": true
+          },
+          {
+            "evaluation_id": "20261017-031503-c32f680b",
+            "checkpoint": "checkpoint-3",
+            "step": 3,
+            "artifact_sha256": "3239dd7ce482c56a1c8057a1ac82a57f2eefb8df7335ba95758cc0bd0181ab18",
+            "success_rate": 1.0,
+            "judge_score": 1.0,
+            "regressions": 0,
+            "guards": {
+              "no_success_regressions": true,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": true
+            },
+            "replicates": 1,
+            "eligible": true
+          },
+          {
+            "evaluation_id": "20261017-031503-57f28007",
+            "checkpoint": "checkpoint-2",
+            "step": 2,
+            "artifact_sha256": "60f62ee5de2bb098ef4c0dcff9092410c3b56aacfab4437266ade8af24df2351",
+            "success_rate": 0.5,
+            "judge_score": 0.98,
+            "regressions": 1,
+            "guards": {
+              "no_success_regressions": false,
+              "no_new_policy_violations": true,
+              "no_new_truncations": true,
+              "no_new_critical_check_failures": false
+            },
+            "replicates": 1,
+            "eligible": false
+          }
+        ],
+        "excluded": [],
+        "recommendation": {
+          "kind": "checkpoint",
+          "checkpoint": "checkpoint-1",
+          "evaluation_id": "20261017-031457-b3cc7a7f"
+        },
+        "quality_gain_verified": false,
+        "notes": [
+          "Validation diagnostic only; fresh test assessment and independent training seeds remain required.",
+          "Rank by success rate, judge score, then earliest saved step. New critical-check, success, policy or truncation regressions disqualify a candidate.",
+          "Incompatible protocols are excluded; unverifiable, conflicting or baseline-mismatched evidence prevents a recommendation.",
+          "Only the captured history is compared. Verification records bytes at execution time; review rechecks them before another evaluation."
+        ]
+      },
+      "training_started": false,
+      "inference_started": false,
+      "notes": [
+        "Queue work survives leaving the TUI. Reopening does not resubmit.",
+        "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain."
+      ]
+    }
+  },
+  "scope": "Synthetic recorded two-case policy/judge transport; no live model quality claim",
+  "inference_started": false,
+  "quality_gain_verified": false,
+  "nomination_review": {
+    "plan": {
+      "schema_version": 1,
+      "kind": "stateset-checkpoint-nomination",
+      "run_id": "20261017-031457-6c645df1",
+      "parent_plan_sha256": "eed1813710cfff4ec32661129a3c8f2a15c16476d2d5bbbea59d90433f64bcac",
+      "implementation_sha256": "be37e1353af22afd8b1eb4f9ae80522d4cfa87e9dc3daa5b5e730222281edc17",
+      "comparison_id": "20261017-031530-8d1e82af",
+      "comparison_plan_sha256": "5a43a636ccff25e3f69c39686a7cb27d3e35ca352c7228d57ef7de864ec3e351",
+      "comparison_result_sha256": "2b8eb8b7ff7c04797f89b4e628d9079aa8d852cb207859d6484b93c0b01102ee",
+      "checkpoint": "checkpoint-1",
+      "artifact_sha256": "b5182a4c580f9403063da4baa209b23926c499a7048fe56191ff2fa3c8c33d01",
+      "checkpoint_receipt_sha256": "67f2319917f22e69ffbbfbb2e143f0a0339022f45c43ea0257d5ca8075d6616c",
+      "selection_evaluation_id": "20261017-031457-b3cc7a7f",
+      "selection_plan_sha256": "5e24bc9df06c8da978709223febc03914492b7ebbc71e217a37299e72efdf53e",
+      "selection_cases_sha256": "835c2153adc6bc8bd7a52cbe7b5d885f22a8276fb4e2cf72f3eb1a8d4ef0f463"
+    },
+    "plan_sha256": "3a1c5f7c62cd577aa8417eb2b25dbeba8f4fb3c3700b26338b8ef34e00f6279b",
+    "prepared": false,
+    "inference_started": false
+  },
+  "nomination_receipt": {
+    "nomination_id": "20261017-031543-987b0f2e",
+    "plan_sha256": "3a1c5f7c62cd577aa8417eb2b25dbeba8f4fb3c3700b26338b8ef34e00f6279b",
+    "checkpoint": "checkpoint-1",
+    "comparison_id": "20261017-031530-8d1e82af",
+    "quality_gain_verified": false,
+    "training_started": false,
+    "inference_started": false
+  },
+  "test_review": {
+    "plan": {
+      "schema_version": 1,
+      "kind": "stateset-local-paired-evaluation",
+      "binding": {
+        "run_id": "20261017-031457-6c645df1",
+        "parent_plan_sha256": "eed1813710cfff4ec32661129a3c8f2a15c16476d2d5bbbea59d90433f64bcac",
+        "completion_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+        "parent_state_sha256": "a0af58eabbdc165960166eac02d0515f7d631a86d262e5f74af474e283dc7521",
+        "checkpoint": "checkpoint-1",
+        "checkpoint_receipt_sha256": "67f2319917f22e69ffbbfbb2e143f0a0339022f45c43ea0257d5ca8075d6616c",
+        "checkpoint_step": 1,
+        "artifact_path": "/tmp/stateset-studio-nomination-20261016-final/synthetic-validation-comparison-fixture/workspace/20261017-031457-6c645df1/artifacts/checkpoint-1",
+        "artifact_sha256": "b5182a4c580f9403063da4baa209b23926c499a7048fe56191ff2fa3c8c33d01",
+        "artifact_bytes": 201,
+        "training_dataset_sha256": "59f9cc8cb6b3e43fa2638e6114c484f6c8a8bfd32473b924dd8a262144288d52",
+        "model": "Qwen/Qwen3.5-0.8B",
+        "model_revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "method": "sft",
+        "training_seed": 42,
+        "nomination": {
+          "nomination_id": "20261017-031543-987b0f2e",
+          "plan_sha256": "3a1c5f7c62cd577aa8417eb2b25dbeba8f4fb3c3700b26338b8ef34e00f6279b"
+        }
+      },
+      "config": {
+        "cases": "/tmp/stateset-studio-nomination-20261016-final/synthetic-validation-comparison-fixture/fresh-test.json",
+        "judge_model": "fixture/judge",
+        "judge_revision": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "max_new_tokens": 192,
+        "judge_max_new_tokens": 1024,
+        "context_length": 8192,
+        "seed": 42,
+        "timeout_seconds": 3600,
+        "cpu_slots": 2,
+        "memory_gb": 4.0,
+        "scratch_gb": 5.0,
+        "checkpoint": "checkpoint-1",
+        "split": "test",
+        "nomination_id": "20261017-031543-987b0f2e"
+      },
+      "cases_sha256": "63bf007a3a18b463b53e580f8145ae9d09be4c70ec2d38a7141da486b530fce2",
+      "cases": 2,
+      "reply_generations": 4,
+      "max_judge_generations": 16,
+      "rubric_sha256": "b640d1c90038b6b8d75bb3c87cc52add0f7f9ee4d8a8cd931464dc1eacde2023",
+      "rubric_revision": "25fa6b2a9551e8901a566245965c3b2beb7f044b",
+      "implementation_sha256": "be37e1353af22afd8b1eb4f9ae80522d4cfa87e9dc3daa5b5e730222281edc17",
+      "decoding": {
+        "do_sample": false,
+        "num_beams": 1,
+        "repetition_penalty": 1.0
+      },
+      "thresholds": {
+        "success_score": 0.8,
+        "max_disagreement": 0.2,
+        "required_checks": [
+          "resolution_correct_outcome",
+          "resolution_consistent",
+          "resolution_latest_message",
+          "resolution_next_step",
+          "resolution_no_redundant_request",
+          "accuracy_no_placeholder",
+          "accuracy_matches_policy",
+          "accuracy_no_invented_details",
+          "accuracy_matches_conversation",
+          "policy_no_forbidden_commitment",
+          "policy_no_must_avoid_phrase",
+          "policy_no_hedging",
+          "policy_minimal_data",
+          "conciseness_no_repetition"
+        ]
+      },
+      "model_access": "local_cache_only; trust_remote_code=false"
+    },
+    "plan_sha256": "f59596a81d9b4f9ff18f6aa43839521928a60f013aeb33a2ea3954bc1798f9ab",
+    "prepared": false,
+    "launched": false
+  },
+  "test_prepared": {
+    "evaluation_id": "20261017-031543-a6087b87",
+    "plan_sha256": "f59596a81d9b4f9ff18f6aa43839521928a60f013aeb33a2ea3954bc1798f9ab",
+    "state": {
+      "status": "prepared",
+      "created_at": 1792206943.9737685
+    },
+    "queue": {},
+    "cases": 2,
+    "reply_generations": 4,
+    "max_judge_generations": 16,
+    "judge_model": "fixture/judge",
+    "checkpoint": "checkpoint-1",
+    "split": "test",
+    "nomination_id": "20261017-031543-987b0f2e",
+    "stop_requested": false,
+    "quality_gain_verified": false,
+    "prepared": true,
+    "launched": false
+  },
+  "original_files_unchanged": true,
+  "new_records_only": [
+    "evaluations/20261017-031543-a6087b87",
+    "nominations/20261017-031543-987b0f2e"
+  ],
+  "test_inference_launched": false
+}

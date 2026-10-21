@@ -37,6 +37,47 @@ def action(tool, **args):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("order_id", ["policy-A", 'policy-"quote\\slash\n雪'])
+async def test_prompt_lookup_example_executes_without_altering_order_id(order_id):
+    env = RefundPolicyEnvironment()
+    state = await env.reset(order(order_id=order_id))
+    prompt = state.context["messages"][0]["content"]
+    example = prompt.split("Your first reply must be:\n", 1)[1].splitlines()[0]
+    state, reward, done, info = await env.step(
+        state, ConversationTurn(role="assistant", content=example)
+    )
+    assert state.context["looked_up"] and not done and reward == 0
+    assert info["metrics"]["policy_violations"] == 0
+    observation = json.loads(info["messages"][0]["content"])
+    assert observation["order_id"] == order_id
+    state, _, _, _ = await env.step(
+        state, action("refund", order_id=order_id, amount_cents=1000)
+    )
+    finish = prompt.split("Finish with ", 1)[1].split(". ", 1)[0]
+    _, reward, done, info = await env.step(
+        state, ConversationTurn(role="assistant", content=finish)
+    )
+    assert done and reward == 1 and info["metrics"]["task_success"] == 1
+
+
+@pytest.mark.asyncio
+async def test_prompt_examples_do_not_disclose_private_policy_decisions():
+    env = RefundPolicyEnvironment()
+    eligible = await env.reset(order())
+    chargeback = await env.reset(
+        order(
+            paid_cents=8473,
+            refunded_cents=217,
+            chargeback_open=True,
+            customer_note="Private customer note.",
+            expected_action="escalate",
+            family="chargeback",
+        )
+    )
+    assert eligible.context["messages"] == chargeback.context["messages"]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize(
     "overrides,tool,args",
     [

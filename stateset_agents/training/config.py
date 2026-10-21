@@ -6,6 +6,8 @@ and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
 import json
+import math
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
@@ -17,19 +19,35 @@ def estimate_grpo_optimizer_steps(
     *,
     gradient_accumulation_steps: int = 1,
     num_gradient_updates: int = 1,
+    task_ids: Sequence[str | None] | None = None,
 ) -> int:
     """Estimate native GRPO's optimizer-step budget for a learning-rate schedule.
 
     Token-path inner updates each commit a full step, bypassing accumulation.
     Their budget is an upper bound when batches instead use sequence fallback,
     emit no gradients, or skip updates. A single update per batch uses ordinary
-    accumulation, including one final partial window.
+    accumulation. Supplying task IDs closes each task segment's partial window,
+    matching the trainer's flush before task-memory consolidation.
     """
     batches = max(0, int(rollout_batches))
     inner = max(1, int(num_gradient_updates or 1))
     accumulation = max(1, int(gradient_accumulation_steps or 1))
     if inner > 1:
         return batches * inner
+    if task_ids is not None:
+        if len(task_ids) != batches:
+            raise ValueError("Task schedule must describe every rollout batch")
+        total, size, current = 0, 0, None
+        for task in task_ids:
+            if task is not None and not isinstance(task, str):
+                raise ValueError("Task identifiers must be strings or None")
+            if task is not None and current is not None and task != current:
+                total += (size + accumulation - 1) // accumulation
+                size = 0
+            if task is not None:
+                current = task
+            size += 1
+        return total + (size + accumulation - 1) // accumulation
     return (batches + accumulation - 1) // accumulation
 
 
@@ -234,6 +252,15 @@ class TrainingConfig:
     # numerically different rollout engine (TRL's vLLM importance-sampling
     # correction). Falls back to ``"recompute"`` when rollouts carry none.
     old_logprobs_source: str = "recompute"
+    # Compatibility paths change the estimator and must be requested explicitly.
+    allow_sequence_fallback: bool = False
+    allow_missing_sampler_logprobs: bool = False
+    # Optional measured provider rate. Runtime metrics cover rollout + update
+    # time only; provisioning/storage charges remain in the provider ledger.
+    compute_cost_per_hour: float | None = None
+    # Keyword-only so existing positional calls to derived configs also retain
+    # their field order. Zero disables the consecutive-zero-advantage guard.
+    zero_signal_patience: int = field(default=5, kw_only=True)
     # Zero every dropout module (including LoRA dropout) in the policy before
     # RL training, so separately scored old/reference log-probs and the
     # learner's forward pass agree (TRL's ``disable_dropout``). Keyword-only
@@ -458,6 +485,94 @@ class TrainingConfig:
                 warnings.append("resume_from_checkpoint path could not be validated")
 
         return warnings
+
+    def validate_for_training(self) -> None:
+        """Reject invalid run semantics before allocating a model or optimizer."""
+        if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
+            raise ValueError("zero_signal_patience must be a nonnegative integer")
+        for name in (
+            "num_episodes",
+            "num_epochs",
+            "per_device_train_batch_size",
+            "gradient_accumulation_steps",
+            "num_generations",
+            "generation_batch_size",
+            "rollout_concurrency",
+            "eval_num_generations",
+            "max_prompt_length",
+            "max_completion_length",
+            "num_gradient_updates",
+            "save_total_limit",
+        ):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        for name in ("learning_rate", "temperature", "max_grad_norm"):
+            value = getattr(self, name)
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or value <= 0
+            ):
+                raise ValueError(f"{name} must be finite and positive")
+        for name in ("warmup_ratio", "eval_split_size", "top_p", "lora_dropout"):
+            value = getattr(self, name)
+            if (
+                type(value) not in (int, float)
+                or not math.isfinite(value)
+                or not 0 <= value <= 1
+            ):
+                raise ValueError(f"{name} must be between zero and one")
+        if self.top_p == 0:
+            raise ValueError("top_p must be positive")
+        if self.bf16 and self.fp16:
+            raise ValueError("bf16 and fp16 are mutually exclusive")
+        if getattr(self, "use_4bit", False) and getattr(self, "use_8bit", False):
+            raise ValueError("use_4bit and use_8bit are mutually exclusive")
+        if type(self.seed) is not int or self.seed < 0:
+            raise ValueError("seed must be a nonnegative integer")
+        if self.compute_cost_per_hour is not None and (
+            type(self.compute_cost_per_hour) not in (int, float)
+            or not math.isfinite(self.compute_cost_per_hour)
+            or self.compute_cost_per_hour < 0
+        ):
+            raise ValueError("compute_cost_per_hour must be finite and nonnegative")
+        for name in (
+            "beta",
+            "entropy_coef",
+            "weight_decay",
+            "clip_ratio",
+            "seq_clip_ratio",
+        ):
+            value = getattr(self, name)
+            if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
+                raise ValueError(f"{name} must be finite and nonnegative")
+        if self.old_logprobs_source not in {"recompute", "sampler"}:
+            raise ValueError("old_logprobs_source must be 'recompute' or 'sampler'")
+        if not self.rollout_sync and self.old_logprobs_source != "sampler":
+            raise ValueError(
+                "Asynchronous rollouts require old_logprobs_source='sampler'"
+            )
+        if self.objective is not None:
+            from .objectives import OBJECTIVES
+
+            if self.objective not in OBJECTIVES:
+                raise ValueError(f"Unknown objective: {self.objective!r}")
+        if self.objective_overrides:
+            from .objectives import OBJECTIVES
+
+            OBJECTIVES[self.objective or "grpo"].with_(**self.objective_overrides)
+        if not isinstance(self.model_name, str) or not self.model_name.strip():
+            raise ValueError("model_name must be nonempty")
+        if self.model_revision is not None and (
+            not isinstance(self.model_revision, str) or not self.model_revision.strip()
+        ):
+            raise ValueError("model_revision must be a nonempty string or None")
+        if (
+            self.resume_from_checkpoint
+            and not Path(self.resume_from_checkpoint).is_dir()
+        ):
+            raise ValueError("resume_from_checkpoint must be an existing directory")
 
     def get_effective_batch_size(self) -> int:
         """Get effective batch size"""

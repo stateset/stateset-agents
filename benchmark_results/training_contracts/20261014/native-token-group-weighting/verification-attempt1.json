@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "job_id": "59d40c9531f8",
+  "exit_code": 1,
+  "failure": "Ruff C408 in new test fixture; corrected before retry",
+  "stages": [
+    {
+      "name": "offline-policy-and-promotion",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "-m",
+        "pytest",
+        "-q",
+        "-n0",
+        "-o",
+        "addopts=",
+        "--timeout=90",
+        "tests/unit/test_token_group_aggregation.py",
+        "tests/unit/test_grpo_token_path.py",
+        "tests/unit/test_token_path_baselines.py",
+        "tests/unit/test_loss_computation_behavioral.py",
+        "tests/unit/test_objective_selection.py",
+        "tests/unit/test_runtime_state.py",
+        "tests/unit/test_offline_policy_training.py",
+        "tests/unit/test_policy_promotion.py",
+        "--disable-warnings",
+        "--tb=short"
+      ],
+      "exit_code": 0,
+      "seconds": 14.450995535997208
+    },
+    {
+      "name": "types",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "scripts/check_types.py",
+        "--all"
+      ],
+      "exit_code": 0,
+      "seconds": 15.402142762999574
+    },
+    {
+      "name": "repository-gates",
+      "argv": [
+        "/home/dom/stateset-agents/.venv/bin/python",
+        "/tmp/stateset-platform-gates.py"
+      ],
+      "exit_code": 1,
+      "seconds": 15.575442452995048
+    }
+  ],
+  "output_sha256": "1c7895cbe1d3a0103e4255101732b4521ab1f845f191f2ebb7c96b2dab0732c0",
+  "output": "queued 59d40c9531f8 (local, 3 CPU slots, 6 GiB reserved)\nwaiting 59d40c9531f8 (0.0s): aged job waiting for capacity [56bbf261aaaa] | blocker: cargo test --locked --lib --features server,swagger-ui,postgres decisions_computed | disk 16.5/11.1 GiB (free/required)\nwaiting 59d40c9531f8 (21.9s): CPU slot budget | disk 16.5/11.0 GiB (free/required)\nwaiting 59d40c9531f8 (60.3s): machine concurrency budget | disk 16.0/11.1 GiB (free/required)\nwaiting 59d40c9531f8 (63.9s): higher priority queued job [cfba51f747b6] | blocker: bash -c 'export PATH=/home/dom/.nvm/versions/node/v20.20.0/bin:$PATH; npm run typecheck && npm test -- --runInBand src/__tests__/hooks/useChat src/__tests__/hooks/chatResponseEffects.test.ts src/__tests__/ChatWidget.offline.test.tsx src/__tests__/components/MessageBubble.test.tsx src/__tests__/utils/messageStorage.test.ts' | disk 15.9/11.0 GiB (free/required)\nwaiting 59d40c9531f8 (64.2s): machine concurrency budget | disk 15.9/11.1 GiB (free/required)\nwaiting 59d40c9531f8 (96.3s): CPU slot budget | disk 15.7/11.0 GiB (free/required)\nrunning 59d40c9531f8 after 137.4s waiting | log /home/dom/.local/state/agent-builds/logs/59d40c9531f8.log\n\nSTAGE offline-policy-and-promotion: [\"/home/dom/stateset-agents/.venv/bin/python\", \"-m\", \"pytest\", \"-q\", \"-n0\", \"-o\", \"addopts=\", \"--timeout=90\", \"tests/unit/test_token_group_aggregation.py\", \"tests/unit/test_grpo_token_path.py\", \"tests/unit/test_token_path_baselines.py\", \"tests/unit/test_loss_computation_behavioral.py\", \"tests/unit/test_objective_selection.py\", \"tests/unit/test_runtime_state.py\", \"tests/unit/test_offline_policy_training.py\", \"tests/unit/test_policy_promotion.py\", \"--disable-warnings\", \"--tb=short\"]\n........................................................................ [ 52%]\n.................................................................        [100%]\n137 passed, 2 warnings in 10.45s\n\nSTAGE types: [\"/home/dom/stateset-agents/.venv/bin/python\", \"scripts/check_types.py\", \"--all\"]\nstateset_agents/config/validation.py:121: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/config/validation.py:122: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:40: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:41: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/cache.py:42: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/type_system.py:485: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/type_system.py:486: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/performance_optimizer.py:426: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/versioning.py:508: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/performance_monitor.py:65: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/performance_monitor.py:66: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:507: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:508: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:509: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/monitoring.py:620: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:438: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:439: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:440: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:441: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/utils/alerts.py:442: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/resilience.py:517: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/api/resilience.py:518: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/neural_architecture_search.py:320: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/adaptive_learning_controller.py:357: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/adaptive_learning_controller.py:358: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/multi_agent_coordination.py:129: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/multi_agent_coordination.py:130: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/experimental/multi_agent_coordination.py:131: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/training/advanced_training_orchestrator.py:1022: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nstateset_agents/core/enhanced/advanced_rl_algorithms.py:671: note: By default the bodies of untyped functions are not checked, consider using --check-untyped-defs  [annotation-unchecked]\nSuccess: no issues found in 383 source files\n\nSTAGE repository-gates: [\"/home/dom/stateset-agents/.venv/bin/python\", \"/tmp/stateset-platform-gates.py\"]\nChecking: /home/dom/stateset-agents/.venv/bin/python -m ruff check .\nC408 Unnecessary `dict()` call (rewrite as a literal)\n  --> tests/unit/test_token_group_aggregation.py:65:14\n   |\n64 |   def _config(name=\"grpo\", **overrides):\n65 |       values = dict(\n   |  ______________^\n66 | |         objective=name,\n67 | |         objective_overrides=None,\n68 | |         max_completion_length=8,\n69 | |         generation_batch_size=3,\n70 | |         entropy_coef=0.0,\n71 | |         reward_clip=None,\n72 | |         clip_ratio=0.2,\n73 | |         advantage_normalization=True,\n74 | |         baseline_type=\"group_mean\",\n75 | |     )\n   | |_____^\n76 |       values.update(overrides)\n77 |       return SimpleNamespace(**values)\n   |\nhelp: Rewrite as a literal\n\nFound 1 error.\nNo fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).\nChecking: /home/dom/stateset-agents/.venv/bin/python scripts/check_repo_hygiene.py\nRepo hygiene check passed.\nChecking: /home/dom/stateset-agents/.venv/bin/python scripts/check_release_governance.py\nRelease governance check passed.\nChecking: /home/dom/stateset-agents/.venv/bin/python scripts/check_api_compatibility.py\nStable v1 API compatibility check passed.\nfinished 59d40c9531f8: failed (exit 1)\n"
+}
