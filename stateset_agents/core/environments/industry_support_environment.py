@@ -20,11 +20,19 @@ from stateset_agents.core.environments.industry_admin_policies import (
     admin_case,
     admin_resolution,
 )
+from stateset_agents.core.environments.industry_operations_policies import (
+    OPERATIONS_FAMILIES,
+    OPERATIONS_FIELDS,
+    OPERATIONS_POLICIES,
+    operations_case,
+    operations_resolution,
+)
 from stateset_agents.core.environments.json_action import parse_json_action
 from stateset_agents.core.trajectory import ConversationTurn
 
 POLICIES = {
     **ADMIN_POLICIES,
+    **OPERATIONS_POLICIES,
     "logistics": (
         "Apply these rules in order. If verified is false, resolve request_verification. "
         "If status is lost, resolve escalate_lost. If cancel_requested, resolve "
@@ -81,6 +89,7 @@ POLICIES = {
 }
 FAMILIES = {
     **ADMIN_FAMILIES,
+    **OPERATIONS_FAMILIES,
     "logistics": (
         "missing_verification",
         "processing",
@@ -137,6 +146,7 @@ FAMILIES = {
 # teacher labels and family annotations never become tool results.
 _EXTRA_FIELDS = {
     **ADMIN_FIELDS,
+    **OPERATIONS_FIELDS,
     "travel": (
         (
             "disruption",
@@ -175,6 +185,8 @@ _EXTRA_FIELDS = {
 
 
 def _additional_resolution(domain: str, row: dict[str, Any]) -> str:
+    if domain in OPERATIONS_POLICIES:
+        return operations_resolution(domain, row)
     if domain in ADMIN_POLICIES:
         return admin_resolution(domain, row)
     if domain == "travel":
@@ -227,6 +239,8 @@ def _additional_resolution(domain: str, row: dict[str, Any]) -> str:
 def _additional_case(
     domain: str, family: str, variant: int, rng: random.Random
 ) -> dict[str, Any]:
+    if domain in OPERATIONS_POLICIES:
+        return operations_case(domain, family, variant, rng)
     if domain in ADMIN_POLICIES:
         return admin_case(domain, family, variant, rng)
     if domain == "travel":

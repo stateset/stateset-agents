@@ -43,6 +43,24 @@ class IndustryRecipe:
 
 _RECIPES = (
     IndustryRecipe(
+        "manufacturing",
+        "Manufacturing operations",
+        ("work-order status", "production-change intake", "material exceptions"),
+        "get_work_order",
+        "work order",
+        "Route safety and quality holds to qualified staff; never bypass a hold or invent production.",
+        ("verified work-order facts", "authorized changes", "correct hold escalation"),
+    ),
+    IndustryRecipe(
+        "insurance",
+        "Insurance administration",
+        ("claim intake", "policy service", "document collection"),
+        "get_claim_case",
+        "claim case",
+        "Route coverage and claim decisions to an authorized specialist; intake does not imply approval or payment.",
+        ("verified case facts", "consented intake", "no invented coverage or payout"),
+    ),
+    IndustryRecipe(
         "logistics",
         "Logistics and fulfillment",
         ("shipment tracking", "address changes", "delivery exceptions"),

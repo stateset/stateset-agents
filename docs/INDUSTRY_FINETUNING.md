@@ -16,10 +16,12 @@ criteria. They are not pretrained industry agents or evidence of business outcom
 | `telecommunications` | Troubleshooting, billing, plan support |
 | `technology` | Product onboarding, technical support, account assistance |
 | `public-sector` | Service navigation, application assistance, case status |
+| `manufacturing` | Work-order status, change intake, material exceptions |
+| `insurance` | Claim intake, policy service, document collection |
 
 ## Generate industry policy datasets
 
-Create all nine corpora locally, with no model downloads or provider calls:
+Create all twelve corpora locally, with no model downloads or provider calls:
 
 ```bash
 stateset-agents industry generate all --output outputs/industry-datasets --seed 42
@@ -33,6 +35,9 @@ stateset-agents industry train outputs/industry-datasets/telecommunications --dr
 stateset-agents industry train outputs/industry-datasets/media --dry-run
 stateset-agents industry train outputs/industry-datasets/healthcare --dry-run
 stateset-agents industry train outputs/industry-datasets/public-sector --dry-run
+stateset-agents industry train outputs/industry-datasets/manufacturing --dry-run
+stateset-agents industry train outputs/industry-datasets/financial-services --dry-run
+stateset-agents industry train outputs/industry-datasets/insurance --dry-run
 ```
 
 Each industry gets **512 training, 64 validation, and 128 reserved test
@@ -57,11 +62,14 @@ stateset-agents industry generate travel --output outputs/travel-dataset --seed 
 | `media` | Subscriber verification, incidents and outages, cancellation without quote requirements, authorized plan changes, access and billing routing | `media` |
 | `healthcare` | Appointment administration: authorization, consent, available slots, booking, rescheduling, cancellation and staff routing | `healthcare` |
 | `public-sector` | Fictional application support: authorization, document completeness, consent, submission, appointments and case status | `public-sector` |
+| `manufacturing` | Work-order verification, safety and quality holds, authorized changes, planner routing after production starts, material shortages and status | `manufacturing` |
+| `financial-services` | Support verification, fraud and specialist routing, authorization, documents, consent, dispute and onboarding intake, case status | `financial-services` |
+| `insurance` | Case verification, reviewer and coverage-specialist routing, authorized claim intake, documents, consent, policy-team routing and status | `insurance` |
 
 These are **fictional policy simulations**, clearly marked `synthetic: true` and
 `not_independently_reviewed`. Messages teach a fact lookup, a policy-grounded JSON
 resolution, and explicit finish. Ecommerce reuses the refund sandbox; the other
-eight domains use `IndustrySupportEnvironment`. Unverified support lookups reveal
+eleven domains use `IndustrySupportEnvironment`. Unverified support lookups reveal
 only the record ID and verification flag. Customer-note overrides do not change
 the policy, and invalid actions cannot be repaired into a successful episode.
 No real refunds, shipments, account settings or credentials are changed.
@@ -73,6 +81,11 @@ records, diagnosis, triage, treatment recommendations, or clinical decisions.
 Public-sector cases simulate paperwork and case navigation; submission never
 implies approval, eligibility, or an actual agency action. Media terms and prices
 are fictional. These simulations do not implement real organizational policies.
+Manufacturing examples route holds to staff and never release them or teach
+machine operation. Financial-services examples collect support requests without
+moving money, opening accounts, making recommendations, or deciding disputes.
+Insurance examples teach claim intake and policy-service routing without deciding
+coverage, approving claims, promising payouts, or changing real policies.
 
 Each directory contains `train.jsonl`, `validation.jsonl`, `test.jsonl`, the private
 synthetic cases in `cases/`, and a training-compatible `manifest.json`. The root
@@ -121,7 +134,8 @@ assert result["success"]
 ```
 
 The helper supports logistics, SaaS, travel, services, telecommunications, media,
-healthcare administration, and public-sector application support.
+healthcare administration, public-sector application support, manufacturing,
+financial-services support intake, and insurance administration.
 For ecommerce, use `replay_refund_trace` from
 `stateset_agents.evaluation.refund_trace`. Replay verifies case identity, initial
 messages, every action and observation, rewards, metrics, and the terminal
@@ -130,7 +144,7 @@ failure reward (default `-1`); replay verifies the declared outcome but cannot
 establish what triggered that stop. `tool_calls` counts attempted action turns,
 including rejected actions, rather than successful business changes.
 
-The native River SDK integration checks cover all eight support domains and
+The native River SDK integration checks iterate over the supported domains and
 eight scenario families, including mixed successful/failed groups and truncated
 rollouts. They verify generated token spans and signed advantages using scripted
 sampling with the real SDK trajectory and batch builders. These checks make no
