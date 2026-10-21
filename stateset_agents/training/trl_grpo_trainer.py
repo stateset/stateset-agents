@@ -78,11 +78,15 @@ except ImportError:  # pragma: no cover - optional dependency
 
 try:
     from trl import GRPOConfig as _GRPOConfig
-    from trl import GRPOTrainer as _TRLGRPOTrainer
 
     GRPOConfig = _GRPOConfig
+except IMPORT_EXCEPTIONS:
+    pass  # pragma: no cover - optional dependency
+
+try:
+    from trl import GRPOTrainer as _TRLGRPOTrainer
+
     TRLGRPOTrainer = _TRLGRPOTrainer
-    TRL_GRPO_AVAILABLE = True
 except IMPORT_EXCEPTIONS:
     # trl's own lazy-module loader (trl._lazy_module) wraps *any* failure
     # while importing a submodule -- including transitively optional,
@@ -98,6 +102,10 @@ except IMPORT_EXCEPTIONS:
     # TRL_GRPO_AVAILABLE = False as intended. IMPORT_EXCEPTIONS covers
     # both.
     pass  # pragma: no cover - optional dependency
+
+# Configuration previews remain available when an optional trainer backend
+# cannot import. Actual training still requires both exports.
+TRL_GRPO_AVAILABLE = GRPOConfig is not None and TRLGRPOTrainer is not None
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_loaded = False
