@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
+from pathlib import Path
 
 import pytest
 import requests
@@ -28,12 +31,34 @@ class LeaseApi:
             raise self.failures[pod_id]
 
 
-def _leased(tmp_path, *pod_ids):
+def dead_owner():
+    """The PID and start token of a process that has since exited."""
+    from stateset_agents.utils.process_probe import process_start_token
+
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+    token = process_start_token(child.pid)
+    child.kill()
+    child.wait()
+    return child.pid, token
+
+
+def _leased(tmp_path, *pod_ids, owner=None):
+    import socket
+
+    pid, token = owner or dead_owner()
     lease_dir = tmp_path / "leases"
     lease_dir.mkdir()
     for pod_id in pod_ids:
         (lease_dir / f"{pod_id}.json").write_text(
-            json.dumps({"provider": "runpod", "pod_id": pod_id})
+            json.dumps(
+                {
+                    "provider": "runpod",
+                    "pod_id": pod_id,
+                    "owner_pid": pid,
+                    "owner_token": token,
+                    "owner_host": socket.gethostname(),
+                }
+            )
         )
     return lease_dir
 
@@ -46,7 +71,7 @@ def test_cleanup_attempts_every_lease_and_treats_404_as_already_gone(tmp_path):
     )
     assert executor.cleanup_orphans() == ["aaa-gone", "bbb-billing", "ccc-billing"]
     assert api.calls == ["aaa-gone", "bbb-billing", "ccc-billing"]
-    assert executor.orphaned_leases() == []
+    assert executor.leases() == []
 
 
 def test_failures_are_reported_together_and_keep_only_their_leases(tmp_path):
@@ -137,4 +162,165 @@ def test_submission_cleanup_counts_an_already_deleted_pod_as_acknowledged(tmp_pa
         )
     )
     assert executor.status(handle).value == "succeeded"
-    assert executor.orphaned_leases() == []
+    assert executor.leases() == []
+
+
+def test_cleanup_never_reclaims_a_live_jobs_pod(tmp_path):
+    """Reclaiming every lease used to end a running job's pod (double billing)."""
+    import threading
+
+    from stateset_agents.remote.job import RemoteJobSpec
+
+    training, release = threading.Event(), threading.Event()
+
+    class Api:
+        def __init__(self):
+            self.created, self.terminated = 0, []
+
+        def create_pod(self, **kwargs):
+            self.created += 1
+            return {"id": f"livepod{self.created}", "costPerHr": 0.5}
+
+        def get_pod(self, pod_id):
+            return {
+                "desiredStatus": "RUNNING",
+                "publicIp": "1.2.3.4",
+                "portMappings": {"22": 22},
+            }
+
+        def terminate_pod(self, pod_id):
+            self.terminated.append(pod_id)
+
+    class Ssh:
+        def wait_until_reachable(self, *args):
+            pass
+
+        def upload(self, *args):
+            pass
+
+        def run(self, command, timeout_s=None):
+            if "training.sft" in command:
+                training.set()
+                assert release.wait(10)
+                return (255, "") if api.terminated else (0, "")
+            return 0, ""
+
+        def download_dir(self, remote, local):
+            Path(local).mkdir(parents=True, exist_ok=True)
+            (Path(local) / "adapter_model.safetensors").write_bytes(b"x")
+            return [Path(local) / "adapter_model.safetensors"]
+
+    api, leases = Api(), tmp_path / "leases"
+    data = tmp_path / "d.jsonl"
+    data.write_text('{"messages": []}\n')
+    live = RunPodExecutor(
+        api=api,
+        ssh=Ssh(),
+        public_key="ssh-ed25519 AAAA",
+        lease_dir=leases,
+        ledger_path=tmp_path / "ledger.jsonl",
+        allow_environment_wheel=False,
+    )
+    handles = []
+    job = threading.Thread(
+        target=lambda: handles.append(
+            live.submit(
+                RemoteJobSpec(
+                    dataset=data,
+                    base_model="example/model",
+                    output_dir=tmp_path / "out",
+                    timeout_s=600,
+                )
+            )
+        )
+    )
+    job.start()
+    try:
+        assert training.wait(10)
+        other = RunPodExecutor(api=api, lease_dir=leases, allow_environment_wheel=False)
+        assert [lease["owner_state"] for lease in other.leases()] == ["alive"]
+        assert other.orphaned_leases() == [] and other.cleanup_orphans() == []
+    finally:
+        release.set()
+        job.join(10)
+    assert api.created == 1 and api.terminated == ["livepod1"]
+    assert live.status(handles[0]).value == "succeeded"
+
+
+def test_only_provably_dead_owners_are_reclaimed_without_force(tmp_path):
+    import os
+
+    from stateset_agents.utils.process_probe import process_start_token
+
+    lease_dir = _leased(tmp_path, "dead-1")
+    (tmp_path / "live").mkdir()
+    alive = _leased(
+        tmp_path / "live",
+        "live-1",
+        owner=(os.getpid(), process_start_token(os.getpid())),
+    )
+    for path in alive.glob("*.json"):
+        path.rename(lease_dir / path.name)
+    (lease_dir / "legacy-1.json").write_text(
+        json.dumps({"provider": "runpod", "pod_id": "legacy-1"})
+    )
+    api = LeaseApi({})
+    executor = RunPodExecutor(
+        api=api, lease_dir=lease_dir, allow_environment_wheel=False
+    )
+    states = {lease["pod_id"]: lease["owner_state"] for lease in executor.leases()}
+    assert states == {"dead-1": "gone", "live-1": "alive", "legacy-1": "unknown"}
+    assert sorted(lease["pod_id"] for lease in executor.orphaned_leases()) == [
+        "dead-1",
+        "legacy-1",
+    ]
+    assert executor.cleanup_orphans() == ["dead-1"]
+    assert sorted(executor.cleanup_orphans(force=True)) == ["legacy-1", "live-1"]
+    assert api.calls == ["dead-1", "legacy-1", "live-1"]
+
+
+def test_orphans_command_keeps_live_pods_unless_forced(tmp_path, monkeypatch):
+    import os
+
+    import stateset_agents.cli_remote as cli_remote
+    from stateset_agents.cli_remote import app
+    from stateset_agents.utils.process_probe import process_start_token
+
+    lease_dir = _leased(
+        tmp_path, "live-1", owner=(os.getpid(), process_start_token(os.getpid()))
+    )
+    api = LeaseApi({})
+    executor = RunPodExecutor(
+        api=api, lease_dir=lease_dir, allow_environment_wheel=False
+    )
+    monkeypatch.setattr(cli_remote, "get_executor", lambda provider: executor)
+    result = CliRunner().invoke(app, ["runpod-orphans", "--terminate"])
+    assert result.exit_code == 0 and api.calls == []
+    assert "submitting process still running" in result.output
+    assert "use --force" in result.output
+    result = CliRunner().invoke(app, ["runpod-orphans", "--terminate", "--force"])
+    assert result.exit_code == 0 and api.calls == ["live-1"]
+
+
+def test_leases_record_their_owner_process(tmp_path):
+    import os
+    import socket
+
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+
+    executor = RunPodExecutor(
+        api=FakePodApi(), ssh=FakeSsh(), public_key="ssh-rsa T", lease_dir=tmp_path
+    )
+    (tmp_path / "d.jsonl").write_text('{"messages": []}\n')
+    executor._write_lease(
+        "pod-1",
+        "job-1",
+        RemoteJobSpec(
+            dataset=tmp_path / "d.jsonl", base_model="m", output_dir=tmp_path
+        ),
+        1.0,
+    )
+    lease = json.loads((tmp_path / "pod-1.json").read_text())
+    assert lease["owner_pid"] == os.getpid()
+    assert lease["owner_host"] == socket.gethostname()

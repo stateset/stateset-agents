@@ -31,6 +31,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -58,6 +59,7 @@ from stateset_agents.remote.ledger import (
     estimate_cost_usd,
     record_entry,
 )
+from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
 
@@ -162,6 +164,33 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     if package_version:
         return f"stateset-agents[training]=={package_version}"
     return "stateset-agents[training]"
+
+
+def lease_owner_state(lease: dict[str, Any]) -> str:
+    """Whether a lease's submitting process is ``alive``, ``gone`` or ``unknown``.
+
+    ``gone`` needs proof: the PID no longer exists, or it now belongs to a
+    different process (start-time token mismatch). Anything uncertain is
+    ``unknown`` so that automatic cleanup never ends a live job's pod.
+    """
+    pid, token = lease.get("owner_pid"), lease.get("owner_token")
+    if (
+        type(pid) is not int
+        or pid < 1
+        or lease.get("owner_host") != socket.gethostname()
+    ):
+        return "unknown"
+    current = process_start_token(pid)
+    if isinstance(token, str) and current is not None:
+        return "alive" if current == token else "gone"
+    try:
+        probe_process(pid)
+    except ProcessLookupError:
+        return "gone"
+    except (OSError, ValueError, OverflowError):
+        return "unknown"
+    # The PID answers, but without a comparable token its identity is unproven.
+    return "alive" if token is None and current is None else "unknown"
 
 
 def _pod_already_gone(exc: BaseException) -> bool:
@@ -1024,6 +1053,7 @@ class RunPodExecutor(RemoteExecutor):
         """Record a billing pod so a later process can clean up after a crash."""
         target = self._lease_path(pod_id)
         temporary = target.with_suffix(".tmp")
+        owner = os.getpid()
         payload = {
             "provider": self.name,
             "pod_id": pod_id,
@@ -1033,6 +1063,11 @@ class RunPodExecutor(RemoteExecutor):
             "gpu": spec.gpu or self.DEFAULT_GPU,
             "gpu_count": spec.gpu_count,
             "output_dir": str(spec.output_dir),
+            # Who holds this pod: cleanup tools reclaim only pods whose
+            # submitting process is provably gone, never a live job's pod.
+            "owner_pid": owner,
+            "owner_token": process_start_token(owner),
+            "owner_host": socket.gethostname(),
         }
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1049,8 +1084,14 @@ class RunPodExecutor(RemoteExecutor):
                 pod_id=pod_id,
             ) from exc
 
-    def orphaned_leases(self) -> list[dict[str, Any]]:
-        """Return pods whose process-local cleanup did not clear its lease."""
+    def leases(self) -> list[dict[str, Any]]:
+        """Every local cleanup lease, each with its submitting process's state.
+
+        ``owner_state`` is ``"alive"`` while the submitting process runs,
+        ``"gone"`` once it has provably exited (or its PID was reused), and
+        ``"unknown"`` for leases without an owner record, from another host,
+        or whose owner cannot be inspected.
+        """
         if not self.lease_dir.exists():
             return []
         leases: list[dict[str, Any]] = []
@@ -1060,8 +1101,15 @@ class RunPodExecutor(RemoteExecutor):
             except (OSError, json.JSONDecodeError):
                 continue
             if isinstance(row, dict) and row.get("provider") == self.name:
-                leases.append(row)
+                leases.append({**row, "owner_state": lease_owner_state(row)})
         return leases
+
+    def orphaned_leases(self) -> list[dict[str, Any]]:
+        """Leases whose submitting process is not known to be running.
+
+        A live job's lease is excluded: its process still owns the cleanup.
+        """
+        return [lease for lease in self.leases() if lease["owner_state"] != "alive"]
 
     def reclaim_pods(self, pod_ids: Iterable[str]) -> tuple[list[str], dict[str, str]]:
         """Terminate each pod independently, clearing a lease only once it is gone.
@@ -1107,14 +1155,18 @@ class RunPodExecutor(RemoteExecutor):
             if pod.get("name") in wanted and isinstance(pod.get("id"), str)
         ]
 
-    def cleanup_orphans(self) -> list[str]:
-        """Terminate every locally leased pod, clearing only confirmed leases.
+    def cleanup_orphans(self, *, force: bool = False) -> list[str]:
+        """Terminate leased pods whose submitting process is provably gone.
 
-        Every lease is attempted; failures are reported together afterwards
-        and their leases kept for a later retry.
+        A live job's pod, or one whose owner cannot be established, is kept
+        unless ``force`` (terminating a live job's pod makes it rent another).
+        Every selected lease is attempted; failures are reported together
+        afterwards and their leases kept for a later retry.
         """
         reclaimed, failed = self.reclaim_pods(
-            str(lease.get("pod_id", "")) for lease in self.orphaned_leases()
+            str(lease.get("pod_id", ""))
+            for lease in self.leases()
+            if force or lease["owner_state"] == "gone"
         )
         if failed:
             raise RemoteExecutionError(

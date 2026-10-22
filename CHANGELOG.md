@@ -365,6 +365,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   compare process creation-time tokens, as Linux does with `/proc` start
   ticks, so a reused PID no longer keeps a dead supervisor or worker looking
   alive. Records written without a token keep presence-only checks.
+- `stateset-agents runpod-orphans --terminate` no longer terminates the pods
+  of jobs that are still running (which made them rent a replacement and
+  doubled billing). Cleanup leases now record the submitting process (PID,
+  start-time token, host); `--terminate` ends only pods whose process has
+  provably exited, the listing shows each owner's state, and `--force`
+  reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
+  live owners and `cleanup_orphans()` gains `force=`.
 
 ### Security
 

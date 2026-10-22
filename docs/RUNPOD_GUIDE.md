@@ -114,8 +114,10 @@ failure and terminate any orphan. (`serve-remote` separately arms an in-pod
 watchdog.)
 
 Training now writes a local cleanup lease immediately after each pod is
-created. After a caller crash, inspect those leases without touching remote
-state, then explicitly terminate them:
+created, recording the submitting process. After a caller crash, inspect those
+leases without touching remote state, then explicitly terminate the pods whose
+process has exited (pods of jobs that are still running are kept; add
+`--force` only when you are sure no job needs them):
 
 ```bash
 stateset-agents runpod-orphans
