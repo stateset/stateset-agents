@@ -204,6 +204,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review and saving a stop request now run in the background (single-flight,
   with progress shown in the status line). Exiting the studio waits for an
   authorized launch or stop submission to finish.
+- `stateset-agents remote runpod-orphans --terminate` (and
+  `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
+  at the first failure. A pod that is already gone (HTTP 404) counts as
+  cleaned up, pod deletion retries 429/5xx with backoff, and failures are
+  reported together at the end with their leases kept; the command exits 1
+  if any pod could not be confirmed terminated.
 
 ### Security
 

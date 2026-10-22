@@ -37,7 +37,7 @@ import tempfile
 import time
 import uuid
 import weakref
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -115,6 +115,12 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     if package_version:
         return f"stateset-agents[training]=={package_version}"
     return "stateset-agents[training]"
+
+
+def _pod_already_gone(exc: BaseException) -> bool:
+    """A termination refused with 404: the pod no longer exists, so nothing bills."""
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) == 404
 
 
 class RunPodApi:
@@ -376,12 +382,14 @@ class RunPodApi:
         return dict(response.json())
 
     def terminate_pod(self, pod_id: str) -> None:
+        """Delete a pod; DELETE is idempotent, so 429/5xx are retried with backoff."""
         import requests
 
-        response = requests.delete(
-            f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+        self._send(
+            lambda: requests.delete(
+                f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+            )
         )
-        response.raise_for_status()
 
 
 class _SshTimeout(RemoteExecutionError):
@@ -890,7 +898,12 @@ class RunPodExecutor(RemoteExecutor):
         """Retain cleanup evidence without masking an existing primary failure."""
         primary_error = sys.exc_info()[1]
         try:
-            api.terminate_pod(pod_id)
+            try:
+                api.terminate_pod(pod_id)
+            except Exception as exc:
+                if not _pod_already_gone(exc):
+                    raise
+                logs.append(f"pod {pod_id} was already gone when cleanup ran")
         except Exception as exc:
             logs.append(
                 f"could not confirm termination of pod {pod_id}: {exc}; "
@@ -964,18 +977,59 @@ class RunPodExecutor(RemoteExecutor):
                 leases.append(row)
         return leases
 
-    def cleanup_orphans(self) -> list[str]:
-        """Terminate every locally leased pod, clearing only confirmed leases."""
+    def reclaim_pods(self, pod_ids: Iterable[str]) -> tuple[list[str], dict[str, str]]:
+        """Terminate each pod independently, clearing a lease only once it is gone.
+
+        A 404 means the pod no longer exists and counts as reclaimed; the API
+        call itself retries 429/5xx. One failure never stops the others.
+        Returns the reclaimed pod ids and a credential-free reason per failure.
+        """
         api = self._require_api()
-        terminated: list[str] = []
-        for lease in self.orphaned_leases():
-            pod_id = str(lease.get("pod_id", "")).strip()
+        reclaimed: list[str] = []
+        failed: dict[str, str] = {}
+        for pod_id in dict.fromkeys(str(value).strip() for value in pod_ids):
             if not pod_id:
                 continue
-            api.terminate_pod(pod_id)
-            self._lease_path(pod_id).unlink(missing_ok=True)
-            terminated.append(pod_id)
-        return terminated
+            try:
+                api.terminate_pod(pod_id)
+            except Exception as exc:
+                if not _pod_already_gone(exc):
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    failed[pod_id] = type(exc).__name__ + (
+                        f" (HTTP {status})" if status is not None else ""
+                    )
+                    continue
+            reclaimed.append(pod_id)
+            try:
+                self._lease_path(pod_id).unlink(missing_ok=True)
+            except OSError:
+                failed[pod_id] = (
+                    "terminated, but its cleanup lease could not be removed"
+                )
+        return reclaimed, failed
+
+    def cleanup_orphans(self) -> list[str]:
+        """Terminate every locally leased pod, clearing only confirmed leases.
+
+        Every lease is attempted; failures are reported together afterwards
+        and their leases kept for a later retry.
+        """
+        reclaimed, failed = self.reclaim_pods(
+            str(lease.get("pod_id", "")) for lease in self.orphaned_leases()
+        )
+        if failed:
+            raise RemoteExecutionError(
+                f"could not confirm termination of {len(failed)} leased pod(s): "
+                + "; ".join(f"{pod}: {reason}" for pod, reason in failed.items())
+                + (f" (terminated {', '.join(reclaimed)})" if reclaimed else "")
+                + "; their leases were kept, so retry or inspect the provider console",
+                provider=self.name,
+                reclaimed=reclaimed,
+                failed=sorted(failed),
+            )
+        return reclaimed
 
     # -- lazily resolved collaborators ------------------------------------
 
