@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+from collections.abc import Collection
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -32,9 +33,41 @@ from stateset_agents.finetune_workspace import (
 )
 
 
-def _state(path: Path, **changes: Any) -> bool:
-    """Merge progress; a recorded outcome never moves to a different status."""
-    return transition_state(path, **changes)
+def _result_committed(path: Path) -> bool:
+    """The executor's result receipt still binds this exact evaluation plan."""
+    try:
+        receipt = read_json(path / "result.json", max_bytes=4 * 1024 * 1024)
+        return receipt.get("evaluation_plan_sha256") == content_hash(
+            read_json(path / "plan.json")
+        )
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+
+
+def _state(
+    path: Path, *, allowed_from: Collection[str] | None = None, **changes: Any
+) -> bool:
+    """Merge progress; a recorded outcome never moves to a different status.
+
+    A success whose ``result.json`` still binds the reviewed plan is final,
+    exactly like a committed fine-tuning success.
+    """
+    return transition_state(
+        path,
+        allowed_from=allowed_from,
+        success_is_final=_result_committed,
+        **changes,
+    )
+
+
+def _record_failure(path: Path, status: str, **fields: Any) -> None:
+    """Record a failure, or keep a committed success and note what came after."""
+    if _state(path, status=status, **fields):
+        return
+    teardown: dict[str, Any] = {"teardown_error": fields.get("error_type", status)}
+    if "exit_code" in fields:
+        teardown["teardown_exit_code"] = fields["exit_code"]
+    _state(path, allowed_from={"succeeded"}, **teardown)
 
 
 def _check_stop(path: Path) -> None:
@@ -128,18 +161,19 @@ def supervise(path: Path) -> int:
         state = read_json(path / "state.json")
         if code != 0 or state.get("status") != "succeeded":
             if state.get("status") not in {"failed", "cancelled"}:
-                _state(
+                _record_failure(
                     path,
-                    status="failed",
+                    "failed",
                     error="Queue/worker exited without a complete evaluation; inspect run.log",
+                    error_type="queue_exit",
                     exit_code=code,
                 )
             return code or 1
         return 0
     except Exception as error:
-        _state(
+        _record_failure(
             path,
-            status="cancelled" if isinstance(error, InterruptedError) else "failed",
+            "cancelled" if isinstance(error, InterruptedError) else "failed",
             error="Evaluation supervisor could not finish; inspect retained records",
             error_type=type(error).__name__,
         )

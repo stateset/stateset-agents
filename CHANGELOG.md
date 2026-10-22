@@ -249,6 +249,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   removes the oldest finished records (never active ones, nor successful
   ones a retained nomination depends on), refusing with a clear message if
   none can be removed.
+- A studio evaluation whose executor committed a result can no longer be
+  overwritten with `failed` by a later queue or supervisor error. As for
+  training runs, a success whose `result.json` still binds the reviewed plan
+  is final, and the late error is kept as `teardown_error` /
+  `teardown_exit_code` in the evaluation status.
 
 ### Security
 
