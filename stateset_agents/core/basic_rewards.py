@@ -623,7 +623,19 @@ class TaskCompletionReward(RewardFunction):
         task_context = context.get("task")
         if not isinstance(task_context, dict):
             task_context = {}
-        criteria = task_context.get("criteria", self.task_criteria)
+        # A task's own "criteria" win; otherwise TaskEnvironment's task shape
+        # (required_actions / goal_keywords at the task's top level); then
+        # the criteria this reward was built with.
+        criteria = task_context.get("criteria")
+        if not criteria and (
+            task_context.get("required_actions") or task_context.get("goal_keywords")
+        ):
+            criteria = {
+                "required_actions": task_context.get("required_actions") or [],
+                "goal_keywords": task_context.get("goal_keywords") or [],
+            }
+        if not criteria:
+            criteria = self.task_criteria
 
         if not criteria:
             return RewardResult(score=0.5, breakdown={}, metadata={"no_criteria": True})

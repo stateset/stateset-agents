@@ -331,7 +331,7 @@ async def test_task_environment_pays_the_completion_bonus_once():
         [TASK], success_criteria=lambda turns, ctx: False, max_turns=4
     )
     trajectory = await environment.run_episode(
-        _replies("load it", "stall", "stall", "stall"), TASK
+        _replies('{"action": "load"}', "stall", "stall", "stall"), TASK
     )
     assert trajectory.turn_rewards == [15.0, 0.0, 0.0, 0.0]
 
@@ -344,7 +344,9 @@ async def test_task_completion_reward_accepts_task_environment_actions():
         max_turns=2,
         reward_fn=TaskCompletionReward(),
     )
-    trajectory = await environment.run_episode(_replies("load data"), task)
+    trajectory = await environment.run_episode(
+        _replies('Loading. {"action": "load"}'), task
+    )
     # 10 progress + 5 completion bonus + 1.0 task completion
     assert trajectory.total_reward == pytest.approx(16.0)
 

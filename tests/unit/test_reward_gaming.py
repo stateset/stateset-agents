@@ -226,12 +226,31 @@ async def test_stalling_after_task_completion_earns_nothing_more():
     environment = TaskEnvironment(
         [task], success_criteria=lambda turns, ctx: False, max_turns=6
     )
-    finished = await environment.run_episode(_replies("load", *["ok"] * 5), task)
+    load = '{"action": "load"}'
+    finished = await environment.run_episode(_replies(load, *["ok"] * 5), task)
     quick = TaskEnvironment(
         [task], success_criteria=lambda turns, ctx: True, max_turns=6
     )
-    done = await quick.run_episode(_replies("load"), task)
+    done = await quick.run_episode(_replies(load), task)
+    assert done.total_reward == pytest.approx(15.0)
     assert finished.total_reward == pytest.approx(done.total_reward)
+
+
+@pytest.mark.parametrize("reply", ["load plot", "I will load the data and plot it."])
+async def test_naming_task_keywords_does_not_complete_actions(reply):
+    task = {
+        "id": "t",
+        "required_actions": [
+            {"name": "load_data", "keywords": ["load"]},
+            {"name": "visualize", "keywords": ["plot"]},
+        ],
+    }
+    environment = TaskEnvironment(
+        [task], success_criteria=lambda t, c: c["task_progress"] >= 1, max_turns=1
+    )
+    trajectory = await environment.run_episode(_replies(reply), task)
+    assert trajectory.final_state["completed_actions"] == []
+    assert trajectory.total_reward == 0.0
 
 
 async def test_stalling_never_beats_resolving_under_the_default_reward():

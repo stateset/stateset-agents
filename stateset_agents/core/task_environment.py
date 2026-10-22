@@ -4,7 +4,9 @@ Task-oriented environment implementation.
 
 from __future__ import annotations
 
+import json
 import random
+import re
 import uuid
 from collections.abc import Callable
 from typing import Any
@@ -13,10 +15,73 @@ from .environment_base import Environment, EnvironmentState, EpisodeStatus
 from .reward import RewardFunction
 from .trajectory import ConversationTurn
 
+_JSON_OBJECT_RE = re.compile(r"\{[^{}]*\}")
+
+
+def _names(value: Any) -> list[str]:
+    """Action names from a string, a list of strings, or ``{"name": ...}``."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, dict):
+        name = value.get("name") or value.get("tool")
+        if isinstance(name, str):
+            return [name]
+        function = value.get("function")
+        if isinstance(function, dict) and isinstance(function.get("name"), str):
+            return [function["name"]]
+        return []
+    if isinstance(value, (list, tuple)):
+        return [name for item in value for name in _names(item)]
+    return []
+
+
+def declared_actions(turn: ConversationTurn) -> set[str]:
+    """Actions an agent turn explicitly declares, lower-cased.
+
+    Explicit signals are structured tool calls (``turn.tool_calls``), an
+    ``"action"``/``"actions"`` entry in ``turn.metadata``, or a JSON object in
+    the reply with an ``"action"``, ``"actions"`` or ``"tool"`` key, e.g.
+    ``{"action": "load_data"}``. Prose that merely mentions an action does not
+    declare it.
+    """
+    names: list[str] = _names(turn.tool_calls or [])
+    metadata = turn.metadata if isinstance(turn.metadata, dict) else {}
+    for key in ("action", "actions"):
+        names += _names(metadata.get(key))
+    content = turn.content if isinstance(turn.content, str) else ""
+    candidates = [content.strip()] + _JSON_OBJECT_RE.findall(content)
+    for candidate in candidates:
+        try:
+            parsed = json.loads(candidate)
+        except (ValueError, RecursionError):
+            continue
+        if isinstance(parsed, dict):
+            for key in ("action", "actions", "tool"):
+                names += _names(parsed.get(key))
+    return {name.strip().lower() for name in names if name.strip()}
+
+
+def _required_name(action: Any) -> str | None:
+    if isinstance(action, str):
+        return action
+    if isinstance(action, dict) and isinstance(action.get("name"), str):
+        return str(action["name"])
+    return None
+
 
 class TaskEnvironment(Environment):
-    """
-    Environment for task-oriented interactions
+    """Environment for task-oriented interactions.
+
+    A task lists ``required_actions`` (names, or mappings with a ``"name"``).
+    An action is completed only when the agent declares it explicitly: a
+    structured tool call, an ``"action"`` entry in the turn's metadata, or a
+    JSON object such as ``{"action": "load_data"}`` in the reply (see
+    :func:`declared_actions`).
+
+    ``match_action_keywords=True`` (a keyword argument) additionally completes
+    an action whenever one of its ``"keywords"`` appears in a reply. That is
+    gameable, since a reply can list every keyword without doing anything, and
+    is meant only for demos with free-text agents.
     """
 
     def __init__(
@@ -27,6 +92,7 @@ class TaskEnvironment(Environment):
         reward_fn: RewardFunction | None = None,
         **kwargs,
     ):
+        self.match_action_keywords = bool(kwargs.pop("match_action_keywords", False))
         super().__init__(max_turns, reward_fn, **kwargs)
         self.tasks = tasks
         self.success_criteria = success_criteria
@@ -123,20 +189,29 @@ class TaskEnvironment(Environment):
     async def _update_task_progress(
         self, action: ConversationTurn, state: EnvironmentState
     ) -> None:
-        """Update task progress based on agent action"""
+        """Complete the required actions this turn declares (see class doc)."""
         required_actions = state.context.get("required_actions", [])
         # Copy: the previous state's list must not change under it.
         completed_actions = list(state.context.get("completed_actions", []))
 
+        declared = declared_actions(action)
         action_content = (action.content or "").lower()
 
         for req_action in required_actions:
-            if req_action not in completed_actions:
-                if any(
-                    keyword in action_content
+            if req_action in completed_actions:
+                continue
+            name = _required_name(req_action)
+            if name is not None and name.strip().lower() in declared:
+                completed_actions.append(req_action)
+            elif (
+                self.match_action_keywords
+                and isinstance(req_action, dict)
+                and any(
+                    str(keyword).lower() in action_content
                     for keyword in req_action.get("keywords", [])
-                ):
-                    completed_actions.append(req_action)
+                )
+            ):
+                completed_actions.append(req_action)
 
         state.context["completed_actions"] = completed_actions
         state.context["task_progress"] = len(completed_actions) / max(
@@ -193,4 +268,5 @@ class TaskEnvironment(Environment):
             max_turns=self.max_turns,
             reward_fn=self.reward_fn,
             timeout_seconds=self.timeout_seconds,
+            match_action_keywords=self.match_action_keywords,
         )
