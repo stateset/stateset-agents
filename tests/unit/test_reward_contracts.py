@@ -44,6 +44,7 @@ from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_components import (
     BaseRewardComponent,
     EmpathyRewardComponent,
+    LengthRewardComponent,
 )
 from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction,
@@ -112,6 +113,9 @@ CONSTRUCTORS: dict[str, Callable[[Any], Any]] = {
     ),
     "stateset_agents.rewards.nsr_verifier.NSRVerifierReward": lambda cls: cls(
         client=_fake_nsr
+    ),
+    "stateset_agents.rewards.multi_objective_reward.MultiObjectiveRewardFunction": (
+        lambda cls: cls([EmpathyRewardComponent(), LengthRewardComponent()])
     ),
     "stateset_agents.core.reward_factories.create_adaptive_reward": lambda f: f(
         [HelpfulnessReward(), ConcisenessReward()],

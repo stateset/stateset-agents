@@ -184,35 +184,33 @@ class Environment(ABC):
         )
 
     async def get_reward(self, trajectory: Any) -> float:
-        """Compute reward for a trajectory."""
-        if self.reward_fn is not None:
-            try:
-                turns = getattr(trajectory, "turns", [])
-                if not turns and hasattr(trajectory, "__iter__"):
-                    turns = list(trajectory)
+        """Score a finished trajectory with this environment's ``reward_fn``.
 
-                if getattr(self.reward_fn, "requires_environment_context", False):
-                    # Evidence rewards judge the recorded final state as is.
-                    result = await self.reward_fn.compute_reward(
-                        turns, getattr(trajectory, "final_state", None)
-                    )
-                else:
-                    result = await self.reward_fn.compute_reward(
-                        turns,
-                        trajectory_reward_context(trajectory, reward_fn=self.reward_fn),
-                    )
-                score = _reward_score(result)
-                if score is not None:
-                    return score
-                logger.warning("Unexpected reward result type: %s", type(result))
-                return 0.5
-            except ENVIRONMENT_EXCEPTIONS as e:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                logger.warning("Failed to compute reward from reward_fn: %s", e)
-                return 0.5
+        There is no stand-in score: an environment without a ``reward_fn``
+        raises ``ValueError`` (its own episode reward is
+        ``trajectory.total_reward``), and a reward that fails, returns a
+        non-finite score or an unknown result type raises too.
+        """
+        reward_fn = self.reward_fn
+        if reward_fn is None:
+            raise ValueError(
+                f"{type(self).__name__} has no reward_fn to score the trajectory "
+                "with; use trajectory.total_reward for the environment's own reward"
+            )
+        turns = getattr(trajectory, "turns", [])
+        if not turns and hasattr(trajectory, "__iter__"):
+            turns = list(trajectory)
 
-        return 0.5
+        if getattr(reward_fn, "requires_environment_context", False):
+            # Evidence rewards judge the recorded final state as is.
+            context = getattr(trajectory, "final_state", None)
+        else:
+            context = trajectory_reward_context(trajectory, reward_fn=reward_fn)
+        result = await reward_fn.compute_reward(turns, context)
+        score = _reward_score(result)
+        if score is None:
+            raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+        return score
 
     async def _apply_step_reward(
         self, state: EnvironmentState, turns: list[ConversationTurn]

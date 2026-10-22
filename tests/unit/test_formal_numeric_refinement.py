@@ -51,6 +51,11 @@ async def test_bounded_weighted_reward_matches_integer_model(
             ],
             normalization_method=normalization_method,
         )
+        if fail_a and fail_b:
+            # No survivor: Python raises instead of returning a score.
+            with pytest.raises(ValueError, match="every component failed"):
+                await reward.compute_reward(turns=[])
+            continue
         result = await reward.compute_reward(turns=[])
         # Lean composedScore: failed components are dropped and their weight
         # redistributed, i.e. the weighted average of the survivors.

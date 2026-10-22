@@ -146,11 +146,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
             ]
 
         if not self.components:
-            return RewardResult(
-                score=0.0,
-                breakdown={"total_score": 0.0},
-                metadata={"error": "No components configured"},
-            )
+            raise ValueError("MultiObjectiveRewardFunction has no components")
 
         # Components are mutable and their callbacks may suspend. Revalidate
         # and use one weight snapshot for the whole evaluation.
@@ -202,7 +198,11 @@ class MultiObjectiveRewardFunction(RewardFunction):
             for score, weight in zip(raw_scores, scored_weights, strict=True)
         ]
         if not raw_scores:
-            logger.error("All reward components failed: %s", ", ".join(failed))
+            # No component scored: fail rather than return a valid-looking 0.0.
+            raise ValueError(
+                "MultiObjectiveRewardFunction: every component failed "
+                f"({', '.join(failed)})"
+            )
 
         # Combine scores
         if self.normalization_method == "weighted_sum":
@@ -258,8 +258,6 @@ class MultiObjectiveRewardFunction(RewardFunction):
             "normalization_method": self.normalization_method,
             "failed_components": failed,
         }
-        if failed and not raw_scores:
-            metadata["error"] = "All reward components failed"
 
         # Log metrics
         if self.monitoring:

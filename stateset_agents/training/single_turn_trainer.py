@@ -11,6 +11,7 @@ import asyncio
 import contextlib
 import inspect
 import logging
+import math
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -388,30 +389,34 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         turns: list[ConversationTurn],
         context: dict[str, Any] | None = None,
     ) -> float:
-        """Compute reward using reward_fn, environment, or default."""
+        """Score one generation with ``reward_fn`` or, without one, the environment.
+
+        There is no stand-in score: a reward that fails, is not finite, or is
+        unavailable (no ``reward_fn`` and no environment reward) raises, and
+        the generation is dropped from its group.
+        """
         if self.reward_fn is not None:
-            try:
-                result = await self.reward_fn.compute_reward(turns, context)
-                if hasattr(result, "score"):
-                    return float(result.score)
-                if isinstance(result, dict) and "score" in result:
-                    return float(result["score"])
-                if isinstance(result, (int, float)):
-                    return float(result)
-            except SINGLE_TRAINER_EXCEPTIONS as e:
-                logger.warning(f"Reward function failed: {e}")
-
-        # Fallback to environment reward interface when available
-        get_reward = getattr(self.environment, "get_reward", None)
-        if callable(get_reward):
-            try:
-                trajectory = MultiTurnTrajectory(turns=turns, total_reward=0.0)
-                env_reward = await get_reward(trajectory)
-                return float(env_reward)
-            except SINGLE_TRAINER_EXCEPTIONS:
-                pass
-
-        return 0.5
+            result = await self.reward_fn.compute_reward(turns, context)
+            if hasattr(result, "score"):
+                score = float(result.score)
+            elif isinstance(result, dict) and "score" in result:
+                score = float(result["score"])
+            elif isinstance(result, (int, float)) and not isinstance(result, bool):
+                score = float(result)
+            else:
+                raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+        else:
+            get_reward = getattr(self.environment, "get_reward", None)
+            if not callable(get_reward):
+                raise ValueError(
+                    "No reward_fn and the environment has no get_reward(); "
+                    "pass reward_fn=..."
+                )
+            trajectory = MultiTurnTrajectory(turns=turns, total_reward=0.0)
+            score = float(await get_reward(trajectory))
+        if not math.isfinite(score):
+            raise ValueError(f"Reward must be finite, got {score}")
+        return score
 
     async def _generate_trajectory_group(
         self,
@@ -443,7 +448,15 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                 ConversationTurn(role="user", content=str(prompt)),
                 assistant_turn,
             ]
-            reward = await self._compute_reward_for_turns(turns, context)
+            try:
+                reward = await self._compute_reward_for_turns(turns, context)
+            except SINGLE_TRAINER_EXCEPTIONS as error:
+                if getattr(self.reward_fn, "fail_on_error", False):
+                    raise
+                logger.warning(
+                    "Dropping generation %d: its reward failed: %s", gen_idx, error
+                )
+                continue
 
             trajectory = MultiTurnTrajectory(
                 turns=turns,
@@ -459,6 +472,10 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                 best_reward = reward
                 best_response = str(response)
 
+        if not trajectories:
+            raise RuntimeError(
+                f"Every one of {num_generations} generations failed to get a reward"
+            )
         group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(trajectories)
         group = TrajectoryGroup(
             scenario_id=f"prompt_{abs(hash(prompt))}",

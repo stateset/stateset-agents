@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
 import os
 import re
 from abc import ABC, abstractmethod
@@ -39,6 +40,16 @@ LLM_JUDGE_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
+
+
+class JudgeUnavailableError(RuntimeError):
+    """The judge returned no usable verdict (timeout, API or parse error).
+
+    Raised instead of returning a neutral score, so reward composers,
+    environments and trainers apply the reward contract (redistribute the
+    component's weight, flag the episode, or drop it) rather than training on
+    a stand-in value.
+    """
 
 
 _JUDGE_PROVIDER_ALIASES = {
@@ -731,17 +742,18 @@ class LLMJudge:
         # Parse result
         result = self.backend._parse_json_response(result_text)
         if result.get("judge_error") or result.get("score") is None:
-            # No verdict (timeout, API or parse error): neutral midpoint of the
-            # output scale, and never cached so a transient outage does not
-            # pin this pair's reward for the rest of the run.
-            logger.warning(
-                "LLM judge returned no score (%s); using neutral midpoint",
-                result.get("judge_error", "missing score"),
+            # No verdict (timeout, API or parse error). Fail closed rather than
+            # inventing a neutral score, and never cache the failure so a
+            # transient outage does not pin this pair's reward.
+            raise JudgeUnavailableError(
+                "LLM judge returned no score: "
+                f"{result.get('judge_error', 'missing score')}"
             )
-            if self.config.normalize_scores:
-                return 0.5
-            return (self.config.score_min + self.config.score_max) / 2.0
         score = float(result["score"])
+        if not math.isfinite(score):
+            raise JudgeUnavailableError(
+                f"LLM judge returned a non-finite score {score}"
+            )
 
         # Normalize
         if self.config.normalize_scores:
@@ -784,14 +796,12 @@ class LLMJudge:
         bounded_tasks = [bounded_task(t) for t in tasks]
         results = await asyncio.gather(*bounded_tasks, return_exceptions=True)
 
-        # Handle errors
+        # A failed evaluation has no score; never substitute a neutral one.
         scores: list[float] = []
         for result in results:
-            if isinstance(result, Exception):
-                logger.warning(f"Evaluation error: {result}")
-                scores.append(0.5)  # Default on error
-            else:
-                scores.append(cast(float, result))
+            if isinstance(result, BaseException):
+                raise result
+            scores.append(result)
 
         return scores
 
@@ -829,6 +839,11 @@ class LLMJudge:
 
         result_text = await self.backend._call_api(messages)
         result = self.backend._parse_json_response(result_text)
+        if result.get("judge_error") or "winner" not in result:
+            raise JudgeUnavailableError(
+                "LLM judge returned no pairwise verdict: "
+                f"{result.get('judge_error', 'missing winner')}"
+            )
 
         winner = str(result.get("winner", "tie")).upper()
 

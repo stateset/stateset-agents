@@ -102,7 +102,8 @@ theorem weightedAverage_at_most_100 (components : List (Nat × Nat))
     failed component is left out of both the weighted sum and the total
     weight, so its weight is redistributed over the components that scored
     (the weighted-sum branch rescales normalized weights by
-    configured / surviving weight, which is this same average). -/
+    configured / surviving weight, which is this same average). With no
+    survivor at all Python raises instead of returning a score. -/
 def survivors (components : List (Bool × Nat × Nat)) : List (Nat × Nat) :=
   (components.filter (fun c => c.1)).map (fun c => c.2)
 

@@ -203,14 +203,10 @@ class CompositeReward(RewardFunction):
     ) -> RewardResult:
         """Compute composite reward from all functions"""
 
-        # Handle empty reward functions
+        # An empty composite has nothing to score with; a 0.0 would look like
+        # a real (worst) score.
         if not self.reward_functions:
-            logger.warning("CompositeReward has no reward functions configured")
-            return RewardResult(
-                score=0.0,
-                breakdown={},
-                metadata={"error": "No reward functions configured"},
-            )
+            raise ValueError("CompositeReward has no reward functions configured")
 
         results: list[tuple[RewardFunction, RewardResult]] = []
         failed: list[str] = []
@@ -240,13 +236,12 @@ class CompositeReward(RewardFunction):
                 # Continue with other reward functions
                 continue
 
-        # Handle case where all reward functions failed
+        # No component scored: there is no reward, so fail rather than
+        # return a valid-looking 0.0 that environments and trainers would use.
         if not results:
-            logger.error("All reward functions failed to compute")
-            return RewardResult(
-                score=0.0,
-                components={},
-                metadata={"error": "All reward functions failed"},
+            raise ValueError(
+                "CompositeReward: every reward function failed "
+                f"({', '.join(failed)})"
             )
 
         # Combine rewards with safe defaults for empty results
