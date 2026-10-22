@@ -109,6 +109,14 @@ def test_workflows_use_current_action_runtimes() -> None:
         path.read_text(encoding="utf-8")
         for path in sorted((ROOT / ".github/workflows").glob("*.yml"))
     )
+    # Actions are SHA-pinned with a trailing `# vX.Y.Z` comment; compare on the
+    # commented major version so deprecated runtimes are still caught.
+    used = set(workflows.split()) | {
+        f"{action}@{major}"
+        for action, major in re.findall(
+            r"uses:\s*([^@\s]+)@[0-9a-f]{40}\s+#\s*(v\d+)", workflows
+        )
+    }
 
     deprecated = {
         "actions/checkout@v4",
@@ -129,14 +137,14 @@ def test_workflows_use_current_action_runtimes() -> None:
         "peaceiris/actions-gh-pages@v3",
     }
 
-    assert not (deprecated & set(workflows.split()))
+    assert not (deprecated & used)
 
 
 def test_tag_publish_attests_and_releases_verified_artifacts_once() -> None:
     workflow = (ROOT / ".github/workflows/publish.yml").read_text(encoding="utf-8")
 
     assert "release:\n    types: [published]" not in workflow
-    assert "actions/attest-build-provenance@v4" in workflow
+    assert re.search(r"actions/attest-build-provenance@[0-9a-f]{40} # v4\.", workflow)
     assert "attestations: write" in workflow
     assert "github-release:" in workflow
     assert 'gh release create "${GITHUB_REF_NAME}" dist/*' in workflow
