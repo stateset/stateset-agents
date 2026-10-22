@@ -795,6 +795,8 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         with self.profiler.measure("reward_evaluation"):
             result = await self.reward_fn.compute_reward(trajectory.turns, context)
         score, breakdown = await self._coerce_reward_result(result)
+        if not math.isfinite(score):
+            raise ValueError(f"Episode reward must be finite, got {score}")
         set_episode_reward(trajectory, score)
         trajectory.metadata["reward_breakdown"] = breakdown
         error = trajectory.metadata.pop("reward_error", None)

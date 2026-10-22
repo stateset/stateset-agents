@@ -7,6 +7,7 @@ including the base class, result types, and composite reward implementation.
 
 import asyncio
 import logging
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -235,6 +236,9 @@ class CompositeReward(RewardFunction):
                             REWARD_SCOPE_KEY: LATEST_TURN_SCOPE,
                         }
                 result = await reward_fn.compute_reward(turns, child_context)
+                if not math.isfinite(float(result.score)):
+                    # A NaN/inf component would silently poison the total.
+                    raise ValueError(f"returned a non-finite score {result.score}")
                 results.append((reward_fn, result))
             except REWARD_EXCEPTIONS as e:
                 if getattr(reward_fn, "fail_on_error", False):

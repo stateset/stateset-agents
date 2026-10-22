@@ -8,6 +8,7 @@ import asyncio
 import copy
 import inspect
 import logging
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -200,12 +201,9 @@ class Environment(ABC):
                         turns,
                         trajectory_reward_context(trajectory, reward_fn=self.reward_fn),
                     )
-                if hasattr(result, "score"):
-                    return float(result.score)
-                if isinstance(result, dict) and "score" in result:
-                    return float(result["score"])
-                if isinstance(result, (int, float)):
-                    return float(result)
+                score = _reward_score(result)
+                if score is not None:
+                    return score
                 logger.warning("Unexpected reward result type: %s", type(result))
                 return 0.5
             except ENVIRONMENT_EXCEPTIONS as e:
@@ -237,13 +235,12 @@ class Environment(ABC):
             int(state.metadata.get("reward_fn_calls", 0) or 0) + 1
         )
         try:
-            result = await reward_fn.compute_reward(turns, context)
+            score = _reward_score(await reward_fn.compute_reward(turns, context))
         except ENVIRONMENT_EXCEPTIONS as error:
             if getattr(reward_fn, "fail_on_error", False):
                 raise
             _record_reward_failure(state.metadata, reward_fn, error, "step")
             return 0.0
-        score = _reward_score(result)
         return 0.0 if score is None else score
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
@@ -404,12 +401,12 @@ class Environment(ABC):
             )
             try:
                 final_reward = await reward_fn.compute_reward(turns, context)
+                final_value = _reward_score(final_reward)
             except ENVIRONMENT_EXCEPTIONS as error:
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
                 _record_reward_failure(reward_metadata, reward_fn, error, "episode")
             else:
-                final_value = _reward_score(final_reward)
                 if final_value is not None:
                     total_reward += final_value
                     if turn_rewards:
@@ -452,14 +449,22 @@ class _Episode:
 
 
 def _reward_score(result: Any) -> float | None:
-    """Read the score from a reward result (object, mapping or bare number)."""
+    """Read the score from a reward result (object, mapping or bare number).
+
+    Raises ``ValueError`` for a non-finite score, so it is handled as a reward
+    failure instead of silently turning the episode's reward into NaN.
+    """
     if hasattr(result, "score"):
-        return float(result.score)
-    if isinstance(result, dict) and "score" in result:
-        return float(result["score"])
-    if isinstance(result, (int, float)) and not isinstance(result, bool):
-        return float(result)
-    return None
+        score = float(result.score)
+    elif isinstance(result, dict) and "score" in result:
+        score = float(result["score"])
+    elif isinstance(result, (int, float)) and not isinstance(result, bool):
+        score = float(result)
+    else:
+        return None
+    if not math.isfinite(score):
+        raise ValueError(f"reward score must be finite, got {score}")
+    return score
 
 
 def _record_reward_failure(
