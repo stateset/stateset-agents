@@ -152,7 +152,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `depth >= 2` (depth-1 eval prompts were training rows with another
   reference) and checks eval against the training rows too;
   `build_episode_ladder` takes `train_count` so episode references clear the
-  training rows.
+  training rows. A domain with exactly `depth` (or `turns`) issues now raises
+  instead of giving eval and harvest reorderings of one issue set, and
+  `check_disjoint_prompts` treats prompts with the same words in another order
+  (and, in the ladder, the same set of issues) as the same request.
+- **`expect` checks honour negation.** An expected phrase counts only where it
+  is not negated ("I can't open a baggage trace" does not deliver one), with
+  the same governing rule as `forbid`, and phrases ending in a digit match
+  whole numbers only ("7701" no longer matches "77015"). Harvests keep fewer,
+  correct samples.
+- `ConversationDataset` raises on NaN or infinite rewards instead of turning
+  every normalized reward into NaN.
+- The harvest job seeds its sampling (`--seed`, default 42, recorded in
+  `harvest_summary.json`) and shares SFT's prompt encoding, generation
+  settings and tokenizer loading (`sft.encode_chat_prompt`,
+  `generate_from_prompt`, `load_tokenizer_for`).
 - **SFT rows may become several sequences.** When a chat template renders an
   assistant turn differently once it is history (Qwen3 drops the newest
   turn's empty `<think>` block, Qwen3.5 omits its generation-prompt stub, both
@@ -243,7 +257,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transcript grading misaligned contexts after a dropped line and reported
   the wrong `user_query`; curated SFT pairs lost the graded multi-turn context.
 - GSM8K answer extraction graded the first "answer is" instead of the final
-  answer; `####` and `\boxed{}` now win and the last match is used.
+  answer; `####` and `\boxed{}` now win and the last match is used. Markdown
+  emphasis no longer hides the answer ("The answer is **18**, which is 2 more
+  than 16" graded 16), and text after a new few-shot "Question:" is ignored.
+- JSONL readers split records on U+2028, U+2029 and U+0085, which the repo's
+  writers leave unescaped, so valid rows were dropped or rejected and source
+  row counts were wrong; every reader now uses `stateset_agents.data.jsonl`,
+  which splits on newlines only.
+- A flywheel rerun into the same `output_root` scored a generation whose
+  training died before evaluating with the previous run's
+  `eval_results.json`, and advanced that stale adapter.
+- `last_assistant_token_mask` (offline RL transitions, offline GRPO) failed
+  for whole datasets when a template strips earlier `<think>` blocks; it falls
+  back to the final-turn mask.
+- The harvest encoded prompts with an extra BOS on Llama/Gemma-style
+  tokenizers, and the SFT training plan crashed on a tool-call first example.
 - Judge parse failures were counted as self-disagreement, and a skipped
   `min_judge_score` gate left no trace; eval rows now carry
   `judge_unavailable` and the manifest records `eval_judge_gates_skipped`.
