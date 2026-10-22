@@ -40,6 +40,19 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Duplicates of maintained trainers, deprecated in v0.69.0 and removed in v0.70.0.
+_REMOVAL_RELEASE = "v0.70.0"
+
+
+def _warn_deprecated(name: str, replacement: str) -> None:
+    warnings.warn(
+        f"stateset_agents.core.enhanced.{name} is deprecated and will be removed "
+        f"in {_REMOVAL_RELEASE}; use {replacement}.",
+        DeprecationWarning,
+        stacklevel=3,
+    )
+
+
 FloatArray: TypeAlias = NDArray[np.float32]
 
 
@@ -173,12 +186,18 @@ class ActorCriticNetwork(nn.Module):
 
 class PPOTrainer:
     """
-    Proximal Policy Optimization trainer
+    Proximal Policy Optimization trainer.
+
+    .. deprecated:: 0.69.0
+        A second, older PPO kept for ``AdvancedRLOrchestrator`` experiments.
+        Use :class:`stateset_agents.experimental.ppo.PPOTrainer`, which is built
+        on the shared ``training/rl_losses`` primitives. Removed in v0.70.0.
     """
 
     def __init__(
         self, agent: EnhancedMultiTurnAgent, config: PPOConfig, device: str = "auto"
     ):
+        _warn_deprecated("PPOTrainer", "stateset_agents.experimental.ppo.PPOTrainer")
         self.agent = agent
         self.config = config
         tokenizer = _require_tokenizer(agent)
@@ -891,7 +910,7 @@ def create_a2c_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> A2CTrainer:
 
 class GSPOTrainerStub:
     """
-    Stub for GSPO trainer integration.
+    Stub for GSPO trainer integration (deprecated in 0.69.0, removed in 0.70.0).
 
     The real implementation is
     :class:`stateset_agents.training.gspo_trainer.GSPOTrainer`; this stub only
@@ -906,6 +925,9 @@ class GSPOTrainerStub:
         config: GSPOConfig,
         device: str = "auto",
     ):
+        _warn_deprecated(
+            "GSPOTrainerStub", "stateset_agents.training.gspo_trainer.GSPOTrainer"
+        )
         self.agent = agent
         self.config = config
         self.device = torch.device(

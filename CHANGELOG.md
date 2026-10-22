@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Deprecated
+
+- `stateset_agents.core.enhanced.PPOTrainer` (and `create_ppo_trainer`) duplicates
+  the maintained `stateset_agents.experimental.ppo.PPOTrainer`, and
+  `GSPOTrainerStub` (and `create_gspo_trainer`) is a no-op stand-in for
+  `stateset_agents.training.gspo_trainer.GSPOTrainer`. Both warn on construction
+  and are removed in v0.70.0. The enhanced DPO and A2C trainers have no
+  maintained duplicate and are unchanged.
+
 ### Changed
 
 - mypy checks the bodies of untyped functions across the whole package

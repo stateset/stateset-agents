@@ -487,3 +487,20 @@ class TestEdgeCases:
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_duplicate_trainers_are_deprecated_with_replacements():
+    """core.enhanced PPOTrainer / GSPOTrainerStub duplicate maintained trainers."""
+    import stateset_agents.core.enhanced.advanced_rl_algorithms as legacy
+
+    with pytest.warns(DeprecationWarning, match="experimental.ppo.PPOTrainer"):
+        legacy._warn_deprecated(
+            "PPOTrainer", "stateset_agents.experimental.ppo.PPOTrainer"
+        )
+    for cls, replacement in (
+        (legacy.PPOTrainer, "experimental.ppo.PPOTrainer"),
+        (legacy.GSPOTrainerStub, "training.gspo_trainer.GSPOTrainer"),
+    ):
+        assert "deprecated" in (cls.__doc__ or "").lower()
+        source = __import__("inspect").getsource(cls.__init__)
+        assert "_warn_deprecated" in source and replacement in source
