@@ -20,6 +20,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - mypy checks the bodies of untyped functions across the whole package
   (`check_untyped_defs`), guarded by the mypy ratchet test.
+- **Each episode is scored exactly once.** When `MultiTurnGRPOTrainer`'s
+  `reward_fn` is the environment's own (the default `train()` wiring) and the
+  environment applied it, the trainer keeps the environment's reward instead of
+  re-scoring the episode. For IMMEDIATE/DENSE rewards the training reward is
+  therefore the sum of per-step scores rather than one whole-conversation
+  score (use a CUMULATIVE/SPARSE reward for a whole-conversation score), and
+  environments with their own step rewards (e.g. `TaskEnvironment` progress)
+  keep them in the total. When the trainer scores an episode itself, the score
+  is credited to the final step so `sum(turn_rewards) == total_reward`.
+- Reward functions receive one context shape from every caller
+  (`stateset_agents.core.reward_context.build_reward_context`): scenario keys
+  at the top level, environment state over them, and the scenario under
+  `"scenario"`. Rewards with `requires_environment_context` get no lifted
+  scenario keys.
+- IMMEDIATE/DENSE step rewards score only the newest assistant turn (the
+  conversation is still passed, marked `reward_scope="latest_turn"`).
+- `ConversationEnvironment` without a `reward_fn` averages its built-in length
+  heuristic over the episode's steps instead of summing it, and the trainer
+  warns once when that heuristic is the training signal.
+- `MultiObjectiveRewardFunction` leaves a failed component out and spreads its
+  weight over the components that scored (as `CompositeReward` does) instead
+  of scoring it 0; failed components are listed in
+  `metadata["failed_components"]` and no longer appear in `components`.
+- `TaskCompletionReward`: when `required_actions` are given, `goal_keywords`
+  only scale the action credit (by up to 20%) and earn nothing on their own.
+- `RulerRewardFunction` rejects judge responses with missing, duplicate or
+  unknown trajectory ids or scores outside [0, 1] (retried, then the heuristic
+  fallback in `compute_reward`) instead of padding with 0.5.
+- `ModelBasedRewardComponent(strict=True)` raises when no `api_client` is
+  configured or the judge call fails.
 
 ### Fixed
 
@@ -35,6 +65,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and span processors attach to the provider that was created.
 - helm-based tests bound their subprocesses, so a stalled `helm` on a loaded
   Windows runner fails one test instead of aborting the xdist run.
+- Rewards were computed twice per episode under default trainer wiring
+  (doubling LLM-judge cost and halving `SupportJudgeReward` budgets).
+- `CorrectnessReward`, `TaskCompletionReward` and `SimilarityAwareReward` fell
+  back to neutral scores on the environment path because the scenario was
+  nested under `"scenario"`.
+- IMMEDIATE step rewards overweighted early turns (the total was the sum of
+  running means).
+- `SafetyReward` scored refusals that name an unsafe topic as 0.0 and missed
+  plurals ("bombs", "weapons", "drugs").
+- `CorrectnessReward` credited substrings ("14" for "4"; any digit run).
+- `TaskEnvironment` ignored IMMEDIATE reward functions, paid its +5 completion
+  bonus on every step after completion, and `TaskCompletionReward` raised
+  `TypeError` on its dict-shaped `completed_actions`.
+- `RulerRewardFunction` mapped judge scores by list position instead of
+  `trajectory_id` and passed through out-of-range scores.
+- Reward failures in environments were swallowed silently (no log or DEBUG)
+  as 0.0; they are now logged at WARNING and recorded as
+  `metadata["reward_error"]`, and the trainer drops such episodes.
+- `ModelBasedRewardComponent` silently scored replies by length without a
+  client; it now warns once.
+- `ProfessionalismRewardComponent` penalized "frustrated" and matched "hate"
+  inside "whatever".
+- `create_adaptive_reward` mutated the caller's reward weights.
 
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 
