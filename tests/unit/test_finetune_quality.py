@@ -109,11 +109,14 @@ def write_evidence(tmp_path, value):
 
 
 def wait_for(studio, attribute):
+    from operator import attrgetter
+
+    busy = attrgetter(attribute)
     until = time.monotonic() + 10
-    while getattr(studio, attribute) and time.monotonic() < until:
+    while busy(studio) and time.monotonic() < until:
         studio.refresh()
         time.sleep(0.005)
-    assert not getattr(studio, attribute)
+    assert not busy(studio)
 
 
 @pytest.mark.parametrize("seeds", [1, 6])
@@ -481,14 +484,14 @@ def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
     before = dict(studio.values)
     studio.handle("TAB")
     studio.handle("e")
-    wait_for(studio, "quality_busy")
+    wait_for(studio, "quality_panel.busy")
     assert "No verifiable" in "\n".join(studio.lines(*size))
     studio.handle("f")
     for character in str(source):
         studio.handle(character)
     studio.handle("ENTER")
-    wait_for(studio, "quality_busy")
-    assert studio.quality_report["regressions_total"] == 32
+    wait_for(studio, "quality_panel.busy")
+    assert studio.quality_panel.report["regressions_total"] == 32
     assert "PRIVATE-ID" not in "\n".join(studio.lines(*size))
     studio.handle("ESC")
     ws.write_json(run / "state.json", {"status": "prepared"})
@@ -542,17 +545,17 @@ def test_guided_setup_runs_in_background_and_requires_explicit_launch_review(
     studio = Studio(run.parent, config)
     before = dict(studio.values)
     studio.handle("w")
-    wait_for(studio, "workflow_busy")
-    assert studio.workflow_report["steps"][1]["status"] == "ready"
+    wait_for(studio, "workflow_panel.busy")
+    assert studio.workflow_panel.report["steps"][1]["status"] == "ready"
     assert "GUIDED SETUP" in "\n".join(studio.lines(72, 22))
-    studio.workflow_index = 3
+    studio.workflow_panel.index = 3
     studio.handle("ENTER")
     settle_preview(studio)
     assert studio.overlay == "review" and not (run / "launch.lock").exists()
     studio.handle("ESC")
     assert studio.values == before
     studio.handle("w")
-    wait_for(studio, "workflow_busy")
+    wait_for(studio, "workflow_panel.busy")
     studio.values["epochs"] += 1
     studio.handle("ENTER")
     assert studio.overlay == "workflow" and "current setup snapshot" in studio.message
@@ -577,14 +580,14 @@ def test_quality_hashing_does_not_block_escaping_or_change_target_run(
     try:
         assert entered.wait(2)
         studio.handle("ESC")
-        assert studio.overlay is None and studio.quality_busy
+        assert studio.overlay is None and studio.quality_panel.busy
         studio.run_query = "no matches"
         studio.refresh()
     finally:
         release.set()
-    wait_for(studio, "quality_busy")
-    assert "PRIVATE" not in json.dumps(studio.quality_report)
-    assert studio.quality_run == run
+    wait_for(studio, "quality_panel.busy")
+    assert "PRIVATE" not in json.dumps(studio.quality_panel.report)
+    assert studio.quality_panel.run == run
 
 
 def test_workflow_agent_command_accepts_incomplete_drafts_without_preparing(tmp_path):

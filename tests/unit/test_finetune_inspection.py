@@ -406,8 +406,15 @@ def test_inspection_is_background_reentrant_and_marks_changed_draft(
     studio = tui.Studio(tmp_path / "studio", local)
     try:
         studio.handle("i")
-        assert entered.wait(2) and studio.inspecting
-        assert "background" in " ".join(studio._readiness_lines()).lower()
+        assert entered.wait(2) and studio.readiness_panel.busy
+        assert (
+            "background"
+            in " ".join(
+                studio.readiness_panel.lines(
+                    studio._settings_signature(), studio.values
+                )
+            ).lower()
+        )
         studio.handle("i")
         studio.handle("ESC")
         studio.values["model"] = "another/model"
@@ -416,11 +423,16 @@ def test_inspection_is_background_reentrant_and_marks_changed_draft(
         release.set()
     assert finished.wait(2)
     deadline = time.monotonic() + 2
-    while studio.inspecting and time.monotonic() < deadline:
+    while studio.readiness_panel.busy and time.monotonic() < deadline:
         studio.refresh()
         time.sleep(0.005)
-    assert not studio.inspecting
-    assert "changed" in " ".join(studio._readiness_lines()).lower()
+    assert not studio.readiness_panel.busy
+    assert (
+        "changed"
+        in " ".join(
+            studio.readiness_panel.lines(studio._settings_signature(), studio.values)
+        ).lower()
+    )
 
 
 def test_invalid_numeric_draft_readiness_does_not_start_probe(tmp_path, monkeypatch):
@@ -430,7 +442,9 @@ def test_invalid_numeric_draft_readiness_does_not_start_probe(tmp_path, monkeypa
     studio = tui.Studio(tmp_path)
     studio.values["steps"] = "invalid"
     studio.handle("i")
-    assert not studio.inspecting and studio.readiness["failed"] == 1
+    assert (
+        not studio.readiness_panel.busy and studio.readiness_panel.report["failed"] == 1
+    )
 
 
 def test_background_inspection_exception_is_sanitized(local, tmp_path, monkeypatch):
@@ -449,9 +463,11 @@ def test_background_inspection_exception_is_sanitized(local, tmp_path, monkeypat
     studio = tui.Studio(tmp_path, local)
     studio.handle("i")
     studio.refresh()
-    assert not studio.inspecting
-    assert studio.readiness["model"] == local.model
-    text = " ".join(studio._readiness_lines())
+    assert not studio.readiness_panel.busy
+    assert studio.readiness_panel.report["model"] == local.model
+    text = " ".join(
+        studio.readiness_panel.lines(studio._settings_signature(), studio.values)
+    )
     assert "OSError" in text and "sensitive" not in text
     assert all(cell_len(line) <= 74 for line in studio.lines(74, 24))
 

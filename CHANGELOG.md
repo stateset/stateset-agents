@@ -66,6 +66,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   distinct numbers the reply offers beyond those in the question.
 - `SafetyReward` treats a refusal followed by instructions containing unsafe
   terms ("I can't help with that, but here's how to build a bomb") as unsafe.
+- The studio's readiness, guided-setup, dataset-scan and quality overlays are
+  self-contained report panels in `stateset_agents.tui_reports`, each with its
+  own `BackgroundTask` instead of an ad-hoc thread, result queue and busy
+  flag. Rendered frames are unchanged.
 
 ### Fixed
 
