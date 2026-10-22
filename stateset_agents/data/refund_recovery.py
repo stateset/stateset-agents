@@ -252,10 +252,11 @@ async def prepare_refund_recovery_data(
         },
     }
     output.mkdir(parents=True, exist_ok=False)
+    # newline="\n" keeps the on-disk bytes equal to the hashed text on Windows.
     for name, data in serialized.items():
-        with (output / name).open("x", encoding="utf-8") as stream:
+        with (output / name).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(data)
-    with (output / "manifest.json").open("x", encoding="utf-8") as stream:
+    with (output / "manifest.json").open("x", encoding="utf-8", newline="\n") as stream:
         stream.write(
             json.dumps(manifest, sort_keys=True, indent=2, allow_nan=False) + "\n"
         )
