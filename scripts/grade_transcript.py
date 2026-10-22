@@ -37,6 +37,8 @@ import sys
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import read_jsonl_lines
+
 logger = logging.getLogger("grade_transcript")
 
 
@@ -50,10 +52,8 @@ def load_transcript(path: Path) -> list[dict[str, str]]:
     if not path.exists():
         raise FileNotFoundError(f"Transcript not found: {path}")
     turns: list[dict[str, str]] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for number, line in read_jsonl_lines(path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as e:
@@ -85,10 +85,8 @@ def load_contexts(path: Path | None) -> list[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"Context file not found: {path}")
     out: list[dict[str, Any]] = []
-    for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+    for number, line in read_jsonl_lines(path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as e:
@@ -253,10 +251,8 @@ def _existing_curated_keys(output_path: Path) -> tuple[set[str], set[tuple[str, 
     legacy: set[tuple[str, str]] = set()
     if not output_path.exists():
         return keys, legacy
-    for line in output_path.read_text(encoding="utf-8").splitlines():
+    for _, line in read_jsonl_lines(output_path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:

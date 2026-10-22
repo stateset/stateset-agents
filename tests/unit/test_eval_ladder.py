@@ -151,16 +151,30 @@ class TestEvalHarvestDisjointness:
         assert [p["expect"][-1] for p in kit["eval"]] == ["7700", "7701", "7702"]
         assert [p["expect"][-1] for p in kit["harvest"]] == ["8800", "8801", "8802"]
 
-    def test_single_combination_domain_partitions_orderings(self):
+    def test_single_combination_domain_is_refused(self):
+        """With exactly ``depth`` issues, eval and harvest got different
+        orderings of the same issues — the same request, which both
+        disjointness checks passed."""
         spec = DomainSpec(
             persona="P",
             issues={n: Issue(f"issue {n}", f"fix {n}", n) for n in ("x", "y", "z")},
         )
-        kit = build_ladder(spec, depth=3, eval_count=4, harvest_count=10)
-        harvest = {_masked(p["prompt"]) for p in kit["harvest"]}
-        assert kit["eval"] and not [
-            p for p in kit["eval"] if _masked(p["prompt"]) in harvest
-        ]
+        with pytest.raises(ValueError, match="one issue combination"):
+            build_ladder(spec, depth=3, eval_count=4, harvest_count=10)
+        with pytest.raises(ValueError, match="one issue combination"):
+            build_episode_ladder(spec, turns=3, eval_count=4, harvest_count=10)
+
+    def test_reordered_clauses_are_the_same_request(self):
+        eval_spec = {
+            "prompt": "Case 7700 — I was double charged, and also my bag never arrived.",
+            "expect": ["refund", "baggage trace", "7700"],
+        }
+        harvest_spec = {
+            "prompt": "Case 8800 — my bag never arrived, and also I was double charged.",
+            "expect": ["baggage trace", "refund", "8800"],
+        }
+        with pytest.raises(ValueError, match="clause order ignored"):
+            check_disjoint_prompts([eval_spec], [harvest_spec])
 
     def test_depth_one_is_refused_because_eval_would_repeat_training_rows(self):
         """Training rows are single-issue: at depth 1 every eval prompt was a
@@ -276,7 +290,7 @@ class TestCli:
                 "--output-dir",
                 str(tmp_path / "kit"),
                 "--depth",
-                "3",
+                "2",
                 "--eval-count",
                 "4",
             ],

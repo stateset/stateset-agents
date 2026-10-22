@@ -101,16 +101,32 @@ def extract_gold_answer(answer_text: str) -> float | None:
     return _parse_number(match.group(1))
 
 
+#: Markdown emphasis instruct models wrap answers in ("**18**", "__18__").
+_EMPHASIS = re.compile(r"[*_]+")
+#: A new few-shot problem the model went on to generate after answering.
+_CONTINUATION = re.compile(r"\n\s*(?:Question|Problem|Q)\s*[:.]", re.IGNORECASE)
+_FINAL_MARKER = re.compile(r"####|\\boxed\{|answer\s*(?:is|[:=])", re.IGNORECASE)
+
+
 def extract_predicted_answer(response: str) -> float | None:
     """Extract a numeric answer from a free-form model response.
 
-    Explicit markers win ("#### N", "\\boxed{N}"), then "the answer is N" /
-    "answer: N", then the last number in the text. Within each tier the
-    *last* parseable match is used, so a model that corrects itself is
-    graded on its final answer. Returns None if no number can be parsed.
+    Markdown emphasis is ignored ("The answer is **18**" is 18, not the last
+    number in the sentence), and text after a new few-shot "Question:" that
+    follows an answer marker is the model continuing the prompt, not
+    answering. Explicit markers win ("#### N", "\\boxed{N}"), then "the
+    answer is N" / "answer: N", then the last number in the text. Within
+    each tier the *last* parseable match is used, so a model that corrects
+    itself is graded on its final answer. Returns None if no number can be
+    parsed.
     """
     if not response:
         return None
+    response = _EMPHASIS.sub("", response)
+    for continuation in _CONTINUATION.finditer(response):
+        if _FINAL_MARKER.search(response, 0, continuation.start()):
+            response = response[: continuation.start()]
+            break
     for tier in _ANSWER_TIERS:
         matches = sorted(
             (match for pattern in tier for match in pattern.finditer(response)),

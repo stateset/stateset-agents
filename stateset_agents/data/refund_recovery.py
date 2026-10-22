@@ -20,6 +20,7 @@ from stateset_agents.core.environments.refund_recovery_environment import (
     RefundRecoveryEnvironment,
 )
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.data.jsonl import read_jsonl_lines
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.implementation import package_implementation
 
@@ -322,9 +323,7 @@ async def audit_refund_recovery_data(output: Path) -> dict[str, Any]:
     }
     if manifest.get("families") != expected_families:
         raise ValueError("Recovery family counts differ from canonical splits")
-    records = [
-        json.loads(line) for line in (output / "train.jsonl").read_text().splitlines()
-    ]
+    records = [json.loads(line) for _, line in read_jsonl_lines(output / "train.jsonl")]
     by_id, seen = {r["order_id"]: r for r in splits["train"]}, set()
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("metadata"), dict):

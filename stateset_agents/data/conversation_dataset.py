@@ -10,6 +10,7 @@ import dataclasses
 import hashlib
 import json
 import logging
+import math
 import random
 import warnings
 from collections.abc import Iterator
@@ -165,6 +166,7 @@ class ConversationDataset(TorchDataset):
         embedding_cache: Optional["EmbeddingCache"] = None,
     ):
         self.config = config or ConversationDatasetConfig()
+        _require_finite_rewards(trajectories)
         self.trajectories = self._within_length_limits(trajectories)
         self.embedding_cache = embedding_cache
         self._embedding_dim: int | None = None
@@ -845,6 +847,27 @@ class ConversationDataset(TorchDataset):
             "contexts": contexts,
             "responses": responses,
         }
+
+
+def _require_finite_rewards(trajectories: list[TrajectoryData]) -> None:
+    """Reject NaN or infinite rewards before they reach normalization.
+
+    ``json.loads`` accepts ``NaN``/``Infinity``, and one such reward made the
+    dataset's mean and standard deviation — and so every normalized reward —
+    NaN, while ``filter_by_quality`` silently dropped the trajectory.
+    """
+    bad = [
+        t.trajectory_id
+        for t in trajectories
+        if not math.isfinite(float(t.total_reward))
+        or not all(math.isfinite(float(r)) for r in t.turn_rewards)
+    ]
+    if bad:
+        shown = ", ".join(map(str, bad[:5]))
+        raise ValueError(
+            f"{len(bad)} trajectory(ies) carry a non-finite reward ({shown}); "
+            "rewards must be finite numbers"
+        )
 
 
 def _reward_positions(trajectory: TrajectoryData) -> set[int]:

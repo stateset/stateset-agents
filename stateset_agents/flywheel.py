@@ -177,6 +177,32 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
     return score_eval_rows(rows)
 
 
+#: Files a job writes that the flywheel reads to decide what happened. A
+#: rerun into the same ``output_root`` must not read the previous run's.
+_HARVEST_RESULTS = ("harvest_summary.json", "harvest.jsonl")
+_TRAIN_RESULTS = ("eval_results.json",)
+
+
+def _clear_results(output_dir: Path, names: tuple[str, ...]) -> None:
+    """Delete a job's result files before it runs, so only its own count.
+
+    A job that dies before writing them then reads as "no results" rather
+    than as the previous run's outcome (which, for a training job, used to
+    advance a stale adapter as the next generation).
+    """
+    for name in names:
+        stale = Path(output_dir) / name
+        if stale.is_file():
+            logger.info("removing stale %s from a previous run", stale)
+            stale.unlink()
+
+
+def _fresh(output_dir: Path, names: tuple[str, ...]) -> Path:
+    """``output_dir`` with the previous run's result files removed."""
+    _clear_results(output_dir, names)
+    return output_dir
+
+
 def _spend(results: list[float | None]) -> float:
     return sum(c for c in results if c is not None)
 
@@ -206,7 +232,7 @@ def _probe_temperature(
         spec = RemoteJobSpec(
             dataset=probe_file,
             base_model=harvest_base,
-            output_dir=gen_dir / f"probe_t{temp}",
+            output_dir=_fresh(gen_dir / f"probe_t{temp}", _HARVEST_RESULTS),
             job_kind="harvest",
             harvest={
                 "adapter_dir": adapter_dir,
@@ -297,7 +323,7 @@ def run_flywheel(
         harvest_spec = RemoteJobSpec(
             dataset=prompts_file,
             base_model=config.teacher_base_model or config.base_model,
-            output_dir=gen_dir / "harvest",
+            output_dir=_fresh(gen_dir / "harvest", _HARVEST_RESULTS),
             job_kind="harvest",
             harvest={
                 # In distillation the teacher is fixed; otherwise the
@@ -399,7 +425,7 @@ def run_flywheel(
         train_spec = RemoteJobSpec(
             dataset=harvest_dataset,
             base_model=config.base_model,
-            output_dir=gen_dir / "adapter",
+            output_dir=_fresh(gen_dir / "adapter", _TRAIN_RESULTS),
             num_epochs=config.num_epochs,
             lora_r=config.lora_r,
             lora_alpha=config.lora_alpha,

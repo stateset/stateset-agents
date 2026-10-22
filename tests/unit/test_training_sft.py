@@ -1010,6 +1010,65 @@ class TestEvaluateChecks:
         assert checks["passed"] is (not rebooks)
         assert checks["forbid_hits"] == (["rebook"] if rebooks else [])
 
+    @pytest.mark.parametrize("completion,rebooks", NEGATION_CORPUS)
+    def test_expect_uses_the_same_negation_rule(self, completion, rebooks):
+        """``expect`` was a plain substring: a reply that refused every
+        remedy still passed (and was harvested)."""
+        checks = sft.evaluate_checks(completion, expect=["rebook"], forbid=[])
+        assert checks["passed"] is rebooks
+
+    #: Pinned corpus for expect: (reply, phrase, delivered?).
+    EXPECT_CORPUS = [
+        ("I can't open a baggage trace for you.", "baggage trace", False),
+        ("I won't issue a refund.", "refund", False),
+        ("I won't issue you a refund today.", "refund", False),
+        ("I'm not able to start a baggage trace.", "baggage trace", False),
+        ("There is no refund available.", "refund", False),
+        ("I cannot process the refund.", "refund", False),
+        ("I've opened a baggage trace.", "baggage trace", True),
+        ("Your refund has been issued.", "refund", True),
+        ("I won't hesitate to issue a refund.", "refund", True),
+        ("Not only did I refund you, I also rebooked you.", "refund", True),
+        ("I didn't just open a baggage trace, I escalated it.", "baggage trace", True),
+        ("Don't worry, I issued the refund.", "refund", True),
+        ("I can't not refund you.", "refund", True),
+    ]
+
+    @pytest.mark.parametrize("completion,phrase,delivered", EXPECT_CORPUS)
+    def test_negated_expect_phrase_is_not_a_hit(self, completion, phrase, delivered):
+        checks = sft.evaluate_checks(completion, expect=[phrase], forbid=[])
+        assert checks["passed"] is delivered
+
+    def test_refusing_every_remedy_fails_and_is_not_harvested(self):
+        from stateset_agents.training.harvest import sample_passes
+
+        spec = {
+            "prompt": "Booking 7701 — bag lost, double charged, do NOT rebook me",
+            "expect": ["baggage trace", "refund", "7701"],
+            "forbid": ["rebook"],
+        }
+        reply = (
+            "Booking 7701: I can't open a baggage trace, I won't issue a refund, "
+            "and I won't rebook you."
+        )
+        checks = sft.evaluate_checks(reply, spec["expect"], spec["forbid"])
+        assert checks["expect_hits"] == ["7701"] and checks["passed"] is False
+        assert sample_passes(spec, reply) is False
+
+    @pytest.mark.parametrize(
+        "completion,hit",
+        [
+            ("Case 77015: refund issued", False),
+            ("Case 177015 noted", False),
+            ("Case 7701: refund issued", True),
+            ("Case #7701.", True),
+            ("ref:7701", True),
+        ],
+    )
+    def test_reference_numbers_match_whole_numbers_only(self, completion, hit):
+        checks = sft.evaluate_checks(completion, expect=["7701"], forbid=[])
+        assert checks["passed"] is hit
+
     def test_forbidden_phrase_must_start_at_a_word_boundary(self):
         checks = sft.evaluate_checks("Your prebooking is fine.", [], ["rebook"])
         assert checks["passed"] is True

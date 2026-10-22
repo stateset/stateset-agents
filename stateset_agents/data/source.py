@@ -9,6 +9,8 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import count_jsonl_records
+
 
 @dataclass(frozen=True)
 class DatasetSourceIdentity:
@@ -40,7 +42,7 @@ class DatasetSourceIdentity:
         return cls(
             path=str(path),
             sha256=hashlib.sha256(data).hexdigest(),
-            rows=sum(bool(line.strip()) for line in data.decode("utf-8").splitlines()),
+            rows=count_jsonl_records(data.decode("utf-8")),
         )
 
     @classmethod

@@ -50,6 +50,7 @@ from stateset_agents.data.finetuning import (
     parse_finetuning_json,
     validate_finetuning_split,
 )
+from stateset_agents.data.jsonl import jsonl_lines
 from stateset_agents.data.source import DatasetSourceIdentity, SFTDatasetIdentity
 from stateset_agents.training.lineage import (
     AdapterManifest,
@@ -131,10 +132,8 @@ def parse_chat_dataset(data: bytes) -> list[dict[str, Any]]:
     training, rather than hashing the original path after it may have changed.
     """
     rows: list[dict[str, Any]] = []
-    for line_num, line in enumerate(data.decode("utf-8").splitlines(), 1):
+    for line_num, line in jsonl_lines(data.decode("utf-8")):
         line = line.strip()
-        if not line:
-            continue
         try:
             row = parse_finetuning_json(line)
         except json.JSONDecodeError as e:
@@ -218,8 +217,16 @@ def print_training_plan(
     if sample:
         print("  First example:")
         for msg in sample.get("messages", [])[:2]:
-            content = msg.get("content", "")[:60]
-            print(f"    [{msg.get('role')}] {content}…")
+            content = msg.get("content")
+            if not isinstance(content, str):  # e.g. a pure tool call
+                calls = msg.get("tool_calls") or []
+                names = [
+                    str((c.get("function") or {}).get("name"))
+                    for c in calls
+                    if isinstance(c, dict)
+                ]
+                content = f"<tool call: {', '.join(names) or '?'}>"
+            print(f"    [{msg.get('role')}] {content[:60]}…")
     print()
     print("  To execute, run this script on a host with a CUDA-capable GPU.")
     print("=" * 60)
@@ -636,6 +643,74 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     return text_lora_targets(model, sorted(text_found))
 
 
+def encode_chat_prompt(tokenizer: Any, prompt: str, device: Any) -> Any:
+    """Render one user prompt with the generation prompt and encode it.
+
+    The single prompt path for evaluation, harvesting and the SFT eval: the
+    chat template already supplies the model's special tokens, so encoding
+    adds none (a second BOS on Llama/Gemma-style tokenizers otherwise), and
+    reasoning models get ``enable_thinking=False`` where the template accepts
+    it, so the budget is not spent on a reasoning preamble (hit for real with
+    NVIDIA Nemotron 3.5 Lightning on an H100 pod). Templates that reject the
+    kwarg (Muse Glimmer's) get the plain call.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    return tokenizer(text, return_tensors="pt", add_special_tokens=False).to(device)
+
+
+def generate_from_prompt(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    *,
+    max_new_tokens: int,
+    num_return_sequences: int = 1,
+    temperature: float | None = None,
+    top_p: float | None = None,
+) -> list[str]:
+    """Completions for one prompt: greedy, or sampled when ``temperature`` is set.
+
+    Shared by :func:`generate_completions` (greedy evals) and the harvest's
+    best-of-N sampling, so both see the prompt SFT trains on and the same
+    generation-compatibility settings.
+    """
+    import torch
+
+    inputs = encode_chat_prompt(tokenizer, prompt, model.device)
+    sampling: dict[str, Any] = {"do_sample": False}
+    if temperature is not None:
+        sampling = {"do_sample": True, "temperature": temperature}
+        if top_p is not None:
+            sampling["top_p"] = top_p
+    with torch.no_grad():
+        output = model.generate(
+            **inputs,
+            **sampling,
+            num_return_sequences=num_return_sequences,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=tokenizer.eos_token_id,
+            **generation_compat_kwargs(model),
+        )
+    prompt_length = inputs["input_ids"].shape[1]
+    return [
+        tokenizer.decode(row[prompt_length:], skip_special_tokens=True)
+        for row in output
+    ]
+
+
 def generate_completions(
     model: Any,
     tokenizer: Any,
@@ -644,53 +719,28 @@ def generate_completions(
 ) -> list[str]:
     """Greedily generate one completion per prompt through ``model``.
 
-    Used for the post-train base-vs-tuned comparison: each prompt is rendered
-    through the model's chat template (with the generation prompt appended)
-    and decoded back to just the completion text. Greedy decoding keeps the
-    two runs comparable — sampling noise would swamp the tuning signal.
-
-    Reasoning models (e.g. NVIDIA Nemotron 3.5 Lightning) default to thinking
-    mode in their chat template, so the whole ``max_new_tokens`` budget goes
-    to the reasoning preamble and the comparison is truncated garbage (hit
-    for real on an H100 pod). ``enable_thinking=False`` turns that off;
-    templates that don't accept the kwarg (e.g. Muse Glimmer's) raise
-    TypeError and get the plain call instead.
+    Used for the post-train base-vs-tuned comparison: each prompt is encoded
+    by :func:`encode_chat_prompt` and decoded back to just the completion
+    text. Greedy decoding keeps the two runs comparable — sampling noise
+    would swamp the tuning signal.
     """
-    import torch
+    return [
+        generate_from_prompt(model, tokenizer, prompt, max_new_tokens=max_new_tokens)[0]
+        for prompt in prompts
+    ]
 
-    completions: list[str] = []
-    for prompt in prompts:
-        messages = [{"role": "user", "content": prompt}]
-        try:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
-        except TypeError:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        # The chat template already supplies the model's special tokens.
-        inputs = tokenizer(text, return_tensors="pt", add_special_tokens=False).to(
-            model.device
-        )
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                do_sample=False,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=tokenizer.eos_token_id,
-                **generation_compat_kwargs(model),
-            )
-        prompt_length = inputs["input_ids"].shape[1]
-        completions.append(
-            tokenizer.decode(output[0][prompt_length:], skip_special_tokens=True)
-        )
-    return completions
+
+def load_tokenizer_for(base_model: str, *, revision: str | None = None) -> Any:
+    """The tokenizer SFT, evaluation and harvesting load for ``base_model``.
+
+    Repository code runs only for curated presets that need it.
+    """
+    from transformers import AutoTokenizer
+
+    revision_kwargs = {"revision": revision} if revision is not None else {}
+    return AutoTokenizer.from_pretrained(  # nosec: B615 - caller pins revision
+        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
+    )
 
 
 #: Keys an eval prompt-spec dict may carry. Anything else is a typo the user
@@ -751,16 +801,26 @@ def normalize_eval_prompts(
 #: Words that negate a following verb: "not", "never", "no", "without",
 #: "cannot" and any "...n't" contraction.
 _NEGATOR = r"(?:not|never|no|without|cannot|\w+n['\u2019]t)"
-#: The only words allowed between a negator and the phrase it governs:
-#: auxiliaries and aspect ("won't be able to rebook", "not going to rebook",
-#: "no need to rebook"). Anything else — "won't hesitate to", "not only
-#: will I", "can't wait to" — means the negation is about something else.
+#: Auxiliaries and aspect allowed between a negator and what it governs
+#: ("won't be able to rebook", "not going to rebook", "no need to rebook").
 _GOVERNING = (
     r"(?:be\s+able\s+to|able\s+to|be|need\s+to|have\s+to|going\s+to"
     r"|go\s+ahead\s+and|try\s+to|bother\s+to|ever)"
 )
+#: A negated verb may take the phrase as its object through a few function
+#: words: "I can't open a baggage trace", "I won't issue you a refund".
+#: Focus adverbs are not verbs: "I didn't just rebook you" still rebooks.
+_GOVERNED_VERB = (
+    rf"(?!(?:only|just|simply|merely|also|even|wait|hesitate|{_NEGATOR})\b)"
+    r"[\w'\u2019-]+"
+)
+_OBJECT_WORDS = (
+    r"(?:you|your|him|her|them|their|it|its|us|our|me|my|a|an|the|any"
+    r"|another|that|this|these|those|some)"
+)
 _NEGATED_BEFORE = re.compile(
-    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?$",
+    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?"
+    rf"(?:{_GOVERNED_VERB}\s+(?:{_OBJECT_WORDS}\s+){{0,2}})?$",
     re.IGNORECASE,
 )
 _NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
@@ -769,9 +829,11 @@ _NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
 def _negation_governs(before: str) -> bool:
     """Whether the text right before a phrase negates it.
 
-    The negator must immediately govern the phrase — adjacent, or separated
-    only by an auxiliary such as "be able to" — and must not itself be
-    negated ("I can't not rebook you" still rebooks).
+    The negator must govern the phrase: adjacent ("won't rebook"), through
+    an auxiliary ("won't be able to rebook"), or as the object of the negated
+    verb ("can't open a baggage trace"). It must not itself be negated ("I
+    can't not rebook you" still rebooks), and "won't hesitate to", "not only
+    will I" or "can't wait to" are not negations of what follows.
     """
     match = _NEGATED_BEFORE.search(before)
     if match is None:
@@ -780,21 +842,29 @@ def _negation_governs(before: str) -> bool:
     return not (previous and _NEGATOR_WORD.fullmatch(previous))
 
 
-def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
-    """True when ``phrase`` occurs in ``completion`` other than negated.
+def _phrase_pattern(phrase: str) -> re.Pattern[str]:
+    """``phrase`` at a word start; a trailing number must end there too.
 
-    A user who declines a remedy is honored by "I won't rebook you" — the
-    forbidden token appears only to say it will not happen. Matches must
-    start at a word boundary ("rebook" still hits "rebooked") and count
-    unless a negation immediately governs them (see
-    :func:`_negation_governs`): "I won't hesitate to rebook you" rebooks.
-    The same check filters harvested samples, so a loose negation rule
-    would harvest exactly the behaviour a refusal prompt forbids.
+    "rebook" still matches "rebooked", but reference "7701" does not match
+    inside "77015".
+    """
+    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
+    end = r"(?!\d)" if phrase[-1:].isdigit() else ""
+    return re.compile(start + re.escape(phrase) + end, re.IGNORECASE)
+
+
+def _phrase_asserted(completion: str, phrase: str) -> bool:
+    """True when ``phrase`` occurs in ``completion`` and is not negated.
+
+    One rule for both sides of a check: a reply that says "I won't rebook
+    you" honors a declined remedy (``forbid``), and one that says "I can't
+    open a baggage trace" did not deliver it (``expect``). The same check
+    filters harvested samples, so a negation it misses becomes training
+    data.
     """
     if not phrase:
         return True
-    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
-    for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
+    for match in _phrase_pattern(phrase).finditer(completion):
         # The governing window is a few words; bound the regex's input.
         before = completion[max(0, match.start() - 200) : match.start()]
         if not _negation_governs(before):
@@ -805,16 +875,15 @@ def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
 def evaluate_checks(
     completion: str, expect: list[str], forbid: list[str]
 ) -> dict[str, Any]:
-    """Case-insensitively match ``expect`` substrings and ``forbid`` phrases.
+    """Case-insensitively match ``expect`` and ``forbid`` phrases.
 
-    Passes when every ``expect`` substring appears in ``completion`` and no
-    ``forbid`` phrase is used: a forbidden phrase must start at a word
-    boundary and does not count where it is explicitly negated ("I won't
-    rebook you", "no rebooking"); see :func:`_forbidden_phrase_used`.
+    Passes when every ``expect`` phrase is asserted in ``completion`` and no
+    ``forbid`` phrase is. A phrase counts where it starts at a word boundary
+    (and, when it ends in a digit, ends at a number boundary) and is not
+    governed by a negation; see :func:`_phrase_asserted`.
     """
-    haystack = completion.lower()
-    expect_hits = [s for s in expect if s.lower() in haystack]
-    forbid_hits = [s for s in forbid if _forbidden_phrase_used(completion, s)]
+    expect_hits = [s for s in expect if _phrase_asserted(completion, s)]
+    forbid_hits = [s for s in forbid if _phrase_asserted(completion, s)]
     return {
         "expect_hits": expect_hits,
         "forbid_hits": forbid_hits,
@@ -1105,7 +1174,6 @@ def run_sft(
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
-        AutoTokenizer,
         DataCollatorForSeq2Seq,
         Trainer,
         TrainingArguments,
@@ -1118,9 +1186,7 @@ def run_sft(
     # not attacker-controlled input; pinning a fixed revision would break
     # support for arbitrary user-chosen base models.
     revision_kwargs = {"revision": model_revision} if model_revision is not None else {}
-    tokenizer = AutoTokenizer.from_pretrained(
-        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
-    )  # nosec: B615
+    tokenizer = load_tokenizer_for(base_model, revision=model_revision)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = load_base_model_for_sft(base_model, **revision_kwargs)
