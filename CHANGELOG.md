@@ -69,6 +69,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `train(uncertainty_weighted=True)` scored every episode twice (the environment
+  with the base reward, the trainer with the wrapper); the environment now uses
+  the same wrapper for the duration of training and its reward is restored after.
+- The professionalism reward no longer treats "whatever" as unprofessional
+  ("whatever you need"); it penalizes dismissive phrases instead.
+
 - `DistributedGRPOTrainer.setup_model()` called agent methods that do not exist;
   it now uses `agent.model` and builds AdamW from the training config.
 - FSDP received the `"full_shard"` string instead of a `ShardingStrategy`.

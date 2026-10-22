@@ -153,13 +153,53 @@ async def train(
             "Offline training uses IQL-weighted logged-action extraction; "
             "objective selects an online policy objective and cannot be applied here"
         )
+    environment_reward = getattr(environment, "reward_fn", None)
     if reward_fn is None:
-        reward_fn = environment.reward_fn
+        reward_fn = environment_reward
 
     # Optional: wrap reward with Bayesian uncertainty weighting
+    restore_environment_reward = False
     if uncertainty_weighted and reward_fn is not None:
+        wraps_environment_reward = reward_fn is environment_reward
         reward_fn = _wrap_with_uncertainty(reward_fn)
+        if wraps_environment_reward and reward_fn is not environment_reward:
+            # Score each episode once: the environment applies the same wrapped
+            # reward the trainer would, so the trainer reuses its score instead
+            # of calling the base reward a second time. Restored on exit.
+            environment.reward_fn = reward_fn
+            restore_environment_reward = True
 
+    try:
+        return await _run_training(
+            agent,
+            environment,
+            config,
+            reward_fn,
+            dataset,
+            dataset_path,
+            training_mode,
+            save_path,
+            callbacks,
+            explicit_fields,
+        )
+    finally:
+        if restore_environment_reward:
+            environment.reward_fn = environment_reward
+
+
+async def _run_training(
+    agent: Any,
+    environment: Any,
+    config: Any,
+    reward_fn: Any,
+    dataset: Any,
+    dataset_path: str | None,
+    training_mode: str,
+    save_path: str | None,
+    callbacks: Any,
+    explicit_fields: Any,
+) -> Agent:
+    """Dispatch to the trainer for ``training_mode`` once rewards are wired."""
     # Load dataset for offline/hybrid modes
     if training_mode in ("offline", "hybrid") and dataset is None and dataset_path:
         dataset = _load_dataset(dataset_path)

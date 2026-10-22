@@ -509,9 +509,23 @@ async def test_professionalism_does_not_penalize_empathy_or_substrings():
     component = ProfessionalismRewardComponent()
     empathetic = "I understand you're frustrated. Please let me help resolve this."
     substring = "Thank you, please enjoy your stay at the chateau."
-    for reply in (empathetic, substring):
+    flexible = "I can help with whatever you need for this order."
+    for reply in (empathetic, substring, flexible):
         score = await component.compute_score([{"role": "assistant", "content": reply}])
         assert score > 0.0, reply
+
+
+async def test_professionalism_penalizes_dismissive_replies():
+    component = ProfessionalismRewardComponent()
+    polite = "I can help resolve this for you, thank you for your patience."
+    dismissive = "That's not my problem, deal with it."
+    polite_score = await component.compute_score(
+        [{"role": "assistant", "content": polite}]
+    )
+    dismissive_score = await component.compute_score(
+        [{"role": "assistant", "content": dismissive}]
+    )
+    assert dismissive_score < polite_score
 
 
 # --- 10. Bookkeeping ---------------------------------------------------------
@@ -522,3 +536,67 @@ def test_create_adaptive_reward_does_not_mutate_caller_weights():
     composite = create_adaptive_reward([helpful, concise])
     assert (helpful.weight, concise.weight) == (2.0, 2.0)
     assert [rf.weight for rf in composite.reward_functions] == [0.5, 0.5]
+
+
+# --- 2b. Uncertainty weighting keeps one scoring per episode -----------------
+
+
+async def test_uncertainty_weighting_installs_the_wrapper_on_the_environment(
+    monkeypatch,
+):
+    """train(uncertainty_weighted=True) wraps the environment's own reward; the
+    environment must score with that same wrapper so the trainer can reuse its
+    score instead of calling the base reward a second time."""
+    import importlib
+
+    # The package re-exports the train() function under the module's name.
+    train_module = importlib.import_module("stateset_agents.training.train")
+
+    base = CountingReward(RewardType.SPARSE)
+    environment = ConversationEnvironment([SCRIPTED], max_turns=5, reward_fn=base)
+    seen = {}
+
+    async def fake_run(agent, env, config, reward_fn, *args, **kwargs):
+        seen["trainer_reward"] = reward_fn
+        seen["environment_reward"] = env.reward_fn
+        return agent
+
+    monkeypatch.setattr(train_module, "_run_training", fake_run)
+    agent = SimpleNamespace(config=None)
+    await train_module.train(
+        agent,
+        environment,
+        num_episodes=1,
+        training_mode="single_turn",
+        uncertainty_weighted=True,
+    )
+
+    assert seen["trainer_reward"] is not base  # wrapped
+    assert seen["environment_reward"] is seen["trainer_reward"]
+    assert environment.reward_fn is base  # restored after training
+
+
+async def test_uncertainty_weighting_restores_the_environment_reward_on_failure(
+    monkeypatch,
+):
+    import importlib
+
+    # The package re-exports the train() function under the module's name.
+    train_module = importlib.import_module("stateset_agents.training.train")
+
+    base = CountingReward(RewardType.SPARSE)
+    environment = ConversationEnvironment([SCRIPTED], max_turns=5, reward_fn=base)
+
+    async def failing_run(*args, **kwargs):
+        raise RuntimeError("trainer crashed")
+
+    monkeypatch.setattr(train_module, "_run_training", failing_run)
+    with pytest.raises(RuntimeError, match="trainer crashed"):
+        await train_module.train(
+            SimpleNamespace(config=None),
+            environment,
+            num_episodes=1,
+            training_mode="single_turn",
+            uncertainty_weighted=True,
+        )
+    assert environment.reward_fn is base

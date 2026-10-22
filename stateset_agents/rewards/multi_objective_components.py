@@ -350,8 +350,11 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "help",
             "resolve",
         ]
+        # Dismissive phrases rather than the bare word "whatever", which is
+        # also how helpful replies offer flexibility ("whatever you need").
         self.unprofessional_indicators = unprofessional_indicators or [
-            "whatever",
+            "not my problem",
+            "deal with it",
             "dunno",
             "idk",
             "lol",
