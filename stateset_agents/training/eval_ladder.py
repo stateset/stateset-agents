@@ -30,6 +30,7 @@ from __future__ import annotations
 import itertools
 import json
 import random
+import re
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -88,24 +89,34 @@ def check_disjoint_prompts(
     harvest_prompts: Iterable[Mapping[str, Any]],
     *,
     ref_of: Callable[[Mapping[str, Any]], str | None] | None = None,
+    same_request: Callable[[Mapping[str, Any]], str] | None = None,
 ) -> None:
     """Raise ``ValueError`` when an eval prompt reappears in the harvest set.
 
-    Compared by :func:`masked_prompt_key`, so a harvest prompt that differs
-    from an eval prompt only in its reference number still counts: training
-    on it would make the eval score measure leakage. ``ref_of`` returns a
-    spec's exact reference when it is known; otherwise every digit is masked.
+    Two prompts are the same request when their :func:`masked_prompt_key`
+    matches (they differ only in reference number), when they use the same
+    words in another order (clauses reordered), or — given ``same_request``
+    — when that key matches (the ladder passes the set of issues asked
+    about). Training on any of them makes the eval score measure leakage.
+    ``ref_of`` returns a spec's exact reference when it is known; otherwise
+    every digit is masked.
     """
+    eval_specs, harvest_specs = list(eval_prompts), list(harvest_prompts)
 
-    def key(spec: Mapping[str, Any]) -> str:
-        return masked_prompt_key(spec, ref_of(spec) if ref_of else None)
+    def keys(spec: Mapping[str, Any]) -> set[str]:
+        text = masked_prompt_key(spec, ref_of(spec) if ref_of else None)
+        found = {"text:" + text, "words:" + " ".join(sorted(re.findall(r"\w+", text)))}
+        if same_request is not None:
+            found.add("request:" + same_request(spec))
+        return found
 
-    harvest = {key(spec) for spec in harvest_prompts}
-    shared = [spec for spec in eval_prompts if key(spec) in harvest]
+    harvest = set().union(*(keys(spec) for spec in harvest_specs))
+    shared = [spec for spec in eval_specs if keys(spec) & harvest]
     if shared:
         raise ValueError(
-            f"{len(shared)} eval prompt(s) match a harvest prompt once reference "
-            "numbers are masked; eval and harvest sets must be disjoint"
+            f"{len(shared)} eval prompt(s) repeat a harvest prompt (reference "
+            "numbers masked, clause order ignored); eval and harvest sets must "
+            "be disjoint"
         )
 
 
@@ -122,35 +133,33 @@ def _partition_shapes(
     eval_count: int,
     harvest_count: int,
     rng: random.Random,
-) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]], bool]:
+) -> tuple[list[tuple[str, ...]], list[tuple[str, ...]]]:
     """Split the domain's issue combinations between eval and harvest.
 
-    Returns ``(eval_shapes, harvest_shapes, ordered)``. Shapes are unordered
-    combinations of ``size`` issues (each prompt shuffles its own order), so
-    an eval prompt never asks for the same set of issues as any harvest
-    prompt. A domain with exactly ``size`` issues has one combination; its
-    orderings are partitioned instead (``ordered=True``). Shapes are shared
-    in proportion to the two set sizes, at least one per non-empty set.
+    Shapes are unordered combinations of ``size`` issues (each prompt
+    shuffles its own order), so an eval prompt never asks for the same set
+    of issues as any harvest prompt. A domain with exactly ``size`` issues
+    has a single combination: eval and harvest could only differ in clause
+    order — the same request — so that raises. Shapes are shared in
+    proportion to the two set sizes, at least one per non-empty set.
     """
     shapes = list(itertools.combinations(names, size))
-    ordered = len(shapes) < 2
-    if ordered:
-        shapes = list(itertools.permutations(names, size))
     rng.shuffle(shapes)
     if not eval_count or not harvest_count:
-        return (shapes, [], ordered) if eval_count else ([], shapes, ordered)
+        return (shapes, []) if eval_count else ([], shapes)
     if len(shapes) < 2:
         raise ValueError(
-            f"a domain with {len(names)} issue(s) at size {size} has one "
-            "issue combination; eval and harvest prompts cannot be disjoint"
+            f"a domain with {len(names)} issue(s) at size {size} has one issue "
+            f"combination, so eval and harvest prompts would ask for the same "
+            f"issues; add an issue (at least {size + 1})"
         )
     share = round(len(shapes) * eval_count / (eval_count + harvest_count))
     split = min(len(shapes) - 1, max(1, share))
-    return shapes[:split], shapes[split:], ordered
+    return shapes[:split], shapes[split:]
 
 
 def _draw_shapes(
-    pool: Sequence[tuple[str, ...]], count: int, ordered: bool, rng: random.Random
+    pool: Sequence[tuple[str, ...]], count: int, rng: random.Random
 ) -> list[list[str]]:
     """``count`` issue lists cycling through ``pool`` in reshuffled rounds."""
     drawn: list[list[str]] = []
@@ -160,10 +169,26 @@ def _draw_shapes(
             cycle = list(pool)
             rng.shuffle(cycle)
         chosen = list(cycle.pop())
-        if not ordered:
-            rng.shuffle(chosen)
+        rng.shuffle(chosen)
         drawn.append(chosen)
     return drawn
+
+
+def _issue_set(spec: Mapping[str, Any]) -> str:
+    """The set of issues a ladder spec asks about, whatever their order.
+
+    A single prompt asks for its expected tokens (a declined extra issue is
+    not asked for); an episode raises every issue across its turns,
+    including a declined last one. The reference is left out: two specs with
+    the same set are the same request with clauses or turns reordered.
+    """
+    ref = _ladder_ref(spec)
+    tokens = list(spec.get("expect") or [])
+    if isinstance(spec.get("turns"), list):
+        for turn in spec.get("turn_expect") or []:
+            tokens.extend(turn)
+        tokens.extend(spec.get("forbid") or [])
+    return json.dumps(sorted({str(t) for t in tokens if str(t) != ref}))
 
 
 @dataclass
@@ -332,7 +357,7 @@ def build_ladder(
         raise ValueError(f"refusal_fraction must be in [0,1], got {refusal_fraction}")
     rng = random.Random(seed)
     train_base, eval_base, harvest_base = _ref_bases(train_count, eval_count)
-    eval_shapes, harvest_shapes, ordered = _partition_shapes(
+    eval_shapes, harvest_shapes = _partition_shapes(
         names, depth, eval_count, harvest_count, rng
     )
 
@@ -340,7 +365,7 @@ def build_ladder(
         count: int, ref_base: int, pool: Sequence[tuple[str, ...]]
     ) -> list[dict]:
         prompts = []
-        for i, included in enumerate(_draw_shapes(pool, count, ordered, rng)):
+        for i, included in enumerate(_draw_shapes(pool, count, rng)):
             wants_refusal = refusal_fraction > 0.0 and rng.random() < refusal_fraction
             extra = [name for name in names if name not in included]
             refused = rng.choice(extra) if wants_refusal and extra else None
@@ -357,7 +382,10 @@ def build_ladder(
         for i, row in enumerate(kit["train"])
     ]
     check_disjoint_prompts(
-        kit["eval"], [*kit["harvest"], *train_specs], ref_of=_ladder_ref
+        kit["eval"],
+        [*kit["harvest"], *train_specs],
+        ref_of=_ladder_ref,
+        same_request=_issue_set,
     )
     return kit
 
@@ -403,7 +431,7 @@ def build_episode_ladder(
         )
     rng = random.Random(seed)
     _, eval_base, harvest_base = _ref_bases(train_count, eval_count)
-    eval_shapes, harvest_shapes, ordered = _partition_shapes(
+    eval_shapes, harvest_shapes = _partition_shapes(
         names, turns, eval_count, harvest_count, rng
     )
 
@@ -411,7 +439,7 @@ def build_episode_ladder(
         count: int, ref_base: int, pool: Sequence[tuple[str, ...]]
     ) -> list[dict]:
         scripts = []
-        for i, chosen in enumerate(_draw_shapes(pool, count, ordered, rng)):
+        for i, chosen in enumerate(_draw_shapes(pool, count, rng)):
             issues = [spec.issues[n] for n in chosen]
             ref = spec.ref(ref_base + i)
             label = spec.ref_label.format(ref=ref)
@@ -471,7 +499,12 @@ def build_episode_ladder(
         "eval": build_set(eval_count, eval_base, eval_shapes),
         "harvest": build_set(harvest_count, harvest_base, harvest_shapes),
     }
-    check_disjoint_prompts(episodes["eval"], episodes["harvest"], ref_of=_ladder_ref)
+    check_disjoint_prompts(
+        episodes["eval"],
+        episodes["harvest"],
+        ref_of=_ladder_ref,
+        same_request=_issue_set,
+    )
     return episodes
 
 

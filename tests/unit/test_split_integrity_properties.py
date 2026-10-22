@@ -12,7 +12,6 @@ combinations) on one side.
 
 from __future__ import annotations
 
-import itertools
 import json
 import random
 import re
@@ -331,7 +330,10 @@ def test_ladder_eval_and_harvest_are_disjoint_and_reproducible(
     spec: DomainSpec, data: Any, seed: int, rng: random.Random
 ) -> None:
     n = len(spec.issues)
-    depth = data.draw(st.integers(2, min(4, n)))
+    # A domain needs more issues than the depth: with exactly ``depth``
+    # issues eval and harvest would ask for the same set (it raises).
+    assume(n >= 3)
+    depth = data.draw(st.integers(2, min(4, n - 1)))
     refusals = data.draw(st.sampled_from([0.0, 0.5, 1.0])) if n > depth else 0.0
     counts = {
         "eval_count": data.draw(st.integers(1, 30)),
@@ -360,10 +362,9 @@ def test_ladder_eval_and_harvest_are_disjoint_and_reproducible(
     assert not eval_keys & harvest_keys
     assert not eval_keys & train_keys
     assert not harvest_keys & train_keys
-    if len(list(itertools.combinations(spec.issues, depth))) >= 2:
-        # Group-preserving: an issue combination lives on one side only.
-        eval_sets = {frozenset(p["expect"][:-1]) for p in kit["eval"]}
-        assert not eval_sets & {frozenset(p["expect"][:-1]) for p in kit["harvest"]}
+    # Group-preserving: an issue set lives on one side only.
+    eval_sets = {frozenset(p["expect"][:-1]) for p in kit["eval"]}
+    assert not eval_sets & {frozenset(p["expect"][:-1]) for p in kit["harvest"]}
 
     eval_refs = {p["expect"][-1] for p in kit["eval"]}
     harvest_refs = {p["expect"][-1] for p in kit["harvest"]}
@@ -384,11 +385,22 @@ def test_ladder_eval_and_harvest_are_disjoint_and_reproducible(
 
 
 @SETTINGS
+@given(domains(), st.integers(0, 2**16))
+def test_a_domain_with_exactly_depth_issues_is_refused(spec, seed):
+    n = len(spec.issues)
+    with pytest.raises(ValueError, match="one issue combination"):
+        build_ladder(spec, depth=n, eval_count=3, harvest_count=3, seed=seed)
+    with pytest.raises(ValueError, match="one issue combination"):
+        build_episode_ladder(spec, turns=n, eval_count=3, harvest_count=3, seed=seed)
+
+
+@SETTINGS
 @given(domains(), st.data(), st.integers(0, 2**16))
 def test_episode_ladder_eval_and_harvest_are_disjoint_and_reproducible(
     spec: DomainSpec, data: Any, seed: int
 ) -> None:
-    turns = data.draw(st.integers(2, min(4, len(spec.issues))))
+    assume(len(spec.issues) >= 3)
+    turns = data.draw(st.integers(2, min(4, len(spec.issues) - 1)))
     counts = {
         "eval_count": data.draw(st.integers(1, 20)),
         "harvest_count": data.draw(st.integers(1, 30)),
