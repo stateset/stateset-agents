@@ -605,7 +605,7 @@ def test_late_submission_cannot_overwrite_a_different_evaluation_editor(
         }
     ]
 
-    def submit(*args):
+    def submit(*args, **kwargs):
         started.set()
         release.wait(timeout=10)
         return tmp_path / "comparison"
@@ -777,3 +777,89 @@ def test_verification_state_changes_go_through_the_locked_transition(tmp_path):
     assert not validation._state(record, status="running", completed=1, total=2)
     state = read_json(record / "state.json")
     assert state["status"] == "succeeded" and "error" not in state
+
+
+def test_worker_that_cannot_start_fails_the_request_instead_of_queuing_forever(
+    tmp_path, monkeypatch
+):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    calls = queued(monkeypatch)
+    request = comparison.submit_comparison(run, paths[0].name)
+    (run / "plan.json").write_text("{not json")  # e.g. swapped at admission
+    assert comparison.execute_comparison(request) == 1
+    assert ws.read_json(request / "state.json")["status"] == "failed"
+    assert not (request / "execution.json").exists()
+    (run / "plan.json").unlink()
+    assert len(calls) == 1
+
+
+def test_a_second_worker_never_changes_the_owners_state(tmp_path, monkeypatch):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    queued(monkeypatch)
+    request = comparison.submit_comparison(run, paths[0].name)
+    ws.write_json(
+        request / "execution.json", {"pid": os.getpid(), "process_token": "x"}
+    )
+    before = (request / "state.json").read_bytes()
+    assert comparison.execute_comparison(request) == 1
+    assert (request / "state.json").read_bytes() == before
+
+
+def test_stale_queued_request_no_longer_blocks_its_anchor(tmp_path, monkeypatch):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    calls = queued(monkeypatch)
+    first = comparison.submit_comparison(run, paths[0].name)
+    state = ws.read_json(first / "state.json")
+    ws.write_json(
+        first / "state.json",
+        {
+            **state,
+            "created_at": state["created_at"]
+            - comparison.QUEUED_STALE_AFTER_SECONDS
+            - 1,
+        },
+    )
+    assert comparison.comparison_status(first)["state"]["status"] == "stale"
+    second = comparison.submit_comparison(run, paths[0].name)
+    assert second != first and len(calls) == 2
+
+
+def test_claimed_request_whose_worker_died_is_interrupted(tmp_path, monkeypatch):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    queued(monkeypatch)
+    request = comparison.submit_comparison(run, paths[0].name)
+    ws.write_json(request / "execution.json", {"pid": 4242, "process_token": "dead"})
+    monkeypatch.setattr(ws, "process_token", lambda _pid: None)
+    monkeypatch.setattr(
+        ws, "probe_process", lambda _pid: (_ for _ in ()).throw(ProcessLookupError())
+    )
+    assert comparison.comparison_status(request)["state"]["status"] == "interrupted"
+
+
+def test_resubmit_queues_a_fresh_request_after_an_uncertain_submission(
+    tmp_path, monkeypatch
+):
+    run, _, paths = cohort(tmp_path, monkeypatch, checkpoints=(1,))
+    calls = queued(
+        monkeypatch,
+        response=SimpleNamespace(returncode=1, stdout="", stderr="queue down"),
+    )
+    first = comparison.submit_comparison(run, paths[0].name)
+    assert comparison.comparison_status(first)["state"]["status"] == (
+        "submission_uncertain"
+    )
+    assert comparison.submit_comparison(run, paths[0].name) == first
+    second = comparison.submit_comparison(run, paths[0].name, resubmit=True)
+    assert second != first and len(calls) == 2
+    result = CliRunner().invoke(
+        cli.app,
+        [
+            "validation-compare",
+            run.name,
+            paths[0].name,
+            "--workspace",
+            str(run.parent),
+            "--resubmit",
+        ],
+    )
+    assert json.loads(result.stdout)["ok"] and len(calls) == 3

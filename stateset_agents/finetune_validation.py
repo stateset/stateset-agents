@@ -13,7 +13,7 @@ import sys
 import time
 import traceback
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -41,6 +41,12 @@ from stateset_agents.finetune_workspace import (
 
 RECORD_ID = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}"
 MAX_COMPARISON_RECORDS = 100
+#: A queued verification no worker has claimed after this long is reported as
+#: ``stale``: it no longer blocks a new submission for its anchor. The queue
+#: job itself is not cancelled; if it starts later it simply verifies again.
+QUEUED_STALE_AFTER_SECONDS = 6 * 3600
+#: Derived statuses that still represent work that may complete.
+ACTIVE_COMPARISON_STATUSES = frozenset({"queued", "running", "submission_uncertain"})
 DIRECTORY = "validation-comparisons"
 GUARDS = (
     "no_success_regressions",
@@ -479,9 +485,19 @@ def compare_validations(
 
 
 def submit_comparison(
-    run: Path, anchor_id: str, evaluation_ids: Sequence[str] | None = None
+    run: Path,
+    anchor_id: str,
+    evaluation_ids: Sequence[str] | None = None,
+    *,
+    resubmit: bool = False,
 ) -> Path:
-    """Retain and submit read-only verification once, without model inference."""
+    """Retain and submit read-only verification once, without model inference.
+
+    An active comparison for the same anchor is returned instead of queuing a
+    duplicate, unless ``resubmit`` explicitly asks for a fresh one (for
+    example after an uncertain submission). Stale, interrupted and failed
+    comparisons never block a new submission.
+    """
     run = run.resolve()
     plan = comparison_plan(run, anchor_id, evaluation_ids)
     queue = queue_executable()
@@ -513,14 +529,13 @@ def submit_comparison(
             )
         except ValueError as error:
             raise ValidationComparisonError(str(error)) from None
-        latest = latest_comparison(run)
+        latest = None if resubmit else latest_comparison(run)
         if latest is not None:
             previous = comparison_status(latest)
-            if previous["anchor_id"] == anchor_id and previous["state"]["status"] in {
-                "queued",
-                "running",
-                "submission_uncertain",
-            }:
+            if (
+                previous["anchor_id"] == anchor_id
+                and previous["state"]["status"] in ACTIVE_COMPARISON_STATUSES
+            ):
                 return latest
         return _submit_request(run, plan, queue, directory)
 
@@ -611,7 +626,9 @@ def _submit_request(
     return path
 
 
-def _state(path: Path, **changes: Any) -> bool:
+def _state(
+    path: Path, *, allowed_from: Collection[str] | None = None, **changes: Any
+) -> bool:
     """Change a verification's state through the shared locked transition.
 
     A recorded outcome is never overwritten, and a success whose result is
@@ -619,9 +636,33 @@ def _state(path: Path, **changes: Any) -> bool:
     """
     return transition_state(
         path,
+        allowed_from=allowed_from,
         success_is_final=lambda directory: (directory / "result.json").is_file(),
         **changes,
     )
+
+
+def _fail_unclaimed(path: Path) -> None:
+    """Record that a queued verification's worker could not start.
+
+    Only an own comparison record that is still queued changes; without this
+    the record stayed ``queued`` forever and blocked its anchor.
+    """
+    try:
+        if (
+            path.parent.name == DIRECTORY
+            and not path.is_symlink()
+            and (path / "state.json").is_file()
+        ):
+            _state(
+                path,
+                allowed_from={"queued"},
+                status="failed",
+                error="The verification worker could not start; inspect inputs and private queue logs.",
+                finished_at=time.time(),
+            )
+    except (OSError, ValueError):
+        pass
 
 
 def execute_comparison(path: Path) -> int:
@@ -642,8 +683,9 @@ def execute_comparison(path: Path) -> int:
                 stream,
             )
     except FileExistsError:
-        return 1
+        return 1  # Another worker owns this verification; keep its state.
     except (OSError, ValueError):
+        _fail_unclaimed(path)
         return 1
     try:
         plan = read_json(path / "plan.json")
@@ -710,12 +752,22 @@ def comparison_status(path: Path) -> dict[str, Any]:
         not isinstance(job, str) or not re.fullmatch(r"[0-9a-f]{12}", job)
     ):
         raise ValidationComparisonError("Comparison queue receipt is unreadable.")
-    if status == "queued" and submission.get("status") == "uncertain":
-        status = "submission_uncertain"
-    if status == "running" and (path / "execution.json").exists():
+    claimed = (path / "execution.json").exists()
+    if status in {"queued", "running"} and claimed:
         # Only an owner that is provably gone (or replaced) interrupts it.
         if owner_alive(path / "execution.json") is False:
             status = "interrupted"
+    elif status == "queued":
+        created = state.get("created_at")
+        if (
+            isinstance(created, (int, float))
+            and not isinstance(created, bool)
+            and math.isfinite(created)
+            and time.time() - created > QUEUED_STALE_AFTER_SECONDS
+        ):
+            status = "stale"
+        elif submission.get("status") == "uncertain":
+            status = "submission_uncertain"
     result = None
     if status == "succeeded":
         result = read_json(path / "result.json", max_bytes=256 * 1024)
@@ -744,7 +796,7 @@ def comparison_status(path: Path) -> dict[str, Any]:
         "inference_started": False,
         "notes": [
             "Queue work survives leaving the TUI. Reopening does not resubmit.",
-            "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain.",
+            "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain, then resubmit explicitly.",
         ],
     }
 

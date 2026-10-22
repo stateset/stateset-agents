@@ -235,6 +235,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   process; where those are missing the worker keeps training and records
   `recovery_unavailable` (shown by `finetune status` and the studio's run
   details) instead of raising inside the trainer's save callback.
+- A checkpoint validation comparison can no longer sit in `queued` forever
+  and block its anchor. A verification worker that cannot start records
+  `failed`; a claimed request whose worker died reads `interrupted`; a request
+  no worker claimed within six hours reads `stale`; none of these block a new
+  submission. `finetune validation-compare --resubmit` (and `b` on an
+  uncertain submission in the evaluation panel) explicitly queues a fresh
+  verification.
 
 ### Security
 

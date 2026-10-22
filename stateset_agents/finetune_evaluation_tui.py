@@ -277,12 +277,17 @@ class EvaluationPanel:
     def _compare(self) -> None:
         if self.busy:
             return
+        resubmit = False
         if (
             self.mode == "comparison"
             and self.comparison
             and self.comparison.get("anchor_id")
         ):
             anchor = self.comparison["anchor_id"]
+            # b on an uncertain submission is the explicit request to retry.
+            resubmit = (
+                self.comparison.get("state", {}).get("status") == "submission_uncertain"
+            )
         else:
             selected = (
                 self.selected
@@ -299,7 +304,9 @@ class EvaluationPanel:
                 return
             anchor = selected["evaluation_id"]
         self._background(
-            "comparison", lambda: submit_comparison(self.run, anchor), owned=True
+            "comparison",
+            lambda: submit_comparison(self.run, anchor, resubmit=resubmit),
+            owned=True,
         )
 
     def _use_recommendation(self) -> None:
