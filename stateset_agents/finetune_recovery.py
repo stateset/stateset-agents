@@ -26,7 +26,7 @@ from stateset_agents.finetune_workspace import (
     FinetuneConfig,
     RunPlan,
     create_run,
-    process_token,
+    owner_evidence,
     read_json,
     read_run_plan,
     read_training_data,
@@ -34,7 +34,6 @@ from stateset_agents.finetune_workspace import (
     verified_run_settings,
     write_json,
 )
-from stateset_agents.utils.process_probe import probe_process
 
 MAX_CHECKPOINT_FILES = 4096
 MAX_CHECKPOINT_BYTES = 1024**4
@@ -266,19 +265,13 @@ def _parent(
             pid, token = owner.get("pid"), owner.get("process_token")
             if type(pid) is not int or pid < 1 or not isinstance(token, str):
                 raise ValueError("Cannot verify the parent worker's lifecycle")
-            current = process_token(pid)
-            if current is None:
-                try:
-                    probe_process(pid)
-                except ProcessLookupError:
-                    continue
-                except PermissionError:
-                    raise ValueError(
-                        "Cannot verify the parent worker's lifecycle"
-                    ) from None
-                raise ValueError("Cannot verify whether the parent worker has exited")
-            if current == token:
+            evidence = owner_evidence(run / filename)
+            if evidence == "alive":
                 raise ValueError("Wait for the parent worker and supervisor to exit")
+            if evidence == "running":
+                raise ValueError("Cannot verify whether the parent worker has exited")
+            if evidence not in {"gone", "reused"}:
+                raise ValueError("Cannot verify the parent worker's lifecycle")
     if not owner_present and (
         state.get("status") == "interrupted"
         or state.get("execution_unconfirmed") is True

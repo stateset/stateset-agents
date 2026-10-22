@@ -127,7 +127,7 @@ def test_pause_freezes_visible_window_across_appends_and_resizes(retained, monke
     (run / "run.log").write_text("NEW OUTPUT\n")
     original = workspace.read_log_snapshot
     monkeypatch.setattr(
-        "stateset_agents.tui.read_log_snapshot",
+        "stateset_agents.tui_panels.read_log_snapshot",
         lambda *a, **k: pytest.fail("paused view must not reread logs"),
     )
     for size in [(72, 22), (74, 44), (110, 32)]:
@@ -135,7 +135,7 @@ def test_pause_freezes_visible_window_across_appends_and_resizes(retained, monke
         assert (
             "PAUSED" in text and "training step 1" in text and "NEW OUTPUT" not in text
         )
-    monkeypatch.setattr("stateset_agents.tui.read_log_snapshot", original)
+    monkeypatch.setattr("stateset_agents.tui_panels.read_log_snapshot", original)
     studio.handle("END")
     assert "NEW OUTPUT" in "\n".join(studio.lines(74, 44))
     studio.handle("s")
@@ -157,9 +157,9 @@ def test_filter_is_literal_case_insensitive_scoped_and_does_not_change_run_searc
     text = "\n".join(studio.lines(74, 44))
     assert "WARNING customer-safe" in text and "training step 1" not in text
     assert (
-        studio.log_query == "warning"
+        studio.log_viewer.query == "warning"
         and studio.run_query == ""
-        and not studio.log_follow
+        and not studio.log_viewer.follow
     )
     studio.handle("/")
     studio.handle("CLEAR")
@@ -170,11 +170,11 @@ def test_filter_is_literal_case_insensitive_scoped_and_does_not_change_run_searc
     studio.handle("/")
     studio.handle("CLEAR")
     studio.handle("ESC")
-    assert studio.overlay == "logs" and studio.log_query == ".*"
+    assert studio.overlay == "logs" and studio.log_viewer.query == ".*"
     studio.handle("BACKSPACE")
-    assert studio.log_query == ""
+    assert studio.log_viewer.query == ""
     studio.handle("ESC")
-    assert studio.overlay is None and studio.log_snapshot is None
+    assert studio.overlay is None and studio.log_viewer is None
 
 
 def test_scrolling_and_live_refresh_remain_bound_to_selected_run(retained):
@@ -184,18 +184,20 @@ def test_scrolling_and_live_refresh_remain_bound_to_selected_run(retained):
     studio.handle("l")
     studio.lines(74, 44)
     studio.handle("HOME")
-    assert "line-000" in "\n".join(studio.lines(74, 44)) and not studio.log_follow
+    assert (
+        "line-000" in "\n".join(studio.lines(74, 44)) and not studio.log_viewer.follow
+    )
     other = create_run(studio.workspace, plan_run(config))
     studio.refresh()
     studio.run_index = next(
         index for index, row in enumerate(studio.runs) if row["id"] == other.name
     )
-    assert studio.log_view_run == run
+    assert studio.log_viewer.run == run
     studio.handle("END")
     assert "line-099" in "\n".join(studio.lines(74, 44))
     studio.run_filter = "failed"
     studio.refresh()
-    assert studio.overlay is None and studio.log_view_run is None
+    assert studio.overlay is None and studio.log_viewer is None
     assert "left this filter" in studio.message
 
 

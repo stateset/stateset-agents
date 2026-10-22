@@ -757,7 +757,7 @@ def test_live_but_uninspectable_owner_is_not_treated_as_a_dead_worker(
     ws.write_json(
         run / "execution.json", {"pid": os.getpid(), "process_token": "unverifiable"}
     )
-    monkeypatch.setattr(recovery, "process_token", lambda _: None)
+    monkeypatch.setattr(ws, "process_token", lambda _: None)
     with pytest.raises(ValueError, match="Cannot verify"):
         recovery.inspect_checkpoints(run)
 

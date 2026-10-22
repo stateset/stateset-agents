@@ -248,3 +248,86 @@ def test_history_load_does_not_block_navigation_and_preserves_selection(
     settle_history()
     assert studio.history_error and len(studio.all_runs) == 3
     assert "Cannot refresh retained runs" in "\n".join(studio.lines())
+
+
+def _slow(release, started, calls, result):
+    """A stand-in for byte-verifying work that must not run on the UI thread."""
+
+    def operation(*args, **kwargs):
+        calls.append(args)
+        started.set()
+        assert release.wait(5), "The operation blocked the terminal thread"
+        return result(*args) if callable(result) else result
+
+    return operation
+
+
+def test_launch_from_review_is_nonblocking_and_single_flight(
+    studio, monkeypatch, settle_preview
+):
+    started, release, calls = threading.Event(), threading.Event(), []
+    monkeypatch.setattr(tui, "launch_run", _slow(release, started, calls, 4242))
+    studio.handle("r")
+    settle_preview(studio)
+    assert studio.overlay == "review"
+    try:
+        studio.handle("ENTER")
+        assert started.wait(2)
+        assert studio.overlay is None and "background" in studio.message
+        studio.handle("r")
+        deadline = time.monotonic() + 5
+        while studio.planning.busy and time.monotonic() < deadline:
+            studio.refresh(history=False)
+            time.sleep(0.005)
+        assert studio.overlay == "review"
+        studio.handle("ENTER")  # a second confirmation while the first submits
+        assert "still being processed" in studio.message
+        assert studio.overlay == "review" and len(calls) == 1
+        studio.handle("ESC")
+    finally:
+        release.set()
+    settle_preview(studio)
+    assert len(calls) == 1 and studio.tab == "runs"
+    assert studio.message.startswith("Launched ")
+    assert studio.runs[studio.run_index]["id"] == calls[0][0].name
+
+
+def test_prepared_review_and_stop_do_not_block_the_terminal(
+    studio, monkeypatch, settle_preview
+):
+    from stateset_agents.finetune_workspace import create_run
+
+    run = create_run(studio.workspace, plan_run(studio.config()))
+    studio.tab = "runs"
+    studio.refresh()
+    started, release, calls = threading.Event(), threading.Event(), []
+    real_review = tui.review_prepared_run
+    monkeypatch.setattr(
+        tui, "review_prepared_run", _slow(release, started, calls, real_review)
+    )
+    try:
+        studio.handle("r")
+        assert started.wait(2) and studio.overlay is None
+        assert "background" in studio.message
+    finally:
+        release.set()
+    settle_preview(studio)
+    assert studio.overlay == "prepared-review"
+    assert studio.prepared_review.run == run
+
+    studio.handle("ESC")
+    stopped, release_stop, stops = threading.Event(), threading.Event(), []
+    monkeypatch.setattr(
+        tui,
+        "request_stop",
+        _slow(release_stop, stopped, stops, {"stop_requested": True}),
+    )
+    studio.handle("k")
+    assert studio.overlay == "stop"
+    try:
+        studio.handle("ENTER")
+        assert stopped.wait(2) and studio.overlay is None
+    finally:
+        release_stop.set()
+    settle_preview(studio)
+    assert len(stops) == 1 and "Local stop requested" in studio.message

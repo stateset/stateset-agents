@@ -28,13 +28,14 @@ from stateset_agents.finetune_evaluation import (
 )
 from stateset_agents.finetune_recovery import CHECKPOINT_NAME_PATTERN
 from stateset_agents.finetune_workspace import (
+    owner_alive,
     process_token,
     queue_executable,
     read_json,
     read_run_plan,
+    transition_state,
     write_json,
 )
-from stateset_agents.utils.process_probe import probe_process
 
 RECORD_ID = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}"
 MAX_COMPARISON_RECORDS = 100
@@ -605,10 +606,16 @@ def _submit_request(
     return path
 
 
-def _state(path: Path, **changes: Any) -> None:
-    write_json(
-        path / "state.json",
-        {**read_json(path / "state.json"), **changes, "updated_at": time.time()},
+def _state(path: Path, **changes: Any) -> bool:
+    """Change a verification's state through the shared locked transition.
+
+    A recorded outcome is never overwritten, and a success whose result is
+    retained is final, so a late progress update cannot reopen it.
+    """
+    return transition_state(
+        path,
+        success_is_final=lambda directory: (directory / "result.json").is_file(),
+        **changes,
     )
 
 
@@ -636,11 +643,11 @@ def execute_comparison(path: Path) -> int:
     try:
         plan = read_json(path / "plan.json")
         _state(path, status="running", phase="verifying_checkpoints")
-        result = compare_validations(
-            run,
-            plan,
-            progress=lambda done, total: _state(path, completed=done, total=total),
-        )
+
+        def progress(done: int, total: int) -> None:
+            _state(path, completed=done, total=total)
+
+        result = compare_validations(run, plan, progress=progress)
         write_json(path / "result.json", result)
         _state(
             path,
@@ -701,19 +708,9 @@ def comparison_status(path: Path) -> dict[str, Any]:
     if status == "queued" and submission.get("status") == "uncertain":
         status = "submission_uncertain"
     if status == "running" and (path / "execution.json").exists():
-        owner = read_json(path / "execution.json")
-        pid = owner.get("pid")
-        if type(pid) is int and pid > 0:
-            token = process_token(pid)
-            if token is not None and token != owner.get("process_token"):
-                status = "interrupted"
-            elif token is None:
-                try:
-                    probe_process(pid)
-                except ProcessLookupError:
-                    status = "interrupted"
-                except PermissionError:
-                    pass
+        # Only an owner that is provably gone (or replaced) interrupts it.
+        if owner_alive(path / "execution.json") is False:
+            status = "interrupted"
     result = None
     if status == "succeeded":
         result = read_json(path / "result.json", max_bytes=256 * 1024)

@@ -757,3 +757,23 @@ def test_queue_submission_is_serialized_for_concurrent_callers(tmp_path, monkeyp
         and requests[0] == requests[1]
         and len(calls) == 1
     )
+
+
+def test_verification_state_changes_go_through_the_locked_transition(tmp_path):
+    """A recorded outcome is final: late progress or failure writes cannot
+    reopen a verification whose result was retained."""
+    from stateset_agents import finetune_validation as validation
+    from stateset_agents.finetune_workspace import read_json, write_json
+
+    record = tmp_path / "record"
+    record.mkdir()
+    write_json(record / "state.json", {"status": "queued"})
+
+    assert validation._state(record, status="running", phase="verifying")
+    write_json(record / "result.json", {"ok": True})
+    assert validation._state(record, status="succeeded", phase="complete")
+
+    assert not validation._state(record, status="failed", error="late failure")
+    assert not validation._state(record, status="running", completed=1, total=2)
+    state = read_json(record / "state.json")
+    assert state["status"] == "succeeded" and "error" not in state

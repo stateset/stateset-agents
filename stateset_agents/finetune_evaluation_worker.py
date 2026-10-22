@@ -27,13 +27,14 @@ from stateset_agents.finetune_workspace import (
     process_token,
     queue_executable,
     read_json,
+    transition_state,
     write_json,
 )
 
 
-def _state(path: Path, **changes: Any) -> None:
-    old = read_json(path / "state.json")
-    write_json(path / "state.json", {**old, **changes, "updated_at": time.time()})
+def _state(path: Path, **changes: Any) -> bool:
+    """Merge progress; a recorded outcome never moves to a different status."""
+    return transition_state(path, **changes)
 
 
 def _check_stop(path: Path) -> None:
@@ -51,10 +52,30 @@ def _authorized(path: Path) -> EvaluationReview:
     return review
 
 
+def _claim_supervisor(path: Path) -> bool:
+    """Exclusively record this process as the evaluation's only supervisor."""
+    try:
+        descriptor = os.open(
+            path / "supervisor.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        return False
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        json.dump(
+            {"pid": os.getpid(), "process_token": process_token(os.getpid())}, stream
+        )
+        stream.write("\n")
+    return True
+
+
 def supervise(path: Path) -> int:
     """Hold durable ownership while the shared queue bounds the whole job."""
     os.umask(0o077)
     try:
+        # Claim before the stop check: a stop that finds no claimed supervisor
+        # cancels the launch outright, so a later claimant must observe it.
+        if not _claim_supervisor(path):
+            return 1  # Another supervisor owns this evaluation; keep its state.
         _check_stop(path)
         review = _authorized(path)
         queue = queue_executable()
@@ -85,12 +106,9 @@ def supervise(path: Path) -> int:
             "--execute",
             str(path),
         ]
-        write_json(
-            path / "supervisor.json",
-            {"pid": os.getpid(), "process_token": process_token(os.getpid())},
-        )
         write_json(path / "command.json", {"argv": command})
-        _state(path, status="queued")
+        if not _state(path, status="queued"):
+            return 1  # An outcome was already recorded; start no queue work.
         environment = dict(
             os.environ,
             OMP_NUM_THREADS=str(config["cpu_slots"]),
@@ -148,7 +166,8 @@ def execute(path: Path) -> int:
         for phase in ("baseline", "candidate", "judge"):
             _check_stop(path)
             read_evaluation(path)
-            _state(path, status="running", phase=phase, completed_cases=0)
+            if not _state(path, status="running", phase=phase, completed_cases=0):
+                raise RuntimeError("Evaluation outcome already recorded")
             code = subprocess.call(
                 [
                     sys.executable,

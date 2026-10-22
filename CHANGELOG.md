@@ -97,9 +97,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   passes parsed (`self_disagreement_n` counts them). The flagship matrix
   requires `judge_parse_failure_rate` and rejects a seed above 0.02; the
   rejudge summary reports it against the same ceiling.
-
-### Fixed
-
+- A fine-tuning success the worker committed (its `completion.json` artifact
+  still verifies) is now authoritative: a later non-zero exit observed by the
+  supervisor (interpreter teardown crash, queue timeout) is recorded as
+  `teardown_error`/`teardown_exit_code` on the run, shown by `finetune status`
+  and the studio's run details, instead of demoting the run to `failed`.
+  Failures recorded before the commit, or a commit whose artifact no longer
+  verifies, still end the run as `failed`.
+- Every fine-tuning run and evaluation `state.json` change now goes through one
+  locked transition helper (`finetune_workspace.transition_run` /
+  `transition_state`). A recorded outcome (succeeded, failed, cancelled) never
+  moves to a different status, so a stop or launch failure that races a
+  finished run is a no-op instead of an overwrite, a refused failure leaves no
+  `failure.json` behind, and an evaluation supervisor starts no queue work once
+  an outcome is recorded.
+- Studio owner-liveness checks (run status, checkpoint recovery and validation
+  comparisons) share one classifier, `finetune_workspace.owner_evidence`, with
+  a tri-state `owner_alive(path)` (alive / gone / undecided). Each caller keeps
+  its existing decisions and messages.
+- The studio's log viewer and file picker are self-contained panels
+  (`stateset_agents.tui_panels.LogViewer` / `FilePicker`, each with
+  `handle(key)` and `lines(width, available)`), and the terminal-safe text
+  helpers live in `stateset_agents.tui_text`. Rendered frames are unchanged.
 - Local SFT labeled every token, system and user turns included, when a chat
   template rewrote earlier turns (Qwen3/Qwen3.5 strip earlier `<think>`
   blocks). Such rows now supervise only their final assistant turn (or are
@@ -159,6 +178,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - A NaN or infinite reward score propagated silently into composite scores and
   episode totals; it is now a reward failure (flagged, or raised for
   `fail_on_error` rewards), and the trainer drops such episodes.
+- RunPod `timeout_s` and `max_cost_usd` now bound the whole run instead of each
+  pod. A pod that dies mid-job is replaced only within the time left on the
+  first pod's deadline (readiness waits included), and only when the spend so
+  far plus the replacement's worst case fits the ceiling; otherwise the run
+  stops with a `budget`/`deadline` error. Previously a replacement got a fresh
+  timeout and a retried run could spend about twice `max_cost_usd`.
+- A fine-tuning run whose supervisor was lost before it claimed the run (OOM,
+  reboot, import failure) no longer stays "prepared" forever. Run status now
+  checks the admitting process while a launch is being claimed, and reports a
+  launch that no process claimed within 120 seconds as `interrupted`. A stop
+  request cancels such an unclaimed launch outright, and a supervisor that
+  cannot claim supervision after admission records a failure.
+- Studio evaluations whose supervisor or executor died (reboot, OOM) are now
+  reported as `interrupted` with `execution_unconfirmed` instead of
+  `queued`/`running` forever, and can be stopped from the evaluation panel. The
+  evaluation supervisor claims `supervisor.json` exclusively, so a second
+  supervisor can no longer take over or rewrite a supervised evaluation.
+- The terminal studio keeps the handles of the run and evaluation supervisors
+  it launches and reaps them when status is refreshed, so finished supervisors
+  no longer linger as zombies (which on macOS also looked alive to owner
+  checks).
+- The terminal studio no longer freezes while it verifies retained bytes:
+  launching a reviewed run, launching a prepared run, opening a prepared-run
+  review and saving a stop request now run in the background (single-flight,
+  with progress shown in the status line). Exiting the studio waits for an
+  authorized launch or stop submission to finish.
+
+### Security
+
+- The fine-tuning studio no longer falls back to hard-coded developer paths
+  (`/home/dom/agent-builds/...`) when looking for the shared Buildr queue. Only
+  `STATESET_BUILDR` or `buildr` on `PATH` is used, so a shared host can no
+  longer run another user's binary with the launching user's environment. A
+  test now rejects absolute home-directory paths in packaged modules.
 
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 

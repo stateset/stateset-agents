@@ -597,7 +597,7 @@ class EvaluationPanel:
                 key == "s"
                 and not self.busy
                 and self.selected["state"].get("status")
-                in {"prepared", "queued", "running"}
+                in {"prepared", "queued", "running", "interrupted"}
             ):
                 self.mode = "stop"
             elif key == "l":
@@ -803,6 +803,10 @@ class EvaluationPanel:
             ]
             if selected["state"].get("error"):
                 rows += ["Error: " + selected["state"]["error"]]
+            if selected["state"].get("execution_unconfirmed"):
+                rows += [
+                    "Supervisor lost; detached queue work may still be running. s requests a cooperative stop."
+                ]
             queue = selected.get("queue", {})
             if queue:
                 rows += [

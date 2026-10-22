@@ -473,7 +473,7 @@ def test_queued_stop_preserves_child_cancellation_through_supervisor(
 
 @pytest.mark.parametrize("size", [(72, 22), (74, 44), (110, 32)])
 def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
-    completed, tmp_path, size
+    completed, tmp_path, size, settle_preview
 ):
     run, config = completed
     source = write_evidence(tmp_path, evidence_for(run, config, regression=True))
@@ -499,6 +499,7 @@ def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
     assert not (run / "stop.json").exists()
     studio.handle("k")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert ws.stop_requested(run) and studio.values == before
 
 

@@ -764,6 +764,11 @@ class RunPodExecutor(RemoteExecutor):
         self._jobs: dict[str, _RunPodJob] = {}
         self._last_duration_s: float | None = None
         self._last_cost_usd: float | None = None
+        #: Run-level deadline (monotonic), fixed when a submission's first pod
+        #: is allocated and shared by every replacement pod.
+        self._run_deadline: float | None = None
+        #: The most recently allocated pod's quote, for replacement budgeting.
+        self._last_cost_per_hr: float | None = None
         self._submission_started = False
 
     @staticmethod
@@ -1008,23 +1013,37 @@ class RunPodExecutor(RemoteExecutor):
 
     # -- lifecycle ---------------------------------------------------------
 
-    def _wait_for_ssh_endpoint(self, api: Any, pod_id: str) -> tuple[str, int]:
-        """Poll until the pod is RUNNING and has published its SSH port."""
+    def _wait_for_ssh_endpoint(
+        self, api: Any, pod_id: str, run_deadline: float | None = None
+    ) -> tuple[str, int]:
+        """Poll until the pod is RUNNING and has published its SSH port.
+
+        The wait never outlives ``run_deadline``: readiness time is billed
+        against the same run-level ``timeout_s`` as the job itself.
+        """
         deadline = time.monotonic() + self.ready_timeout_s
+        if run_deadline is not None:
+            deadline = min(deadline, run_deadline)
         while True:
             pod = api.get_pod(pod_id)
             ip = pod.get("publicIp")
             port = (pod.get("portMappings") or {}).get("22")
             if pod.get("desiredStatus") == "RUNNING" and ip and port:
                 return str(ip), int(port)
-            if time.monotonic() >= deadline:
+            now = time.monotonic()
+            if now >= deadline:
+                bound = (
+                    "the run's remaining time limit"
+                    if run_deadline is not None and deadline >= run_deadline
+                    else f"{self.ready_timeout_s}s"
+                )
                 raise RemoteExecutionError(
                     f"pod {pod_id} never became reachable within "
-                    f"{self.ready_timeout_s}s (last status "
+                    f"{bound} (last status "
                     f"{pod.get('desiredStatus')!r})",
                     provider=self.name,
                 )
-            time.sleep(self.poll_interval_s)
+            time.sleep(max(0.0, min(self.poll_interval_s, deadline - now)))
 
     def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
         """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
@@ -1150,7 +1169,29 @@ class RunPodExecutor(RemoteExecutor):
 
         total_duration_s = 0.0
         total_cost_usd: float | None = 0.0
+        # ``timeout_s`` and ``max_cost_usd`` bound the whole run, not each pod:
+        # the deadline is fixed when the first pod is allocated and every
+        # replacement inherits what is left of it.
+        self._run_deadline = None
+        self._last_cost_per_hr = None
+        pod_death: _PodDiedMidJob | None = None
         for attempt in range(1, self.max_provision_attempts + 1):
+            if pod_death is not None:
+                refusal = self._replacement_refusal(
+                    spec,
+                    spent_usd=total_cost_usd,
+                    cost_per_hr=self._last_cost_per_hr,
+                    start=time.monotonic(),
+                )
+                if refusal is not None:
+                    stage, reason = refusal
+                    logs.append(f"not provisioning a replacement pod: {reason}")
+                    raise RemoteExecutionError(
+                        f"pod died mid-job and no replacement pod was "
+                        f"provisioned: {reason} ({pod_death})",
+                        provider=self.name,
+                        stage=stage,
+                    ) from pod_death
             self._last_duration_s = None
             self._last_cost_usd = None
             self._submission_cleanup_unconfirmed = False
@@ -1168,8 +1209,10 @@ class RunPodExecutor(RemoteExecutor):
                     # a network volume; without one they died with the pod.
                     force_resume=bool(spec.network_volume_id) and attempt > 1,
                     attempt=attempt,
+                    spent_usd=total_cost_usd,
                 )
             except _PodDiedMidJob as exc:
+                pod_death = exc
                 if (
                     getattr(self, "_submission_observer", None) is not None
                     and self._submission_cleanup_unconfirmed
@@ -1244,6 +1287,49 @@ class RunPodExecutor(RemoteExecutor):
 
         raise AssertionError("unreachable")  # pragma: no cover
 
+    def _replacement_refusal(
+        self,
+        spec: RemoteJobSpec,
+        *,
+        spent_usd: float | None,
+        cost_per_hr: float | None,
+        start: float,
+    ) -> tuple[str, str] | None:
+        """Why a replacement pod starting at ``start`` must not run, if it must not.
+
+        A replacement only gets what is left of the run deadline, so its worst
+        case is its hourly price for that remainder. Together with what the
+        earlier pods already cost, that must stay within ``max_cost_usd``.
+        Unknown spend or price cannot be checked against a ceiling, so it is a
+        refusal, mirroring :func:`check_budget`.
+        """
+        deadline = self._run_deadline
+        remaining_s = (deadline - start) if deadline is not None else spec.timeout_s
+        if remaining_s <= 0:
+            return (
+                "deadline",
+                f"the run's {spec.timeout_s}s time limit has already elapsed",
+            )
+        if spec.max_cost_usd is None:
+            return None
+        if spent_usd is None or cost_per_hr is None:
+            return (
+                "budget",
+                "the spend so far or the pod price is unknown, so a replacement "
+                f"cannot be checked against the --max-cost ceiling of "
+                f"${spec.max_cost_usd:.2f}",
+            )
+        worst_case = spent_usd + cost_per_hr * remaining_s / 3600.0
+        if worst_case > spec.max_cost_usd:
+            return (
+                "budget",
+                f"this run could then cost ${worst_case:.2f} "
+                f"(${spent_usd:.2f} already spent + ${cost_per_hr}/hr for the "
+                f"remaining {remaining_s:.0f}s), above the --max-cost ceiling "
+                f"of ${spec.max_cost_usd:.2f}",
+            )
+        return None
+
     def _record_cost(self, spec: RemoteJobSpec, job_id: str, status: JobStatus) -> None:
         """Retain one allocation's quote-derived observed cost, even on failure."""
         record_entry(
@@ -1281,6 +1367,7 @@ class RunPodExecutor(RemoteExecutor):
         data_center_id: str | None = None,
         force_resume: bool = False,
         attempt: int = 1,
+        spent_usd: float | None = 0.0,
     ) -> JobStatus:
         """One full provision → upload → run → download cycle on a new pod.
 
@@ -1330,6 +1417,10 @@ class RunPodExecutor(RemoteExecutor):
             not math.isfinite(cost_per_hr) or cost_per_hr < 0
         ):
             cost_per_hr = None
+        self._last_cost_per_hr = cost_per_hr
+        if self._run_deadline is None:
+            self._run_deadline = pod_started_monotonic + spec.timeout_s
+        run_deadline = self._run_deadline
         try:
             self._write_lease(pod_id, job_id, spec, pod_started_at)
             self._observe_pod(job_id, "allocated", pod_id, attempt=attempt)
@@ -1342,29 +1433,59 @@ class RunPodExecutor(RemoteExecutor):
 
             if type(ssh) is SshTransport:
                 # Keep transport construction inside the allocation's cleanup
-                # boundary, after retaining its identity and lease.
-                ssh = ssh._for_deadline(pod_started_monotonic + spec.timeout_s)
+                # boundary, after retaining its identity and lease. Every
+                # attempt shares the run deadline; a replacement pod gets only
+                # what is left of ``timeout_s``, never a fresh window.
+                ssh = ssh._for_deadline(run_deadline)
 
             # Refuse before work, retaining the allocated pod's observed cost.
             # Failed or ambiguous termination can still leave billing active.
-            try:
-                check_budget(
-                    cost_per_hr,
-                    spec.timeout_s,
-                    spec.max_cost_usd,
-                    # RunPod quotes the whole Pod, not each GPU separately.
-                    gpu_count=1,
+            if attempt == 1:
+                try:
+                    check_budget(
+                        cost_per_hr,
+                        spec.timeout_s,
+                        spec.max_cost_usd,
+                        # RunPod quotes the whole Pod, not each GPU separately.
+                        gpu_count=1,
+                    )
+                except BudgetExceeded as exc:
+                    raise RemoteExecutionError(
+                        str(exc), provider=self.name, pod_id=pod_id
+                    ) from exc
+            else:
+                # The replacement's own quote may differ from the dead pod's.
+                refusal = self._replacement_refusal(
+                    spec,
+                    spent_usd=spent_usd,
+                    cost_per_hr=cost_per_hr,
+                    start=pod_started_monotonic,
                 )
-            except BudgetExceeded as exc:
-                raise RemoteExecutionError(
-                    str(exc), provider=self.name, pod_id=pod_id
-                ) from exc
+                if refusal is not None:
+                    raise RemoteExecutionError(
+                        f"replacement pod {pod_id} refused before work: "
+                        f"{refusal[1]}",
+                        provider=self.name,
+                        pod_id=pod_id,
+                        stage=refusal[0],
+                    )
 
             # Everything from here must terminate the pod, whatever happens.
             try:
-                host, port = self._wait_for_ssh_endpoint(api, pod_id)
+                host, port = self._wait_for_ssh_endpoint(api, pod_id, run_deadline)
                 logs.append(f"pod reachable at {host}:{port}")
-                ssh.wait_until_reachable(host, port, self.ready_timeout_s)
+                remaining_s = run_deadline - time.monotonic()
+                if remaining_s <= 0:
+                    raise RemoteExecutionError(
+                        f"pod {pod_id} became reachable after the run's "
+                        f"{spec.timeout_s}s time limit",
+                        provider=self.name,
+                        pod_id=pod_id,
+                        stage="deadline",
+                    )
+                ssh.wait_until_reachable(
+                    host, port, min(self.ready_timeout_s, remaining_s)
+                )
 
                 # The job phase: any transport failure past this point means the
                 # pod (or its network) died under us — the retryable case.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -12,9 +13,11 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -521,6 +524,167 @@ def write_json(path: Path, value: Any) -> None:
         temporary.unlink(missing_ok=True)
 
 
+_STATE_LOCK_TIMEOUT = 1.0
+#: Outcomes that, once recorded, only ever gain detail (exit codes, timings).
+FINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(
+            descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
+        )
+
+
+@contextmanager
+def state_lock(directory: Path) -> Iterator[None]:
+    """Serialize bounded state transitions through a stable private descriptor."""
+    path = directory / ".state.lock"
+    if path.is_symlink():
+        raise ValueError("Fine-tuning state lock is unavailable")
+    descriptor = os.open(
+        path,
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0),
+        0o600,
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or (
+            os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise ValueError("Fine-tuning state lock is unavailable")
+        if os.name == "nt" and info.st_size == 0:
+            os.write(descriptor, b"\0")
+        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT
+        while True:
+            try:
+                _state_lock_operation(descriptor)
+                break
+            except OSError as error:
+                if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise ValueError("Fine-tuning state is busy") from None
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            _state_lock_operation(descriptor, release=True)
+    finally:
+        os.close(descriptor)
+
+
+def transition_state(
+    directory: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    success_is_final: Callable[[Path], bool] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """Atomically merge ``changes`` into ``directory/state.json`` under its lock.
+
+    Writes nothing and returns ``False`` for an illegal transition:
+
+    * ``allowed_from`` is given and the current status is not in it;
+    * the current status is final (succeeded, failed, cancelled) and the
+      change would move it to any other status. The one exception is a
+      success that ``success_is_final`` does not confirm, which a failure or
+      cancellation may still replace (no callback: never confirmed).
+
+    ``before_write`` runs under the lock once the transition is known to be
+    legal, for records that must only exist alongside it (failure receipts).
+    An unreadable state is replaced, keeping a ``previous_state_unreadable``
+    marker, unless ``allowed_from`` demands a known status.
+    """
+    with state_lock(directory):
+        try:
+            state = read_json(directory / "state.json")
+        except (OSError, ValueError):
+            state = {"previous_state_unreadable": True}
+        current, status = state.get("status"), changes.get("status")
+        if allowed_from is not None and current not in allowed_from:
+            return False
+        if current in FINAL_STATUSES and status is not None and status != current:
+            demotable = (
+                current == "succeeded"
+                and status in {"failed", "cancelled"}
+                and not (success_is_final is not None and success_is_final(directory))
+            )
+            if not demotable:
+                return False
+        if before_write is not None:
+            before_write(state)
+        write_json(
+            directory / "state.json", {**state, **changes, "updated_at": time.time()}
+        )
+        return True
+
+
+def completion_verified(run: Path) -> bool:
+    """The worker's completion receipt still points at a usable artifact."""
+    try:
+        completion = read_json(run / "completion.json", max_bytes=128 * 1024)
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    if completion.get("result_kind") == "hosted_pointer":
+        checkpoint = completion.get("checkpoint")
+        return (
+            isinstance(checkpoint, str)
+            and checkpoint.startswith("river://")
+            and len(checkpoint) > len("river://")
+        )
+    output, weights = completion.get("output_dir"), completion.get("weights")
+    if not isinstance(output, str) or not isinstance(weights, list) or not weights:
+        return False
+    for name in weights:
+        if (
+            not isinstance(name, str)
+            or not name
+            or Path(name).is_absolute()
+            or ".." in Path(name).parts
+        ):
+            return False
+        path = Path(output) / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def transition_run(
+    run: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """The one way to change a fine-tuning run's ``state.json``.
+
+    A success whose committed artifact still verifies is final; see
+    :func:`transition_state` for every other rule.
+    """
+    return transition_state(
+        run,
+        allowed_from=allowed_from,
+        success_is_final=completion_verified,
+        before_write=before_write,
+        **changes,
+    )
+
+
 def read_json(path: Path, *, max_bytes: int = 128 * 1024) -> dict[str, Any]:
     """Read a bounded regular object record without following symbolic links."""
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
@@ -986,20 +1150,49 @@ def create_run(workspace: Path, plan: RunPlan) -> Path:
     return run.resolve()
 
 
+#: Detached supervisors this process started. Their handles are kept so the
+#: long-lived terminal studio can reap them once they exit: an unreaped child
+#: lingers as a zombie, and on macOS ``kill(pid, 0)`` succeeds on a zombie, so
+#: a finished supervisor would keep looking alive to the owner checks.
+_DETACHED_CHILDREN: list[Any] = []
+_DETACHED_CHILDREN_LOCK = threading.Lock()
+
+
+def retain_child(process: Any) -> None:
+    """Keep a detached supervisor's handle so its exit can be reaped later."""
+    with _DETACHED_CHILDREN_LOCK:
+        _DETACHED_CHILDREN.append(process)
+
+
+def reap_children() -> None:
+    """Collect every retained supervisor that has exited, without waiting."""
+    with _DETACHED_CHILDREN_LOCK:
+        running = []
+        for process in _DETACHED_CHILDREN:
+            poll = getattr(process, "poll", None)
+            try:
+                if callable(poll) and poll() is None:
+                    running.append(process)
+            except OSError:
+                continue
+        _DETACHED_CHILDREN[:] = running
+
+
 def queue_executable() -> str | None:
-    """Find an installed shared queue, honoring an explicit executable path."""
+    """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
+
+    There is deliberately no fixed-path fallback: the queue wrapper runs with
+    the caller's environment, so only an executable the user configured or
+    put on their own PATH may be chosen.
+    """
     configured = os.environ.get("STATESET_BUILDR")
     if configured:
         if not Path(configured).is_file() or not os.access(configured, os.X_OK):
             raise ValueError("STATESET_BUILDR must point to an executable")
         return configured
-    for candidate in (
-        shutil.which("buildr"),
-        "/home/dom/agent-builds/buildr",
-        "/home/dom/agent-builds/agent-builds",
-    ):
-        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+    candidate = shutil.which("buildr")
+    if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
     return None
 
 
@@ -1039,14 +1232,16 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+        retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
-        state = read_json(run / "state.json")
         cancelled = False
         try:
             cancelled = stop_requested(run)
         except (OSError, ValueError, TypeError, RecursionError):
             pass
-        state.update(
+        transition_run(
+            run,
+            allowed_from={"prepared"},
             status="cancelled" if cancelled else "failed",
             error=(
                 "Local stop requested before launch"
@@ -1054,7 +1249,6 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 else "Worker could not start or reviewed inputs changed"
             ),
         )
-        write_json(run / "state.json", state)
         raise
     return process.pid
 
@@ -1113,10 +1307,17 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
     if not stop_requested(run):
         # Publish a complete receipt atomically; concurrent callers are idempotent.
         write_json(run / "stop.json", {"schema_version": 1, "plan_sha256": digest})
-    if state.get("status") == "prepared" and not (run / "launch.lock").exists():
-        write_json(
-            run / "state.json",
-            {**state, "status": "cancelled", "finished_at": time.time()},
+    # The stop receipt is published before this check, and every supervisor or
+    # direct worker claims admission before it checks for a stop. So a launch
+    # that no process has claimed yet can be cancelled outright: any process
+    # that claims it later stops before doing work.
+    if not (run / "launch.lock").exists() or launch_unclaimed(run):
+        # Only a still-prepared run changes; anything else is left as is.
+        transition_run(
+            run,
+            allowed_from={"prepared"},
+            status="cancelled",
+            finished_at=time.time(),
         )
     current = run_status(run)
     return {
@@ -1155,44 +1356,157 @@ def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
     return None
 
 
-def _owner_confirmed(path: Path) -> bool:
-    """Boundedly inspect one local owner without signaling it or proving exit."""
+OWNER_EVIDENCE = frozenset(
+    {"alive", "reused", "gone", "running", "denied", "malformed"}
+)
+
+
+def owner_evidence(
+    path: Path,
+    *,
+    use_tokens: bool = True,
+    probe: bool = True,
+    max_bytes: int = 128 * 1024,
+) -> str:
+    """Classify the process named by one owner record, without signalling it.
+
+    * ``"alive"``: its Linux start-time token matches the record;
+    * ``"reused"``: the PID now belongs to a different process;
+    * ``"gone"``: no process has that PID;
+    * ``"running"``: a process with that PID answers, identity unproven
+      (no token available: non-Linux, a zombie, or an unreadable ``/proc``);
+    * ``"denied"``: a process exists but may not be inspected;
+    * ``"malformed"``: the record names no valid PID.
+
+    ``use_tokens``/``probe`` select which evidence to gather (a skipped probe
+    reports ``"running"`` as unknown would). An unreadable record raises.
+    """
+    owner = read_json(path, max_bytes=max_bytes)
+    pid = owner.get("pid")
+    if type(pid) is not int or pid < 1:
+        return "malformed"
+    if use_tokens:
+        current = process_token(pid)
+        if current is not None:
+            return "alive" if current == owner.get("process_token") else "reused"
+    if not probe:
+        return "running"
     try:
-        owner = read_json(path, max_bytes=4096)
-        pid = owner.get("pid")
-        if type(pid) is not int or pid < 1:
-            return False
+        probe_process(pid)
+    except ProcessLookupError:
+        return "gone"
+    except PermissionError:
+        return "denied"
+    return "running"
+
+
+def owner_alive(path: Path) -> bool | None:
+    """Whether a recorded owner is provably running (True) or gone (False).
+
+    ``None`` means the evidence cannot decide: a PID that answers without a
+    matching start-time token, a process that may not be inspected, or a
+    record without a valid PID. Callers choose how cautious to be about it.
+    """
+    evidence = owner_evidence(path)
+    if evidence == "alive":
+        return True
+    if evidence in {"gone", "reused"}:
+        return False
+    return None
+
+
+def _owner_confirmed(path: Path) -> bool:
+    """Boundedly inspect one local owner without signaling it or proving exit.
+
+    Linux trusts only a matching start-time token. Without tokens, a PID that
+    still answers (or refuses inspection) is taken as the owner.
+    """
+    try:
         if sys.platform == "linux":
-            token = process_token(pid)
-            return token is not None and token == owner.get("process_token")
+            return owner_evidence(path, probe=False, max_bytes=4096) == "alive"
         else:
-            try:
-                probe_process(pid)
-                return True
-            except PermissionError:
-                return True
-            except ProcessLookupError:
-                return False
+            return owner_evidence(path, use_tokens=False, max_bytes=4096) in {
+                "running",
+                "denied",
+            }
     except (OSError, ValueError, TypeError, RecursionError, OverflowError):
         return False
 
 
+#: How long a submitted launch may go without any process claiming it before
+#: its owner counts as lost. A supervisor normally claims admission within a
+#: second of ``launch_run``; this only bounds how long a launch whose process
+#: died first (OOM, reboot, import failure) can keep looking "prepared".
+LAUNCH_CLAIM_GRACE_SECONDS = 120.0
+
+
+def _present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def launch_unclaimed(directory: Path) -> bool:
+    """A launch receipt exists, but no admission/supervisor/execution owner does."""
+    return _present(directory / "launch.lock") and not any(
+        _present(directory / name)
+        for name in ("admission.json", "supervisor.json", "execution.json")
+    )
+
+
+def launch_claim_lost(
+    directory: Path, *, grace_seconds: float = LAUNCH_CLAIM_GRACE_SECONDS
+) -> bool:
+    """An unclaimed launch receipt is older than the startup grace window."""
+    if not launch_unclaimed(directory):
+        return False
+    try:
+        submitted = (directory / "launch.lock").lstat().st_mtime
+    except OSError:
+        return False
+    return time.time() - submitted > grace_seconds
+
+
+def detached_owner_lost(directory: Path, status: object) -> bool:
+    """Whether unfinished detached work in ``directory`` has lost its owner.
+
+    The supervisor record owns the work once it exists, otherwise a worker's
+    execution record does; a submitted launch that no process claimed within
+    the startup grace window is lost too. Like :func:`run_status`, this cannot
+    establish that detached queue work has exited.
+    """
+    if status not in {"prepared", "starting", "queued", "running"}:
+        return False
+    supervisor = directory / "supervisor.json"
+    execution = directory / "execution.json"
+    if _present(supervisor):
+        return not _owner_confirmed(supervisor)
+    if status == "running" or _present(execution):
+        return not _owner_confirmed(execution)
+    return status == "prepared" and launch_claim_lost(directory)
+
+
 def run_status(run: Path) -> dict[str, Any]:
     """Read committed outcomes; missing owners leave unfinished work unconfirmed."""
+    reap_children()
     state = read_json(run / "state.json")
     if state.get("status") not in TERMINAL_STATES:
         supervisor = run / "supervisor.json"
         execution = run / "execution.json"
+        admission = run / "admission.json"
         owner = None
-        if supervisor.exists() or supervisor.is_symlink():
+        lost = False
+        if _present(supervisor):
             owner = supervisor
-        elif (
-            state.get("status") == "running"
-            or execution.exists()
-            or execution.is_symlink()
-        ):
+        elif state.get("status") == "running" or _present(execution):
             owner = execution
-        if owner is not None and not _owner_confirmed(owner):
+        elif state.get("status") == "prepared":
+            # Between admission and the supervisor/execution claim, the
+            # admitting process owns the run. A launch nobody ever claimed
+            # is lost once its startup grace window has passed.
+            if _present(admission):
+                owner = admission
+            else:
+                lost = launch_claim_lost(run)
+        if lost or (owner is not None and not _owner_confirmed(owner)):
             state = {
                 **state,
                 "status": "interrupted",

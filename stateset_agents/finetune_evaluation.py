@@ -37,10 +37,15 @@ from stateset_agents.finetune_recovery import (
     list_evaluation_checkpoints,
 )
 from stateset_agents.finetune_workspace import (
+    detached_owner_lost,
+    launch_unclaimed,
     queue_executable,
     read_json,
     read_run_plan,
     read_training_data,
+    reap_children,
+    retain_child,
+    transition_state,
     write_json,
 )
 
@@ -576,14 +581,14 @@ def launch_evaluation(path: Path, *, expected_plan_sha256: str) -> int:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+        retain_child(process)
         return int(process.pid)
     except OSError:
-        write_json(
-            path / "state.json",
-            {
-                "status": "failed",
-                "error": "Supervisor submission failed; inspect logs before preparing a new evaluation",
-            },
+        transition_state(
+            path,
+            allowed_from={"prepared"},
+            status="failed",
+            error="Supervisor submission failed; inspect logs before preparing a new evaluation",
         )
         raise
 
@@ -693,8 +698,13 @@ def _queue_progress(path: Path) -> dict[str, Any]:
 
 def evaluation_status(path: Path) -> dict[str, Any]:
     """Return content-free retained progress; no inference or model hashing."""
+    reap_children()
     plan = read_json(path / "plan.json")
     state = read_json(path / "state.json")
+    if detached_owner_lost(path, state.get("status")):
+        # Reboot/OOM: nobody will ever finish or fail this job. Detached queue
+        # work may still be running, so this is unconfirmed, not failed.
+        state = {**state, "status": "interrupted", "error": "owner lost"}
     config = plan["config"]
     checkpoint = config.get("checkpoint", "")
     split = config.get("split", "test")
@@ -728,6 +738,7 @@ def evaluation_status(path: Path) -> dict[str, Any]:
         public["error"] = (
             "Evaluation incomplete; inspect its private log and current inputs before preparing a new job."
         )
+    public["execution_unconfirmed"] = state.get("status") == "interrupted"
     return {
         "evaluation_id": path.name,
         "plan_sha256": content_hash(plan),
@@ -771,11 +782,9 @@ def stop_evaluation(path: Path, *, expected_plan_sha256: str) -> None:
     if content_hash(plan) != expected_plan_sha256:
         raise ValueError("Evaluation checksum differs from the reviewed plan")
     write_json(path / "stop.json", {"plan_sha256": expected_plan_sha256})
-    state = read_json(path / "state.json")
-    if state.get("status") == "prepared" and not (path / "launch.lock").exists():
-        write_json(
-            path / "state.json",
-            {**state, "status": "cancelled", "finished_at": time.time()},
+    if not (path / "launch.lock").exists() or launch_unclaimed(path):
+        transition_state(
+            path, allowed_from={"prepared"}, status="cancelled", finished_at=time.time()
         )
 
 

@@ -20,7 +20,7 @@ from stateset_agents.tui import Studio
 
 
 @pytest.fixture
-def handoff(tmp_path, monkeypatch):
+def handoff(tmp_path, monkeypatch, settle_preview):
     dataset = tmp_path / "source chat.jsonl"
     dataset.write_text(
         json.dumps(
@@ -58,7 +58,13 @@ def handoff(tmp_path, monkeypatch):
     studio = Studio(root)
     studio.tab = "runs"
     return SimpleNamespace(
-        root=root, run=run, config=config, studio=studio, calls=calls, prepared=prepared
+        root=root,
+        run=run,
+        config=config,
+        studio=studio,
+        calls=calls,
+        prepared=prepared,
+        settle=settle_preview,
     )
 
 
@@ -73,6 +79,7 @@ def test_agent_preparation_review_escape_and_launch_preserve_identity_and_draft(
     original = (h.run / "dataset").read_bytes()
     Path(h.config.dataset).unlink()
     assert studio.handle("r")
+    handoff.settle(studio)
     assert studio.overlay == "prepared-review"
     assert studio.prepared_review.run == h.run
     text = "\n".join(studio.lines(110, 60))
@@ -83,7 +90,9 @@ def test_agent_preparation_review_escape_and_launch_preserve_identity_and_draft(
     assert studio.prepared_review is None and not h.calls
     assert not (h.run / "launch.lock").exists()
     studio.handle("r")
+    handoff.settle(studio)
     studio.handle("ENTER")
+    handoff.settle(studio)
     assert len(h.calls) == 1 and h.calls[0][0][0][-1] == str(h.run)
     assert studio.runs[studio.run_index]["id"] == h.run.name
     assert (h.run / "dataset").read_bytes() == original
@@ -110,6 +119,7 @@ def test_agent_preparation_review_escape_and_launch_preserve_identity_and_draft(
 def test_confirmation_rejects_changes_after_opening_review(handoff, change):
     h = handoff
     h.studio.handle("r")
+    h.settle(h.studio)
     if change == "plan":
         record = read_json(h.run / "plan.json")
         record["config"]["epochs"] += 1
@@ -122,6 +132,7 @@ def test_confirmation_rejects_changes_after_opening_review(handoff, change):
         workspace.launch_run(h.run)
     count = len(h.calls)
     h.studio.handle("ENTER")
+    h.settle(h.studio)
     assert len(h.calls) == count and "Launch failed:" in h.studio.message
     assert h.studio.overlay is None and h.studio.prepared_review is None
     assert len(list(h.root.glob("*/plan.json"))) == 1
@@ -131,6 +142,7 @@ def test_review_stays_bound_to_original_selection_during_refresh(handoff):
     h = handoff
     h.studio.handle("ENTER")
     h.studio.handle("r")
+    h.settle(h.studio)
     assert h.studio.overlay == "prepared-review"
     other = workspace.create_run(h.root, workspace.plan_run(h.config))
     h.studio.refresh()
@@ -138,6 +150,7 @@ def test_review_stays_bound_to_original_selection_during_refresh(handoff):
         index for index, row in enumerate(h.studio.runs) if row["id"] == other.name
     )
     h.studio.handle("ENTER")
+    h.settle(h.studio)
     assert h.calls[0][0][0][-1] == str(h.run)
     assert not (other / "launch.lock").exists()
 
@@ -166,6 +179,7 @@ def test_invalid_prepared_records_cannot_open_launch_review(handoff, change):
         (h.run / "dataset").symlink_to(retained)
     write_json(h.run / "plan.json", record)
     h.studio.handle("r")
+    h.settle(h.studio)
     assert h.studio.prepared_review is None and not h.calls
     assert "Cannot review prepared run:" in h.studio.message
 
@@ -195,12 +209,14 @@ def test_remote_review_uses_saved_resources_and_requires_environment_key(
         index for index, row in enumerate(h.studio.runs) if row["id"] == run.name
     )
     h.studio.handle("r")
+    h.settle(h.studio)
     text = "\n".join(h.studio.lines(110, 65))
     assert "RunPod pod ceiling: $6.50" in text
     assert "GPU:" in text and "Local queue: not held" in text
     assert "Local reservation:" not in text
     monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
     h.studio.handle("ENTER")
+    h.settle(h.studio)
     assert "RUNPOD_API_KEY is missing" in h.studio.message
     assert not h.calls and not (run / "launch.lock").exists()
 
@@ -218,6 +234,7 @@ def test_malformed_remote_resource_fields_are_rejected_before_render(handoff):
         index for index, row in enumerate(h.studio.runs) if row["id"] == run.name
     )
     h.studio.handle("r")
+    h.settle(h.studio)
     assert "Malformed retained resource metadata" in h.studio.message
     assert h.studio.prepared_review is None
     h.studio.lines(74, 44)
@@ -260,6 +277,7 @@ def test_launch_receipt_validation_and_legacy_compatibility(handoff, receipt):
         with pytest.raises(ValueError):
             worker._settings(h.run)
     h.studio.handle("r")
+    h.settle(h.studio)
     assert h.studio.prepared_review is None and not h.calls
 
 
@@ -269,6 +287,7 @@ def test_review_scrolls_full_plan_and_keeps_confirmation_visible(
 ):
     studio = handoff.studio
     studio.handle("r")
+    handoff.settle(studio)
     seen = []
     for _ in range(8):
         frame = studio.lines(width, height)
