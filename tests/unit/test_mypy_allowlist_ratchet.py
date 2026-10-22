@@ -81,6 +81,6 @@ def test_mypy_follows_imports_and_never_skips_them() -> None:
             )
     assert parser.get("mypy", "follow_imports") in ("silent", "normal")
     for section in parser.sections():
-        assert not parser.getboolean(section, "ignore_errors", fallback=False), (
-            f"[{section}] sets ignore_errors; fix the module's type errors instead."
-        )
+        assert not parser.getboolean(
+            section, "ignore_errors", fallback=False
+        ), f"[{section}] sets ignore_errors; fix the module's type errors instead."

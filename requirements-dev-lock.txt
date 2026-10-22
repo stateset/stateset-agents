@@ -335,7 +335,7 @@ opentelemetry-util-http==0.58b0
     # via opentelemetry-instrumentation-requests
 packageurl-python==0.17.6
     # via cyclonedx-python-lib
-packaging==26.2
+packaging==26.3
     # via
     #   accelerate
     #   black
@@ -351,6 +351,7 @@ packaging==26.2
     #   sphinx
     #   transformers
     #   trl
+    #   virtualenv
     #   wandb
     #   wheel
 pandas==3.0.5
@@ -646,7 +647,7 @@ uvicorn==0.51.0
     # via
     #   mcp
     #   stateset-agents (pyproject.toml)
-virtualenv==21.7.13
+virtualenv==21.14.12
     # via pre-commit
 wandb==0.28.1
     # via stateset-agents (pyproject.toml)
