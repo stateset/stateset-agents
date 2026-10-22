@@ -37,20 +37,15 @@ import re
 from dataclasses import dataclass
 from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
+from pydantic import BaseModel, ValidationError
+
 logger = logging.getLogger(__name__)
 
 # Type variable for generic structured output
 T = TypeVar("T")
 
-# Check for Pydantic availability
-try:
-    from pydantic import BaseModel, ValidationError
-
-    PYDANTIC_AVAILABLE = True
-except ImportError:
-    PYDANTIC_AVAILABLE = False
-    BaseModel = cast(Any, object)
-    ValidationError = cast(Any, Exception)
+# Pydantic is a required dependency; the flag is kept for backwards compatibility.
+PYDANTIC_AVAILABLE = True
 
 
 @dataclass
@@ -70,6 +65,10 @@ class StructuredOutputConfig:
     include_schema_in_prompt: bool = True
     json_mode: bool = True
     repair_json: bool = True
+
+
+class SchemaValidationError(ValueError):
+    """Raised when parsed JSON does not match a plain JSON schema."""
 
 
 class StructuredOutputError(Exception):
@@ -375,7 +374,7 @@ class StructuredOutputMixin:
                     }
                 )
 
-            except ValidationError as e:
+            except (ValidationError, SchemaValidationError) as e:
                 last_error = e
                 logger.warning(
                     f"Structured output attempt {attempt + 1}/{config.max_retries} "
@@ -437,13 +436,15 @@ class StructuredOutputMixin:
 
         if schema_type == "object":
             if not isinstance(data, dict):
-                raise ValidationError(f"Expected object, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected object, got {type(data).__name__}"
+                )
 
             # Check required fields
             required = schema.get("required", [])
             for field in required:
                 if field not in data:
-                    raise ValidationError(f"Missing required field: {field}")
+                    raise SchemaValidationError(f"Missing required field: {field}")
 
             # Validate properties
             properties = schema.get("properties", {})
@@ -453,7 +454,9 @@ class StructuredOutputMixin:
 
         elif schema_type == "array":
             if not isinstance(data, list):
-                raise ValidationError(f"Expected array, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected array, got {type(data).__name__}"
+                )
 
             items_schema = schema.get("items", {})
             for item in data:
@@ -461,19 +464,27 @@ class StructuredOutputMixin:
 
         elif schema_type == "string":
             if not isinstance(data, str):
-                raise ValidationError(f"Expected string, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected string, got {type(data).__name__}"
+                )
 
         elif schema_type == "integer":
             if not isinstance(data, int) or isinstance(data, bool):
-                raise ValidationError(f"Expected integer, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected integer, got {type(data).__name__}"
+                )
 
         elif schema_type == "number":
             if not isinstance(data, (int, float)) or isinstance(data, bool):
-                raise ValidationError(f"Expected number, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected number, got {type(data).__name__}"
+                )
 
         elif schema_type == "boolean":
             if not isinstance(data, bool):
-                raise ValidationError(f"Expected boolean, got {type(data).__name__}")
+                raise SchemaValidationError(
+                    f"Expected boolean, got {type(data).__name__}"
+                )
 
 
 # Convenience class combining MultiTurnAgent with StructuredOutputMixin
@@ -521,6 +532,7 @@ def create_structured_agent_class():
 # Export for convenience
 __all__ = [
     "StructuredOutputConfig",
+    "SchemaValidationError",
     "StructuredOutputError",
     "StructuredOutputMixin",
     "json_schema_from_type",
