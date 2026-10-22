@@ -20,10 +20,13 @@ import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from . import rl_losses
 from .trainer_utils import get_torch, require_torch
+
+if TYPE_CHECKING:  # torch stays a lazy runtime dependency
+    from torch import Tensor
 
 ADVANTAGE_KINDS = (
     "group_norm",
@@ -113,8 +116,8 @@ class PolicyObjective:
 class PolicyLossResult:
     """Scalar differentiable ``loss``, detached ``ratio``, float ``metrics``."""
 
-    loss: Any
-    ratio: Any
+    loss: Tensor
+    ratio: Tensor
     metrics: dict[str, float] = field(default_factory=dict)
 
 

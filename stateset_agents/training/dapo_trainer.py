@@ -47,11 +47,17 @@ except ImportError:  # pragma: no cover - optional dependency
     wandb = cast(Any, None)
 
 try:
-    from peft import LoraConfig, TaskType, get_peft_model
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
 except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = cast(Any, None)
-    TaskType = cast(Any, None)
-    get_peft_model = cast(Any, None)
+    LoraConfig = None
+    TaskType = None
+    get_peft_model = None
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_dapo_loaded = False
@@ -518,7 +524,10 @@ class DAPOTrainer(TrainingRuntime):
         ``rl_losses.safe_exp_ratio``) so a single wildly off-policy token
         cannot overflow to inf and make the whole batch's loss non-finite.
         """
-        return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
+        ratios: torch.Tensor = rl_losses.safe_exp_ratio(
+            current_log_probs - old_log_probs
+        )
+        return ratios
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
         """Advantages for one group of rewards [group_size] using the
@@ -530,7 +539,10 @@ class DAPOTrainer(TrainingRuntime):
             rewards.numel(), dtype=torch.long, device=rewards.device
         )
         objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["dapo"]
-        return objectives.compute_advantages(rewards, group_ids, objective)
+        advantages: torch.Tensor = objectives.compute_advantages(
+            rewards, group_ids, objective
+        )
+        return advantages
 
     def compute_dapo_loss_from_log_probs(
         self,
@@ -571,7 +583,10 @@ class DAPOTrainer(TrainingRuntime):
         per_token = objectives.surrogate(
             self._objective, importance_ratios, advantages, importance_ratios
         )
-        return objectives.aggregate(self._objective, per_token, response_mask)
+        loss: torch.Tensor = objectives.aggregate(
+            self._objective, per_token, response_mask
+        )
+        return loss
 
     async def generate_group_responses(
         self,

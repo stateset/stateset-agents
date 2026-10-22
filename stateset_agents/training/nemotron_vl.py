@@ -182,12 +182,19 @@ def train_nemotron_vl(config: NemotronVLConfig) -> dict[str, Any]:
         trust_remote_code=True,
     )
     if config.gradient_checkpointing and not config.fsdp:
-        model.language_model.gradient_checkpointing_enable(
-            gradient_checkpointing_kwargs={"use_reentrant": False}
+        # The language tower comes from remote code; nn.Module.__getattr__ types
+        # submodule access as ``Tensor | Module``, so resolve the hook by name.
+        enable_checkpointing = getattr(
+            model.language_model, "gradient_checkpointing_enable", None
         )
+        if not callable(enable_checkpointing):
+            raise RuntimeError(
+                "Nemotron VL language model does not support gradient checkpointing"
+            )
+        enable_checkpointing(gradient_checkpointing_kwargs={"use_reentrant": False})
     # Generic PeftModel preserves the composite multimodal forward signature;
     # a CausalLM-specific wrapper assumes output-embedding APIs this VLM lacks.
-    model = get_peft_model(
+    peft_model = get_peft_model(
         model,
         LoraConfig(
             r=config.lora_rank,
@@ -198,7 +205,7 @@ def train_nemotron_vl(config: NemotronVLConfig) -> dict[str, Any]:
         ),
     )
     trainable = [
-        name for name, value in model.named_parameters() if value.requires_grad
+        name for name, value in peft_model.named_parameters() if value.requires_grad
     ]
     if not trainable or any(
         "lora_" not in name or ".language_model." not in name for name in trainable
@@ -238,7 +245,7 @@ def train_nemotron_vl(config: NemotronVLConfig) -> dict[str, Any]:
         **fsdp_options,
     )
     trainer = Trainer(
-        model=model,
+        model=peft_model,
         args=arguments,
         train_dataset=NemotronVLDataset(config.train_data, config.image_root),
         eval_dataset=(

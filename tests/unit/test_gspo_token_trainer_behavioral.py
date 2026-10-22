@@ -429,3 +429,16 @@ async def test_constant_reward_group_with_overflowing_ratio_is_finite(
     grads = [p.grad for p in trainer.model.parameters() if p.grad is not None]
     assert grads
     assert all(torch.isfinite(g).all() for g in grads)
+
+
+@pytest.mark.asyncio
+async def test_token_metrics_are_builtin_floats_with_tensor_lr(
+    gspo_token_trainer_tiny, monkeypatch
+):
+    """Metrics are ``dict[str, float]``: numpy means and a tensor-valued
+    scheduler LR must not leak into logged metrics."""
+    trainer = gspo_token_trainer_tiny
+    monkeypatch.setattr(trainer.scheduler, "get_last_lr", lambda: [torch.tensor(2e-5)])
+    metrics = await trainer.train_step_token_level(["hello"], num_groups=1)
+    assert {k: type(v) for k, v in metrics.items() if type(v) is not float} == {}
+    assert metrics["learning_rate"] == pytest.approx(2e-5)

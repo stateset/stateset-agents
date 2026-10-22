@@ -485,7 +485,7 @@ def verify_ddp_learner_batch(trainer: Any, groups: list[Any]) -> dict[str, Any] 
         verify_ddp_replica_state(trainer)
         trainer._ddp_replica_consensus_pending = False
     return {
-        "local_empty": bool(header[1].item() & 128),
+        "local_empty": bool(int(header[1].item()) & 128),
         "global_empty": not populated,
         "rollout_path": effective["path"],
         "rollout_source": effective["source"],

@@ -329,14 +329,15 @@ class GSPOTokenTrainer(GSPOTrainer):
                     current_log_probs,
                     sequence_lengths,
                 ) = self._score_token_rows(query, responses, system_prompt)
-                old_log_probs = frozen_old[index]
-                if old_log_probs is None:
-                    old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                frozen = frozen_old[index]
+                if frozen is None:
+                    prepared, generation_gaps = self._prepare_old_log_probs(
                         current_log_probs, generation_log_probs, sequence_lengths
                     )
-                    old_log_probs = old_log_probs.detach()
-                    frozen_old[index] = old_log_probs
+                    frozen = prepared.detach()
+                    frozen_old[index] = frozen
                     all_generation_gaps.extend(generation_gaps)
+                old_log_probs = frozen
 
                 # Detach immediately: the GSPO-token objective uses a
                 # stop-gradient sequence ratio for clipping; gradients flow only
@@ -370,9 +371,9 @@ class GSPOTokenTrainer(GSPOTrainer):
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = np.mean(all_rewards) if all_rewards else 0.0
+        avg_reward = float(np.mean(all_rewards)) if all_rewards else 0.0
         avg_importance_ratio = (
-            np.mean(all_importance_ratios) if all_importance_ratios else 1.0
+            float(np.mean(all_importance_ratios)) if all_importance_ratios else 1.0
         )
 
         metrics = {
@@ -389,7 +390,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             "generation_log_prob_gap": (
                 float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
             ),
-            "learning_rate": self.scheduler.get_last_lr()[0],
+            "learning_rate": float(self.scheduler.get_last_lr()[0]),
         }
 
         # Store metrics

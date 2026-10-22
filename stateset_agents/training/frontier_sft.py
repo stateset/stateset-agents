@@ -226,7 +226,11 @@ def train_frontier_sft(config: FrontierSFTConfig) -> dict[str, Any]:
         "revision": spec.revision,
         "trust_remote_code": False,
         "dtype": "bfloat16",
-        "distributed_config": DistributedConfig(fsdp_size=world_size, ep_size=1),
+        # ``ep_size`` exists from transformers 5.20 (gated above); older
+        # installed stubs do not declare it.
+        "distributed_config": DistributedConfig(  # type: ignore[call-arg, unused-ignore]
+            fsdp_size=world_size, ep_size=1
+        ),
     }
     if spec.checkpoint_format == "fp8":
         model_kwargs["quantization_config"] = FineGrainedFP8Config(dequantize=True)
@@ -310,6 +314,8 @@ def train_frontier_sft(config: FrontierSFTConfig) -> dict[str, Any]:
     )
     import re
 
+    if trainer.model is None:
+        raise RuntimeError("SFTTrainer did not initialise a model")
     trainable = [
         name for name, p in trainer.model.named_parameters() if p.requires_grad
     ]

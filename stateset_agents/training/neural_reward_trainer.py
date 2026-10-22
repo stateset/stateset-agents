@@ -245,7 +245,7 @@ class NeuralRewardModel(nn.Module):
         hidden = self.hidden_layers(hidden)
 
         # Output projection
-        reward = self.output_proj(hidden)
+        reward: torch.Tensor = self.output_proj(hidden)
 
         return reward
 
