@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.68.0`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.69.0`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -469,7 +469,15 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.68.0 (latest candidate; publication pending):**
+**v0.69.0 (latest candidate; publication pending):**
+
+- **One reward scoring path** — training, periodic eval, post-training eval and the distributed trainer score every episode once, through one helper; judge outages and all-failed composites fail closed instead of scoring a neutral 0.5.
+- **Rewards that can't be farmed** — per-step rewards average over the episode, task actions complete only from explicit signals, and a contract suite plus exploit tests cover every shipped reward.
+- **Leak-free data** — one request identity drives every train/eval/harvest split, SFT never labels prompt or failed-reply tokens, and masking is verified against real Qwen3/Qwen3.5 tokenizers.
+- **Fine-tuning studio that can't overspend or wedge** — one run-level RunPod budget, pods reclaimed when a worker dies, every stuck state recoverable, and the TUI split into panels.
+- **Release hygiene** — mypy checks every function body, CI runs on integration PRs, and the dev lock carries no known vulnerabilities.
+
+**v0.68.0:**
 
 - **GSPO/GSPO-token honour `num_iterations`** — frozen old-policy scores, N optimizer steps per rollout, so the sequence clip actually engages.
 - **Loss-loop safety** — OOM and rollout-contract errors propagate; an all-failed group raises instead of a silent zero loss; `beta` without a reference model warns.
@@ -1530,7 +1538,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.68.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.69.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2432,7 +2440,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.68.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.69.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

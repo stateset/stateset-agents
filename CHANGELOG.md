@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
+
 ### Added
 
 - `docs/REWARD_CONTRACT.md` documents the reward contract (score range and

@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current tagged version: **v0.68.0 (strong beta; publication blocked)**.
+Current tagged version: **v0.69.0 (strong beta; publication blocked)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.
@@ -78,7 +78,7 @@ evaluation, and lineage contracts.
   output commit, named-Secret/region injection, and multi-GPU resource wiring
 
 Earlier releases retain successful Python publication and attestations in
-[`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md). The v0.68.0 publish workflow failed
+[`RELEASE_EVIDENCE.md`](RELEASE_EVIDENCE.md). The v0.69.0 publish workflow failed
 before publication; its PyPI upload, GitHub release, and distribution
 attestations remain unverified. Post-tag fixes do not change the immutable tag.
 
