@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- mypy checks the bodies of untyped functions across the whole package
+  (`check_untyped_defs`), guarded by the mypy ratchet test.
+
+### Fixed
+
+- `DistributedGRPOTrainer.setup_model()` called agent methods that do not exist;
+  it now uses `agent.model` and builds AdamW from the training config.
+- FSDP received the `"full_shard"` string instead of a `ShardingStrategy`.
+- The training orchestrator's monitoring loop no longer raises every pass when
+  metrics are disabled.
+- `retry_async` could `raise None`; `RetryConfig(max_attempts < 1)` is now
+  rejected, and circuit breakers are re-created if their registry entry is gone.
+- `ContinuousMonitor` was handed an evaluation result instead of the agent.
+- OpenTelemetry tracing is installed only when every component is available,
+  and span processors attach to the provider that was created.
+- helm-based tests bound their subprocesses, so a stalled `helm` on a loaded
+  Windows runner fails one test instead of aborting the xdist run.
+
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 
 ### Changed
