@@ -74,3 +74,15 @@ def test_dependabot_tracks_github_actions() -> None:
     config = yaml.safe_load((ROOT / ".github/dependabot.yml").read_text())
     ecosystems = {u["package-ecosystem"] for u in config["updates"]}
     assert "github-actions" in ecosystems
+
+
+@pytest.mark.parametrize("name", ["ci.yml", "security.yml"])
+def test_pull_requests_into_integration_branches_run_ci(name: str) -> None:
+    """Release-candidate work lands through PRs into integration/* branches;
+    those PRs must get the test and security gates without a manual dispatch."""
+    path = ROOT / ".github/workflows" / name
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    triggers = workflow.get("on", workflow.get(True))
+    branches = triggers["pull_request"]["branches"]
+    assert "integration/**" in branches
+    assert {"main", "master"} <= set(branches)

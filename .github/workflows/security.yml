@@ -7,7 +7,7 @@ on:
   push:
     branches: [ main, master, develop ]
   pull_request:
-    branches: [ main, master, develop ]
+    branches: [ main, master, develop, "integration/**" ]
   schedule:
     # Run security scans weekly
     - cron: '0 2 * * 1'
