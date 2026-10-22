@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from ..auth import RequestContext, get_request_context
 from ..config import get_config
 from ..dependencies import get_inference_service
+from ..generation_params import validate_max_tokens
 from ..messages_models import MessageInput, MessagesRequest
 from ..services.inference_service import InferenceService
 
@@ -518,6 +519,10 @@ async def chat_v1(
             status_code=422,
             detail="Provide either 'message' or 'messages'",
         )
+    try:
+        validate_max_tokens(payload.max_tokens, config.validation)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     conversations, conversation_access, now = _get_timed_state(
         request,
