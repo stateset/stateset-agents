@@ -36,7 +36,11 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.chat_masking import (
+    _token_mask_for_spans,
+    assistant_token_mask,
+    chat_template_render,
+)
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -295,7 +299,69 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     }
 
 
-_WARNED_ONCE: set[str] = set()
+#: How :func:`tokenize_sft_rows` treated each row, as counted in the manifest.
+SFT_LABEL_OUTCOMES = (
+    "all_assistant_turns",
+    "final_turn_only",
+    "dropped_unmaskable",
+    "dropped_truncated",
+)
+
+
+def _final_turn_token_mask(
+    tokenizer: Any,
+    messages: list[dict[str, Any]],
+    tools: list[dict[str, Any]] | None,
+) -> tuple[list[int], list[bool]] | None:
+    """Supervise only the final assistant turn of a history-rewriting render.
+
+    Templates such as Qwen3's strip ``<think>`` blocks from earlier assistant
+    turns, so earlier replies have no faithful span in the full render. The
+    final turn still does: its context is exactly the inference-time prompt
+    (``add_generation_prompt=True`` over the preceding messages, with history
+    rewritten the same way), and everything the template renders after that
+    prompt is what the model must generate. Returns ``None`` when the prompt
+    is not a prefix of the conversation render either.
+    """
+    last = max(
+        (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
+        default=None,
+    )
+    if last is None:
+        return None
+    render = chat_template_render(tokenizer, tools)
+    conversation = list(messages[: last + 1])
+    full = render(conversation, False)
+    prompt = render(conversation[:last], True)
+    if not full or prompt is None or len(full) <= len(prompt):
+        return None
+    if not full.startswith(prompt):
+        return None
+    return _token_mask_for_spans(tokenizer, full, [(len(prompt), len(full))])
+
+
+def _tokenize_sft_row(
+    tokenizer: Any, row: dict[str, Any], max_length: int
+) -> tuple[dict[str, list[int]] | None, str]:
+    tools = _row_tools(row)
+    outcome = "all_assistant_turns"
+    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
+    if masked is None:
+        outcome = "final_turn_only"
+        masked = _final_turn_token_mask(tokenizer, row["messages"], tools)
+        if masked is None:
+            return None, "dropped_unmaskable"
+    ids, assistant = masked
+    ids, assistant = ids[:max_length], assistant[:max_length]
+    if not any(assistant):
+        return None, "dropped_truncated"
+    # Real EOS labels survive even when EOS doubles as padding: the collator
+    # pads labels with -100 by position, not token id.
+    return {
+        "input_ids": ids,
+        "attention_mask": [1] * len(ids),
+        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
+    }, outcome
 
 
 def tokenize_sft_row(
@@ -304,37 +370,55 @@ def tokenize_sft_row(
     """Tokenize one chat row with labels on assistant tokens only.
 
     System prompts, user turns and tool results are context, not targets
-    (training on them teaches the model to write its own tool outputs).
-    Truncation keeps the first ``max_length`` tokens; a row with no supervised
-    token left is dropped (``None``). Templates whose renders rewrite earlier
-    turns fall back to full-sequence labels with a one-time warning.
+    (training on them teaches the model to write its own tool outputs), so a
+    row is never labeled on prompt tokens. When the template rewrites earlier
+    turns (Qwen3 strips earlier ``<think>`` blocks) only the final assistant
+    turn is supervised; a row whose final turn cannot be located either, or
+    whose supervised tokens were truncated away at ``max_length``, is dropped
+    (``None``). :func:`tokenize_sft_rows` counts each outcome.
     """
-    tools = _row_tools(row)
-    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
-    if masked is None:
-        if "unmasked_sft" not in _WARNED_ONCE:
-            logger.warning(
-                "Chat template rewrites earlier turns; SFT labels fall back to "
-                "every token for affected rows."
-            )
-            _WARNED_ONCE.add("unmasked_sft")
-        text = _render_sft_row(tokenizer, row)["text"]
-        ids = list(
-            tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+    return _tokenize_sft_row(tokenizer, row, max_length)[0]
+
+
+def tokenize_sft_rows(
+    tokenizer: Any, rows: list[dict[str, Any]], max_length: int
+) -> tuple[list[dict[str, list[int]]], dict[str, int]]:
+    """Tokenize ``rows`` and count how each was labeled or why it was dropped.
+
+    Returns the kept records and a count per :data:`SFT_LABEL_OUTCOMES` entry,
+    so a run's manifest can say how many rows lost their earlier assistant
+    turns or were not trained at all.
+    """
+    counts = dict.fromkeys(SFT_LABEL_OUTCOMES, 0)
+    records = []
+    for row in rows:
+        record, outcome = _tokenize_sft_row(tokenizer, row, max_length)
+        counts[outcome] += 1
+        if record is not None:
+            records.append(record)
+    if counts["final_turn_only"]:
+        logger.warning(
+            "Chat template rewrites earlier turns in %d of %d SFT row(s); only "
+            "their final assistant turn is supervised.",
+            counts["final_turn_only"],
+            len(rows),
         )
-        assistant = [True] * len(ids)
-    else:
-        ids, assistant = masked
-    ids, assistant = ids[:max_length], assistant[:max_length]
-    if not any(assistant):
-        return None
-    # Real EOS labels survive even when EOS doubles as padding: the collator
-    # pads labels with -100 by position, not token id.
-    return {
-        "input_ids": ids,
-        "attention_mask": [1] * len(ids),
-        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
-    }
+    if counts["dropped_unmaskable"]:
+        logger.warning(
+            "Dropped %d of %d SFT row(s) whose assistant tokens cannot be "
+            "located in the chat template render.",
+            counts["dropped_unmaskable"],
+            len(rows),
+        )
+    if counts["dropped_truncated"]:
+        logger.warning(
+            "Dropped %d of %d SFT row(s) whose assistant tokens were truncated "
+            "away at max_length=%d.",
+            counts["dropped_truncated"],
+            len(rows),
+            max_length,
+        )
+    return records, counts
 
 
 def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
@@ -959,19 +1043,11 @@ def run_sft(
 
     # Render Python records directly: Arrow otherwise unifies different tool
     # schemas/argument objects and inserts null fields into the conversations.
-    tokenized = [tokenize_sft_row(tokenizer, row, max_length) for row in rows]
-    records = [record for record in tokenized if record is not None]
-    if len(records) < len(tokenized):
-        logger.warning(
-            "Dropped %d of %d SFT rows whose assistant tokens were truncated "
-            "away at max_length=%d.",
-            len(tokenized) - len(records),
-            len(tokenized),
-            max_length,
-        )
+    records, label_outcomes = tokenize_sft_rows(tokenizer, rows, max_length)
     if not records:
         raise ValueError(
-            f"No SFT row keeps an assistant token within max_length={max_length}."
+            "No SFT row keeps a locatable assistant token within "
+            f"max_length={max_length}."
         )
     dataset = Dataset.from_list(records)
 
@@ -1025,6 +1101,11 @@ def run_sft(
             "training_content_sha256": dataset_identity.content_sha256,
             "training_input_rows": dataset_identity.examples,
             "effective_training_rows": len(records),
+            # Rows supervised on their final assistant turn only (the template
+            # rewrites earlier turns) and rows not trained at all, by reason.
+            "final_turn_only_rows": label_outcomes["final_turn_only"],
+            "unmaskable_rows_dropped": label_outcomes["dropped_unmaskable"],
+            "truncated_rows_dropped": label_outcomes["dropped_truncated"],
             "seed": seed,
             "data_seed": seed,
             "num_epochs": num_epochs,
