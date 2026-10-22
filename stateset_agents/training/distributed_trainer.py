@@ -36,17 +36,12 @@ except ImportError:
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
-from stateset_agents.core.reward_context import (
-    environment_applied_reward,
-    set_episode_reward,
-    trajectory_reward_context,
-)
+from stateset_agents.core.reward_context import score_episode
 from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
 from .loss_computation import compute_grpo_loss
-from .multi_turn_evaluation import coerce_reward_result
 
 logger = logging.getLogger(__name__)
 
@@ -429,31 +424,11 @@ class DistributedGRPOTrainer:
         return trajectories
 
     async def _compute_rewards(self, trajectories: list[Any]) -> list[float]:
-        """Score each trajectory with the configured reward function."""
-        rewards: list[float] = []
-        for trajectory in trajectories:
-            if environment_applied_reward(
-                trajectory, self.reward_function, self.environment
-            ):
-                # The environment already scored the episode with this reward.
-                rewards.append(float(trajectory.total_reward))
-                continue
-            context = trajectory_reward_context(
-                trajectory, reward_fn=self.reward_function
-            )
-            reward_result = await self.reward_function.compute_reward(
-                getattr(trajectory, "turns", []), context
-            )
-            score, breakdown = await coerce_reward_result(
-                reward_result, DISTRIBUTED_TRAIN_EXCEPTIONS
-            )
-            set_episode_reward(trajectory, score)
-            if hasattr(trajectory, "metadata") and isinstance(
-                trajectory.metadata, dict
-            ):
-                trajectory.metadata["reward_breakdown"] = breakdown
-            rewards.append(score)
-        return rewards
+        """Score each trajectory on the shared path (``score_episode``)."""
+        return [
+            await score_episode(trajectory, self.reward_function, self.environment)
+            for trajectory in trajectories
+        ]
 
     def _compute_grpo_loss(
         self, trajectories: list[Any], rewards: list[float]

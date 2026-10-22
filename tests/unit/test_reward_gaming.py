@@ -17,6 +17,7 @@ from stateset_agents.core.basic_rewards import (
     TaskCompletionReward,
 )
 from stateset_agents.core.conversation_environment import ConversationEnvironment
+from stateset_agents.core.reward_context import score_episode
 from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_components import (
@@ -307,14 +308,18 @@ async def test_shipped_factories_never_pay_for_stalling(name):
     factory, build = FACTORIES[name]
     scenario = {"id": "s", "user_query": "Can you close my ticket?"}
 
-    async def episode(max_turns):
+    async def episode(max_turns, attach_to_environment):
+        reward = build(factory)
         environment = ConversationEnvironment(
-            [scenario], max_turns=max_turns, reward_fn=build(factory)
+            [scenario],
+            max_turns=max_turns,
+            reward_fn=reward if attach_to_environment else None,
         )
         trajectory = await environment.run_episode(_always(PADDED), scenario)
-        return trajectory.total_reward
+        return await score_episode(trajectory, reward, environment, scenario)
 
-    once = await episode(1)
-    stalled = await episode(10)
-    assert stalled <= once + 1e-9, (name, stalled, once)
-    assert 0.0 <= stalled <= 1.0 + 1e-9
+    once = await episode(1, attach_to_environment=True)
+    for attach in (True, False):
+        stalled = await episode(10, attach_to_environment=attach)
+        assert stalled <= once + 1e-9, (name, attach, stalled, once)
+        assert 0.0 <= stalled <= 1.0 + 1e-9

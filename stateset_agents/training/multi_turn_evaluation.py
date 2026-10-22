@@ -10,11 +10,7 @@ from typing import Any
 
 import numpy as np
 
-from stateset_agents.core.reward_context import (
-    environment_applied_reward,
-    set_episode_reward,
-    trajectory_reward_context,
-)
+from stateset_agents.core.reward_context import score_episode
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +96,12 @@ async def run_post_training_evaluation(
     trainer_exceptions: tuple[type[BaseException], ...],
     coerce_reward_result_fn: Any,
 ) -> dict[str, Any]:
-    """Run comprehensive post-training evaluation."""
+    """Run comprehensive post-training evaluation.
+
+    Episodes are scored with ``reward_context.score_episode``, the path
+    training uses; ``coerce_reward_result_fn`` is accepted for compatibility
+    and no longer used.
+    """
     logger.info("Running post-training evaluation on %s samples...", num_samples)
 
     trainer.agent.model.eval()
@@ -128,24 +129,12 @@ async def run_post_training_evaluation(
 
                 trajectory = await trainer.environment.run_episode(agent_fn, scenario)
 
-                if trainer.reward_fn and not environment_applied_reward(
-                    trajectory, trainer.reward_fn, trainer.environment
-                ):
-                    reward_result = await trainer.reward_fn.compute_reward(
-                        trajectory.turns,
-                        trajectory_reward_context(
-                            trajectory, scenario, reward_fn=trainer.reward_fn
-                        ),
-                    )
-                    score, reward_breakdown = await coerce_reward_result_fn(
-                        reward_result
-                    )
-                    set_episode_reward(trajectory, score)
-                else:
-                    # Keep the reward the environment computed for the episode
-                    # (with the trainer's own reward_fn, when it applied it).
-                    metadata = getattr(trajectory, "metadata", None) or {}
-                    reward_breakdown = dict(metadata.get("reward_breakdown") or {})
+                # The scoring path training uses (reward_context.score_episode).
+                await score_episode(
+                    trajectory, trainer.reward_fn, trainer.environment, scenario
+                )
+                metadata = getattr(trajectory, "metadata", None) or {}
+                reward_breakdown = dict(metadata.get("reward_breakdown") or {})
 
                 traj_info = {
                     "generation_idx": gen_idx,

@@ -20,7 +20,7 @@ from typing import Any
 import numpy as np
 
 from stateset_agents.core.environment import Environment
-from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.core.reward_context import score_episode
 
 logger = logging.getLogger(__name__)
 
@@ -49,35 +49,6 @@ class EvaluationConfig:
     seed: int | None = 42
     concurrency: int = 4  # Default to parallel evaluation for better performance
     fail_on_error: bool = True
-
-
-async def _compute_reward(
-    reward_fn: Any,
-    turns: list[ConversationTurn],
-    context: dict[str, Any] | None,
-) -> float:
-    if reward_fn is None:
-        return 0.0
-
-    compute = getattr(reward_fn, "compute_reward", None)
-    if compute is None:
-        raise TypeError("reward_fn must expose compute_reward(...)")
-
-    result = compute(turns, context)
-    if asyncio.iscoroutine(result):
-        result = await result
-
-    if hasattr(result, "score"):
-        value = float(result.score)
-    elif isinstance(result, dict) and "score" in result:
-        value = float(result["score"])
-    elif isinstance(result, (int, float)):
-        value = float(result)
-    else:
-        raise TypeError(f"Unexpected reward result type: {type(result)!r}")
-    if not math.isfinite(value):
-        raise ValueError("Evaluation reward must be finite")
-    return value
 
 
 class _EvaluationMetrics(dict[str, float]):
@@ -238,16 +209,10 @@ async def _evaluate_seeded(
                 continue
 
             try:
-                reward = float(getattr(trajectory, "total_reward", 0.0))
-                if reward_fn is not None:
-                    context = (
-                        getattr(trajectory, "final_state", None)
-                        if getattr(reward_fn, "requires_environment_context", False)
-                        else scenario
-                    )
-                    reward = await _compute_reward(
-                        reward_fn, list(getattr(trajectory, "turns", [])), context
-                    )
+                # The same scoring path training uses: the environment's reward
+                # when reward_fn is its own (or absent), otherwise reward_fn
+                # applied as the environment would, plus environment rewards.
+                reward = await score_episode(trajectory, reward_fn, env, scenario)
                 episode_length = float(getattr(trajectory, "episode_length", 0))
                 if (
                     not math.isfinite(reward)
