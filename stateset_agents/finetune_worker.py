@@ -16,6 +16,7 @@ from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.finetune_recovery import recovery_unavailable_reason
 from stateset_agents.finetune_workspace import (
     FAILURE_GUIDANCE,
     FinetuneConfig,
@@ -520,6 +521,24 @@ def _metrics(run: Path, step: int, metrics: dict[str, Any]) -> None:
     write_json(run / "metrics.json", event)
 
 
+def _publish_recovery(run: Path, checkpoint: Path, *, step: int) -> None:
+    """Publish a recovery receipt, or record why recovery is unavailable.
+
+    Recovery needs Linux ownership checks and a single training process. When
+    those are missing (Windows, an inherited ``WORLD_SIZE``) training must
+    still finish; the run records ``recovery_unavailable`` instead of failing
+    at its first checkpoint save.
+    """
+    from stateset_agents.finetune_recovery import publish_checkpoint
+
+    reason = recovery_unavailable_reason()
+    if reason is not None:
+        _state(run, recovery_unavailable=reason)
+        return
+    publish_checkpoint(run, checkpoint, step=step)
+    _state(run, recovery_checkpoint=str(checkpoint))
+
+
 def _train_sft(run: Path, config: FinetuneConfig) -> Path:
     from stateset_agents.training.sft import load_sft_dataset, run_sft
 
@@ -531,11 +550,8 @@ def _train_sft(run: Path, config: FinetuneConfig) -> Path:
 
     class Progress(TrainerCallback):
         def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> Any:
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
             path = run / "artifacts" / f"checkpoint-{state.global_step}"
-            publish_checkpoint(run, path, step=state.global_step)
-            _state(run, recovery_checkpoint=str(path))
+            _publish_recovery(run, path, step=state.global_step)
             return control
 
         def on_step_end(
@@ -629,10 +645,7 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
         ) -> None:
             if is_best:
                 return
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
-            publish_checkpoint(run, Path(path), step=step)
-            _state(run, recovery_checkpoint=path)
+            _publish_recovery(run, Path(path), step=step)
 
         def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
             _metrics(run, step, metrics)
@@ -642,7 +655,8 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
             if stop_requested(run):
                 name = f"stopped-step-{step}"
                 await trainer.save_checkpoint(checkpoint_name=name)
-                _state(run, recovery_checkpoint=str(run / "artifacts" / name))
+                if recovery_unavailable_reason() is None:
+                    _state(run, recovery_checkpoint=str(run / "artifacts" / name))
                 raise FinetuneFailure("cancelled")
 
     training = TrainingConfig(

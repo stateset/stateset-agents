@@ -54,13 +54,23 @@ _RESUME_FIELDS = {
 }
 
 
-def _single_process() -> None:
+def recovery_unavailable_reason() -> str | None:
+    """Why studio checkpoint recovery cannot be offered here, or ``None``.
+
+    Training itself does not need recovery: a worker that cannot publish
+    recovery receipts records this reason and keeps training.
+    """
     if not sys.platform.startswith("linux"):
-        raise ValueError("Studio recovery currently verifies worker ownership on Linux")
+        return "Studio recovery currently verifies worker ownership on Linux"
     if os.environ.get("WORLD_SIZE", "1") != "1":
-        raise ValueError(
-            "Studio checkpoint recovery requires a single training process"
-        )
+        return "Studio checkpoint recovery requires a single training process"
+    return None
+
+
+def _single_process() -> None:
+    reason = recovery_unavailable_reason()
+    if reason is not None:
+        raise ValueError(reason)
 
 
 def _directory(path: Path) -> None:

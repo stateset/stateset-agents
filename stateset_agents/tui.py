@@ -2925,6 +2925,12 @@ class Studio:
         ]
         if state.get("teardown_error"):
             result.append(_teardown_note(state))
+        if state.get("recovery_unavailable"):
+            result.append(
+                "Recovery checkpoints: unavailable ("
+                + _safe(str(state["recovery_unavailable"]))
+                + "); training continued without recovery receipts."
+            )
         if state.get("execution_unconfirmed"):
             result += [
                 "Execution: unconfirmed; detached work may still be queued or running.",

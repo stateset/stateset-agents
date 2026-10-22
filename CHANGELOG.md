@@ -229,6 +229,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   worker honors (`stop_protocol`), and `request_stop` checks that version
   instead of the whole-package source hash; plans from before the field
   existed keep the old identical-code requirement.
+- Local studio training no longer fails at its first checkpoint save on
+  Windows or when the launching environment carries `WORLD_SIZE != 1`.
+  Recovery receipts need Linux ownership checks and a single training
+  process; where those are missing the worker keeps training and records
+  `recovery_unavailable` (shown by `finetune status` and the studio's run
+  details) instead of raising inside the trainer's save callback.
 
 ### Security
 

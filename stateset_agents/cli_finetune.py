@@ -251,6 +251,7 @@ def _summary(run: Path) -> dict[str, Any]:
         "stop_requested",
         "execution_unconfirmed",
         "recovery_checkpoint",
+        "recovery_unavailable",
         "teardown_error",
         "teardown_exit_code",
         "error",
