@@ -207,7 +207,8 @@ def test_full_view_wraps_long_lines_and_limits_visible_scope(retained, width, he
         + "short\n" * 2100
         + "WIDE "
         + "界" * 80
-        + "\nEND-OF-LONG-LINE\n"
+        + "\nEND-OF-LONG-LINE\n",
+        encoding="utf-8",
     )
     studio.handle("l")
     frame = studio.lines(width, height)

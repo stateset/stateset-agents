@@ -844,6 +844,11 @@ def plan_run(config: FinetuneConfig, *, cwd: Path | None = None) -> RunPlan:
         raw = read_training_data(source)
     except (FileNotFoundError, IsADirectoryError):
         raise ValueError("Dataset must be a file no larger than 64 MiB") from None
+    except PermissionError:
+        # Windows reports opening a directory as EACCES rather than EISDIR.
+        if not source.is_dir():
+            raise
+        raise ValueError("Dataset must be a file no larger than 64 MiB") from None
     data_provenance: dict[str, Any] = {}
     if config.method == "sft":
         # The strict parser rejects every malformed row instead of skipping it.

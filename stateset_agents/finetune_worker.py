@@ -320,6 +320,30 @@ def supervise(run: Path) -> int:
         return 1
 
 
+def _stop_worker_group(process: subprocess.Popen[bytes], *, force: bool) -> None:
+    """Stop a timed-out worker together with the children it started.
+
+    POSIX signals the worker's own session. Windows has neither process groups
+    for ``os.killpg`` nor SIGKILL, so ``taskkill /T /F`` stops the worker tree
+    immediately, falling back to the direct child if taskkill is unavailable.
+    """
+    if os.name == "nt":
+        try:
+            subprocess.run(
+                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            process.kill()
+        return
+    import signal
+
+    os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
+
+
 def _supervise(
     run: Path, config: FinetuneConfig, *, supervisor_token: str | None = None
 ) -> int:
@@ -378,6 +402,8 @@ def _supervise(
         MKL_NUM_THREADS=str(config.cpu_slots),
         TOKENIZERS_PARALLELISM="false",
         PYTHONUNBUFFERED="1",
+        # Log readers decode run.log as UTF-8; Windows would default to cp1252.
+        PYTHONIOENCODING="utf-8",
     )
     environment[SUPERVISOR_TOKEN_ENV] = supervisor_token
     try:
@@ -401,13 +427,11 @@ def _supervise(
                     )
                 )
             except subprocess.TimeoutExpired:
-                import signal
-
-                os.killpg(process.pid, signal.SIGTERM)
+                _stop_worker_group(process, force=False)
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    _stop_worker_group(process, force=True)
                     process.wait()
                 raise FinetuneFailure("timeout") from None
         completed = (run / "completion.json").is_file()

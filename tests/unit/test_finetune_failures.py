@@ -2,6 +2,7 @@
 
 import errno
 import json
+import os
 import subprocess
 from types import SimpleNamespace
 
@@ -65,7 +66,8 @@ def test_failure_diagnosis_is_controlled_and_terminal(run, error, stage, code):
     assert info["recorded"] and info["code"] == code and info["stage"] == stage
     record = read_json(run / "failure.json")
     assert set(record) == {"schema_version", "code", "stage", "recorded_at"}
-    assert (run / "failure.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (run / "failure.json").stat().st_mode & 0o077 == 0
     assert "sensitive" not in json.dumps(record) + state["error"]
     assert str(error) not in json.dumps(record)
 
@@ -139,7 +141,16 @@ def test_direct_worker_timeout_records_action_after_terminating_its_group(
         "Popen",
         lambda *_a, **_k: SimpleNamespace(pid=123, wait=wait),
     )
-    monkeypatch.setattr("os.killpg", lambda pid, signal: signals.append((pid, signal)))
+    if os.name == "nt":  # Windows stops the worker tree with taskkill instead.
+        monkeypatch.setattr(
+            worker.subprocess,
+            "run",
+            lambda command, **_k: signals.append((int(command[-1]), command)),
+        )
+    else:
+        monkeypatch.setattr(
+            "os.killpg", lambda pid, signal: signals.append((pid, signal))
+        )
     assert worker.supervise(run) == 1
     assert signals and signals[0][0] == 123
     info = failure_info(run, read_json(run / "state.json"))
