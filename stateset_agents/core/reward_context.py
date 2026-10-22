@@ -50,7 +50,8 @@ LATEST_TURN_SCOPE = "latest_turn"
 
 def requires_environment_context(reward_fn: Any) -> bool:
     """Whether ``reward_fn`` judges executed environment evidence."""
-    return bool(getattr(reward_fn, "requires_environment_context", False))
+    # Only an explicit True counts: a mock's auto-attribute is not a claim.
+    return getattr(reward_fn, "requires_environment_context", False) is True
 
 
 def _resolve_scenario(
@@ -179,21 +180,24 @@ def _real(value: Any) -> float | None:
 
 def reward_score(result: Any) -> float:
     """The finite score of a reward result: a ``RewardResult`` (anything with
-    ``.score``), a mapping with ``"score"``, or a real scalar (Python, NumPy
-    or a 0-d tensor).
+    ``.score``, or its ``.total_reward`` alias), a mapping with ``"score"`` (or
+    ``"total_reward"``), or a real scalar (Python, NumPy or a 0-d tensor).
 
     Raises ``TypeError`` for anything else (``None``, a string, a list) and
     ``ValueError`` for a non-finite score: neither is ever replaced by a
     stand-in value. Every caller (environments, ``Environment.get_reward``,
     ``score_episode``) uses this one parser.
     """
-    if hasattr(result, "score"):
-        raw = result.score
-    elif isinstance(result, Mapping) and "score" in result:
-        raw = result["score"]
+    if isinstance(result, Mapping):
+        candidates = [result.get("score"), result.get("total_reward")]
     else:
-        raw = result
-    score = _real(raw)
+        # ``total_reward`` is RewardResult's compatibility alias.
+        candidates = [
+            getattr(result, "score", None),
+            getattr(result, "total_reward", None),
+            result,
+        ]
+    score = next((value for value in map(_real, candidates) if value is not None), None)
     if score is None:
         raise TypeError(
             f"Unexpected reward result {type(result).__name__!r}: expected a "
@@ -258,6 +262,24 @@ async def _call(reward_fn: Any, turns: list[Any], context: dict[str, Any]) -> An
     if inspect.isawaitable(result):
         result = await result
     return result
+
+
+def response_reward_context(
+    prompt: str,
+    scenario: Mapping[str, Any] | None = None,
+    *,
+    reward_fn: Any = None,
+) -> dict[str, Any]:
+    """The reward context for one reply to one prompt (single-turn trainers).
+
+    The standard shape: the scenario's keys lifted to the top level, with
+    ``"user_query"`` set to the prompt unless the scenario has one, and the
+    scenario under ``"scenario"``. ``GSPOTrainer``, ``GSPOTokenTrainer`` and
+    the TRL reward bridge build their context here, so scenario labels such
+    as ``ground_truth`` reach the reward as they do in a multi-turn episode.
+    """
+    query = {"user_query": str(prompt), **dict(scenario or {})}
+    return build_reward_context(None, query, reward_fn=reward_fn)
 
 
 async def score_episode(
@@ -365,6 +387,7 @@ __all__ = [
     "note_fallback",
     "reward_fallback",
     "requires_environment_context",
+    "response_reward_context",
     "reward_score",
     "score_episode",
     "scores_latest_turn_only",

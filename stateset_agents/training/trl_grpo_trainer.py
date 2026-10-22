@@ -22,6 +22,7 @@ import torch
 # Import framework components
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward_context import response_reward_context, reward_score
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
@@ -793,32 +794,31 @@ class TRLGRPORewardFunction:
                 role="assistant", content=str(completion), metadata={"generated": True}
             )
 
-            # Compute reward using the framework's reward model.
-            # Uses the canonical RewardFunction.compute_reward(turns, context) API
-            # documented in §4.1 of the whitepaper, so any RewardFunction subclass
-            # (not just MultiObjectiveRewardFunction) works.
-            context: dict[str, Any] = {"user_query": user_query}
+            # Compute reward using the framework's reward model: the canonical
+            # RewardFunction.compute_reward(turns, context) API with the
+            # standard reward context (response_reward_context), so any
+            # RewardFunction subclass works and scenario labels reach it.
+            scenario: dict[str, Any] | None = None
             if isinstance(scenario_indices, list) and position < len(scenario_indices):
                 scenario_index = int(scenario_indices[position])
                 if 0 <= scenario_index < len(self.environment.scenarios):
-                    context.update(self.environment.scenarios[scenario_index])
+                    scenario = dict(self.environment.scenarios[scenario_index])
             else:
-                matching = next(
+                scenario = next(
                     (
-                        scenario
-                        for scenario in self.environment.scenarios
-                        if scenario.get("user_query") == user_query
+                        dict(candidate)
+                        for candidate in self.environment.scenarios
+                        if candidate.get("user_query") == user_query
                     ),
                     None,
                 )
-                if matching is not None:
-                    context.update(matching)
             reward_info = await self.reward_model.compute_reward(
                 turns=[turn],
-                context=context,
+                context=response_reward_context(
+                    user_query, scenario, reward_fn=self.reward_model
+                ),
             )
-
-            rewards.append(reward_info.total_reward)
+            rewards.append(reward_score(reward_info))
 
         return rewards
 

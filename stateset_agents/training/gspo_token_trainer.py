@@ -15,6 +15,7 @@ import torch
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward_context import response_reward_context, reward_score
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
@@ -278,9 +279,11 @@ class GSPOTokenTrainer(GSPOTrainer):
                 )
                 reward_info = await self.reward_model.compute_turn_reward(
                     turn=turn,
-                    context={"user_query": query, **query_context},
+                    context=response_reward_context(
+                        query, query_context, reward_fn=self.reward_model
+                    ),
                 )
-                rewards.append(reward_info.total_reward)
+                rewards.append(reward_score(reward_info))
 
             rewards_tensor = torch.tensor(
                 rewards, dtype=torch.float32, device=model_device

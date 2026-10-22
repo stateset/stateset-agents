@@ -24,6 +24,10 @@ import torch.nn.functional as F
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward_context import (
+    response_reward_context,
+    reward_score,
+)
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
@@ -702,6 +706,21 @@ class GSPOTrainer(TrainingRuntime):
 
         return sequence_log_probs, response_lengths
 
+    async def _reward_for_response(
+        self, prompt: str, query_context: dict[str, Any], response: str
+    ) -> float:
+        """Score one sampled response with the standard reward context."""
+        turn = ConversationTurn(
+            role="assistant", content=response, metadata={"generated": True}
+        )
+        result = await self.reward_model.compute_reward(
+            turns=[turn],
+            context=response_reward_context(
+                prompt, query_context, reward_fn=self.reward_model
+            ),
+        )
+        return reward_score(result)
+
     async def train_step(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
     ) -> dict[str, float]:
@@ -768,16 +787,7 @@ class GSPOTrainer(TrainingRuntime):
                 _prompt: str = prompt_value,
                 _query_context: dict[str, Any] = query_context_value,
             ) -> float:
-                turn = ConversationTurn(
-                    role="assistant", content=resp, metadata={"generated": True}
-                )
-                reward_context = {"user_query": _prompt}
-                reward_context.update(_query_context)
-                reward_info = await self.reward_model.compute_reward(
-                    turns=[turn],
-                    context=reward_context,
-                )
-                return float(reward_info.total_reward)
+                return await self._reward_for_response(_prompt, _query_context, resp)
 
             rewards = list(
                 await asyncio.gather(

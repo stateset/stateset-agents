@@ -228,3 +228,65 @@ async def test_untyped_rewards_judge_the_whole_episode_once(attach_to_environmen
     total = await score_episode(trajectory, reward, environment, scenario)
     assert total == 1.0  # only the final reply counts, not their mean
     assert reward.calls == 1
+
+
+# --- Single-turn trainers use the standard reward context --------------------
+
+MATH = {"id": "m", "prompt": "What is 2+2?", "ground_truth": {"answer": "4"}}
+
+
+async def test_single_turn_trainer_lifts_scenario_labels():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+    from stateset_agents.core.trajectory import ConversationTurn
+    from stateset_agents.training.single_turn_state import (
+        extract_context,
+        merge_scenario_into_state,
+    )
+    from stateset_agents.training.single_turn_trainer import SingleTurnGRPOTrainer
+
+    environment = ConversationEnvironment([MATH])
+    state = merge_scenario_into_state(await environment.reset(MATH), MATH, None)
+    trainer = object.__new__(SingleTurnGRPOTrainer)
+    trainer.reward_fn = CorrectnessReward()
+    trainer.environment = environment
+    scores = []
+    for reply in ("The answer is 4.", "The answer is 5."):
+        turns = [
+            ConversationTurn(role="user", content="What is 2+2?"),
+            ConversationTurn(role="assistant", content=reply),
+        ]
+        scores.append(
+            await trainer._compute_reward_for_turns(turns, extract_context(state))
+        )
+    assert scores == [1.0, 0.0]
+
+
+class ContextRecorder(RewardFunction):
+    def __init__(self):
+        super().__init__(reward_type=RewardType.IMMEDIATE)
+        self.contexts = []
+
+    async def compute_reward(self, turns, context=None):
+        self.contexts.append(context)
+        return RewardResult(score=0.5)
+
+
+async def test_gspo_and_trl_rewards_get_the_standard_context():
+    from stateset_agents.training.gspo_trainer import GSPOTrainer
+    from stateset_agents.training.trl_grpo_trainer import TRLGRPORewardFunction
+
+    gspo = object.__new__(GSPOTrainer)
+    gspo.reward_model = ContextRecorder()
+    await gspo._reward_for_response("What is 2+2?", dict(MATH), "4")
+    trl = TRLGRPORewardFunction(
+        reward_model=ContextRecorder(),
+        agent=None,
+        environment=SimpleNamespace(scenarios=[MATH]),
+    )
+    await trl.compute_rewards(
+        ["4"], ["User: What is 2+2?\nAssistant:"], scenario_index=[0]
+    )
+    for [context] in (gspo.reward_model.contexts, trl.reward_model.contexts):
+        assert context["ground_truth"] == {"answer": "4"}
+        assert context["scenario"]["ground_truth"] == {"answer": "4"}
+        assert context["user_query"] == "What is 2+2?"
