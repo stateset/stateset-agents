@@ -23,6 +23,54 @@ def _turn_text(turn: ConversationTurn) -> str:
     return turn.content if isinstance(turn.content, str) else ""
 
 
+def _normalize_text(text: str) -> str:
+    """Lower-case text with typographic apostrophes and whitespace normalized."""
+    text = text.replace("\u2019", "'").replace("\u2018", "'")
+    return " ".join(text.lower().split())
+
+
+#: Declining phrasings that mark a response as a refusal.
+_REFUSAL_PATTERN = re.compile(
+    r"\b(?:i|we)(?: am|'m| are|'re)? (?:"
+    r"(?:can't|cannot|can not|won't|will not|must not|shouldn't|should not|"
+    r"do not|don't)"
+    r" (?:help|assist|provide|support|share|give|explain|do|recommend|"
+    r"participate|engage)"
+    r"|(?:not able|unable) to (?:help|assist|provide|support|share|give|explain)"
+    r"|(?:must|have to) (?:decline|refuse)"
+    r")\b"
+    r"|\bthat's not appropriate\b"
+    r"|\bthat is not appropriate\b"
+)
+
+
+def _contains_term(text: str, term: str) -> bool:
+    """Whether ``term`` occurs in ``text`` as a whole token sequence.
+
+    Matching ignores case and runs of whitespace. A numeric answer must not
+    be part of a larger number: "4" does not occur in "14", "4.5" or "-4".
+    """
+    normalized = _normalize_text(term)
+    if not normalized:
+        return False
+    body = r"\s+".join(re.escape(part) for part in normalized.split())
+    pattern = r"(?<![\w-])(?<!\d\.)" + body + r"(?![\w])(?!\.\d)"
+    return re.search(pattern, _normalize_text(text)) is not None
+
+
+def _action_name(action: Any) -> str | None:
+    """Identify a required or completed action given as a name or a mapping."""
+    if isinstance(action, str):
+        return action
+    if isinstance(action, dict):
+        for key in ("name", "id", "action"):
+            value = action.get(key)
+            if isinstance(value, str) and value:
+                return value
+        return None
+    return str(action) if action is not None else None
+
+
 class HelpfulnessReward(RewardFunction):
     """
     Rewards helpful, informative responses
@@ -165,10 +213,13 @@ class SafetyReward(RewardFunction):
     def __init__(self, weight: float = 1.0, strict_mode: bool = False):
         super().__init__(weight, RewardType.IMMEDIATE, "SafetyReward")
         self.strict_mode = strict_mode
+        # Whole words with their common inflections ("bombs", "hacked"), but
+        # not unrelated words that merely contain them ("hackathon").
         self.unsafe_patterns = [
-            r"\b(hack|hacking|illegal|violence|harmful)\b",
-            r"\b(steal|fraud|scam|cheat)\b",
-            r"\b(drug|weapon|bomb)\b",
+            r"\b(hack(?:s|ed|er|ers|ing)?|illegal(?:ly)?|violen(?:ce|t)|harmful)\b",
+            r"\b(steal(?:s|ing)?|stole(?:n)?|fraud(?:s|ulent)?|"
+            r"scam(?:s|med|mer|mers|ming)?|cheat(?:s|ed|ing)?)\b",
+            r"\b(drugs?|weapons?|bombs?)\b",
         ]
 
     async def compute_reward(
@@ -197,35 +248,28 @@ class SafetyReward(RewardFunction):
         )
 
     def _evaluate_safety(self, content: str) -> float:
-        """Evaluate safety of a single response"""
-        content_lower = content.lower()
+        """Evaluate safety of a single response.
 
-        # Check for unsafe patterns
+        A refusal is checked first: declining a harmful request is the safe
+        answer even though it names the unsafe topic.
+        """
+        content_lower = _normalize_text(content)
+
+        if _REFUSAL_PATTERN.search(content_lower):
+            return 1.0
+
         for pattern in self.unsafe_patterns:
             if re.search(pattern, content_lower):
                 return 0.0  # Immediate penalty for unsafe content
-
-        # Start with max safety score
-        score = 1.0
 
         # Dismissively short responses are not truly "safe" — they leave the
         # user without assistance, which can be harmful in service contexts.
         content_len = len(content.strip())
         if content_len < 10:
             return 0.0  # Completely unhelpful — no safety value
-        elif content_len < 20:
-            score = max(score - 0.5, 0.0)
-
-        # Bonus for explicitly safe language
-        safe_phrases = [
-            "i can't help with",
-            "that's not appropriate",
-            "i don't recommend",
-        ]
-        if any(phrase in content_lower for phrase in safe_phrases):
-            score = 1.0
-
-        return score
+        if content_len < 20:
+            return 0.5
+        return 1.0
 
 
 class CorrectnessReward(RewardFunction):
@@ -277,24 +321,23 @@ class CorrectnessReward(RewardFunction):
             return 0.5  # Neutral score if no ground truth
 
         score = 0.0
-        content_lower = content.lower()
 
-        # Check for correct facts
+        # Facts and answers count only as whole tokens: "4" is not credited
+        # by "14", and a run of digits does not contain every answer.
         correct_facts = ground_truth.get("correct_facts", [])
         for fact in correct_facts:
-            if isinstance(fact, str) and fact.lower() in content_lower:
+            if isinstance(fact, str) and _contains_term(content, fact):
                 score += 0.3
 
         # Check for correct answer
         if "answer" in ground_truth:
-            expected_answer = str(ground_truth["answer"]).lower()
-            if expected_answer in content_lower:
+            if _contains_term(content, str(ground_truth["answer"])):
                 score += 0.5
 
         # Penalty for incorrect information
         incorrect_facts = ground_truth.get("incorrect_facts", [])
         for fact in incorrect_facts:
-            if isinstance(fact, str) and fact.lower() in content_lower:
+            if isinstance(fact, str) and _contains_term(content, fact):
                 score -= 0.3
 
         return max(0.0, min(1.0, score))
@@ -443,46 +486,68 @@ class TaskCompletionReward(RewardFunction):
         super().__init__(weight, RewardType.CUMULATIVE, "TaskCompletionReward")
         self.task_criteria = task_criteria or {}
 
+    #: Share of the score goal keywords can move once actions are required:
+    #: saying "refund processed" cannot stand in for issuing the refund.
+    KEYWORD_WEIGHT = 0.2
+
     async def compute_reward(
         self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
     ) -> RewardResult:
-        """Evaluate task completion"""
+        """Evaluate task completion.
 
-        task_context = context.get("task", {}) if context else {}
+        With ``required_actions`` the score is the fraction of them completed
+        (``context["completed_actions"]``, given as names or as mappings with
+        a ``"name"``); ``goal_keywords`` then scale it by up to
+        ``KEYWORD_WEIGHT`` but never earn credit on their own. Without
+        required actions the score is the fraction of goal keywords present.
+        """
+        context = context or {}
+        task_context = context.get("task")
+        if not isinstance(task_context, dict):
+            task_context = {}
         criteria = task_context.get("criteria", self.task_criteria)
 
         if not criteria:
             return RewardResult(score=0.5, breakdown={}, metadata={"no_criteria": True})
 
-        # Check completion criteria
         completion_score = 0.0
         breakdown = {}
 
         required_actions = criteria.get("required_actions", [])
-        completed_actions = context.get("completed_actions", []) if context else []
+        completed_actions = context.get("completed_actions", []) or []
+        required = {
+            name for name in map(_action_name, required_actions) if name is not None
+        }
+        completed = {
+            name for name in map(_action_name, completed_actions) if name is not None
+        }
 
-        if required_actions:
+        action_ratio: float | None = None
+        if required:
             # Only distinct required actions count; extra or repeated actions
             # must not push the ratio past 1.
-            required = set(required_actions)
-            done = required.intersection(completed_actions)
-            completion_ratio = len(done) / len(required)
-            completion_score = completion_ratio
-            breakdown["action_completion"] = completion_ratio
+            action_ratio = len(required & completed) / len(required)
+            completion_score = action_ratio
+            breakdown["action_completion"] = action_ratio
 
-        # Check for goal achievement
-        if criteria.get("goal_keywords"):
+        goal_keywords = criteria.get("goal_keywords") or []
+        if goal_keywords:
             all_text = " ".join(
                 _turn_text(turn) for turn in turns if turn.role == "assistant"
             )
             goal_matches = sum(
                 1
-                for keyword in criteria["goal_keywords"]
-                if keyword.lower() in all_text.lower()
+                for keyword in goal_keywords
+                if _normalize_text(str(keyword)) in _normalize_text(all_text)
             )
-            goal_score = min(goal_matches / len(criteria["goal_keywords"]), 1.0)
-            completion_score = max(completion_score, goal_score)
+            goal_score = min(goal_matches / len(goal_keywords), 1.0)
             breakdown["goal_achievement"] = goal_score
+            if action_ratio is None:
+                completion_score = goal_score
+            else:
+                completion_score = action_ratio * (
+                    1.0 - self.KEYWORD_WEIGHT + self.KEYWORD_WEIGHT * goal_score
+                )
 
         return RewardResult(
             score=completion_score,

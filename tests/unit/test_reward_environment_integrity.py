@@ -14,8 +14,11 @@ from types import SimpleNamespace
 import pytest
 
 from stateset_agents.core.basic_rewards import (
+    ConcisenessReward,
     CorrectnessReward,
     HelpfulnessReward,
+    SafetyReward,
+    TaskCompletionReward,
 )
 from stateset_agents.core.conversation_environment import ConversationEnvironment
 from stateset_agents.core.reward_base import (
@@ -29,8 +32,13 @@ from stateset_agents.core.reward_context import (
     REWARD_SCOPE_KEY,
     build_reward_context,
 )
+from stateset_agents.core.reward_factories import create_adaptive_reward
 from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.rewards.multi_objective_components import (
+    ModelBasedRewardComponent,
+    ProfessionalismRewardComponent,
+)
 
 
 def _conversation(reply: str) -> list[ConversationTurn]:
@@ -86,6 +94,39 @@ def _trainer(environment, reward_fn, reply="Your refund is being processed now."
         reward_fn=reward_fn,
         config=TrainingConfig(num_generations=2),
     )
+
+
+# --- 1. SafetyReward ---------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I can't help with hacking into accounts, that's illegal.",
+        "I cannot assist with building weapons.",
+        "Sorry, I won’t help you buy drugs.",
+    ],
+)
+async def test_safety_refusal_that_names_an_unsafe_topic_is_safe(reply):
+    assert (await SafetyReward().compute_reward(_conversation(reply))).score == 1.0
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Sure! Mix these chemicals to build pipe bombs and other weapons at home.",
+        "Here is how to buy drugs online anonymously, step by step.",
+        "Step one: we hacked the admin account and stole the passwords.",
+    ],
+)
+async def test_safety_flags_inflected_unsafe_terms(reply):
+    assert (await SafetyReward().compute_reward(_conversation(reply))).score == 0.0
+
+
+async def test_safety_does_not_flag_words_that_merely_contain_unsafe_terms():
+    reply = "Congratulations on winning the hackathon; the drugstore opens at nine."
+    score = (await SafetyReward().compute_reward(_conversation(reply))).score
+    assert score == 1.0
 
 
 # --- 2. One scoring per episode under default trainer wiring -----------------
@@ -289,6 +330,37 @@ async def test_task_environment_pays_the_completion_bonus_once():
     assert trajectory.turn_rewards == [15.0, 0.0, 0.0, 0.0]
 
 
+async def test_task_completion_reward_accepts_task_environment_actions():
+    task = {**TASK, "criteria": {"required_actions": ["load"]}}
+    environment = TaskEnvironment(
+        [task],
+        success_criteria=lambda turns, ctx: ctx["task_progress"] >= 1,
+        max_turns=2,
+        reward_fn=TaskCompletionReward(),
+    )
+    trajectory = await environment.run_episode(_replies("load data"), task)
+    # 10 progress + 5 completion bonus + 1.0 task completion
+    assert trajectory.total_reward == pytest.approx(16.0)
+
+
+async def test_task_completion_reward_requires_actions_over_keywords():
+    reward = TaskCompletionReward(
+        task_criteria={
+            "required_actions": ["issue_refund"],
+            "goal_keywords": ["refund processed"],
+        }
+    )
+    claimed = await reward.compute_reward(
+        _conversation("Your refund processed."), {"completed_actions": []}
+    )
+    done = await reward.compute_reward(
+        _conversation("Your refund processed."),
+        {"completed_actions": [{"name": "issue_refund"}]},
+    )
+    assert claimed.score == 0.0
+    assert done.score == 1.0
+
+
 # --- 8. Reward failures are visible ------------------------------------------
 
 
@@ -317,3 +389,55 @@ async def test_failed_step_reward_is_logged_and_marked(caplog):
         r.levelno >= logging.WARNING and "judge outage" in r.getMessage()
         for r in caplog.records
     )
+
+
+# --- 9. Gameable heuristics --------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "reply", ["The answer is 14.", "0123456789", "It is 4.5", "Roughly -4"]
+)
+async def test_correctness_requires_the_answer_as_a_whole_token(reply):
+    reward = CorrectnessReward(ground_truth={"answer": "4"})
+    assert (await reward.compute_reward(_conversation(reply))).score == 0.0
+
+
+async def test_correctness_still_credits_the_exact_answer():
+    reward = CorrectnessReward(ground_truth={"answer": "4"})
+    assert (await reward.compute_reward(_conversation("It's 4."))).score == 0.5
+
+
+async def test_model_based_component_without_client_warns_once(caplog):
+    component = ModelBasedRewardComponent()
+    turns = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "ok"}]
+    with caplog.at_level(logging.WARNING):
+        await component.compute_score(turns)
+        await component.compute_score(turns)
+    warnings = [r for r in caplog.records if "api_client" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+async def test_strict_model_based_component_without_client_raises():
+    component = ModelBasedRewardComponent(strict=True)
+    turns = [{"role": "user", "content": "q"}, {"role": "assistant", "content": "ok"}]
+    with pytest.raises(RuntimeError, match="api_client"):
+        await component.compute_score(turns)
+
+
+async def test_professionalism_does_not_penalize_empathy_or_substrings():
+    component = ProfessionalismRewardComponent()
+    empathetic = "I understand you're frustrated. Please let me help resolve this."
+    substring = "Thank you, please enjoy your stay at the chateau."
+    for reply in (empathetic, substring):
+        score = await component.compute_score([{"role": "assistant", "content": reply}])
+        assert score > 0.0, reply
+
+
+# --- 10. Bookkeeping ---------------------------------------------------------
+
+
+def test_create_adaptive_reward_does_not_mutate_caller_weights():
+    helpful, concise = HelpfulnessReward(weight=2.0), ConcisenessReward(weight=2.0)
+    composite = create_adaptive_reward([helpful, concise])
+    assert (helpful.weight, concise.weight) == (2.0, 2.0)
+    assert [rf.weight for rf in composite.reward_functions] == [0.5, 0.5]

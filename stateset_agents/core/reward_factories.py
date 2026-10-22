@@ -7,6 +7,7 @@ This module provides:
 - Adaptive reward creation utilities
 """
 
+import copy
 from typing import Any
 
 from .basic_rewards import (
@@ -181,9 +182,13 @@ def create_adaptive_reward(
     expected_responses: dict[str, str] | None = None,
     similarity_weight: float = 0.3,
 ) -> CompositeReward:
-    """Create an adaptive reward that combines base rewards with similarity matching"""
+    """Create an adaptive reward that combines base rewards with similarity matching.
 
-    reward_functions = base_rewards.copy()
+    The composite holds copies of ``base_rewards`` with normalized weights;
+    the caller's reward objects keep their own weights.
+    """
+
+    reward_functions = [copy.copy(reward_fn) for reward_fn in base_rewards]
 
     # Add similarity reward if expected responses provided
     if expected_responses:
@@ -196,7 +201,8 @@ def create_adaptive_reward(
 
     # Normalize weights
     total_weight = sum(rf.weight for rf in reward_functions)
-    for rf in reward_functions:
-        rf.weight = rf.weight / total_weight
+    if total_weight > 0:
+        for rf in reward_functions:
+            rf.weight = rf.weight / total_weight
 
     return CompositeReward(reward_functions)

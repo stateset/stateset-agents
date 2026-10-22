@@ -362,7 +362,6 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             "sucks",
             "hate",
             "annoying",
-            "frustrated",
             "angry",
         ]
         professional = [re.escape(keyword) for keyword in self.professional_indicators]
@@ -370,11 +369,14 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
             r"(?:" + "|".join(professional) + r")",
             re.IGNORECASE,
         )
+        # Whole words only: "hate" must not match inside "whatever". Naming
+        # the customer's feelings ("I understand you're frustrated") is
+        # empathy, not unprofessional language, so it is not listed.
         unprofessional = [
             re.escape(keyword) for keyword in self.unprofessional_indicators
         ]
         self._unprofessional_pattern = re.compile(
-            r"(?:" + "|".join(unprofessional) + r")",
+            r"\b(?:" + "|".join(unprofessional) + r")\b",
             re.IGNORECASE,
         )
 
@@ -415,7 +417,11 @@ class ModelBasedRewardComponent(BaseRewardComponent):
     ):
         provider = kwargs.pop("provider", None)
         model_name = kwargs.pop("model_name", None)
+        strict = bool(kwargs.pop("strict", False))
         super().__init__(name, weight, **kwargs)
+        #: Raise instead of scoring by reply length when no client is set.
+        self.strict = strict
+        self._warned_no_client = False
         self.provider = _normalize_model_provider(
             provider or os.getenv("STATESET_JUDGE_PROVIDER")
         )
@@ -448,33 +454,48 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             assistant_response=assistant_response,
         )
 
-        try:
-            client = self.api_client
-            if client is not None:
-                effective_provider = _resolve_model_provider(self.provider, client)
-                self.model_name = _resolve_model_name(
-                    effective_provider, self._configured_model_name
+        client = self.api_client
+        if client is None:
+            if self.strict:
+                raise RuntimeError(
+                    f"{self.name}: no api_client configured; refusing to "
+                    "substitute a length heuristic for the judge (strict=True)"
                 )
-                if effective_provider == "openai":
-                    response = await self._call_openai_api(prompt)
-                    score = self._parse_score_from_response(response)
-                elif effective_provider == "anthropic":
-                    response = await self._call_anthropic_api(prompt)
-                    score = self._parse_score_from_response(response)
-                elif hasattr(client, "generate"):
-                    response = await client.generate(prompt)
-                    score = self._parse_score_from_response(response)
-                else:
-                    logger.warning(
-                        "Unknown API client configuration for provider %s, using heuristic",
-                        effective_provider,
-                    )
-                    score = min(1.0, len(assistant_response) / 200.0)
+            if not self._warned_no_client:
+                self._warned_no_client = True
+                logger.warning(
+                    "%s has no api_client; scoring replies by length "
+                    "(len/200) instead of a judge. Pass api_client=... or "
+                    "strict=True to fail instead.",
+                    self.name,
+                )
+            return max(0.0, min(1.0, len(assistant_response) / 200.0))
+
+        try:
+            effective_provider = _resolve_model_provider(self.provider, client)
+            self.model_name = _resolve_model_name(
+                effective_provider, self._configured_model_name
+            )
+            if effective_provider == "openai":
+                response = await self._call_openai_api(prompt)
+                score = self._parse_score_from_response(response)
+            elif effective_provider == "anthropic":
+                response = await self._call_anthropic_api(prompt)
+                score = self._parse_score_from_response(response)
+            elif hasattr(client, "generate"):
+                response = await client.generate(prompt)
+                score = self._parse_score_from_response(response)
             else:
+                logger.warning(
+                    "Unknown API client configuration for provider %s, using heuristic",
+                    effective_provider,
+                )
                 score = min(1.0, len(assistant_response) / 200.0)
 
             return max(0.0, min(1.0, score))
         except MULTI_REWARD_EXCEPTIONS as exc:
+            if self.strict:
+                raise
             logger.error("Model judge failed: %s", exc)
             return 0.5
 
