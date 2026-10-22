@@ -30,6 +30,7 @@ from .gspo_generation import (
 from .gspo_trainer import (
     GSPOConfig,
     GSPOTrainer,
+    _policy_iterations,
     _require_finite_vector,
     normalize_total_loss,
 )
@@ -142,6 +143,68 @@ class GSPOTokenTrainer(GSPOTrainer):
         )
         return result.loss
 
+    def _score_token_rows(
+        self, query: str, responses: list[str], system_prompt: str | None
+    ) -> tuple[list[torch.Tensor], torch.Tensor, torch.Tensor]:
+        """Per-token response log-probs (with gradients) for one prompt group.
+
+        Returns the masked token log-prob rows, their per-sequence sums and the
+        response lengths used for length normalisation.
+        """
+        model_device = _get_model_device(self.model)
+        rendered_prompt = render_prompt_for_scoring(
+            self.tokenizer, query, system_prompt
+        )
+        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
+
+        sequence_lengths_list = []
+        token_log_probs_list = []
+
+        for response in responses:
+            full_text = build_scoring_text(rendered_prompt, response)
+            inputs = self.tokenizer(
+                full_text,
+                return_tensors="pt",
+                truncation=True,
+                max_length=prompt_length + self.config.max_completion_length,
+                add_special_tokens=False,
+            )
+            if model_device is not None and hasattr(inputs, "to"):
+                inputs = inputs.to(model_device)
+
+            # Gradients must flow through this forward pass: the
+            # GSPO-token loss below differentiates through
+            # `token_log_probs`.
+            outputs = self.model(**inputs)
+            logits = outputs.logits
+
+            # Shared gather (fp32 log-softmax). The response mask is
+            # built on the unshifted axis: position p is a response
+            # token when p >= prompt_length, which after the helper's
+            # shift-by-one keeps the first response token at index
+            # max(prompt_length - 1, 0) — the same convention as
+            # gspo_generation._compute_sequence_log_prob.
+            input_ids = inputs["input_ids"]
+            response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
+            if prompt_length < response_mask.shape[-1]:
+                response_mask[..., prompt_length:] = 1.0
+
+            masked_token_log_probs, _ = rl_losses.gather_token_logprobs(
+                logits, input_ids, response_mask
+            )
+            token_log_probs_list.append(masked_token_log_probs)
+
+            response_start = max(prompt_length - 1, 0)
+            response_len = max(masked_token_log_probs.shape[-1] - response_start, 1)
+            sequence_lengths_list.append(float(response_len))
+
+        # Keep tensors (not .item()) so gradients survive into the loss.
+        current_log_probs = torch.stack([t.sum() for t in token_log_probs_list])
+        sequence_lengths = torch.tensor(
+            sequence_lengths_list, dtype=torch.float32, device=model_device
+        )
+        return token_log_probs_list, current_log_probs, sequence_lengths
+
     async def train_step_token_level(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
     ) -> dict[str, float]:
@@ -163,7 +226,6 @@ class GSPOTokenTrainer(GSPOTrainer):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_loss = torch.tensor(0.0, device=model_device)
         total_clipped = 0
         total_samples = 0
         all_rewards = []
@@ -174,6 +236,9 @@ class GSPOTokenTrainer(GSPOTrainer):
         advantage_count = 0
         zero_advantage_groups = 0
 
+        scored_groups: list[
+            tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
+        ] = []
         step_queries = list(queries[:num_groups])
         # One batched generate samples every group before any scoring.
         step_groups = await self.generator.generate_groups_batch(
@@ -230,91 +295,6 @@ class GSPOTokenTrainer(GSPOTrainer):
             advantage_count += advantages.numel()
             zero_advantage_groups += int(active == 0)
 
-            # Compute current log probs for each response and get token-level details
-            # (with gradients — only the sequence-level importance ratio used
-            # for clipping is detached below).
-            agent_config = getattr(getattr(self, "agent", None), "config", None)
-            system_prompt = getattr(agent_config, "system_prompt", None)
-            rendered_prompt = render_prompt_for_scoring(
-                self.tokenizer, query, system_prompt
-            )
-            prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-
-            sequence_lengths_list = []
-            token_log_probs_list = []
-
-            for response in responses:
-                full_text = build_scoring_text(rendered_prompt, response)
-                inputs = self.tokenizer(
-                    full_text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=prompt_length + self.config.max_completion_length,
-                    add_special_tokens=False,
-                )
-                if model_device is not None and hasattr(inputs, "to"):
-                    inputs = inputs.to(model_device)
-
-                # Gradients must flow through this forward pass: the
-                # GSPO-token loss below differentiates through
-                # `token_log_probs`.
-                outputs = self.model(**inputs)
-                logits = outputs.logits
-
-                # Shared gather (fp32 log-softmax). The response mask is
-                # built on the unshifted axis: position p is a response
-                # token when p >= prompt_length, which after the helper's
-                # shift-by-one keeps the first response token at index
-                # max(prompt_length - 1, 0) — the same convention as
-                # gspo_generation._compute_sequence_log_prob.
-                input_ids = inputs["input_ids"]
-                response_mask = torch.zeros_like(input_ids, dtype=torch.float32)
-                if prompt_length < response_mask.shape[-1]:
-                    response_mask[..., prompt_length:] = 1.0
-
-                masked_token_log_probs, _ = rl_losses.gather_token_logprobs(
-                    logits, input_ids, response_mask
-                )
-                token_log_probs_list.append(masked_token_log_probs)
-
-                response_start = max(prompt_length - 1, 0)
-                response_len = max(masked_token_log_probs.shape[-1] - response_start, 1)
-                sequence_lengths_list.append(float(response_len))
-
-            # Keep tensors (not .item()) so gradients survive into the loss.
-            current_log_probs = torch.stack([t.sum() for t in token_log_probs_list])
-            sequence_lengths = torch.tensor(
-                sequence_lengths_list, dtype=torch.float32, device=model_device
-            )
-            old_log_probs, generation_gaps = self._prepare_old_log_probs(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_generation_gaps.extend(generation_gaps)
-
-            # Compute sequence importance ratios. Detach immediately: the
-            # GSPO-token objective uses a stop-gradient sequence ratio for
-            # clipping — gradients flow only through the token log probs in
-            # the loss below.
-            importance_ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, sequence_lengths
-            ).detach()
-            all_importance_ratios.extend(importance_ratios.tolist())
-
-            # Apply clipping to sequence-level importance ratios
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-
-            # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
-            total_clipped += num_clipped
-            total_samples += len(responses)
-
-            # Compute policy loss using GSPO-token objective
-            # For each response, we compute token-level weighted loss
-
             ref_log_probs = None
             if self.config.beta > 0 and self.ref_model is not None:
                 ref_log_prob_values: list[float] = []
@@ -325,21 +305,68 @@ class GSPOTokenTrainer(GSPOTrainer):
                 ref_log_probs = torch.tensor(
                     ref_log_prob_values, dtype=torch.float32, device=model_device
                 )
-            loss = self.compute_gspo_token_loss(
-                token_log_probs_list,
-                sequence_lengths,
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                ref_log_probs,
+            scored_groups.append(
+                (query, responses, old_log_probs, advantages, ref_log_probs)
             )
 
-            total_loss += loss
+        agent_config = getattr(getattr(self, "agent", None), "config", None)
+        system_prompt = getattr(agent_config, "system_prompt", None)
+        # Rollouts are scored once; each iteration recomputes token log-probs
+        # against old-policy scores frozen on the first pass (see GSPOTrainer).
+        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
+        iteration_losses: list[float] = []
+        for _iteration in range(_policy_iterations(self.config)):
+            total_loss = torch.tensor(0.0, device=model_device)
+            for index, (
+                query,
+                responses,
+                generation_log_probs,
+                advantages,
+                ref_log_probs,
+            ) in enumerate(scored_groups):
+                (
+                    token_log_probs_list,
+                    current_log_probs,
+                    sequence_lengths,
+                ) = self._score_token_rows(query, responses, system_prompt)
+                old_log_probs = frozen_old[index]
+                if old_log_probs is None:
+                    old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                        current_log_probs, generation_log_probs, sequence_lengths
+                    )
+                    old_log_probs = old_log_probs.detach()
+                    frozen_old[index] = old_log_probs
+                    all_generation_gaps.extend(generation_gaps)
 
-        # Match GSPO: each processed prompt group has equal objective weight.
-        # Normalize the full loss, including KL, before backward and clipping.
-        total_loss = normalize_total_loss(total_loss, processed_groups)
-        self._apply_optimizer_step(total_loss)
+                # Detach immediately: the GSPO-token objective uses a
+                # stop-gradient sequence ratio for clipping; gradients flow only
+                # through the token log probs in the loss below.
+                importance_ratios = self.compute_sequence_importance_ratio(
+                    current_log_probs, old_log_probs, sequence_lengths
+                ).detach()
+                all_importance_ratios.extend(importance_ratios.tolist())
+                clipped_ratios = torch.clamp(
+                    importance_ratios,
+                    1 - self.config.clip_range_left,
+                    1 + self.config.clip_range_right,
+                )
+                total_clipped += int((importance_ratios != clipped_ratios).sum().item())
+                total_samples += len(responses)
+
+                total_loss = total_loss + self.compute_gspo_token_loss(
+                    token_log_probs_list,
+                    sequence_lengths,
+                    importance_ratios,
+                    advantages,
+                    current_log_probs,
+                    ref_log_probs,
+                )
+
+            # Match GSPO: each processed prompt group has equal objective
+            # weight. Normalize the full loss, including KL, before backward.
+            total_loss = normalize_total_loss(total_loss, processed_groups)
+            self._apply_optimizer_step(total_loss)
+            iteration_losses.append(float(total_loss.detach().item()))
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -349,7 +376,8 @@ class GSPOTokenTrainer(GSPOTrainer):
         )
 
         metrics = {
-            "policy_loss": total_loss.item(),
+            "policy_loss": float(np.mean(iteration_losses)),
+            "optimizer_updates": float(len(iteration_losses)),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,

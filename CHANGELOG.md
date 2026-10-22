@@ -46,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GSPO and GSPO-token honour `num_iterations`.** Each rollout batch is scored
+  once, old-policy sequence scores are frozen on the first pass, and the trainer
+  takes `num_iterations` optimizer steps against them, so GSPO's sequence clip
+  engages in the off-policy regime it was designed for. The cosine schedule
+  spans `num_outer_iterations * num_iterations` steps, and `train_step` reports
+  `optimizer_updates`. `num_iterations` is no longer listed as ignored.
+- Learning tests asserting that a KL penalty measurably restrains drift on the
+  token path, and that multi-iteration GSPO engages its clip while learning.
+
 - Replay recorded industry policy traces offline, checking every transition,
   terminal outcome, and external-stop failure reward against a fresh sandbox.
   Exercise all five support domains through the real River SDK's rollout and

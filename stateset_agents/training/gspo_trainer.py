@@ -350,6 +350,14 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
+def _policy_iterations(config: Any) -> int:
+    """Optimizer steps per rollout batch (GSPO ``num_iterations``, >= 1)."""
+    iterations = getattr(config, "num_iterations", 1)
+    if type(iterations) is not int or iterations < 1:
+        raise ValueError("num_iterations must be a positive integer")
+    return iterations
+
+
 def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
     """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
     if step < warmup_steps:
@@ -414,10 +422,12 @@ class GSPOTrainer(TrainingRuntime):
         )
 
         # Cosine schedule over the optimizer steps actually taken: train_step
-        # makes exactly one per outer iteration. Progress is clamped so steps
-        # past the end hold the final LR (HF's cosine is periodic there and
-        # flipped the LR between full and zero on alternate steps).
-        total_steps = max(1, int(config.num_outer_iterations))
+        # makes ``num_iterations`` per outer iteration. Progress is clamped so
+        # steps past the end hold the final LR (HF's cosine is periodic there
+        # and flipped the LR between full and zero on alternate steps).
+        total_steps = max(1, int(config.num_outer_iterations)) * _policy_iterations(
+            config
+        )
         warmup_steps = int(total_steps * float(config.warmup_ratio))
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             self.optimizer,
@@ -703,7 +713,6 @@ class GSPOTrainer(TrainingRuntime):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_loss = torch.tensor(0.0, device=model_device)
         total_clipped = 0
         total_samples = 0
         all_rewards = []
@@ -714,9 +723,12 @@ class GSPOTrainer(TrainingRuntime):
         nonzero_advantages = 0
         advantage_count = 0
         zero_advantage_groups = 0
+        scored_groups: list[
+            tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
+        ] = []
         step_queries = list(queries[:num_groups])
         # Every group of the step is sampled in one batched generate before any
-        # scoring; weights only change at the optimizer step after the loop.
+        # scoring; weights only change in the update iterations after the loop.
         step_groups = await self.generator.generate_groups_batch(
             [_query_prompt(query) for query in step_queries],
             self.config.num_generations,
@@ -779,55 +791,68 @@ class GSPOTrainer(TrainingRuntime):
             advantage_count += advantages.numel()
             zero_advantage_groups += int(active == 0)
 
-            # Compute current log probs (with gradients) for each response
-            (
-                current_log_probs,
-                sequence_lengths,
-            ) = self._compute_group_sequence_log_probs(prompt, responses)
-            old_log_probs, generation_gaps = self._prepare_old_log_probs(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_generation_gaps.extend(generation_gaps)
-
-            # Compute sequence importance ratios
-            importance_ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
-
-            # Apply clipping to importance ratios
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-
-            # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
-            total_clipped += num_clipped
-            total_samples += len(responses)
-
             ref_log_probs = None
             if self.config.beta > 0 and self.ref_model is not None:
                 ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
                 if model_device is not None:
                     ref_log_probs = ref_log_probs.to(model_device)
-            total_loss_item = self.compute_gspo_loss(
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                sequence_lengths,
-                ref_log_probs,
+            scored_groups.append(
+                (prompt, responses, old_log_probs, advantages, ref_log_probs)
             )
 
-            # Accumulate loss
-            total_loss += total_loss_item
+        # Rollouts are scored once; each iteration recomputes current log-probs
+        # against old-policy scores frozen on the first pass. With one
+        # iteration the update is on-policy (ratio 1); later iterations are the
+        # off-policy regime GSPO's sequence clip exists for.
+        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
+        iteration_losses: list[float] = []
+        for _iteration in range(_policy_iterations(self.config)):
+            total_loss = torch.tensor(0.0, device=model_device)
+            for index, (
+                prompt,
+                responses,
+                generation_log_probs,
+                advantages,
+                ref_log_probs,
+            ) in enumerate(scored_groups):
+                (
+                    current_log_probs,
+                    sequence_lengths,
+                ) = self._compute_group_sequence_log_probs(prompt, responses)
+                old_log_probs = frozen_old[index]
+                if old_log_probs is None:
+                    old_log_probs, generation_gaps = self._prepare_old_log_probs(
+                        current_log_probs, generation_log_probs, sequence_lengths
+                    )
+                    old_log_probs = old_log_probs.detach()
+                    frozen_old[index] = old_log_probs
+                    all_generation_gaps.extend(generation_gaps)
 
-        # Normalize accumulated loss by the number of processed query groups
-        # so gradient magnitude does not scale with batch composition.
-        total_loss = normalize_total_loss(total_loss, processed_groups)
+                importance_ratios = self.compute_sequence_importance_ratio(
+                    current_log_probs, old_log_probs, sequence_lengths
+                )
+                all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
+                clipped_ratios = torch.clamp(
+                    importance_ratios,
+                    1 - self.config.clip_range_left,
+                    1 + self.config.clip_range_right,
+                )
+                total_clipped += int((importance_ratios != clipped_ratios).sum().item())
+                total_samples += len(responses)
 
-        self._apply_optimizer_step(total_loss)
+                total_loss = total_loss + self.compute_gspo_loss(
+                    importance_ratios,
+                    advantages,
+                    current_log_probs,
+                    sequence_lengths,
+                    ref_log_probs,
+                )
+
+            # Normalize by the number of processed query groups so gradient
+            # magnitude does not scale with batch composition.
+            total_loss = normalize_total_loss(total_loss, processed_groups)
+            self._apply_optimizer_step(total_loss)
+            iteration_losses.append(float(total_loss.detach().item()))
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -837,7 +862,8 @@ class GSPOTrainer(TrainingRuntime):
         )
 
         metrics = {
-            "policy_loss": total_loss.item(),
+            "policy_loss": float(np.mean(iteration_losses)),
+            "optimizer_updates": float(len(iteration_losses)),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,

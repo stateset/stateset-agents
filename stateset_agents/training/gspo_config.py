@@ -26,7 +26,7 @@ class GSPOConfig(TrainingConfig):
     clip_range_left: float = 3e-4
     clip_range_right: float = 4e-4
 
-    num_iterations: int = 1
+    num_iterations: int = 1  # optimizer steps per rollout batch
     mini_batch_size: int = 1
 
     num_outer_iterations: int = 1
@@ -78,8 +78,9 @@ class GSPOConfig(TrainingConfig):
         if ignored:
             warnings.append(
                 f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} "
-                "ignored by the GSPO trainer: train_step takes one optimizer step "
-                "per outer iteration on a cosine schedule, without reward clipping."
+                "ignored by the GSPO trainer: train_step takes num_iterations "
+                "full-batch optimizer steps per outer iteration on a cosine "
+                "schedule, without reward clipping."
             )
 
         if (
@@ -135,7 +136,6 @@ class GSPOConfig(TrainingConfig):
 
 # Inherited or declared fields the GSPO trainer never reads.
 _GSPO_IGNORED_FIELDS = (
-    "num_iterations",
     "mini_batch_size",
     "gradient_accumulation_steps",
     "lr_scheduler_type",
