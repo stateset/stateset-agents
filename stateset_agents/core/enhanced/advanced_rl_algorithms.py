@@ -31,7 +31,6 @@ import torch.nn.functional as F
 from numpy.typing import NDArray
 from torch.distributions import Categorical
 
-from ...training.rl_losses import whiten
 from ..environment import Environment
 from ..trajectory import ConversationTurn, MultiTurnTrajectory
 from .enhanced_agent import EnhancedMultiTurnAgent
@@ -365,6 +364,8 @@ class PPOTrainer:
         returns = advantages + values
 
         # Normalize advantages
+        from ...training.rl_losses import whiten  # core stays training-free
+
         advantages = whiten(advantages)
 
         # PPO training loop
@@ -693,6 +694,8 @@ class A2CTrainer:
         advantages = returns - values
 
         # Normalize advantages
+        from ...training.rl_losses import whiten  # core stays training-free
+
         advantages = whiten(advantages)
 
         # Get current policy outputs
