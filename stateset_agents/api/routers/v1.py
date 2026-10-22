@@ -40,11 +40,13 @@ class TrainingRequestV1(BaseModel):
 
     prompts: list[str] = Field(..., description="Training prompts", min_length=1)
     strategy: Literal["computational", "distributed"] = Field(
-        "computational", description="Training strategy"
+        default="computational", description="Training strategy"
     )
-    num_iterations: int = Field(1, ge=1, description="Number of training iterations")
+    num_iterations: int = Field(
+        default=1, ge=1, description="Number of training iterations"
+    )
     idempotency_key: str | None = Field(
-        None, description="Optional idempotency key for safe retries"
+        default=None, description="Optional idempotency key for safe retries"
     )
 
 

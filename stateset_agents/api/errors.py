@@ -59,9 +59,9 @@ class ErrorCode(str, Enum):
 class ErrorDetail(BaseModel):
     """Individual error detail."""
 
-    field: str | None = Field(None, description="Field that caused the error")
+    field: str | None = Field(default=None, description="Field that caused the error")
     message: str = Field(..., description="Human-readable error message")
-    code: str | None = Field(None, description="Machine-readable error code")
+    code: str | None = Field(default=None, description="Machine-readable error code")
 
 
 class ErrorResponse(BaseModel):
@@ -93,7 +93,7 @@ class ErrorResponse(BaseModel):
     timestamp: str = Field(..., description="ISO 8601 timestamp")
     path: str = Field(..., description="Request path that caused the error")
     documentation_url: str | None = Field(
-        None, description="Link to relevant documentation"
+        default=None, description="Link to relevant documentation"
     )
 
 
