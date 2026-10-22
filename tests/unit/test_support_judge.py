@@ -614,7 +614,7 @@ def test_summary_metrics_are_bounded_order_free_means() -> None:
             assert 0.0 <= summary[key] <= 1.0
         shuffled = list(results)
         rng.shuffle(shuffled)
-        assert summarize(shuffled) == pytest.approx(summary)
+        assert summarize(shuffled) == summary  # exactly: order-free sums
 
     check()
 

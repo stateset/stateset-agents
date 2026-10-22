@@ -32,6 +32,7 @@ import difflib
 import hashlib
 import html
 import json
+import math
 import re
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -784,8 +785,8 @@ def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
     ``parse_failure_rate`` (failed passes / total passes) and ``n``. Gate
     ``parse_failure_rate`` separately: failed passes score ``0.0`` and drag
     ``mean_score``, and every pass failing leaves no disagreement to measure.
-    Checklist
-    diagnostics: ``check_flip_rate`` (fraction of judge-decided, i.e. not
+    Sums are exactly rounded (``math.fsum``), so the summary does not depend
+    on the order of ``results``. Checklist diagnostics: ``check_flip_rate`` (fraction of judge-decided, i.e. not
     forced, checks that differ between the two passes, over items whose two
     passes both parsed), ``forced_false_checks`` (forced ``False`` values,
     counted once per item), ``judge_overrides`` (forced values that
@@ -809,9 +810,9 @@ def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
             judged += 1
             flips += result.checks[0][check] != result.checks[1][check]
     summary: dict[str, float] = {
-        "mean_score": sum(result.score for result in results) / n,
+        "mean_score": math.fsum(result.score for result in results) / n,
         "self_disagreement": (
-            sum(result.disagreement for result in parsed) / len(parsed)
+            math.fsum(result.disagreement for result in parsed) / len(parsed)
             if parsed
             else 0.0
         ),
@@ -835,7 +836,7 @@ def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
     }
     for name in CRITERIA:
         summary[f"disagreement_{name}"] = (
-            sum(abs(r.criteria[0][name] - r.criteria[1][name]) for r in both)
+            math.fsum(abs(r.criteria[0][name] - r.criteria[1][name]) for r in both)
             / len(both)
             if both
             else 0.0
