@@ -111,6 +111,11 @@ class RewardFunction(ABC):
     Abstract base class for reward functions
     """
 
+    #: True for style heuristics (keyword, phrase or length scoring) that a
+    #: canned reply can satisfy without answering the request. The shipped
+    #: factories wrap these in ``core.grounding.GroundedReward``.
+    shaping: bool = False
+
     def __init__(
         self,
         weight: float = 1.0,

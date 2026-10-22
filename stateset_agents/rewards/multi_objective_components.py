@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from stateset_agents.core.grounding import task_grounding
 from stateset_agents.core.reward_base import RewardUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -167,6 +168,29 @@ class LengthRewardComponent(BaseRewardComponent):
         )
 
 
+def _keyword_pattern(keywords: list[str]) -> re.Pattern[str]:
+    """Whole-word keyword matcher; a keyword may be a stem ("frustrat")."""
+    escaped = [re.escape(keyword) for keyword in keywords]
+    return re.compile(r"\b(?:" + "|".join(escaped) + r")\w*", re.IGNORECASE)
+
+
+def _distinct_keyword_score(pattern: re.Pattern[str], texts: list[str]) -> float:
+    """Mean over replies of ``1 - 0.5 ** distinct_keywords``.
+
+    Whole-word matches only ("hate" never matches inside "whatever"), each
+    distinct keyword counted once per reply, with diminishing returns: one
+    keyword is worth 0.5, two 0.75, three 0.875, so repeating or piling up
+    keywords never saturates the score.
+    """
+    if not texts:
+        return 0.0
+    scores = []
+    for text in texts:
+        distinct = {match.lower() for match in pattern.findall(text)}
+        scores.append(1.0 - 0.5 ** len(distinct))
+    return sum(scores) / len(scores)
+
+
 class EmpathyRewardComponent(BaseRewardComponent):
     """Reward component based on empathy indicators."""
 
@@ -197,34 +221,15 @@ class EmpathyRewardComponent(BaseRewardComponent):
             "definitely",
             "of course",
         ]
-        escaped = [re.escape(keyword) for keyword in self.empathy_keywords]
-        self._keyword_pattern = re.compile(
-            r"(?:" + "|".join(escaped) + r")",
-            re.IGNORECASE,
-        )
+        self._keyword_pattern = _keyword_pattern(self.empathy_keywords)
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
-        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
-        if not assistant_responses:
-            return 0.0
-
-        total_matches = 0
-        total_words = 0
-        for response in assistant_responses:
-            content = response.get("content", "")
-            total_words += len(content.split())
-            total_matches += len(self._keyword_pattern.findall(content))
-
-        if total_words == 0:
-            return 0.0
-
-        empathy_density = total_matches / max(1, len(assistant_responses))
-        return min(1.0, empathy_density / 2.0)
+        replies = [
+            str(t.get("content") or "") for t in turns if t.get("role") == "assistant"
+        ]
+        return _distinct_keyword_score(self._keyword_pattern, replies)
 
 
 class ActionOrientedRewardComponent(BaseRewardComponent):
@@ -259,30 +264,15 @@ class ActionOrientedRewardComponent(BaseRewardComponent):
             "approach",
             "way",
         ]
-        escaped = [re.escape(keyword) for keyword in self.action_keywords]
-        self._keyword_pattern = re.compile(
-            r"(?:" + "|".join(escaped) + r")",
-            re.IGNORECASE,
-        )
+        self._keyword_pattern = _keyword_pattern(self.action_keywords)
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
-        assistant_responses = [t for t in turns if t.get("role") == "assistant"]
-        if not assistant_responses:
-            return 0.0
-
-        total_matches = 0
-        for response in assistant_responses:
-            total_matches += len(
-                self._keyword_pattern.findall(response.get("content", ""))
-            )
-
-        action_density = total_matches / max(1, len(assistant_responses))
-        return min(1.0, action_density / 3.0)
+        replies = [
+            str(t.get("content") or "") for t in turns if t.get("role") == "assistant"
+        ]
+        return _distinct_keyword_score(self._keyword_pattern, replies)
 
 
 class SimilarityRewardComponent(BaseRewardComponent):
@@ -627,3 +617,33 @@ __all__ = [
     "RewardComponent",
     "SimilarityRewardComponent",
 ]
+
+
+class GroundedComponent(BaseRewardComponent):
+    """A style component that only pays for grounded replies.
+
+    ``score = grounding * (share + (1 - share) * component_score)`` (see
+    ``stateset_agents.core.grounding``): a canned template or keyword stuffing
+    has no grounding and scores 0. Name and weight are the wrapped
+    component's, so the composite reports it under its own name.
+    """
+
+    def __init__(self, component: BaseRewardComponent, share: float = 0.5):
+        super().__init__(component.name, component.weight)
+        self.component = component
+        self.share = float(share)
+        self.config = {"grounded": True, **getattr(component, "config", {})}
+
+    async def compute_score(
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+    ) -> float:
+        score = await self.component.compute_score(turns, context)
+        grounding = task_grounding(turns, context)
+        return grounding * (self.share + (1.0 - self.share) * score)
+
+
+def ground_components(
+    components: list[BaseRewardComponent], share: float = 0.5
+) -> list[BaseRewardComponent]:
+    """Wrap each component in :class:`GroundedComponent`."""
+    return [GroundedComponent(component, share) for component in components]

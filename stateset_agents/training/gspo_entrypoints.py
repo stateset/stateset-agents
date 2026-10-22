@@ -345,11 +345,15 @@ async def train_customer_service_with_gspo(
     env_config = CONVERSATION_CONFIGS["customer_service"].copy()
     environment = ConversationEnvironment(**env_config)
 
+    from stateset_agents.core.grounding import log_heuristic_reward_notice
     from stateset_agents.rewards.multi_objective_reward import (
         create_customer_service_reward,
     )
 
     reward_model = create_customer_service_reward()
+    log_heuristic_reward_notice(
+        logger, "GSPO customer service training", "create_customer_service_reward()"
+    )
 
     return await train_with_gspo(
         config=config,

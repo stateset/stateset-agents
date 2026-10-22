@@ -23,6 +23,7 @@ from .domain_rewards import (
     SalesAssistantReward,
     TechnicalSupportReward,
 )
+from .grounding import GroundedReward, ground_shaping_rewards
 from .reward_base import CompositeReward, RewardFunction, RewardResult, RewardType
 from .reward_context import assistant_turns_in_scope
 from .trajectory import ConversationTurn
@@ -101,37 +102,59 @@ class SimilarityAwareReward(RewardFunction):
 
 
 # Utility functions for creating common reward combinations
+#
+# These are heuristic shaping signals, not training objectives: each style
+# heuristic (helpfulness phrasing, engagement, conciseness, domain keywords)
+# is gated on task grounding (core.grounding.GroundedReward), so a canned
+# template or keyword stuffing scores below a reply that answers the request.
+# Train against an outcome, verifier or judge reward where one exists.
+
+
+def _keyword_only(result: RewardResult) -> bool:
+    """A TaskCompletionReward result scored by goal keywords alone."""
+    return "action_completion" not in result.breakdown
 
 
 def create_helpful_agent_reward() -> CompositeReward:
-    """Create reward function for helpful assistant"""
+    """Create reward function for helpful assistant (a grounded shaping signal)."""
     return CompositeReward(
-        [
-            HelpfulnessReward(weight=0.4),
-            SafetyReward(weight=0.3),
-            CorrectnessReward(weight=0.2),
-            EngagementReward(weight=0.1),
-        ]
+        ground_shaping_rewards(
+            [
+                HelpfulnessReward(weight=0.4),
+                SafetyReward(weight=0.3),
+                CorrectnessReward(weight=0.2),
+                EngagementReward(weight=0.1),
+            ]
+        )
     )
 
 
 def create_customer_service_reward() -> CompositeReward:
-    """Create reward function for customer service agent"""
+    """Create reward function for customer service agent (grounded shaping)."""
     return CompositeReward(
-        [
-            HelpfulnessReward(weight=0.35),
-            SafetyReward(weight=0.25),
-            ConcisenessReward(weight=0.2),
-            EngagementReward(weight=0.2),
-        ]
+        ground_shaping_rewards(
+            [
+                HelpfulnessReward(weight=0.35),
+                SafetyReward(weight=0.25),
+                ConcisenessReward(weight=0.2),
+                EngagementReward(weight=0.2),
+            ]
+        )
     )
 
 
 def create_task_agent_reward(task_criteria: dict[str, Any]) -> CompositeReward:
-    """Create reward function for task-oriented agent"""
+    """Create reward function for task-oriented agent.
+
+    Completed actions are an outcome and count as they are; credit earned by
+    goal keywords alone is gated on grounding like the other heuristics.
+    """
     return CompositeReward(
         [
-            TaskCompletionReward(weight=0.5, task_criteria=task_criteria),
+            GroundedReward(
+                TaskCompletionReward(weight=0.5, task_criteria=task_criteria),
+                gate_if=_keyword_only,
+            ),
             CorrectnessReward(weight=0.3),
             SafetyReward(weight=0.2),
         ]
@@ -139,14 +162,16 @@ def create_task_agent_reward(task_criteria: dict[str, Any]) -> CompositeReward:
 
 
 def create_tutoring_reward() -> CompositeReward:
-    """Create reward function for tutoring agent"""
+    """Create reward function for tutoring agent (a grounded shaping signal)."""
     return CompositeReward(
-        [
-            HelpfulnessReward(weight=0.3),
-            CorrectnessReward(weight=0.3),
-            EngagementReward(weight=0.25),
-            SafetyReward(weight=0.15),
-        ]
+        ground_shaping_rewards(
+            [
+                HelpfulnessReward(weight=0.3),
+                CorrectnessReward(weight=0.3),
+                EngagementReward(weight=0.25),
+                SafetyReward(weight=0.15),
+            ]
+        )
     )
 
 
@@ -160,8 +185,9 @@ def create_domain_reward(
 
     domain_lower = domain.lower()
 
+    # Domain keyword rewards are style heuristics: gate them on grounding.
     if domain_lower in ["customer_service", "support", "cs"]:
-        return CustomerServiceReward(weight, expected_responses)
+        return GroundedReward(CustomerServiceReward(weight, expected_responses))
     elif domain_lower in [
         "technical",
         "tech_support",
@@ -169,9 +195,9 @@ def create_domain_reward(
         "it",
         "it_support",
     ]:
-        return TechnicalSupportReward(weight)
+        return GroundedReward(TechnicalSupportReward(weight))
     elif domain_lower in ["sales", "marketing", "product", "sales_assistant"]:
-        return SalesAssistantReward(weight)
+        return GroundedReward(SalesAssistantReward(weight))
     else:
         # Default to a general helpful agent reward
         return create_helpful_agent_reward()
@@ -185,10 +211,13 @@ def create_adaptive_reward(
     """Create an adaptive reward that combines base rewards with similarity matching.
 
     The composite holds copies of ``base_rewards`` with normalized weights;
-    the caller's reward objects keep their own weights.
+    the caller's reward objects keep their own weights. Style heuristics
+    among them (``shaping = True``) are gated on task grounding.
     """
 
-    reward_functions = [copy.copy(reward_fn) for reward_fn in base_rewards]
+    reward_functions = ground_shaping_rewards(
+        [copy.copy(reward_fn) for reward_fn in base_rewards]
+    )
 
     # Add similarity reward if expected responses provided
     if expected_responses:

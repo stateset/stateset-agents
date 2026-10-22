@@ -175,6 +175,9 @@ class HelpfulnessReward(RewardFunction):
     Rewards helpful, informative responses
     """
 
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
+
     def __init__(self, weight: float = 1.0):
         super().__init__(weight, RewardType.IMMEDIATE, "HelpfulnessReward")
 
@@ -506,6 +509,9 @@ class ConcisenessReward(RewardFunction):
     Rewards concise, to-the-point responses
     """
 
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
+
     def __init__(self, weight: float = 1.0, optimal_length: int = 150):
         super().__init__(weight, RewardType.IMMEDIATE, "ConcisenessReward")
         self.optimal_length = optimal_length
@@ -557,6 +563,9 @@ class EngagementReward(RewardFunction):
     """
     Rewards engaging, interesting responses
     """
+
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
 
     def __init__(self, weight: float = 1.0):
         super().__init__(weight, RewardType.IMMEDIATE, "EngagementReward")

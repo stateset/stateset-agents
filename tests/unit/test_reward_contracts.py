@@ -54,7 +54,10 @@ DEFAULT_RANGE = (0.0, 1.0)
 
 
 def _reward_modules() -> list[ModuleType]:
-    modules = [importlib.import_module("stateset_agents.core.reward")]
+    modules = [
+        importlib.import_module("stateset_agents.core.reward"),
+        importlib.import_module("stateset_agents.core.grounding"),
+    ]
     modules.append(rewards_package)
     for info in pkgutil.iter_modules(
         rewards_package.__path__, f"{rewards_package.__name__}."
@@ -120,6 +123,12 @@ CONSTRUCTORS: dict[str, Callable[[Any], Any]] = {
     ),
     "stateset_agents.rewards.nsr_verifier.NSRVerifierReward": lambda cls: cls(
         client=_fake_nsr
+    ),
+    "stateset_agents.core.grounding.GroundedReward": lambda cls: cls(
+        HelpfulnessReward()
+    ),
+    "stateset_agents.rewards.multi_objective_components.GroundedComponent": (
+        lambda cls: cls(EmpathyRewardComponent())
     ),
     "stateset_agents.rewards.multi_objective_reward.MultiObjectiveRewardFunction": (
         lambda cls: cls([EmpathyRewardComponent(), LengthRewardComponent()])

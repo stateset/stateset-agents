@@ -469,10 +469,11 @@ async def test_multi_objective_redistributes_a_failed_component_weight():
     reward = MultiObjectiveRewardFunction(
         [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)]
     )
-    result = await reward.compute_reward(
-        [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
-    )
-    assert result.score == pytest.approx(1.0)
+    turns = [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
+    result = await reward.compute_reward(turns)
+    alone = await EmpathyRewardComponent().compute_score(turns)
+    # The failed half's weight goes to empathy: the total is empathy's score.
+    assert result.score == pytest.approx(alone)
     assert result.metadata["failed_components"] == ["judge"]
     assert "judge" not in result.metadata["components"]
 

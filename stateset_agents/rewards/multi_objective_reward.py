@@ -20,12 +20,14 @@ from .multi_objective_components import (
     ActionOrientedRewardComponent,
     BaseRewardComponent,
     EmpathyRewardComponent,
+    GroundedComponent,
     LengthRewardComponent,
     ModelBasedRewardComponent,
     ProfessionalismRewardComponent,
     ReasoningRewardComponent,
     RewardComponent,
     SimilarityRewardComponent,
+    ground_components,
 )
 
 logger = logging.getLogger(__name__)
@@ -345,7 +347,11 @@ class MultiObjectiveRewardFunction(RewardFunction):
         }
 
 
-# Convenience functions for creating common multi-objective rewards
+# Convenience functions for creating common multi-objective rewards.
+#
+# These are heuristic shaping signals, not training objectives. Every
+# component is gated on task grounding (GroundedComponent), so a canned
+# template or keyword stuffing scores below a reply that answers the request.
 def create_customer_service_reward(
     expected_responses: list[str] | None = None, weight: float = 1.0, **kwargs
 ) -> MultiObjectiveRewardFunction:
@@ -358,7 +364,9 @@ def create_customer_service_reward(
         SimilarityRewardComponent(weight=0.15, expected_responses=expected_responses),
     ]
 
-    return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+    return MultiObjectiveRewardFunction(
+        components=ground_components(components), weight=weight, **kwargs
+    )
 
 
 def create_domain_reward(
@@ -425,7 +433,9 @@ def create_technical_support_reward(
         SimilarityRewardComponent(weight=0.3, expected_responses=expected_responses),
     ]
 
-    return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+    return MultiObjectiveRewardFunction(
+        components=ground_components(components), weight=weight, **kwargs
+    )
 
 
 def create_educational_reward(
@@ -439,7 +449,9 @@ def create_educational_reward(
         SimilarityRewardComponent(weight=0.4, expected_responses=expected_responses),
     ]
 
-    return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+    return MultiObjectiveRewardFunction(
+        components=ground_components(components), weight=weight, **kwargs
+    )
 
 
 def create_sales_reward(
@@ -477,7 +489,9 @@ def create_sales_reward(
         SimilarityRewardComponent(weight=0.15, expected_responses=expected_responses),
     ]
 
-    return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+    return MultiObjectiveRewardFunction(
+        components=ground_components(components), weight=weight, **kwargs
+    )
 
 
 def create_creative_reward(
@@ -510,13 +524,16 @@ def create_creative_reward(
         SimilarityRewardComponent(weight=0.6, expected_responses=expected_responses),
     ]
 
-    return MultiObjectiveRewardFunction(components=components, weight=weight, **kwargs)
+    return MultiObjectiveRewardFunction(
+        components=ground_components(components), weight=weight, **kwargs
+    )
 
 
 __all__ = [
     "ActionOrientedRewardComponent",
     "BaseRewardComponent",
     "EmpathyRewardComponent",
+    "GroundedComponent",
     "LengthRewardComponent",
     "MULTI_REWARD_EXCEPTIONS",
     "ModelBasedRewardComponent",

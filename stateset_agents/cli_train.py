@@ -133,6 +133,7 @@ def train(
     try:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
+        from stateset_agents.core.grounding import ground_shaping_rewards
         from stateset_agents.core.reward import (
             CompositeReward,
             HelpfulnessReward,
@@ -215,11 +216,15 @@ def train(
         ),
     )
 
+    # A heuristic demo reward: the helpfulness heuristic is gated on task
+    # grounding so canned replies cannot game it.
     reward_fn = CompositeReward(
-        [
-            HelpfulnessReward(weight=0.6),
-            SafetyReward(weight=0.4),
-        ]
+        ground_shaping_rewards(
+            [
+                HelpfulnessReward(weight=0.6),
+                SafetyReward(weight=0.4),
+            ]
+        )
     )
 
     num_episodes = _coerce_positive_int(
