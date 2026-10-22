@@ -37,6 +37,7 @@ from ...training.callbacks import (
 )
 from ...training.checkpoint_io import load_checkpoint_file
 from ...training.checkpoint_publication import checkpoint_write
+from ...training.rl_losses import whiten
 from ...training.runtime_state import capture_rng, restore_rng
 
 logger = logging.getLogger(__name__)
@@ -868,7 +869,7 @@ class OfflineGRPOTrainer:
         advantages = hybrid_q - offline_values
 
         if self.config.advantage_normalization:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages = whiten(advantages)
 
         return advantages
 

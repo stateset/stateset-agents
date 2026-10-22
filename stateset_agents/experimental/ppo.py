@@ -668,9 +668,7 @@ class PPOTrainer(TrainingRuntime):
             gamma=self.config.gamma,
             gae_lambda=self.config.gae_lambda,
         )
-        valid = advantages[action_mask > 0]
-        if valid.numel() > 1:
-            advantages = (advantages - valid.mean()) / (valid.std() + 1e-8)
+        advantages = rl_losses.whiten(advantages, action_mask)
         return advantages * action_mask, returns
 
     async def train_step(
