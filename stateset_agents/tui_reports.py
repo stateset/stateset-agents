@@ -302,3 +302,127 @@ class QualityReport(BackgroundReport[dict[str, Any]]):
             for row in report["regressions"]
         ]
         return rows + ["", *report["notes"]]
+
+
+class RecoveryPanel:
+    """Checkpoint recovery: its parent run, choices and one owned background step.
+
+    Inspection and reviews may be abandoned on exit; preparing a recovery run
+    and launching it are authorized steps that run on non-daemon threads, so
+    closing the studio waits for them.
+    """
+
+    def __init__(self) -> None:
+        self.task: BackgroundTask[dict[str, Any]] = BackgroundTask()
+        self.run: Path | None = None
+        self.report: dict[str, Any] | None = None
+        self.choice: dict[str, Any] | None = None
+        self.index = 0
+
+    @property
+    def busy(self) -> bool:
+        """Whether a recovery step is still running."""
+        return self.task.busy
+
+    def start(
+        self, operation: Callable[[], dict[str, Any]], *, step: str, authorized: bool
+    ) -> bool:
+        """Run one recovery step off the terminal thread."""
+        return self.task.start(
+            operation, daemon=not authorized, name=f"stateset-recovery-{step}"
+        )
+
+    def poll(self) -> dict[str, Any] | None:
+        """Take a finished step's result, which also becomes the report."""
+        result = self.task.poll()
+        if result is None:
+            return None
+        self.report = (
+            result.value
+            if result.value is not None
+            else {
+                "error": "Recovery work failed unexpectedly; reinspect retained state."
+            }
+        )
+        return self.report
+
+    def choices(self) -> list[dict[str, Any]]:
+        """Checkpoints offered by the latest inspection report."""
+        return list((self.report or {}).get("checkpoints", []))
+
+    def move(self, step: int) -> None:
+        """Select the next or previous checkpoint, staying in range."""
+        choices = self.choices()
+        if choices:
+            self.index = max(0, min(len(choices) - 1, self.index + step))
+
+    def select(self) -> bool:
+        """Capture the selected checkpoint for review if it is available."""
+        choices = self.choices()
+        if not choices or not choices[self.index]["available"]:
+            return False
+        self.choice = dict(choices[self.index])
+        return True
+
+    def lines(self, message: str) -> list[str]:
+        rows = [
+            "RECOVERY / exact local checkpoint",
+            "Parent run: " + (self.run.name if self.run else "none"),
+            "",
+        ]
+        if self.busy:
+            return rows + [
+                message,
+                "Esc returns while owned recovery work finishes. Launch requires its own confirmation.",
+                "Exiting waits for an authorized snapshot or launch submission to finish.",
+            ]
+        report = self.report or {}
+        if "error" in report:
+            return rows + [
+                report["error"],
+                "",
+                "z reinspects; Esc returns. Older unbound artifacts are not resumable here.",
+            ]
+        choices = report.get("checkpoints", [])
+        if not choices:
+            return rows + [
+                "No published recovery checkpoints for this run.",
+                "New local workers publish receipts after complete saves. A model-only export cannot restore optimizer progress.",
+            ]
+        rows += [
+            f"{' >' if index == self.index else '  '} {item['checkpoint']} | "
+            + (
+                f"step {item['step']} | {item['remaining']:g} {item['budget_unit']} remain"
+                if item["available"]
+                else "UNAVAILABLE"
+            )
+            for index, item in enumerate(choices)
+        ]
+        selected = choices[min(self.index, len(choices) - 1)]
+        rows += [""]
+        if selected["available"]:
+            rows += [
+                "Checkpoint SHA256: " + selected["checkpoint_sha256"],
+                "Recovery SHA256: " + selected["recovery_sha256"],
+                f"Private copy: {selected['bytes']:,} bytes / {selected['file_count']} files",
+                "Enter reviews this checkpoint; it does not launch training.",
+            ]
+        else:
+            rows.append(selected["reason"])
+        return rows + ["", *report.get("notes", [])]
+
+    def review_lines(self) -> list[str]:
+        choice = self.choice or {}
+        return [
+            "REVIEW CHECKPOINT RECOVERY / prepare only",
+            "",
+            "Parent: " + (self.run.name if self.run else "none"),
+            "Checkpoint: " + str(choice.get("checkpoint", "none")),
+            "Checkpoint SHA256: " + str(choice.get("checkpoint_sha256", "")),
+            "Recovery SHA256: " + str(choice.get("recovery_sha256", "")),
+            f"Copy size: {choice.get('bytes', 0):,} bytes",
+            "",
+            "Enter copies the reviewed checkpoint and retained dataset into a NEW private run.",
+            "Training settings and the original total budget stay fixed. Source artifacts are preserved.",
+            "A separate prepared-run launch review follows. Esc prepares nothing.",
+        ]

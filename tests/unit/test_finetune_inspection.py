@@ -458,7 +458,7 @@ def test_background_inspection_exception_is_sanitized(local, tmp_path, monkeypat
     def fail(*_):
         raise OSError("sensitive subprocess detail")
 
-    monkeypatch.setattr(tui.threading, "Thread", ImmediateThread)
+    monkeypatch.setattr("stateset_agents.tui_tasks.threading.Thread", ImmediateThread)
     monkeypatch.setattr(tui, "inspect_readiness", fail)
     studio = tui.Studio(tmp_path, local)
     studio.handle("i")

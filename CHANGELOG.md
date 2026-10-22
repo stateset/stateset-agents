@@ -70,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   self-contained report panels in `stateset_agents.tui_reports`, each with its
   own `BackgroundTask` instead of an ad-hoc thread, result queue and busy
   flag. Rendered frames are unchanged.
+- The studio's checkpoint-recovery overlay is a `RecoveryPanel` with one
+  `BackgroundTask`; preparing and launching a recovery run still run on
+  non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
+  longer starts raw threads or uses result queues.
 
 ### Fixed
 

@@ -88,3 +88,45 @@ def test_quality_names_its_captured_run(tmp_path):
     assert panel.lines()[1] == "Run: none"
     panel.run = tmp_path / "run-1"
     assert panel.lines()[1] == "Run: run-1"
+
+
+def test_recovery_panel_selects_only_available_checkpoints(tmp_path):
+    from stateset_agents.tui_reports import RecoveryPanel
+
+    panel = RecoveryPanel()
+    assert not panel.select()
+    panel.report = {
+        "checkpoints": [
+            {"checkpoint": "checkpoint-1", "available": False, "reason": "gone"},
+            {"checkpoint": "checkpoint-2", "available": True},
+        ]
+    }
+    assert not panel.select()
+    panel.move(5)
+    assert panel.index == 1 and panel.select()
+    assert panel.choice == {"checkpoint": "checkpoint-2", "available": True}
+    panel.run = tmp_path / "parent"
+    assert "Parent: parent" in panel.review_lines()
+
+
+def test_recovery_authorized_steps_outlive_the_terminal(monkeypatch):
+    from stateset_agents import tui_tasks
+    from stateset_agents.tui_reports import RecoveryPanel
+
+    started = []
+
+    class Recorder:
+        def __init__(self, *, target, daemon, name):
+            started.append((daemon, name))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(tui_tasks.threading, "Thread", Recorder)
+    for step, authorized in (("inspection", False), ("launch", True)):
+        panel = RecoveryPanel()
+        assert panel.start(dict, step=step, authorized=authorized)
+    assert started == [
+        (True, "stateset-recovery-inspection"),
+        (False, "stateset-recovery-launch"),
+    ]

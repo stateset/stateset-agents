@@ -10,12 +10,10 @@ import hashlib
 import math
 import shlex
 import sys
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from queue import Empty, SimpleQueue
 from typing import Any, TypeGuard
 
 from rich.cells import cell_len, set_cell_size
@@ -65,6 +63,7 @@ from stateset_agents.tui_reports import (
     DataReport,
     QualityReport,
     ReadinessReport,
+    RecoveryPanel,
     WorkflowReport,
 )
 from stateset_agents.tui_tasks import BackgroundTask, TaskResult
@@ -292,12 +291,7 @@ class Studio:
         self.evaluation_panel: EvaluationPanel | None = None
         self.stop_run: Path | None = None
         self.stop_digest = ""
-        self.recovery_run: Path | None = None
-        self.recovery_report: dict[str, Any] | None = None
-        self.recovery_choice: dict[str, Any] | None = None
-        self.recovery_index = 0
-        self.recovery_busy = False
-        self._recovery_results: SimpleQueue[dict[str, Any]] = SimpleQueue()
+        self.recovery_panel = RecoveryPanel()
         self.validation_issues: list[ConfigIssue] = []
         self.validation_index = 0
         self.validation_signature = ""
@@ -434,10 +428,8 @@ class Studio:
                         self.dialog_offset = 0
         self.readiness_panel.poll()
 
-        try:
-            result = self._recovery_results.get_nowait()
-            self.recovery_busy = False
-            self.recovery_report = result
+        result = self.recovery_panel.poll()
+        if result is not None:
             if "prepared_review" in result:
                 review = result["prepared_review"]
                 if self.overlay == "recovery":
@@ -454,8 +446,6 @@ class Studio:
                     if "error" in result
                     else "Recovery choices verified; Enter reviews a selected checkpoint."
                 )
-        except Empty:
-            pass
         if self.data_panel.poll():
             self.data_panel.show_samples = False
             if self.message in {
@@ -903,7 +893,8 @@ class Studio:
         return [row for row in self.models if query in " ".join(row).casefold()]
 
     def _open_recovery(self, captured_run: Path | None = None) -> None:
-        if self.recovery_busy:
+        panel = self.recovery_panel
+        if panel.busy:
             self.overlay = "recovery"
             self.message = (
                 "Recovery work is still running; Esc leaves it in the background."
@@ -914,97 +905,44 @@ class Studio:
                 "Select a retained local run to inspect recovery checkpoints."
             )
             return
-        self.recovery_run = captured_run or Path(self.runs[self.run_index]["path"])
-        self.recovery_report, self.recovery_choice = None, None
-        self.recovery_index, self.dialog_offset = 0, 0
-        self.overlay, self.recovery_busy = "recovery", True
+        run = captured_run or Path(self.runs[self.run_index]["path"])
+        panel.run, panel.report, panel.choice, panel.index = run, None, None, 0
+        self.dialog_offset = 0
+        self.overlay = "recovery"
         self.message = "Verifying recovery checkpoint bytes in the background."
-        run = self.recovery_run
 
-        def inspect() -> None:
+        def inspect() -> dict[str, Any]:
             try:
-                result = inspect_checkpoints(run)
+                return inspect_checkpoints(run)
             except Exception:
-                result = {
+                return {
                     "error": "Recovery requires a terminal local run, stopped workers, matching code, pinned model commit and complete published checkpoint state."
                 }
-            self._recovery_results.put(result)
 
-        threading.Thread(
-            target=inspect, daemon=True, name="stateset-recovery-inspection"
-        ).start()
+        panel.start(inspect, step="inspection", authorized=False)
 
     def _prepare_recovery(self) -> None:
-        run, choice = self.recovery_run, self.recovery_choice
-        if self.recovery_busy or run is None or choice is None:
+        panel = self.recovery_panel
+        run, choice = panel.run, panel.choice
+        if panel.busy or run is None or choice is None:
             return
-        self.recovery_busy, self.overlay = True, "recovery"
+        self.overlay = "recovery"
         self.message = "Copying the reviewed checkpoint into a new private run; no training is launched."
 
-        def prepare() -> None:
+        def prepare() -> dict[str, Any]:
             try:
                 child = prepare_resume(
                     run,
                     choice["checkpoint"],
                     expected_recovery_sha256=choice["recovery_sha256"],
                 )
-                result: dict[str, Any] = {"prepared_review": review_prepared_run(child)}
+                return {"prepared_review": review_prepared_run(child)}
             except Exception:
-                result = {
+                return {
                     "error": "Recovery preparation failed. Reinspect checkpoint state, current code, worker ownership and free disk space; no launch was attempted."
                 }
-            self._recovery_results.put(result)
 
-        threading.Thread(
-            target=prepare, daemon=False, name="stateset-recovery-preparation"
-        ).start()
-
-    def _recovery_lines(self) -> list[str]:
-        rows = [
-            "RECOVERY / exact local checkpoint",
-            "Parent run: " + (self.recovery_run.name if self.recovery_run else "none"),
-            "",
-        ]
-        if self.recovery_busy:
-            return rows + [
-                self.message,
-                "Esc returns while owned recovery work finishes. Launch requires its own confirmation.",
-                "Exiting waits for an authorized snapshot or launch submission to finish.",
-            ]
-        report = self.recovery_report or {}
-        if "error" in report:
-            return rows + [
-                report["error"],
-                "",
-                "z reinspects; Esc returns. Older unbound artifacts are not resumable here.",
-            ]
-        choices = report.get("checkpoints", [])
-        if not choices:
-            return rows + [
-                "No published recovery checkpoints for this run.",
-                "New local workers publish receipts after complete saves. A model-only export cannot restore optimizer progress.",
-            ]
-        rows += [
-            f"{' >' if index == self.recovery_index else '  '} {item['checkpoint']} | "
-            + (
-                f"step {item['step']} | {item['remaining']:g} {item['budget_unit']} remain"
-                if item["available"]
-                else "UNAVAILABLE"
-            )
-            for index, item in enumerate(choices)
-        ]
-        selected = choices[min(self.recovery_index, len(choices) - 1)]
-        rows += [""]
-        if selected["available"]:
-            rows += [
-                "Checkpoint SHA256: " + selected["checkpoint_sha256"],
-                "Recovery SHA256: " + selected["recovery_sha256"],
-                f"Private copy: {selected['bytes']:,} bytes / {selected['file_count']} files",
-                "Enter reviews this checkpoint; it does not launch training.",
-            ]
-        else:
-            rows.append(selected["reason"])
-        return rows + ["", *report.get("notes", [])]
+        panel.start(prepare, step="preparation", authorized=True)
 
     def handle(self, key: str) -> bool:
         """Apply a normalized key; return false only when the user exits."""
@@ -1142,24 +1080,13 @@ class Studio:
                         0, self.dialog_offset + (8 if key == "PAGEDOWN" else -8)
                     )
             elif self.overlay == "recovery":
-                if key == "z" and not self.recovery_busy:
-                    self._open_recovery(self.recovery_run)
-                elif not self.recovery_busy and self.recovery_report:
-                    choices = self.recovery_report.get("checkpoints", [])
-                    if key in {"UP", "DOWN"} and choices:
-                        self.recovery_index = max(
-                            0,
-                            min(
-                                len(choices) - 1,
-                                self.recovery_index + (1 if key == "DOWN" else -1),
-                            ),
-                        )
-                    elif (
-                        key == "ENTER"
-                        and choices
-                        and choices[self.recovery_index]["available"]
-                    ):
-                        self.recovery_choice = dict(choices[self.recovery_index])
+                panel = self.recovery_panel
+                if key == "z" and not panel.busy:
+                    self._open_recovery(panel.run)
+                elif not panel.busy and panel.report:
+                    if key in {"UP", "DOWN"}:
+                        panel.move(1 if key == "DOWN" else -1)
+                    elif key == "ENTER" and panel.select():
                         self.overlay, self.dialog_offset = "recovery-review", 0
                 if key in {"PAGEUP", "PAGEDOWN"}:
                     self.dialog_offset = max(
@@ -1899,29 +1826,24 @@ class Studio:
         try:
             run = self.workspace / self.runs[self.run_index]["id"]
             if "resume" in read_run_plan(run)[0]:
-                if self.recovery_busy:
+                if self.recovery_panel.busy:
                     self.message = "Recovery inspection is already running; no new review was opened."
                     return
-                self.recovery_run = run
-                self.recovery_busy, self.overlay = True, "recovery"
+                self.recovery_panel.run = run
+                self.overlay = "recovery"
                 self.message = (
                     "Verifying the prepared recovery snapshot in the background."
                 )
 
-                def inspect() -> None:
+                def inspect() -> dict[str, Any]:
                     try:
-                        result: dict[str, Any] = {
-                            "prepared_review": review_prepared_run(run)
-                        }
+                        return {"prepared_review": review_prepared_run(run)}
                     except Exception:
-                        result = {
+                        return {
                             "error": "Cannot verify the prepared recovery run; inspect state, code and checkpoint bytes."
                         }
-                    self._recovery_results.put(result)
 
-                threading.Thread(
-                    target=inspect, daemon=True, name="stateset-recovery-review"
-                ).start()
+                self.recovery_panel.start(inspect, step="review", authorized=False)
                 return
             self._submit(
                 "review",
@@ -1937,27 +1859,23 @@ class Studio:
         """Submit only the run and bytes captured when its review opened."""
         review = self.prepared_review
         if review is not None and review.plan.resume is not None:
-            if self.recovery_busy:
+            if self.recovery_panel.busy:
                 self.message = "Recovery work is already running; no duplicate launch was submitted."
                 return
-            self.recovery_busy = True
             self.overlay = "recovery"
             self.prepared_review = None
             self.message = "Submitting the reviewed recovery run in the background; closing this view does not cancel an authorized launch."
 
-            def launch() -> None:
+            def launch() -> dict[str, Any]:
                 try:
                     launch_run(review.run, expected_plan_sha256=review.plan_sha256)
-                    result = {"launched": True, "run_id": review.run.name}
+                    return {"launched": True, "run_id": review.run.name}
                 except Exception:
-                    result = {
+                    return {
                         "error": "Recovery launch failed; inspect the prepared run and retained logs before any retry."
                     }
-                self._recovery_results.put(result)
 
-            threading.Thread(
-                target=launch, daemon=False, name="stateset-recovery-launch"
-            ).start()
+            self.recovery_panel.start(launch, step="launch", authorized=True)
             return
         if review is None:
             self.prepared_review, self.overlay = None, None
@@ -2185,26 +2103,9 @@ class Studio:
         elif self.overlay == "quality":
             body = _wrap(self.quality_panel.lines(), width)
         elif self.overlay == "recovery":
-            body = _wrap(self._recovery_lines(), width)
+            body = _wrap(self.recovery_panel.lines(self.message), width)
         elif self.overlay == "recovery-review":
-            choice = self.recovery_choice or {}
-            body = _wrap(
-                [
-                    "REVIEW CHECKPOINT RECOVERY / prepare only",
-                    "",
-                    "Parent: "
-                    + (self.recovery_run.name if self.recovery_run else "none"),
-                    "Checkpoint: " + str(choice.get("checkpoint", "none")),
-                    "Checkpoint SHA256: " + str(choice.get("checkpoint_sha256", "")),
-                    "Recovery SHA256: " + str(choice.get("recovery_sha256", "")),
-                    f"Copy size: {choice.get('bytes', 0):,} bytes",
-                    "",
-                    "Enter copies the reviewed checkpoint and retained dataset into a NEW private run.",
-                    "Training settings and the original total budget stay fixed. Source artifacts are preserved.",
-                    "A separate prepared-run launch review follows. Esc prepares nothing.",
-                ],
-                width,
-            )
+            body = _wrap(self.recovery_panel.review_lines(), width)
         elif self.overlay == "quality-path":
             body = _wrap(
                 [
