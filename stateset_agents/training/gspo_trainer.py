@@ -70,12 +70,17 @@ except ImportError:  # pragma: no cover - optional dependency
     wandb = None
 
 try:
-    from peft import (
-        LoraConfig,
-        TaskType,
-        get_peft_model,
-        prepare_model_for_kbit_training,
-    )
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+    from peft import prepare_model_for_kbit_training as _prepare_kbit
+
+    # Optional-dependency slots: rebound to ``None`` when peft is missing and
+    # monkeypatched by tests, so they are deliberately typed ``Any``.
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
+    prepare_model_for_kbit_training: Any = _prepare_kbit
 except ImportError:  # pragma: no cover - optional dependency
     LoraConfig = None
     TaskType = None
@@ -471,7 +476,8 @@ class GSPOTrainer(TrainingRuntime):
         # Convert to ratio via exp, clamped: an inf ratio multiplied by an
         # advantage of exactly 0 (which a constant-reward group produces) is
         # NaN, and that NaN reaches the GSPO-token gate.
-        return rl_losses.safe_exp_ratio(normalized_log_ratio)
+        ratios: torch.Tensor = rl_losses.safe_exp_ratio(normalized_log_ratio)
+        return ratios
 
     def compute_group_advantages(
         self, rewards: Any
@@ -803,7 +809,7 @@ class GSPOTrainer(TrainingRuntime):
             )
 
             # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
+            num_clipped = int((importance_ratios != clipped_ratios).sum().item())
             total_clipped += num_clipped
             total_samples += len(responses)
 
@@ -831,13 +837,13 @@ class GSPOTrainer(TrainingRuntime):
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = np.mean(all_rewards) if all_rewards else 0.0
+        avg_reward = float(np.mean(all_rewards)) if all_rewards else 0.0
         avg_importance_ratio = (
-            np.mean(all_importance_ratios) if all_importance_ratios else 1.0
+            float(np.mean(all_importance_ratios)) if all_importance_ratios else 1.0
         )
 
         metrics = {
-            "policy_loss": total_loss.item(),
+            "policy_loss": float(total_loss.item()),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
@@ -849,7 +855,7 @@ class GSPOTrainer(TrainingRuntime):
                 float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
             ),
             "sequence_importance_ratio": avg_importance_ratio,
-            "learning_rate": self.scheduler.get_last_lr()[0],
+            "learning_rate": float(self.scheduler.get_last_lr()[0]),
         }
 
         # Store metrics

@@ -308,7 +308,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             )
 
             # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
+            num_clipped = int((importance_ratios != clipped_ratios).sum().item())
             total_clipped += num_clipped
             total_samples += len(responses)
 
@@ -343,13 +343,13 @@ class GSPOTokenTrainer(GSPOTrainer):
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = np.mean(all_rewards) if all_rewards else 0.0
+        avg_reward = float(np.mean(all_rewards)) if all_rewards else 0.0
         avg_importance_ratio = (
-            np.mean(all_importance_ratios) if all_importance_ratios else 1.0
+            float(np.mean(all_importance_ratios)) if all_importance_ratios else 1.0
         )
 
         metrics = {
-            "policy_loss": total_loss.item(),
+            "policy_loss": float(total_loss.item()),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
@@ -361,7 +361,7 @@ class GSPOTokenTrainer(GSPOTrainer):
             "generation_log_prob_gap": (
                 float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
             ),
-            "learning_rate": self.scheduler.get_last_lr()[0],
+            "learning_rate": float(self.scheduler.get_last_lr()[0]),
         }
 
         # Store metrics
