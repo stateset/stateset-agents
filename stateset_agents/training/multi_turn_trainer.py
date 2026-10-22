@@ -780,6 +780,8 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         credits the score to the final step so ``turn_rewards`` sum to it.
         """
         if not self.reward_fn:
+            if trajectory.metadata.get("reward_source") == "default_length_heuristic":
+                self._warn_default_reward()
             return
         if environment_applied_reward(trajectory, self.reward_fn, self.environment):
             error = trajectory.metadata.get("reward_error")
@@ -799,6 +801,17 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         if error:
             # The environment's own reward failed, but the trainer's scored.
             trajectory.metadata["environment_reward_error"] = error
+
+    def _warn_default_reward(self) -> None:
+        if getattr(self, "_warned_default_reward", False):
+            return
+        self._warned_default_reward = True
+        logger.warning(
+            "Training on the environment's built-in length heuristic: neither the "
+            "trainer nor %s has a reward_fn, so rewards measure reply length "
+            "only. Pass reward_fn=... for a meaningful training signal.",
+            type(self.environment).__name__,
+        )
 
     async def _generate_batched_trajectories(
         self, scenarios: list[dict[str, Any]], num_generations: int

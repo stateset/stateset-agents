@@ -73,12 +73,17 @@ class TaskEnvironment(Environment):
         return state
 
     async def step(self, state: EnvironmentState, action: ConversationTurn) -> Any:
-        """Process agent action and update task state"""
+        """Process agent action and update task state.
+
+        The step reward is the task-progress reward plus, for an IMMEDIATE or
+        DENSE ``reward_fn``, that function's score for this action. Other
+        reward functions are applied once at episode end.
+        """
         new_state = state.copy()
         new_state.turn_count += 1
 
-        turns = list(new_state.context.get("turns", []))
-        turns.append(action)
+        prior_turns = list(new_state.context.get("turns", []))
+        turns = prior_turns + [action]
 
         await self._update_task_progress(action, new_state)
 
@@ -87,6 +92,10 @@ class TaskEnvironment(Environment):
         new_state.context["turns"] = turns
 
         step_reward = await self._calculate_task_reward(action, new_state)
+        if self.reward_fn is not None and self._should_compute_step_reward():
+            step_reward += await self._apply_step_reward(
+                new_state, prior_turns + [action]
+            )
 
         task_complete = await self._check_task_completion(new_state)
         done = task_complete or new_state.turn_count >= self.max_turns
@@ -116,7 +125,8 @@ class TaskEnvironment(Environment):
     ) -> None:
         """Update task progress based on agent action"""
         required_actions = state.context.get("required_actions", [])
-        completed_actions = state.context.get("completed_actions", [])
+        # Copy: the previous state's list must not change under it.
+        completed_actions = list(state.context.get("completed_actions", []))
 
         action_content = (action.content or "").lower()
 
@@ -153,7 +163,11 @@ class TaskEnvironment(Environment):
     async def _calculate_task_reward(
         self, action: ConversationTurn, state: EnvironmentState
     ) -> float:
-        """Calculate reward based on task progress"""
+        """Reward progress made by this step, plus a one-time completion bonus.
+
+        The bonus is paid on the step that completes the task, not on every
+        later step, so stalling after completion earns nothing.
+        """
         progress = state.context.get("task_progress", 0.0)
         previous_progress = state.context.get("previous_progress", 0.0)
         progress_delta = progress - previous_progress
@@ -161,7 +175,7 @@ class TaskEnvironment(Environment):
         state.context["previous_progress"] = progress
 
         reward = progress_delta * 10.0
-        if progress == 1.0:
+        if progress >= 1.0 > previous_progress:
             reward += 5.0
 
         return float(reward)

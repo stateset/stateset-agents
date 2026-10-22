@@ -14,9 +14,10 @@ from .environment_base import (
     Environment,
     EnvironmentState,
     EpisodeStatus,
+    _Episode,
 )
 from .reward import RewardFunction
-from .trajectory import ConversationTurn
+from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
 
@@ -295,9 +296,42 @@ class ConversationEnvironment(Environment):
             metadata={"generated": True, "turn_number": state.turn_count},
         )
 
+    def _uses_default_step_reward(self) -> bool:
+        """Whether episodes are scored by the built-in length heuristic."""
+        return (
+            self.reward_fn is None
+            and type(self)._calculate_step_reward
+            is ConversationEnvironment._calculate_step_reward
+        )
+
+    async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
+        """Average the built-in length heuristic over the episode's steps.
+
+        Summed per step it pays an agent for stalling (ten padded replies
+        outscore resolving and saying goodbye), so without a ``reward_fn`` an
+        episode is worth the mean of its step heuristics instead. Each step's
+        reward is scaled by ``1 / steps`` so ``turn_rewards`` still sum to the
+        total. Subclasses that override ``_calculate_step_reward`` keep their
+        summed per-step rewards.
+        """
+        default = self._uses_default_step_reward()
+        if default and episode.turn_rewards:
+            steps = len(episode.turn_rewards)
+            episode.turn_rewards = [r / steps for r in episode.turn_rewards]
+            episode.total_reward = float(sum(episode.turn_rewards))
+        trajectory = await super()._finish_episode(episode)
+        if default:
+            trajectory.metadata["reward_source"] = "default_length_heuristic"
+        return trajectory
+
     async def _calculate_step_reward(
         self, agent_turn: ConversationTurn, state: EnvironmentState
     ) -> float:
+        """Built-in step heuristic used when no ``reward_fn`` is configured.
+
+        It rewards reply length only; pass a ``reward_fn`` for a meaningful
+        training signal.
+        """
         base_reward = 0.1
         if len(agent_turn.content or "") > 50:
             base_reward += 0.1

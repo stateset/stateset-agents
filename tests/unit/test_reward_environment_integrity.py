@@ -29,6 +29,7 @@ from stateset_agents.core.reward_context import (
     REWARD_SCOPE_KEY,
     build_reward_context,
 )
+from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.core.trajectory import ConversationTurn
 
 
@@ -223,6 +224,69 @@ async def test_composite_routes_the_step_scope_to_scenario_children():
     )
     await composite.compute_reward(_conversation("hi there"), context)
     assert ordinary.contexts[0][REWARD_SCOPE_KEY] == LATEST_TURN_SCOPE
+
+
+# --- 5. Default ConversationEnvironment reward -------------------------------
+
+
+async def test_default_reward_does_not_pay_for_stalling():
+    scenario = {"id": "s", "user_query": "Can you close my ticket?"}
+    environment = ConversationEnvironment([scenario], max_turns=10)
+
+    async def closes(history, context):
+        return "Done - your ticket is closed and everything is resolved. Goodbye!"
+
+    async def stalls(history, context):
+        return (
+            "Let me keep looking into this for you, there are a few more things "
+            "to check here."
+        )
+
+    resolved = await environment.run_episode(closes, scenario)
+    stalled = await environment.run_episode(stalls, scenario)
+    assert len(stalled.turn_rewards) == 10
+    assert stalled.total_reward <= resolved.total_reward
+    assert sum(stalled.turn_rewards) == pytest.approx(stalled.total_reward)
+    assert stalled.metadata["reward_source"] == "default_length_heuristic"
+
+
+async def test_training_on_the_default_reward_warns_once(caplog):
+    environment = ConversationEnvironment([SCRIPTED], max_turns=5)
+    trainer = _trainer(environment, None)
+    with caplog.at_level(logging.WARNING):
+        await trainer.generate_trajectories([SCRIPTED], num_generations=2)
+        await trainer.generate_trajectories([SCRIPTED], num_generations=2)
+    warnings = [r for r in caplog.records if "length heuristic" in r.getMessage()]
+    assert len(warnings) == 1
+
+
+# --- 6. TaskEnvironment ------------------------------------------------------
+
+TASK = {
+    "description": "d",
+    "required_actions": [{"name": "load", "keywords": ["load"]}],
+}
+
+
+async def test_task_environment_applies_immediate_reward_functions():
+    reward = CountingReward(RewardType.IMMEDIATE, score=0.5)
+    environment = TaskEnvironment(
+        [TASK], success_criteria=lambda turns, ctx: False, max_turns=3, reward_fn=reward
+    )
+    trajectory = await environment.run_episode(_replies("x", "y", "z"), TASK)
+    assert len(reward.contexts) == 3
+    assert trajectory.total_reward == pytest.approx(1.5)
+    assert reward.contexts[0][REWARD_SCOPE_KEY] == LATEST_TURN_SCOPE
+
+
+async def test_task_environment_pays_the_completion_bonus_once():
+    environment = TaskEnvironment(
+        [TASK], success_criteria=lambda turns, ctx: False, max_turns=4
+    )
+    trajectory = await environment.run_episode(
+        _replies("load it", "stall", "stall", "stall"), TASK
+    )
+    assert trajectory.turn_rewards == [15.0, 0.0, 0.0, 0.0]
 
 
 # --- 8. Reward failures are visible ------------------------------------------
