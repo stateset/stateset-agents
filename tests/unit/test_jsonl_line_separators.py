@@ -36,7 +36,7 @@ import grade_transcript as gt  # noqa: E402
 import prepare_sft_dataset as prep  # noqa: E402
 
 #: Every character ``str.splitlines`` breaks on that JSON may leave raw.
-SEPARATORS = (" ", " ", "\x85")
+SEPARATORS = ("\u2028", "\u2029", "\x85")
 SETTINGS = settings(
     max_examples=40, deadline=None, suppress_health_check=[HealthCheck.too_slow]
 )
@@ -110,5 +110,5 @@ def test_every_reader_keeps_every_record(tmp_path_factory, pairs, newline):
 
 
 def test_jsonl_lines_splits_on_newline_only_and_numbers_physical_lines():
-    text = "a b\r\n\n  \nc\x85d\n"
-    assert jsonl_lines(text) == [(1, "a b"), (4, "c\x85d")]
+    text = "a\u2028b\r\n\n  \nc\x85d\n"
+    assert jsonl_lines(text) == [(1, "a\u2028b"), (4, "c\x85d")]
