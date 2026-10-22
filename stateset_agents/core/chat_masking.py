@@ -45,23 +45,36 @@ def assistant_char_spans(
         context = render(messages[:i], False) if i else ""
         if before is None or after is None or context is None:
             return None
-        span_start = len(os.path.commonprefix([before, full]))
-        if span_start < len(context) or not full.startswith(context):
+        span_start = _turn_start(full, before, context)
+        if span_start is None:
             return None
-        if span_start < len(before):
-            # The turn omits part of the generation prompt (e.g. a ``<think>``
-            # stub added only to new turns); characters that merely happen to
-            # match ("<t" of "<think>" vs "<tool_call>") belong to the reply.
-            # Back off to the last line break of the matched prompt part.
-            line_end = full.rfind("\n", len(context), span_start)
-            if line_end >= 0:
-                span_start = line_end + 1
         span_end = _reply_end(full, after, span_start, message.get("content"))
         if span_end is None:
             return None
         if span_end > span_start:
             spans.append((span_start, span_end))
     return full, spans
+
+
+def _turn_start(full: str, before: str, context: str) -> int | None:
+    """Where a turn's target begins in ``full``, or None if history differs.
+
+    ``before`` is the context rendered with the generation prompt; the target
+    starts where it stops agreeing with ``full`` (which must still contain
+    the whole ``context``). When the turn omits part of the generation
+    prompt (a ``<think>`` stub added only to new turns, or an empty one where
+    the reply has real reasoning), characters that merely happen to match
+    ("<t" of "<think>" vs "<tool_call>") belong to the reply: back off to the
+    last line break of the matched prompt part.
+    """
+    start = len(os.path.commonprefix([before, full]))
+    if start < len(context) or not full.startswith(context):
+        return None
+    if start < len(before):
+        line_end = full.rfind("\n", len(context), start)
+        if line_end >= 0:
+            start = line_end + 1
+    return start
 
 
 def _reply_end(full: str, after: str, start: int, content: Any) -> int | None:
@@ -149,6 +162,42 @@ def assistant_token_mask(
     return _token_mask_for_spans(tokenizer, full, spans)
 
 
+def final_turn_token_mask(
+    tokenizer: Any,
+    messages: Sequence[dict[str, Any]],
+    *,
+    tools: Any | None = None,
+) -> tuple[list[int], list[bool]] | None:
+    """Mask only the final assistant turn, tolerating rewritten history.
+
+    Unlike :func:`last_assistant_token_mask` this does not need every
+    earlier turn to have a faithful span: templates such as Qwen3's strip
+    ``<think>`` blocks from earlier replies, yet the final turn's context is
+    still exactly the inference-time prompt (the preceding messages rendered
+    with the generation prompt, history rewritten the same way). Everything
+    the template renders for the final turn after that prompt is the target.
+    Messages after the final assistant turn are dropped. Returns ``None``
+    when there is no assistant turn or the history does not agree.
+    """
+    last = max(
+        (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
+        default=None,
+    )
+    if last is None:
+        return None
+    render = chat_template_render(tokenizer, tools)
+    conversation = list(messages[: last + 1])
+    full = render(conversation, False)
+    before = render(conversation[:last], True)
+    context = render(conversation[:last], False) if last else ""
+    if not full or before is None or context is None:
+        return None
+    start = _turn_start(full, before, context)
+    if start is None or start >= len(full):
+        return None
+    return _token_mask_for_spans(tokenizer, full, [(start, len(full))])
+
+
 def last_assistant_token_mask(
     tokenizer: Any, messages: Sequence[dict[str, Any]]
 ) -> tuple[list[int], list[bool]] | None:
@@ -204,5 +253,6 @@ __all__ = [
     "assistant_char_spans",
     "assistant_token_mask",
     "chat_template_render",
+    "final_turn_token_mask",
     "last_assistant_token_mask",
 ]

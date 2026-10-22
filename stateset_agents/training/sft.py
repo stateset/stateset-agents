@@ -38,9 +38,8 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.core.chat_masking import (
-    _token_mask_for_spans,
     assistant_token_mask,
-    chat_template_render,
+    final_turn_token_mask,
 )
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
@@ -312,38 +311,6 @@ SFT_LABEL_OUTCOMES = (
 )
 
 
-def _final_turn_token_mask(
-    tokenizer: Any,
-    messages: list[dict[str, Any]],
-    tools: list[dict[str, Any]] | None,
-) -> tuple[list[int], list[bool]] | None:
-    """Supervise only the final assistant turn of a history-rewriting render.
-
-    Templates such as Qwen3's strip ``<think>`` blocks from earlier assistant
-    turns, so earlier replies have no faithful span in the full render. The
-    final turn still does: its context is exactly the inference-time prompt
-    (``add_generation_prompt=True`` over the preceding messages, with history
-    rewritten the same way), and everything the template renders after that
-    prompt is what the model must generate. Returns ``None`` when the prompt
-    is not a prefix of the conversation render either.
-    """
-    last = max(
-        (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
-        default=None,
-    )
-    if last is None:
-        return None
-    render = chat_template_render(tokenizer, tools)
-    conversation = list(messages[: last + 1])
-    full = render(conversation, False)
-    prompt = render(conversation[:last], True)
-    if not full or prompt is None or len(full) <= len(prompt):
-        return None
-    if not full.startswith(prompt):
-        return None
-    return _token_mask_for_spans(tokenizer, full, [(len(prompt), len(full))])
-
-
 def _tokenize_sft_row(
     tokenizer: Any, row: dict[str, Any], max_length: int
 ) -> tuple[dict[str, list[int]] | None, str, bool]:
@@ -353,7 +320,7 @@ def _tokenize_sft_row(
     masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
     if masked is None:
         outcome = "final_turn_only"
-        masked = _final_turn_token_mask(tokenizer, row["messages"], tools)
+        masked = final_turn_token_mask(tokenizer, row["messages"], tools=tools)
         if masked is None:
             return None, "dropped_unmaskable", False
     ids, assistant = masked
