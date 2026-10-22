@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, cast
 
+from stateset_agents.core.reward_base import RewardUnavailableError
+
 logger = logging.getLogger(__name__)
 
 LLM_JUDGE_EXCEPTIONS = (
@@ -42,7 +44,7 @@ LLM_JUDGE_EXCEPTIONS = (
 )
 
 
-class JudgeUnavailableError(RuntimeError):
+class JudgeUnavailableError(RewardUnavailableError):
     """The judge returned no usable verdict (timeout, API or parse error).
 
     Raised instead of returning a neutral score, so reward composers,

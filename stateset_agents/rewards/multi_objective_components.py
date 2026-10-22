@@ -11,6 +11,8 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
+from stateset_agents.core.reward_base import RewardUnavailableError
+
 logger = logging.getLogger(__name__)
 
 MULTI_REWARD_EXCEPTIONS = (
@@ -22,6 +24,11 @@ MULTI_REWARD_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
+
+
+#: Judge call failures that mean "no verdict available" (network, timeout,
+#: provider errors, an unparseable reply), as opposed to programming errors.
+_JUDGE_OUTAGES = (RuntimeError, ValueError, OSError, asyncio.TimeoutError)
 
 
 _MODEL_PROVIDER_ALIASES = {
@@ -475,31 +482,36 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 )
             return max(0.0, min(1.0, len(assistant_response) / 200.0))
 
-        try:
-            effective_provider = _resolve_model_provider(self.provider, client)
-            self.model_name = _resolve_model_name(
-                effective_provider, self._configured_model_name
+        effective_provider = _resolve_model_provider(self.provider, client)
+        self.model_name = _resolve_model_name(
+            effective_provider, self._configured_model_name
+        )
+        if effective_provider not in ("openai", "anthropic") and not hasattr(
+            client, "generate"
+        ):
+            # A misconfigured client is a bug, not an outage.
+            raise TypeError(
+                f"{self.name}: api_client for provider {effective_provider!r} "
+                "has no chat/completions/messages/generate interface"
             )
+        try:
             if effective_provider == "openai":
                 response = await self._call_openai_api(prompt)
-                score = self._parse_score_from_response(response)
             elif effective_provider == "anthropic":
                 response = await self._call_anthropic_api(prompt)
-                score = self._parse_score_from_response(response)
-            elif hasattr(client, "generate"):
-                response = await client.generate(prompt)
-                score = self._parse_score_from_response(response)
             else:
-                raise TypeError(
-                    f"{self.name}: api_client for provider {effective_provider!r} "
-                    "has no chat/completions/messages/generate interface"
-                )
-        except MULTI_REWARD_EXCEPTIONS as exc:
+                response = await client.generate(prompt)
+            score = self._parse_score_from_response(response)
+        except _JUDGE_OUTAGES as exc:
             # Fail closed: the composer leaves this component out and spreads
             # its weight; a neutral 0.5 would be trained on as a verdict.
-            raise RuntimeError(f"{self.name}: model judge failed: {exc}") from exc
+            raise RewardUnavailableError(
+                f"{self.name}: model judge failed: {exc}"
+            ) from exc
         if not math.isfinite(score) or not 0.0 <= score <= 1.0:
-            raise ValueError(f"{self.name}: judge score {score} is outside [0, 1]")
+            raise RewardUnavailableError(
+                f"{self.name}: judge score {score} is outside [0, 1]"
+            )
         return score
 
     async def _call_openai_api(self, prompt: str) -> str:

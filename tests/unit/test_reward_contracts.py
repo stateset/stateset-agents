@@ -299,11 +299,11 @@ class _Scripted(RewardFunction):
         return RewardResult(score=self.score)
 
 
-async def test_composite_flags_a_nan_component_and_keeps_a_finite_total():
+async def test_composite_raises_for_a_nan_component():
+    # A NaN is a bug or garbage output, never an outage to reweight around.
     composite = CompositeReward([_Scripted(math.nan), _Scripted(0.5)])
-    result = await composite.compute_reward(INPUTS["multi_turn"])
-    assert math.isfinite(result.score)
-    assert result.metadata["failed_components"] == ["scripted" + str(math.nan)]
+    with pytest.raises(ValueError, match="non-finite"):
+        await composite.compute_reward(INPUTS["multi_turn"])
 
 
 async def test_composite_raises_for_a_critical_nan_component():
@@ -312,7 +312,7 @@ async def test_composite_raises_for_a_critical_nan_component():
         await composite.compute_reward(INPUTS["multi_turn"])
 
 
-async def test_multi_objective_flags_a_nan_component():
+async def test_multi_objective_raises_for_a_nan_component():
     class NaNComponent(EmpathyRewardComponent):
         async def compute_score(self, turns, context=None):
             return math.nan
@@ -320,11 +320,10 @@ async def test_multi_objective_flags_a_nan_component():
     reward = MultiObjectiveRewardFunction(
         [EmpathyRewardComponent(weight=0.5), NaNComponent(name="nan", weight=0.5)]
     )
-    result = await reward.compute_reward(
-        [{"role": "assistant", "content": "Sorry, I understand."}]
-    )
-    assert math.isfinite(result.score)
-    assert result.metadata["failed_components"] == ["nan"]
+    with pytest.raises(ValueError, match="non-finite"):
+        await reward.compute_reward(
+            [{"role": "assistant", "content": "Sorry, I understand."}]
+        )
 
 
 @pytest.mark.parametrize("reward_type", [RewardType.IMMEDIATE, RewardType.SPARSE])

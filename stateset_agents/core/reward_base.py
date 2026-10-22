@@ -27,6 +27,17 @@ REWARD_EXCEPTIONS = (
 )
 
 
+class RewardUnavailableError(RuntimeError):
+    """A reward could not be computed for an external reason (judge or network
+    outage, a verifier that cannot be reached).
+
+    This is the only failure reward composers absorb: ``CompositeReward`` and
+    ``MultiObjectiveRewardFunction`` leave the component out and spread its
+    weight over the rest. Every other exception is a bug or bad data and
+    propagates, so it is never mistaken for an outage.
+    """
+
+
 class RewardType(Enum):
     """Types of rewards"""
 
@@ -222,22 +233,32 @@ class CompositeReward(RewardFunction):
                     # scenario's keys and the environment state.
                     child_context = build_reward_context(context, reward_fn=reward_fn)
                 result = await reward_fn.compute_reward(turns, child_context)
-                if not math.isfinite(float(result.score)):
-                    # A NaN/inf component would silently poison the total.
-                    raise ValueError(f"returned a non-finite score {result.score}")
-                results.append((reward_fn, result))
-            except REWARD_EXCEPTIONS as e:
+            except RewardUnavailableError as e:
+                # An outage: leave the component out and spread its weight.
+                # Anything else (TypeError, AttributeError, bad data) is a bug
+                # and propagates rather than silently reweighting the reward.
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
-                logger.warning(f"Reward function {reward_fn.name} failed: {e}")
+                logger.warning(
+                    "Reward function %s is unavailable; its weight is spread "
+                    "over the other components: %s",
+                    reward_fn.name,
+                    e,
+                )
                 failed.append(str(reward_fn.name))
-                # Continue with other reward functions
                 continue
+            if not math.isfinite(float(result.score)):
+                # A NaN/inf component would silently poison the total.
+                raise ValueError(
+                    f"Reward function {reward_fn.name} returned a non-finite "
+                    f"score {result.score}"
+                )
+            results.append((reward_fn, result))
 
         # No component scored: there is no reward, so fail rather than
         # return a valid-looking 0.0 that environments and trainers would use.
         if not results:
-            raise ValueError(
+            raise RewardUnavailableError(
                 "CompositeReward: every reward function failed "
                 f"({', '.join(failed)})"
             )

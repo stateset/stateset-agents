@@ -10,6 +10,7 @@ from stateset_agents.core.reward_base import (
     RewardFunction,
     RewardResult,
     RewardType,
+    RewardUnavailableError,
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.task_outcome import TaskOutcomeReward
@@ -85,7 +86,7 @@ async def test_mixed_composition_routes_context_to_each_child_and_preserves_evid
 
 
 async def test_optional_reward_failures_remain_optional_and_capabilities_are_dynamic():
-    optional = RecordedReward(failure=ValueError("optional unavailable"))
+    optional = RecordedReward(failure=RewardUnavailableError("optional unavailable"))
     composite = CompositeReward([optional, RecordedReward()])
     assert not composite.fail_on_error and not composite.requires_environment_context
     result = await composite.compute_reward([])

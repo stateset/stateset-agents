@@ -140,6 +140,23 @@ def _text_answer_credit(content: str, answer: str) -> float:
     return best
 
 
+def _ground_truth_mapping(ground_truth: Any) -> dict[str, Any]:
+    """Ground truth as a mapping; a bare string or number is the answer."""
+    if ground_truth is None:
+        return {}
+    if isinstance(ground_truth, dict):
+        return ground_truth
+    if isinstance(ground_truth, (str, int, float)) and not isinstance(
+        ground_truth, bool
+    ):
+        text = str(ground_truth).strip()
+        return {"answer": text} if text else {}
+    raise TypeError(
+        "ground_truth must be a mapping or an answer string/number, got "
+        f"{type(ground_truth).__name__}"
+    )
+
+
 def _action_name(action: Any) -> str | None:
     """Identify a required or completed action given as a name or a mapping."""
     if isinstance(action, str):
@@ -377,7 +394,7 @@ class CorrectnessReward(RewardFunction):
 
     def __init__(self, weight: float = 1.0, ground_truth: dict[str, Any] | None = None):
         super().__init__(weight, RewardType.IMMEDIATE, "CorrectnessReward")
-        self.ground_truth = ground_truth or {}
+        self.ground_truth = _ground_truth_mapping(ground_truth)
 
     async def compute_reward(
         self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
@@ -388,8 +405,9 @@ class CorrectnessReward(RewardFunction):
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 
-        # Use ground truth from context if available
-        ground_truth = (
+        # Use ground truth from context if available. A bare label ("4", 4)
+        # is the expected answer, as in verl-style datasets.
+        ground_truth = _ground_truth_mapping(
             context.get("ground_truth", self.ground_truth)
             if context
             else self.ground_truth

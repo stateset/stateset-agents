@@ -6,7 +6,11 @@ from typing import Any, cast
 
 import numpy as np
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult
+from stateset_agents.core.reward_base import (
+    RewardFunction,
+    RewardResult,
+    RewardUnavailableError,
+)
 from stateset_agents.core.reward_context import scores_latest_turn_only
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
@@ -176,17 +180,21 @@ class MultiObjectiveRewardFunction(RewardFunction):
         ):
             try:
                 score = await component.compute_score(normalized_turns, context)
-                if not math.isfinite(score):
-                    raise ValueError("component score must be finite")
-            except MULTI_REWARD_EXCEPTIONS as e:
+            except RewardUnavailableError as e:
+                # Only an outage is absorbed; other exceptions are bugs.
                 logger.warning(
-                    "Reward component %s failed; its weight is spread over the "
-                    "other components: %s",
+                    "Reward component %s is unavailable; its weight is spread "
+                    "over the other components: %s",
                     component.name,
                     e,
                 )
                 failed.append(component.name)
                 continue
+            if not math.isfinite(score):
+                raise ValueError(
+                    f"Reward component {component.name} returned a non-finite "
+                    f"score {score}"
+                )
             component_scores[component.name] = score
             raw_scores.append(score)
             scored_weights.append(component_weight)
@@ -210,7 +218,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         ]
         if not raw_scores:
             # No component scored: fail rather than return a valid-looking 0.0.
-            raise ValueError(
+            raise RewardUnavailableError(
                 "MultiObjectiveRewardFunction: every component failed "
                 f"({', '.join(failed)})"
             )

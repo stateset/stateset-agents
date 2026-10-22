@@ -28,6 +28,7 @@ from stateset_agents.core.reward_base import (
     RewardFunction,
     RewardResult,
     RewardType,
+    RewardUnavailableError,
 )
 from stateset_agents.core.reward_context import (
     LATEST_TURN_SCOPE,
@@ -463,7 +464,7 @@ async def test_failed_step_reward_is_logged_and_marked(caplog):
 async def test_multi_objective_redistributes_a_failed_component_weight():
     class Boom(EmpathyRewardComponent):
         async def compute_score(self, turns, context=None):
-            raise RuntimeError("down")
+            raise RewardUnavailableError("down")
 
     reward = MultiObjectiveRewardFunction(
         [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)]
