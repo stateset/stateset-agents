@@ -214,7 +214,9 @@ class JudgeResult:
         criteria: Per-criterion fraction of checks that hold, for each pass
             (empty on failure).
         parse_failures: Number of passes (0-2) that failed closed.
-        disagreement: ``|pass_scores[0] - pass_scores[1]|``.
+        disagreement: ``|pass_scores[0] - pass_scores[1]|`` (a failed pass
+            counts as ``0.0`` here; :func:`summarize` excludes such items
+            from ``self_disagreement`` and reports ``parse_failure_rate``).
         findings: Deterministic findings shown to the judge in both passes
             (see :func:`detect_findings`).
         checks: Final boolean value of every check for each pass, after the
@@ -775,8 +777,14 @@ class SupportJudge:
 def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
     """Aggregate results into summary statistics.
 
-    Always present: ``mean_score``, ``self_disagreement``,
-    ``parse_failure_rate`` (failed passes / total passes) and ``n``. Checklist
+    Always present: ``mean_score``, ``self_disagreement`` (mean
+    ``disagreement`` over items whose two passes both parsed — a pass that
+    failed to parse is a parse failure, not a disagreement; ``0.0`` when no
+    item parsed twice), ``self_disagreement_n`` (the number of such items),
+    ``parse_failure_rate`` (failed passes / total passes) and ``n``. Gate
+    ``parse_failure_rate`` separately: failed passes score ``0.0`` and drag
+    ``mean_score``, and every pass failing leaves no disagreement to measure.
+    Checklist
     diagnostics: ``check_flip_rate`` (fraction of judge-decided, i.e. not
     forced, checks that differ between the two passes, over items whose two
     passes both parsed), ``forced_false_checks`` (forced ``False`` values,
@@ -792,6 +800,7 @@ def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
         raise ValueError("cannot summarize an empty result set")
     n = len(results)
     both = [r for r in results if r.checks[0] and r.checks[1]]
+    parsed = [r for r in results if r.parse_failures == 0]
     flips = judged = 0
     for result in both:
         for check in ALL_CHECKS:
@@ -801,7 +810,12 @@ def summarize(results: Sequence[JudgeResult]) -> dict[str, float]:
             flips += result.checks[0][check] != result.checks[1][check]
     summary: dict[str, float] = {
         "mean_score": sum(result.score for result in results) / n,
-        "self_disagreement": sum(result.disagreement for result in results) / n,
+        "self_disagreement": (
+            sum(result.disagreement for result in parsed) / len(parsed)
+            if parsed
+            else 0.0
+        ),
+        "self_disagreement_n": float(len(parsed)),
         "parse_failure_rate": sum(result.parse_failures for result in results)
         / (2 * n),
         "n": float(n),

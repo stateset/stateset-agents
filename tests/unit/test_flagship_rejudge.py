@@ -493,6 +493,8 @@ def test_local_mode_rejudges_with_current_rubric(
     # One resolution check flips between passes: 1/5 of one criterion of five.
     assert summary["judge_self_disagreement"] == pytest.approx(0.04)
     assert summary["self_disagreement_within_gate"] is True
+    assert summary["judge_parse_failure_rate"] == 0.0
+    assert summary["parse_failure_within_gate"] is True
     assert summary["groups"]["final"]["mean_score"] == pytest.approx(0.98)
     rows = (tmp_path / "out" / "judge" / "final.jsonl").read_text().splitlines()
     assert [json.loads(r)["id"] for r in rows] == ["final/eval-1", "final/eval-2"]
