@@ -21,6 +21,7 @@ from stateset_agents.finetune_workspace import (
     FAILURE_GUIDANCE,
     FinetuneConfig,
     FinetuneFailure,
+    detached_process_options,
     failure_info,
     process_token,
     queue_executable,
@@ -383,7 +384,7 @@ def _supervise(
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=environment,
-                start_new_session=True,
+                **detached_process_options(),
             )
             # Buildr owns the timeout and its child cleanup. Without Buildr,
             # this supervisor owns the process group and bounds its lifetime.
@@ -406,6 +407,25 @@ def _supervise(
                     process.wait()
                 exited = True
                 raise FinetuneFailure("timeout") from None
+            except BaseException:
+                # Ctrl+C, SystemExit or a closed console reached the
+                # supervisor itself. It owns the worker: stop it and record
+                # why, so the run never sits "running" with nobody watching.
+                if process.poll() is None:
+                    _stop_worker_group(process, force=False)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        _stop_worker_group(process, force=True)
+                        process.wait()
+                exited = True
+                _record_failure(
+                    run,
+                    FinetuneFailure("supervisor_stopped"),
+                    stage="supervisor",
+                    preserve=True,
+                )
+                raise
             finally:
                 # Only once the worker is known to have exited: reclaiming
                 # under a live worker would end its running pod.
@@ -453,7 +473,7 @@ def _reclaim_remote_allocations(run: Path, config: FinetuneConfig) -> None:
     except Exception as error:  # noqa: BLE001 - outcome recording must continue
         logging.error(
             "Could not reclaim RunPod pods after the worker exited (%s); "
-            "run `stateset-agents remote runpod-orphans` to inspect leases",
+            "run `stateset-agents runpod-orphans` to inspect leases",
             type(error).__name__,
         )
         return
@@ -886,6 +906,16 @@ def execute(run: Path, *, supervisor_token: str | None = None) -> int:
             logging.error("Fine-tuning outcome already recorded; success not committed")
             return 1
         return 0
+    except SystemExit:
+        # A remote stop signals this worker (SIGTERM becomes SystemExit). Its
+        # executor has already terminated the pod on the way out; record the
+        # requested stop as the outcome before exiting.
+        try:
+            if stop_requested(run):
+                _record_failure(run, FinetuneFailure("cancelled"), stage=stage)
+        except (OSError, ValueError):
+            pass
+        raise
     except Exception as error:
         _record_failure(run, error, stage=stage)
         logging.exception("Fine-tuning failed")

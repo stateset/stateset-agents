@@ -65,43 +65,68 @@ def test_unreadable_records_raise_for_callers_to_decide(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "platform,token,probe,confirmed",
+    "platform,recorded,token,probe,confirmed",
     [
         # Linux trusts only a matching start-time token and never probes.
-        ("linux", "recorded", "fail", True),
-        ("linux", "someone-else", "fail", False),
-        ("linux", None, "fail", False),
-        # Without tokens, an answering or uninspectable PID is the owner.
-        ("darwin", "ignored", "answers", True),
-        ("darwin", "ignored", "denied", True),
-        ("darwin", "ignored", "gone", False),
+        ("linux", "recorded", "recorded", "fail", True),
+        ("linux", "recorded", "someone-else", "fail", False),
+        ("linux", "recorded", None, "fail", False),
+        # macOS/Windows compare creation-time tokens when both exist, so a
+        # reused PID no longer keeps a dead supervisor "running".
+        ("darwin", "recorded", "recorded", "fail", True),
+        ("darwin", "recorded", "someone-else", "fail", False),
+        # Without a current token, presence decides as before.
+        ("darwin", "recorded", None, "answers", True),
+        ("darwin", "recorded", None, "denied", True),
+        ("darwin", "recorded", None, "gone", False),
+        # Records written without a token keep presence-only semantics.
+        ("darwin", None, "ignored", "answers", True),
+        ("win32", None, "ignored", "gone", False),
     ],
 )
 def test_run_status_owner_check_keeps_its_platform_semantics(
-    tmp_path, monkeypatch, platform, token, probe, confirmed
+    tmp_path, monkeypatch, platform, recorded, token, probe, confirmed
 ):
     record = tmp_path / "supervisor.json"
-    workspace.write_json(record, {"pid": PID, "process_token": "recorded"})
+    workspace.write_json(record, {"pid": PID, "process_token": recorded})
     monkeypatch.setattr(workspace, "sys", SimpleNamespace(platform=platform))
     monkeypatch.setattr(
         workspace,
         "process_token",
         (
-            (lambda _pid: token)
-            if platform == "linux"
-            else (lambda _pid: pytest.fail("tokens are Linux-only"))
+            (lambda _pid: pytest.fail("no token is compared for this record"))
+            if recorded is None
+            else (lambda _pid: token)
         ),
     )
     monkeypatch.setattr(
         workspace,
         "probe_process",
         (
-            (lambda _pid: pytest.fail("Linux must not probe"))
+            (lambda _pid: pytest.fail("a token decided; no probe is needed"))
             if probe == "fail"
             else _probe(probe)
         ),
     )
     assert workspace._owner_confirmed(record) is confirmed
+
+
+def test_non_linux_process_token_uses_the_creation_time(monkeypatch):
+    calls = []
+    monkeypatch.setattr(workspace, "sys", SimpleNamespace(platform="darwin"))
+    monkeypatch.setattr(
+        workspace, "process_start_token", lambda pid: calls.append(pid) or "Mon 1"
+    )
+    assert workspace.process_token(PID) == "Mon 1" and calls == [PID]
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="ps lstart fallback is macOS")
+def test_macos_ps_start_token_is_stable_for_a_live_process():
+    import os
+
+    from stateset_agents.utils.process_probe import _ps_start_token
+
+    assert _ps_start_token(os.getpid()) == _ps_start_token(os.getpid()) is not None
 
 
 @pytest.mark.skipif(sys.platform != "linux", reason="Uses Linux process tokens")

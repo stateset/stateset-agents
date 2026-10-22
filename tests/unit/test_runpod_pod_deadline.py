@@ -233,3 +233,202 @@ def test_executor_arms_the_pod_deadline_at_the_run_deadline(
     logs = "\n".join(executor.logs(handle))
     assert ("deadline armed" in logs) == ("armed" in output)
     assert executor.status(handle).value == "succeeded"
+
+
+def _submit_default_image(tmp_path, **options):
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"messages":[]}\n')
+    api = FakePodApi(ready_after=1)
+    RunPodExecutor(
+        api=api,
+        ssh=FakeSsh(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+        **options,
+    ).submit(RemoteJobSpec(dataset=data, base_model="m", output_dir=tmp_path / "out"))
+    return api.created[0]
+
+
+def test_boot_watchdog_is_off_by_default(tmp_path, monkeypatch):
+    """The start-command wrapper awaits live-pod verification, so pods boot as-is."""
+    monkeypatch.delenv("STATESET_RUNPOD_BOOT_WATCHDOG", raising=False)
+    created = _submit_default_image(tmp_path)
+    assert "docker_start_cmd" not in created
+    assert "docker_entrypoint" not in created
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES"])
+def test_boot_watchdog_can_be_enabled_from_the_environment(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setenv("STATESET_RUNPOD_BOOT_WATCHDOG", value)
+    assert "docker_start_cmd" in _submit_default_image(tmp_path)
+
+
+def test_explicit_option_overrides_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("STATESET_RUNPOD_BOOT_WATCHDOG", "1")
+    assert "docker_start_cmd" not in _submit_default_image(
+        tmp_path, boot_watchdog=False
+    )
+
+
+def test_deadline_is_armed_at_pod_creation_for_runpod_images(tmp_path):
+    """Opted in, a host crash during provisioning cannot leave the pod billing."""
+    import shlex
+
+    from stateset_agents.remote import runpod
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"messages":[]}\n')
+    api = FakePodApi(ready_after=1)
+    executor = RunPodExecutor(
+        api=api,
+        ssh=FakeSsh(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+        boot_watchdog=True,
+    )
+    before = time.time()
+    executor.submit(
+        RemoteJobSpec(
+            dataset=data,
+            base_model="example/model",
+            output_dir=tmp_path / "out",
+            timeout_s=1800,
+        )
+    )
+    created = api.created[0]
+    assert created["docker_entrypoint"] == ["/bin/bash", "-c"]
+    (command,) = created["docker_start_cmd"]
+    assert command.endswith("& exec /start.sh")
+    words = shlex.split(command.split(" >/tmp/stateset-deadline.log")[0])
+    assert words[:2] == ["python3", "-c"] and words[2] == runpod._POD_WATCHDOG
+    deadline = float(words[3].lstrip("@"))
+    assert before + 1800 - 5 <= deadline <= time.time() + 1800 + 5
+    assert words[4:] == [runpod._API_ROOT, "*"]
+    # No user credential travels with the pod; it uses RunPod's injected key.
+    assert set(created["env"]) == {"PUBLIC_KEY", "SSH_PUBLIC_KEY"}
+
+
+def test_custom_images_keep_their_own_start_command_even_when_opted_in(tmp_path):
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"messages":[]}\n')
+    api = FakePodApi(ready_after=1)
+    RunPodExecutor(
+        api=api,
+        ssh=FakeSsh(),
+        public_key="ssh-rsa TEST",
+        image="example/custom:1",
+        boot_watchdog=True,
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+    ).submit(RemoteJobSpec(dataset=data, base_model="m", output_dir=tmp_path / "out"))
+    assert "docker_start_cmd" not in api.created[0]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the watchdog forks on the pod (Linux)")
+def test_absolute_deadline_fires_for_any_own_pod_identity():
+    with _DeleteRecorder() as endpoint:
+        env = dict(os.environ, RUNPOD_POD_ID="pod-9", RUNPOD_API_KEY="pod-scoped")
+        from stateset_agents.remote.runpod import _POD_WATCHDOG
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                _POD_WATCHDOG,
+                f"@{time.time():.0f}",
+                endpoint.root,
+                "*",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            env=env,
+        )
+        assert result.stdout.strip() == "pod deadline armed"
+        for _ in range(200):
+            if endpoint.requests:
+                break
+            time.sleep(0.05)
+    assert endpoint.requests == [("/v1/pods/pod-9", "Bearer pod-scoped")]
+
+
+def test_submission_first_sweeps_pods_left_by_exited_submitters(tmp_path):
+    import json
+    import socket
+
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+    from tests.unit.test_runpod_pod_reclamation import dead_owner
+
+    leases = tmp_path / "leases"
+    leases.mkdir()
+    pid, token = dead_owner()
+    (leases / "crashed-pod.json").write_text(
+        json.dumps(
+            {
+                "provider": "runpod",
+                "pod_id": "crashed-pod",
+                "owner_pid": pid,
+                "owner_token": token,
+                "owner_host": socket.gethostname(),
+            }
+        )
+    )
+    (leases / "legacy-pod.json").write_text(
+        json.dumps({"provider": "runpod", "pod_id": "legacy-pod"})
+    )
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"messages":[]}\n')
+    api = FakePodApi(ready_after=1)
+    executor = RunPodExecutor(
+        api=api,
+        ssh=FakeSsh(),
+        public_key="ssh-rsa TEST",
+        lease_dir=leases,
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+    )
+    handle = executor.submit(
+        RemoteJobSpec(dataset=data, base_model="m", output_dir=tmp_path / "out")
+    )
+    assert api.terminated[0] == "crashed-pod" and "legacy-pod" not in api.terminated
+    assert any("crashed-pod" in line for line in executor.logs(handle))
+    assert sorted(p.stem for p in leases.glob("*.json")) == ["legacy-pod"]
+
+
+def test_studio_start_sweeps_only_with_a_runpod_key(tmp_path, monkeypatch):
+    from stateset_agents.remote import runpod
+    from stateset_agents.tui import Studio
+
+    calls = []
+    monkeypatch.setattr(
+        runpod.RunPodExecutor,
+        "sweep_abandoned_pods",
+        lambda self: calls.append(1) or (["crashed-pod"], {}),
+    )
+    studio = Studio(tmp_path)
+    monkeypatch.delenv("RUNPOD_API_KEY", raising=False)
+    assert studio.start_lease_sweep() is False
+    monkeypatch.setenv("RUNPOD_API_KEY", "synthetic")
+    assert studio.start_lease_sweep() is True
+    deadline = time.monotonic() + 5
+    while studio.lease_sweep.busy and time.monotonic() < deadline:
+        studio.refresh(history=False)
+        time.sleep(0.01)
+    studio.refresh(history=False)
+    assert calls == [1] and "Ended 1 RunPod pod(s)" in studio.message

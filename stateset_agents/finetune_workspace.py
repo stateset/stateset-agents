@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_remote_code import RemoteCodeSelection
-from stateset_agents.utils.process_probe import probe_process
+from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 MAX_DATA_BYTES = 64 * 1024 * 1024
 MAX_STUDIO_CHECKPOINTS = 100
@@ -151,6 +151,10 @@ FAILURE_GUIDANCE = {
     "missing_receipt": (
         "The worker produced no completion receipt",
         "Inspect worker and export logs. A zero exit code without an artifact receipt is not successful training.",
+    ),
+    "supervisor_stopped": (
+        "The run's supervisor was stopped",
+        "The supervising process was interrupted (Ctrl+C, shutdown or a closed console) and stopped the worker it owned. Inspect run.log and supervisor.log, then prepare a fresh run.",
     ),
     "permissions": (
         "A file or executable permission was denied",
@@ -1207,6 +1211,26 @@ def reap_children() -> None:
         _DETACHED_CHILDREN[:] = running
 
 
+#: Windows process-creation flags: a new process group (so the whole tree can
+#: be stopped together) with its own hidden console, detached from the
+#: launching terminal so that closing it cannot end the run.
+_WINDOWS_DETACHED = (
+    0x00000200 | 0x08000000
+)  # CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+
+
+def detached_process_options(*, windows: bool | None = None) -> dict[str, Any]:
+    """``Popen`` options for a child that must outlive the launching terminal.
+
+    POSIX starts a new session. Windows ignores ``start_new_session``, so a
+    supervisor or worker started without these flags shares the console and
+    dies (or sees Ctrl+C) with it.
+    """
+    if os.name == "nt" if windows is None else windows:
+        return {"creationflags": _WINDOWS_DETACHED}
+    return {"start_new_session": True}
+
+
 def queue_executable() -> str | None:
     """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
 
@@ -1259,7 +1283,7 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **detached_process_options(),
             )
         retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
@@ -1326,14 +1350,56 @@ def _stop_protocol_supported(plan: Mapping[str, Any]) -> bool:
     )
 
 
+#: Remote providers whose worker ends its own allocation when signalled.
+REMOTE_STOP_PROVIDERS = frozenset({"runpod"})
+
+
+def remote_stop_supported(provider: object) -> bool:
+    """Whether this host can stop a paid run of ``provider`` from the studio.
+
+    RunPod workers turn SIGTERM into their cleanup (pod termination). Windows
+    cannot deliver that signal to a detached worker without killing it
+    outright, so remote stop is POSIX-only.
+    """
+    return provider in REMOTE_STOP_PROVIDERS and os.name != "nt"
+
+
+def _signal_remote_worker(run: Path) -> bool:
+    """Ask the verified execution owner to stop; return whether it was signalled.
+
+    Only a process whose start-time token matches ``execution.json`` is
+    signalled, so a reused PID is never touched. The worker converts SIGTERM
+    into ``SystemExit``: the executor terminates its pod, and the stop receipt
+    makes the outcome ``cancelled``.
+    """
+    import signal
+
+    owner = run / "execution.json"
+    try:
+        if not _present(owner) or owner_evidence(owner) != "alive":
+            return False
+        os.kill(read_json(owner, max_bytes=4096)["pid"], signal.SIGTERM)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
+        return False
+    return True
+
+
 def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
-    """Request a local worker stop without signalling PIDs or cancelling queue jobs."""
+    """Request a plan-bound stop: cooperative for local runs, signalled for RunPod.
+
+    Local workers stop at their next safe boundary and are never signalled.
+    A RunPod worker is signalled (only after its identity is verified) so it
+    terminates its pod; other remote providers are refused.
+    """
     plan, digest = read_run_plan(run)
     if digest != expected_plan_sha256:
         raise ValueError("Plan checksum differs from the reviewed plan")
-    if plan["config"].get("provider") != "local":
+    provider = plan["config"].get("provider")
+    remote = provider != "local"
+    if remote and not remote_stop_supported(provider):
         raise ValueError(
-            "Remote stop is unavailable; use provider-specific cleanup controls"
+            "Remote stop is available for RunPod runs on POSIX hosts; use "
+            "provider-specific cleanup controls for this run"
         )
     state = run_status(run)
     if run_terminal_status(state) is True:
@@ -1365,25 +1431,42 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
             status="cancelled",
             finished_at=time.time(),
         )
+    signalled = remote and _signal_remote_worker(run)
     current = run_status(run)
-    return {
+    result = {
         "status": current["status"],
         "terminal": run_terminal_status(current),
         "execution_unconfirmed": current.get("execution_unconfirmed") is True,
         "stop_requested": True,
         "scope": "Cooperative local stop at the next safe boundary; queued entries remain until admitted. Supervisor loss does not establish worker exit. Remote resources are not controlled.",
     }
+    if remote:
+        result["worker_signalled"] = signalled
+        result["scope"] = (
+            "The verified RunPod worker was asked to stop; it terminates its pod and records the cancellation. An acknowledged deletion does not prove billing ended."
+            if signalled
+            else "Stop receipt saved, but no verified RunPod worker is running to signal; inspect the run and `stateset-agents runpod-orphans`."
+        )
+    return result
 
 
 def process_token(pid: int) -> str | None:
-    """Use Linux process start ticks to distinguish a worker from a reused PID."""
+    """A start-time token that distinguishes a worker from a reused PID.
+
+    Linux reads start ticks from ``/proc``. Other platforms use the process
+    creation time (``psutil``, or ``ps`` on macOS); ``None`` when unavailable.
+    """
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
         if fields[0] in {"Z", "X"}:
             return None
         return fields[19]
     except (OSError, IndexError):
+        pass
+    if sys.platform == "linux":
         return None
+    else:
+        return process_start_token(pid)
 
 
 def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
@@ -1471,10 +1554,13 @@ def _owner_confirmed(path: Path) -> bool:
         if sys.platform == "linux":
             return owner_evidence(path, probe=False, max_bytes=4096) == "alive"
         else:
-            return owner_evidence(path, use_tokens=False, max_bytes=4096) in {
-                "running",
-                "denied",
-            }
+            # A recorded creation-time token tells a reused PID apart; records
+            # without one (or hosts that cannot read one now) fall back to
+            # presence, where an answering PID counts as the owner.
+            recorded = read_json(path, max_bytes=4096).get("process_token")
+            return owner_evidence(
+                path, use_tokens=isinstance(recorded, str), max_bytes=4096
+            ) in {"alive", "running", "denied"}
     except (OSError, ValueError, TypeError, RecursionError, OverflowError):
         return False
 

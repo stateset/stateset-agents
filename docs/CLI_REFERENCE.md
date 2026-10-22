@@ -1173,16 +1173,24 @@ or hosted chat modes. See [River provider](RIVER_PROVIDER.md).
 
 ### `stateset-agents runpod-orphans`
 
-Inspect locally recorded cleanup leases for RunPod training pods whose
-submitting process exited before cleanup. The default is read-only.
+Inspect locally recorded cleanup leases for RunPod training pods. Each lease
+records the submitting process (PID, start-time token and host), and the
+read-only listing shows whether that process is still running, has exited, or
+cannot be verified (older leases, another host).
 
 ```bash
 stateset-agents runpod-orphans
 stateset-agents runpod-orphans --terminate
+stateset-agents runpod-orphans --terminate --force
 ```
 
-- `--terminate`: Terminate every leased pod and remove a lease only after the
-  provider confirms deletion. Review the read-only output first.
+- `--terminate`: Terminate only pods whose submitting process has provably
+  exited, removing each lease after the provider confirms deletion (an
+  already-deleted pod counts as cleaned up). A live job's pod is kept, since
+  ending it would make that job rent a replacement.
+- `--force`: With `--terminate`, also terminate pods whose process is still
+  running or cannot be verified. Use only after checking that no job needs
+  them.
 
 ### `stateset-agents model-support`
 

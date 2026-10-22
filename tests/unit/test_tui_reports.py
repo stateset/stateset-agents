@@ -130,3 +130,29 @@ def test_recovery_authorized_steps_outlive_the_terminal(monkeypatch):
         (True, "stateset-recovery-inspection"),
         (False, "stateset-recovery-launch"),
     ]
+
+
+def test_evaluation_panel_work_uses_background_tasks(tmp_path, monkeypatch):
+    from stateset_agents import tui_tasks
+    from stateset_agents.finetune_evaluation_tui import EvaluationPanel
+
+    started = []
+
+    class Recorder:
+        def __init__(self, *, target, daemon, name):
+            started.append((daemon, name))
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(tui_tasks.threading, "Thread", Recorder)
+    panel = EvaluationPanel(tmp_path / "run")
+    panel._background("verify", dict)
+    assert panel.busy
+    panel._background("launch", dict)  # single flight while busy
+    other = EvaluationPanel(tmp_path / "run")
+    other._background("launch", dict, owned=True)
+    assert started == [
+        (True, "stateset-evaluation-verify"),
+        (False, "stateset-evaluation-launch"),
+    ]

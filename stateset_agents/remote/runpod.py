@@ -31,6 +31,7 @@ import re
 import shlex
 import shutil
 import signal
+import socket
 import stat
 import subprocess
 import sys
@@ -58,6 +59,7 @@ from stateset_agents.remote.ledger import (
     estimate_cost_usd,
     record_entry,
 )
+from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 __all__ = ["RunPodApi", "RunPodExecutor", "SshTransport", "package_pin"]
 
@@ -87,7 +89,9 @@ with os.fdopen(descriptor, 'rb') as source:
 #: the container environment; no user credential is copied to the pod. It
 #: arms only when those identify the pod this executor created.
 _POD_WATCHDOG = r"""import os, sys, time, urllib.error, urllib.request
-delay, root, expected = float(sys.argv[1]), sys.argv[2], sys.argv[3]
+when, root, expected = sys.argv[1], sys.argv[2], sys.argv[3]
+# "@<epoch>" is an absolute wall-clock deadline; otherwise a delay in seconds.
+until = float(when[1:]) if when.startswith("@") else time.time() + float(when)
 env = dict(os.environ)
 if not (env.get("RUNPOD_POD_ID") and env.get("RUNPOD_API_KEY")):
     try:
@@ -98,7 +102,7 @@ if not (env.get("RUNPOD_POD_ID") and env.get("RUNPOD_API_KEY")):
     except OSError:
         pass
 pod, key = env.get("RUNPOD_POD_ID"), env.get("RUNPOD_API_KEY")
-if not pod or not key or pod != expected:
+if not pod or not key or expected not in ("*", pod):
     print("pod deadline unavailable", flush=True)
     sys.exit(0)
 if os.fork():
@@ -108,7 +112,8 @@ os.setsid()
 null = os.open(os.devnull, os.O_RDWR)
 for descriptor in (0, 1, 2):
     os.dup2(null, descriptor)
-time.sleep(max(0.0, delay))
+while time.time() < until:
+    time.sleep(min(60.0, max(0.0, until - time.time())))
 request = urllib.request.Request(
     root + "/pods/" + pod, method="DELETE",
     headers={"Authorization": "Bearer " + key},
@@ -126,6 +131,28 @@ for _ in range(5):
 """
 
 _API_ROOT = "https://rest.runpod.io/v1"
+#: RunPod's own PyTorch images start sshd (from PUBLIC_KEY) via /start.sh.
+_START_SCRIPT_IMAGES = ("runpod/pytorch:",)
+#: Opt-in for the boot-time deadline wrapper (see ``boot_watchdog``). It
+#: replaces the image's start command, so it stays off until a live pod has
+#: verified that ``/start.sh`` is the right hand-over for the image.
+BOOT_WATCHDOG_ENV = "STATESET_RUNPOD_BOOT_WATCHDOG"
+
+
+def _deadline_start_command(deadline_epoch: float) -> str:
+    """A pod start command that arms the deadline before sshd starts.
+
+    The watchdog runs from the first moment the container starts, so a pod
+    whose submitter dies while it is still provisioning (before SSH is ever
+    reachable) still deletes itself at the run deadline. It then hands over
+    to the image's own ``/start.sh``.
+    """
+    watchdog = shlex.join(
+        ["python3", "-c", _POD_WATCHDOG, f"@{deadline_epoch:.0f}", _API_ROOT, "*"]
+    )
+    return f"{watchdog} >/tmp/stateset-deadline.log 2>&1 & exec /start.sh"
+
+
 _HTTP_ATTEMPTS = 5
 _HTTP_BACKOFF_S = 2.0
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
@@ -162,6 +189,74 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     if package_version:
         return f"stateset-agents[training]=={package_version}"
     return "stateset-agents[training]"
+
+
+_TIME_MODULE = time
+_REAL_MONOTONIC = time.monotonic
+#: Wall-clock lead over monotonic time that counts as a suspend, not jitter.
+_SUSPEND_NOISE_S = 1.0
+_CLOCK_LOCK = threading.Lock()
+_clock_anchor: list[Any] = []
+
+
+def _billing_now() -> float:
+    """Seconds on a clock that keeps counting while the host is suspended.
+
+    A pod bills through a laptop sleep, but ``CLOCK_MONOTONIC`` pauses, so a
+    run deadline or a spend estimate measured with it would stretch by the
+    suspended time. Linux uses ``CLOCK_BOOTTIME``. Elsewhere this is monotonic
+    time plus whatever wall-clock time monotonic missed (a suspend), and it
+    never decreases, so a wall clock stepped backwards cannot shorten it.
+    """
+    clock = time
+    if clock is _TIME_MODULE and clock.monotonic is not _REAL_MONOTONIC:
+        # A substituted monotonic source (a test double) is trusted as is:
+        # comparing it with the real wall clock would invent suspends.
+        return float(clock.monotonic())
+    boottime = getattr(clock, "CLOCK_BOOTTIME", None)
+    gettime = getattr(clock, "clock_gettime", None)
+    if boottime is not None and callable(gettime):
+        return float(gettime(boottime))
+    mono, wall = float(clock.monotonic()), float(clock.time())
+    source = clock.monotonic
+    key = (id(clock), id(getattr(source, "__func__", source)))
+    with _CLOCK_LOCK:
+        if not _clock_anchor or _clock_anchor[0] != key:
+            _clock_anchor[:] = [key, mono, wall, 0.0, mono]
+        _, mono0, wall0, offset, last = _clock_anchor
+        missed = (wall - wall0) - (mono - mono0)
+        if missed > _SUSPEND_NOISE_S:  # ignore scheduling jitter between reads
+            offset = max(offset, missed)
+        now = max(last, mono + offset)
+        _clock_anchor[3], _clock_anchor[4] = offset, now
+        return float(now)
+
+
+def lease_owner_state(lease: dict[str, Any]) -> str:
+    """Whether a lease's submitting process is ``alive``, ``gone`` or ``unknown``.
+
+    ``gone`` needs proof: the PID no longer exists, or it now belongs to a
+    different process (start-time token mismatch). Anything uncertain is
+    ``unknown`` so that automatic cleanup never ends a live job's pod.
+    """
+    pid, token = lease.get("owner_pid"), lease.get("owner_token")
+    if (
+        type(pid) is not int
+        or pid < 1
+        or lease.get("owner_host") != socket.gethostname()
+    ):
+        return "unknown"
+    current = process_start_token(pid)
+    if isinstance(token, str) and current is not None:
+        return "alive" if current == token else "gone"
+    try:
+        probe_process(pid)
+    except ProcessLookupError:
+        return "gone"
+    except (OSError, ValueError, OverflowError):
+        return "unknown"
+    # The PID answers, but without a comparable token its identity is unproven.
+    return "alive" if token is None and current is None else "unknown"
 
 
 def _pod_already_gone(exc: BaseException) -> bool:
@@ -554,7 +649,7 @@ class SshTransport:
             else self._positive_timeout(requested)
         )
         if self._deadline is not None:
-            remaining = self._deadline - time.monotonic()
+            remaining = self._deadline - _billing_now()
             if remaining <= 0:
                 raise _SshTimeout(
                     "RunPod transport deadline expired before starting an operation",
@@ -643,12 +738,12 @@ class SshTransport:
         """Block until sshd answers, or raise once ``timeout_s`` elapses."""
         self._host, self._port = host, port
         timeout_s = self._positive_timeout(timeout_s)
-        deadline = time.monotonic() + timeout_s
+        deadline = _billing_now() + timeout_s
         if self._deadline is not None:
             deadline = min(deadline, self._deadline)
         last_error = ""
-        while time.monotonic() < deadline:
-            remaining = deadline - time.monotonic()
+        while _billing_now() < deadline:
+            remaining = deadline - _billing_now()
             if remaining <= 0:
                 break
             try:
@@ -667,10 +762,10 @@ class SshTransport:
             except _SshTimeout:
                 last_error = "SSH readiness probe timed out"
             else:
-                if probe.returncode == 0 and time.monotonic() <= deadline:
+                if probe.returncode == 0 and _billing_now() <= deadline:
                     return
                 last_error = (probe.stderr or "").strip()
-            remaining = deadline - time.monotonic()
+            remaining = deadline - _billing_now()
             if remaining > 0:
                 time.sleep(min(5.0, remaining))
         raise RemoteExecutionError(
@@ -817,9 +912,22 @@ class RunPodExecutor(RemoteExecutor):
         allow_environment_wheel: bool = True,
         reviewed_wheel_sha256: str | None = None,
         reviewed_wheel_bytes: int | None = None,
+        boot_watchdog: bool | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
+        #: Arm the pod-side deadline in the pod's start command (official
+        #: ``runpod/pytorch`` images only), covering a submitter that dies
+        #: before SSH is reachable. Off by default: it changes how every pod
+        #: boots and awaits live-pod verification. ``None`` reads
+        #: STATESET_RUNPOD_BOOT_WATCHDOG (``1``/``true``/``yes`` enables it).
+        if boot_watchdog is None:
+            boot_watchdog = os.environ.get(BOOT_WATCHDOG_ENV, "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+        self.boot_watchdog = bool(boot_watchdog)
         self._public_key = public_key
         #: Install this locally built wheel instead of pulling the pinned
         #: version from PyPI. This is how an *unreleased* change gets verified
@@ -1024,6 +1132,7 @@ class RunPodExecutor(RemoteExecutor):
         """Record a billing pod so a later process can clean up after a crash."""
         target = self._lease_path(pod_id)
         temporary = target.with_suffix(".tmp")
+        owner = os.getpid()
         payload = {
             "provider": self.name,
             "pod_id": pod_id,
@@ -1033,6 +1142,11 @@ class RunPodExecutor(RemoteExecutor):
             "gpu": spec.gpu or self.DEFAULT_GPU,
             "gpu_count": spec.gpu_count,
             "output_dir": str(spec.output_dir),
+            # Who holds this pod: cleanup tools reclaim only pods whose
+            # submitting process is provably gone, never a live job's pod.
+            "owner_pid": owner,
+            "owner_token": process_start_token(owner),
+            "owner_host": socket.gethostname(),
         }
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -1049,8 +1163,14 @@ class RunPodExecutor(RemoteExecutor):
                 pod_id=pod_id,
             ) from exc
 
-    def orphaned_leases(self) -> list[dict[str, Any]]:
-        """Return pods whose process-local cleanup did not clear its lease."""
+    def leases(self) -> list[dict[str, Any]]:
+        """Every local cleanup lease, each with its submitting process's state.
+
+        ``owner_state`` is ``"alive"`` while the submitting process runs,
+        ``"gone"`` once it has provably exited (or its PID was reused), and
+        ``"unknown"`` for leases without an owner record, from another host,
+        or whose owner cannot be inspected.
+        """
         if not self.lease_dir.exists():
             return []
         leases: list[dict[str, Any]] = []
@@ -1060,8 +1180,15 @@ class RunPodExecutor(RemoteExecutor):
             except (OSError, json.JSONDecodeError):
                 continue
             if isinstance(row, dict) and row.get("provider") == self.name:
-                leases.append(row)
+                leases.append({**row, "owner_state": lease_owner_state(row)})
         return leases
+
+    def orphaned_leases(self) -> list[dict[str, Any]]:
+        """Leases whose submitting process is not known to be running.
+
+        A live job's lease is excluded: its process still owns the cleanup.
+        """
+        return [lease for lease in self.leases() if lease["owner_state"] != "alive"]
 
     def reclaim_pods(self, pod_ids: Iterable[str]) -> tuple[list[str], dict[str, str]]:
         """Terminate each pod independently, clearing a lease only once it is gone.
@@ -1096,6 +1223,23 @@ class RunPodExecutor(RemoteExecutor):
                 )
         return reclaimed, failed
 
+    def sweep_abandoned_pods(self) -> tuple[list[str], dict[str, str]]:
+        """Reclaim pods whose submitting process on this host has provably exited.
+
+        Runs before new work starts, so a pod left behind by a crashed
+        submitter (even mid-provisioning) is ended by the next session instead
+        of billing until someone notices. Live and unverifiable owners are
+        never touched.
+        """
+        abandoned = [
+            str(lease.get("pod_id", ""))
+            for lease in self.leases()
+            if lease["owner_state"] == "gone"
+        ]
+        if not abandoned:
+            return [], {}
+        return self.reclaim_pods(abandoned)
+
     def pods_named(self, names: Iterable[str]) -> list[str]:
         """Ids of account pods whose name is exactly one of ``names``."""
         wanted = set(names)
@@ -1107,14 +1251,18 @@ class RunPodExecutor(RemoteExecutor):
             if pod.get("name") in wanted and isinstance(pod.get("id"), str)
         ]
 
-    def cleanup_orphans(self) -> list[str]:
-        """Terminate every locally leased pod, clearing only confirmed leases.
+    def cleanup_orphans(self, *, force: bool = False) -> list[str]:
+        """Terminate leased pods whose submitting process is provably gone.
 
-        Every lease is attempted; failures are reported together afterwards
-        and their leases kept for a later retry.
+        A live job's pod, or one whose owner cannot be established, is kept
+        unless ``force`` (terminating a live job's pod makes it rent another).
+        Every selected lease is attempted; failures are reported together
+        afterwards and their leases kept for a later retry.
         """
         reclaimed, failed = self.reclaim_pods(
-            str(lease.get("pod_id", "")) for lease in self.orphaned_leases()
+            str(lease.get("pod_id", ""))
+            for lease in self.leases()
+            if force or lease["owner_state"] == "gone"
         )
         if failed:
             raise RemoteExecutionError(
@@ -1172,7 +1320,7 @@ class RunPodExecutor(RemoteExecutor):
         The wait never outlives ``run_deadline``: readiness time is billed
         against the same run-level ``timeout_s`` as the job itself.
         """
-        deadline = time.monotonic() + self.ready_timeout_s
+        deadline = _billing_now() + self.ready_timeout_s
         if run_deadline is not None:
             deadline = min(deadline, run_deadline)
         while True:
@@ -1181,7 +1329,7 @@ class RunPodExecutor(RemoteExecutor):
             port = (pod.get("portMappings") or {}).get("22")
             if pod.get("desiredStatus") == "RUNNING" and ip and port:
                 return str(ip), int(port)
-            now = time.monotonic()
+            now = _billing_now()
             if now >= deadline:
                 bound = (
                     "the run's remaining time limit"
@@ -1204,7 +1352,7 @@ class RunPodExecutor(RemoteExecutor):
         Covers the case no local process survives to clean up. The job never
         depends on it; whether it armed is logged.
         """
-        delay = max(0, math.ceil(run_deadline - time.monotonic()))
+        delay = max(0, math.ceil(run_deadline - _billing_now()))
         try:
             _, output = ssh.run(
                 shlex.join(
@@ -1339,6 +1487,18 @@ class RunPodExecutor(RemoteExecutor):
         job_id = uuid.uuid4().hex[:12]
         handle = JobHandle(provider=self.name, job_id=job_id)
         logs: list[str] = []
+        try:
+            swept, unswept = self.sweep_abandoned_pods()
+        except Exception as exc:  # noqa: BLE001 - never blocks new work
+            logs.append(f"could not sweep abandoned pods: {type(exc).__name__}")
+        else:
+            logs.extend(
+                f"terminated pod {pod} left by an exited submitter" for pod in swept
+            )
+            logs.extend(
+                f"could not terminate abandoned pod {pod} ({reason}); lease kept"
+                for pod, reason in unswept.items()
+            )
 
         # A network volume is datacenter-scoped, so the pod must be created
         # in the volume's datacenter. Resolved once, before any pod exists.
@@ -1365,7 +1525,7 @@ class RunPodExecutor(RemoteExecutor):
                     spec,
                     spent_usd=total_cost_usd,
                     cost_per_hr=self._last_cost_per_hr,
-                    start=time.monotonic(),
+                    start=_billing_now(),
                 )
                 if refusal is not None:
                     stage, reason = refusal
@@ -1562,6 +1722,19 @@ class RunPodExecutor(RemoteExecutor):
         allocation, without claiming that an acknowledgement ends billing.
         """
         self._observe_pod(job_id, "allocation_intent", attempt=attempt)
+        start: dict[str, Any] = {}
+        if self.boot_watchdog and self.image.startswith(_START_SCRIPT_IMAGES):
+            # Opt-in: the pod-side backstop is armed at creation, so no local
+            # process has to survive provisioning for the pod to stop at the
+            # run deadline. By default the SSH-armed watchdog and the
+            # dead-owner lease sweep are the backstops.
+            remaining = float(spec.timeout_s)
+            if self._run_deadline is not None:
+                remaining = max(0.0, self._run_deadline - _billing_now())
+            start = {
+                "docker_entrypoint": ["/bin/bash", "-c"],
+                "docker_start_cmd": [_deadline_start_command(time.time() + remaining)],
+            }
         pod = api.create_pod(
             name=f"stateset-sft-{job_id}",
             image=self.image,
@@ -1574,6 +1747,7 @@ class RunPodExecutor(RemoteExecutor):
             network_volume_id=spec.network_volume_id,
             volume_mount_path=_REMOTE_WORKDIR if spec.network_volume_id else None,
             data_center_id=data_center_id,
+            **start,
         )
         pod_id = pod.get("id") if isinstance(pod, dict) else None
         if (
@@ -1591,7 +1765,7 @@ class RunPodExecutor(RemoteExecutor):
         # time from the returned identity through the cleanup request. Neither
         # boundary independently verifies the provider's actual billing window.
         pod_started_at = time.time()
-        pod_started_monotonic = time.monotonic()
+        pod_started_clock = _billing_now()
         cost_per_hr = pod.get("costPerHr")
         try:
             cost_per_hr = float(cost_per_hr) if cost_per_hr is not None else None
@@ -1603,7 +1777,7 @@ class RunPodExecutor(RemoteExecutor):
             cost_per_hr = None
         self._last_cost_per_hr = cost_per_hr
         if self._run_deadline is None:
-            self._run_deadline = pod_started_monotonic + spec.timeout_s
+            self._run_deadline = pod_started_clock + spec.timeout_s
         run_deadline = self._run_deadline
         try:
             self._write_lease(pod_id, job_id, spec, pod_started_at)
@@ -1643,7 +1817,7 @@ class RunPodExecutor(RemoteExecutor):
                     spec,
                     spent_usd=spent_usd,
                     cost_per_hr=cost_per_hr,
-                    start=pod_started_monotonic,
+                    start=pod_started_clock,
                 )
                 if refusal is not None:
                     raise RemoteExecutionError(
@@ -1658,7 +1832,7 @@ class RunPodExecutor(RemoteExecutor):
             try:
                 host, port = self._wait_for_ssh_endpoint(api, pod_id, run_deadline)
                 logs.append(f"pod reachable at {host}:{port}")
-                remaining_s = run_deadline - time.monotonic()
+                remaining_s = run_deadline - _billing_now()
                 if remaining_s <= 0:
                     raise RemoteExecutionError(
                         f"pod {pod_id} became reachable after the run's "
@@ -1777,7 +1951,7 @@ class RunPodExecutor(RemoteExecutor):
             finally:
                 # This is the observed interval, not proof that billing ended.
                 # Retain it even when cleanup evidence cannot be persisted.
-                self._last_duration_s = time.monotonic() - pod_started_monotonic
+                self._last_duration_s = _billing_now() - pod_started_clock
                 self._last_cost_usd = estimate_cost_usd(
                     cost_per_hr, self._last_duration_s
                 )

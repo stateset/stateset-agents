@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import os
 import threading
 from types import SimpleNamespace
 
@@ -155,7 +156,9 @@ def test_provider_capability_documents_readonly_effect_and_preserves_no_remote_s
     with SyncASGIClient(app) as client:
         result = client.get("/finetune/capabilities").json()["result"]
     assert result["effects"]["provider_get"] == "reads_retained_provider_submission"
-    assert result["remote_stop_supported"] is result["launch_supported"] is False
+    assert result["launch_supported"] is False
+    assert result["remote_stop_supported"] is (os.name != "nt")
+    assert result["remote_stop_providers"] == (["runpod"] if os.name != "nt" else [])
 
 
 def test_provider_response_redacts_known_credentials_and_omits_unrelated_record_fields(

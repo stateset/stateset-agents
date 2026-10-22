@@ -21,6 +21,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/unit/test_episode_scoring_paths.py` checks that training, periodic and
   post-training evaluation and the distributed trainer give an episode the same
   reward, wherever the reward is attached.
+- Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
+  (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
+  saved and the run's worker is signalled only after its process identity is
+  verified; the worker terminates its pod and records the run as `cancelled`.
+  The API capability reports `remote_stop_supported` and
+  `remote_stop_providers`. Other remote providers are still refused.
 
 ### Deprecated
 
@@ -113,6 +119,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BackgroundTask`; preparing and launching a recovery run still run on
   non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
   longer starts raw threads or uses result queues.
+- The evaluation panel's background work runs through the shared
+  `BackgroundTask` (owned submissions on non-daemon threads) instead of its
+  own thread and result queue.
+- The studio's run details, metrics, run comparison, launch review and
+  resource summaries are pure renderers in `stateset_agents.tui_views`
+  (testable without a `Studio`); rendered frames are unchanged.
 
 ### Fixed
 
@@ -341,7 +353,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review and saving a stop request now run in the background (single-flight,
   with progress shown in the status line). Exiting the studio waits for an
   authorized launch or stop submission to finish.
-- `stateset-agents remote runpod-orphans --terminate` (and
+- `stateset-agents runpod-orphans --terminate` (and
   `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
   at the first failure. A pod that is already gone (HTTP 404) counts as
   cleaned up, pod deletion retries 429/5xx with backoff, and failures are
@@ -391,6 +403,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training runs, a success whose `result.json` still binds the reviewed plan
   is final, and the late error is kept as `teardown_error` /
   `teardown_exit_code` in the evaluation status.
+- On macOS (and on Windows when `psutil` is installed) studio owner checks
+  compare process creation-time tokens, as Linux does with `/proc` start
+  ticks, so a reused PID no longer keeps a dead supervisor or worker looking
+  alive. Records written without a token keep presence-only checks.
+- `stateset-agents runpod-orphans --terminate` no longer terminates the pods
+  of jobs that are still running (which made them rent a replacement and
+  doubled billing). Cleanup leases now record the submitting process (PID,
+  start-time token, host); `--terminate` ends only pods whose process has
+  provably exited, the listing shows each owner's state, and `--force`
+  reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
+  live owners and `cleanup_orphans()` gains `force=`.
+- RunPod run deadlines and spend accounting keep counting while the host is
+  suspended. They used `CLOCK_MONOTONIC`, which pauses during a laptop sleep,
+  so a pod could bill past the cap, a replacement could be rented on wake,
+  and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
+  monotonic time is extended by wall-clock time it missed, never decreasing
+  when the wall clock steps back.
+- A RunPod pod no longer bills indefinitely when its submitting host crashes
+  while the pod is still provisioning. Each RunPod submission, and the studio
+  at start-up when `RUNPOD_API_KEY` is set, first terminates leased pods whose
+  submitting process on this host has provably exited. An opt-in boot-time
+  watchdog (`STATESET_RUNPOD_BOOT_WATCHDOG=1` or
+  `RunPodExecutor(boot_watchdog=True)`, off by default and awaiting live-pod
+  verification) also arms the run deadline in the start command of RunPod's
+  `runpod/pytorch` images, using the pod-scoped key RunPod injects; no user key
+  is copied. The SSH-armed watchdog remains the default pod-side backstop.
+- CLI hints name real commands: the worker's orphan hint pointed to a
+  nonexistent `stateset-agents remote runpod-orphans` (the command is the
+  top-level `runpod-orphans`), and a `--curated` help text named the
+  `make grade-batch` target as a CLI command. A test now resolves every
+  backtick-quoted `stateset-agents ...` hint in the package against the CLI.
+- On Windows, studio supervisors and workers are now really detached:
+  `start_new_session` is ignored there, so closing the launching console
+  killed the supervisor and worker (orphaning a RunPod pod). Launches use one
+  helper, `detached_process_options()`, which gives Windows children their
+  own process group and hidden console. A supervisor interrupted by Ctrl+C or
+  `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
+  failure instead of leaving no outcome.
 
 ### Security
 
