@@ -12,6 +12,12 @@ import yaml
 ROOT = Path(__file__).resolve().parents[2]
 K8S_DIR = ROOT / "deployment" / "kubernetes"
 CHART = ROOT / "deployment" / "helm" / "stateset-agents"
+
+# helm can be slow to start on loaded Windows runners (first-exec scanning).
+# A bounded subprocess turns a stuck helm into an ordinary test failure; without
+# it pytest-timeout kills the xdist worker and aborts the whole run.
+HELM_TIMEOUT_SECONDS = 120
+pytestmark = pytest.mark.timeout(HELM_TIMEOUT_SECONDS + 30)
 VLLM_MANIFESTS = sorted(K8S_DIR.glob("*vllm*.yaml"))
 GATEWAY_LABELS = {"app": "stateset-agents-api"}
 
@@ -83,6 +89,7 @@ def _helm_template(*args: str) -> list[dict]:
         capture_output=True,
         text=True,
         check=True,
+        timeout=HELM_TIMEOUT_SECONDS,
     )
     return _docs(result.stdout)
 

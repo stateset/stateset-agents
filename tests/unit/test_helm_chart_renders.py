@@ -19,6 +19,12 @@ CHART_PATH = REPO_ROOT / "deployment" / "helm" / "stateset-agents"
 
 VALUES_FILES = sorted(CHART_PATH.glob("values-*.yaml"))
 
+# helm can be slow to start on loaded Windows runners (first-exec scanning).
+# A bounded subprocess turns a stuck helm into an ordinary test failure; without
+# it pytest-timeout kills the xdist worker and aborts the whole run.
+HELM_TIMEOUT_SECONDS = 120
+pytestmark = pytest.mark.timeout(HELM_TIMEOUT_SECONDS + 30)
+
 
 @pytest.fixture(scope="module")
 def helm_binary() -> str:
@@ -35,6 +41,7 @@ def test_chart_lints_with_defaults(helm_binary):
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=HELM_TIMEOUT_SECONDS,
     )
     assert (
         result.returncode == 0
@@ -50,6 +57,7 @@ def test_values_file_lints_cleanly(helm_binary, values_file):
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=HELM_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, (
         f"helm lint failed for {values_file.name}:\n"
@@ -73,6 +81,7 @@ def test_values_file_template_renders(helm_binary, values_file):
         text=True,
         encoding="utf-8",
         errors="replace",
+        timeout=HELM_TIMEOUT_SECONDS,
     )
     assert result.returncode == 0, (
         f"helm template failed for {values_file.name}:\n"
