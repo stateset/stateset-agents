@@ -897,7 +897,7 @@ if __name__ == "__main__":
             "example_operation", component="test"
         ) as span:
             await asyncio.sleep(0.1)
-            if span:
+            if span and monitoring.tracer is not None:
                 monitoring.tracer.add_span_log(
                     span.span_id, "info", "Operation completed"
                 )
