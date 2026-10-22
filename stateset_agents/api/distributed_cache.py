@@ -73,6 +73,10 @@ class CacheConfig:
     allow_pickle: bool = False
     compression_enabled: bool = False
     compression_threshold: int = 1024  # bytes
+    #: Upper bound on a decompressed cache payload. Decompression stops (and
+    #: the entry is rejected) past this size, so a small compressed value in a
+    #: shared or compromised Redis cannot expand into an OOM ("zip bomb").
+    max_decompressed_bytes: int = 64 * 1024 * 1024
     health_check_interval: int = 30
     retry_attempts: int = 3
     retry_delay: float = 0.1
@@ -83,6 +87,8 @@ class CacheConfig:
     def __post_init__(self) -> None:
         if self.redis_connect_timeout_seconds <= 0:
             raise ValueError("redis_connect_timeout_seconds must be positive")
+        if self.max_decompressed_bytes <= 0:
+            raise ValueError("max_decompressed_bytes must be positive")
         serializer = str(self.serializer).lower()
         if serializer not in ("json", "pickle"):
             logger.warning(
@@ -140,7 +146,33 @@ class CacheConfig:
             redis_connect_timeout_seconds=float(
                 os.getenv("CACHE_REDIS_CONNECT_TIMEOUT", "2.0")
             ),
+            max_decompressed_bytes=int(
+                os.getenv("CACHE_MAX_DECOMPRESSED_BYTES", str(64 * 1024 * 1024))
+            ),
         )
+
+
+def _bounded_decompress(payload: bytes, max_bytes: int) -> bytes:
+    """Inflate a zlib ``payload``, refusing output larger than ``max_bytes``.
+
+    Raises:
+        ValueError: If the payload is corrupt, truncated, or would expand
+            beyond ``max_bytes``.
+    """
+    import zlib
+
+    decompressor = zlib.decompressobj()
+    try:
+        output = decompressor.decompress(payload, max_bytes + 1)
+    except zlib.error as exc:
+        raise ValueError(f"corrupt compressed cache payload: {exc}") from exc
+    if len(output) > max_bytes or decompressor.unconsumed_tail:
+        raise ValueError(
+            f"compressed cache payload exceeds {max_bytes} bytes when expanded"
+        )
+    if not decompressor.eof:
+        raise ValueError("truncated compressed cache payload")
+    return output
 
 
 # ============================================================================
@@ -740,9 +772,7 @@ class RedisCache(CacheInterface):
     def _deserialize(self, data: bytes) -> Any:
         """Deserialize value from storage."""
         if data.startswith(b"ZLIB:"):
-            import zlib
-
-            data = zlib.decompress(data[5:])
+            data = _bounded_decompress(data[5:], self.config.max_decompressed_bytes)
 
         if self.config.serializer == "pickle":
             if not self.config.allow_pickle:
