@@ -112,10 +112,9 @@ after a usable pod ID returns. Training cleanup runs in a `finally` (SIGTERM
 and SIGHUP also reach it), and three backstops cover a caller that is killed
 outright or loses power:
 
-- With RunPod's `runpod/pytorch` images, the pod's start command arms an in-pod
-  deadline before sshd starts: at the run deadline the pod deletes itself using
-  the pod-scoped `RUNPOD_API_KEY` RunPod injects (no user key is copied to the
-  pod). Other images arm the same watchdog over SSH once the pod is reachable.
+- Once the pod is reachable over SSH, an in-pod watchdog is armed: at the run
+  deadline the pod deletes itself using the pod-scoped `RUNPOD_API_KEY` RunPod
+  injects (no user key is copied to the pod).
 - The studio supervisor terminates pods its exited worker never cleaned up.
 - The next RunPod submission, and the studio at start-up (with
   `RUNPOD_API_KEY` set), terminate leased pods whose submitting process on this
@@ -124,6 +123,18 @@ outright or loses power:
 Check the RunPod console after a crash anyway; an acknowledged deletion does
 not independently prove billing stopped. (`serve-remote` separately arms its
 own in-pod watchdog.)
+
+**Optional boot-time watchdog (awaiting live-pod verification).** A caller
+that dies while the pod is still provisioning, before SSH is reachable, is
+covered by default only by the lease sweep above. Setting
+`STATESET_RUNPOD_BOOT_WATCHDOG=1` (or `RunPodExecutor(boot_watchdog=True)`)
+also arms the deadline in the pod's start command for RunPod's
+`runpod/pytorch` images, before sshd starts, then hands over to the image's
+`/start.sh`. It replaces how every such pod boots and has not yet been
+verified on a live pod: if `/start.sh` is not the right hand-over for your
+image, sshd never starts and each run fails (the pod is then terminated).
+Leave it off unless you have confirmed it on your image. Custom images never
+use it.
 
 Training now writes a local cleanup lease immediately after each pod is
 created, recording the submitting process. After a caller crash, inspect those

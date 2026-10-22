@@ -391,12 +391,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   monotonic time is extended by wall-clock time it missed, never decreasing
   when the wall clock steps back.
 - A RunPod pod no longer bills indefinitely when its submitting host crashes
-  while the pod is still provisioning. For RunPod's `runpod/pytorch` images,
-  the pod's start command arms the run deadline before sshd starts (using the
-  pod-scoped key RunPod injects; no user key is copied). Each RunPod
-  submission, and the studio at start-up when `RUNPOD_API_KEY` is set, first
-  terminates leased pods whose submitting process on this host has provably
-  exited.
+  while the pod is still provisioning. Each RunPod submission, and the studio
+  at start-up when `RUNPOD_API_KEY` is set, first terminates leased pods whose
+  submitting process on this host has provably exited. An opt-in boot-time
+  watchdog (`STATESET_RUNPOD_BOOT_WATCHDOG=1` or
+  `RunPodExecutor(boot_watchdog=True)`, off by default and awaiting live-pod
+  verification) also arms the run deadline in the start command of RunPod's
+  `runpod/pytorch` images, using the pod-scoped key RunPod injects; no user key
+  is copied. The SSH-armed watchdog remains the default pod-side backstop.
 - CLI hints name real commands: the worker's orphan hint pointed to a
   nonexistent `stateset-agents remote runpod-orphans` (the command is the
   top-level `runpod-orphans`), and a `--curated` help text named the

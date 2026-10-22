@@ -235,8 +235,50 @@ def test_executor_arms_the_pod_deadline_at_the_run_deadline(
     assert executor.status(handle).value == "succeeded"
 
 
+def _submit_default_image(tmp_path, **options):
+    from stateset_agents.remote.job import RemoteJobSpec
+    from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
+
+    data = tmp_path / "train.jsonl"
+    data.write_text('{"messages":[]}\n')
+    api = FakePodApi(ready_after=1)
+    RunPodExecutor(
+        api=api,
+        ssh=FakeSsh(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+        **options,
+    ).submit(RemoteJobSpec(dataset=data, base_model="m", output_dir=tmp_path / "out"))
+    return api.created[0]
+
+
+def test_boot_watchdog_is_off_by_default(tmp_path, monkeypatch):
+    """The start-command wrapper awaits live-pod verification, so pods boot as-is."""
+    monkeypatch.delenv("STATESET_RUNPOD_BOOT_WATCHDOG", raising=False)
+    created = _submit_default_image(tmp_path)
+    assert "docker_start_cmd" not in created
+    assert "docker_entrypoint" not in created
+
+
+@pytest.mark.parametrize("value", ["1", "true", "YES"])
+def test_boot_watchdog_can_be_enabled_from_the_environment(
+    tmp_path, monkeypatch, value
+):
+    monkeypatch.setenv("STATESET_RUNPOD_BOOT_WATCHDOG", value)
+    assert "docker_start_cmd" in _submit_default_image(tmp_path)
+
+
+def test_explicit_option_overrides_the_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("STATESET_RUNPOD_BOOT_WATCHDOG", "1")
+    assert "docker_start_cmd" not in _submit_default_image(
+        tmp_path, boot_watchdog=False
+    )
+
+
 def test_deadline_is_armed_at_pod_creation_for_runpod_images(tmp_path):
-    """A host crash during provisioning must not leave the pod billing forever."""
+    """Opted in, a host crash during provisioning cannot leave the pod billing."""
     import shlex
 
     from stateset_agents.remote import runpod
@@ -253,6 +295,7 @@ def test_deadline_is_armed_at_pod_creation_for_runpod_images(tmp_path):
         lease_dir=tmp_path / "leases",
         ledger_path=tmp_path / "ledger.jsonl",
         poll_interval_s=0,
+        boot_watchdog=True,
     )
     before = time.time()
     executor.submit(
@@ -276,7 +319,7 @@ def test_deadline_is_armed_at_pod_creation_for_runpod_images(tmp_path):
     assert set(created["env"]) == {"PUBLIC_KEY", "SSH_PUBLIC_KEY"}
 
 
-def test_custom_images_keep_their_own_start_command(tmp_path):
+def test_custom_images_keep_their_own_start_command_even_when_opted_in(tmp_path):
     from stateset_agents.remote.job import RemoteJobSpec
     from tests.unit.test_remote_runpod_executor import FakePodApi, FakeSsh
 
@@ -288,6 +331,7 @@ def test_custom_images_keep_their_own_start_command(tmp_path):
         ssh=FakeSsh(),
         public_key="ssh-rsa TEST",
         image="example/custom:1",
+        boot_watchdog=True,
         lease_dir=tmp_path / "leases",
         ledger_path=tmp_path / "ledger.jsonl",
         poll_interval_s=0,

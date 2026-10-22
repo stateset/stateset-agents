@@ -133,6 +133,10 @@ for _ in range(5):
 _API_ROOT = "https://rest.runpod.io/v1"
 #: RunPod's own PyTorch images start sshd (from PUBLIC_KEY) via /start.sh.
 _START_SCRIPT_IMAGES = ("runpod/pytorch:",)
+#: Opt-in for the boot-time deadline wrapper (see ``boot_watchdog``). It
+#: replaces the image's start command, so it stays off until a live pod has
+#: verified that ``/start.sh`` is the right hand-over for the image.
+BOOT_WATCHDOG_ENV = "STATESET_RUNPOD_BOOT_WATCHDOG"
 
 
 def _deadline_start_command(deadline_epoch: float) -> str:
@@ -908,9 +912,22 @@ class RunPodExecutor(RemoteExecutor):
         allow_environment_wheel: bool = True,
         reviewed_wheel_sha256: str | None = None,
         reviewed_wheel_bytes: int | None = None,
+        boot_watchdog: bool | None = None,
     ) -> None:
         self._api = api
         self._ssh = ssh
+        #: Arm the pod-side deadline in the pod's start command (official
+        #: ``runpod/pytorch`` images only), covering a submitter that dies
+        #: before SSH is reachable. Off by default: it changes how every pod
+        #: boots and awaits live-pod verification. ``None`` reads
+        #: STATESET_RUNPOD_BOOT_WATCHDOG (``1``/``true``/``yes`` enables it).
+        if boot_watchdog is None:
+            boot_watchdog = os.environ.get(BOOT_WATCHDOG_ENV, "").strip().lower() in {
+                "1",
+                "true",
+                "yes",
+            }
+        self.boot_watchdog = bool(boot_watchdog)
         self._public_key = public_key
         #: Install this locally built wheel instead of pulling the pinned
         #: version from PyPI. This is how an *unreleased* change gets verified
@@ -1706,9 +1723,11 @@ class RunPodExecutor(RemoteExecutor):
         """
         self._observe_pod(job_id, "allocation_intent", attempt=attempt)
         start: dict[str, Any] = {}
-        if self.image.startswith(_START_SCRIPT_IMAGES):
-            # The pod-side backstop is armed at creation: no local process has
-            # to survive provisioning for the pod to stop at the run deadline.
+        if self.boot_watchdog and self.image.startswith(_START_SCRIPT_IMAGES):
+            # Opt-in: the pod-side backstop is armed at creation, so no local
+            # process has to survive provisioning for the pod to stop at the
+            # run deadline. By default the SSH-armed watchdog and the
+            # dead-owner lease sweep are the backstops.
             remaining = float(spec.timeout_s)
             if self._run_deadline is not None:
                 remaining = max(0.0, self._run_deadline - _billing_now())
