@@ -966,11 +966,7 @@ class VAPOTrainer(TrainingRuntime):
             )
 
             # Normalize advantages over the actions that are actually trained
-            policy_adv_masked = policy_advantages[action_mask > 0]
-            if len(policy_adv_masked) > 1:
-                policy_advantages = (policy_advantages - policy_adv_masked.mean()) / (
-                    policy_adv_masked.std() + 1e-8
-                )
+            policy_advantages = rl_losses.whiten(policy_advantages, action_mask)
 
             rollouts.append(
                 {

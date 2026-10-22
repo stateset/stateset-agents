@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -20,7 +21,11 @@ def _mypy_base_cmd() -> list[str]:
     serialization. Running without incremental mode and with an explicit
     throwaway cache dir keeps the type gate deterministic.
     """
+    # Run the interpreter's own mypy: a bare ``mypy`` resolves through PATH
+    # and can pick up a different version and site-packages (different stubs).
     return [
+        sys.executable,
+        "-m",
         "mypy",
         "--config-file",
         "mypy.ini",

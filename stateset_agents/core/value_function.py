@@ -312,8 +312,10 @@ class ValueFunction:
         unnormalized_advantages = advantages.clone()
 
         # Normalize advantages if requested
-        if self.normalize_advantages and len(advantages) > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        if self.normalize_advantages:
+            from ..training.rl_losses import whiten
+
+            advantages = whiten(advantages)
 
         # Compute returns using unnormalized advantages: R_t = A_t + V(s_t)
         returns = unnormalized_advantages + values
@@ -354,10 +356,10 @@ class ValueFunction:
         advantages = rewards - baseline
 
         # Normalize
-        if self.normalize_advantages and len(advantages) > 1:
-            std = advantages.std()
-            if std > 0:
-                advantages = (advantages - advantages.mean()) / (std + 1e-8)
+        if self.normalize_advantages:
+            from ..training.rl_losses import whiten
+
+            advantages = whiten(advantages)
 
         return advantages
 

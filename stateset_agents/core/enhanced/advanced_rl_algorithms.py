@@ -31,6 +31,7 @@ import torch.nn.functional as F
 from numpy.typing import NDArray
 from torch.distributions import Categorical
 
+from ...training.rl_losses import whiten
 from ..environment import Environment
 from ..trajectory import ConversationTurn, MultiTurnTrajectory
 from .enhanced_agent import EnhancedMultiTurnAgent
@@ -364,7 +365,7 @@ class PPOTrainer:
         returns = advantages + values
 
         # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = whiten(advantages)
 
         # PPO training loop
         for _ in range(self.config.ppo_epochs):
@@ -692,7 +693,7 @@ class A2CTrainer:
         advantages = returns - values
 
         # Normalize advantages
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = whiten(advantages)
 
         # Get current policy outputs
         logits, current_values = self.actor_critic(states)
