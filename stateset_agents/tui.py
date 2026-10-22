@@ -1514,7 +1514,13 @@ class Studio:
                 "Type evidence path | Enter verify/import | Ctrl+U clear | Esc back"
             ]
         elif self.overlay == "stop":
-            keys = ["Enter requests local stop | Esc keeps training"]
+            keys = [
+                (
+                    "Enter signals the RunPod worker to stop | Esc keeps training"
+                    if self._stop_is_remote()
+                    else "Enter requests local stop | Esc keeps training"
+                )
+            ]
         elif self.overlay == "recovery":
             keys = [
                 "Up/Down select | Enter review | z recheck | PgUp/Dn scroll | Esc back"

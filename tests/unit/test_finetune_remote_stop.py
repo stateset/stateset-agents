@@ -134,3 +134,19 @@ def test_real_worker_is_stopped_and_terminates_its_pod(make_run, tmp_path):
     assert child.returncode == 128 + signal.SIGTERM
     assert (run / "pod-terminated").read_text() == "yes"
     assert workspace.run_status(run)["status"] == "cancelled"
+
+
+def test_tui_reviews_a_runpod_stop_with_runpod_wording(make_run, monkeypatch):
+    from stateset_agents.tui import Studio
+
+    run, _ = make_run()
+    _running(run, 4242, "worker")
+    studio = Studio(run.parent)
+    studio.tab = "runs"
+    studio.refresh()
+    studio.handle("k")
+    assert studio.overlay == "stop"
+    frame = "\n".join(studio.lines(110, 32))
+    assert "REVIEW RUNPOD STOP REQUEST" in frame
+    assert "Enter signals the RunPod worker to stop" in frame
+    assert "requests local stop" not in frame
