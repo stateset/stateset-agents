@@ -328,9 +328,13 @@ def _stop_worker_group(process: subprocess.Popen[bytes], *, force: bool) -> None
     immediately, falling back to the direct child if taskkill is unavailable.
     """
     if os.name == "nt":
+        # Absolute path: a taskkill.exe earlier on PATH must not be run instead.
+        taskkill = os.path.join(
+            os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
+        )
         try:
             subprocess.run(
-                ["taskkill", "/T", "/F", "/PID", str(process.pid)],
+                [taskkill, "/T", "/F", "/PID", str(process.pid)],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
