@@ -14,17 +14,20 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any, TypeGuard
 
+from rich.cells import cell_len, set_cell_size
+
 from stateset_agents.finetune_inspection import metric_history, metric_sparkline
 from stateset_agents.finetune_provider_submission import inspect_submission
 from stateset_agents.finetune_workspace import (
     BACKENDS,
+    PROVIDERS,
     RunPlan,
     failure_info,
     queue_executable,
     read_json,
     redact_finetune_secrets,
 )
-from stateset_agents.tui_text import _safe
+from stateset_agents.tui_text import _clip, _safe, _wrap
 
 
 def _teardown_note(state: dict[str, Any]) -> str:
@@ -535,4 +538,166 @@ def review_lines(plan: RunPlan | None, draft: dict[str, Any]) -> list[str]:
         ),
         "",
         "Closing this terminal will not stop a launched job.",
+    ]
+
+
+def backend_lines(index: int) -> list[str]:
+    """The backend picker with the selected backend's setup and billing."""
+    provider = PROVIDERS[index]
+    info = BACKENDS[provider]
+    credentials = {
+        "local": "Local CUDA and stateset-agents[training].",
+        "runpod": "RUNPOD_API_KEY from the launching environment.",
+        "modal": "stateset-agents[modal]; configured Modal profile or environment credentials.",
+        "river": "Python 3.12+, stateset-agents[river], tokenizer dependencies and RIVER_API_KEY.",
+    }
+    return [
+        "TRAINING BACKENDS / no connection or allocation during selection",
+        "",
+        *[
+            (" > " if position == index else "   ")
+            + str(BACKENDS[name]["label"])
+            + " / "
+            + name
+            for position, name in enumerate(PROVIDERS)
+        ],
+        "",
+        "Selected: " + str(info["label"]),
+        "Studio methods: " + ", ".join(info["methods"]),
+        "Result: " + str(info["result_kind"]),
+        "Billing: " + str(info["cost"]),
+        "Setup: " + credentials[provider],
+        "",
+        "Remote native RL is not remapped to SFT. River RL uses the dedicated River workflow.",
+        "Selection preserves training settings; incompatible settings must be fixed before launch.",
+    ]
+
+
+def model_lines(
+    choices: list[tuple[str, str]],
+    index: int,
+    search: str,
+    width: int,
+    available: int,
+) -> tuple[list[str], int]:
+    """The model catalog around the selection; returns rows and the clamped index."""
+    header = [
+        "MODEL CATALOG / type to search",
+        "Search: " + search,
+        f"{len(choices)} matches | Maturity is not workflow certification.",
+    ]
+    if not choices:
+        return (
+            _wrap(
+                [
+                    *header,
+                    "",
+                    "No matches. Esc returns; Enter on Model lets you type a custom ID.",
+                ],
+                width,
+            ),
+            index,
+        )
+    index = min(index, len(choices) - 1)
+    name, stage = choices[index]
+    detail = _wrap(["Selected: " + name, "Catalog stage: " + stage], width)
+    count = max(1, available - len(header) - len(detail) - 1)
+    start = max(0, min(index - count // 2, len(choices) - count))
+    rows = []
+    for position in range(start, min(len(choices), start + count)):
+        model, maturity = choices[position]
+        badge = " [" + maturity + "]"
+        cells = max(1, width - cell_len(badge) - 4)
+        rows.append(
+            (" > " if position == index else "   ")
+            + set_cell_size(_clip(model, cells), cells)
+            + badge
+        )
+    rows += [""] * max(0, count - len(rows))
+    return [*header, *rows, "", *detail], index
+
+
+def validation_lines(
+    issues: list[Any],
+    index: int,
+    stale: bool,
+    width: int,
+    available: int,
+    labels: dict[str, str] | None = None,
+) -> tuple[list[str], int]:
+    """Configuration issues around the selection; returns rows and the clamped index."""
+    labels = labels or {}
+    heading = _wrap(
+        [
+            "SETTINGS CHECK / configuration only",
+            f"Configuration issues: {len(issues)} | Enter jumps to a setting",
+            "No dataset contents, hardware or provider access checked.",
+        ],
+        width,
+    )
+    if stale:
+        heading += _wrap(
+            ["[WARNING] Settings changed; v refreshes this report."], width
+        )
+    if not issues:
+        return (
+            [
+                *heading,
+                "",
+                "Configuration settings passed.",
+                *_wrap(
+                    [
+                        "Press p to validate the dataset, i for local readiness, then r for a separate launch review. Nothing has been prepared or launched."
+                    ],
+                    width,
+                ),
+            ],
+            index,
+        )
+    index = min(index, len(issues) - 1)
+    issue = issues[index]
+    detail = _wrap(
+        [
+            "",
+            "Selected: " + labels.get(issue.field, "Config file"),
+            issue.message,
+            "Enter opens this field, including settings hidden by the backend.",
+        ],
+        width,
+    )
+    count = max(1, available - len(heading) - len(detail) - 1)
+    start = max(0, min(index - count // 2, len(issues) - count))
+    rows = [
+        (" > " if position == index else "   ")
+        + labels.get(item.field, "Config file")
+        + " / "
+        + item.code
+        for position, item in enumerate(issues)
+        if start <= position < start + count
+    ]
+    return [*heading, "", *rows, *detail], index
+
+
+def stop_dialog_lines(run: Path | None, digest: str, *, remote: bool) -> list[str]:
+    """The stop review: a cooperative local stop, or a signalled RunPod stop."""
+    if remote:
+        return [
+            "REVIEW RUNPOD STOP REQUEST",
+            "Run: " + (run.name if run else "none"),
+            "Plan SHA256: " + digest,
+            "",
+            "Enter saves a stop receipt and signals the verified worker; Esc leaves the run unchanged.",
+            "The worker terminates its pod and records the run as cancelled. Training progress on the pod is lost.",
+            "An acknowledged deletion does not prove billing ended; check the RunPod console if in doubt.",
+        ]
+    return [
+        "REVIEW LOCAL STOP REQUEST",
+        "Run: " + (run.name if run else "none"),
+        "Plan SHA256: " + digest,
+        "",
+        "Enter requests a cooperative stop; Esc leaves the run unchanged.",
+        "An active update finishes first. Native RL saves a checkpoint; SFT requests save/stop at its next step boundary.",
+        "Queued jobs remain in Buildr and exit before loading a model when admitted.",
+        "This does not cancel queue jobs, kill processes or control remote resources.",
+        "After the worker exits, z inspects published local recovery checkpoints.",
     ]

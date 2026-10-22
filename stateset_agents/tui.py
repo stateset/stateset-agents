@@ -66,12 +66,16 @@ from stateset_agents.tui_text import _clip, _safe, _wrap
 from stateset_agents.tui_views import (
     _run_config,
     _teardown_note,
+    backend_lines,
     comparison_lines,
     metric_lines,
+    model_lines,
     progress_lines,
     resource_lines,
     review_lines,
     run_details_lines,
+    stop_dialog_lines,
+    validation_lines,
 )
 
 MIN_TERMINAL_COLUMNS = 32
@@ -1706,38 +1710,10 @@ class Studio:
         return [*heading, "", *body, "", *detail]
 
     def _model_lines(self, width: int, available: int) -> list[str]:
-        choices = self.filtered_models()
-        header = [
-            "MODEL CATALOG / type to search",
-            "Search: " + self.search,
-            f"{len(choices)} matches | Maturity is not workflow certification.",
-        ]
-        if not choices:
-            return _wrap(
-                [
-                    *header,
-                    "",
-                    "No matches. Esc returns; Enter on Model lets you type a custom ID.",
-                ],
-                width,
-            )
-        self.model_index = min(self.model_index, len(choices) - 1)
-        name, stage = choices[self.model_index]
-        detail = _wrap(["Selected: " + name, "Catalog stage: " + stage], width)
-        count = max(1, available - len(header) - len(detail) - 1)
-        start = max(0, min(self.model_index - count // 2, len(choices) - count))
-        rows = []
-        for index in range(start, min(len(choices), start + count)):
-            model, maturity = choices[index]
-            badge = " [" + maturity + "]"
-            cells = max(1, width - cell_len(badge) - 4)
-            rows.append(
-                (" > " if index == self.model_index else "   ")
-                + set_cell_size(_clip(model, cells), cells)
-                + badge
-            )
-        rows += [""] * max(0, count - len(rows))
-        return [*header, *rows, "", *detail]
+        rows, self.model_index = model_lines(
+            self.filtered_models(), self.model_index, self.search, width, available
+        )
+        return rows
 
     def _set_backend(self, provider: str) -> None:
         self.values["provider"] = provider
@@ -1755,90 +1731,18 @@ class Studio:
             self.message += " Choose provider_billed cost policy to acknowledge no enforced dollar ceiling."
 
     def _backend_lines(self) -> list[str]:
-        provider = PROVIDERS[self.backend_index]
-        info = BACKENDS[provider]
-        credentials = {
-            "local": "Local CUDA and stateset-agents[training].",
-            "runpod": "RUNPOD_API_KEY from the launching environment.",
-            "modal": "stateset-agents[modal]; configured Modal profile or environment credentials.",
-            "river": "Python 3.12+, stateset-agents[river], tokenizer dependencies and RIVER_API_KEY.",
-        }
-        return [
-            "TRAINING BACKENDS / no connection or allocation during selection",
-            "",
-            *[
-                (" > " if index == self.backend_index else "   ")
-                + str(BACKENDS[name]["label"])
-                + " / "
-                + name
-                for index, name in enumerate(PROVIDERS)
-            ],
-            "",
-            "Selected: " + str(info["label"]),
-            "Studio methods: " + ", ".join(info["methods"]),
-            "Result: " + str(info["result_kind"]),
-            "Billing: " + str(info["cost"]),
-            "Setup: " + credentials[provider],
-            "",
-            "Remote native RL is not remapped to SFT. River RL uses the dedicated River workflow.",
-            "Selection preserves training settings; incompatible settings must be fixed before launch.",
-        ]
+        return backend_lines(self.backend_index)
 
     def _validation_lines(self, width: int, available: int) -> list[str]:
-        heading = _wrap(
-            [
-                "SETTINGS CHECK / configuration only",
-                f"Configuration issues: {len(self.validation_issues)} | Enter jumps to a setting",
-                "No dataset contents, hardware or provider access checked.",
-            ],
+        rows, self.validation_index = validation_lines(
+            self.validation_issues,
+            self.validation_index,
+            self.validation_signature != self._settings_signature(),
             width,
+            available,
+            {field.name: field.label for field in FIELDS},
         )
-        if self.validation_signature != self._settings_signature():
-            heading += _wrap(
-                ["[WARNING] Settings changed; v refreshes this report."], width
-            )
-        if not self.validation_issues:
-            return [
-                *heading,
-                "",
-                "Configuration settings passed.",
-                *_wrap(
-                    [
-                        "Press p to validate the dataset, i for local readiness, then r for a separate launch review. Nothing has been prepared or launched."
-                    ],
-                    width,
-                ),
-            ]
-        self.validation_index = min(
-            self.validation_index, len(self.validation_issues) - 1
-        )
-        labels = {field.name: field.label for field in FIELDS}
-        issue = self.validation_issues[self.validation_index]
-        detail = _wrap(
-            [
-                "",
-                "Selected: " + labels.get(issue.field, "Config file"),
-                issue.message,
-                "Enter opens this field, including settings hidden by the backend.",
-            ],
-            width,
-        )
-        count = max(1, available - len(heading) - len(detail) - 1)
-        start = max(
-            0,
-            min(
-                self.validation_index - count // 2, len(self.validation_issues) - count
-            ),
-        )
-        rows = [
-            (" > " if index == self.validation_index else "   ")
-            + labels.get(item.field, "Config file")
-            + " / "
-            + item.code
-            for index, item in enumerate(self.validation_issues)
-            if start <= index < start + count
-        ]
-        return [*heading, "", *rows, *detail]
+        return rows
 
     def _review_prepared(self) -> None:
         """Review the selected retained plan without changing the draft or cloning."""
@@ -2087,32 +1991,11 @@ class Studio:
                 ],
                 width,
             )
-        elif self.overlay == "stop" and self._stop_is_remote():
-            body = _wrap(
-                [
-                    "REVIEW RUNPOD STOP REQUEST",
-                    "Run: " + (self.stop_run.name if self.stop_run else "none"),
-                    "Plan SHA256: " + self.stop_digest,
-                    "",
-                    "Enter saves a stop receipt and signals the verified worker; Esc leaves the run unchanged.",
-                    "The worker terminates its pod and records the run as cancelled. Training progress on the pod is lost.",
-                    "An acknowledged deletion does not prove billing ended; check the RunPod console if in doubt.",
-                ],
-                width,
-            )
         elif self.overlay == "stop":
             body = _wrap(
-                [
-                    "REVIEW LOCAL STOP REQUEST",
-                    "Run: " + (self.stop_run.name if self.stop_run else "none"),
-                    "Plan SHA256: " + self.stop_digest,
-                    "",
-                    "Enter requests a cooperative stop; Esc leaves the run unchanged.",
-                    "An active update finishes first. Native RL saves a checkpoint; SFT requests save/stop at its next step boundary.",
-                    "Queued jobs remain in Buildr and exit before loading a model when admitted.",
-                    "This does not cancel queue jobs, kill processes or control remote resources.",
-                    "After the worker exits, z inspects published local recovery checkpoints.",
-                ],
+                stop_dialog_lines(
+                    self.stop_run, self.stop_digest, remote=self._stop_is_remote()
+                ),
                 width,
             )
         elif self.overlay == "readiness":
