@@ -12,7 +12,8 @@ This module provides:
 * :func:`load_gsm8k` — Hugging Face dataset loader with answer pre-extraction.
 * :class:`GSM8KReward` — a ``RewardFunction`` that returns 1.0 for correct
   numeric answers and 0.0 otherwise. The reward parses common answer formats
-  ("The answer is 42", "#### 42", "42", "$42.00") robustly.
+  ("#### 42", "\\boxed{42}", "The answer is 42", "42", "$42.00") robustly,
+  grading the final answer when a response corrects itself.
 * :func:`make_gsm8k_scenarios` — converts examples to ``ConversationEnvironment``
   scenario dicts.
 
@@ -44,20 +45,25 @@ _GOLD_ANSWER_RE = re.compile(r"####\s*([\-+]?[\d,\.]+)")
 _IMMUTABLE_HF_REVISION_RE = re.compile(r"[0-9a-fA-F]{40}")
 GSM8K_DATASET_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 
-# Generated answer extraction — try several patterns in priority order.
-_ANSWER_PATTERNS = [
-    # "The answer is 42" or "answer: 42" — most common in instruction-tuned outputs.
-    re.compile(
-        r"(?:the\s+)?answer\s+is\s*[:=]?\s*\$?([\-+]?[\d,]+(?:\.\d+)?)", re.IGNORECASE
+# Generated answer extraction, in priority tiers. Within a tier the LAST
+# match wins, so a self-correction ("the answer is 5... no, the answer is 7")
+# is graded on the final claim.
+_NUMBER = r"\$?([\-+]?[\d,]+(?:\.\d+)?)"
+_ANSWER_TIERS: tuple[tuple[re.Pattern[str], ...], ...] = (
+    # Explicit final-answer markers: GSM8K's native "#### 42" and LaTeX
+    # "\boxed{42}" from math-tuned models.
+    (
+        re.compile(r"####\s*" + _NUMBER),
+        re.compile(r"\\boxed\{\s*" + _NUMBER + r"\s*\}"),
     ),
-    re.compile(r"answer\s*[:=]\s*\$?([\-+]?[\d,]+(?:\.\d+)?)", re.IGNORECASE),
-    # "#### 42" — GSM8K's native format if the model imitates it.
-    re.compile(r"####\s*\$?([\-+]?[\d,]+(?:\.\d+)?)"),
-    # "\boxed{42}" — LaTeX format from math-tuned models.
-    re.compile(r"\\boxed\{\$?([\-+]?[\d,]+(?:\.\d+)?)\}"),
-    # Fallback: last number anywhere in the text.
-    re.compile(r"\$?([\-+]?[\d,]+(?:\.\d+)?)(?!.*\d)", re.DOTALL),
-]
+    # "The answer is 42" / "answer: 42" — common in instruction-tuned output.
+    (
+        re.compile(r"(?:the\s+)?answer\s+is\s*[:=]?\s*" + _NUMBER, re.IGNORECASE),
+        re.compile(r"answer\s*[:=]\s*" + _NUMBER, re.IGNORECASE),
+    ),
+    # Fallback: the last number anywhere in the text.
+    (re.compile(_NUMBER),),
+)
 
 
 @dataclass
@@ -98,15 +104,19 @@ def extract_gold_answer(answer_text: str) -> float | None:
 def extract_predicted_answer(response: str) -> float | None:
     """Extract a numeric answer from a free-form model response.
 
-    Tries several patterns in priority order: "the answer is N", "answer: N",
-    "#### N", "\\boxed{N}", and finally the last number in the text.
-    Returns None if no number can be parsed.
+    Explicit markers win ("#### N", "\\boxed{N}"), then "the answer is N" /
+    "answer: N", then the last number in the text. Within each tier the
+    *last* parseable match is used, so a model that corrects itself is
+    graded on its final answer. Returns None if no number can be parsed.
     """
     if not response:
         return None
-    for pattern in _ANSWER_PATTERNS:
-        match = pattern.search(response)
-        if match:
+    for tier in _ANSWER_TIERS:
+        matches = sorted(
+            (match for pattern in tier for match in pattern.finditer(response)),
+            key=lambda match: match.start(),
+        )
+        for match in reversed(matches):
             value = _parse_number(match.group(1))
             if value is not None:
                 return value

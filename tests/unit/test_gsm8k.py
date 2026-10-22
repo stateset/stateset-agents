@@ -125,6 +125,20 @@ class TestExtractPredictedAnswer:
     def test_empty(self) -> None:
         assert extract_predicted_answer("") is None
 
+    def test_self_correction_is_graded_on_the_final_answer(self) -> None:
+        """The FIRST "answer is" used to win, so self-corrections scored 0."""
+        text = "The answer is 5. Wait, I dropped a term: the answer is 7."
+        assert extract_predicted_answer(text) == 7.0
+        assert extract_predicted_answer("Answer: 3 ... corrected answer: 4") == 4.0
+
+    def test_explicit_markers_win_over_answer_phrases(self) -> None:
+        assert extract_predicted_answer("#### 12\nso the answer is 5") == 12.0
+        assert extract_predicted_answer("The answer is 5, i.e. \\boxed{6}") == 6.0
+
+    def test_last_explicit_marker_wins(self) -> None:
+        assert extract_predicted_answer("\\boxed{1} no wait \\boxed{2}") == 2.0
+        assert extract_predicted_answer("#### 3\n#### 4") == 4.0
+
 
 class TestGSM8KReward:
     @pytest.fixture
