@@ -1095,7 +1095,53 @@ class TestBuildEvalExtras:
         )
 
         assert "judge_score" not in extras[0]
+        assert extras[0]["judge_unavailable"] is True
         assert extras[0]["checks"]["passed"] is True
+
+
+class TestSkippedJudgeGates:
+    """A min_judge_score gate whose judge could not run was skipped with no
+    trace in eval_results.json, the run output or the manifest."""
+
+    SPECS = [
+        {"prompt": "gated", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "scored", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "ungated", "judge": "cs"},
+    ]
+
+    def test_skips_name_every_unchecked_gate(self):
+        rows = [{"judge_unavailable": True}, {"judge_score": 0.9}, {}]
+        (skip,) = sft.eval_gate_skips(self.SPECS, rows)
+        assert "'gated'" in skip and "not checked" in skip
+
+    def test_job_output_reports_the_skipped_gate(self, dataset, tmp_path, monkeypatch):
+        out = tmp_path / "adapter"
+
+        def fake_run_sft(rows, base_model, output_dir, eval_prompts, **kwargs):
+            from tests.sft_fixtures import write_sft_export
+
+            write_sft_export(output_dir, base_model=base_model, **kwargs)
+            sft.write_eval_results(
+                output_dir,
+                ["gated"],
+                ["b"],
+                ["f"],
+                extras=[{"judge_unavailable": True}],
+            )
+            return output_dir
+
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", fake_run_sft)
+        outcome = sft.run_sft_job(
+            payload(
+                dataset,
+                output_dir=str(out),
+                dry_run=False,
+                eval_prompts=[self.SPECS[0]],
+            )
+        )
+        assert outcome["returncode"] == 0  # judge failures still degrade
+        assert any("Eval judge gate skipped" in line for line in outcome["logs"])
 
 
 class TestEvalGateFailures:

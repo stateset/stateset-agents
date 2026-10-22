@@ -105,21 +105,24 @@ def test_tokenize_sft_rows_counts_every_outcome():
 
     tok = _byte_tokenizer(THINK_STRIPPING)
     long_system = [{"role": "system", "content": "x" * 300}, *CONVERSATION[1:]]
+    long_reply = [*CONVERSATION[:-1], {"role": "assistant", "content": "y" * 300}]
     records, counts = tokenize_sft_rows(
         tok,
         [
             {"messages": CONVERSATION},
             {"messages": THINKING_CONVERSATION},
             {"messages": long_system},
+            {"messages": long_reply},
         ],
         max_length=200,
     )
-    assert len(records) == 2
+    assert len(records) == 3
     assert counts == {
-        "all_assistant_turns": 1,
+        "all_assistant_turns": 2,
         "final_turn_only": 1,
         "dropped_unmaskable": 0,
         "dropped_truncated": 1,
+        "partially_truncated": 1,
     }
     _, unmaskable = tokenize_sft_rows(
         _byte_tokenizer(REVERSING), [{"messages": CONVERSATION}], max_length=4096

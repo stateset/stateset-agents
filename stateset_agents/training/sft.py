@@ -300,7 +300,10 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     }
 
 
-#: How :func:`tokenize_sft_rows` treated each row, as counted in the manifest.
+#: How :func:`tokenize_sft_rows` treated each row, as counted in the manifest
+#: (exactly one outcome per row). Kept rows that lost some, but not all, of
+#: their supervised tokens to ``max_length`` are counted separately as
+#: ``partially_truncated``.
 SFT_LABEL_OUTCOMES = (
     "all_assistant_turns",
     "final_turn_only",
@@ -343,7 +346,8 @@ def _final_turn_token_mask(
 
 def _tokenize_sft_row(
     tokenizer: Any, row: dict[str, Any], max_length: int
-) -> tuple[dict[str, list[int]] | None, str]:
+) -> tuple[dict[str, list[int]] | None, str, bool]:
+    """(record, outcome, lost supervised tokens to truncation)."""
     tools = _row_tools(row)
     outcome = "all_assistant_turns"
     masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
@@ -351,18 +355,23 @@ def _tokenize_sft_row(
         outcome = "final_turn_only"
         masked = _final_turn_token_mask(tokenizer, row["messages"], tools)
         if masked is None:
-            return None, "dropped_unmaskable"
+            return None, "dropped_unmaskable", False
     ids, assistant = masked
+    truncated = any(assistant[max_length:])
     ids, assistant = ids[:max_length], assistant[:max_length]
     if not any(assistant):
-        return None, "dropped_truncated"
+        return None, "dropped_truncated", truncated
     # Real EOS labels survive even when EOS doubles as padding: the collator
     # pads labels with -100 by position, not token id.
-    return {
-        "input_ids": ids,
-        "attention_mask": [1] * len(ids),
-        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
-    }, outcome
+    return (
+        {
+            "input_ids": ids,
+            "attention_mask": [1] * len(ids),
+            "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
+        },
+        outcome,
+        truncated,
+    )
 
 
 def tokenize_sft_row(
@@ -378,7 +387,8 @@ def tokenize_sft_row(
     whose supervised tokens were truncated away at ``max_length``, is dropped
     (``None``). :func:`tokenize_sft_rows` counts each outcome.
     """
-    return _tokenize_sft_row(tokenizer, row, max_length)[0]
+    record, _outcome, _truncated = _tokenize_sft_row(tokenizer, row, max_length)
+    return record
 
 
 def tokenize_sft_rows(
@@ -386,17 +396,19 @@ def tokenize_sft_rows(
 ) -> tuple[list[dict[str, list[int]]], dict[str, int]]:
     """Tokenize ``rows`` and count how each was labeled or why it was dropped.
 
-    Returns the kept records and a count per :data:`SFT_LABEL_OUTCOMES` entry,
-    so a run's manifest can say how many rows lost their earlier assistant
-    turns or were not trained at all.
+    Returns the kept records and a count per :data:`SFT_LABEL_OUTCOMES` entry
+    plus ``partially_truncated`` (kept rows that lost supervised tokens to
+    ``max_length``), so a run's manifest can say how many rows lost their
+    earlier assistant turns, lost the end of a reply, or were not trained.
     """
-    counts = dict.fromkeys(SFT_LABEL_OUTCOMES, 0)
+    counts = dict.fromkeys((*SFT_LABEL_OUTCOMES, "partially_truncated"), 0)
     records = []
     for row in rows:
-        record, outcome = _tokenize_sft_row(tokenizer, row, max_length)
+        record, outcome, truncated = _tokenize_sft_row(tokenizer, row, max_length)
         counts[outcome] += 1
         if record is not None:
             records.append(record)
+            counts["partially_truncated"] += truncated
     if counts["final_turn_only"]:
         logger.warning(
             "Chat template rewrites earlier turns in %d of %d SFT row(s); only "
@@ -416,6 +428,14 @@ def tokenize_sft_rows(
             "Dropped %d of %d SFT row(s) whose assistant tokens were truncated "
             "away at max_length=%d.",
             counts["dropped_truncated"],
+            len(rows),
+            max_length,
+        )
+    if counts["partially_truncated"]:
+        logger.warning(
+            "%d of %d SFT row(s) lost part of their assistant tokens at "
+            "max_length=%d; only the surviving prefix is supervised.",
+            counts["partially_truncated"],
             len(rows),
             max_length,
         )
@@ -836,7 +856,8 @@ def build_eval_extras(
 
     Rows for plain prompts stay exactly as before (empty extras); rows whose
     spec carries assertions gain ``checks``, and specs naming a ``judge``
-    gain ``judge_score`` (when the judge could run).
+    gain ``judge_score`` when the judge could run and
+    ``judge_unavailable: true`` when it could not.
     """
     extras: list[dict[str, Any]] = []
     for spec, completion in zip(specs, finetuned, strict=True):
@@ -849,6 +870,8 @@ def build_eval_extras(
             score = judge_completion(spec["judge"], spec["prompt"], completion)
             if score is not None:
                 extra["judge_score"] = score
+            else:  # recorded, so a skipped min_judge_score gate is visible
+                extra["judge_unavailable"] = True
         if spec.get("nsr"):
             # Lazy import: harvest imports this module at load time.
             from stateset_agents.training import harvest
@@ -896,6 +919,24 @@ def eval_gate_failures(
                 "did not agree with a verified NSR decision"
             )
     return failures
+
+
+def eval_gate_skips(
+    specs: list[dict[str, Any]], rows: list[dict[str, Any]]
+) -> list[str]:
+    """``min_judge_score`` gates that could not be applied (no judge score).
+
+    A judge that cannot run degrades instead of failing the gate (see
+    :func:`eval_gate_failures`); this lists those prompts so the run says
+    which of its gates were not actually checked.
+    """
+    return [
+        f"{spec['prompt']!r}: min_judge_score {spec['min_judge_score']} not "
+        "checked — no judge score (judge unavailable)"
+        for spec, row in zip(specs, rows, strict=True)
+        if spec.get("min_judge_score") is not None
+        and not isinstance(row.get("judge_score"), (int, float))
+    ]
 
 
 def resolve_resume_checkpoint(output_dir: Path, resume: bool) -> bool:
@@ -1138,6 +1179,7 @@ def run_sft(
             "final_turn_only_rows": label_outcomes["final_turn_only"],
             "unmaskable_rows_dropped": label_outcomes["dropped_unmaskable"],
             "truncated_rows_dropped": label_outcomes["dropped_truncated"],
+            "partially_truncated_rows": label_outcomes["partially_truncated"],
             "seed": seed,
             "data_seed": seed,
             "num_epochs": num_epochs,
@@ -1194,6 +1236,12 @@ def run_sft(
             logger.info("Eval checks: %d/%d prompt(s) passed.", passed, len(checked))
             manifest.eval_passed = passed
             manifest.eval_total = len(checked)
+        if any(spec.get("min_judge_score") is not None for spec in eval_specs):
+            skipped = eval_gate_skips(eval_specs, extras)
+            for skip in skipped:
+                logger.warning("Eval judge gate skipped: %s", skip)
+            manifest.eval_judge_gates_skipped = len(skipped)
+        if checked or manifest.eval_judge_gates_skipped is not None:
             write_manifest(output_dir, manifest)
 
     return output_dir
@@ -1244,6 +1292,8 @@ def _apply_eval_gate(
     if not results_path.exists():  # e.g. eval skipped; nothing to gate on
         return 0
     rows = json.loads(results_path.read_text())
+    for skip in eval_gate_skips(specs, rows):
+        logger.warning("Eval judge gate skipped: %s", skip)
     failures = eval_gate_failures(specs, rows)
     if not failures:
         return 0
