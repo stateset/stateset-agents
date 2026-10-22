@@ -39,6 +39,23 @@ def _load_specs(path: Path, label: str) -> list[dict]:
         raise typer.BadParameter(f"{label} file is not valid JSON: {exc}") from exc
     if not isinstance(data, list) or not data:
         raise typer.BadParameter(f"{label} file must be a non-empty JSON list")
+    from stateset_agents.training.sft import has_eval_assertions
+
+    unchecked = [
+        index
+        for index, spec in enumerate(data)
+        if not isinstance(spec, dict)
+        or not (
+            isinstance(spec.get("prompt"), str) or isinstance(spec.get("turns"), list)
+        )
+        or not has_eval_assertions(spec)
+    ]
+    if unchecked:
+        raise typer.BadParameter(
+            f"{label} spec(s) at index {unchecked[:5]} need a prompt (or turns) "
+            "and expect, forbid or turn_expect checks; a spec without checks "
+            "passes trivially"
+        )
     return data
 
 

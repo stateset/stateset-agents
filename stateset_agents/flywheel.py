@@ -116,6 +116,19 @@ class FlywheelConfig:
     dry_run: bool = False
 
     def __post_init__(self) -> None:
+        from stateset_agents.training.sft import has_eval_assertions
+
+        for label, specs in (
+            ("eval_prompts", self.eval_prompts),
+            ("harvest_prompts", self.harvest_prompts),
+        ):
+            unchecked = [spec for spec in specs if not has_eval_assertions(spec)]
+            if unchecked:
+                raise ValueError(
+                    f"{len(unchecked)} {label} spec(s) carry no expect, forbid "
+                    "or turn_expect checks; a spec without checks passes "
+                    "trivially and skews the score"
+                )
         check_disjoint_prompts(self.eval_prompts, self.harvest_prompts)
 
 
@@ -149,6 +162,8 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
     as ``checks.passed`` (rows for plain prompts have no ``checks`` and are
     not counted). The first live run shipped a reader for an imagined
     ``{"results": [...]}`` envelope and scored every real file as None.
+    Scored by :func:`stateset_agents.training.sft.score_eval_rows`, exactly
+    like the harvest job's baseline, so generations share one denominator.
     """
     if output_dir is None:
         return None, None
@@ -156,21 +171,10 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
         data = json.loads((Path(output_dir) / "eval_results.json").read_text())
     except (OSError, ValueError):
         return None, None
+    from stateset_agents.training.sft import score_eval_rows
+
     rows = data.get("results") if isinstance(data, dict) else data
-    if not isinstance(rows, list):
-        return None, None
-    outcomes = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        checks = row.get("checks")
-        if isinstance(checks, dict) and "passed" in checks:
-            outcomes.append(bool(checks["passed"]))
-        elif "passed" in row:
-            outcomes.append(bool(row["passed"]))
-    if not outcomes:
-        return None, None
-    return sum(outcomes), len(outcomes)
+    return score_eval_rows(rows)
 
 
 def _spend(results: list[float | None]) -> float:

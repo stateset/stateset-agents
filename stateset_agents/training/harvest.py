@@ -35,15 +35,18 @@ from stateset_agents.training.sft import (
     evaluate_checks,
     generate_completions,
     gpu_available,
+    has_eval_assertions,
     judge_completion,
     load_base_model_for_sft,
     normalize_eval_prompts,
+    score_eval_rows,
 )
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "build_harvest_rows",
+    "eval_summary",
     "sample_passes",
     "main",
     "run_harvest_job",
@@ -171,6 +174,31 @@ def sample_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
     return True
 
 
+def eval_summary(
+    eval_specs: list[dict[str, Any]], completions: list[str]
+) -> dict[str, Any]:
+    """The "before" eval of a generation, scored like a training job's.
+
+    Specs without checks cannot fail, so their rows carry no outcome and do
+    not count; ``passed``/``total`` come from
+    :func:`~stateset_agents.training.sft.score_eval_rows`, the scorer the
+    flywheel applies to ``eval_results.json`` — one denominator for every
+    generation, so a real improvement is never read as a plateau.
+    """
+    results = []
+    for spec, completion in zip(eval_specs, completions, strict=True):
+        result: dict[str, Any] = {"prompt": spec["prompt"], "completion": completion}
+        if has_eval_assertions(spec):
+            result.update(
+                evaluate_checks(
+                    completion, spec.get("expect", []), spec.get("forbid", [])
+                )
+            )
+        results.append(result)
+    passed, total = score_eval_rows(results)
+    return {"passed": passed or 0, "total": total or 0, "results": results}
+
+
 def build_harvest_rows(
     prompt_spec: dict[str, Any], samples: list[str]
 ) -> list[dict[str, Any]]:
@@ -277,19 +305,7 @@ def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:
             [spec["prompt"] for spec in eval_specs],
             max_new_tokens=payload.get("eval_max_new_tokens", 300),
         )
-        results = []
-        for spec, completion in zip(eval_specs, completions, strict=True):
-            checked = evaluate_checks(
-                completion, spec.get("expect", []), spec.get("forbid", [])
-            )
-            results.append(
-                {"prompt": spec["prompt"], "completion": completion, **checked}
-            )
-        summary["eval"] = {
-            "passed": sum(1 for r in results if r["passed"]),
-            "total": len(results),
-            "results": results,
-        }
+        summary["eval"] = eval_summary(eval_specs, completions)
         logger.info(
             "current generation: %d/%d eval prompts passed",
             summary["eval"]["passed"],

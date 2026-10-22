@@ -822,6 +822,48 @@ def evaluate_checks(
     }
 
 
+def has_eval_assertions(spec: Any) -> bool:
+    """Whether a prompt spec (or episode script) carries checks.
+
+    ``expect``/``forbid`` for single prompts, ``turn_expect`` for episode
+    scripts. Only such specs can fail, so only they count toward an eval
+    score; a spec without checks would "pass" whatever the model says.
+    """
+    if not isinstance(spec, dict):
+        return False
+    turn_expect = spec.get("turn_expect")
+    return bool(
+        spec.get("expect")
+        or spec.get("forbid")
+        or (isinstance(turn_expect, list) and any(turn_expect))
+    )
+
+
+def score_eval_rows(rows: Any) -> tuple[int | None, int | None]:
+    """``(passed, total)`` over eval rows that carry an assertion outcome.
+
+    The one scorer for every generation of a flywheel: the harvest job's
+    "before" eval and each training job's ``eval_results.json`` count the
+    same rows — those with ``checks.passed`` (or a flat ``passed``) — so a
+    real improvement is never compared against a larger denominator.
+    ``(None, None)`` when no row carries an outcome.
+    """
+    if not isinstance(rows, list):
+        return None, None
+    outcomes = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        checks = row.get("checks")
+        if isinstance(checks, dict) and "passed" in checks:
+            outcomes.append(bool(checks["passed"]))
+        elif "passed" in row:
+            outcomes.append(bool(row["passed"]))
+    if not outcomes:
+        return None, None
+    return sum(outcomes), len(outcomes)
+
+
 def _create_domain_reward(name: str) -> Any:
     """Import hook for the optional judge — split out so tests can fake it."""
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
