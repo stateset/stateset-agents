@@ -11,13 +11,18 @@ import hashlib
 import json
 import logging
 import random
-import unicodedata
 import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
+
+from stateset_agents.data.identity import (
+    first_user_text,
+    normalize_identity_text,
+    prompt_identity,
+)
 
 try:
     import torch as _torch
@@ -678,9 +683,12 @@ class ConversationDataset(TorchDataset):
         """Split dataset into train and validation sets without leakage.
 
         Trajectories with the same normalized content (roles and NFKC-,
-        case- and whitespace-normalized text), or sharing a ``group_id`` /
-        ``source_id`` in their metadata, are linked transitively and always
-        land in the same split; ``train_ratio`` applies to these groups.
+        case- and whitespace-normalized text), the same first user request
+        (so rollouts of one prompt stay together), or a shared ``group_id`` /
+        ``source_id`` in their metadata are linked transitively and always
+        land in the same split; ``train_ratio`` applies to these groups. The
+        request identity is :func:`stateset_agents.data.identity.prompt_identity`,
+        the one ``split_finetuning_data`` and the eval ladder use.
         With ``shuffle`` the groups are ordered by a hash of ``seed`` and
         their content, so the split is reproducible and independent of
         input order; ``seed=None`` means :data:`DEFAULT_SPLIT_SEED`. Without
@@ -847,7 +855,7 @@ def _reward_positions(trajectory: TrajectoryData) -> set[int]:
 
 
 def _normalized_text(text: str) -> str:
-    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
+    return normalize_identity_text(text)
 
 
 def _content_digest(trajectory: TrajectoryData) -> str:
@@ -857,6 +865,13 @@ def _content_digest(trajectory: TrajectoryData) -> str:
 
 def _identity_keys(trajectory: TrajectoryData) -> set[str]:
     keys = {"content:" + _content_digest(trajectory)}
+    # Rollouts of one prompt (a GRPO group) differ in every reply but share
+    # the request: they must land in the same split.
+    request = first_user_text(
+        [{"role": turn.role, "content": turn.content} for turn in trajectory.turns]
+    )
+    if request is not None:
+        keys.add("prompt:" + prompt_identity(request))
     for field_name in ("group_id", "source_id"):
         value = trajectory.metadata.get(field_name)
         if isinstance(value, str) and value.strip():

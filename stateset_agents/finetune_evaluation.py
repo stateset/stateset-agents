@@ -21,7 +21,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.data.finetuning import normalize_identity_text
+from stateset_agents.data.identity import normalize_identity_text
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.implementation import package_implementation
 from stateset_agents.evaluation.support_judge import (

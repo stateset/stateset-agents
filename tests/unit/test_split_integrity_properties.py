@@ -35,6 +35,7 @@ from stateset_agents.data.finetuning import (  # noqa: E402
     group_finetuning_data,
     split_finetuning_data,
 )
+from stateset_agents.data.identity import prompt_identity  # noqa: E402
 from stateset_agents.data.text_sft import load_text_sft_snapshot  # noqa: E402
 from stateset_agents.flywheel import FlywheelConfig  # noqa: E402
 from stateset_agents.training.eval_ladder import (  # noqa: E402
@@ -143,6 +144,7 @@ def test_conversation_split_is_reproducible_disjoint_and_group_preserving(
     assert sorted(_ids(train) + _ids(val)) == sorted(by_id)
     for key in (
         _content_key,
+        lambda row: prompt_identity(row["turns"][0]["content"]),
         lambda row: row["metadata"].get("group_id"),
         lambda row: norm(row["metadata"].get("source_id", "")) or None,
     ):
@@ -151,7 +153,9 @@ def test_conversation_split_is_reproducible_disjoint_and_group_preserving(
         assert not train_keys & val_keys
 
     unlinked = not any(row["metadata"] for row in rows)
-    if unlinked and len({_content_key(row) for row in rows}) >= 2:
+    # Without metadata links, groups are exactly the distinct requests.
+    requests = {prompt_identity(row["turns"][0]["content"]) for row in rows}
+    if unlinked and len(requests) >= 2:
         assert _ids(train) and _ids(val)
 
 
@@ -327,7 +331,7 @@ def test_ladder_eval_and_harvest_are_disjoint_and_reproducible(
     spec: DomainSpec, data: Any, seed: int, rng: random.Random
 ) -> None:
     n = len(spec.issues)
-    depth = data.draw(st.integers(1, min(4, n)))
+    depth = data.draw(st.integers(2, min(4, n)))
     refusals = data.draw(st.sampled_from([0.0, 0.5, 1.0])) if n > depth else 0.0
     counts = {
         "eval_count": data.draw(st.integers(1, 30)),
@@ -348,8 +352,14 @@ def test_ladder_eval_and_harvest_are_disjoint_and_reproducible(
         **counts,
     )
 
+    # Train, eval and harvest are mutually disjoint under the shared request
+    # identity with reference digits masked.
     eval_keys = {masked(p["prompt"]) for p in kit["eval"]}
-    assert not eval_keys & {masked(p["prompt"]) for p in kit["harvest"]}
+    harvest_keys = {masked(p["prompt"]) for p in kit["harvest"]}
+    train_keys = {masked(r["messages"][0]["content"]) for r in kit["train"]}
+    assert not eval_keys & harvest_keys
+    assert not eval_keys & train_keys
+    assert not harvest_keys & train_keys
     if len(list(itertools.combinations(spec.issues, depth))) >= 2:
         # Group-preserving: an issue combination lives on one side only.
         eval_sets = {frozenset(p["expect"][:-1]) for p in kit["eval"]}

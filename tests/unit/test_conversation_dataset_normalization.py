@@ -166,6 +166,29 @@ class TestSplit:
             for pair in ({"0", "0-dup"}, {"3", "7"}):
                 assert pair <= train_ids or pair <= val_ids
 
+    def test_rollouts_of_one_prompt_never_straddle_splits(self):
+        """GRPO groups (one prompt, several sampled replies) were linked only
+        by identical content, so 6 of 6 validation prompts also had rollouts
+        in train."""
+        rows = [
+            {
+                "trajectory_id": f"{p}-{k}",
+                "turns": [
+                    {"role": "user", "content": f"Refund order {p}?"},
+                    {"role": "assistant", "content": f"rollout {k} for {p}"},
+                ],
+                "total_reward": k / 3,
+            }
+            for p in range(10)
+            for k in range(4)
+        ]
+        for seed in range(5):
+            train, val = self._ds(rows).split(train_ratio=0.8, seed=seed)
+            prompts = [
+                {t.turns[0].content for t in part.trajectories} for part in (train, val)
+            ]
+            assert prompts[0] and prompts[1] and not prompts[0] & prompts[1]
+
 
 class TestLengthLimits:
     def test_trajectory_length_limits_are_enforced(self):
