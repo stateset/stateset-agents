@@ -51,10 +51,30 @@ def _authorized(path: Path) -> EvaluationReview:
     return review
 
 
+def _claim_supervisor(path: Path) -> bool:
+    """Exclusively record this process as the evaluation's only supervisor."""
+    try:
+        descriptor = os.open(
+            path / "supervisor.json", os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        return False
+    with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+        json.dump(
+            {"pid": os.getpid(), "process_token": process_token(os.getpid())}, stream
+        )
+        stream.write("\n")
+    return True
+
+
 def supervise(path: Path) -> int:
     """Hold durable ownership while the shared queue bounds the whole job."""
     os.umask(0o077)
     try:
+        # Claim before the stop check: a stop that finds no claimed supervisor
+        # cancels the launch outright, so a later claimant must observe it.
+        if not _claim_supervisor(path):
+            return 1  # Another supervisor owns this evaluation; keep its state.
         _check_stop(path)
         review = _authorized(path)
         queue = queue_executable()
@@ -85,10 +105,6 @@ def supervise(path: Path) -> int:
             "--execute",
             str(path),
         ]
-        write_json(
-            path / "supervisor.json",
-            {"pid": os.getpid(), "process_token": process_token(os.getpid())},
-        )
         write_json(path / "command.json", {"argv": command})
         _state(path, status="queued")
         environment = dict(

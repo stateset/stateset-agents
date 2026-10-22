@@ -1217,6 +1217,25 @@ def launch_claim_lost(
     return time.time() - submitted > grace_seconds
 
 
+def detached_owner_lost(directory: Path, status: object) -> bool:
+    """Whether unfinished detached work in ``directory`` has lost its owner.
+
+    The supervisor record owns the work once it exists, otherwise a worker's
+    execution record does; a submitted launch that no process claimed within
+    the startup grace window is lost too. Like :func:`run_status`, this cannot
+    establish that detached queue work has exited.
+    """
+    if status not in {"prepared", "starting", "queued", "running"}:
+        return False
+    supervisor = directory / "supervisor.json"
+    execution = directory / "execution.json"
+    if _present(supervisor):
+        return not _owner_confirmed(supervisor)
+    if status == "running" or _present(execution):
+        return not _owner_confirmed(execution)
+    return status == "prepared" and launch_claim_lost(directory)
+
+
 def run_status(run: Path) -> dict[str, Any]:
     """Read committed outcomes; missing owners leave unfinished work unconfirmed."""
     state = read_json(run / "state.json")

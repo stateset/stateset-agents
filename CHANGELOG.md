@@ -47,6 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   launch that no process claimed within 120 seconds as `interrupted`. A stop
   request cancels such an unclaimed launch outright, and a supervisor that
   cannot claim supervision after admission records a failure.
+- Studio evaluations whose supervisor or executor died (reboot, OOM) are now
+  reported as `interrupted` with `execution_unconfirmed` instead of
+  `queued`/`running` forever, and can be stopped from the evaluation panel. The
+  evaluation supervisor claims `supervisor.json` exclusively, so a second
+  supervisor can no longer take over or rewrite a supervised evaluation.
 
 ### Security
 

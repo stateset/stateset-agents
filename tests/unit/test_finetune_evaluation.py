@@ -271,6 +271,78 @@ def test_supervisor_preserves_queue_argv_and_bounds_entire_pipeline(
     assert (path / "queue-events.jsonl").stat().st_mode & 0o777 == 0o600
 
 
+def _owner(pid, token):
+    return {"pid": pid, "process_token": token}
+
+
+@pytest.fixture
+def controlled_owners(monkeypatch):
+    """Decide owner liveness deterministically; never inspect a real PID."""
+    alive = {}
+    monkeypatch.setattr(ws, "sys", type("Sys", (), {"platform": "linux"})())
+    monkeypatch.setattr(ws, "process_token", lambda pid: alive.get(pid))
+    return alive
+
+
+@pytest.mark.parametrize(
+    "status,record", [("queued", "supervisor.json"), ("running", "execution.json")]
+)
+def test_lost_evaluation_owner_is_interrupted_not_active_forever(
+    tmp_path, controlled_owners, status, record
+):
+    """After a reboot or OOM kill nobody will ever finish or fail the job."""
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    ws.write_json(path / "state.json", {"status": status})
+    ws.write_json(path / record, _owner(4242, "owner-start"))
+    controlled_owners[4242] = "owner-start"
+    assert evaluation.evaluation_status(path)["state"]["status"] == status
+    assert evaluation.evaluation_status(path)["state"]["execution_unconfirmed"] is False
+
+    controlled_owners.pop(4242)
+    state = evaluation.evaluation_status(path)["state"]
+    assert state["status"] == "interrupted"
+    assert state["execution_unconfirmed"] is True
+    assert "Evaluation incomplete" in state["error"]
+    assert ws.read_json(path / "state.json")["status"] == status  # derived only
+    panel = EvaluationPanel(review.run)
+    panel.selected, panel.mode = evaluation.evaluation_status(path), "detail"
+    assert "Supervisor lost" in "\n".join(panel.lines())
+    panel.handle("s")
+    assert panel.mode == "stop"
+
+
+def test_unclaimed_evaluation_launch_is_interrupted_after_grace_and_stoppable(
+    tmp_path, controlled_owners
+):
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    assert evaluation.evaluation_status(path)["state"]["status"] == "prepared"
+    submitted = os.stat(path / "launch.lock").st_mtime - 600
+    os.utime(path / "launch.lock", (submitted, submitted))
+    assert evaluation.evaluation_status(path)["state"]["status"] == "interrupted"
+    evaluation.stop_evaluation(path, expected_plan_sha256=review.sha256)
+    assert ws.read_json(path / "state.json")["status"] == "cancelled"
+
+
+def test_second_supervisor_cannot_claim_or_change_a_supervised_evaluation(
+    tmp_path, monkeypatch
+):
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    ws.write_json(path / "state.json", {"status": "queued"})
+    original = _owner(4242, "first-supervisor")
+    ws.write_json(path / "supervisor.json", original)
+    monkeypatch.setattr(worker, "queue_executable", lambda: "/queue")
+    monkeypatch.setattr(
+        worker.subprocess, "call", lambda *_a, **_k: pytest.fail("No second queue job")
+    )
+    assert worker.supervise(path) == 1
+    assert ws.read_json(path / "supervisor.json") == original
+    assert ws.read_json(path / "state.json") == {"status": "queued"}
+    assert not (path / "command.json").exists()
+
+
 def test_queue_progress_is_bounded_private_and_survives_partial_events(tmp_path):
     path, review = prepared(tmp_path)
     event = {
