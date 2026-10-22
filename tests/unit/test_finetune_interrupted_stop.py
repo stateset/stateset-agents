@@ -44,6 +44,9 @@ def interrupted_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         workspace, "sys", SimpleNamespace(platform="linux", executable=sys.executable)
     )
+    # Faking Linux for owner checks must not make state locking import POSIX
+    # modules: Windows has no fcntl, so no call-time import may need it.
+    monkeypatch.setitem(sys.modules, "fcntl", None)
     monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
     monkeypatch.setattr(
         workspace.os, "kill", lambda *_: pytest.fail("Stop must not signal processes")

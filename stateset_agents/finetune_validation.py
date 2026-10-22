@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
@@ -29,6 +30,7 @@ from stateset_agents.finetune_evaluation import (
 from stateset_agents.finetune_recovery import CHECKPOINT_NAME_PATTERN
 from stateset_agents.finetune_workspace import (
     owner_alive,
+    private_file_lock,
     process_token,
     queue_executable,
     read_json,
@@ -499,15 +501,18 @@ def submit_comparison(
         raise ValidationComparisonError(
             "Published-checkpoint comparison currently requires Linux."
         )
-    import fcntl
-
-    fd = os.open(
-        directory / ".submit.lock",
-        os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-        0o600,
-    )
-    with os.fdopen(fd, "a") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
+    with contextlib.ExitStack() as held:
+        try:
+            held.enter_context(
+                private_file_lock(
+                    directory / ".submit.lock",
+                    timeout_s=60.0,
+                    unavailable="Comparison submission lock must be a private regular file.",
+                    busy="Another comparison submission is still in progress; retry shortly.",
+                )
+            )
+        except ValueError as error:
+            raise ValidationComparisonError(str(error)) from None
         latest = latest_comparison(run)
         if latest is not None:
             previous = comparison_status(latest)

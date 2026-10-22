@@ -529,15 +529,20 @@ _STATE_LOCK_TIMEOUT = 1.0
 FINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
 
 
-def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
-    if sys.platform == "win32":
-        import msvcrt
+# The lock primitive is chosen once, at import, from the real platform: a
+# caller (or a test) that later fakes ``sys.platform`` for process checks must
+# not switch file locking to a module this platform does not have.
+if sys.platform == "win32":
+    import msvcrt
 
+    def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
         os.lseek(descriptor, 0, os.SEEK_SET)
         msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
-    else:
-        import fcntl
 
+else:
+    import fcntl
+
+    def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
         fcntl.flock(
             descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
         )
@@ -546,9 +551,27 @@ def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
 @contextmanager
 def state_lock(directory: Path) -> Iterator[None]:
     """Serialize bounded state transitions through a stable private descriptor."""
-    path = directory / ".state.lock"
+    with private_file_lock(
+        directory / ".state.lock",
+        timeout_s=_STATE_LOCK_TIMEOUT,
+        unavailable="Fine-tuning state lock is unavailable",
+        busy="Fine-tuning state is busy",
+    ):
+        yield
+
+
+@contextmanager
+def private_file_lock(
+    path: Path, *, timeout_s: float, unavailable: str, busy: str
+) -> Iterator[None]:
+    """Hold an exclusive OS lock on a private regular file, on any platform.
+
+    The OS releases it if the holder dies. Waits up to ``timeout_s``, then
+    raises ``ValueError(busy)``; a symlink, non-regular or group/world
+    accessible lock file raises ``ValueError(unavailable)``.
+    """
     if path.is_symlink():
-        raise ValueError("Fine-tuning state lock is unavailable")
+        raise ValueError(unavailable)
     descriptor = os.open(
         path,
         os.O_RDWR
@@ -562,10 +585,10 @@ def state_lock(directory: Path) -> Iterator[None]:
         if not stat.S_ISREG(info.st_mode) or (
             os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
         ):
-            raise ValueError("Fine-tuning state lock is unavailable")
+            raise ValueError(unavailable)
         if os.name == "nt" and info.st_size == 0:
             os.write(descriptor, b"\0")
-        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT
+        deadline = time.monotonic() + timeout_s
         while True:
             try:
                 _state_lock_operation(descriptor)
@@ -574,7 +597,7 @@ def state_lock(directory: Path) -> Iterator[None]:
                 if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
                     raise
                 if time.monotonic() >= deadline:
-                    raise ValueError("Fine-tuning state is busy") from None
+                    raise ValueError(busy) from None
                 time.sleep(0.01)
         try:
             yield

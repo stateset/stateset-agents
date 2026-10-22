@@ -219,6 +219,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provider journal; and each pod arms a pod-side deadline that deletes it at
   the run deadline using RunPod's own pod-scoped credentials (no user key is
   copied to the pod), logging when those credentials are unavailable.
+- Studio file locking is portable: the lock primitive (`fcntl` or `msvcrt`) is
+  chosen once at import, so code that fakes `sys.platform` for process checks
+  no longer makes Windows import `fcntl` (three studio tests failed on hosted
+  Windows CI). The validation-comparison submit lock uses the same shared
+  `finetune_workspace.private_file_lock` instead of a direct `fcntl` call.
 
 ### Security
 
