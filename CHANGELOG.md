@@ -9,6 +9,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Per-model starter commands moved under `stateset-agents model <preset>`.**
+  The old top-level spellings (e.g. `stateset-agents qwen3-5-0-8b`) are hidden,
+  deprecated aliases that print a notice on stderr and are removed in v0.69.0.
+- `stateset_agents.training` is documented as a provisional namespace; only
+  `stateset_agents.__all__` carries the API compatibility guarantee.
+- The gateway rejects `max_tokens`, `n`/`best_of`, `logit_bias` and stop lists
+  above configurable ceilings (`API_MAX_GENERATION_TOKENS`,
+  `API_MAX_COMPLETIONS_PER_REQUEST`, `API_MAX_LOGIT_BIAS_ENTRIES`,
+  `API_MAX_STOP_SEQUENCES`) with 422, and forwards only an allowlist of
+  sampling fields to the inference backend.
+- Rate limiting reads the client IP `API_TRUSTED_PROXY_HOPS` entries from the
+  right of `X-Forwarded-For`, and uses the same credential precedence as auth.
+- JWTs must carry `exp`. Training-lab WebSockets reject unknown experiment ids
+  and accept credentials via `Sec-WebSocket-Protocol`; query-string credentials
+  log a deprecation warning.
+- RunPod SSH sessions pin the pod host key per session (`accept-new` with a
+  private known_hosts) instead of disabling host-key checking.
+- **Docker Compose requires passwords and binds to loopback.** Redis and Postgres
+  passwords come from `.env` (see `.env.example`); published ports bind to
+  `127.0.0.1`.
+- Kubernetes vLLM manifests and the Helm chart ship a NetworkPolicy allowing
+  only gateway pods (and metrics scraping) to reach vLLM.
+- Every GitHub Action is pinned to a commit SHA; workflows default to
+  `contents: read`, and benchmark results are pushed to gh-pages only from
+  `main`/`master`.
+
 - Merge the checkpointed IQL policy extractor with the experimental module layout
   and support aligned logged-message datasets without changing its objective.
 - Keep sampled stop tokens and their log-probabilities in RL actions while hiding
@@ -31,6 +57,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and preserved synthetic provenance through Studio and the existing SFT trainer.
 
 ### Fixed
+
+- GRPO loss loops propagate rollout-contract violations and out-of-memory
+  errors instead of skipping the trajectory, and raise when every trajectory in
+  a group fails instead of returning a constant zero loss.
+- `beta > 0` without `use_reference_model=True` now warns (config validation and
+  trainer start-up) instead of silently disabling the KL penalty.
+- The old-policy snapshot for inner updates is scored in eval mode, so dropout
+  no longer perturbs the first importance ratio.
+- `/v1/chat/completions` returns 422 for unsupported OpenAI `response_format`
+  types instead of a 500.
+- Cache decompression is bounded (`CACHE_MAX_DECOMPRESSED_BYTES`) and corrupt
+  payloads surface as cache errors.
+- Pod log-server tokens are compared in constant time, and adapter names are
+  validated and shell-quoted before reaching the pod.
 
 - Keep verified PyPI install pins separate from source candidates during version
   bumps, and correct the v0.67.0 publication status and install instructions.
