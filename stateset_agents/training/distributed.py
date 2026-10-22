@@ -11,7 +11,7 @@ This module provides distributed training capabilities including:
 import inspect
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -26,6 +26,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     BackwardPrefetch,
     CPUOffload,
     MixedPrecision,
+    ShardingStrategy,
 )
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -82,6 +83,26 @@ class DistributedConfig:
     # Checkpointing
     checkpoint_parallel: bool = True
     checkpoint_dir: str = "./distributed_checkpoints"
+
+
+def _resolve_fsdp_sharding_strategy(
+    value: str | ShardingStrategy,
+) -> ShardingStrategy:
+    """Map a config value such as ``"full_shard"`` to a ``ShardingStrategy``.
+
+    FSDP requires the enum: a raw string is stored as-is and later fails when
+    FSDP reads ``sharding_strategy.name`` on multi-rank runs.
+    """
+    if isinstance(value, ShardingStrategy):
+        return value
+    key = value.strip().upper()
+    try:
+        return ShardingStrategy[key]
+    except KeyError:
+        choices = ", ".join(s.name.lower() for s in ShardingStrategy)
+        raise ValueError(
+            f"Unknown fsdp_sharding_strategy {value!r}; expected one of: {choices}"
+        ) from None
 
 
 class DistributedTrainer(MultiTurnGRPOTrainer):
@@ -250,7 +271,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         # Auto-wrap policy: wrap layers with >= min_params parameters.
         # This gives FSDP proper per-layer sharding granularity instead of
         # wrapping the entire model as one flat unit.
-        auto_wrap_policy = None
+        auto_wrap_policy: Callable[..., bool] | None = None
         min_params = self.distributed_config.fsdp_auto_wrap_min_params
         if min_params > 0:
             try:
@@ -263,20 +284,20 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             except ImportError:
                 logger.debug("size_based_auto_wrap_policy not available")
 
-        # Wrap model
-        fsdp_kwargs = {
-            "cpu_offload": cpu_offload,
-            "backward_prefetch": backward_prefetch,
-            "mixed_precision": mixed_precision,
-            "sharding_strategy": self.distributed_config.fsdp_sharding_strategy,
-            "device_id": torch.cuda.current_device(),
-            "sync_module_states": self.distributed_config.fsdp_sync_module_states,
-            "limit_all_gathers": self.distributed_config.fsdp_limit_all_gathers,
-        }
-        if auto_wrap_policy is not None:
-            fsdp_kwargs["auto_wrap_policy"] = auto_wrap_policy
-
-        self.agent.model = FSDP(self.agent.model, **fsdp_kwargs)
+        # Wrap model (``auto_wrap_policy=None`` is FSDP's own default).
+        self.agent.model = FSDP(
+            self.agent.model,
+            cpu_offload=cpu_offload,
+            backward_prefetch=backward_prefetch,
+            mixed_precision=mixed_precision,
+            sharding_strategy=_resolve_fsdp_sharding_strategy(
+                self.distributed_config.fsdp_sharding_strategy
+            ),
+            device_id=torch.cuda.current_device(),
+            sync_module_states=self.distributed_config.fsdp_sync_module_states,
+            limit_all_gathers=self.distributed_config.fsdp_limit_all_gathers,
+            auto_wrap_policy=auto_wrap_policy,
+        )
 
         # Activation checkpointing: trade compute for memory by recomputing
         # activations during backward pass instead of storing them.
