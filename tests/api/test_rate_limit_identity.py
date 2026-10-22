@@ -300,3 +300,135 @@ async def test_redis_limiter_retries_after_cooldown(preserve_api_config, monkeyp
     assert allowed is True
     assert remaining == 4
     assert middleware._redis_currently_disabled is False
+
+
+@pytest.mark.asyncio
+async def test_spoofed_leftmost_xff_does_not_change_bucket(preserve_api_config):
+    """Rotating the client-controlled leftmost XFF entry must not mint buckets."""
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True, trust_proxy_headers=True)
+    )
+
+    async with _client(app, client_ip="10.0.0.1") as client:
+        r1 = await client.get(
+            "/probe", headers={"X-Forwarded-For": "1.1.1.1, 203.0.113.7"}
+        )
+        r2 = await client.get(
+            "/probe", headers={"X-Forwarded-For": "2.2.2.2, 203.0.113.7"}
+        )
+
+    # Rightmost (proxy-appended) hop is the same -> same bucket -> limited.
+    assert r1.status_code == 200
+    assert r2.status_code == 429
+
+
+@pytest.mark.asyncio
+async def test_trusted_proxy_hops_selects_nth_from_right(preserve_api_config):
+    app = _build_app(
+        RateLimitConfig(
+            requests_per_minute=1,
+            enabled=True,
+            trust_proxy_headers=True,
+            trusted_proxy_hops=2,
+        )
+    )
+
+    async with _client(app, client_ip="10.0.0.1") as client:
+        r1 = await client.get(
+            "/probe", headers={"X-Forwarded-For": "6.6.6.6, 198.51.100.4, 10.1.1.1"}
+        )
+        r2 = await client.get(
+            "/probe", headers={"X-Forwarded-For": "7.7.7.7, 198.51.100.4, 10.1.1.2"}
+        )
+
+    assert r1.status_code == 200
+    assert r2.status_code == 429
+
+
+@pytest.mark.parametrize(
+    ("header", "hops", "expected"),
+    [
+        ("1.1.1.1", 1, "1.1.1.1"),
+        ("evil, 203.0.113.7", 1, "203.0.113.7"),
+        ("evil, 198.51.100.4, 10.0.0.1", 2, "198.51.100.4"),
+        ("203.0.113.7", 3, "203.0.113.7"),
+        (" , ", 1, None),
+        ("a,,b", 1, "b"),
+    ],
+)
+def test_client_ip_from_forwarded_for(header, hops, expected):
+    from stateset_agents.api.middleware import _client_ip_from_forwarded_for
+
+    assert _client_ip_from_forwarded_for(header, hops) == expected
+
+
+def test_trusted_proxy_hops_env(monkeypatch):
+    monkeypatch.setenv("API_TRUSTED_PROXY_HOPS", "3")
+    assert RateLimitConfig.from_env().trusted_proxy_hops == 3
+    monkeypatch.delenv("API_TRUSTED_PROXY_HOPS")
+    assert RateLimitConfig.from_env().trusted_proxy_hops == 1
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_charges_same_credential_auth_uses(preserve_api_config):
+    """X-API-Key wins over Authorization in both auth and rate limiting.
+
+    Previously the limiter preferred Authorization while auth preferred
+    X-API-Key, so a caller could authenticate with one valid key while a
+    rotating second credential decided the rate-limit bucket.
+    """
+    app = _build_app(
+        RateLimitConfig(requests_per_minute=1, enabled=True),
+        security=SecurityConfig(
+            api_keys={
+                "precedence-key-a": ["user"],
+                "precedence-key-b": ["user"],
+                "precedence-key-c": ["user"],
+            },
+            require_auth=False,
+        ),
+    )
+
+    async with _client(app) as client:
+        r1 = await client.get(
+            "/probe",
+            headers={
+                "X-API-Key": "precedence-key-a",
+                "Authorization": "Bearer precedence-key-b",
+            },
+        )
+        r2 = await client.get(
+            "/probe",
+            headers={
+                "X-API-Key": "precedence-key-a",
+                "Authorization": "Bearer precedence-key-c",
+            },
+        )
+
+    assert r1.status_code == 200
+    assert r2.status_code == 429
+
+
+def test_credential_precedence_shared_between_auth_and_middleware():
+    from starlette.requests import Request
+
+    from stateset_agents.api.auth import _extract_api_key, extract_request_credential
+
+    scope = {
+        "type": "http",
+        "headers": [
+            (b"x-api-key", b" header-key "),
+            (b"authorization", b"Bearer bearer-token"),
+        ],
+    }
+    request = Request(scope)
+    assert extract_request_credential(request) == "header-key"
+    assert _extract_api_key(request) == "header-key"
+    assert RateLimitMiddleware(FastAPI())._extract_api_key(request) == "header-key"
+
+    bearer_only = Request(
+        {"type": "http", "headers": [(b"authorization", b"Bearer bearer-token")]}
+    )
+    assert RateLimitMiddleware(FastAPI())._extract_api_key(bearer_only) == (
+        "bearer-token"
+    )

@@ -173,15 +173,24 @@ def _extract_bearer_token(request: Request) -> str | None:
     return None
 
 
-def _extract_api_key(request: Request) -> str | None:
-    """Extract API key from headers."""
-    # Check X-API-Key header first
+def extract_request_credential(request: Request) -> str | None:
+    """Return the credential presented on ``request``.
+
+    This is the single source of truth for credential precedence: the
+    ``X-API-Key`` header wins, then ``Authorization: Bearer``. Authentication
+    and rate limiting must both use it so that the credential that is
+    authenticated is also the one whose bucket is charged.
+    """
     api_key = request.headers.get("X-API-Key")
-    if api_key:
+    if api_key and api_key.strip():
         return str(api_key.strip())
 
-    # Fall back to Authorization header
     return _extract_bearer_token(request)
+
+
+def _extract_api_key(request: Request) -> str | None:
+    """Extract API key from headers (alias of :func:`extract_request_credential`)."""
+    return extract_request_credential(request)
 
 
 def authenticate_request(

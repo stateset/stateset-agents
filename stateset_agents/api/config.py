@@ -197,6 +197,9 @@ class RateLimitConfig:
     window_seconds: int = 60
     enabled: bool = True
     trust_proxy_headers: bool = False
+    # Number of trusted reverse proxies that append to X-Forwarded-For. The
+    # client IP is taken this many entries from the right of the header.
+    trusted_proxy_hops: int = 1
     backend: str = "memory"
     redis_url: str | None = None
 
@@ -219,6 +222,9 @@ class RateLimitConfig:
             ),
             enabled=_get_bool("API_RATE_LIMIT_ENABLED", True),
             trust_proxy_headers=_get_bool("API_TRUST_PROXY_HEADERS", False),
+            trusted_proxy_hops=_get_int(
+                "API_TRUSTED_PROXY_HOPS", 1, min_val=1, max_val=16
+            ),
             backend=backend,
             redis_url=os.getenv("API_RATE_LIMIT_REDIS_URL"),
         )

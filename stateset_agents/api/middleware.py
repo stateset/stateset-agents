@@ -24,7 +24,7 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from stateset_agents.utils.credentials import credential_fingerprint
 
-from .auth import get_jwt_handler
+from .auth import extract_request_credential, get_jwt_handler
 from .config import get_config
 from .constants import (
     HEADER_CORRELATION_ID,
@@ -360,6 +360,26 @@ class RedisSlidingWindowLimiter:
             self._client = None
 
 
+def _client_ip_from_forwarded_for(header: str, trusted_hops: int) -> str | None:
+    """Pick the client address from an ``X-Forwarded-For`` chain.
+
+    Each trusted proxy appends the address of the peer it received the request
+    from, so the leftmost entries are fully client-controlled and must never be
+    used for identity. With ``trusted_hops`` proxies in front of the API, the
+    client address is the ``trusted_hops``-th entry from the right. When the
+    chain is shorter than expected, the leftmost entry is the furthest one any
+    trusted proxy could have written.
+    """
+    hops = [hop.strip() for hop in header.split(",")]
+    hops = [hop for hop in hops if hop]
+    if not hops:
+        return None
+    index = max(1, int(trusted_hops))
+    if index > len(hops):
+        return hops[0]
+    return hops[-index]
+
+
 def _hash_credential(value: str) -> str:
     """Hash a credential (API key / bearer token) for use as a bucket key.
 
@@ -485,9 +505,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         if config.rate_limit.trust_proxy_headers:
             forwarded_for = request.headers.get("X-Forwarded-For")
             if forwarded_for:
-                first_hop = str(forwarded_for).split(",")[0].strip()
-                if first_hop:
-                    return first_hop
+                client_ip = _client_ip_from_forwarded_for(
+                    str(forwarded_for),
+                    getattr(config.rate_limit, "trusted_proxy_hops", 1),
+                )
+                if client_ip:
+                    return client_ip
 
         return str(request.client.host) if request.client else "unknown"
 
@@ -559,15 +582,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _extract_api_key(self, request: Request) -> str | None:
-        """Extract API key from request headers."""
-        # Check Authorization header
-        auth_header = str(request.headers.get("Authorization", ""))
-        if auth_header.lower().startswith("bearer "):
-            return auth_header.split(" ", 1)[1].strip()
-
-        # Check X-API-Key header
-        api_key = request.headers.get("X-API-Key")
-        return api_key.strip() if api_key else None
+        """Extract the request credential using the same precedence as auth."""
+        return extract_request_credential(request)
 
 
 # ============================================================================
