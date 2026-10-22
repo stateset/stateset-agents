@@ -9,12 +9,19 @@ expect, forbid} shape every downstream consumer speaks.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 
 import pytest
 
-from stateset_agents.training.eval_ladder import DomainSpec, Issue, build_ladder
+from stateset_agents.training.eval_ladder import (
+    DomainSpec,
+    Issue,
+    build_episode_ladder,
+    build_ladder,
+    check_disjoint_prompts,
+)
 
 SPEC = DomainSpec(
     persona="Byte @ TechNest",
@@ -73,6 +80,102 @@ class TestDepth:
         eval_refs = {p["expect"][-1] for p in a["eval"]}
         harvest_refs = {p["expect"][-1] for p in a["harvest"]}
         assert not eval_refs & harvest_refs
+
+
+SIX = DomainSpec(
+    persona="Ava",
+    ref_label="Booking {ref}",
+    issues={
+        name: Issue(phrasing=f"problem {name}", resolution=f"fix {name}", token=name)
+        for name in ("alpha", "bravo", "charlie", "delta", "echo", "foxtrot")
+    },
+)
+
+
+def _masked(text: str) -> str:
+    return re.sub(r"\d+", "#", text)
+
+
+class TestEvalHarvestDisjointness:
+    """Eval and harvest used to sample the same issue combinations from the
+    same template: at 6 issues / depth 2 / seed 0, 7 of 12 eval prompts were
+    identical to a harvest prompt once the reference number was masked."""
+
+    @pytest.mark.parametrize("seed", range(6))
+    @pytest.mark.parametrize("refusal_fraction", [0.0, 0.5])
+    def test_no_eval_prompt_reappears_in_harvest_modulo_reference(
+        self, seed, refusal_fraction
+    ):
+        kit = build_ladder(
+            SIX, depth=2, eval_count=12, refusal_fraction=refusal_fraction, seed=seed
+        )
+        harvest = {_masked(p["prompt"]) for p in kit["harvest"]}
+        assert not [p for p in kit["eval"] if _masked(p["prompt"]) in harvest]
+        # Stronger: no eval prompt asks for the same SET of issues as any
+        # harvest prompt.
+        eval_sets = {frozenset(p["expect"][:-1]) for p in kit["eval"]}
+        harvest_sets = {frozenset(p["expect"][:-1]) for p in kit["harvest"]}
+        assert not eval_sets & harvest_sets
+
+    @pytest.mark.parametrize("seed", range(4))
+    def test_episode_scripts_are_disjoint_too(self, seed):
+        kit = build_episode_ladder(SIX, turns=2, eval_count=12, seed=seed)
+
+        def key(script):
+            return tuple(_masked(turn) for turn in script["turns"])
+
+        harvest = {key(s) for s in kit["harvest"]}
+        assert not [s for s in kit["eval"] if key(s) in harvest]
+
+    def test_reference_ranges_never_overlap_for_large_counts(self):
+        """Refs collided once eval_count exceeded 1100 (77xx ran into 88xx)."""
+        kit = build_ladder(
+            SIX, depth=2, eval_count=1200, harvest_count=40, train_count=5000
+        )
+        train = {
+            re.search(r"Booking (\d+)", r["messages"][0]["content"]).group(1)
+            for r in kit["train"]
+        }
+        eval_refs = {p["expect"][-1] for p in kit["eval"]}
+        harvest_refs = {p["expect"][-1] for p in kit["harvest"]}
+        assert len(eval_refs) == 1200 and len(harvest_refs) == 40
+        assert not (train & eval_refs or train & harvest_refs)
+        assert not eval_refs & harvest_refs
+        episodes = build_episode_ladder(SIX, eval_count=1200, harvest_count=40)
+        assert not {s["turn_expect"][0][-1] for s in episodes["eval"]} & {
+            s["turn_expect"][0][-1] for s in episodes["harvest"]
+        }
+
+    def test_default_reference_ranges_are_unchanged(self):
+        kit = build_ladder(SIX, depth=2, eval_count=3, harvest_count=3)
+        assert [p["expect"][-1] for p in kit["eval"]] == ["7700", "7701", "7702"]
+        assert [p["expect"][-1] for p in kit["harvest"]] == ["8800", "8801", "8802"]
+
+    def test_single_combination_domain_partitions_orderings(self):
+        spec = DomainSpec(
+            persona="P",
+            issues={n: Issue(f"issue {n}", f"fix {n}", n) for n in ("x", "y", "z")},
+        )
+        kit = build_ladder(spec, depth=3, eval_count=4, harvest_count=10)
+        harvest = {_masked(p["prompt"]) for p in kit["harvest"]}
+        assert kit["eval"] and not [
+            p for p in kit["eval"] if _masked(p["prompt"]) in harvest
+        ]
+
+    def test_domain_too_small_to_separate_eval_from_harvest_is_refused(self):
+        spec = DomainSpec(persona="P", issues={"x": Issue("issue x", "fix x", "x")})
+        with pytest.raises(ValueError, match="disjoint"):
+            build_ladder(spec, depth=1)
+
+    def test_check_disjoint_prompts_masks_reference_digits(self):
+        with pytest.raises(ValueError, match="disjoint"):
+            check_disjoint_prompts(
+                [{"prompt": "Case 7701 — lost bag."}],
+                [{"prompt": "Case  8801 — LOST bag."}],
+            )
+        check_disjoint_prompts(
+            [{"prompt": "Case 7701 — lost bag."}], [{"prompt": "Case 8801 — late."}]
+        )
 
 
 class TestRefusals:

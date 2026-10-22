@@ -204,24 +204,29 @@ def flywheel(
         temperature if temperature is not None else (0.9 if algorithm == "sft" else 1.0)
     )
 
-    config = FlywheelConfig(
-        base_model=base_model,
-        harvest_prompts=_load_specs(harvest_prompts, "--harvest-prompts"),
-        eval_prompts=_load_specs(eval_prompts, "--eval-prompts"),
-        output_root=output_root,
-        initial_adapter=initial_adapter,
-        teacher_base_model=teacher_base_model,
-        teacher_adapter=teacher_adapter,
-        generations=generations,
-        best_of=best_of,
-        temperature=temperature,
-        target_harvest_rate=target_harvest_rate,
-        max_cost_usd=max_cost,
-        gpu=gpu,
-        container_disk_gb=container_disk_gb,
-        num_epochs=num_epochs,
-        dry_run=dry_run,
-    )
+    harvest_specs = _load_specs(harvest_prompts, "--harvest-prompts")
+    eval_specs = _load_specs(eval_prompts, "--eval-prompts")
+    try:
+        config = FlywheelConfig(
+            base_model=base_model,
+            harvest_prompts=harvest_specs,
+            eval_prompts=eval_specs,
+            output_root=output_root,
+            initial_adapter=initial_adapter,
+            teacher_base_model=teacher_base_model,
+            teacher_adapter=teacher_adapter,
+            generations=generations,
+            best_of=best_of,
+            temperature=temperature,
+            target_harvest_rate=target_harvest_rate,
+            max_cost_usd=max_cost,
+            gpu=gpu,
+            container_disk_gb=container_disk_gb,
+            num_epochs=num_epochs,
+            dry_run=dry_run,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(f"--eval-prompts: {exc}") from exc
     try:
         executor = get_executor(provider)
     except StateSetError as exc:

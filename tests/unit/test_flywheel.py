@@ -430,3 +430,25 @@ class TestRarityController:
         )
         run_flywheel(config, executor)
         assert len([s for s in executor.specs if s.job_kind == "harvest"]) == 1
+
+
+class TestEvalHarvestLeakage:
+    def test_config_rejects_eval_prompts_that_reappear_in_the_harvest(self, tmp_path):
+        """The disjointness rule used to be a comment; a prompt that differs
+        from a harvest prompt only by its reference number now fails fast."""
+        with pytest.raises(ValueError, match="disjoint"):
+            FlywheelConfig(
+                base_model="base/model",
+                harvest_prompts=[{"prompt": "Case 8801 — lost bag", "expect": ["x"]}],
+                eval_prompts=[{"prompt": "case 7701 —  Lost bag", "expect": ["x"]}],
+                output_root=tmp_path / "fw",
+            )
+
+    def test_disjoint_prompts_are_accepted(self, tmp_path):
+        config = FlywheelConfig(
+            base_model="base/model",
+            harvest_prompts=[{"prompt": "Case 8801 — lost bag", "expect": ["x"]}],
+            eval_prompts=[{"prompt": "Case 7701 — late flight", "expect": ["x"]}],
+            output_root=tmp_path / "fw",
+        )
+        assert config.eval_prompts[0]["prompt"].startswith("Case 7701")
