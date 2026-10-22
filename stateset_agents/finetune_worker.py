@@ -95,8 +95,45 @@ def _state_lock(run: Path) -> Iterator[None]:
         os.close(descriptor)
 
 
+def _completion_verified(run: Path) -> bool:
+    """The worker's completion receipt still points at a usable artifact."""
+    try:
+        completion = read_json(run / "completion.json", max_bytes=128 * 1024)
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    if completion.get("result_kind") == "hosted_pointer":
+        checkpoint = completion.get("checkpoint")
+        return (
+            isinstance(checkpoint, str)
+            and checkpoint.startswith("river://")
+            and len(checkpoint) > len("river://")
+        )
+    output, weights = completion.get("output_dir"), completion.get("weights")
+    if not isinstance(output, str) or not isinstance(weights, list) or not weights:
+        return False
+    for name in weights:
+        if (
+            not isinstance(name, str)
+            or not name
+            or Path(name).is_absolute()
+            or ".." in Path(name).parts
+        ):
+            return False
+        path = Path(output) / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
 def _state(run: Path, **changes: Any) -> bool:
-    """Merge progress without promoting an already failed or cancelled run."""
+    """Merge progress without promoting a failed/cancelled run or demoting success.
+
+    A success the worker committed (``completion.json`` whose artifact still
+    verifies) is authoritative: a later failure cannot replace it.
+    """
     with _state_lock(run):
         try:
             state = read_json(run / "state.json")
@@ -109,7 +146,26 @@ def _state(run: Path, **changes: Any) -> bool:
             and status not in {"failed", "cancelled"}
         ):
             return False
+        if (
+            state.get("status") == "succeeded"
+            and status in {"failed", "cancelled"}
+            and _completion_verified(run)
+        ):
+            return False
         write_json(run / "state.json", {**state, **changes, "updated_at": time.time()})
+        return True
+
+
+def _keep_committed_success(run: Path, **teardown: Any) -> bool:
+    """Record a post-commit failure as non-fatal when success was committed."""
+    with _state_lock(run):
+        try:
+            state = read_json(run / "state.json")
+        except (OSError, ValueError):
+            return False
+        if state.get("status") != "succeeded" or not _completion_verified(run):
+            return False
+        write_json(run / "state.json", {**state, **teardown, "updated_at": time.time()})
         return True
 
 
@@ -145,7 +201,20 @@ def _record_failure(
         code = "out_of_memory"
     else:
         code = "review_invalid" if stage == "review" else "unknown"
+    # A teardown crash or queue timeout observed after the worker committed a
+    # verified success must not demote it; keep the observation instead.
+    teardown: dict[str, Any] = {"teardown_error": code}
+    if exit_code is not None:
+        teardown["teardown_exit_code"] = exit_code
     try:
+        if _keep_committed_success(run, **teardown):
+            logging.error(
+                "Fine-tuning %s failure (%s) after the worker committed success; "
+                "the committed result stands",
+                stage,
+                code,
+            )
+            return
         if not (previous and previous["recorded"]):
             write_json(
                 run / "failure.json",
@@ -163,7 +232,9 @@ def _record_failure(
         }
         if exit_code is not None:
             changes["exit_code"] = exit_code
-        _state(run, **changes)
+        if not _state(run, **changes):
+            # The worker committed success between the check and this write.
+            _keep_committed_success(run, **teardown)
     except (OSError, ValueError):
         # Full or inaccessible storage must not replace the original failure
         # with a new exception or a successful exit. Logs remain the fallback.

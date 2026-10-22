@@ -20,6 +20,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - mypy checks the bodies of untyped functions across the whole package
   (`check_untyped_defs`), guarded by the mypy ratchet test.
+- A fine-tuning success the worker committed (its `completion.json` artifact
+  still verifies) is now authoritative: a later non-zero exit observed by the
+  supervisor (interpreter teardown crash, queue timeout) is recorded as
+  `teardown_error`/`teardown_exit_code` on the run, shown by `finetune status`
+  and the studio's run details, instead of demoting the run to `failed`.
+  Failures recorded before the commit, or a commit whose artifact no longer
+  verifies, still end the run as `failed`.
 
 ### Fixed
 

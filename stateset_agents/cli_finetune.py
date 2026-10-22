@@ -251,6 +251,8 @@ def _summary(run: Path) -> dict[str, Any]:
         "stop_requested",
         "execution_unconfirmed",
         "recovery_checkpoint",
+        "teardown_error",
+        "teardown_exit_code",
         "error",
     )
     config = plan.get("config", {})

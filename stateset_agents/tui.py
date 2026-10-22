@@ -245,6 +245,16 @@ def _wrap(lines: list[str], width: int) -> list[str]:
     return result
 
 
+def _teardown_note(state: dict[str, Any]) -> str:
+    """Describe a failure observed after the worker committed its success."""
+    code = state.get("teardown_exit_code")
+    return (
+        "Note: the worker exited after committing a verified result"
+        + (f" (exit {code})" if isinstance(code, int) else "")
+        + f"; teardown: {_safe(str(state.get('teardown_error')))}. The result stands."
+    )
+
+
 def _run_config(row: dict[str, Any]) -> dict[str, Any]:
     config = row.get("plan", {}).get("config", {})
     return config if isinstance(config, dict) else {}
@@ -3156,6 +3166,8 @@ class Studio:
             rows.append(
                 "Supervisor lost; detached work may still be queued or running."
             )
+        if state.get("teardown_error"):
+            rows.append(_teardown_note(state))
         if state.get("stop_requested") and state.get("status") not in {
             "succeeded",
             "failed",
@@ -3191,6 +3203,8 @@ class Studio:
             "Model commit: " + str(config.get("revision") or "mutable / unpinned"),
             f"Method: {str(config.get('method', '?')).upper()} | Provider: {config.get('provider', '?')}",
         ]
+        if state.get("teardown_error"):
+            result.append(_teardown_note(state))
         if state.get("execution_unconfirmed"):
             result += [
                 "Execution: unconfirmed; detached work may still be queued or running.",
