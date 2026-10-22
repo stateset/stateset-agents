@@ -372,6 +372,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   provably exited, the listing shows each owner's state, and `--force`
   reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
   live owners and `cleanup_orphans()` gains `force=`.
+- RunPod run deadlines and spend accounting keep counting while the host is
+  suspended. They used `CLOCK_MONOTONIC`, which pauses during a laptop sleep,
+  so a pod could bill past the cap, a replacement could be rented on wake,
+  and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
+  monotonic time is extended by wall-clock time it missed, never decreasing
+  when the wall clock steps back.
 
 ### Security
 

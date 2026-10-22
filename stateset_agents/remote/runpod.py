@@ -166,6 +166,47 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     return "stateset-agents[training]"
 
 
+_TIME_MODULE = time
+_REAL_MONOTONIC = time.monotonic
+#: Wall-clock lead over monotonic time that counts as a suspend, not jitter.
+_SUSPEND_NOISE_S = 1.0
+_CLOCK_LOCK = threading.Lock()
+_clock_anchor: list[Any] = []
+
+
+def _billing_now() -> float:
+    """Seconds on a clock that keeps counting while the host is suspended.
+
+    A pod bills through a laptop sleep, but ``CLOCK_MONOTONIC`` pauses, so a
+    run deadline or a spend estimate measured with it would stretch by the
+    suspended time. Linux uses ``CLOCK_BOOTTIME``. Elsewhere this is monotonic
+    time plus whatever wall-clock time monotonic missed (a suspend), and it
+    never decreases, so a wall clock stepped backwards cannot shorten it.
+    """
+    clock = time
+    if clock is _TIME_MODULE and clock.monotonic is not _REAL_MONOTONIC:
+        # A substituted monotonic source (a test double) is trusted as is:
+        # comparing it with the real wall clock would invent suspends.
+        return float(clock.monotonic())
+    boottime = getattr(clock, "CLOCK_BOOTTIME", None)
+    gettime = getattr(clock, "clock_gettime", None)
+    if boottime is not None and callable(gettime):
+        return float(gettime(boottime))
+    mono, wall = float(clock.monotonic()), float(clock.time())
+    source = clock.monotonic
+    key = (id(clock), id(getattr(source, "__func__", source)))
+    with _CLOCK_LOCK:
+        if not _clock_anchor or _clock_anchor[0] != key:
+            _clock_anchor[:] = [key, mono, wall, 0.0, mono]
+        _, mono0, wall0, offset, last = _clock_anchor
+        missed = (wall - wall0) - (mono - mono0)
+        if missed > _SUSPEND_NOISE_S:  # ignore scheduling jitter between reads
+            offset = max(offset, missed)
+        now = max(last, mono + offset)
+        _clock_anchor[3], _clock_anchor[4] = offset, now
+        return float(now)
+
+
 def lease_owner_state(lease: dict[str, Any]) -> str:
     """Whether a lease's submitting process is ``alive``, ``gone`` or ``unknown``.
 
@@ -583,7 +624,7 @@ class SshTransport:
             else self._positive_timeout(requested)
         )
         if self._deadline is not None:
-            remaining = self._deadline - time.monotonic()
+            remaining = self._deadline - _billing_now()
             if remaining <= 0:
                 raise _SshTimeout(
                     "RunPod transport deadline expired before starting an operation",
@@ -672,12 +713,12 @@ class SshTransport:
         """Block until sshd answers, or raise once ``timeout_s`` elapses."""
         self._host, self._port = host, port
         timeout_s = self._positive_timeout(timeout_s)
-        deadline = time.monotonic() + timeout_s
+        deadline = _billing_now() + timeout_s
         if self._deadline is not None:
             deadline = min(deadline, self._deadline)
         last_error = ""
-        while time.monotonic() < deadline:
-            remaining = deadline - time.monotonic()
+        while _billing_now() < deadline:
+            remaining = deadline - _billing_now()
             if remaining <= 0:
                 break
             try:
@@ -696,10 +737,10 @@ class SshTransport:
             except _SshTimeout:
                 last_error = "SSH readiness probe timed out"
             else:
-                if probe.returncode == 0 and time.monotonic() <= deadline:
+                if probe.returncode == 0 and _billing_now() <= deadline:
                     return
                 last_error = (probe.stderr or "").strip()
-            remaining = deadline - time.monotonic()
+            remaining = deadline - _billing_now()
             if remaining > 0:
                 time.sleep(min(5.0, remaining))
         raise RemoteExecutionError(
@@ -1224,7 +1265,7 @@ class RunPodExecutor(RemoteExecutor):
         The wait never outlives ``run_deadline``: readiness time is billed
         against the same run-level ``timeout_s`` as the job itself.
         """
-        deadline = time.monotonic() + self.ready_timeout_s
+        deadline = _billing_now() + self.ready_timeout_s
         if run_deadline is not None:
             deadline = min(deadline, run_deadline)
         while True:
@@ -1233,7 +1274,7 @@ class RunPodExecutor(RemoteExecutor):
             port = (pod.get("portMappings") or {}).get("22")
             if pod.get("desiredStatus") == "RUNNING" and ip and port:
                 return str(ip), int(port)
-            now = time.monotonic()
+            now = _billing_now()
             if now >= deadline:
                 bound = (
                     "the run's remaining time limit"
@@ -1256,7 +1297,7 @@ class RunPodExecutor(RemoteExecutor):
         Covers the case no local process survives to clean up. The job never
         depends on it; whether it armed is logged.
         """
-        delay = max(0, math.ceil(run_deadline - time.monotonic()))
+        delay = max(0, math.ceil(run_deadline - _billing_now()))
         try:
             _, output = ssh.run(
                 shlex.join(
@@ -1417,7 +1458,7 @@ class RunPodExecutor(RemoteExecutor):
                     spec,
                     spent_usd=total_cost_usd,
                     cost_per_hr=self._last_cost_per_hr,
-                    start=time.monotonic(),
+                    start=_billing_now(),
                 )
                 if refusal is not None:
                     stage, reason = refusal
@@ -1643,7 +1684,7 @@ class RunPodExecutor(RemoteExecutor):
         # time from the returned identity through the cleanup request. Neither
         # boundary independently verifies the provider's actual billing window.
         pod_started_at = time.time()
-        pod_started_monotonic = time.monotonic()
+        pod_started_clock = _billing_now()
         cost_per_hr = pod.get("costPerHr")
         try:
             cost_per_hr = float(cost_per_hr) if cost_per_hr is not None else None
@@ -1655,7 +1696,7 @@ class RunPodExecutor(RemoteExecutor):
             cost_per_hr = None
         self._last_cost_per_hr = cost_per_hr
         if self._run_deadline is None:
-            self._run_deadline = pod_started_monotonic + spec.timeout_s
+            self._run_deadline = pod_started_clock + spec.timeout_s
         run_deadline = self._run_deadline
         try:
             self._write_lease(pod_id, job_id, spec, pod_started_at)
@@ -1695,7 +1736,7 @@ class RunPodExecutor(RemoteExecutor):
                     spec,
                     spent_usd=spent_usd,
                     cost_per_hr=cost_per_hr,
-                    start=pod_started_monotonic,
+                    start=pod_started_clock,
                 )
                 if refusal is not None:
                     raise RemoteExecutionError(
@@ -1710,7 +1751,7 @@ class RunPodExecutor(RemoteExecutor):
             try:
                 host, port = self._wait_for_ssh_endpoint(api, pod_id, run_deadline)
                 logs.append(f"pod reachable at {host}:{port}")
-                remaining_s = run_deadline - time.monotonic()
+                remaining_s = run_deadline - _billing_now()
                 if remaining_s <= 0:
                     raise RemoteExecutionError(
                         f"pod {pod_id} became reachable after the run's "
@@ -1829,7 +1870,7 @@ class RunPodExecutor(RemoteExecutor):
             finally:
                 # This is the observed interval, not proof that billing ended.
                 # Retain it even when cleanup evidence cannot be persisted.
-                self._last_duration_s = time.monotonic() - pod_started_monotonic
+                self._last_duration_s = _billing_now() - pod_started_clock
                 self._last_cost_usd = estimate_cost_usd(
                     cost_per_hr, self._last_duration_s
                 )
