@@ -453,7 +453,7 @@ def _reclaim_remote_allocations(run: Path, config: FinetuneConfig) -> None:
     except Exception as error:  # noqa: BLE001 - outcome recording must continue
         logging.error(
             "Could not reclaim RunPod pods after the worker exited (%s); "
-            "run `stateset-agents remote runpod-orphans` to inspect leases",
+            "run `stateset-agents runpod-orphans` to inspect leases",
             type(error).__name__,
         )
         return

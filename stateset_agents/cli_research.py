@@ -274,7 +274,7 @@ def auto_research(
 def fine_tune(
     curated: str = typer.Argument(
         ...,
-        help="Path to a curated JSONL (from `stateset-agents grade-batch ... CURATED=...`).",
+        help="Path to a curated JSONL (from `make grade-batch ... CURATED=...`).",
     ),
     base_model: str = typer.Option(
         "Qwen/Qwen3.5-0.8B",

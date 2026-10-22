@@ -311,7 +311,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review and saving a stop request now run in the background (single-flight,
   with progress shown in the status line). Exiting the studio waits for an
   authorized launch or stop submission to finish.
-- `stateset-agents remote runpod-orphans --terminate` (and
+- `stateset-agents runpod-orphans --terminate` (and
   `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
   at the first failure. A pod that is already gone (HTTP 404) counts as
   cleaned up, pod deletion retries 429/5xx with backoff, and failures are
@@ -385,6 +385,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submission, and the studio at start-up when `RUNPOD_API_KEY` is set, first
   terminates leased pods whose submitting process on this host has provably
   exited.
+- CLI hints name real commands: the worker's orphan hint pointed to a
+  nonexistent `stateset-agents remote runpod-orphans` (the command is the
+  top-level `runpod-orphans`), and a `--curated` help text named the
+  `make grade-batch` target as a CLI command. A test now resolves every
+  backtick-quoted `stateset-agents ...` hint in the package against the CLI.
 
 ### Security
 
