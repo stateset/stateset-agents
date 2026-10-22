@@ -188,7 +188,10 @@ class ContinuousActionMapper(ActionMapper):
     ):
         self.action_dim = action_dim
 
-        # Set bounds
+        # Set bounds (declared up front: np.full's stub shape is narrower than
+        # np.asarray's on some numpy versions).
+        self.action_low: np.ndarray
+        self.action_high: np.ndarray
         if action_low is None:
             self.action_low = np.full(action_dim, -1.0)
         else:
