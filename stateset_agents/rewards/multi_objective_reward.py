@@ -7,6 +7,7 @@ from typing import Any, cast
 import numpy as np
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult
+from stateset_agents.core.reward_context import scores_latest_turn_only
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 
@@ -128,6 +129,21 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         turns = turns or []
         normalized_turns = [self._normalize_turn(item) for item in turns]
+        if scores_latest_turn_only(context):
+            # One step's reward: keep the conversation, but only the newest
+            # reply among assistant turns, so components that aggregate over
+            # replies score that one.
+            assistant_indices = [
+                index
+                for index, item in enumerate(normalized_turns)
+                if item.get("role") == "assistant"
+            ]
+            earlier = set(assistant_indices[:-1])
+            normalized_turns = [
+                item
+                for index, item in enumerate(normalized_turns)
+                if index not in earlier
+            ]
 
         if not self.components:
             return RewardResult(

@@ -12,6 +12,7 @@ from abc import abstractmethod
 from typing import Any
 
 from .reward_base import RewardFunction, RewardResult, RewardType
+from .reward_context import assistant_turns_in_scope
 from .trajectory import ConversationTurn
 
 
@@ -40,14 +41,19 @@ class DomainSpecificReward(RewardFunction):
     ) -> RewardResult:
         """Compute domain-specific reward"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
-        if not assistant_turns:
+        all_assistant_turns = [t for t in turns if t.role == "assistant"]
+        if not all_assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
+
+        # One step's reward scores only the newest reply (see reward_context).
+        scored = len(assistant_turns_in_scope(turns, context))
+        first = len(all_assistant_turns) - scored
+        assistant_turns = all_assistant_turns[first:]
 
         total_score = 0.0
         breakdown = {}
 
-        for i, turn in enumerate(assistant_turns):
+        for i, turn in enumerate(assistant_turns, start=first):
             # Get expected response if available
             query = self._get_query_for_turn(turns, i)
             expected = self.expected_responses.get(query) if query else None

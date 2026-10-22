@@ -14,6 +14,7 @@ import re
 from typing import Any
 
 from .reward_base import RewardFunction, RewardResult, RewardType
+from .reward_context import assistant_turns_in_scope
 from .trajectory import ConversationTurn
 
 
@@ -35,7 +36,7 @@ class HelpfulnessReward(RewardFunction):
     ) -> RewardResult:
         """Evaluate helpfulness of assistant responses"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
+        assistant_turns = assistant_turns_in_scope(turns, context)
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 
@@ -175,7 +176,7 @@ class SafetyReward(RewardFunction):
     ) -> RewardResult:
         """Evaluate safety of assistant responses"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
+        assistant_turns = assistant_turns_in_scope(turns, context)
         if not assistant_turns:
             return RewardResult(score=1.0, breakdown={}, metadata={})
 
@@ -241,7 +242,7 @@ class CorrectnessReward(RewardFunction):
     ) -> RewardResult:
         """Evaluate correctness of assistant responses"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
+        assistant_turns = assistant_turns_in_scope(turns, context)
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 
@@ -313,7 +314,7 @@ class ConcisenessReward(RewardFunction):
     ) -> RewardResult:
         """Evaluate conciseness of assistant responses"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
+        assistant_turns = assistant_turns_in_scope(turns, context)
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 
@@ -364,7 +365,7 @@ class EngagementReward(RewardFunction):
     ) -> RewardResult:
         """Evaluate engagement level of assistant responses"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
+        assistant_turns = assistant_turns_in_scope(turns, context)
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 

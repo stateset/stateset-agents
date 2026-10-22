@@ -237,7 +237,8 @@ async def test_nested_outcome_runs_through_real_trainer_with_executed_tools():
     groups = await trainer.generate_trajectories([scenario])
     assert len(groups) == 1 and len(groups[0].trajectories) == 1
     assert groups[0].trajectories[0].total_reward == 1.5
-    assert ordinary.contexts == [scenario, scenario]
+    # The environment scored the episode; the trainer reuses it, not re-scores.
+    assert ordinary.contexts == [scenario]
     assert all("expected_tool_calls" not in context["scenario"] for context in contexts)
 
 

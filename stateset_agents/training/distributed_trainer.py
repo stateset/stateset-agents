@@ -36,6 +36,11 @@ except ImportError:
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
+from stateset_agents.core.reward_context import (
+    environment_applied_reward,
+    set_episode_reward,
+    trajectory_reward_context,
+)
 from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.utils.monitoring import MonitoringService
 
@@ -427,14 +432,22 @@ class DistributedGRPOTrainer:
         """Score each trajectory with the configured reward function."""
         rewards: list[float] = []
         for trajectory in trajectories:
-            context = getattr(trajectory, "metadata", None) or {}
+            if environment_applied_reward(
+                trajectory, self.reward_function, self.environment
+            ):
+                # The environment already scored the episode with this reward.
+                rewards.append(float(trajectory.total_reward))
+                continue
+            context = trajectory_reward_context(
+                trajectory, reward_fn=self.reward_function
+            )
             reward_result = await self.reward_function.compute_reward(
                 getattr(trajectory, "turns", []), context
             )
             score, breakdown = await coerce_reward_result(
                 reward_result, DISTRIBUTED_TRAIN_EXCEPTIONS
             )
-            trajectory.total_reward = score
+            set_episode_reward(trajectory, score)
             if hasattr(trajectory, "metadata") and isinstance(
                 trajectory.metadata, dict
             ):

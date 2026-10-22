@@ -10,6 +10,12 @@ from typing import Any
 
 import numpy as np
 
+from stateset_agents.core.reward_context import (
+    environment_applied_reward,
+    set_episode_reward,
+    trajectory_reward_context,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,17 +128,24 @@ async def run_post_training_evaluation(
 
                 trajectory = await trainer.environment.run_episode(agent_fn, scenario)
 
-                if trainer.reward_fn:
+                if trainer.reward_fn and not environment_applied_reward(
+                    trajectory, trainer.reward_fn, trainer.environment
+                ):
                     reward_result = await trainer.reward_fn.compute_reward(
-                        trajectory.turns, scenario
+                        trajectory.turns,
+                        trajectory_reward_context(
+                            trajectory, scenario, reward_fn=trainer.reward_fn
+                        ),
                     )
                     score, reward_breakdown = await coerce_reward_result_fn(
                         reward_result
                     )
-                    trajectory.total_reward = score
+                    set_episode_reward(trajectory, score)
                 else:
-                    # Keep the reward the environment computed for the episode.
-                    reward_breakdown = {}
+                    # Keep the reward the environment computed for the episode
+                    # (with the trainer's own reward_fn, when it applied it).
+                    metadata = getattr(trajectory, "metadata", None) or {}
+                    reward_breakdown = dict(metadata.get("reward_breakdown") or {})
 
                 traj_info = {
                     "generation_idx": gen_idx,

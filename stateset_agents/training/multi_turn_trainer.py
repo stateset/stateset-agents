@@ -18,6 +18,11 @@ from typing import Any, TypeAlias
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
+from stateset_agents.core.reward_context import (
+    environment_applied_reward,
+    set_episode_reward,
+    trajectory_reward_context,
+)
 from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
@@ -764,16 +769,36 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
     ) -> None:
-        """Apply the trainer's reward function, if any, to a finished episode."""
-        if self.reward_fn:
-            context = scenario
-            if getattr(self.reward_fn, "requires_environment_context", False):
-                context = {**(trajectory.final_state or {}), "scenario": scenario}
-            with self.profiler.measure("reward_evaluation"):
-                result = await self.reward_fn.compute_reward(trajectory.turns, context)
-            score, breakdown = await self._coerce_reward_result(result)
-            trajectory.total_reward = score
-            trajectory.metadata["reward_breakdown"] = breakdown
+        """Make sure a finished episode carries exactly one reward.
+
+        When the trainer's reward function is the environment's own and the
+        environment already applied it (per step or at episode end), that
+        reward is kept: scoring again would double the cost of an LLM judge,
+        spend a judge budget twice and replace the environment's reward with
+        one computed under a different context. Otherwise the trainer scores
+        the whole episode once, with the shared reward-context contract, and
+        credits the score to the final step so ``turn_rewards`` sum to it.
+        """
+        if not self.reward_fn:
+            return
+        if environment_applied_reward(trajectory, self.reward_fn, self.environment):
+            error = trajectory.metadata.get("reward_error")
+            if error:
+                raise RuntimeError(f"Episode reward failed: {error}")
+            trajectory.metadata.setdefault("reward_breakdown", {})
+            return
+        context = trajectory_reward_context(
+            trajectory, scenario, reward_fn=self.reward_fn
+        )
+        with self.profiler.measure("reward_evaluation"):
+            result = await self.reward_fn.compute_reward(trajectory.turns, context)
+        score, breakdown = await self._coerce_reward_result(result)
+        set_episode_reward(trajectory, score)
+        trajectory.metadata["reward_breakdown"] = breakdown
+        error = trajectory.metadata.pop("reward_error", None)
+        if error:
+            # The environment's own reward failed, but the trainer's scored.
+            trajectory.metadata["environment_reward_error"] = error
 
     async def _generate_batched_trajectories(
         self, scenarios: list[dict[str, Any]], num_generations: int

@@ -15,6 +15,11 @@ from typing import Any
 
 import numpy as np
 
+from .reward_context import (
+    LATEST_TURN_SCOPE,
+    REWARD_SCOPE_KEY,
+    scores_latest_turn_only,
+)
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -224,6 +229,11 @@ class CompositeReward(RewardFunction):
                     # Ordinary components retain their historical scenario
                     # context; outcome components receive executed tool state.
                     child_context = context["scenario"]
+                    if scores_latest_turn_only(context):
+                        child_context = {
+                            **child_context,
+                            REWARD_SCOPE_KEY: LATEST_TURN_SCOPE,
+                        }
                 result = await reward_fn.compute_reward(turns, child_context)
                 results.append((reward_fn, result))
             except REWARD_EXCEPTIONS as e:

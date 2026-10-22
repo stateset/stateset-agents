@@ -16,6 +16,7 @@ from typing import Any
 
 from .reward import RewardFunction
 from .reward_base import RewardType
+from .reward_context import build_reward_context, trajectory_reward_context
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
@@ -110,7 +111,10 @@ class Environment(ABC):
     def reward_function(self, value: RewardFunction | None) -> None:
         self.reward_fn = value
 
-    # Whether step() applies IMMEDIATE/DENSE (and untyped) reward functions.
+    #: Whether step() applies untyped reward functions (no ``reward_type``)
+    #: per step. Environments that score steps always apply IMMEDIATE/DENSE
+    #: rewards per step; an untyped one is applied per step only when this is
+    #: set, and otherwise once at episode end.
     scores_steps: bool = False
 
     def _get_reward_type(self) -> RewardType | None:
@@ -125,7 +129,7 @@ class Environment(ABC):
             return False
         reward_type = self._get_reward_type()
         if reward_type is None:
-            return True
+            return self.scores_steps
         return reward_type in (RewardType.IMMEDIATE, RewardType.DENSE)
 
     def _should_compute_final_reward(self) -> bool:
@@ -187,11 +191,15 @@ class Environment(ABC):
                     turns = list(trajectory)
 
                 if getattr(self.reward_fn, "requires_environment_context", False):
+                    # Evidence rewards judge the recorded final state as is.
                     result = await self.reward_fn.compute_reward(
                         turns, getattr(trajectory, "final_state", None)
                     )
                 else:
-                    result = await self.reward_fn.compute_reward(turns)
+                    result = await self.reward_fn.compute_reward(
+                        turns,
+                        trajectory_reward_context(trajectory, reward_fn=self.reward_fn),
+                    )
                 if hasattr(result, "score"):
                     return float(result.score)
                 if isinstance(result, dict) and "score" in result:
@@ -207,6 +215,36 @@ class Environment(ABC):
                 return 0.5
 
         return 0.5
+
+    async def _apply_step_reward(
+        self, state: EnvironmentState, turns: list[ConversationTurn]
+    ) -> float:
+        """Score the newest assistant turn of ``turns`` with ``reward_fn``.
+
+        The whole conversation so far is passed for context, marked so rewards
+        that aggregate over assistant turns score only the newest one. The
+        call is counted in ``state.metadata["reward_fn_calls"]``; a failure is
+        logged, recorded in ``state.metadata["reward_error"]`` and scores 0.0
+        unless the reward sets ``fail_on_error``.
+        """
+        reward_fn = self.reward_fn
+        if reward_fn is None:
+            return 0.0
+        context = build_reward_context(
+            state.context, reward_fn=reward_fn, latest_turn_only=True
+        )
+        state.metadata["reward_fn_calls"] = (
+            int(state.metadata.get("reward_fn_calls", 0) or 0) + 1
+        )
+        try:
+            result = await reward_fn.compute_reward(turns, context)
+        except ENVIRONMENT_EXCEPTIONS as error:
+            if getattr(reward_fn, "fail_on_error", False):
+                raise
+            _record_reward_failure(state.metadata, reward_fn, error, "step")
+            return 0.0
+        score = _reward_score(result)
+        return 0.0 if score is None else score
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
         """Expose public context while retaining evaluator references privately."""
@@ -349,37 +387,56 @@ class Environment(ABC):
         turns, state, scenario = episode.turns, episode.state, episode.scenario
         turn_rewards = episode.turn_rewards
         total_reward = episode.total_reward
-        if self.reward_fn and self._should_compute_final_reward():
+        reward_metadata = {
+            key: state.metadata[key]
+            for key in ("reward_fn_calls", "reward_error")
+            if state.metadata.get(key)
+        }
+        reward_fn = self.reward_fn
+        if reward_fn and self._should_compute_final_reward():
+            context = build_reward_context(
+                state.context,
+                scenario if isinstance(scenario, dict) else None,
+                reward_fn=reward_fn,
+            )
+            reward_metadata["reward_fn_calls"] = (
+                int(reward_metadata.get("reward_fn_calls", 0)) + 1
+            )
             try:
-                final_reward = await self.reward_fn.compute_reward(turns, state.context)
-                if hasattr(final_reward, "score"):
-                    final_value = float(final_reward.score)
-                elif isinstance(final_reward, dict) and "score" in final_reward:
-                    final_value = float(final_reward["score"])
-                else:
-                    final_value = None
+                final_reward = await reward_fn.compute_reward(turns, context)
+            except ENVIRONMENT_EXCEPTIONS as error:
+                if getattr(reward_fn, "fail_on_error", False):
+                    raise
+                _record_reward_failure(reward_metadata, reward_fn, error, "episode")
+            else:
+                final_value = _reward_score(final_reward)
                 if final_value is not None:
                     total_reward += final_value
                     if turn_rewards:
                         turn_rewards[-1] += final_value
                     else:
                         turn_rewards.append(final_value)
-            except ENVIRONMENT_EXCEPTIONS:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                pass
+                breakdown = getattr(final_reward, "breakdown", None)
+                if isinstance(breakdown, dict):
+                    reward_metadata["reward_breakdown"] = dict(breakdown)
 
+        metadata: dict[str, Any] = {
+            "episode_id": state.episode_id,
+            "status": state.status.value,
+            "scenario": scenario,
+        }
+        if reward_metadata.get("reward_fn_calls"):
+            # Lets a trainer holding the same reward_fn reuse this reward
+            # instead of scoring the episode a second time.
+            metadata["reward_fn_applied"] = True
+        metadata.update(reward_metadata)
         return MultiTurnTrajectory(
             turns=turns,
             total_reward=total_reward,
             turn_rewards=turn_rewards,
             initial_state={"scenario": scenario} if scenario else None,
             final_state=state.context,
-            metadata={
-                "episode_id": state.episode_id,
-                "status": state.status.value,
-                "scenario": scenario,
-            },
+            metadata=metadata,
         )
 
 
@@ -392,6 +449,31 @@ class _Episode:
     turns: list[ConversationTurn] = field(default_factory=list)
     turn_rewards: list[float] = field(default_factory=list)
     total_reward: float = 0.0
+
+
+def _reward_score(result: Any) -> float | None:
+    """Read the score from a reward result (object, mapping or bare number)."""
+    if hasattr(result, "score"):
+        return float(result.score)
+    if isinstance(result, dict) and "score" in result:
+        return float(result["score"])
+    if isinstance(result, (int, float)) and not isinstance(result, bool):
+        return float(result)
+    return None
+
+
+def _record_reward_failure(
+    metadata: dict[str, Any], reward_fn: Any, error: BaseException, where: str
+) -> None:
+    """Log a swallowed reward failure and mark it on the episode."""
+    name = getattr(reward_fn, "name", None) or type(reward_fn).__name__
+    logger.warning(
+        "Reward function %s failed scoring the %s; it contributes 0.0: %s",
+        name,
+        where,
+        error,
+    )
+    metadata["reward_error"] = f"{type(error).__name__}: {error}"
 
 
 def _is_reward(value: Any) -> bool:

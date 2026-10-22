@@ -23,6 +23,7 @@ from .domain_rewards import (
     TechnicalSupportReward,
 )
 from .reward_base import CompositeReward, RewardFunction, RewardResult, RewardType
+from .reward_context import assistant_turns_in_scope
 from .trajectory import ConversationTurn
 
 
@@ -58,8 +59,9 @@ class SimilarityAwareReward(RewardFunction):
         similarity_scores = []
         similarity_breakdown = {}
 
+        scored_turns = {id(turn) for turn in assistant_turns_in_scope(turns, context)}
         for i, turn in enumerate(turns):
-            if turn.role == "assistant":
+            if turn.role == "assistant" and id(turn) in scored_turns:
                 # Get the prompt/query for this turn
                 prompt = context.get("prompt") if context else None
                 expected = self.expected_responses_map.get(prompt) if prompt else None

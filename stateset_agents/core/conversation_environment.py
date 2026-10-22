@@ -11,7 +11,6 @@ import uuid
 from typing import Any, cast
 
 from .environment_base import (
-    ENVIRONMENT_EXCEPTIONS,
     Environment,
     EnvironmentState,
     EpisodeStatus,
@@ -203,29 +202,15 @@ class ConversationEnvironment(Environment):
         new_state.context["history"] = history
 
         # Score the reply against the conversation it answers, before the
-        # simulated user's next message exists.
+        # simulated user's next message exists. Only the newest reply is
+        # scored, so an episode's step rewards weight every turn once.
         step_reward = 0.0
         if self.reward_fn is not None and self._should_compute_step_reward():
             reward_turns = [
                 ConversationTurn(role=str(m["role"]), content=str(m["content"]))
                 for m in prior_history
             ] + [agent_turn]
-            try:
-                reward_result = await self.reward_fn.compute_reward(
-                    reward_turns,
-                    new_state.context,
-                )
-                if hasattr(reward_result, "score"):
-                    step_reward = float(reward_result.score)
-                elif isinstance(reward_result, dict) and "score" in reward_result:
-                    step_reward = float(reward_result["score"])
-                elif isinstance(reward_result, (int, float)):
-                    step_reward = float(reward_result)
-            except ENVIRONMENT_EXCEPTIONS as reward_err:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                logger.debug("Reward computation failed: %s", reward_err)
-                step_reward = 0.0
+            step_reward = await self._apply_step_reward(new_state, reward_turns)
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))
 
