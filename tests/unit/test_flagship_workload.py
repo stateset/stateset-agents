@@ -219,6 +219,7 @@ def test_run_workload_produces_metrics_and_artifacts(tmp_path: Path) -> None:
     assert metrics["baseline_score"] == 0.5
     assert metrics["final_score"] == 0.6
     assert metrics["judge_self_disagreement"] == 0.04
+    assert metrics["judge_parse_failure_rate"] == 0.01
     assert metrics["train_examples"] == 3
     assert metrics["eval_examples"] == 2
     assert metrics["peak_vram_mb"] == 52000.0

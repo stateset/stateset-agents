@@ -40,6 +40,7 @@ from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutor
 from stateset_agents.remote.job import JobStatus, RemoteJobSpec
+from stateset_agents.training.eval_ladder import check_disjoint_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,9 @@ class FlywheelConfig:
     #: are mandatory — without them every sample "passes" and the harvest is
     #: noise (enforced by the harvest job itself).
     harvest_prompts: list[dict[str, Any]]
-    #: ``{prompt, expect, forbid}`` specs that score each generation. Keep
-    #: them disjoint from ``harvest_prompts`` or the score measures leakage.
+    #: ``{prompt, expect, forbid}`` specs that score each generation. They
+    #: must be disjoint from ``harvest_prompts`` even with reference numbers
+    #: masked (checked on construction), or the score measures leakage.
     eval_prompts: list[dict[str, Any]]
     output_root: Path = Path("outputs/flywheel")
     #: Adapter directory of the current generation, if one already exists
@@ -112,6 +114,9 @@ class FlywheelConfig:
     #: pre-rental budget check and as the job timeout.
     timeout_s: int = 3600
     dry_run: bool = False
+
+    def __post_init__(self) -> None:
+        check_disjoint_prompts(self.eval_prompts, self.harvest_prompts)
 
 
 @dataclass

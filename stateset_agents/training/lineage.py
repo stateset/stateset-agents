@@ -54,6 +54,9 @@ class AdapterManifest:
     )
     model_revision: str | None = None
     reward_sha256: str | None = None
+    #: ``min_judge_score`` gates the eval could not check (judge unavailable);
+    #: None when no eval prompt set one.
+    eval_judge_gates_skipped: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -186,6 +186,38 @@ def test_cases_fail_closed_without_writes_or_private_errors(tmp_path, problem):
 
 
 @pytest.mark.parametrize(
+    "turn",
+    [
+        "private\u00a0\u00a0customer",  # case + non-breaking, repeated spaces
+        "\uff30\uff32\uff29\uff36\uff21\uff34\uff25 CUSTOMER",  # full-width
+        "  PRIVATE\n\tCUSTOMER ",
+    ],
+)
+def test_normalized_overlap_with_training_text_is_rejected(tmp_path, turn):
+    """Only byte-identical-after-strip().casefold() repeats were caught."""
+    run, config = make_evaluation(tmp_path)
+    source = Path(config.cases)
+    document = json.loads(source.read_text())
+    document["cases"][0]["user_turns"] = [turn]
+    source.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="overlap retained training text"):
+        evaluation.plan_evaluation(run, config)
+
+
+def test_normalized_duplicate_initial_questions_are_rejected(tmp_path):
+    run, config = make_evaluation(tmp_path)
+    source = Path(config.cases)
+    document = json.loads(source.read_text())
+    first = document["cases"][0]["user_turns"][0]
+    document["cases"][1]["user_turns"] = [
+        "\u00a0" + first.upper().replace(" ", "  ") + " "
+    ]
+    source.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="must be distinct"):
+        evaluation.plan_evaluation(run, config)
+
+
+@pytest.mark.parametrize(
     "changes",
     [
         {"judge_revision": "main"},

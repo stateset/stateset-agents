@@ -972,6 +972,38 @@ class TestEvaluateChecks:
     def test_no_assertions_trivially_passes(self):
         assert sft.evaluate_checks("anything", expect=[], forbid=[])["passed"]
 
+    @pytest.mark.parametrize(
+        "completion",
+        [
+            "Done. I won't rebook you, as you asked.",
+            "Understood: I will not be able to rebook that flight.",
+            "Refund issued, and no rebooking was made.",
+            "I've left the booking as is and did NOT rebook anything.",
+        ],
+    )
+    def test_negated_forbidden_phrase_honors_the_refusal(self, completion):
+        """A refusal-respecting reply names the declined remedy only to say it
+        will not happen; plain substring matching failed it."""
+        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
+        assert checks["forbid_hits"] == [] and checks["passed"] is True
+
+    @pytest.mark.parametrize(
+        "completion",
+        [
+            "I've rebooked you on the 9am flight.",
+            "No problem! I rebooked you.",
+            "I'm not sure why it failed, but I will rebook you now.",
+            "I did not only refund the fare but also rebook the trip.",
+        ],
+    )
+    def test_forbidden_phrase_still_hits_when_used(self, completion):
+        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
+        assert checks["forbid_hits"] == ["rebook"] and checks["passed"] is False
+
+    def test_forbidden_phrase_must_start_at_a_word_boundary(self):
+        checks = sft.evaluate_checks("Your prebooking is fine.", [], ["rebook"])
+        assert checks["passed"] is True
+
 
 class FakeJudge:
     """Stands in for a domain reward: async compute_reward -> .score."""
@@ -1063,7 +1095,53 @@ class TestBuildEvalExtras:
         )
 
         assert "judge_score" not in extras[0]
+        assert extras[0]["judge_unavailable"] is True
         assert extras[0]["checks"]["passed"] is True
+
+
+class TestSkippedJudgeGates:
+    """A min_judge_score gate whose judge could not run was skipped with no
+    trace in eval_results.json, the run output or the manifest."""
+
+    SPECS = [
+        {"prompt": "gated", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "scored", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "ungated", "judge": "cs"},
+    ]
+
+    def test_skips_name_every_unchecked_gate(self):
+        rows = [{"judge_unavailable": True}, {"judge_score": 0.9}, {}]
+        (skip,) = sft.eval_gate_skips(self.SPECS, rows)
+        assert "'gated'" in skip and "not checked" in skip
+
+    def test_job_output_reports_the_skipped_gate(self, dataset, tmp_path, monkeypatch):
+        out = tmp_path / "adapter"
+
+        def fake_run_sft(rows, base_model, output_dir, eval_prompts, **kwargs):
+            from tests.sft_fixtures import write_sft_export
+
+            write_sft_export(output_dir, base_model=base_model, **kwargs)
+            sft.write_eval_results(
+                output_dir,
+                ["gated"],
+                ["b"],
+                ["f"],
+                extras=[{"judge_unavailable": True}],
+            )
+            return output_dir
+
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", fake_run_sft)
+        outcome = sft.run_sft_job(
+            payload(
+                dataset,
+                output_dir=str(out),
+                dry_run=False,
+                eval_prompts=[self.SPECS[0]],
+            )
+        )
+        assert outcome["returncode"] == 0  # judge failures still degrade
+        assert any("Eval judge gate skipped" in line for line in outcome["logs"])
 
 
 class TestEvalGateFailures:

@@ -21,6 +21,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.finetuning import normalize_identity_text
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.implementation import package_implementation
 from stateset_agents.evaluation.support_judge import (
@@ -359,10 +360,13 @@ def _cases(
                 raise ValueError("Case lists must contain bounded nonempty text")
         if not case["user_turns"] or not case["policy_facts"]:
             raise ValueError("Each case needs user turns and policy facts")
-        if case["id"] in ids or case["user_turns"][0].strip().casefold() in queries:
+        if (
+            normalize_identity_text(case["id"]) in ids
+            or normalize_identity_text(case["user_turns"][0]) in queries
+        ):
             raise ValueError("Case IDs and initial questions must be distinct")
-        ids.add(case["id"])
-        queries.add(case["user_turns"][0].strip().casefold())
+        ids.add(normalize_identity_text(case["id"]))
+        queries.add(normalize_identity_text(case["user_turns"][0]))
     parent, _ = read_run_plan(run)
     raw = read_training_data(run / "dataset")
     if parent["config"]["method"] == "sft":
@@ -370,7 +374,7 @@ def _cases(
 
         rows = _parse_conversations(raw, "retained training dataset")
         training_queries = {
-            turn["content"].strip().casefold()
+            normalize_identity_text(turn["content"])
             for row in rows
             for turn in row["messages"]
             if turn["role"] == "user"
@@ -379,14 +383,16 @@ def _cases(
         from stateset_agents.finetune_workspace import read_scenarios
 
         rows = read_scenarios(raw)
-        if ids & {row["id"] for row in rows}:
+        if ids & {normalize_identity_text(row["id"]) for row in rows}:
             raise ValueError("Test case IDs overlap retained RL training cases")
-        training_queries = {row["context"].strip().casefold() for row in rows}
+        training_queries = {normalize_identity_text(row["context"]) for row in rows}
         training_queries.update(
-            turn.strip().casefold() for row in rows for turn in row["user_responses"]
+            normalize_identity_text(turn)
+            for row in rows
+            for turn in row["user_responses"]
         )
     if any(
-        turn.strip().casefold() in training_queries
+        normalize_identity_text(turn) in training_queries
         for case in cases
         for turn in case["user_turns"]
     ):

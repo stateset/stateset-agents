@@ -32,11 +32,15 @@ import contextlib
 import io
 import json
 import logging
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.chat_masking import assistant_token_mask
+from stateset_agents.core.chat_masking import (
+    assistant_token_mask,
+    final_turn_token_mask,
+)
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -295,7 +299,46 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
     }
 
 
-_WARNED_ONCE: set[str] = set()
+#: How :func:`tokenize_sft_rows` treated each row, as counted in the manifest
+#: (exactly one outcome per row). Kept rows that lost some, but not all, of
+#: their supervised tokens to ``max_length`` are counted separately as
+#: ``partially_truncated``.
+SFT_LABEL_OUTCOMES = (
+    "all_assistant_turns",
+    "final_turn_only",
+    "dropped_unmaskable",
+    "dropped_truncated",
+)
+
+
+def _tokenize_sft_row(
+    tokenizer: Any, row: dict[str, Any], max_length: int
+) -> tuple[dict[str, list[int]] | None, str, bool]:
+    """(record, outcome, lost supervised tokens to truncation)."""
+    tools = _row_tools(row)
+    outcome = "all_assistant_turns"
+    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
+    if masked is None:
+        outcome = "final_turn_only"
+        masked = final_turn_token_mask(tokenizer, row["messages"], tools=tools)
+        if masked is None:
+            return None, "dropped_unmaskable", False
+    ids, assistant = masked
+    truncated = any(assistant[max_length:])
+    ids, assistant = ids[:max_length], assistant[:max_length]
+    if not any(assistant):
+        return None, "dropped_truncated", truncated
+    # Real EOS labels survive even when EOS doubles as padding: the collator
+    # pads labels with -100 by position, not token id.
+    return (
+        {
+            "input_ids": ids,
+            "attention_mask": [1] * len(ids),
+            "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
+        },
+        outcome,
+        truncated,
+    )
 
 
 def tokenize_sft_row(
@@ -304,37 +347,66 @@ def tokenize_sft_row(
     """Tokenize one chat row with labels on assistant tokens only.
 
     System prompts, user turns and tool results are context, not targets
-    (training on them teaches the model to write its own tool outputs).
-    Truncation keeps the first ``max_length`` tokens; a row with no supervised
-    token left is dropped (``None``). Templates whose renders rewrite earlier
-    turns fall back to full-sequence labels with a one-time warning.
+    (training on them teaches the model to write its own tool outputs), so a
+    row is never labeled on prompt tokens. When the template rewrites earlier
+    turns (Qwen3 strips earlier ``<think>`` blocks) only the final assistant
+    turn is supervised; a row whose final turn cannot be located either, or
+    whose supervised tokens were truncated away at ``max_length``, is dropped
+    (``None``). :func:`tokenize_sft_rows` counts each outcome.
     """
-    tools = _row_tools(row)
-    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
-    if masked is None:
-        if "unmasked_sft" not in _WARNED_ONCE:
-            logger.warning(
-                "Chat template rewrites earlier turns; SFT labels fall back to "
-                "every token for affected rows."
-            )
-            _WARNED_ONCE.add("unmasked_sft")
-        text = _render_sft_row(tokenizer, row)["text"]
-        ids = list(
-            tokenizer(text, add_special_tokens=False, truncation=False)["input_ids"]
+    record, _outcome, _truncated = _tokenize_sft_row(tokenizer, row, max_length)
+    return record
+
+
+def tokenize_sft_rows(
+    tokenizer: Any, rows: list[dict[str, Any]], max_length: int
+) -> tuple[list[dict[str, list[int]]], dict[str, int]]:
+    """Tokenize ``rows`` and count how each was labeled or why it was dropped.
+
+    Returns the kept records and a count per :data:`SFT_LABEL_OUTCOMES` entry
+    plus ``partially_truncated`` (kept rows that lost supervised tokens to
+    ``max_length``), so a run's manifest can say how many rows lost their
+    earlier assistant turns, lost the end of a reply, or were not trained.
+    """
+    counts = dict.fromkeys((*SFT_LABEL_OUTCOMES, "partially_truncated"), 0)
+    records = []
+    for row in rows:
+        record, outcome, truncated = _tokenize_sft_row(tokenizer, row, max_length)
+        counts[outcome] += 1
+        if record is not None:
+            records.append(record)
+            counts["partially_truncated"] += truncated
+    if counts["final_turn_only"]:
+        logger.warning(
+            "Chat template rewrites earlier turns in %d of %d SFT row(s); only "
+            "their final assistant turn is supervised.",
+            counts["final_turn_only"],
+            len(rows),
         )
-        assistant = [True] * len(ids)
-    else:
-        ids, assistant = masked
-    ids, assistant = ids[:max_length], assistant[:max_length]
-    if not any(assistant):
-        return None
-    # Real EOS labels survive even when EOS doubles as padding: the collator
-    # pads labels with -100 by position, not token id.
-    return {
-        "input_ids": ids,
-        "attention_mask": [1] * len(ids),
-        "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
-    }
+    if counts["dropped_unmaskable"]:
+        logger.warning(
+            "Dropped %d of %d SFT row(s) whose assistant tokens cannot be "
+            "located in the chat template render.",
+            counts["dropped_unmaskable"],
+            len(rows),
+        )
+    if counts["dropped_truncated"]:
+        logger.warning(
+            "Dropped %d of %d SFT row(s) whose assistant tokens were truncated "
+            "away at max_length=%d.",
+            counts["dropped_truncated"],
+            len(rows),
+            max_length,
+        )
+    if counts["partially_truncated"]:
+        logger.warning(
+            "%d of %d SFT row(s) lost part of their assistant tokens at "
+            "max_length=%d; only the surviving prefix is supervised.",
+            counts["partially_truncated"],
+            len(rows),
+            max_length,
+        )
+    return records, counts
 
 
 def build_training_arguments(training_arguments_cls: Any, **kwargs: Any) -> Any:
@@ -655,17 +727,48 @@ def normalize_eval_prompts(
     return specs
 
 
+#: A negation ending right before a forbidden phrase, in the same clause:
+#: "not"/"never"/"without"/"cannot"/"...n't" up to three words earlier
+#: ("I won't be able to rebook"), or "no" immediately before ("no rebooking").
+_NEGATED_BEFORE = re.compile(
+    r"(?:\b(?:not|never|without|cannot)|n['\u2019]t)\s+(?:[\w'\u2019-]+\s+){0,3}$"
+    r"|\bno\s+$",
+    re.IGNORECASE,
+)
+
+
+def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
+    """True when ``phrase`` occurs in ``completion`` other than negated.
+
+    A user who declines a remedy is honored by "I won't rebook you" — the
+    forbidden token appears only to say it will not happen. Matches must
+    start at a word boundary ("rebook" still hits "rebooked") and count
+    unless an explicit negation directly precedes them in the same clause.
+    """
+    if not phrase:
+        return True
+    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
+    for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
+        # The negation window is a few words; bound the regex's input.
+        before = completion[max(0, match.start() - 200) : match.start()]
+        if not _NEGATED_BEFORE.search(before):
+            return True
+    return False
+
+
 def evaluate_checks(
     completion: str, expect: list[str], forbid: list[str]
 ) -> dict[str, Any]:
-    """Case-insensitively match ``expect``/``forbid`` substrings.
+    """Case-insensitively match ``expect`` substrings and ``forbid`` phrases.
 
     Passes when every ``expect`` substring appears in ``completion`` and no
-    ``forbid`` substring does.
+    ``forbid`` phrase is used: a forbidden phrase must start at a word
+    boundary and does not count where it is explicitly negated ("I won't
+    rebook you", "no rebooking"); see :func:`_forbidden_phrase_used`.
     """
     haystack = completion.lower()
     expect_hits = [s for s in expect if s.lower() in haystack]
-    forbid_hits = [s for s in forbid if s.lower() in haystack]
+    forbid_hits = [s for s in forbid if _forbidden_phrase_used(completion, s)]
     return {
         "expect_hits": expect_hits,
         "forbid_hits": forbid_hits,
@@ -720,7 +823,8 @@ def build_eval_extras(
 
     Rows for plain prompts stay exactly as before (empty extras); rows whose
     spec carries assertions gain ``checks``, and specs naming a ``judge``
-    gain ``judge_score`` (when the judge could run).
+    gain ``judge_score`` when the judge could run and
+    ``judge_unavailable: true`` when it could not.
     """
     extras: list[dict[str, Any]] = []
     for spec, completion in zip(specs, finetuned, strict=True):
@@ -733,6 +837,8 @@ def build_eval_extras(
             score = judge_completion(spec["judge"], spec["prompt"], completion)
             if score is not None:
                 extra["judge_score"] = score
+            else:  # recorded, so a skipped min_judge_score gate is visible
+                extra["judge_unavailable"] = True
         if spec.get("nsr"):
             # Lazy import: harvest imports this module at load time.
             from stateset_agents.training import harvest
@@ -780,6 +886,24 @@ def eval_gate_failures(
                 "did not agree with a verified NSR decision"
             )
     return failures
+
+
+def eval_gate_skips(
+    specs: list[dict[str, Any]], rows: list[dict[str, Any]]
+) -> list[str]:
+    """``min_judge_score`` gates that could not be applied (no judge score).
+
+    A judge that cannot run degrades instead of failing the gate (see
+    :func:`eval_gate_failures`); this lists those prompts so the run says
+    which of its gates were not actually checked.
+    """
+    return [
+        f"{spec['prompt']!r}: min_judge_score {spec['min_judge_score']} not "
+        "checked — no judge score (judge unavailable)"
+        for spec, row in zip(specs, rows, strict=True)
+        if spec.get("min_judge_score") is not None
+        and not isinstance(row.get("judge_score"), (int, float))
+    ]
 
 
 def resolve_resume_checkpoint(output_dir: Path, resume: bool) -> bool:
@@ -959,19 +1083,11 @@ def run_sft(
 
     # Render Python records directly: Arrow otherwise unifies different tool
     # schemas/argument objects and inserts null fields into the conversations.
-    tokenized = [tokenize_sft_row(tokenizer, row, max_length) for row in rows]
-    records = [record for record in tokenized if record is not None]
-    if len(records) < len(tokenized):
-        logger.warning(
-            "Dropped %d of %d SFT rows whose assistant tokens were truncated "
-            "away at max_length=%d.",
-            len(tokenized) - len(records),
-            len(tokenized),
-            max_length,
-        )
+    records, label_outcomes = tokenize_sft_rows(tokenizer, rows, max_length)
     if not records:
         raise ValueError(
-            f"No SFT row keeps an assistant token within max_length={max_length}."
+            "No SFT row keeps a locatable assistant token within "
+            f"max_length={max_length}."
         )
     dataset = Dataset.from_list(records)
 
@@ -1025,6 +1141,12 @@ def run_sft(
             "training_content_sha256": dataset_identity.content_sha256,
             "training_input_rows": dataset_identity.examples,
             "effective_training_rows": len(records),
+            # Rows supervised on their final assistant turn only (the template
+            # rewrites earlier turns) and rows not trained at all, by reason.
+            "final_turn_only_rows": label_outcomes["final_turn_only"],
+            "unmaskable_rows_dropped": label_outcomes["dropped_unmaskable"],
+            "truncated_rows_dropped": label_outcomes["dropped_truncated"],
+            "partially_truncated_rows": label_outcomes["partially_truncated"],
             "seed": seed,
             "data_seed": seed,
             "num_epochs": num_epochs,
@@ -1081,6 +1203,12 @@ def run_sft(
             logger.info("Eval checks: %d/%d prompt(s) passed.", passed, len(checked))
             manifest.eval_passed = passed
             manifest.eval_total = len(checked)
+        if any(spec.get("min_judge_score") is not None for spec in eval_specs):
+            skipped = eval_gate_skips(eval_specs, extras)
+            for skip in skipped:
+                logger.warning("Eval judge gate skipped: %s", skip)
+            manifest.eval_judge_gates_skipped = len(skipped)
+        if checked or manifest.eval_judge_gates_skipped is not None:
             write_manifest(output_dir, manifest)
 
     return output_dir
@@ -1131,6 +1259,8 @@ def _apply_eval_gate(
     if not results_path.exists():  # e.g. eval skipped; nothing to gate on
         return 0
     rows = json.loads(results_path.read_text())
+    for skip in eval_gate_skips(specs, rows):
+        logger.warning("Eval judge gate skipped: %s", skip)
     failures = eval_gate_failures(specs, rows)
     if not failures:
         return 0

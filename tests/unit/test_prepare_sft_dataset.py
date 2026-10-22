@@ -169,3 +169,141 @@ class TestEndToEndCLI:
             assert "messages" in line
             roles = [m["role"] for m in line["messages"]]
             assert roles == ["user", "assistant"]
+
+
+MULTI_TURN = {
+    "prompt": "Q2",
+    "response": "A2",
+    "messages": [
+        {"role": "system", "content": "Be brief."},
+        {"role": "user", "content": "Q1"},
+        {"role": "assistant", "content": "A1"},
+        {"role": "user", "content": "Q2"},
+        {"role": "assistant", "content": "A2"},
+    ],
+    "score": 0.9,
+    "source": "s.jsonl",
+}
+
+
+class TestUnscoredEntries:
+    """A missing score used to default to 1.0, so unscored rows passed any
+    --min-score; stats defaulted it to 0.0 instead."""
+
+    def test_unscored_entry_fails_min_score_and_is_counted(self, caplog) -> None:
+        entries = [
+            {"prompt": "scored", "response": "r", "score": 0.9},
+            {"prompt": "unscored", "response": "r"},
+            {"prompt": "junk", "response": "r", "score": "high"},
+        ]
+        with caplog.at_level("WARNING", logger="prepare_sft_dataset"):
+            kept = prep.filter_entries(entries, min_score=0.5)
+        assert [e["prompt"] for e in kept] == ["scored"]
+        assert "dropped 2 entries with no numeric score" in caplog.text
+
+    def test_unscored_entries_still_pass_without_min_score(self) -> None:
+        assert len(prep.filter_entries([{"prompt": "p", "response": "r"}])) == 1
+
+    def test_stats_report_unscored_entries_separately(self, tmp_path: Path) -> None:
+        import subprocess
+
+        src, out = tmp_path / "c.jsonl", tmp_path / "o.jsonl"
+        _write_jsonl(
+            src,
+            [
+                {"prompt": "a", "response": "r", "score": 0.8},
+                {"prompt": "b", "response": "r"},
+            ],
+        )
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "prepare_sft_dataset.py"),
+                *("--input", str(src), "--format", "chat", "--output", str(out)),
+                "--stats",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr
+        assert "unscored:  1" in result.stdout
+        assert "min score: 0.800" in result.stdout
+
+
+class TestUtf8:
+    def test_utf8_input_loads_under_the_c_locale(self, tmp_path: Path) -> None:
+        import os
+        import subprocess
+
+        src, out = tmp_path / "c.jsonl", tmp_path / "o.jsonl"
+        src.write_text(
+            json.dumps(
+                {"prompt": "Café order?", "response": "Refund de 12€", "score": 0.9},
+                ensure_ascii=False,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        env = {**os.environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0"}
+        env.pop("PYTHONIOENCODING", None)
+        result = subprocess.run(
+            [
+                sys.executable,
+                str(SCRIPT_DIR / "prepare_sft_dataset.py"),
+                *("--input", str(src), "--format", "chat", "--output", str(out)),
+            ],
+            capture_output=True,
+            env=env,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
+        row = json.loads(out.read_text(encoding="utf-8"))
+        assert row["messages"][0]["content"] == "Café order?"
+
+
+class TestMultiTurnEntries:
+    """Curated entries carry the graded multi-turn context; flattening it to
+    (last user, response) trained on a different context than was graded."""
+
+    def test_chat_keeps_the_full_graded_context(self) -> None:
+        assert prep.to_chat(MULTI_TURN) == {"messages": MULTI_TURN["messages"]}
+
+    def test_axolotl_puts_earlier_turns_in_input(self) -> None:
+        assert prep.to_axolotl(MULTI_TURN) == {
+            "instruction": "Q2",
+            "input": "Be brief.\n\nQ1\n\nA1",
+            "output": "A2",
+        }
+
+    def test_hf_trainer_text_has_every_turn(self) -> None:
+        assert prep.to_hf_trainer(MULTI_TURN) == {
+            "text": "Be brief.\n\nQ1\n\nA1\n\nQ2\n\nA2"
+        }
+
+    def test_flatten_restores_the_legacy_pair(self) -> None:
+        assert prep.to_chat(prep.flatten(MULTI_TURN))["messages"] == [
+            {"role": "user", "content": "Q2"},
+            {"role": "assistant", "content": "A2"},
+        ]
+
+    def test_dedup_is_by_context_not_last_prompt(self) -> None:
+        other_context = {
+            **MULTI_TURN,
+            "messages": [
+                {"role": "user", "content": "Q2"},
+                {"role": "assistant", "content": "A2"},
+            ],
+        }
+        same_context = {**MULTI_TURN, "response": "A2", "score": 0.5}
+        kept = prep.filter_entries(
+            [MULTI_TURN, other_context, same_context], dedup=True
+        )
+        assert kept == [MULTI_TURN, other_context]
+
+    def test_inconsistent_messages_are_skipped(self, tmp_path: Path) -> None:
+        p = tmp_path / "c.jsonl"
+        bad = {**MULTI_TURN, "response": "not the last message"}
+        _write_jsonl(p, [MULTI_TURN, bad])
+        assert prep.load_curated(p) == [MULTI_TURN]

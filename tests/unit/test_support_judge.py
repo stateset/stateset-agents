@@ -502,7 +502,9 @@ def test_summarize_math() -> None:
     summary = summarize(results)
     assert summary == {
         "mean_score": pytest.approx(0.5),
-        "self_disagreement": pytest.approx(0.25),
+        # Only "a" parsed both passes; "b" is a parse failure, not agreement.
+        "self_disagreement": pytest.approx(0.5),
+        "self_disagreement_n": 1.0,
         "parse_failure_rate": pytest.approx(0.25),
         "n": 2.0,
         "check_flip_rate": 0.0,
@@ -512,6 +514,109 @@ def test_summarize_math() -> None:
     }
     with pytest.raises(ValueError):
         summarize([])
+
+
+# --------------------------------------------------------------------------- #
+# Aggregate metric correctness
+# --------------------------------------------------------------------------- #
+
+ITEM = JudgeItem(
+    id="c1",
+    scenario=SCENARIO,
+    transcript=(("user", "Where is my order?"), ("assistant", "It shipped.")),
+)
+
+
+def test_a_pass_that_fails_to_parse_is_not_a_disagreement() -> None:
+    """A failed pass scores 0.0; summarize counted |1.0 - 0.0| as the judge
+    disagreeing with itself (self_disagreement=1.0) instead of a parse
+    failure."""
+    generate = RecordingGenerate(
+        lambda p: "I think it is fine." if _is_pass_two(p) else _checks_json(True)
+    )
+    (result,) = SupportJudge(generate).score([ITEM])
+    assert result.parse_failures == 1 and result.pass_scores == (1.0, 0.0)
+    summary = summarize([result])
+    assert summary["self_disagreement"] == 0.0
+    assert summary["self_disagreement_n"] == 0.0
+    assert summary["parse_failure_rate"] == 0.5
+    assert summary["mean_score"] == 0.5
+
+
+def test_self_disagreement_averages_only_items_that_parsed_twice() -> None:
+    results = [
+        JudgeResult("a", 0.7, (0.6, 0.8), ({}, {}), 0, 0.2),
+        JudgeResult("b", 0.9, (0.9, 0.9), ({}, {}), 0, 0.0),
+        JudgeResult("c", 0.5, (1.0, 0.0), ({}, {}), 1, 1.0),
+        JudgeResult("d", 0.0, (0.0, 0.0), ({}, {}), 2, 0.0),
+    ]
+    summary = summarize(results)
+    assert summary["self_disagreement"] == pytest.approx(0.1)
+    assert summary["self_disagreement_n"] == 2.0
+    assert summary["parse_failure_rate"] == pytest.approx(3 / 8)
+    assert summary["mean_score"] == pytest.approx(2.1 / 4)
+    assert summarize(results[::-1]) == summary
+
+
+def test_all_passes_failing_reports_full_parse_failure() -> None:
+    (result,) = SupportJudge(
+        RecordingGenerate(lambda _p: "no json here"), max_parse_retries=0
+    ).score([ITEM])
+    summary = summarize([result])
+    assert summary["parse_failure_rate"] == 1.0
+    assert summary["self_disagreement_n"] == 0.0
+    assert summary["mean_score"] == 0.0
+
+
+def _judge_results():
+    from hypothesis import strategies as st
+
+    score = st.floats(min_value=0.0, max_value=1.0, allow_nan=False)
+
+    @st.composite
+    def result(draw):  # type: ignore[no-untyped-def]
+        first, second = draw(score), draw(score)
+        failed = draw(st.sets(st.sampled_from((0, 1)), max_size=2))
+        passes = (0.0 if 0 in failed else first, 0.0 if 1 in failed else second)
+        return JudgeResult(
+            draw(st.text(min_size=1, max_size=4)),
+            (passes[0] + passes[1]) / 2,
+            passes,
+            ({}, {}),
+            len(failed),
+            abs(passes[0] - passes[1]),
+        )
+
+    return st.lists(result(), min_size=1, max_size=12)
+
+
+def test_summary_metrics_are_bounded_order_free_means() -> None:
+    from hypothesis import given, settings
+    from hypothesis import strategies as st
+
+    @settings(max_examples=200, deadline=None)
+    @given(_judge_results(), st.randoms(use_true_random=False))
+    def check(results, rng):  # type: ignore[no-untyped-def]
+        summary = summarize(results)
+        parsed = [r for r in results if r.parse_failures == 0]
+        assert summary["n"] == len(results)
+        assert summary["mean_score"] == pytest.approx(
+            sum(r.score for r in results) / len(results)
+        )
+        assert summary["parse_failure_rate"] == pytest.approx(
+            sum(r.parse_failures for r in results) / (2 * len(results))
+        )
+        assert summary["self_disagreement_n"] == len(parsed)
+        assert summary["self_disagreement"] == pytest.approx(
+            sum(r.disagreement for r in parsed) / len(parsed) if parsed else 0.0
+        )
+        for key in ("mean_score", "parse_failure_rate", "self_disagreement"):
+            assert 0.0 <= summary[key] <= 1.0
+        shuffled = list(results)
+        rng.shuffle(shuffled)
+        assert summarize(shuffled) == pytest.approx(summary)
+
+    check()
 
 
 def test_judge_result_is_json_serializable() -> None:

@@ -45,8 +45,8 @@ def assistant_char_spans(
         context = render(messages[:i], False) if i else ""
         if before is None or after is None or context is None:
             return None
-        span_start = len(os.path.commonprefix([before, full]))
-        if span_start < len(context) or not full.startswith(context):
+        span_start = _turn_start(full, before, context)
+        if span_start is None:
             return None
         span_end = _reply_end(full, after, span_start, message.get("content"))
         if span_end is None:
@@ -54,6 +54,27 @@ def assistant_char_spans(
         if span_end > span_start:
             spans.append((span_start, span_end))
     return full, spans
+
+
+def _turn_start(full: str, before: str, context: str) -> int | None:
+    """Where a turn's target begins in ``full``, or None if history differs.
+
+    ``before`` is the context rendered with the generation prompt; the target
+    starts where it stops agreeing with ``full`` (which must still contain
+    the whole ``context``). When the turn omits part of the generation
+    prompt (a ``<think>`` stub added only to new turns, or an empty one where
+    the reply has real reasoning), characters that merely happen to match
+    ("<t" of "<think>" vs "<tool_call>") belong to the reply: back off to the
+    last line break of the matched prompt part.
+    """
+    start = len(os.path.commonprefix([before, full]))
+    if start < len(context) or not full.startswith(context):
+        return None
+    if start < len(before):
+        line_end = full.rfind("\n", len(context), start)
+        if line_end >= 0:
+            start = line_end + 1
+    return start
 
 
 def _reply_end(full: str, after: str, start: int, content: Any) -> int | None:
@@ -68,8 +89,37 @@ def _reply_end(full: str, after: str, start: int, content: Any) -> int | None:
         suffix_at = after.rfind(candidate)
         suffix = after[suffix_at + len(candidate) :] if suffix_at >= 0 else ""
         return end + len(os.path.commonprefix([suffix, full[end:]]))
-    # No reply text to anchor on (e.g. a pure tool call): the turn ends where
-    # rendering it stops agreeing with the full conversation.
+    if not text.strip():
+        return _unanchored_reply_end(full, after, start)
+    # The reply text was rewritten in the full render (e.g. an earlier
+    # ``<think>`` block stripped): the turn ends where rendering it stops
+    # agreeing with the full conversation, which usually means no span.
+    shared = len(os.path.commonprefix([after, full]))
+    return shared if shared > start else None
+
+
+def _unanchored_reply_end(full: str, after: str, start: int) -> int | None:
+    """End of a turn with no reply text to anchor on (e.g. a pure tool call).
+
+    ``after`` renders this turn as the LAST message, which templates may
+    decorate (Qwen3 adds an empty ``<think>`` block), so it can stop agreeing
+    with ``full`` right at the start of the turn. The turn's tail — the call
+    and its end-of-turn suffix — renders identically, so the turn ends where
+    the longest suffix of ``after`` that occurs at or after ``start`` ends.
+    Every shorter suffix of an occurring suffix also occurs, so the boundary
+    is binary-searched.
+    """
+    low, high = 0, len(after)
+    while low < high:
+        middle = (low + high) // 2
+        if full.find(after[middle:], start) >= 0:
+            high = middle
+        else:
+            low = middle + 1
+    tail = after[low:]
+    found = full.find(tail, start) if tail else -1
+    if found >= 0 and found + len(tail) > start:
+        return found + len(tail)
     shared = len(os.path.commonprefix([after, full]))
     return shared if shared > start else None
 
@@ -110,6 +160,42 @@ def assistant_token_mask(
         return None
     full, spans = located
     return _token_mask_for_spans(tokenizer, full, spans)
+
+
+def final_turn_token_mask(
+    tokenizer: Any,
+    messages: Sequence[dict[str, Any]],
+    *,
+    tools: Any | None = None,
+) -> tuple[list[int], list[bool]] | None:
+    """Mask only the final assistant turn, tolerating rewritten history.
+
+    Unlike :func:`last_assistant_token_mask` this does not need every
+    earlier turn to have a faithful span: templates such as Qwen3's strip
+    ``<think>`` blocks from earlier replies, yet the final turn's context is
+    still exactly the inference-time prompt (the preceding messages rendered
+    with the generation prompt, history rewritten the same way). Everything
+    the template renders for the final turn after that prompt is the target.
+    Messages after the final assistant turn are dropped. Returns ``None``
+    when there is no assistant turn or the history does not agree.
+    """
+    last = max(
+        (i for i, m in enumerate(messages) if m.get("role") == "assistant"),
+        default=None,
+    )
+    if last is None:
+        return None
+    render = chat_template_render(tokenizer, tools)
+    conversation = list(messages[: last + 1])
+    full = render(conversation, False)
+    before = render(conversation[:last], True)
+    context = render(conversation[:last], False) if last else ""
+    if not full or before is None or context is None:
+        return None
+    start = _turn_start(full, before, context)
+    if start is None or start >= len(full):
+        return None
+    return _token_mask_for_spans(tokenizer, full, [(start, len(full))])
 
 
 def last_assistant_token_mask(
@@ -167,5 +253,6 @@ __all__ = [
     "assistant_char_spans",
     "assistant_token_mask",
     "chat_template_render",
+    "final_turn_token_mask",
     "last_assistant_token_mask",
 ]

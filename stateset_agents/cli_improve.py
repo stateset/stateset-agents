@@ -114,7 +114,10 @@ async def _grade_all(transcript_files: list[Path], reward: Any) -> list[dict[str
 
     per_transcript: list[dict[str, Any]] = []
     for path in transcript_files:
-        turns = gt.load_transcript(path)
+        try:
+            turns = gt.load_transcript(path)
+        except ValueError as exc:  # a skipped line would misalign every turn
+            raise ImproveDataError(str(exc)) from exc
         rows = await gt.grade_transcript(turns, [], reward)
         per_transcript.append({"path": path, "turns": turns, "rows": rows})
     return per_transcript

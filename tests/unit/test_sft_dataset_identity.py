@@ -311,6 +311,56 @@ def test_real_cpu_lora_retains_captured_source_after_training_side_effects(
     )
     assert manifest["hyperparameters"]["training_input_rows"] == 1
     assert manifest["hyperparameters"]["effective_training_rows"] == 1
+    assert manifest["hyperparameters"]["final_turn_only_rows"] == 0
+    assert manifest["hyperparameters"]["unmaskable_rows_dropped"] == 0
+    assert manifest["hyperparameters"]["truncated_rows_dropped"] == 0
+    assert manifest["hyperparameters"]["partially_truncated_rows"] == 0
+    assert manifest["eval_judge_gates_skipped"] is None
+
+
+def test_real_cpu_sft_records_rows_supervised_on_their_final_turn_only(
+    tmp_path, tiny_cpu_sft, monkeypatch
+):
+    """A template that rewrites history used to train on every token of the
+    row with no record of it; the manifest now counts the fallback rows."""
+    rows = [chat(), chat(answer="response response")]
+    rewritten = rows[1]["messages"]
+    real_mask = sft.assistant_token_mask
+
+    def rewrites_second_row(tokenizer, messages, **kwargs):
+        if messages == rewritten:
+            return None
+        return real_mask(tokenizer, messages, **kwargs)
+
+    monkeypatch.setattr(sft, "assistant_token_mask", rewrites_second_row)
+    output = tmp_path / "adapter"
+    sft.run_sft(rows=rows, **train_options(output))
+    hyper = json.loads((output / "stateset_manifest.json").read_text())[
+        "hyperparameters"
+    ]
+    assert hyper["effective_training_rows"] == 2
+    assert hyper["final_turn_only_rows"] == 1
+    assert hyper["unmaskable_rows_dropped"] == 0
+
+
+def test_real_cpu_sft_manifest_counts_skipped_judge_gates(
+    tmp_path, tiny_cpu_sft, monkeypatch
+):
+    def unavailable(name):
+        raise ImportError("no reward stack on this worker")
+
+    monkeypatch.setattr(sft, "_create_domain_reward", unavailable)
+    output = tmp_path / "adapter"
+    sft.run_sft(
+        rows=[chat()],
+        eval_prompts=[{"prompt": "request", "judge": "cs", "min_judge_score": 0.5}],
+        eval_max_new_tokens=2,
+        **train_options(output),
+    )
+    manifest = json.loads((output / "stateset_manifest.json").read_text())
+    assert manifest["eval_judge_gates_skipped"] == 1
+    (row,) = json.loads((output / "eval_results.json").read_text())
+    assert row["judge_unavailable"] is True
 
 
 def test_real_cpu_in_memory_sft_keeps_source_unbound(tmp_path, tiny_cpu_sft):
