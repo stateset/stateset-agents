@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.finetuning import _identity_keys
+
 
 class DatasetFormatError(ValueError):
     """A content-free dataset diagnostic with one-based source locations."""
@@ -230,9 +232,15 @@ def load_text_sft_snapshot(
         )
         provenance["validation"] = validation_provenance
     if validation is not None:
-        train_keys = {json.dumps(row, sort_keys=True) for row in train}
-        if any(json.dumps(row, sort_keys=True) in train_keys for row in validation):
-            raise ValueError("training and validation conversations overlap")
+        # Same identity as split_finetuning_data: a validation conversation
+        # whose initial request matches a training one after NFKC, case and
+        # whitespace normalization is leakage, whatever the replies say.
+        train_keys = set().union(*(_identity_keys(row) for row in train))
+        if any(_identity_keys(row) & train_keys for row in validation):
+            raise ValueError(
+                "training and validation conversations overlap (same initial "
+                "request after normalization)"
+            )
     return TextSFTSnapshot(
         train=train,
         validation=validation,
