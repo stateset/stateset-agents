@@ -748,14 +748,36 @@ def normalize_eval_prompts(
     return specs
 
 
-#: A negation ending right before a forbidden phrase, in the same clause:
-#: "not"/"never"/"without"/"cannot"/"...n't" up to three words earlier
-#: ("I won't be able to rebook"), or "no" immediately before ("no rebooking").
+#: Words that negate a following verb: "not", "never", "no", "without",
+#: "cannot" and any "...n't" contraction.
+_NEGATOR = r"(?:not|never|no|without|cannot|\w+n['\u2019]t)"
+#: The only words allowed between a negator and the phrase it governs:
+#: auxiliaries and aspect ("won't be able to rebook", "not going to rebook",
+#: "no need to rebook"). Anything else — "won't hesitate to", "not only
+#: will I", "can't wait to" — means the negation is about something else.
+_GOVERNING = (
+    r"(?:be\s+able\s+to|able\s+to|be|need\s+to|have\s+to|going\s+to"
+    r"|go\s+ahead\s+and|try\s+to|bother\s+to|ever)"
+)
 _NEGATED_BEFORE = re.compile(
-    r"(?:\b(?:not|never|without|cannot)|n['\u2019]t)\s+(?:[\w'\u2019-]+\s+){0,3}$"
-    r"|\bno\s+$",
+    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?$",
     re.IGNORECASE,
 )
+_NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
+
+
+def _negation_governs(before: str) -> bool:
+    """Whether the text right before a phrase negates it.
+
+    The negator must immediately govern the phrase — adjacent, or separated
+    only by an auxiliary such as "be able to" — and must not itself be
+    negated ("I can't not rebook you" still rebooks).
+    """
+    match = _NEGATED_BEFORE.search(before)
+    if match is None:
+        return False
+    previous = match.group("previous")
+    return not (previous and _NEGATOR_WORD.fullmatch(previous))
 
 
 def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
@@ -764,15 +786,18 @@ def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
     A user who declines a remedy is honored by "I won't rebook you" — the
     forbidden token appears only to say it will not happen. Matches must
     start at a word boundary ("rebook" still hits "rebooked") and count
-    unless an explicit negation directly precedes them in the same clause.
+    unless a negation immediately governs them (see
+    :func:`_negation_governs`): "I won't hesitate to rebook you" rebooks.
+    The same check filters harvested samples, so a loose negation rule
+    would harvest exactly the behaviour a refusal prompt forbids.
     """
     if not phrase:
         return True
     start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
     for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
-        # The negation window is a few words; bound the regex's input.
+        # The governing window is a few words; bound the regex's input.
         before = completion[max(0, match.start() - 200) : match.start()]
-        if not _NEGATED_BEFORE.search(before):
+        if not _negation_governs(before):
             return True
     return False
 
