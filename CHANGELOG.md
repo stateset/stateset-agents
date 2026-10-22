@@ -117,6 +117,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BackgroundTask`; preparing and launching a recovery run still run on
   non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
   longer starts raw threads or uses result queues.
+- The evaluation panel's background work runs through the shared
+  `BackgroundTask` (owned submissions on non-daemon threads) instead of its
+  own thread and result queue.
 
 ### Fixed
 
