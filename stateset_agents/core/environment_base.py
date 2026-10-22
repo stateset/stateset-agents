@@ -22,6 +22,13 @@ from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
 
+#: ``EnvironmentState.metadata`` key a step uses to report the reward
+#: function's (or default heuristic's) share of its step reward.
+STEP_REWARD_FN_SCORE = "_step_reward_fn_score"
+#: ``EnvironmentState.metadata`` key a step may use to report the
+#: environment's own share of its step reward exactly.
+STEP_ENVIRONMENT_REWARD = "_step_environment_reward"
+
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
 # AttributeError typically indicate programming bugs and should propagate
 # so they surface during testing.
@@ -221,7 +228,10 @@ class Environment(ABC):
         that aggregate over assistant turns score only the newest one. The
         call is counted in ``state.metadata["reward_fn_calls"]``; a failure is
         logged, recorded in ``state.metadata["reward_error"]`` and scores 0.0
-        unless the reward sets ``fail_on_error``.
+        unless the reward sets ``fail_on_error``. The score is also recorded
+        under :data:`STEP_REWARD_FN_SCORE`, so the episode can average the
+        reward function's step scores separately from the environment's own
+        step rewards.
         """
         reward_fn = self.reward_fn
         if reward_fn is None:
@@ -233,13 +243,20 @@ class Environment(ABC):
             int(state.metadata.get("reward_fn_calls", 0) or 0) + 1
         )
         try:
-            score = _reward_score(await reward_fn.compute_reward(turns, context))
+            result = await reward_fn.compute_reward(turns, context)
+            score = _reward_score(result)
         except ENVIRONMENT_EXCEPTIONS as error:
             if getattr(reward_fn, "fail_on_error", False):
                 raise
             _record_reward_failure(state.metadata, reward_fn, error, "step")
-            return 0.0
-        return 0.0 if score is None else score
+            score = None
+        else:
+            breakdown = getattr(result, "breakdown", None)
+            if isinstance(breakdown, dict):
+                state.metadata["reward_breakdown"] = dict(breakdown)
+        score = 0.0 if score is None else score
+        state.metadata[STEP_REWARD_FN_SCORE] = score
+        return score
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
         """Expose public context while retaining evaluator references privately."""
@@ -364,6 +381,14 @@ class Environment(ABC):
         new_state, step_reward, done, env_response, info = _parse_step_result(
             raw_step_result
         )
+        # Split the step reward into the reward function's score (averaged
+        # over the episode at the end) and the environment's own reward.
+        reward_fn_part = float(new_state.metadata.pop(STEP_REWARD_FN_SCORE, 0.0))
+        intrinsic = new_state.metadata.pop(STEP_ENVIRONMENT_REWARD, None)
+        episode.reward_fn_scores.append(reward_fn_part)
+        episode.environment_rewards.append(
+            float(step_reward) - reward_fn_part if intrinsic is None else intrinsic
+        )
         episode.total_reward += float(step_reward)
         episode.turn_rewards.append(float(step_reward))
         if isinstance(env_response, ConversationTurn):
@@ -379,12 +404,25 @@ class Environment(ABC):
         return bool(done or new_state.status != EpisodeStatus.ONGOING)
 
     async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
+        """Total the episode: environment rewards plus one reward-function score.
+
+        Each step keeps the environment's own reward; a per-step reward
+        function (or the built-in default heuristic) contributes the mean of
+        its step scores, spread as ``score / steps`` over the steps, so it
+        never grows with episode length; an episode-end reward is added to
+        the last step. ``total_reward == fsum(turn_rewards)``.
+        """
         turns, state, scenario = episode.turns, episode.state, episode.scenario
-        turn_rewards = episode.turn_rewards
-        total_reward = episode.total_reward
+        steps = len(episode.environment_rewards)
+        turn_rewards = [
+            intrinsic + score / steps
+            for intrinsic, score in zip(
+                episode.environment_rewards, episode.reward_fn_scores, strict=True
+            )
+        ]
         reward_metadata = {
             key: state.metadata[key]
-            for key in ("reward_fn_calls", "reward_error")
+            for key in ("reward_fn_calls", "reward_error", "reward_breakdown")
             if state.metadata.get(key)
         }
         reward_fn = self.reward_fn
@@ -406,7 +444,6 @@ class Environment(ABC):
                 _record_reward_failure(reward_metadata, reward_fn, error, "episode")
             else:
                 if final_value is not None:
-                    total_reward += final_value
                     if turn_rewards:
                         turn_rewards[-1] += final_value
                     else:
@@ -419,6 +456,9 @@ class Environment(ABC):
             "episode_id": state.episode_id,
             "status": state.status.value,
             "scenario": scenario,
+            # The environment's own step rewards, without any reward function:
+            # a trainer scoring with another reward adds its score to these.
+            "environment_rewards": list(episode.environment_rewards),
         }
         if reward_metadata.get("reward_fn_calls"):
             # Lets a trainer holding the same reward_fn reuse this reward
@@ -427,7 +467,7 @@ class Environment(ABC):
         metadata.update(reward_metadata)
         return MultiTurnTrajectory(
             turns=turns,
-            total_reward=total_reward,
+            total_reward=math.fsum(turn_rewards),
             turn_rewards=turn_rewards,
             initial_state={"scenario": scenario} if scenario else None,
             final_state=state.context,
@@ -444,6 +484,10 @@ class _Episode:
     turns: list[ConversationTurn] = field(default_factory=list)
     turn_rewards: list[float] = field(default_factory=list)
     total_reward: float = 0.0
+    #: Per step: the reward function's (or default heuristic's) raw score.
+    reward_fn_scores: list[float] = field(default_factory=list)
+    #: Per step: the environment's own reward, without the reward function.
+    environment_rewards: list[float] = field(default_factory=list)
 
 
 def _reward_score(result: Any) -> float | None:

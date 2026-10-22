@@ -11,7 +11,12 @@ import uuid
 from collections.abc import Callable
 from typing import Any
 
-from .environment_base import Environment, EnvironmentState, EpisodeStatus
+from .environment_base import (
+    STEP_ENVIRONMENT_REWARD,
+    Environment,
+    EnvironmentState,
+    EpisodeStatus,
+)
 from .reward import RewardFunction
 from .trajectory import ConversationTurn
 
@@ -158,6 +163,7 @@ class TaskEnvironment(Environment):
         new_state.context["turns"] = turns
 
         step_reward = await self._calculate_task_reward(action, new_state)
+        new_state.metadata[STEP_ENVIRONMENT_REWARD] = step_reward
         if self.reward_fn is not None and self._should_compute_step_reward():
             step_reward += await self._apply_step_reward(
                 new_state, prior_turns + [action]

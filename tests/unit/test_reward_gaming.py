@@ -260,3 +260,61 @@ async def test_stalling_never_beats_resolving_under_the_default_reward():
     resolved = await environment.run_episode(_always(RESOLVED), scenario)
     assert len(stalled.turn_rewards) > len(resolved.turn_rewards) == 1
     assert stalled.total_reward <= resolved.total_reward
+
+
+# --- Shipped reward factories in a real environment --------------------------
+
+
+def _shipped_factories():
+    """Every create_*_reward factory that runs offline, with its arguments."""
+    import importlib
+    import inspect
+    import re
+
+    from stateset_agents.core.basic_rewards import ConcisenessReward
+
+    arguments = {
+        "create_adaptive_reward": lambda f: f(
+            [HelpfulnessReward(), ConcisenessReward()]
+        ),
+        "create_task_agent_reward": lambda f: f({"goal_keywords": ["resolved"]}),
+        "create_domain_reward": lambda f: f("customer_service"),
+    }
+    networked = {"create_llm_judge_reward", "create_rlaif_reward"}
+    found = {}
+    for module_name in ("stateset_agents.core.reward", "stateset_agents.rewards"):
+        module = importlib.import_module(module_name)
+        for name, value in vars(module).items():
+            if (
+                inspect.isfunction(value)
+                and re.fullmatch(r"create_\w*reward", name)
+                and name not in networked
+            ):
+                build = arguments.get(name, lambda f: f())
+                found[f"{value.__module__}.{name}"] = (value, build)
+    return found
+
+
+FACTORIES = _shipped_factories()
+
+
+def test_every_offline_factory_is_covered():
+    assert len(FACTORIES) >= 10
+
+
+@pytest.mark.parametrize("name", sorted(FACTORIES))
+async def test_shipped_factories_never_pay_for_stalling(name):
+    factory, build = FACTORIES[name]
+    scenario = {"id": "s", "user_query": "Can you close my ticket?"}
+
+    async def episode(max_turns):
+        environment = ConversationEnvironment(
+            [scenario], max_turns=max_turns, reward_fn=build(factory)
+        )
+        trajectory = await environment.run_episode(_always(PADDED), scenario)
+        return trajectory.total_reward
+
+    once = await episode(1)
+    stalled = await episode(10)
+    assert stalled <= once + 1e-9, (name, stalled, once)
+    assert 0.0 <= stalled <= 1.0 + 1e-9

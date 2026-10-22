@@ -14,8 +14,6 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import numpy as np
-
 from .reward_context import build_reward_context
 from .trajectory import ConversationTurn
 
@@ -244,40 +242,36 @@ class CompositeReward(RewardFunction):
                 f"({', '.join(failed)})"
             )
 
-        # Combine rewards with safe defaults for empty results
+        # Combine rewards. math.fsum keeps the totals exactly rounded and
+        # independent of summation order and Python version.
         component_weights = [float(rf.weight) for rf, _ in results]
-        if self.normalize_weights and sum(component_weights) > 0:
-            weight_sum = float(sum(component_weights))
+        if self.normalize_weights and math.fsum(component_weights) > 0:
+            weight_sum = math.fsum(component_weights)
             component_weights = [w / weight_sum for w in component_weights]
-        elif failed and sum(component_weights) > 0:
+        elif failed and math.fsum(component_weights) > 0:
             # Spread a failed component's weight over the survivors so the
             # score keeps its scale; otherwise a failure scores as 0 and
             # biases advantages within the group.
-            configured = float(sum(float(rf.weight) for rf in self.reward_functions))
-            scale = configured / float(sum(component_weights))
+            configured = math.fsum(float(rf.weight) for rf in self.reward_functions)
+            scale = configured / math.fsum(component_weights)
             component_weights = [w * scale for w in component_weights]
 
+        weighted_sum = math.fsum(
+            rr.score * w for (_, rr), w in zip(results, component_weights, strict=True)
+        )
         if self.combination_method == "weighted_sum":
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
         elif self.combination_method == "average":
-            total_score = (
-                float(np.mean([r.score for _, r in results])) if results else 0.0
-            )
+            total_score = math.fsum(r.score for _, r in results) / len(results)
         elif self.combination_method == "min":
-            total_score = min((r.score for _, r in results), default=0.0)
+            total_score = min(r.score for _, r in results)
         elif self.combination_method == "max":
-            total_score = max((r.score for _, r in results), default=0.0)
+            total_score = max(r.score for _, r in results)
         else:
             logger.warning(
                 f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum"
             )
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
 
         components: dict[str, float] = {}
         for reward_fn, result in results:
