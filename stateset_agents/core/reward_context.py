@@ -29,8 +29,11 @@ from __future__ import annotations
 
 import inspect
 import math
+import numbers
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from .trajectory import ConversationTurn
 
 #: Context key an environment sets when it asks for one step's reward.
 REWARD_SCOPE_KEY = "reward_scope"
@@ -151,23 +154,73 @@ def environment_applied_reward(
     return isinstance(metadata, Mapping) and bool(metadata.get("reward_fn_applied"))
 
 
-def reward_score(result: Any) -> float:
-    """The finite score of a reward result (object, mapping or bare number).
+def _real(value: Any) -> float | None:
+    """A Python or NumPy/torch scalar as a float, or None if it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, numbers.Real):
+        return float(value)
+    item = getattr(value, "item", None)
+    if callable(item) and getattr(value, "ndim", 0) == 0:
+        scalar: Any = item()
+        if isinstance(scalar, bool):
+            return None
+        if isinstance(scalar, numbers.Real):
+            return float(scalar)
+    return None
 
-    Raises ``TypeError`` for an unknown result type and ``ValueError`` for a
-    non-finite score: neither is ever replaced by a stand-in value.
+
+def reward_score(result: Any) -> float:
+    """The finite score of a reward result: a ``RewardResult`` (anything with
+    ``.score``), a mapping with ``"score"``, or a real scalar (Python, NumPy
+    or a 0-d tensor).
+
+    Raises ``TypeError`` for anything else (``None``, a string, a list) and
+    ``ValueError`` for a non-finite score: neither is ever replaced by a
+    stand-in value. Every caller (environments, ``Environment.get_reward``,
+    ``score_episode``) uses this one parser.
     """
     if hasattr(result, "score"):
-        score = float(result.score)
+        raw = result.score
     elif isinstance(result, Mapping) and "score" in result:
-        score = float(result["score"])
-    elif isinstance(result, (int, float)) and not isinstance(result, bool):
-        score = float(result)
+        raw = result["score"]
     else:
-        raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+        raw = result
+    score = _real(raw)
+    if score is None:
+        raise TypeError(
+            f"Unexpected reward result {type(result).__name__!r}: expected a "
+            "RewardResult, a mapping with 'score' or a real number"
+        )
     if not math.isfinite(score):
         raise ValueError(f"reward score must be finite, got {score}")
     return score
+
+
+def normalize_turns(turns: Any) -> list[ConversationTurn]:
+    """Conversation turns as ``ConversationTurn`` objects.
+
+    Accepts ``ConversationTurn`` objects and ``{"role": ..., "content": ...}``
+    mappings (the shape ``Trajectory.add_turn`` and many callers use), so
+    rewards that read ``turn.role`` never see a dict and silently score 0.
+    """
+    normalized: list[ConversationTurn] = []
+    for turn in list(turns or []):
+        if isinstance(turn, ConversationTurn):
+            normalized.append(turn)
+        elif isinstance(turn, Mapping):
+            normalized.append(
+                ConversationTurn(
+                    role=str(turn.get("role", "user")),
+                    content="" if turn.get("content") is None else str(turn["content"]),
+                    metadata=dict(turn.get("metadata") or {}),
+                )
+            )
+        elif hasattr(turn, "role") and hasattr(turn, "content"):
+            normalized.append(turn)
+        else:
+            raise TypeError(f"Unsupported conversation turn: {type(turn).__name__!r}")
+    return normalized
 
 
 def _scores_per_step(reward_fn: Any, environment: Any) -> bool:
@@ -226,7 +279,7 @@ async def score_episode(
             raise ValueError(f"Episode reward must be finite, got {total}")
         return total
 
-    turns = list(getattr(trajectory, "turns", None) or [])
+    turns = normalize_turns(getattr(trajectory, "turns", None))
     context = trajectory_reward_context(trajectory, scenario, reward_fn=reward_fn)
     intrinsic = metadata.get("environment_rewards")
     if not isinstance(intrinsic, list) or not intrinsic:
@@ -280,6 +333,7 @@ __all__ = [
     "assistant_turns_in_scope",
     "build_reward_context",
     "environment_applied_reward",
+    "normalize_turns",
     "requires_environment_context",
     "reward_score",
     "score_episode",
