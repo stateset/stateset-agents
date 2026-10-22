@@ -51,6 +51,7 @@ from stateset_agents.finetune_workspace import (
     read_json,
     read_run_plan,
     redact_finetune_secrets,
+    remote_stop_supported,
     request_stop,
     require_backend_credentials,
     review_prepared_run,
@@ -677,13 +678,22 @@ class Studio:
         run = Path(self.runs[self.run_index]["path"])
         try:
             plan, digest = read_run_plan(run)
-            if plan["config"].get("provider") != "local":
+            provider = plan["config"].get("provider")
+            if provider != "local" and not remote_stop_supported(provider):
                 self.message = "Remote stop needs provider-specific cleanup; no stop was requested."
                 return
             self.stop_run, self.stop_digest = run, digest
             self.overlay, self.dialog_offset = "stop", 0
         except (OSError, ValueError, TypeError, KeyError):
             self.message = "Cannot verify the selected run for a stop request."
+
+    def _stop_is_remote(self) -> bool:
+        """Whether the stop under review targets a remote (RunPod) run."""
+        try:
+            plan, _ = read_run_plan(self.stop_run) if self.stop_run else ({}, "")
+            return plan.get("config", {}).get("provider") not in {None, "local"}
+        except (OSError, ValueError, TypeError, KeyError):
+            return False
 
     def _filter_runs(self, query: str) -> list[dict[str, Any]]:
         rows = []
@@ -2147,6 +2157,19 @@ class Studio:
                     "Path: " + self.search,
                     "Enter hashes completed weights and validates paired test reports in the background.",
                     "No models or providers are called. Successful import writes private quality.json.",
+                ],
+                width,
+            )
+        elif self.overlay == "stop" and self._stop_is_remote():
+            body = _wrap(
+                [
+                    "REVIEW RUNPOD STOP REQUEST",
+                    "Run: " + (self.stop_run.name if self.stop_run else "none"),
+                    "Plan SHA256: " + self.stop_digest,
+                    "",
+                    "Enter saves a stop receipt and signals the verified worker; Esc leaves the run unchanged.",
+                    "The worker terminates its pod and records the run as cancelled. Training progress on the pod is lost.",
+                    "An acknowledged deletion does not prove billing ended; check the RunPod console if in doubt.",
                 ],
                 width,
             )

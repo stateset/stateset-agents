@@ -19,6 +19,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/unit/test_episode_scoring_paths.py` checks that training, periodic and
   post-training evaluation and the distributed trainer give an episode the same
   reward, wherever the reward is attached.
+- Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
+  (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
+  saved and the run's worker is signalled only after its process identity is
+  verified; the worker terminates its pod and records the run as `cancelled`.
+  The API capability reports `remote_stop_supported` and
+  `remote_stop_providers`. Other remote providers are still refused.
 
 ### Deprecated
 

@@ -1350,14 +1350,56 @@ def _stop_protocol_supported(plan: Mapping[str, Any]) -> bool:
     )
 
 
+#: Remote providers whose worker ends its own allocation when signalled.
+REMOTE_STOP_PROVIDERS = frozenset({"runpod"})
+
+
+def remote_stop_supported(provider: object) -> bool:
+    """Whether this host can stop a paid run of ``provider`` from the studio.
+
+    RunPod workers turn SIGTERM into their cleanup (pod termination). Windows
+    cannot deliver that signal to a detached worker without killing it
+    outright, so remote stop is POSIX-only.
+    """
+    return provider in REMOTE_STOP_PROVIDERS and os.name != "nt"
+
+
+def _signal_remote_worker(run: Path) -> bool:
+    """Ask the verified execution owner to stop; return whether it was signalled.
+
+    Only a process whose start-time token matches ``execution.json`` is
+    signalled, so a reused PID is never touched. The worker converts SIGTERM
+    into ``SystemExit``: the executor terminates its pod, and the stop receipt
+    makes the outcome ``cancelled``.
+    """
+    import signal
+
+    owner = run / "execution.json"
+    try:
+        if not _present(owner) or owner_evidence(owner) != "alive":
+            return False
+        os.kill(read_json(owner, max_bytes=4096)["pid"], signal.SIGTERM)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
+        return False
+    return True
+
+
 def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
-    """Request a local worker stop without signalling PIDs or cancelling queue jobs."""
+    """Request a plan-bound stop: cooperative for local runs, signalled for RunPod.
+
+    Local workers stop at their next safe boundary and are never signalled.
+    A RunPod worker is signalled (only after its identity is verified) so it
+    terminates its pod; other remote providers are refused.
+    """
     plan, digest = read_run_plan(run)
     if digest != expected_plan_sha256:
         raise ValueError("Plan checksum differs from the reviewed plan")
-    if plan["config"].get("provider") != "local":
+    provider = plan["config"].get("provider")
+    remote = provider != "local"
+    if remote and not remote_stop_supported(provider):
         raise ValueError(
-            "Remote stop is unavailable; use provider-specific cleanup controls"
+            "Remote stop is available for RunPod runs on POSIX hosts; use "
+            "provider-specific cleanup controls for this run"
         )
     state = run_status(run)
     if run_terminal_status(state) is True:
@@ -1389,14 +1431,23 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
             status="cancelled",
             finished_at=time.time(),
         )
+    signalled = remote and _signal_remote_worker(run)
     current = run_status(run)
-    return {
+    result = {
         "status": current["status"],
         "terminal": run_terminal_status(current),
         "execution_unconfirmed": current.get("execution_unconfirmed") is True,
         "stop_requested": True,
         "scope": "Cooperative local stop at the next safe boundary; queued entries remain until admitted. Supervisor loss does not establish worker exit. Remote resources are not controlled.",
     }
+    if remote:
+        result["worker_signalled"] = signalled
+        result["scope"] = (
+            "The verified RunPod worker was asked to stop; it terminates its pod and records the cancellation. An acknowledged deletion does not prove billing ended."
+            if signalled
+            else "Stop receipt saved, but no verified RunPod worker is running to signal; inspect the run and `stateset-agents runpod-orphans`."
+        )
+    return result
 
 
 def process_token(pid: int) -> str | None:

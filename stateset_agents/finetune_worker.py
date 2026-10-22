@@ -906,6 +906,16 @@ def execute(run: Path, *, supervisor_token: str | None = None) -> int:
             logging.error("Fine-tuning outcome already recorded; success not committed")
             return 1
         return 0
+    except SystemExit:
+        # A remote stop signals this worker (SIGTERM becomes SystemExit). Its
+        # executor has already terminated the pod on the way out; record the
+        # requested stop as the outcome before exiting.
+        try:
+            if stop_requested(run):
+                _record_failure(run, FinetuneFailure("cancelled"), stage=stage)
+        except (OSError, ValueError):
+            pass
+        raise
     except Exception as error:
         _record_failure(run, error, stage=stage)
         logging.exception("Fine-tuning failed")
