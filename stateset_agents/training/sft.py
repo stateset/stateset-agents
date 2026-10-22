@@ -751,16 +751,26 @@ def normalize_eval_prompts(
 #: Words that negate a following verb: "not", "never", "no", "without",
 #: "cannot" and any "...n't" contraction.
 _NEGATOR = r"(?:not|never|no|without|cannot|\w+n['\u2019]t)"
-#: The only words allowed between a negator and the phrase it governs:
-#: auxiliaries and aspect ("won't be able to rebook", "not going to rebook",
-#: "no need to rebook"). Anything else — "won't hesitate to", "not only
-#: will I", "can't wait to" — means the negation is about something else.
+#: Auxiliaries and aspect allowed between a negator and what it governs
+#: ("won't be able to rebook", "not going to rebook", "no need to rebook").
 _GOVERNING = (
     r"(?:be\s+able\s+to|able\s+to|be|need\s+to|have\s+to|going\s+to"
     r"|go\s+ahead\s+and|try\s+to|bother\s+to|ever)"
 )
+#: A negated verb may take the phrase as its object through a few function
+#: words: "I can't open a baggage trace", "I won't issue you a refund".
+#: Focus adverbs are not verbs: "I didn't just rebook you" still rebooks.
+_GOVERNED_VERB = (
+    rf"(?!(?:only|just|simply|merely|also|even|wait|hesitate|{_NEGATOR})\b)"
+    r"[\w'\u2019-]+"
+)
+_OBJECT_WORDS = (
+    r"(?:you|your|him|her|them|their|it|its|us|our|me|my|a|an|the|any"
+    r"|another|that|this|these|those|some)"
+)
 _NEGATED_BEFORE = re.compile(
-    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?$",
+    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?"
+    rf"(?:{_GOVERNED_VERB}\s+(?:{_OBJECT_WORDS}\s+){{0,2}})?$",
     re.IGNORECASE,
 )
 _NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
@@ -769,9 +779,11 @@ _NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
 def _negation_governs(before: str) -> bool:
     """Whether the text right before a phrase negates it.
 
-    The negator must immediately govern the phrase — adjacent, or separated
-    only by an auxiliary such as "be able to" — and must not itself be
-    negated ("I can't not rebook you" still rebooks).
+    The negator must govern the phrase: adjacent ("won't rebook"), through
+    an auxiliary ("won't be able to rebook"), or as the object of the negated
+    verb ("can't open a baggage trace"). It must not itself be negated ("I
+    can't not rebook you" still rebooks), and "won't hesitate to", "not only
+    will I" or "can't wait to" are not negations of what follows.
     """
     match = _NEGATED_BEFORE.search(before)
     if match is None:
@@ -780,21 +792,29 @@ def _negation_governs(before: str) -> bool:
     return not (previous and _NEGATOR_WORD.fullmatch(previous))
 
 
-def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
-    """True when ``phrase`` occurs in ``completion`` other than negated.
+def _phrase_pattern(phrase: str) -> re.Pattern[str]:
+    """``phrase`` at a word start; a trailing number must end there too.
 
-    A user who declines a remedy is honored by "I won't rebook you" — the
-    forbidden token appears only to say it will not happen. Matches must
-    start at a word boundary ("rebook" still hits "rebooked") and count
-    unless a negation immediately governs them (see
-    :func:`_negation_governs`): "I won't hesitate to rebook you" rebooks.
-    The same check filters harvested samples, so a loose negation rule
-    would harvest exactly the behaviour a refusal prompt forbids.
+    "rebook" still matches "rebooked", but reference "7701" does not match
+    inside "77015".
+    """
+    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
+    end = r"(?!\d)" if phrase[-1:].isdigit() else ""
+    return re.compile(start + re.escape(phrase) + end, re.IGNORECASE)
+
+
+def _phrase_asserted(completion: str, phrase: str) -> bool:
+    """True when ``phrase`` occurs in ``completion`` and is not negated.
+
+    One rule for both sides of a check: a reply that says "I won't rebook
+    you" honors a declined remedy (``forbid``), and one that says "I can't
+    open a baggage trace" did not deliver it (``expect``). The same check
+    filters harvested samples, so a negation it misses becomes training
+    data.
     """
     if not phrase:
         return True
-    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
-    for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
+    for match in _phrase_pattern(phrase).finditer(completion):
         # The governing window is a few words; bound the regex's input.
         before = completion[max(0, match.start() - 200) : match.start()]
         if not _negation_governs(before):
@@ -805,16 +825,15 @@ def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
 def evaluate_checks(
     completion: str, expect: list[str], forbid: list[str]
 ) -> dict[str, Any]:
-    """Case-insensitively match ``expect`` substrings and ``forbid`` phrases.
+    """Case-insensitively match ``expect`` and ``forbid`` phrases.
 
-    Passes when every ``expect`` substring appears in ``completion`` and no
-    ``forbid`` phrase is used: a forbidden phrase must start at a word
-    boundary and does not count where it is explicitly negated ("I won't
-    rebook you", "no rebooking"); see :func:`_forbidden_phrase_used`.
+    Passes when every ``expect`` phrase is asserted in ``completion`` and no
+    ``forbid`` phrase is. A phrase counts where it starts at a word boundary
+    (and, when it ends in a digit, ends at a number boundary) and is not
+    governed by a negation; see :func:`_phrase_asserted`.
     """
-    haystack = completion.lower()
-    expect_hits = [s for s in expect if s.lower() in haystack]
-    forbid_hits = [s for s in forbid if _forbidden_phrase_used(completion, s)]
+    expect_hits = [s for s in expect if _phrase_asserted(completion, s)]
+    forbid_hits = [s for s in forbid if _phrase_asserted(completion, s)]
     return {
         "expect_hits": expect_hits,
         "forbid_hits": forbid_hits,
