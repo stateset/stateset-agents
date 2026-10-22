@@ -354,6 +354,16 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         partial reference or silently remove an explicitly requested KL policy.
         """
         if (
+            float(getattr(self.config, "beta", 0.0) or 0.0) > 0.0
+            and not getattr(self.config, "use_reference_model", False)
+            and self.reference_model is None
+        ):
+            logger.warning(
+                "beta=%s is set but use_reference_model=False: the KL penalty "
+                "is disabled. Set use_reference_model=True to apply it.",
+                self.config.beta,
+            )
+        if (
             getattr(self.config, "use_reference_model", False)
             and self.reference_model is None
         ):

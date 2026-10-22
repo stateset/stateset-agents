@@ -47,9 +47,17 @@ class SampledTurn:
         )
 
 
+class RolloutContractError(ValueError):
+    """A rollout cannot be scored without silently changing the estimator.
+
+    Loss loops must propagate this instead of skipping the trajectory: a
+    per-row skip would hide a configuration error behind a smaller batch.
+    """
+
+
 def require_explicit_fallback(config: Any, option: str, reason: str) -> None:
     """Reject a changed estimator unless the caller opted into compatibility."""
     if not getattr(config, option, False):
-        raise ValueError(
+        raise RolloutContractError(
             f"{reason}. Set {option}=True to explicitly allow this fallback"
         )

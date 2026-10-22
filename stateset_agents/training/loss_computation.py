@@ -488,12 +488,20 @@ def compute_token_old_logprobs(
         len(r) for r in rows if r
     )
     snapshots = []
-    for group_rows in rows:
-        assert group_rows is not None
-        lp, _, _ = _forward_token_rows(
-            agent.model, group_rows, device, chunk, grad=False
-        )
-        snapshots.append(lp.detach())
+    # Score the old policy without dropout: a stochastic snapshot makes the
+    # first inner-update ratio noise rather than 1, so the clip bites on it.
+    model = agent.model
+    was_training = bool(getattr(model, "training", False))
+    if was_training and callable(getattr(model, "eval", None)):
+        model.eval()
+    try:
+        for group_rows in rows:
+            assert group_rows is not None
+            lp, _, _ = _forward_token_rows(model, group_rows, device, chunk, grad=False)
+            snapshots.append(lp.detach())
+    finally:
+        if was_training and callable(getattr(model, "train", None)):
+            model.train()
     return snapshots
 
 
@@ -1017,6 +1025,22 @@ def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
 _estimate_policy_entropy = compute_entropy_bonus
 
 
+def _is_fatal_loss_error(error: BaseException, torch: Any) -> bool:
+    """Errors a per-trajectory loss loop must propagate rather than skip.
+
+    Out-of-memory and rollout-contract violations are not properties of one
+    trajectory: skipping them would bias the group mean or hide bad config.
+    """
+    from .rollout_contract import RolloutContractError
+
+    if isinstance(error, RolloutContractError):
+        return True
+    oom_type = getattr(getattr(torch, "cuda", None), "OutOfMemoryError", None)
+    if isinstance(oom_type, type) and isinstance(error, oom_type):
+        return True
+    return "out of memory" in str(error).lower()
+
+
 def _compute_group_policy_loss(
     group: Any,
     advantages: Any,
@@ -1042,6 +1066,7 @@ def _compute_group_policy_loss(
     device = _resolve_model_device(agent, torch)
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
     num_trajectories = 0
+    failed_trajectories = 0
     entropy_sum = 0.0
     entropy_count = 0
 
@@ -1139,10 +1164,21 @@ def _compute_group_policy_loss(
                 num_trajectories += 1
 
         except LOSS_EXCEPTIONS as e:
+            if _is_fatal_loss_error(e, torch):
+                raise
+            failed_trajectories += 1
             logger.warning(
                 f"Failed to compute policy loss for trajectory {traj_idx}: {e}"
             )
             continue
+
+    if num_trajectories == 0 and failed_trajectories > 0:
+        # Returning a constant zero would turn the optimizer step into a
+        # silent no-op; a group where every row failed is a real error.
+        raise RuntimeError(
+            f"policy loss failed for all {failed_trajectories} trajectories "
+            "in the group; see the preceding warnings"
+        )
 
     mean_entropy = (entropy_sum / entropy_count) if entropy_count > 0 else None
 

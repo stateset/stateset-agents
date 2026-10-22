@@ -464,6 +464,11 @@ class TrainingConfig:
             warnings.append("ewc_num_samples must be > 0 when ewc_lambda > 0")
         if self.ewc_decay < 0.0 or self.ewc_decay > 1.0:
             warnings.append("ewc_decay should be between 0 and 1 for stable updates")
+        if self.beta > 0 and not self.use_reference_model:
+            warnings.append(
+                f"beta={self.beta} has no effect without use_reference_model=True; "
+                "the KL penalty needs a frozen reference policy"
+            )
         if self.continual_kl_beta > 0 and "lwf" not in self.continual_strategy:
             warnings.append(
                 "continual_kl_beta set but continual_strategy does not include lwf"

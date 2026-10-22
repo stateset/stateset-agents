@@ -208,3 +208,71 @@ def test_seq_clip_ratio_default_is_gspo_scale():
     from stateset_agents.training.config import TrainingConfig
 
     assert TrainingConfig().seq_clip_ratio == 3e-4
+
+
+# --- Fatal errors must not be skipped per trajectory -----------------------
+
+
+class _RaisingModel(_FixedLossModel):
+    def __init__(self, error: BaseException):
+        super().__init__()
+        self.error = error
+
+    def forward(self, *args, **kwargs):
+        raise self.error
+
+
+def test_rollout_contract_violation_propagates():
+    """A missing-log-prob fallback the caller did not opt into is a config
+    error, not a bad row: it must surface instead of shrinking the batch."""
+    from stateset_agents.training.rollout_contract import RolloutContractError
+
+    agent = _make_agent(8, 4)
+    group = _make_group(8, 4)  # no log_probs, clip on, no explicit fallback
+    with pytest.raises(RolloutContractError):
+        lc._compute_group_policy_loss(
+            group, torch.tensor([1.0]), _config(clip_ratio=0.2), agent
+        )
+
+
+def test_out_of_memory_propagates():
+    agent = _make_agent(8, 4)
+    agent.model = _RaisingModel(RuntimeError("CUDA out of memory. Tried to ..."))
+    with pytest.raises(RuntimeError, match="out of memory"):
+        lc._compute_group_policy_loss(
+            _make_group(8, 4), torch.tensor([1.0]), _config(), agent
+        )
+
+
+def test_all_trajectories_failing_is_an_error_not_zero_loss():
+    agent = _make_agent(8, 4)
+    agent.model = _RaisingModel(RuntimeError("shape mismatch"))
+    with pytest.raises(RuntimeError, match="failed for all 1 trajectories"):
+        lc._compute_group_policy_loss(
+            _make_group(8, 4), torch.tensor([1.0]), _config(), agent
+        )
+
+
+def test_old_policy_snapshot_is_scored_without_dropout(monkeypatch):
+    """Old log-probs come from eval mode; the caller's train mode is restored."""
+    seen = []
+
+    def fake_rows(group):
+        return [object()]
+
+    def fake_forward(model, rows, device, chunk, *, grad):
+        seen.append(model.training)
+        return torch.zeros(1, 3), None, None
+
+    monkeypatch.setattr(lc, "_token_rows_for_group", fake_rows)
+    monkeypatch.setattr(lc, "_forward_token_rows", fake_forward)
+    model = torch.nn.Dropout(p=0.5)
+    model.train()
+    agent = SimpleNamespace(model=model)
+    group = SimpleNamespace(trajectories=[object()])
+
+    snapshots = lc.compute_token_old_logprobs([group], _config(), agent)
+
+    assert seen == [False]
+    assert model.training is True
+    assert snapshots is not None and len(snapshots) == 1
