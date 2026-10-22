@@ -35,6 +35,8 @@ def _unsupported(monkeypatch, why):
     if why == "windows":
         monkeypatch.setattr(recovery, "sys", SimpleNamespace(platform="win32"))
     else:
+        # Pin Linux so the world-size reason is exercised on every OS.
+        monkeypatch.setattr(recovery, "sys", SimpleNamespace(platform="linux"))
         monkeypatch.setenv("WORLD_SIZE", "2")
 
 

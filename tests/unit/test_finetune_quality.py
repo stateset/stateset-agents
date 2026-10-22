@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -622,6 +623,10 @@ def test_sft_stop_requests_checkpoint_save_at_step_boundary(completed, monkeypat
     assert worker._train_sft(run, config) == run / "artifacts"
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="studio checkpoint recovery verifies worker ownership on Linux only",
+)
 @pytest.mark.asyncio
 async def test_native_rl_stop_saves_checkpoint_at_committed_update(
     completed, tmp_path, monkeypatch

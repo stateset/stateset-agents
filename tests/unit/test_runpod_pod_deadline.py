@@ -53,9 +53,14 @@ CHILD = textwrap.dedent("""
     ))
     """)
 
+# SIGHUP does not exist on Windows; parametrize is evaluated at import time.
+POSIX_TERMINATION_SIGNALS = [signal.SIGTERM] + (
+    [signal.SIGHUP] if hasattr(signal, "SIGHUP") else []
+)
+
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX termination signals")
-@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
+@pytest.mark.parametrize("signum", POSIX_TERMINATION_SIGNALS)
 def test_signalled_submitter_terminates_its_pod_and_clears_the_lease(tmp_path, signum):
     """SIGTERM/SIGHUP mid-job used to exit without terminating the pod."""
     script = tmp_path / "child.py"

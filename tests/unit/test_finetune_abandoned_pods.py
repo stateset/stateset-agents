@@ -43,6 +43,11 @@ CHILD = textwrap.dedent("""
     os.kill(os.getpid(), signal.SIGKILL)
     """)
 
+# SIGHUP does not exist on Windows; parametrize is evaluated at import time.
+POSIX_TERMINATION_SIGNALS = [signal.SIGTERM] + (
+    [signal.SIGHUP] if hasattr(signal, "SIGHUP") else []
+)
+
 
 class Api:
     def __init__(self, pods=(), fail=False):
@@ -167,7 +172,8 @@ WORKER_MAIN = textwrap.dedent("""
     """)
 
 
-@pytest.mark.parametrize("signum", [signal.SIGTERM, signal.SIGHUP])
+@pytest.mark.skipif(os.name == "nt", reason="POSIX termination signals")
+@pytest.mark.parametrize("signum", POSIX_TERMINATION_SIGNALS)
 def test_signalled_worker_runs_its_cleanup_before_exiting(tmp_path, signum):
     script = tmp_path / "worker_main.py"
     script.write_text(WORKER_MAIN)

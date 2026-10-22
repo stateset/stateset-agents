@@ -76,8 +76,14 @@ def _discover() -> tuple[dict[str, type], dict[str, Callable[..., Any]]]:
     for module in _reward_modules():
         for value in vars(module).values():
             if inspect.isclass(value):
+                try:
+                    is_reward = issubclass(value, (RewardFunction, BaseRewardComponent))
+                except TypeError:
+                    # Python 3.10 reports some generic aliases (list[int]) as
+                    # classes that issubclass() then rejects.
+                    continue
                 if (
-                    issubclass(value, (RewardFunction, BaseRewardComponent))
+                    is_reward
                     and not inspect.isabstract(value)
                     and value.__module__.startswith("stateset_agents.")
                 ):
