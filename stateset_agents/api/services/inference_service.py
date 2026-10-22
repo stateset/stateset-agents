@@ -17,6 +17,8 @@ from typing import Any, cast
 import httpx
 
 from .. import inference_metrics
+from ..config import get_config
+from ..generation_params import validate_generation_request
 from ..inference_metrics import (
     ROUTE_ANTHROPIC_RESPONSE,
     ROUTE_ANTHROPIC_STREAM,
@@ -368,27 +370,10 @@ class InferenceService:
         if openai_tool_choice is not None:
             payload["tool_choice"] = openai_tool_choice
 
-        # Pass through any extra fields on the request that vLLM/OpenAI backends
-        # might understand (e.g. presence_penalty, seed, logit_bias, etc.).
-        # We explicitly exclude fields that we transform or that are gateway-only.
-        extra = request.model_dump(exclude_none=True)
-        for key in (
-            "model",
-            "messages",
-            "system",
-            "max_tokens",
-            "temperature",
-            "top_p",
-            "top_k",
-            "stop_sequences",
-            "stream",
-            "tools",
-            "tool_choice",
-            "metadata",
-            "response_format",
-        ):
-            extra.pop(key, None)
-        payload.update(extra)
+        # Forward only allowlisted, bounded sampling parameters. Unknown extra
+        # fields are dropped so clients cannot reach unbounded backend knobs
+        # (e.g. vLLM's ignore_eos / guided decoding / large ``n`` fan-out).
+        payload.update(validate_generation_request(request, get_config().validation))
 
         return payload
 

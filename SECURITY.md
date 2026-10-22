@@ -114,9 +114,14 @@ The API gateway treats every authenticated caller as a separate tenant:
   `API_REQUIRE_AUTH` is on. Set `API_PUBLIC_METRICS=true` only for a scraper
   that cannot send credentials and is reachable solely from a trusted network.
 - **Training-lab WebSocket** credentials go in the `X-API-Key` or
-  `Authorization: Bearer` header. `API_LAB_WS_QUERY_TOKEN=true` re-enables the
-  `?api_key=` / `?token=` query parameters for browser clients that cannot
-  set headers; query strings are written to access logs.
+  `Authorization: Bearer` header. Browser clients, which cannot set headers on
+  a WebSocket, offer the subprotocols `stateset.lab.v1` and
+  `bearer.<credential>`; the server selects `stateset.lab.v1` and never echoes
+  the credential. `API_LAB_WS_QUERY_TOKEN=true` re-enables the deprecated
+  `?api_key=` / `?token=` query parameters (each use logs a deprecation
+  warning); query strings are written to access logs. Subscribing to an
+  experiment that does not exist, or that belongs to someone else, is closed
+  with code 4404.
 
 ## Security controls and updates
 

@@ -24,6 +24,7 @@ from stateset_agents.api.distributed_cache import (
     HybridCache,
     MemoryCache,
     MemoryCacheEntry,
+    RedisCache,
     cache_invalidate,
     cached,
     close_cache,
@@ -105,6 +106,99 @@ class TestCacheConfig:
         assert config.redis_url == "redis://localhost:6379"
         assert config.redis_password == "secret"
         assert config.redis_db == 1
+
+
+class TestBoundedDecompression:
+    """Compressed Redis payloads must not expand without limit."""
+
+    def _cache(self, **kwargs) -> RedisCache:
+        return RedisCache(
+            CacheConfig(compression_enabled=True, compression_threshold=16, **kwargs)
+        )
+
+    def test_default_and_env_limit(self, monkeypatch):
+        assert CacheConfig().max_decompressed_bytes == 64 * 1024 * 1024
+        monkeypatch.setenv("CACHE_MAX_DECOMPRESSED_BYTES", "4096")
+        assert CacheConfig.from_env().max_decompressed_bytes == 4096
+
+    def test_non_positive_limit_rejected(self):
+        with pytest.raises(ValueError, match="max_decompressed_bytes"):
+            CacheConfig(max_decompressed_bytes=0)
+
+    def test_compressed_round_trip_within_limit(self):
+        cache = self._cache()
+        value = {"text": "x" * 5000}
+        data = cache._serialize(value)
+        assert data.startswith(b"ZLIB:")
+        assert cache._deserialize(data) == value
+
+    def test_oversized_expansion_is_rejected(self):
+        import zlib
+
+        cache = self._cache(max_decompressed_bytes=1024)
+        bomb = b"ZLIB:" + zlib.compress(b"0" * (10 * 1024 * 1024))
+        assert len(bomb) < 20_000
+        with pytest.raises(ValueError, match="exceeds 1024 bytes"):
+            cache._deserialize(bomb)
+
+    def test_corrupt_and_truncated_payloads_raise_value_error(self):
+        import zlib
+
+        cache = self._cache()
+        with pytest.raises(ValueError, match="corrupt"):
+            cache._deserialize(b"ZLIB:not-zlib-data")
+        truncated = zlib.compress(b'{"a": "' + b"y" * 4000 + b'"}')[:-8]
+        with pytest.raises(ValueError, match="truncated"):
+            cache._deserialize(b"ZLIB:" + truncated)
+
+    def test_bound_applies_before_pickle_gate(self, monkeypatch):
+        """Even with pickle opted in, the size check runs before unpickling."""
+        import pickle
+        import zlib
+
+        from stateset_agents.api import distributed_cache
+
+        cache = self._cache(
+            serializer="pickle", allow_pickle=True, max_decompressed_bytes=1024
+        )
+        called = []
+        monkeypatch.setattr(
+            distributed_cache.pickle, "loads", lambda data: called.append(data)
+        )
+        payload = b"ZLIB:" + zlib.compress(pickle.dumps("z" * 100_000))
+        with pytest.raises(ValueError, match="exceeds"):
+            cache._deserialize(payload)
+        assert called == []
+
+    def test_pickle_payload_not_unpickled_without_opt_in(self, monkeypatch):
+        import pickle
+
+        from stateset_agents.api import distributed_cache
+
+        cache = RedisCache(CacheConfig(serializer="pickle", allow_pickle=False))
+        monkeypatch.setattr(
+            distributed_cache.pickle,
+            "loads",
+            lambda data: pytest.fail("pickle.loads must not be called"),
+        )
+        with pytest.raises(ValueError):
+            cache._deserialize(pickle.dumps({"a": 1}))
+
+    @pytest.mark.asyncio
+    async def test_redis_get_treats_bomb_as_error(self):
+        import zlib
+
+        cache = self._cache(max_decompressed_bytes=1024)
+        client = SimpleNamespace(
+            get=AsyncMock(return_value=b"ZLIB:" + zlib.compress(b"1" * 100_000))
+        )
+        cache._client = client
+        cache._connected = True
+
+        ok, value = await cache._get_with_status("k")
+
+        assert (ok, value) == (False, None)
+        assert cache.get_stats().errors == 1
 
 
 # ============================================================================

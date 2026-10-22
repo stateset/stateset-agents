@@ -19,6 +19,7 @@ from ..dependencies import (
     get_inference_service,
     require_auth_if_enabled,
 )
+from ..generation_params import validate_generation_request
 from ..messages_models import MessageInput, MessagesRequest, MessagesResponse
 from ..messages_utils import validate_tool_choice, validate_tools
 from ..openai_models import OpenAIChatCompletionResponse
@@ -116,6 +117,7 @@ async def create_message(
             config.validation.max_conversation_messages,
             config.validation.max_message_length,
         )
+        validate_generation_request(request, config.validation)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 

@@ -1718,17 +1718,79 @@ async def export_experiment(
     }
 
 
+#: Subprotocol a browser client offers alongside ``bearer.<credential>`` so
+#: the server has a non-secret protocol to select in its handshake response.
+LAB_WS_SUBPROTOCOL = "stateset.lab.v1"
+_LAB_WS_BEARER_PREFIX = "bearer."
+
+
+def _websocket_subprotocols(websocket: WebSocket) -> list[str]:
+    scope = getattr(websocket, "scope", None)
+    if not isinstance(scope, dict):
+        return []
+    offered = scope.get("subprotocols") or []
+    return [str(item) for item in offered]
+
+
+def _websocket_credential(websocket: WebSocket, allow_query: bool) -> str | None:
+    """Return the credential presented on a WebSocket handshake.
+
+    Precedence: ``X-API-Key`` header, ``Authorization: Bearer`` header, then a
+    ``bearer.<credential>`` entry in ``Sec-WebSocket-Protocol`` (the only
+    header browsers can set on a WebSocket). Query-string ``api_key`` /
+    ``token`` is a deprecated fallback honoured only when ``allow_query``.
+    """
+    credential = websocket.headers.get("x-api-key")
+    if credential and credential.strip():
+        return str(credential).strip()
+    auth_header = websocket.headers.get("authorization", "")
+    if auth_header.lower().startswith("bearer "):
+        bearer = auth_header.split(" ", 1)[1].strip()
+        if bearer:
+            return str(bearer)
+    for offered in _websocket_subprotocols(websocket):
+        if offered.lower().startswith(_LAB_WS_BEARER_PREFIX):
+            value = offered[len(_LAB_WS_BEARER_PREFIX) :].strip()
+            if value:
+                return value
+    if allow_query:
+        query_credential = websocket.query_params.get(
+            "api_key"
+        ) or websocket.query_params.get("token")
+        if query_credential:
+            logger.warning(
+                "Deprecated: training-lab WebSocket credential supplied in the "
+                "query string (leaks into access logs). Send it via the "
+                "X-API-Key / Authorization header or the 'bearer.<token>' "
+                "Sec-WebSocket-Protocol entry instead; API_LAB_WS_QUERY_TOKEN "
+                "support will be removed in a future release."
+            )
+            return str(query_credential)
+    return None
+
+
+async def _accept_websocket(websocket: WebSocket) -> None:
+    """Accept, selecting the lab subprotocol when the client offered it.
+
+    The ``bearer.<credential>`` entry is never echoed back.
+    """
+    if LAB_WS_SUBPROTOCOL in _websocket_subprotocols(websocket):
+        await websocket.accept(subprotocol=LAB_WS_SUBPROTOCOL)
+    else:
+        await websocket.accept()
+
+
 async def _authorize_websocket(
     websocket: WebSocket,
 ) -> tuple[bool, LabUser]:
     """Validate API key / JWT credentials for the metrics WebSocket.
 
     WebSocket connections can't use the standard HTTP ``Depends`` auth
-    dependency, so credentials are read from the ``X-API-Key`` header or an
-    ``Authorization: Bearer`` header and validated like
+    dependency, so credentials are read by :func:`_websocket_credential`
+    (headers, then the ``bearer.<token>`` subprotocol) and validated like
     ``auth.authenticate_request``. Query-string credentials (``api_key`` /
-    ``token``) leak into access logs and are accepted only when the operator
-    sets ``API_LAB_WS_QUERY_TOKEN=true``.
+    ``token``) leak into access logs; they are deprecated and accepted only
+    when the operator sets ``API_LAB_WS_QUERY_TOKEN=true``.
 
     Returns ``(authorized, user)``; ``user`` is None when auth is disabled.
     """
@@ -1739,16 +1801,7 @@ async def _authorize_websocket(
     if not config.security.require_auth:
         return True, None
 
-    credential = websocket.headers.get("x-api-key")
-    if not credential:
-        auth_header = websocket.headers.get("authorization", "")
-        if auth_header.lower().startswith("bearer "):
-            credential = auth_header.split(" ", 1)[1].strip()
-    if not credential and config.lab_ws_query_token:
-        credential = websocket.query_params.get(
-            "api_key"
-        ) or websocket.query_params.get("token")
-
+    credential = _websocket_credential(websocket, bool(config.lab_ws_query_token))
     if not credential:
         return False, None
 
@@ -1783,15 +1836,17 @@ async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
         # Accept before closing so clients consistently receive the WebSocket
         # close code. Closing pre-accept relies on the optional ASGI denial
         # response extension and deadlocks some Starlette/AnyIO combinations.
-        await websocket.accept()
+        await _accept_websocket(websocket)
         await websocket.close(code=4401)
         return
-    if experiment_id in _experiments and not _can_access(experiment_id, user):
-        # Someone else's experiment looks the same as a missing one over HTTP.
-        await websocket.accept()
+    if not _can_access(experiment_id, user):
+        # Unknown ids are rejected (subscribing must not mint subscriber
+        # entries for arbitrary ids), and someone else's experiment looks the
+        # same as a missing one, as over HTTP.
+        await _accept_websocket(websocket)
         await websocket.close(code=4404)
         return
-    await websocket.accept()
+    await _accept_websocket(websocket)
     _metrics_subscribers.setdefault(experiment_id, []).append(websocket)
     try:
         exp = _experiments.get(experiment_id)
@@ -1813,6 +1868,9 @@ async def experiment_ws(websocket: WebSocket, experiment_id: str) -> None:
     except WebSocketDisconnect:
         pass
     finally:
-        subs = _metrics_subscribers.get(experiment_id, [])
-        if websocket in subs:
-            subs.remove(websocket)
+        subs = _metrics_subscribers.get(experiment_id)
+        if subs is not None:
+            if websocket in subs:
+                subs.remove(websocket)
+            if not subs:
+                _metrics_subscribers.pop(experiment_id, None)

@@ -22,6 +22,7 @@ from ..dependencies import (
     get_inference_service,
     require_auth_if_enabled,
 )
+from ..generation_params import validate_generation_request
 from ..messages_models import MessageInput, MessagesRequest
 from ..messages_utils import validate_tool_choice, validate_tools
 from ..openai_models import OpenAIChatCompletionRequest, OpenAIChatCompletionResponse
@@ -165,6 +166,10 @@ async def chat_completions(
         config.validation.max_conversation_messages,
         config.validation.max_message_length,
     )
+    try:
+        validate_generation_request(messages_request, config.validation)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     request_id = getattr(http_request.state, "request_id", None)
     start_time = time.monotonic()

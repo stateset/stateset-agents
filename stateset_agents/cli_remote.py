@@ -174,15 +174,18 @@ def _parse_adapters(entries: list[str]) -> dict[str, Path]:
     Duplicate names are refused loudly — vLLM would otherwise register one
     adapter and silently shadow the other.
     """
+    from stateset_agents.remote.serve_session import is_valid_adapter_name
+
     adapters: dict[str, Path] = {}
     for entry in entries:
         name, sep, raw = entry.partition("=")
         if not sep:
             name, raw = "adapter", entry
         name = name.strip()
-        if not name or "/" in name:
+        if not is_valid_adapter_name(name):
             raise typer.BadParameter(
-                f"adapter name {name!r} must be a plain identifier"
+                f"adapter name {name!r} must be a plain identifier "
+                "(letters, digits, '.', '_' or '-')"
             )
         if name in adapters:
             raise typer.BadParameter(f"duplicate adapter name {name!r}")

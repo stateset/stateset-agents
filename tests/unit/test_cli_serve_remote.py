@@ -284,6 +284,17 @@ class TestMultiAdapter:
         assert result.exit_code != 0
         assert "duplicate" in result.output
 
+    @pytest.mark.parametrize("bad_name", ["x;id", "a b", "..", "$(id)", "a\\b"])
+    def test_unsafe_adapter_names_are_refused(self, tmp_path, bad_name):
+        a = tmp_path / "a"
+        a.mkdir()
+
+        result = invoke("--base-model", "m", "--adapter", f"{bad_name}={a}")
+
+        assert result.exit_code != 0
+        assert "plain identifier" in result.output
+        assert FakeSession.instances == []
+
     def test_bare_path_serves_under_the_default_name(self, tmp_path):
         a = tmp_path / "a"
         a.mkdir()
