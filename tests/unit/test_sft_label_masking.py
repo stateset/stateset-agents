@@ -7,7 +7,10 @@ import pytest
 
 pytest.importorskip("transformers")
 
-from stateset_agents.training.sft import tokenize_sft_row  # noqa: E402
+from stateset_agents.training.sft import (  # noqa: E402
+    tokenize_sft_row,
+    tokenize_sft_rows,
+)
 from tests.unit.test_loss_computation_real_tokenizer_masks import (  # noqa: E402
     CHATML,
     _byte_tokenizer,
@@ -18,16 +21,11 @@ from tests.unit.test_river_sft_masking import CONVERSATION, QWEN3_LIKE  # noqa: 
 @pytest.mark.parametrize("template", [CHATML, QWEN3_LIKE])
 def test_labels_cover_assistant_tokens_only(template):
     tok = _byte_tokenizer(template)
-    out = tokenize_sft_row(tok, {"messages": CONVERSATION}, max_length=4096)
-    assert out is not None
-    assert len(out["labels"]) == len(out["input_ids"]) == len(out["attention_mask"])
-    supervised = tok.decode(
-        [
-            t
-            for t, lab in zip(out["input_ids"], out["labels"], strict=True)
-            if lab != -100
-        ]
-    )
+    records, _ = tokenize_sft_rows(tok, [{"messages": CONVERSATION}], max_length=4096)
+    assert records
+    for out in records:
+        assert len(out["labels"]) == len(out["input_ids"]) == len(out["attention_mask"])
+    supervised = " | ".join(_supervised(tok, out) for out in records)
     assert "Shipped." in supervised and "Refunded." in supervised
     assert "Where is order 7?" not in supervised and "Be terse." not in supervised
 
@@ -78,18 +76,23 @@ def _supervised(tok, out):
     )
 
 
-def test_history_rewriting_template_supervises_only_the_final_turn():
+def test_history_rewriting_template_trains_each_turn_as_generated():
     """Unlocatable earlier turns used to label EVERY token (system and user
-    included); now only the final assistant turn is a target."""
+    included). Each turn is now its own sequence, rendered as the newest
+    turn: the earlier reply keeps the reasoning it was generated with, and
+    the later one sees the history the template shows at inference."""
     tok = _byte_tokenizer(THINK_STRIPPING)
-    out = tokenize_sft_row(tok, {"messages": THINKING_CONVERSATION}, max_length=4096)
-    assert out is not None
-    supervised = _supervised(tok, out)
-    assert "Refunded." in supervised
-    for prompt_text in ("Be terse.", "Where is order 7?", "And refund", "Shipped."):
-        assert prompt_text not in supervised
-    # The context is the inference-time render (earlier think block stripped).
-    assert "look it up" not in tok.decode(out["input_ids"])
+    records, counts = tokenize_sft_rows(
+        tok, [{"messages": THINKING_CONVERSATION}], max_length=4096
+    )
+    assert counts["split_per_turn"] == 1 and len(records) == 2
+    first, second = (_supervised(tok, out) for out in records)
+    assert first == "<think>look it up</think>Shipped.<|im_end|>\n"
+    assert second == "Refunded.<|im_end|>\n"
+    assert "look it up" not in tok.decode(records[1]["input_ids"])
+    assert tokenize_sft_row(tok, {"messages": THINKING_CONVERSATION}, 4096) == (
+        records[1]
+    )
 
 
 def test_row_with_no_locatable_assistant_span_is_dropped():
@@ -116,10 +119,11 @@ def test_tokenize_sft_rows_counts_every_outcome():
         ],
         max_length=200,
     )
-    assert len(records) == 3
+    assert len(records) == 4  # the split row contributes two sequences
     assert counts == {
         "all_assistant_turns": 2,
-        "final_turn_only": 1,
+        "split_per_turn": 1,
+        "dropped_no_target": 0,
         "dropped_unmaskable": 0,
         "dropped_truncated": 1,
         "partially_truncated": 1,
@@ -148,8 +152,63 @@ def test_tool_call_turn_followed_by_more_turns_is_fully_supervised():
         {"role": "assistant", "content": "Done."},
     ]
     tok = _byte_tokenizer(QWEN3_LIKE)
-    out = tokenize_sft_row(tok, {"messages": messages}, max_length=4096)
-    supervised = _supervised(tok, out)
-    assert "<tool_call>refund</tool_call><|im_end|>" in supervised
-    assert "Done." in supervised
-    assert "Refund order 8" not in supervised and "refunded" not in supervised
+    records, counts = tokenize_sft_rows(tok, [{"messages": messages}], 4096)
+    assert counts["split_per_turn"] == 1
+    call, done = (_supervised(tok, out) for out in records)
+    assert call == "<tool_call>refund</tool_call><|im_end|>\n"
+    assert done == "Done.<|im_end|>\n"
+
+
+def _prompt_before_target(tok, out):
+    first = next(i for i, label in enumerate(out["labels"]) if label != -100)
+    return tok.decode(out["input_ids"][:first])
+
+
+def test_every_target_is_trained_after_its_generation_prompt():
+    """Qwen3-style templates render the newest turn with a ``<think>`` stub
+    that history drops: one sequence used to train "Shipped." without the
+    stub and "Refunded." with it — contradictory targets for one prompt."""
+    tok = _byte_tokenizer(QWEN3_LIKE)
+    records, _ = tokenize_sft_rows(tok, [{"messages": CONVERSATION}], 4096)
+    assert len(records) == 2
+    for index, out in zip((2, 4), records, strict=True):
+        expected = tok.apply_chat_template(
+            CONVERSATION[:index], tokenize=False, add_generation_prompt=True
+        )
+        assert _prompt_before_target(tok, out) == expected
+
+
+def test_weight_zero_turns_are_context_not_targets():
+    weighted = [
+        *CONVERSATION[:2],
+        {**CONVERSATION[2], "weight": 0},
+        *CONVERSATION[3:],
+    ]
+    for template in (CHATML, QWEN3_LIKE):
+        tok = _byte_tokenizer(template)
+        records, counts = tokenize_sft_rows(tok, [{"messages": weighted}], 4096)
+        assert len(records) == 1
+        supervised = _supervised(tok, records[0])
+        assert "Refunded." in supervised and "Shipped." not in supervised
+        assert "Shipped." in tok.decode(records[0]["input_ids"])
+    unweighted = [
+        {**m, "weight": 0} if m["role"] == "assistant" else m for m in weighted
+    ]
+    records, counts = tokenize_sft_rows(
+        _byte_tokenizer(CHATML), [{"messages": unweighted}], 4096
+    )
+    assert records == [] and counts["dropped_no_target"] == 1
+
+
+@pytest.mark.parametrize(
+    "message",
+    [
+        {"role": "assistant", "content": "x", "weight": 0.5},
+        {"role": "user", "content": "x", "weight": 0},
+    ],
+)
+def test_invalid_weights_are_rejected(message):
+    tok = _byte_tokenizer(CHATML)
+    row = {"messages": [{"role": "user", "content": "q"}, message]}
+    with pytest.raises(ValueError, match="weight must be 0 or 1"):
+        tokenize_sft_rows(tok, [row], 4096)

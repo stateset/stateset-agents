@@ -311,35 +311,54 @@ def test_real_cpu_lora_retains_captured_source_after_training_side_effects(
     )
     assert manifest["hyperparameters"]["training_input_rows"] == 1
     assert manifest["hyperparameters"]["effective_training_rows"] == 1
-    assert manifest["hyperparameters"]["final_turn_only_rows"] == 0
+    assert manifest["hyperparameters"]["training_sequences"] == 1
+    assert manifest["hyperparameters"]["split_per_turn_rows"] == 0
+    assert manifest["hyperparameters"]["untargeted_rows_dropped"] == 0
     assert manifest["hyperparameters"]["unmaskable_rows_dropped"] == 0
     assert manifest["hyperparameters"]["truncated_rows_dropped"] == 0
     assert manifest["hyperparameters"]["partially_truncated_rows"] == 0
     assert manifest["eval_judge_gates_skipped"] is None
 
 
-def test_real_cpu_sft_records_rows_supervised_on_their_final_turn_only(
+def test_real_cpu_sft_records_rows_split_per_assistant_turn(
     tmp_path, tiny_cpu_sft, monkeypatch
 ):
-    """A template that rewrites history used to train on every token of the
-    row with no record of it; the manifest now counts the fallback rows."""
-    rows = [chat(), chat(answer="response response")]
-    rewritten = rows[1]["messages"]
-    real_mask = sft.assistant_token_mask
+    """A template that renders history differently from new turns used to
+    train contradictory targets in one sequence; such rows are split into
+    one sequence per assistant turn and the manifest counts them."""
+    import transformers
 
-    def rewrites_second_row(tokenizer, messages, **kwargs):
-        if messages == rewritten:
-            return None
-        return real_mask(tokenizer, messages, **kwargs)
+    load = transformers.AutoTokenizer.from_pretrained
 
-    monkeypatch.setattr(sft, "assistant_token_mask", rewrites_second_row)
+    def decorating_new_turns(*args, **kwargs):
+        tokenizer = load(*args, **kwargs)
+        # The newest assistant turn (and the generation prompt) carry an
+        # extra word that history drops, like Qwen3's empty <think> block.
+        tokenizer.chat_template = (
+            "{% for m in messages %}{{ m['role'] + ' ' }}"
+            "{% if loop.last and m['role'] == 'assistant' %}{{ 'request ' }}"
+            "{% endif %}{{ m['content'] + ' ' }}{% endfor %}"
+            "{% if add_generation_prompt %}{{ 'assistant request ' }}{% endif %}"
+        )
+        return tokenizer
+
+    monkeypatch.setattr(
+        transformers.AutoTokenizer, "from_pretrained", decorating_new_turns
+    )
+    multi_turn = {
+        "messages": [
+            *chat()["messages"],
+            *chat(answer="response response")["messages"],
+        ]
+    }
     output = tmp_path / "adapter"
-    sft.run_sft(rows=rows, **train_options(output))
+    sft.run_sft(rows=[chat(), multi_turn], **train_options(output))
     hyper = json.loads((output / "stateset_manifest.json").read_text())[
         "hyperparameters"
     ]
     assert hyper["effective_training_rows"] == 2
-    assert hyper["final_turn_only_rows"] == 1
+    assert hyper["training_sequences"] == 3
+    assert hyper["split_per_turn_rows"] == 1
     assert hyper["unmaskable_rows_dropped"] == 0
 
 
