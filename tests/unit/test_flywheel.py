@@ -509,3 +509,58 @@ class TestOneEvalDenominator:
         path.write_text(json.dumps([{"prompt": "a", "expect": ["x"]}, {"prompt": "b"}]))
         with pytest.raises(typer.BadParameter, match=r"index \[1\]"):
             _load_specs(path, "--eval-prompts")
+
+
+class TestRerunIntoTheSameRoot:
+    """A rerun into the same output_root read the previous run's
+    eval_results.json when its training job died before evaluating, and
+    advanced that stale adapter as the next generation."""
+
+    def _config(self, tmp_path):
+        return FlywheelConfig(
+            base_model="b",
+            harvest_prompts=[{"prompt": "h1", "expect": ["x"]}],
+            eval_prompts=[{"prompt": "e1", "expect": ["x"]}],
+            output_root=tmp_path / "fw",
+            generations=1,
+        )
+
+    def test_failed_training_never_reuses_the_previous_runs_eval(self, tmp_path):
+        config = self._config(tmp_path)
+        first = run_flywheel(
+            config,
+            ScriptedExecutor(
+                [{"kept": 3, "samples": 8, "current_eval": 2, "passed": 9}]
+            ),
+        )
+        assert first["generations"][0]["eval_passed"] == 9
+        crashed = ScriptedExecutor(
+            [
+                {
+                    "kept": 3,
+                    "samples": 8,
+                    "current_eval": 2,
+                    "passed": None,
+                    "train_status": JobStatus.FAILED,
+                }
+            ]
+        )
+        with pytest.raises(RuntimeError, match="no eval artifacts"):
+            run_flywheel(config, crashed)
+
+    def test_a_succeeded_rerun_scores_only_its_own_eval(self, tmp_path):
+        config = self._config(tmp_path)
+        run_flywheel(
+            config,
+            ScriptedExecutor(
+                [{"kept": 3, "samples": 8, "current_eval": 2, "passed": 9}]
+            ),
+        )
+        report = run_flywheel(
+            config,
+            ScriptedExecutor(
+                [{"kept": 3, "samples": 8, "current_eval": 2, "passed": None}]
+            ),
+        )
+        assert report["generations"][0]["eval_passed"] is None
+        assert report["best_eval_passed"] == 2
