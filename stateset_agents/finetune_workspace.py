@@ -1462,9 +1462,11 @@ def process_token(pid: int) -> str | None:
             return None
         return fields[19]
     except (OSError, IndexError):
-        if sys.platform == "linux":
-            return None
-    return process_start_token(pid)
+        pass
+    if sys.platform == "linux":
+        return None
+    else:
+        return process_start_token(pid)
 
 
 def run_terminal_status(state: Mapping[str, Any]) -> bool | None:

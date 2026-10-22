@@ -92,12 +92,23 @@ def process_start_token(pid: int) -> str | None:
     if type(pid) is not int or pid < 1 or pid > 0xFFFFFFFF:
         return None
     if sys.platform.startswith("linux"):
-        try:
-            with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
-                fields = stream.read().rsplit(")", 1)[1].split()
-            return None if fields[0] in {"Z", "X"} else fields[19]
-        except (OSError, IndexError, UnicodeDecodeError):
-            return None
+        return _proc_start_token(pid)
+    else:
+        return _portable_start_token(pid)
+
+
+def _proc_start_token(pid: int) -> str | None:
+    """Linux: start time in clock ticks, ``None`` for zombies or gone PIDs."""
+    try:
+        with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
+            fields = stream.read().rsplit(")", 1)[1].split()
+        return None if fields[0] in {"Z", "X"} else fields[19]
+    except (OSError, IndexError, UnicodeDecodeError):
+        return None
+
+
+def _portable_start_token(pid: int) -> str | None:
+    """Other platforms: psutil's creation time, or ``ps`` on macOS."""
     try:
         import psutil
     except ImportError:

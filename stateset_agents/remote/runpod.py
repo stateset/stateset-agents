@@ -1709,7 +1709,7 @@ class RunPodExecutor(RemoteExecutor):
         if self.image.startswith(_START_SCRIPT_IMAGES):
             # The pod-side backstop is armed at creation: no local process has
             # to survive provisioning for the pod to stop at the run deadline.
-            remaining = spec.timeout_s
+            remaining = float(spec.timeout_s)
             if self._run_deadline is not None:
                 remaining = max(0.0, self._run_deadline - _billing_now())
             start = {
