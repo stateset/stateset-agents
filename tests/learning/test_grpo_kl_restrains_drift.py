@@ -55,6 +55,9 @@ def _drift(seed: int, *, beta: float) -> tuple[float, list[dict[str, Any]]]:
         max_completion_length=8,
         beta=beta,
         use_reference_model=beta > 0,
+        # Fixed-budget learning and negative controls may saturate this toy
+        # sampler. Production zero-signal stopping is tested independently.
+        zero_signal_patience=0,
         bf16=False,
         fp16=False,
         report_to="none",
