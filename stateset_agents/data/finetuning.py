@@ -5,9 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-import unicodedata
 from pathlib import Path
 from typing import Any
+
+from stateset_agents.data.identity import (  # noqa: F401 - re-exported
+    normalize_identity_text,
+    prompt_identity,
+)
 
 __all__ = [
     "load_finetuning_data",
@@ -15,7 +19,6 @@ __all__ = [
     "split_finetuning_data",
     "check_finetuning_overlap",
     "group_finetuning_data",
-    "normalize_identity_text",
     "parse_finetuning_json",
     "validate_finetuning_split",
     "validate_finetuning_source_split",
@@ -229,22 +232,12 @@ def load_finetuning_data(
     return rows
 
 
-def normalize_identity_text(text: str) -> str:
-    """Normalize text for split-leakage identity: NFKC, casefold, whitespace.
-
-    Two requests that differ only in Unicode compatibility forms (full-width
-    or non-breaking characters), letter case or whitespace are the same
-    request for train/validation/test separation.
-    """
-    return " ".join(unicodedata.normalize("NFKC", text).casefold().split())
-
-
 def _identity_keys(row: dict[str, Any]) -> set[str]:
     # Conservatively keep repeated initial requests together even when their
     # answers, policies, or tool schemas differ. group_id also links a customer,
     # case, or source conversation across differently worded examples.
     prompt = next(m["content"] for m in row["messages"] if m["role"] == "user")
-    keys = {"prompt:" + normalize_identity_text(prompt)}
+    keys = {"prompt:" + prompt_identity(prompt)}
     if "group_id" in row:
         keys.add("group:" + row["group_id"])
     return keys

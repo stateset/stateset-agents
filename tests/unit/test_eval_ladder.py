@@ -162,10 +162,42 @@ class TestEvalHarvestDisjointness:
             p for p in kit["eval"] if _masked(p["prompt"]) in harvest
         ]
 
-    def test_domain_too_small_to_separate_eval_from_harvest_is_refused(self):
-        spec = DomainSpec(persona="P", issues={"x": Issue("issue x", "fix x", "x")})
-        with pytest.raises(ValueError, match="disjoint"):
-            build_ladder(spec, depth=1)
+    def test_depth_one_is_refused_because_eval_would_repeat_training_rows(self):
+        """Training rows are single-issue: at depth 1 every eval prompt was a
+        training prompt with another reference (6/6 at 4 issues)."""
+        with pytest.raises(ValueError, match="depth must be at least 2"):
+            build_ladder(SIX, depth=1)
+
+    def test_eval_is_checked_against_training_rows(self, monkeypatch):
+        """The ladder verifies eval against train as well as harvest."""
+        import stateset_agents.training.eval_ladder as ladder
+
+        seen = []
+        real = ladder.check_disjoint_prompts
+
+        def spy(eval_prompts, other, **kwargs):
+            seen.append(list(other))
+            return real(eval_prompts, other, **kwargs)
+
+        monkeypatch.setattr(ladder, "check_disjoint_prompts", spy)
+        kit = build_ladder(SIX, depth=2, eval_count=3, harvest_count=4, train_count=5)
+        (other,) = seen
+        assert len(other) == 4 + 5
+        assert {o["prompt"] for o in other[4:]} == {
+            r["messages"][0]["content"] for r in kit["train"]
+        }
+
+    def test_episode_refs_clear_a_large_training_set(self):
+        """Episode references ignored train_count: with >= 4700 training rows
+        episode-eval turn 1 was verbatim a training prompt."""
+        kit = build_ladder(
+            SIX, depth=2, eval_count=6, harvest_count=6, train_count=5000
+        )
+        episodes = build_episode_ladder(
+            SIX, eval_count=6, harvest_count=6, train_count=5000
+        )
+        train = {r["messages"][0]["content"] for r in kit["train"]}
+        assert not [s for s in episodes["eval"] if s["turns"][0] in train]
 
     def test_check_disjoint_prompts_masks_reference_digits(self):
         with pytest.raises(ValueError, match="disjoint"):

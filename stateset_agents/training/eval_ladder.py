@@ -30,12 +30,12 @@ from __future__ import annotations
 import itertools
 import json
 import random
-import re
-import unicodedata
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from stateset_agents.data.identity import prompt_identity
 
 __all__ = [
     "DomainSpec",
@@ -58,7 +58,8 @@ def masked_prompt_key(spec: Mapping[str, Any], ref: str | None = None) -> str:
     """Identity of a prompt spec with its reference numbers masked.
 
     Single-turn specs are identified by ``prompt``, episode scripts by their
-    ``turns``; text is NFKC-, case- and whitespace-normalized. With ``ref``
+    ``turns``, under the shared request identity
+    (:func:`stateset_agents.data.identity.prompt_identity`). With ``ref``
     (the spec's own reference string) exactly that reference is masked;
     without it every digit run is, which also catches hand-written prompts
     whose references are unknown. Two prompts with the same key differ only
@@ -72,12 +73,7 @@ def masked_prompt_key(spec: Mapping[str, Any], ref: str | None = None) -> str:
 
 
 def _masked_text(text: str, ref: str | None) -> str:
-    text = unicodedata.normalize("NFKC", text)
-    if ref:
-        text = text.replace(unicodedata.normalize("NFKC", ref), "\x00ref\x00")
-    else:
-        text = re.sub(r"\d+", "#", text)
-    return " ".join(text.casefold().split())
+    return prompt_identity(text, ref=ref, mask_digits=not ref)
 
 
 def _ladder_ref(spec: Mapping[str, Any]) -> str | None:
@@ -312,11 +308,18 @@ def build_ladder(
     :func:`_partition_shapes`) and use non-overlapping reference ranges
     (eval from 7700, harvest from 8800, shifted up only when a set would run
     into the next); the result is verified with
-    :func:`check_disjoint_prompts`. Prompts are deterministic per seed.
-    Raises when the domain has too few issues for the depth (a depth-4
-    prompt needs 4 distinct issues, 5 with a refusal) or too few issue
-    combinations to keep eval and harvest apart.
+    :func:`check_disjoint_prompts`, as is eval against the training rows.
+    ``depth`` must be at least 2: training rows are single-issue, so a
+    depth-1 eval prompt would be a training prompt with another reference.
+    Prompts are deterministic per seed. Raises when the domain has too few
+    issues for the depth (a depth-4 prompt needs 4 distinct issues, 5 with a
+    refusal) or too few issue combinations to keep eval and harvest apart.
     """
+    if depth < 2:
+        raise ValueError(
+            f"depth must be at least 2, got {depth}: training rows are "
+            "single-issue, so a depth-1 eval prompt repeats a training prompt"
+        )
     names = sorted(spec.issues)
     need = depth + (1 if refusal_fraction > 0 else 0)
     if len(names) < need:
@@ -349,7 +352,13 @@ def build_ladder(
         "eval": build_set(eval_count, eval_base, eval_shapes),
         "harvest": build_set(harvest_count, harvest_base, harvest_shapes),
     }
-    check_disjoint_prompts(kit["eval"], kit["harvest"], ref_of=_ladder_ref)
+    train_specs = [
+        {"prompt": row["messages"][0]["content"], "expect": [spec.ref(train_base + i)]}
+        for i, row in enumerate(kit["train"])
+    ]
+    check_disjoint_prompts(
+        kit["eval"], [*kit["harvest"], *train_specs], ref_of=_ladder_ref
+    )
     return kit
 
 
@@ -361,6 +370,7 @@ def build_episode_ladder(
     harvest_count: int = 30,
     refusal_fraction: float = 0.0,
     seed: int = 0,
+    train_count: int = 140,
 ) -> dict[str, list[dict]]:
     """Two-turn episode scripts that make context carryover objective.
 
@@ -378,7 +388,10 @@ def build_episode_ladder(
     Script shape: ``{"turns": [...], "turn_expect": [[...], [...]],
     "forbid": [...]}`` — scored per turn, forbids over the whole episode.
     Eval and harvest scripts use disjoint issue combinations and
-    non-overlapping reference ranges, exactly like :func:`build_ladder`.
+    non-overlapping reference ranges, exactly like :func:`build_ladder`;
+    ``train_count`` must match the kit's so episode references also stay
+    clear of the training rows (turn 1 is single-issue by design, so only
+    its reference distinguishes it from a training prompt).
     """
     names = sorted(spec.issues)
     if turns < 2:
@@ -389,7 +402,7 @@ def build_episode_ladder(
             f"domain has {len(names)}"
         )
     rng = random.Random(seed)
-    _, eval_base, harvest_base = _ref_bases(0, eval_count)
+    _, eval_base, harvest_base = _ref_bases(train_count, eval_count)
     eval_shapes, harvest_shapes, ordered = _partition_shapes(
         names, turns, eval_count, harvest_count, rng
     )
@@ -512,6 +525,7 @@ def main(argv: list[str] | None = None) -> int:
             harvest_count=args.harvest_count,
             refusal_fraction=args.refusal_fraction,
             seed=args.seed,
+            train_count=args.train_count,
         )
         (args.output_dir / "episode_eval.json").write_text(
             json.dumps(episodes["eval"], indent=1)

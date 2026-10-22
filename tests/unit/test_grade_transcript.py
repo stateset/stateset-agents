@@ -391,10 +391,17 @@ class TestWriteCuratedExamples:
             == 3
         )
         entries = [json.loads(x) for x in curated.read_text().splitlines()]
+
+        def context(upto):
+            return [
+                {**t, "weight": 0} if t["role"] == "assistant" else t
+                for t in turns[: upto - 1]
+            ] + [turns[upto - 1]]
+
         assert [e["messages"] for e in entries] == [
-            turns[:3],
-            turns[:4],
-            turns[:6],
+            context(3),
+            context(4),
+            context(6),
         ]
         assert [e["prompt"] for e in entries] == ["Q1: 2+2?", "Q1: 2+2?", "Q2: 3+3?"]
         assert entries[2]["response"] == "The answer is 6"

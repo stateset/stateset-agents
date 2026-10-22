@@ -287,7 +287,9 @@ def write_curated_examples(
 
     ``messages`` is the exact context the turn was graded in, so training
     sees what the grader saw (``prepare_sft_dataset.py --format chat`` emits
-    it); ``prompt``/``response`` stay for single-turn consumers.
+    it); ``prompt``/``response`` stay for single-turn consumers. Earlier
+    assistant replies carry ``"weight": 0``: they are context, possibly below
+    the threshold, and only the graded reply is a training target.
 
     Designed to be append-safe across many transcripts — multiple invocations
     of this script can write into the same curated file without clobbering.
@@ -302,9 +304,16 @@ def write_curated_examples(
     for index, turn in enumerate(turns):
         if turn["role"] != "assistant":
             continue
-        messages = [
-            {"role": t["role"], "content": t["content"]} for t in turns[: index + 1]
+        # Earlier replies are context only (weight 0, the OpenAI fine-tuning
+        # convention): they may have failed the threshold, and every passing
+        # reply is curated once, in its own example.
+        messages: list[dict[str, Any]] = [
+            {"role": t["role"], "content": t["content"]} for t in turns[:index]
         ]
+        for message in messages:
+            if message["role"] == "assistant":
+                message["weight"] = 0
+        messages.append({"role": "assistant", "content": turn["content"]})
         examples.append(
             {
                 "prompt": preceding_user_content(turns, index),

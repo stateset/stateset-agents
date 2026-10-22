@@ -452,3 +452,60 @@ class TestEvalHarvestLeakage:
             output_root=tmp_path / "fw",
         )
         assert config.eval_prompts[0]["prompt"].startswith("Case 7701")
+
+
+class TestOneEvalDenominator:
+    """The harvest baseline counted every eval spec (check-less specs pass
+    trivially) while post-training scoring counted only rows with checks, so
+    a generation that fixed a prompt (1/3 -> 2/2... read as 1 vs 1) was
+    declared a plateau and discarded."""
+
+    SPECS = [
+        {"prompt": "Case 1 bag", "expect": ["trace"]},
+        {"prompt": "Say hello"},
+        {"prompt": "Case 2 seat", "expect": ["seat"]},
+    ]
+
+    def test_baseline_and_trained_scores_share_one_denominator(self, tmp_path):
+        from stateset_agents.flywheel import _eval_score
+        from stateset_agents.training.harvest import eval_summary
+        from stateset_agents.training.sft import build_eval_extras, write_eval_results
+
+        base = ["no", "hello", "no"]
+        tuned = ["baggage trace started", "hello", "no"]
+        before = eval_summary(self.SPECS, base)
+        write_eval_results(
+            tmp_path,
+            [s["prompt"] for s in self.SPECS],
+            base,
+            tuned,
+            build_eval_extras(self.SPECS, tuned),
+        )
+        assert (before["passed"], before["total"]) == (0, 2)
+        assert _eval_score(tmp_path) == (1, 2)  # an improvement, not a plateau
+
+    def test_specs_without_checks_are_rejected(self, tmp_path):
+        with pytest.raises(ValueError, match="no expect, forbid or turn_expect"):
+            FlywheelConfig(
+                base_model="base/model",
+                harvest_prompts=[{"prompt": "h1", "expect": ["x"]}],
+                eval_prompts=[{"prompt": "e1"}],
+                output_root=tmp_path / "fw",
+            )
+        episode = {"turns": ["t1", "t2"], "turn_expect": [["a"], ["b"]], "forbid": []}
+        FlywheelConfig(
+            base_model="base/model",
+            harvest_prompts=[{"prompt": "h1", "expect": ["x"]}],
+            eval_prompts=[episode],
+            output_root=tmp_path / "fw",
+        )
+
+    def test_cli_rejects_check_less_spec_files(self, tmp_path):
+        import typer
+
+        from stateset_agents.cli_flywheel import _load_specs
+
+        path = tmp_path / "eval.json"
+        path.write_text(json.dumps([{"prompt": "a", "expect": ["x"]}, {"prompt": "b"}]))
+        with pytest.raises(typer.BadParameter, match=r"index \[1\]"):
+            _load_specs(path, "--eval-prompts")

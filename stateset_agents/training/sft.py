@@ -37,10 +37,7 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.chat_masking import (
-    assistant_token_mask,
-    final_turn_token_mask,
-)
+from stateset_agents.core.chat_masking import supervised_turn_sequences
 from stateset_agents.core.lora_targets import (
     NON_TEXT_STACK_MARKERS as _NON_TEXT_STACK_MARKERS,
 )
@@ -300,45 +297,71 @@ def _render_sft_row(tokenizer: Any, row: dict[str, Any]) -> dict[str, str]:
 
 
 #: How :func:`tokenize_sft_rows` treated each row, as counted in the manifest
-#: (exactly one outcome per row). Kept rows that lost some, but not all, of
-#: their supervised tokens to ``max_length`` are counted separately as
-#: ``partially_truncated``.
+#: (exactly one outcome per row):
+#:
+#: * ``all_assistant_turns`` — one sequence supervising every target turn;
+#: * ``split_per_turn`` — the template renders a target turn differently once
+#:   it is history (Qwen3/Qwen3.5), so the row became one sequence per target
+#:   turn, each rendered as the final turn of its prefix;
+#: * ``dropped_no_target`` — every assistant turn carries ``weight: 0``;
+#: * ``dropped_unmaskable`` — a target turn cannot be located in the render;
+#: * ``dropped_truncated`` — every supervised token fell past ``max_length``.
+#:
+#: Kept rows that lost some supervised tokens (or whole later-turn sequences)
+#: to ``max_length`` are counted separately as ``partially_truncated``.
 SFT_LABEL_OUTCOMES = (
     "all_assistant_turns",
-    "final_turn_only",
+    "split_per_turn",
+    "dropped_no_target",
     "dropped_unmaskable",
     "dropped_truncated",
 )
 
 
+def _validate_weights(messages: list[dict[str, Any]]) -> None:
+    for index, message in enumerate(messages):
+        if "weight" not in message:
+            continue
+        weight = message["weight"]
+        if message.get("role") != "assistant" or weight not in (0, 1):
+            raise ValueError(
+                f"message {index}: weight must be 0 or 1 on an assistant message"
+            )
+
+
 def _tokenize_sft_row(
     tokenizer: Any, row: dict[str, Any], max_length: int
-) -> tuple[dict[str, list[int]] | None, str, bool]:
-    """(record, outcome, lost supervised tokens to truncation)."""
+) -> tuple[list[dict[str, list[int]]], str, bool]:
+    """(records, outcome, lost supervised tokens to truncation)."""
     tools = _row_tools(row)
-    outcome = "all_assistant_turns"
-    masked = assistant_token_mask(tokenizer, row["messages"], tools=tools)
-    if masked is None:
-        outcome = "final_turn_only"
-        masked = final_turn_token_mask(tokenizer, row["messages"], tools=tools)
-        if masked is None:
-            return None, "dropped_unmaskable", False
-    ids, assistant = masked
-    truncated = any(assistant[max_length:])
-    ids, assistant = ids[:max_length], assistant[:max_length]
-    if not any(assistant):
-        return None, "dropped_truncated", truncated
-    # Real EOS labels survive even when EOS doubles as padding: the collator
-    # pads labels with -100 by position, not token id.
-    return (
-        {
-            "input_ids": ids,
-            "attention_mask": [1] * len(ids),
-            "labels": [t if a else -100 for t, a in zip(ids, assistant, strict=True)],
-        },
-        outcome,
-        truncated,
-    )
+    _validate_weights(row["messages"])
+    located = supervised_turn_sequences(tokenizer, row["messages"], tools=tools)
+    if located is None:
+        return [], "dropped_unmaskable", False
+    outcome, sequences = located
+    if outcome == "no_target":
+        return [], "dropped_no_target", False
+    records = []
+    truncated = False
+    for ids, assistant in sequences:
+        truncated = truncated or any(assistant[max_length:])
+        ids, assistant = ids[:max_length], assistant[:max_length]
+        if not any(assistant):
+            continue
+        # Real EOS labels survive even when EOS doubles as padding: the
+        # collator pads labels with -100 by position, not token id.
+        records.append(
+            {
+                "input_ids": ids,
+                "attention_mask": [1] * len(ids),
+                "labels": [
+                    t if a else -100 for t, a in zip(ids, assistant, strict=True)
+                ],
+            }
+        )
+    if not records:
+        return [], "dropped_truncated", truncated
+    return records, outcome, truncated
 
 
 def tokenize_sft_row(
@@ -347,15 +370,16 @@ def tokenize_sft_row(
     """Tokenize one chat row with labels on assistant tokens only.
 
     System prompts, user turns and tool results are context, not targets
-    (training on them teaches the model to write its own tool outputs), so a
-    row is never labeled on prompt tokens. When the template rewrites earlier
-    turns (Qwen3 strips earlier ``<think>`` blocks) only the final assistant
-    turn is supervised; a row whose final turn cannot be located either, or
-    whose supervised tokens were truncated away at ``max_length``, is dropped
-    (``None``). :func:`tokenize_sft_rows` counts each outcome.
+    (training on them teaches the model to write its own tool outputs), and
+    assistant messages with ``weight: 0`` are context too. Every target turn
+    is trained in exactly the context it is generated in: when the template
+    renders a turn differently once it is history (Qwen3/Qwen3.5) the row is
+    split per target turn and this returns the last surviving sequence — use
+    :func:`tokenize_sft_rows` for all of them. ``None`` when no target turn
+    can be located or every supervised token was truncated at ``max_length``.
     """
-    record, _outcome, _truncated = _tokenize_sft_row(tokenizer, row, max_length)
-    return record
+    records, _outcome, _truncated = _tokenize_sft_row(tokenizer, row, max_length)
+    return records[-1] if records else None
 
 
 def tokenize_sft_rows(
@@ -363,41 +387,38 @@ def tokenize_sft_rows(
 ) -> tuple[list[dict[str, list[int]]], dict[str, int]]:
     """Tokenize ``rows`` and count how each was labeled or why it was dropped.
 
-    Returns the kept records and a count per :data:`SFT_LABEL_OUTCOMES` entry
-    plus ``partially_truncated`` (kept rows that lost supervised tokens to
-    ``max_length``), so a run's manifest can say how many rows lost their
-    earlier assistant turns, lost the end of a reply, or were not trained.
+    Returns the training sequences (one per row, or one per target turn for a
+    ``split_per_turn`` row) and a count per :data:`SFT_LABEL_OUTCOMES` entry
+    plus ``partially_truncated``, so a run's manifest says how many rows were
+    split, lost supervised tokens, or were not trained.
     """
     counts = dict.fromkeys((*SFT_LABEL_OUTCOMES, "partially_truncated"), 0)
     records = []
     for row in rows:
-        record, outcome, truncated = _tokenize_sft_row(tokenizer, row, max_length)
+        kept, outcome, truncated = _tokenize_sft_row(tokenizer, row, max_length)
         counts[outcome] += 1
-        if record is not None:
-            records.append(record)
+        if kept:
+            records.extend(kept)
             counts["partially_truncated"] += truncated
-    if counts["final_turn_only"]:
-        logger.warning(
-            "Chat template rewrites earlier turns in %d of %d SFT row(s); only "
-            "their final assistant turn is supervised.",
-            counts["final_turn_only"],
+    if counts["split_per_turn"]:
+        logger.info(
+            "Chat template renders history differently from new turns in %d of "
+            "%d SFT row(s); each was split into one sequence per assistant turn.",
+            counts["split_per_turn"],
             len(rows),
         )
-    if counts["dropped_unmaskable"]:
-        logger.warning(
-            "Dropped %d of %d SFT row(s) whose assistant tokens cannot be "
-            "located in the chat template render.",
-            counts["dropped_unmaskable"],
-            len(rows),
-        )
-    if counts["dropped_truncated"]:
-        logger.warning(
-            "Dropped %d of %d SFT row(s) whose assistant tokens were truncated "
-            "away at max_length=%d.",
-            counts["dropped_truncated"],
-            len(rows),
-            max_length,
-        )
+    for outcome, reason in (
+        ("dropped_no_target", "have no assistant turn without weight 0"),
+        ("dropped_unmaskable", "have an assistant turn the template render hides"),
+        ("dropped_truncated", f"lost every target token at max_length={max_length}"),
+    ):
+        if counts[outcome]:
+            logger.warning(
+                "Dropped %d of %d SFT row(s) that %s.",
+                counts[outcome],
+                len(rows),
+                reason,
+            )
     if counts["partially_truncated"]:
         logger.warning(
             "%d of %d SFT row(s) lost part of their assistant tokens at "
@@ -727,14 +748,36 @@ def normalize_eval_prompts(
     return specs
 
 
-#: A negation ending right before a forbidden phrase, in the same clause:
-#: "not"/"never"/"without"/"cannot"/"...n't" up to three words earlier
-#: ("I won't be able to rebook"), or "no" immediately before ("no rebooking").
+#: Words that negate a following verb: "not", "never", "no", "without",
+#: "cannot" and any "...n't" contraction.
+_NEGATOR = r"(?:not|never|no|without|cannot|\w+n['\u2019]t)"
+#: The only words allowed between a negator and the phrase it governs:
+#: auxiliaries and aspect ("won't be able to rebook", "not going to rebook",
+#: "no need to rebook"). Anything else — "won't hesitate to", "not only
+#: will I", "can't wait to" — means the negation is about something else.
+_GOVERNING = (
+    r"(?:be\s+able\s+to|able\s+to|be|need\s+to|have\s+to|going\s+to"
+    r"|go\s+ahead\s+and|try\s+to|bother\s+to|ever)"
+)
 _NEGATED_BEFORE = re.compile(
-    r"(?:\b(?:not|never|without|cannot)|n['\u2019]t)\s+(?:[\w'\u2019-]+\s+){0,3}$"
-    r"|\bno\s+$",
+    rf"(?:(?P<previous>[\w'\u2019]+)\s+)?\b{_NEGATOR}\s+(?:{_GOVERNING}\s+)?$",
     re.IGNORECASE,
 )
+_NEGATOR_WORD = re.compile(rf"{_NEGATOR}", re.IGNORECASE)
+
+
+def _negation_governs(before: str) -> bool:
+    """Whether the text right before a phrase negates it.
+
+    The negator must immediately govern the phrase — adjacent, or separated
+    only by an auxiliary such as "be able to" — and must not itself be
+    negated ("I can't not rebook you" still rebooks).
+    """
+    match = _NEGATED_BEFORE.search(before)
+    if match is None:
+        return False
+    previous = match.group("previous")
+    return not (previous and _NEGATOR_WORD.fullmatch(previous))
 
 
 def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
@@ -743,15 +786,18 @@ def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
     A user who declines a remedy is honored by "I won't rebook you" — the
     forbidden token appears only to say it will not happen. Matches must
     start at a word boundary ("rebook" still hits "rebooked") and count
-    unless an explicit negation directly precedes them in the same clause.
+    unless a negation immediately governs them (see
+    :func:`_negation_governs`): "I won't hesitate to rebook you" rebooks.
+    The same check filters harvested samples, so a loose negation rule
+    would harvest exactly the behaviour a refusal prompt forbids.
     """
     if not phrase:
         return True
     start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
     for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
-        # The negation window is a few words; bound the regex's input.
+        # The governing window is a few words; bound the regex's input.
         before = completion[max(0, match.start() - 200) : match.start()]
-        if not _NEGATED_BEFORE.search(before):
+        if not _negation_governs(before):
             return True
     return False
 
@@ -774,6 +820,48 @@ def evaluate_checks(
         "forbid_hits": forbid_hits,
         "passed": len(expect_hits) == len(expect) and not forbid_hits,
     }
+
+
+def has_eval_assertions(spec: Any) -> bool:
+    """Whether a prompt spec (or episode script) carries checks.
+
+    ``expect``/``forbid`` for single prompts, ``turn_expect`` for episode
+    scripts. Only such specs can fail, so only they count toward an eval
+    score; a spec without checks would "pass" whatever the model says.
+    """
+    if not isinstance(spec, dict):
+        return False
+    turn_expect = spec.get("turn_expect")
+    return bool(
+        spec.get("expect")
+        or spec.get("forbid")
+        or (isinstance(turn_expect, list) and any(turn_expect))
+    )
+
+
+def score_eval_rows(rows: Any) -> tuple[int | None, int | None]:
+    """``(passed, total)`` over eval rows that carry an assertion outcome.
+
+    The one scorer for every generation of a flywheel: the harvest job's
+    "before" eval and each training job's ``eval_results.json`` count the
+    same rows — those with ``checks.passed`` (or a flat ``passed``) — so a
+    real improvement is never compared against a larger denominator.
+    ``(None, None)`` when no row carries an outcome.
+    """
+    if not isinstance(rows, list):
+        return None, None
+    outcomes = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        checks = row.get("checks")
+        if isinstance(checks, dict) and "passed" in checks:
+            outcomes.append(bool(checks["passed"]))
+        elif "passed" in row:
+            outcomes.append(bool(row["passed"]))
+    if not outcomes:
+        return None, None
+    return sum(outcomes), len(outcomes)
 
 
 def _create_domain_reward(name: str) -> Any:
@@ -1140,10 +1228,14 @@ def run_sft(
             ),
             "training_content_sha256": dataset_identity.content_sha256,
             "training_input_rows": dataset_identity.examples,
-            "effective_training_rows": len(records),
-            # Rows supervised on their final assistant turn only (the template
-            # rewrites earlier turns) and rows not trained at all, by reason.
-            "final_turn_only_rows": label_outcomes["final_turn_only"],
+            # Input rows that produced at least one training sequence, the
+            # sequences themselves (a split row yields one per target turn),
+            # and rows not trained at all, by reason.
+            "effective_training_rows": label_outcomes["all_assistant_turns"]
+            + label_outcomes["split_per_turn"],
+            "training_sequences": len(records),
+            "split_per_turn_rows": label_outcomes["split_per_turn"],
+            "untargeted_rows_dropped": label_outcomes["dropped_no_target"],
             "unmaskable_rows_dropped": label_outcomes["dropped_unmaskable"],
             "truncated_rows_dropped": label_outcomes["dropped_truncated"],
             "partially_truncated_rows": label_outcomes["partially_truncated"],

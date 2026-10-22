@@ -972,33 +972,43 @@ class TestEvaluateChecks:
     def test_no_assertions_trivially_passes(self):
         assert sft.evaluate_checks("anything", expect=[], forbid=[])["passed"]
 
-    @pytest.mark.parametrize(
-        "completion",
-        [
-            "Done. I won't rebook you, as you asked.",
-            "Understood: I will not be able to rebook that flight.",
-            "Refund issued, and no rebooking was made.",
-            "I've left the booking as is and did NOT rebook anything.",
-        ],
-    )
-    def test_negated_forbidden_phrase_honors_the_refusal(self, completion):
-        """A refusal-respecting reply names the declined remedy only to say it
-        will not happen; plain substring matching failed it."""
-        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
-        assert checks["forbid_hits"] == [] and checks["passed"] is True
+    #: Pinned adversarial corpus for forbid=["rebook"]: (reply, rebooks?).
+    #: The same check filters harvested samples, so every "rebooks" reply
+    #: here must fail a refusal prompt.
+    NEGATION_CORPUS = [
+        ("Done. I won't rebook you, as you asked.", False),
+        ("I will not rebook you.", False),
+        ("Understood: I will not be able to rebook that flight.", False),
+        ("I won't be rebooking you.", False),
+        ("I'm not going to rebook you.", False),
+        ("There's no need to rebook anything.", False),
+        ("Refund issued, and no rebooking was made.", False),
+        ("I've left the booking as is and did NOT rebook anything.", False),
+        ("I cannot rebook you, as you asked.", False),
+        ("Refund issued without rebooking.", False),
+        ("I won\u2019t rebook you.", False),
+        ("I won't hesitate to rebook you on the 6pm flight.", True),
+        ("Not only will I rebook you, I'll add a voucher.", True),
+        ("Don't worry, I will rebook you now.", True),
+        ("No problem \u2014 rebooking you now.", True),
+        ("I can't wait to rebook you!", True),
+        ("I can't not rebook you.", True),
+        ("I've rebooked you on the 9am flight.", True),
+        ("No problem! I rebooked you.", True),
+        ("I'm not sure why it failed, but I will rebook you now.", True),
+        ("I did not only refund the fare but also rebook the trip.", True),
+        ("I won't refund it, but I will rebook you.", True),
+        ("Rebook confirmed.", True),
+        ("Nothing to worry about, I'll rebook you.", True),
+    ]
 
-    @pytest.mark.parametrize(
-        "completion",
-        [
-            "I've rebooked you on the 9am flight.",
-            "No problem! I rebooked you.",
-            "I'm not sure why it failed, but I will rebook you now.",
-            "I did not only refund the fare but also rebook the trip.",
-        ],
-    )
-    def test_forbidden_phrase_still_hits_when_used(self, completion):
+    @pytest.mark.parametrize("completion,rebooks", NEGATION_CORPUS)
+    def test_negation_must_govern_the_forbidden_phrase(self, completion, rebooks):
+        """A loose window passed "I won't hesitate to rebook you", "Not only
+        will I rebook you" and "I can't wait to rebook you!"."""
         checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
-        assert checks["forbid_hits"] == ["rebook"] and checks["passed"] is False
+        assert checks["passed"] is (not rebooks)
+        assert checks["forbid_hits"] == (["rebook"] if rebooks else [])
 
     def test_forbidden_phrase_must_start_at_a_word_boundary(self):
         checks = sft.evaluate_checks("Your prebooking is fine.", [], ["rebook"])

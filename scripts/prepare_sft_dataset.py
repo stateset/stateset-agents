@@ -14,12 +14,14 @@ files carry only ``prompt``/``response`` and are treated as single-turn.
 This script reshapes those into one of three target formats:
 
 * ``--format hf-trainer`` — Hugging Face ``Trainer`` text-style:
-    ``{"text": "<prompt>\\n\\n<response>"}`` (every turn's text, in order)
+    ``{"text": "<prompt>\\n\\n<response>"}`` (single-turn: plain text cannot
+    keep earlier turns out of the loss)
 
 * ``--format chat`` — OpenAI / chat-template style:
     ``{"messages": [{"role": "user", ...}, {"role": "assistant", ...}]}``
     (the format ``apply_chat_template`` consumes; also what TRL's SFTTrainer
-    expects for chat models) — the full graded context
+    expects for chat models) — the full graded context, earlier assistant
+    replies marked ``"weight": 0`` so only the graded reply is trained
 
 * ``--format axolotl`` — axolotl/unsloth-friendly ``alpaca`` style:
     ``{"instruction": "...", "input": "<earlier turns>", "output": "..."}``
@@ -53,24 +55,37 @@ from typing import Any
 logger = logging.getLogger("prepare_sft_dataset")
 
 
-def entry_messages(entry: dict[str, Any]) -> list[dict[str, str]]:
+def entry_messages(entry: dict[str, Any]) -> list[dict[str, Any]]:
     """The conversation an entry was graded in, ending with its response.
 
-    Entries without ``messages`` (older curated files) are single-turn.
+    Every earlier assistant reply carries ``"weight": 0``: it is context (it
+    may have scored below the threshold, and each passing reply is its own
+    entry), so only the graded response is a training target. Entries
+    without ``messages`` (older curated files) are single-turn.
     """
     messages = entry.get("messages")
-    if isinstance(messages, list) and messages:
-        return [{"role": m["role"], "content": m["content"]} for m in messages]
-    return [
-        {"role": "user", "content": entry["prompt"]},
-        {"role": "assistant", "content": entry["response"]},
-    ]
+    if not (isinstance(messages, list) and messages):
+        return [
+            {"role": "user", "content": entry["prompt"]},
+            {"role": "assistant", "content": entry["response"]},
+        ]
+    out: list[dict[str, Any]] = []
+    for index, message in enumerate(messages):
+        turn: dict[str, Any] = {"role": message["role"], "content": message["content"]}
+        if turn["role"] == "assistant" and index < len(messages) - 1:
+            turn["weight"] = 0
+        out.append(turn)
+    return out
 
 
 def to_hf_trainer(entry: dict[str, Any]) -> dict[str, Any]:
-    """HF Trainer text-style: every turn's text, blank-line separated."""
+    """HF Trainer text-style: ``prompt`` and ``response`` only.
+
+    Plain text cannot mark which tokens are targets, so earlier turns (which
+    may hold sub-threshold replies) are left out rather than trained on.
+    """
     return {
-        "text": "\n\n".join(m["content"] for m in entry_messages(entry)),
+        "text": f"{entry['prompt']}\n\n{entry['response']}",
     }
 
 

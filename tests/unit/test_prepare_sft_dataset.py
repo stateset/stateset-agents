@@ -268,7 +268,12 @@ class TestMultiTurnEntries:
     (last user, response) trained on a different context than was graded."""
 
     def test_chat_keeps_the_full_graded_context(self) -> None:
-        assert prep.to_chat(MULTI_TURN) == {"messages": MULTI_TURN["messages"]}
+        """Earlier replies are context only: they may have failed the grader,
+        and each passing reply is its own entry (it used to be re-trained in
+        every later entry of the transcript)."""
+        messages = [dict(m) for m in MULTI_TURN["messages"]]
+        messages[2]["weight"] = 0
+        assert prep.to_chat(MULTI_TURN) == {"messages": messages}
 
     def test_axolotl_puts_earlier_turns_in_input(self) -> None:
         assert prep.to_axolotl(MULTI_TURN) == {
@@ -277,10 +282,10 @@ class TestMultiTurnEntries:
             "output": "A2",
         }
 
-    def test_hf_trainer_text_has_every_turn(self) -> None:
-        assert prep.to_hf_trainer(MULTI_TURN) == {
-            "text": "Be brief.\n\nQ1\n\nA1\n\nQ2\n\nA2"
-        }
+    def test_hf_trainer_text_never_includes_earlier_replies(self) -> None:
+        """Plain text trains every token, so earlier (possibly failed)
+        replies stay out of it."""
+        assert prep.to_hf_trainer(MULTI_TURN) == {"text": "Q2\n\nA2"}
 
     def test_flatten_restores_the_legacy_pair(self) -> None:
         assert prep.to_chat(prep.flatten(MULTI_TURN))["messages"] == [
