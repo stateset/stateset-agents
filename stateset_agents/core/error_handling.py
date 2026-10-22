@@ -194,6 +194,8 @@ class RetryConfig:
         jitter: bool = True,
         retry_on: list[type[Exception]] | None = None,
     ):
+        if max_attempts < 1:
+            raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
         self.max_attempts = max_attempts
         self.base_delay = base_delay
         self.max_delay = max_delay
@@ -403,7 +405,7 @@ def retry_async(config: RetryConfig):
 
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
-            last_exception = None
+            last_exception: BaseException | None = None
 
             for attempt in range(config.max_attempts):
                 try:
@@ -430,6 +432,12 @@ def retry_async(config: RetryConfig):
                     await asyncio.sleep(delay)
 
             # If we get here, all retries failed
+            if last_exception is None:
+                # Only reachable when max_attempts was mutated below 1 after
+                # construction; never ``raise None`` (a confusing TypeError).
+                raise ValueError(
+                    f"max_attempts must be >= 1, got {config.max_attempts}"
+                )
             raise last_exception
 
         return wrapper
@@ -447,6 +455,11 @@ def circuit_breaker(
     def decorator(func: Callable):
         def wrapper(*args, **kwargs):
             cb = error_handler.get_circuit_breaker(name)
+            if cb is None:
+                # The registry was cleared after decoration; re-register so the
+                # decorated function keeps its breaker instead of crashing.
+                cb = CircuitBreaker(config)
+                error_handler.circuit_breakers[name] = cb
             return cb.call(func, *args, **kwargs)
 
         return wrapper
