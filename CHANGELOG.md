@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `queued`/`running` forever, and can be stopped from the evaluation panel. The
   evaluation supervisor claims `supervisor.json` exclusively, so a second
   supervisor can no longer take over or rewrite a supervised evaluation.
+- The terminal studio keeps the handles of the run and evaluation supervisors
+  it launches and reaps them when status is refreshed, so finished supervisors
+  no longer linger as zombies (which on macOS also looked alive to owner
+  checks).
 
 ### Security
 

@@ -42,6 +42,8 @@ from stateset_agents.finetune_workspace import (
     read_json,
     read_run_plan,
     read_training_data,
+    reap_children,
+    retain_child,
     write_json,
 )
 
@@ -572,6 +574,7 @@ def launch_evaluation(path: Path, *, expected_plan_sha256: str) -> int:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+        retain_child(process)
         return int(process.pid)
     except OSError:
         write_json(
@@ -689,6 +692,7 @@ def _queue_progress(path: Path) -> dict[str, Any]:
 
 def evaluation_status(path: Path) -> dict[str, Any]:
     """Return content-free retained progress; no inference or model hashing."""
+    reap_children()
     plan = read_json(path / "plan.json")
     state = read_json(path / "state.json")
     if detached_owner_lost(path, state.get("status")):

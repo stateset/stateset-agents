@@ -146,6 +146,46 @@ def test_launch_is_detached_shell_free_and_exclusive(settings, tmp_path, monkeyp
     assert len(calls) == 1
 
 
+def _process_state(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return None  # reaped: no process table entry remains
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Reads the Linux process table")
+def test_finished_supervisor_is_reaped_on_the_next_status_refresh(
+    settings, tmp_path, monkeypatch
+):
+    """The long-lived studio must not accumulate zombie supervisors."""
+    import subprocess
+
+    run = create_run(tmp_path / "workspace", plan_run(settings))
+    real_popen = subprocess.Popen
+
+    def short_lived(argv, **kwargs):
+        return real_popen([sys.executable, "-c", "pass"], **kwargs)
+
+    monkeypatch.setattr(workspace.subprocess, "Popen", short_lived)
+    pid = workspace.launch_run(run)
+    deadline = time.monotonic() + 10
+    while _process_state(pid) not in {"Z", None} and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert _process_state(pid) in {"Z", None}
+    workspace.run_status(run)
+    assert _process_state(pid) is None
+
+
+def test_reaping_skips_handles_that_cannot_be_polled(monkeypatch):
+    finished = SimpleNamespace(poll=lambda: 0)
+    running = SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(workspace, "_DETACHED_CHILDREN", [])
+    for handle in (finished, running, SimpleNamespace(pid=1)):
+        workspace.retain_child(handle)
+    workspace.reap_children()
+    assert workspace._DETACHED_CHILDREN == [running]
+
+
 @pytest.mark.parametrize(
     "exit_code,receipt,expected",
     [(0, True, "succeeded"), (0, False, "failed"), (2, True, "failed")],

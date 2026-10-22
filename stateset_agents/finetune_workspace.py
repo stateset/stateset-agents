@@ -12,6 +12,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 from collections.abc import Mapping
@@ -986,6 +987,34 @@ def create_run(workspace: Path, plan: RunPlan) -> Path:
     return run.resolve()
 
 
+#: Detached supervisors this process started. Their handles are kept so the
+#: long-lived terminal studio can reap them once they exit: an unreaped child
+#: lingers as a zombie, and on macOS ``kill(pid, 0)`` succeeds on a zombie, so
+#: a finished supervisor would keep looking alive to the owner checks.
+_DETACHED_CHILDREN: list[Any] = []
+_DETACHED_CHILDREN_LOCK = threading.Lock()
+
+
+def retain_child(process: Any) -> None:
+    """Keep a detached supervisor's handle so its exit can be reaped later."""
+    with _DETACHED_CHILDREN_LOCK:
+        _DETACHED_CHILDREN.append(process)
+
+
+def reap_children() -> None:
+    """Collect every retained supervisor that has exited, without waiting."""
+    with _DETACHED_CHILDREN_LOCK:
+        running = []
+        for process in _DETACHED_CHILDREN:
+            poll = getattr(process, "poll", None)
+            try:
+                if callable(poll) and poll() is None:
+                    running.append(process)
+            except OSError:
+                continue
+        _DETACHED_CHILDREN[:] = running
+
+
 def queue_executable() -> str | None:
     """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
 
@@ -1040,6 +1069,7 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 stderr=subprocess.STDOUT,
                 start_new_session=True,
             )
+        retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
         state = read_json(run / "state.json")
         cancelled = False
@@ -1238,6 +1268,7 @@ def detached_owner_lost(directory: Path, status: object) -> bool:
 
 def run_status(run: Path) -> dict[str, Any]:
     """Read committed outcomes; missing owners leave unfinished work unconfirmed."""
+    reap_children()
     state = read_json(run / "state.json")
     if state.get("status") not in TERMINAL_STATES:
         supervisor = run / "supervisor.json"
