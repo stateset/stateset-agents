@@ -18,8 +18,10 @@ from typing import Any
 from .reward import RewardFunction
 from .reward_base import RewardType
 from .reward_context import (
+    REWARD_FALLBACK_KEY,
     build_reward_context,
     normalize_turns,
+    note_fallback,
     reward_score,
     trajectory_reward_context,
 )
@@ -261,6 +263,7 @@ class Environment(ABC):
             breakdown = getattr(result, "breakdown", None)
             if isinstance(breakdown, dict):
                 state.metadata["reward_breakdown"] = dict(breakdown)
+            note_fallback(state.metadata, result)
         state.metadata[STEP_REWARD_FN_SCORE] = score
         return score
 
@@ -428,7 +431,12 @@ class Environment(ABC):
         ]
         reward_metadata = {
             key: state.metadata[key]
-            for key in ("reward_fn_calls", "reward_error", "reward_breakdown")
+            for key in (
+                "reward_fn_calls",
+                "reward_error",
+                "reward_breakdown",
+                REWARD_FALLBACK_KEY,
+            )
             if state.metadata.get(key)
         }
         reward_fn = self.reward_fn
@@ -456,6 +464,7 @@ class Environment(ABC):
                 breakdown = getattr(final_reward, "breakdown", None)
                 if isinstance(breakdown, dict):
                     reward_metadata["reward_breakdown"] = dict(breakdown)
+                note_fallback(reward_metadata, final_reward)
 
         metadata: dict[str, Any] = {
             "episode_id": state.episode_id,

@@ -35,6 +35,13 @@ from typing import Any
 
 from .trajectory import ConversationTurn
 
+#: ``RewardResult.metadata`` key a reward sets (to a short reason) when its
+#: score is an opted-in fallback rather than a real verdict, e.g.
+#: ``NSRVerifierConfig(error_score=0.0)`` or ``RulerRewardFunction(
+#: fallback_enabled=True)`` during an outage. Environments and
+#: ``score_episode`` copy it to the trajectory's metadata.
+REWARD_FALLBACK_KEY = "reward_fallback"
+
 #: Context key an environment sets when it asks for one step's reward.
 REWARD_SCOPE_KEY = "reward_scope"
 #: ``REWARD_SCOPE_KEY`` value: score only the newest assistant turn.
@@ -197,6 +204,21 @@ def reward_score(result: Any) -> float:
     return score
 
 
+def reward_fallback(result: Any) -> str | None:
+    """The fallback reason a reward result is flagged with, if any."""
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, Mapping) and metadata.get(REWARD_FALLBACK_KEY):
+        return str(metadata[REWARD_FALLBACK_KEY])
+    return None
+
+
+def note_fallback(metadata: dict[str, Any], result: Any) -> None:
+    """Record ``result``'s fallback flag (if any) in episode ``metadata``."""
+    reason = reward_fallback(result)
+    if reason is not None:
+        metadata[REWARD_FALLBACK_KEY] = reason
+
+
 def normalize_turns(turns: Any) -> list[ConversationTurn]:
     """Conversation turns as ``ConversationTurn`` objects.
 
@@ -291,6 +313,7 @@ async def score_episode(
         i for i, turn in enumerate(turns) if getattr(turn, "role", None) == "assistant"
     ]
     breakdown: Any = None
+    fallback: str | None = None
     if _scores_per_step(reward_fn, environment) and assistant:
         step_context = {**context, REWARD_SCOPE_KEY: LATEST_TURN_SCOPE}
         scores = []
@@ -298,6 +321,7 @@ async def score_episode(
             result = await _call(reward_fn, turns[: index + 1], step_context)
             scores.append(reward_score(result))
             breakdown = getattr(result, "breakdown", None)
+            fallback = reward_fallback(result) or fallback
         parts = [score / len(scores) for score in scores]
         if len(parts) != len(intrinsic):
             # Steps and assistant turns do not line up; credit the mean once.
@@ -306,6 +330,7 @@ async def score_episode(
         result = await _call(reward_fn, turns, context)
         parts = [0.0] * (len(intrinsic) - 1) + [reward_score(result)]
         breakdown = getattr(result, "breakdown", None)
+        fallback = reward_fallback(result)
 
     turn_rewards = [base + part for base, part in zip(intrinsic, parts, strict=True)]
     total = math.fsum(turn_rewards)
@@ -324,16 +349,21 @@ async def score_episode(
         if error:
             # The environment's own reward failed; this one scored.
             trajectory.metadata["environment_reward_error"] = error
+        if fallback is not None:
+            trajectory.metadata[REWARD_FALLBACK_KEY] = fallback
     return total
 
 
 __all__ = [
     "LATEST_TURN_SCOPE",
+    "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
     "assistant_turns_in_scope",
     "build_reward_context",
     "environment_applied_reward",
     "normalize_turns",
+    "note_fallback",
+    "reward_fallback",
     "requires_environment_context",
     "reward_score",
     "score_episode",

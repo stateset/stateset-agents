@@ -376,3 +376,77 @@ def _turns(reply: str) -> list[ConversationTurn]:
         ConversationTurn(role="user", content="What is 2+2?"),
         ConversationTurn(role="assistant", content=reply),
     ]
+
+
+# --- Network rewards fail closed unless a fallback is opted into -------------
+
+
+async def _unreachable(payload):
+    raise ConnectionError("nsr unreachable")
+
+
+def _verdict_turns(reply: str) -> list[ConversationTurn]:
+    return [
+        ConversationTurn(role="user", content="Refund for #A1?"),
+        ConversationTurn(role="assistant", content=reply),
+    ]
+
+
+async def test_nsr_outage_is_unavailable_by_default_and_redistributed():
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    nsr = NSRVerifierReward(config=NSRVerifierConfig(), client=_unreachable)
+    with pytest.raises(RewardUnavailableError, match="nsr unreachable"):
+        await nsr.compute_reward(_verdict_turns("Decision: approve"), {})
+    composite = CompositeReward([nsr, Half()])
+    result = await composite.compute_reward(_verdict_turns("Decision: approve"), {})
+    assert result.metadata["failed_components"] == ["NSRVerifierReward"]
+
+
+async def test_opted_in_nsr_fallback_is_flagged_on_the_episode():
+    from stateset_agents.core.reward_context import score_episode
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    nsr = NSRVerifierReward(
+        config=NSRVerifierConfig(error_score=0.0), client=_unreachable
+    )
+    nsr.reward_type = RewardType.SPARSE
+    scenario = {"id": "r", "user_turns": ["Refund for #A1?"]}
+    for attach in (True, False):
+        environment = ConversationEnvironment(
+            [scenario], max_turns=1, reward_fn=nsr if attach else None
+        )
+        trajectory = await environment.run_episode(
+            _replies("Decision: approve"), scenario
+        )
+        assert await score_episode(trajectory, nsr, environment, scenario) == 0.0
+        assert trajectory.metadata["reward_fallback"] == "nsr_error"
+
+
+async def test_ruler_failure_is_unavailable_unless_fallback_is_enabled(monkeypatch):
+    import stateset_agents.rewards.llm_reward as lr
+
+    monkeypatch.setattr(lr, "LITELLM_AVAILABLE", True)
+
+    async def broken(messages):
+        raise RuntimeError("judge 503")
+
+    strict = lr.RulerRewardFunction(model="judge", max_retries=1)
+    strict._make_completion_call = broken
+    with pytest.raises(RewardUnavailableError, match="judge 503"):
+        await strict.compute_reward(TURNS)
+
+    lenient = lr.RulerRewardFunction(
+        model="judge", max_retries=1, fallback_enabled=True
+    )
+    lenient._make_completion_call = broken
+    result = await lenient.compute_reward(TURNS)
+    assert result.metadata["reward_fallback"] == "ruler_error"
+    composite = await CompositeReward([lenient, Half()]).compute_reward(TURNS)
+    assert "ruler_error" in composite.metadata["reward_fallback"]

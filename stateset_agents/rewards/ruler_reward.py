@@ -28,7 +28,7 @@ class RulerConfig:
     temperature: float = 0.0
     max_tokens: int = 256
     weight: float = 1.0
-    fallback_enabled: bool = True
+    fallback_enabled: bool = False
     fallback_score: float = 0.5
 
 

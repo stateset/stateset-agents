@@ -427,7 +427,7 @@ async def test_ruler_maps_scores_by_trajectory_id(monkeypatch):
 )
 async def test_ruler_rejects_invalid_judgements(monkeypatch, scores):
     reward = _ruler(monkeypatch, scores)
-    with pytest.raises(ValueError):
+    with pytest.raises(RewardUnavailableError, match="RULER judge unavailable"):
         await reward.compute_batch_rewards(_batch())
 
 

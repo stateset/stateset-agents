@@ -106,7 +106,8 @@ class _FakeJudge:
 
 
 async def _fake_nsr(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"decision": "approve", "decision_id": "d-1", "confidence": 0.9}
+    # A real verdict word, so the "verdict" inputs score both 1.0 and 0.0.
+    return {"decision": "approved", "decision_id": "d-1", "confidence": 0.9}
 
 
 #: Constructors for rewards that need arguments, keyed by qualified name.
@@ -186,6 +187,14 @@ INPUTS: dict[str, list[ConversationTurn]] = {
     "blank_reply": [
         ConversationTurn(role="user", content="Hello?"),
         ConversationTurn(role="assistant", content=""),
+    ],
+    "verdict_approve": [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Approved: your refund is issued."),
+    ],
+    "verdict_deny": [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Denied: the item is past 90 days."),
     ],
 }
 CONTEXTS: dict[str, dict[str, Any] | None] = {
@@ -357,3 +366,12 @@ async def test_trainer_drops_an_episode_with_a_nan_reward():
         config=TrainingConfig(num_generations=2),
     )
     assert await trainer.generate_trajectories([scenario], num_generations=2) == []
+
+
+async def test_nsr_contract_inputs_exercise_both_verdicts():
+    from stateset_agents.rewards.nsr_verifier import NSRVerifierReward
+
+    reward = NSRVerifierReward(client=_fake_nsr)
+    approve = await reward.compute_reward(INPUTS["verdict_approve"], {})
+    deny = await reward.compute_reward(INPUTS["verdict_deny"], {})
+    assert (approve.score, deny.score) == (1.0, 0.0)

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .reward_context import build_reward_context
+from .reward_context import REWARD_FALLBACK_KEY, build_reward_context, reward_fallback
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -301,6 +301,15 @@ class CompositeReward(RewardFunction):
                 name = name[: -len("reward")]
             components[name] = float(result.score)
 
+        metadata: dict[str, Any] = {}
+        fallbacks = [
+            f"{rf.name}: {reason}"
+            for rf, rr in results
+            if (reason := reward_fallback(rr)) is not None
+        ]
+        if fallbacks:
+            # A child's opted-in fallback score is part of this score too.
+            metadata[REWARD_FALLBACK_KEY] = "; ".join(fallbacks)
         return RewardResult(
             score=total_score,
             components=components,
@@ -312,6 +321,7 @@ class CompositeReward(RewardFunction):
                 "combination_method": self.combination_method,
                 "normalize_weights": self.normalize_weights,
                 "failed_components": failed,
+                **metadata,
             },
         )
 
