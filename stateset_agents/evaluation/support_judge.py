@@ -931,9 +931,12 @@ def hf_generate_fn(
         tokenizer.pad_token = tokenizer.eos_token
     device = "cuda" if torch.cuda.is_available() else "cpu"
     dtype = torch.bfloat16 if device == "cuda" else torch.float32
-    lm = transformers.AutoModelForCausalLM.from_pretrained(
+    # PreTrainedModel.to is decorated with functools.wraps, whose typeshed stub
+    # does not bind ``self``; keep the handle untyped so ``.to(device)`` checks.
+    lm: Any = transformers.AutoModelForCausalLM.from_pretrained(
         model, revision=revision, torch_dtype=dtype
-    ).to(device)
+    )
+    lm = lm.to(device)
     lm.eval()
 
     def generate(prompts: Sequence[str]) -> list[str]:

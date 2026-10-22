@@ -60,6 +60,7 @@ def river_environment_factory(
         raise ValueError("truncation_reward must be a finite number")
     try:
         from river_client import rl
+        from river_client.renderers import Message
     except ImportError as exc:
         raise ImportError("Install stateset-agents[river] on Python >=3.12") from exc
 
@@ -74,7 +75,7 @@ def river_environment_factory(
             self.case_hash: str | None = None
             self.trace: dict[str, Any] | None = None
 
-        async def reset(self, row: dict[str, Any]) -> list[dict[str, Any]]:
+        async def reset(self, row: dict[str, Any]) -> list[Message]:
             # A failed reset must not leave the previous episode usable.
             self.state, self.case_hash = None, None
             self.trace = None
@@ -98,7 +99,7 @@ def river_environment_factory(
                 }
             return list(messages)
 
-        async def on_turn(self, traj: Any) -> list[dict[str, Any]] | None:
+        async def on_turn(self, traj: Any) -> list[Message] | None:
             if self.state is None or self.done:
                 raise RuntimeError("Environment must be reset before stepping")
             traj.stateset_episode_id = self.state.episode_id

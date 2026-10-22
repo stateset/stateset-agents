@@ -26,12 +26,16 @@ if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
 
 try:
-    import torch
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
     torch = None
 
 try:
-    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+    from jinja2.exceptions import TemplateError as _ImportedTemplateError
+
+    _Jinja2TemplateError: type[Exception] = _ImportedTemplateError
 except ImportError:  # pragma: no cover
     _Jinja2TemplateError = ValueError
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues

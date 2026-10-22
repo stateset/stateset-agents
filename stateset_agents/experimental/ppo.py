@@ -222,7 +222,8 @@ class PPOValueHead(nn.Module):
         Returns:
             values: [batch, seq_len, 1]
         """
-        return self.net(hidden_states)
+        values: torch.Tensor = self.net(hidden_states)
+        return values
 
 
 class AdaptiveKLController:
@@ -510,7 +511,8 @@ class PPOTrainer(TrainingRuntime):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        return outputs.hidden_states[-1]
+        last_hidden: torch.Tensor = outputs.hidden_states[-1]
+        return last_hidden
 
     def compute_log_probs(
         self,
@@ -558,9 +560,9 @@ class PPOTrainer(TrainingRuntime):
         zero expectation and therefore never pulled the policy toward the
         reference.
         """
-        if mask is None:
-            return rl_losses.k3_kl(current_log_probs, reference_log_probs)
-        return rl_losses.k3_kl(current_log_probs, reference_log_probs, mask)
+        # rl_losses is backend-agnostic (Any in, Any out); torch in, torch out.
+        kl: torch.Tensor = rl_losses.k3_kl(current_log_probs, reference_log_probs, mask)
+        return kl
 
     def ppo_loss(
         self,
@@ -926,13 +928,8 @@ class PPOTrainer(TrainingRuntime):
                     values, old_values[idx], returns[idx], mb_mask
                 )
 
-                # Entropy bonus
-                if mb_mask is not None:
-                    entropy_bonus = (entropy * mb_mask).sum() / mb_mask.sum().clamp(
-                        min=1
-                    )
-                else:
-                    entropy_bonus = entropy.mean()
+                # Entropy bonus over response tokens only
+                entropy_bonus = (entropy * mb_mask).sum() / mb_mask.sum().clamp(min=1)
 
                 # Total loss
                 total_loss = (

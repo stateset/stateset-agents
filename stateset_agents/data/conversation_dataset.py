@@ -13,19 +13,25 @@ import logging
 import random
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional, cast
+from typing import TYPE_CHECKING, Any, Optional
 
 import numpy as np
 
 try:
-    import torch
-    from torch.utils.data import Dataset as TorchDataset
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:
     torch = None
-    TorchDataset = object
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from sentence_transformers import SentenceTransformer
+    from torch.utils.data import Dataset as TorchDataset
+else:
+    try:
+        from torch.utils.data import Dataset as TorchDataset
+    except ImportError:
+        TorchDataset = object
 
 
 def _load_sentence_transformer_cls() -> Any:
@@ -444,12 +450,10 @@ class ConversationDataset(TorchDataset):
                     actions.append(action_embedding)
                     history += f"assistant: {turn.content}\n"
 
-        if states:
-            states = torch.stack(states)
-        if actions:
-            actions = torch.stack(actions)
-
-        return states, actions
+        # Empty batches keep the original empty lists instead of a tensor.
+        state_batch: Any = torch.stack(states) if states else states
+        action_batch: Any = torch.stack(actions) if actions else actions
+        return state_batch, action_batch
 
     def get_statistics(self) -> dict[str, float]:
         """Compute dataset statistics"""
@@ -494,27 +498,27 @@ class ConversationDataset(TorchDataset):
         if not all_rewards:
             return
 
-        all_rewards = np.array(all_rewards)
+        reward_array = np.array(all_rewards)
 
         if method == "standard":
-            mean = np.mean(all_rewards)
-            std = np.std(all_rewards) + 1e-8
+            mean = np.mean(reward_array)
+            std = np.std(reward_array) + 1e-8
 
             def normalize(r: float) -> float:
                 return float((r - mean) / std)
 
         elif method == "minmax":
-            min_r: float = float(np.min(all_rewards))
-            max_r: float = float(np.max(all_rewards))
+            min_r: float = float(np.min(reward_array))
+            max_r: float = float(np.max(reward_array))
             range_r = max_r - min_r + 1e-8
 
             def normalize(r: float) -> float:
                 return float((r - min_r) / range_r)
 
         elif method == "percentile":
-            p5 = np.percentile(all_rewards, 5)
-            p95 = np.percentile(all_rewards, 95)
-            clipped = np.clip(all_rewards, p5, p95)
+            p5 = np.percentile(reward_array, 5)
+            p95 = np.percentile(reward_array, 95)
+            clipped = np.clip(reward_array, p5, p95)
             mean = np.mean(clipped)
             std = np.std(clipped) + 1e-8
 
@@ -707,7 +711,8 @@ class ConversationDataset(TorchDataset):
             value = embedding_cache.get_or_compute(
                 f"{identity}_{suffix}_{digest}", text
             )
-            return cast(np.ndarray, np.asarray(value.detach().cpu().numpy()))
+            array: np.ndarray = np.asarray(value.detach().cpu().numpy())
+            return array
 
         for row in self.policy_transitions():
             identity = row["transition_id"]

@@ -220,7 +220,10 @@ class LocalGenerator:
             trust_remote_code=False,
             local_files_only=True,
         )
-        self.model = AutoModelForCausalLM.from_pretrained(
+        # Either a transformers model or a PEFT wrapper around one. The stubs
+        # share no typed generate/to protocol (PreTrainedModel.to is a
+        # functools.wraps object that typeshed does not bind), so stay untyped.
+        self.model: Any = AutoModelForCausalLM.from_pretrained(
             str(snapshot),
             revision=revision,
             trust_remote_code=False,
@@ -272,6 +275,8 @@ class LocalGenerator:
         eos_ids = eos if isinstance(eos, list) else [eos]
         ended = bool(count and int(generated[-1]) in eos_ids)
         text = self.tokenizer.decode(generated, skip_special_tokens=True)
+        if not isinstance(text, str):
+            raise TypeError("Tokenizer decoded one sequence into a batch")
         if not text.strip():
             raise ValueError("Model generated an empty completion")
         return text, count, count >= tokens and not ended
