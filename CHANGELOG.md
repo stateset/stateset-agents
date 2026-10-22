@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   comparisons) share one classifier, `finetune_workspace.owner_evidence`, with
   a tri-state `owner_alive(path)` (alive / gone / undecided). Each caller keeps
   its existing decisions and messages.
+- The studio's log viewer and file picker are self-contained panels
+  (`stateset_agents.tui_panels.LogViewer` / `FilePicker`, each with
+  `handle(key)` and `lines(width, available)`), and the terminal-safe text
+  helpers live in `stateset_agents.tui_text`. Rendered frames are unchanged.
 
 ### Fixed
 

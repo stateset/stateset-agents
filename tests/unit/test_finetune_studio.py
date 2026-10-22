@@ -827,11 +827,11 @@ def test_file_picker_filters_selects_without_reading_contents(
     studio = Studio(tmp_path / "studio", settings)
     studio.handle("f")
     assert studio.overlay == "files"
-    assert "unrelated.txt" not in {row[0] for row in studio.file_entries}
-    assert ".hidden.json" not in {row[0] for row in studio.file_entries}
+    assert "unrelated.txt" not in {row[0] for row in studio.file_picker.entries}
+    assert ".hidden.json" not in {row[0] for row in studio.file_picker.entries}
     for char in chosen.name:
         studio.handle(char)
-    assert len(studio._filtered_files()) == 1
+    assert len(studio.file_picker.filtered()) == 1
     monkeypatch.setattr(
         Path, "read_bytes", lambda _: pytest.fail("picker must not read file content")
     )
@@ -851,10 +851,10 @@ def test_file_picker_directory_navigation_and_cancel_preserve_draft(settings, tm
     for char in "cases":
         studio.handle(char)
     studio.handle("ENTER")
-    assert studio.file_directory == directory
-    assert studio.file_search == ""
+    assert studio.file_picker.directory == directory
+    assert studio.file_picker.search == ""
     studio.handle("BACKSPACE")
-    assert studio.file_directory == tmp_path
+    assert studio.file_picker.directory == tmp_path
     studio.handle("ESC")
     assert studio.values["dataset"] == settings.dataset
     assert studio.overlay is None
@@ -865,12 +865,12 @@ def test_file_picker_permission_failure_remains_navigable(
 ):
     studio = Studio(tmp_path / "studio", settings)
     monkeypatch.setattr(
-        "stateset_agents.tui.os.scandir",
+        "stateset_agents.tui_panels.os.scandir",
         lambda _: (_ for _ in ()).throw(PermissionError("denied")),
     )
     studio.handle("f")
-    assert studio.overlay == "files" and "PermissionError" in studio.file_error
-    assert studio.file_entries[0][0] == ".."
+    assert studio.overlay == "files" and "PermissionError" in studio.file_picker.error
+    assert studio.file_picker.entries[0][0] == ".."
     assert "DATASET PICKER" in "\n".join(studio.lines(74, 44))
     studio.handle("ESC")
     assert studio.overlay is None

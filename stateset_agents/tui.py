@@ -8,20 +8,17 @@ from __future__ import annotations
 
 import hashlib
 import math
-import os
 import shlex
 import sys
-import textwrap
 import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from itertools import islice
 from pathlib import Path
 from queue import Empty, SimpleQueue
 from typing import Any, TypeGuard
 
-from rich.cells import cell_len, chop_cells, set_cell_size
+from rich.cells import cell_len, set_cell_size
 
 from stateset_agents.data.text_sft import DatasetFormatError
 from stateset_agents.finetune_evaluation_tui import EvaluationPanel
@@ -38,13 +35,11 @@ from stateset_agents.finetune_quality import inspect_quality, record_quality
 from stateset_agents.finetune_recovery import inspect_checkpoints, prepare_resume
 from stateset_agents.finetune_workspace import (
     BACKENDS,
-    LOG_SOURCES,
     MAX_DATA_BYTES,
     METHODS,
     PROVIDERS,
     ConfigIssue,
     FinetuneConfig,
-    LogSnapshot,
     PreparedRunReview,
     RunPlan,
     check_config_values,
@@ -56,7 +51,6 @@ from stateset_agents.finetune_workspace import (
     plan_run,
     queue_executable,
     read_json,
-    read_log_snapshot,
     read_run_plan,
     redact_finetune_secrets,
     request_stop,
@@ -65,8 +59,10 @@ from stateset_agents.finetune_workspace import (
     write_json,
 )
 from stateset_agents.tui_actions import ActionMenu
+from stateset_agents.tui_panels import FilePicker, LogViewer
 from stateset_agents.tui_render import FrameRenderer, configure_terminal
 from stateset_agents.tui_tasks import BackgroundTask, TaskResult
+from stateset_agents.tui_text import _clip, _safe, _wrap
 
 MIN_TERMINAL_COLUMNS = 32
 MIN_TERMINAL_ROWS = 16
@@ -211,38 +207,11 @@ def model_choices() -> list[tuple[str, str]]:
     return sorted(models.items())
 
 
-def _safe(value: Any) -> str:
-    return "".join(char if char.isprintable() else " " for char in str(value))
-
-
 def _field_text(value: Any) -> str:
     """Keep valid numeric zeros visible while labelling absent values."""
     if value is None or (isinstance(value, str) and not value):
         return "(not set)"
     return str(value)
-
-
-def _clip(value: Any, width: int) -> str:
-    text = _safe(value)
-    if cell_len(text) <= width:
-        return text
-    if width < 4:
-        return str(set_cell_size(text, max(0, width)))
-    return str(set_cell_size(text, width - 3)) + "..."
-
-
-def _wrap(lines: list[str], width: int) -> list[str]:
-    result: list[str] = []
-    for line in lines:
-        parts = textwrap.wrap(
-            _safe(line),
-            width=max(1, width),
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
-        for part in parts or [""]:
-            result.extend(chop_cells(part, max(1, width)) or [""])
-    return result
 
 
 def _teardown_note(state: dict[str, Any]) -> str:
@@ -300,11 +269,7 @@ class Studio:
         self.backend_index = PROVIDERS.index(str(self.values["provider"]))
         self.dialog_offset = 0
         self.models = model_choices()
-        self.file_directory = Path.cwd()
-        self.file_entries: list[tuple[str, Path, bool]] = []
-        self.file_index = 0
-        self.file_search = ""
-        self.file_error = ""
+        self.file_picker = FilePicker(Path.cwd())
         self.file_evaluation: EvaluationPanel | None = None
         self.plan: RunPlan | None = None
         self.planning: BackgroundTask[RunPlan] = BackgroundTask()
@@ -343,13 +308,7 @@ class Studio:
         self.validation_index = 0
         self.validation_signature = ""
         self.validation_field: str | None = None
-        self.log_view_run: Path | None = None
-        self.log_source = "auto"
-        self.log_snapshot: LogSnapshot | None = None
-        self.log_follow = True
-        self.log_view_offset = 0
-        self.log_query = ""
-        self.log_search_edit: str | None = None
+        self.log_viewer: LogViewer | None = None
         self.message = "Start here: w guided setup | : actions. Preview is free."
         self.runs: list[dict[str, Any]] = []
         self.all_runs: list[dict[str, Any]] = []
@@ -448,8 +407,8 @@ class Studio:
         ):
             selected, self.pending_run_id = self.pending_run_id, None
         watched = (
-            self.log_view_run.name
-            if self.overlay == "logs" and self.log_view_run
+            self.log_viewer.run.name
+            if self.overlay == "logs" and self.log_viewer
             else selected
         )
         if (
@@ -459,8 +418,7 @@ class Studio:
         ):
             self.overlay = None
             self.dialog_offset = 0
-            self.log_view_run = None
-            self.log_snapshot = None
+            self.log_viewer = None
             self.message = (
                 "Selected run left this filter. Backspace shows all retained runs."
             )
@@ -915,49 +873,9 @@ class Studio:
             path = Path.cwd() / path
         while not path.is_dir() and path != path.parent:
             path = path.parent
-        self.file_directory = path.resolve()
+        self.file_picker = FilePicker(path.resolve(), cases=evaluation is not None)
         self.overlay = "files"
-        self._read_files()
-
-    def _read_files(self) -> None:
-        self.file_entries = []
-        self.file_error = ""
-        self.file_search = ""
-        self.file_index = 0
-        if self.file_directory.parent != self.file_directory:
-            self.file_entries.append(("..", self.file_directory.parent, True))
-        try:
-            rows = []
-            with os.scandir(self.file_directory) as entries:
-                for entry in islice(entries, 2000):
-                    if entry.name.startswith("."):
-                        continue
-                    try:
-                        directory = entry.is_dir()
-                        if directory or (
-                            entry.is_file(follow_symlinks=self.file_evaluation is None)
-                            and Path(entry.name).suffix.lower()
-                            in (
-                                {".json"}
-                                if self.file_evaluation
-                                else {".json", ".jsonl"}
-                            )
-                        ):
-                            rows.append((entry.name, Path(entry.path), directory))
-                    except OSError:
-                        continue
-            self.file_entries += sorted(
-                rows, key=lambda row: (not row[2], row[0].casefold())
-            )
-        except OSError as error:
-            self.file_error = f"Cannot list this directory ({type(error).__name__}); select .. or Esc."
-
-    def _filtered_files(self) -> list[tuple[str, Path, bool]]:
-        return [
-            row
-            for row in self.file_entries
-            if self.file_search.casefold() in row[0].casefold()
-        ]
+        self.file_picker.read()
 
     def _close_files(self, selected: Path | None = None) -> None:
         """Return a path only to the captured editor; never read or prepare it."""
@@ -992,41 +910,6 @@ class Studio:
             self.values["dataset"] = str(selected)
             self.plan = None
             self.message = "Dataset selected. Press p to validate its contents."
-
-    def _file_key(self, key: str) -> None:
-        entries = self._filtered_files()
-        if key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
-            delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
-            self.file_index = max(
-                0,
-                min(
-                    len(entries) - 1,
-                    self.file_index
-                    + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
-                ),
-            )
-        elif key in {"HOME", "END"}:
-            self.file_index = 0 if key == "HOME" else max(0, len(entries) - 1)
-        elif key == "BACKSPACE":
-            if self.file_search:
-                self.file_search = self.file_search[:-1]
-                self.file_index = 0
-            else:
-                self.file_directory = self.file_directory.parent
-                self._read_files()
-        elif key == "CLEAR":
-            self.file_search = ""
-            self.file_index = 0
-        elif key == "ENTER" and entries:
-            _, path, directory = entries[min(self.file_index, len(entries) - 1)]
-            if directory:
-                self.file_directory = path.resolve()
-                self._read_files()
-            else:
-                self._close_files(path)
-        elif len(key) == 1 and key.isprintable():
-            self.file_search += key
-            self.file_index = 0
 
     def _reuse_run(self) -> None:
         if not self.runs:
@@ -1423,7 +1306,11 @@ class Studio:
             return True
         if self.overlay:
             if self.overlay == "logs":
-                self._log_key(key)
+                if self.log_viewer is None:
+                    if key == "ESC":
+                        self.overlay = None
+                elif self.log_viewer.handle(key):
+                    self.overlay, self.log_viewer = None, None
                 return True
             if key == "ESC":
                 if self.overlay == "files":
@@ -1497,7 +1384,9 @@ class Studio:
                         + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
                     )
             elif self.overlay == "files":
-                self._file_key(key)
+                chosen = self.file_picker.handle(key)
+                if chosen is not None:
+                    self._close_files(chosen)
             elif self.overlay == "validation":
                 if key == "v":
                     self._check_settings()
@@ -1886,19 +1775,11 @@ class Studio:
         elif self.overlay == "metrics":
             keys = ["PgUp/Dn scroll | Esc back | Charts use reported samples"]
         elif self.overlay == "logs":
-            if self.log_search_edit is not None:
-                keys = [
-                    "Filter: "
-                    + _clip(
-                        self.log_search_edit[-max(1, (width - 12) // 2) :], width - 8
-                    ),
-                    "Enter apply | Esc discard | Backspace edit | Ctrl+U clear",
-                ]
-            else:
-                keys = [
-                    "Space pause/follow | s source | / filter | Esc back",
-                    "Arrows/PgUp/Dn scroll | Home oldest | End follow | Backspace clear",
-                ]
+            keys = (
+                self.log_viewer.keys(width)
+                if self.log_viewer is not None
+                else list(LogViewer.BROWSE_KEYS)
+            )
         elif self.overlay == "help":
             keys = ["PgUp/Dn scroll | Esc back | Ctrl+C exit"]
         elif self.tab == "runs":
@@ -1927,7 +1808,11 @@ class Studio:
                 and self.action_menu.searchable
             )
             or self.overlay in {"quality-path", "run-search", "models", "files"}
-            or (self.overlay == "logs" and self.log_search_edit is not None)
+            or (
+                self.overlay == "logs"
+                and self.log_viewer is not None
+                and self.log_viewer.editing
+            )
             or (
                 self.overlay == "evaluation"
                 and self.evaluation_panel is not None
@@ -2347,44 +2232,6 @@ class Studio:
             "Closing this terminal will not stop a launched job.",
         ]
 
-    def _file_lines(self, width: int, available: int) -> list[str]:
-        header = _wrap(
-            [
-                (
-                    "HELD-OUT CASE PICKER / JSON files"
-                    if self.file_evaluation
-                    else "DATASET PICKER / JSON and JSONL files"
-                ),
-                str(self.file_directory),
-                "Filter: " + self.file_search,
-            ],
-            width,
-        )
-        entries = self._filtered_files()
-        self.file_index = max(0, min(self.file_index, len(entries) - 1))
-        selected = (
-            _wrap(["Selected: " + str(entries[self.file_index][1])], width)
-            if entries
-            else ["No matching files; Backspace goes to the parent directory."]
-        )
-        count = max(1, available - len(header) - len(selected) - 2)
-        start = max(0, min(self.file_index - count // 2, len(entries) - count))
-        rows = [
-            (" > " if index == self.file_index else "   ")
-            + _clip(name + ("/" if directory else ""), width - 4)
-            for index, (name, _, directory) in enumerate(entries)
-            if start <= index < start + count
-        ]
-        rows += [""] * max(0, count - len(rows))
-        return [
-            *header,
-            *rows,
-            "",
-            *selected,
-            self.file_error
-            or "Lists at most 2,000 directory entries; selection does not read file contents.",
-        ]
-
     def lines(self, width: int = 110, height: int = 32) -> list[str]:
         """Render by terminal cell width, with compact layouts and scrollable details."""
         width, height = max(20, width), max(10, height)
@@ -2487,7 +2334,7 @@ class Studio:
         elif self.overlay == "validation":
             body = self._validation_lines(width, available)
         elif self.overlay == "files":
-            body = self._file_lines(width, available)
+            body = self.file_picker.lines(width, available)
         elif self.overlay == "run-search":
             matches = self._filter_runs(self.search)
             body = _wrap(
@@ -2589,7 +2436,11 @@ class Studio:
         elif self.overlay == "metrics":
             body = _wrap(self._metric_lines(width), width)
         elif self.overlay == "logs":
-            body = self._log_lines(width, available)
+            body = (
+                self.log_viewer.lines(width, available)
+                if self.log_viewer is not None
+                else ["No log source selected. Esc returns to Runs."]
+            )
         elif self.overlay == "review":
             body = _wrap(self._review_lines(), width)
         elif self.overlay == "prepared-review" and self.prepared_review:
@@ -2864,142 +2715,11 @@ class Studio:
     def _open_logs(self) -> None:
         if not self.runs:
             return
-        self.log_view_run = Path(self.runs[self.run_index]["path"])
-        self.log_source = "auto"
-        self.log_snapshot = None
-        self.log_follow = True
-        self.log_view_offset = 0
-        self.log_query = ""
-        self.log_search_edit = None
+        self.log_viewer = LogViewer(Path(self.runs[self.run_index]["path"]))
         self.overlay = "logs"
         self.message = (
             "Private output; source selection and filtering never change a run."
         )
-
-    def _pause_logs(self) -> None:
-        if self.log_snapshot is None and self.log_view_run:
-            self.log_snapshot = read_log_snapshot(
-                self.log_view_run, source=self.log_source
-            )
-        self.log_follow = False
-
-    def _log_key(self, key: str) -> None:
-        if self.log_search_edit is not None:
-            if key == "ESC":
-                self.log_search_edit = None
-            elif key == "ENTER":
-                self.log_query = self.log_search_edit
-                self.log_search_edit = None
-                self.log_view_offset = 0
-            elif key == "BACKSPACE":
-                self.log_search_edit = self.log_search_edit[:-1]
-            elif key == "CLEAR":
-                self.log_search_edit = ""
-            elif (
-                len(key) == 1 and key.isprintable() and len(self.log_search_edit) < 256
-            ):
-                self.log_search_edit += key
-            return
-        if key == "ESC":
-            self.overlay = None
-            self.log_view_run = None
-            self.log_snapshot = None
-        elif key == "/":
-            self._pause_logs()
-            self.log_search_edit = self.log_query
-        elif key == "BACKSPACE":
-            self.log_query = ""
-            self.log_view_offset = 0
-        elif key == "s":
-            self.log_source = LOG_SOURCES[
-                (LOG_SOURCES.index(self.log_source) + 1) % len(LOG_SOURCES)
-            ]
-            self.log_snapshot = (
-                read_log_snapshot(self.log_view_run, source=self.log_source)
-                if self.log_view_run
-                else None
-            )
-            self.log_view_offset = 0
-        elif key == "END":
-            self.log_follow = True
-            self.log_view_offset = 0
-        elif key == " ":
-            if self.log_follow:
-                self._pause_logs()
-            else:
-                self.log_follow = True
-                self.log_view_offset = 0
-        elif key == "HOME":
-            self._pause_logs()
-            self.log_view_offset = 1000000
-        elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
-            self._pause_logs()
-            delta = 12 if key in {"PAGEUP", "PAGEDOWN"} else 1
-            self.log_view_offset = max(
-                0,
-                min(
-                    1000000,
-                    self.log_view_offset
-                    + (delta if key in {"UP", "PAGEUP"} else -delta),
-                ),
-            )
-
-    def _log_lines(self, width: int, available: int) -> list[str]:
-        if self.log_view_run is None:
-            return ["No log source selected. Esc returns to Runs."]
-        if self.log_follow or self.log_snapshot is None:
-            self.log_snapshot = read_log_snapshot(
-                self.log_view_run, source=self.log_source
-            )
-        snapshot = self.log_snapshot
-        retained = snapshot.lines[-2000:]
-        query = self.log_query.casefold()
-        selected = (
-            [line for line in retained if query in line.casefold()]
-            if query
-            else list(retained)
-        )
-        heading = _wrap(
-            [
-                "RUN LOGS / long lines wrap",
-                "Run: " + self.log_view_run.name,
-                f"{'FOLLOW' if self.log_follow else 'PAUSED'} | {self.log_source} -> {snapshot.source} / {snapshot.filename}",
-                f"Tail scope: 128 KiB / 2,000 lines | {len(selected)}/{len(retained)} match",
-                "Filter: " + _clip(self.log_query or "(none)", max(1, width - 8)),
-            ],
-            width,
-        )
-        if snapshot.window_truncated:
-            heading += _wrap(
-                ["Earlier bytes omitted; the first retained line may be partial."],
-                width,
-            )
-        if len(snapshot.lines) > 2000:
-            heading += ["Earlier lines omitted from this view."]
-        content = _wrap(selected, width)
-        if not snapshot.available:
-            content = [
-                (
-                    "Waiting for worker output..."
-                    if snapshot.error == "missing"
-                    else "Log unavailable; inspect permissions or select another source."
-                )
-            ]
-        elif not content:
-            content = _wrap(
-                [
-                    (
-                        "No matching lines in this tail window; Backspace clears the filter."
-                        if query
-                        else "No log lines in the selected source yet."
-                    )
-                ],
-                width,
-            )
-        count = max(1, available - len(heading) - 1)
-        self.log_view_offset = min(self.log_view_offset, max(0, len(content) - count))
-        end = len(content) - (0 if self.log_follow else self.log_view_offset)
-        return [*heading, "", *content[max(0, end - count) : end]]
 
     def _metric_lines(self, width: int) -> list[str]:
         if not self.runs:
