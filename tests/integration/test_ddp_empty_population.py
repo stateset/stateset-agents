@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration._spawn_budget import spawn_budget
+
 pytestmark = pytest.mark.integration
 SHARDS = 4
 
@@ -255,9 +257,7 @@ def _worker(rank, directory, shard):
         dist.destroy_process_group()
 
 
-# Spawned Gloo workers re-import torch per process; on loaded Windows runners a
-# shard that takes ~25 s on Linux has exceeded 90 s, so Windows gets more room.
-SHARD_BUDGET_SECONDS = 180 if sys.platform == "win32" else 90
+SHARD_BUDGET_SECONDS = spawn_budget(90)
 
 
 @pytest.mark.timeout(SHARD_BUDGET_SECONDS + 30)
@@ -278,7 +278,7 @@ def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path, shard
             if time.monotonic() > deadline:
                 pytest.fail(
                     f"empty population shard {shard} exceeded "
-                    f"{SHARD_BUDGET_SECONDS} seconds"
+                    f"{SHARD_BUDGET_SECONDS:.0f} seconds"
                 )
     finally:
         for process in context.processes:

@@ -14,6 +14,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.integration._spawn_budget import spawn_budget
+
 pytestmark = pytest.mark.integration
 
 
@@ -332,7 +334,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
-@pytest.mark.timeout(140)
+@pytest.mark.timeout(spawn_budget(140))
 def test_ddp_flush_reporting_and_recovery(tmp_path):
     torch = pytest.importorskip("torch")
     if (
@@ -344,10 +346,12 @@ def test_ddp_flush_reporting_and_recovery(tmp_path):
         _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
     )
     try:
-        deadline = time.monotonic() + 110
+        deadline = time.monotonic() + spawn_budget(110)
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("optimizer reporting contract exceeded 110 seconds")
+                pytest.fail(
+                    f"optimizer reporting contract exceeded {spawn_budget(110):.0f} seconds"
+                )
     finally:
         for process in context.processes:
             if process.is_alive():

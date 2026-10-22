@@ -16,6 +16,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.integration._spawn_budget import spawn_budget
+
 pytestmark = pytest.mark.integration
 _ARTIFACT_FAULTS = [
     "rank",
@@ -382,7 +384,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
-@pytest.mark.timeout(210)
+@pytest.mark.timeout(spawn_budget(210))
 def test_native_ddp_checkpoint_resume_and_coordinated_recovery(tmp_path):
     torch = pytest.importorskip("torch")
     if (
@@ -396,10 +398,12 @@ def test_native_ddp_checkpoint_resume_and_coordinated_recovery(tmp_path):
     try:
         # 84 roundtrips now re-read source provenance at every admission and
         # restore. Keep a bounded harness timeout separate from numerical gates.
-        deadline = time.monotonic() + 180
+        deadline = time.monotonic() + spawn_budget(180)
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("native DDP checkpoint contract exceeded 180 seconds")
+                pytest.fail(
+                    f"native DDP checkpoint contract exceeded {spawn_budget(180):.0f} seconds"
+                )
     finally:
         for process in context.processes:
             if process.is_alive():
