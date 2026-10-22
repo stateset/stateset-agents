@@ -50,6 +50,7 @@ from stateset_agents.data.finetuning import (
     parse_finetuning_json,
     validate_finetuning_split,
 )
+from stateset_agents.data.jsonl import jsonl_lines
 from stateset_agents.data.source import DatasetSourceIdentity, SFTDatasetIdentity
 from stateset_agents.training.lineage import (
     AdapterManifest,
@@ -131,10 +132,8 @@ def parse_chat_dataset(data: bytes) -> list[dict[str, Any]]:
     training, rather than hashing the original path after it may have changed.
     """
     rows: list[dict[str, Any]] = []
-    for line_num, line in enumerate(data.decode("utf-8").splitlines(), 1):
+    for line_num, line in jsonl_lines(data.decode("utf-8")):
         line = line.strip()
-        if not line:
-            continue
         try:
             row = parse_finetuning_json(line)
         except json.JSONDecodeError as e:

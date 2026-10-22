@@ -52,6 +52,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import read_jsonl_lines
+
 logger = logging.getLogger("prepare_sft_dataset")
 
 
@@ -147,11 +149,8 @@ def load_curated(path: Path) -> list[dict[str, Any]]:
     if not path.exists():
         raise FileNotFoundError(f"Curated file not found: {path}")
     entries: list[dict[str, Any]] = []
-    text = path.read_text(encoding="utf-8")
-    for line_num, line in enumerate(text.splitlines(), 1):
+    for line_num, line in read_jsonl_lines(path):
         line = line.strip()
-        if not line:
-            continue
         try:
             entry = json.loads(line)
         except json.JSONDecodeError as e:

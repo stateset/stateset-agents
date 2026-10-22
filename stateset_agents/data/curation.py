@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import read_jsonl_lines
+
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _PHONE = re.compile(r"(?<!\w)(?:\+\d[\d ()-]{8,}\d|\(\d{3}\)\s*\d{3}[- ]\d{4})(?!\w)")
 _CREDENTIAL = re.compile(
@@ -200,9 +202,7 @@ def main() -> None:
     parser.add_argument("--test-after", required=True)
     parser.add_argument("--minimum-reward", type=float)
     args = parser.parse_args()
-    records = [
-        json.loads(line) for line in args.input.read_text().splitlines() if line.strip()
-    ]
+    records = [json.loads(line) for _, line in read_jsonl_lines(args.input)]
     bundle = curate_conversations(
         records,
         validation_after=args.validation_after,

@@ -21,6 +21,7 @@ import typer
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
 from stateset_agents.core.errors import StateSetError
+from stateset_agents.data.jsonl import read_jsonl_lines
 from stateset_agents.remote.job import RemoteJobSpec
 from stateset_agents.remote.registry import available_providers, get_executor
 
@@ -752,8 +753,7 @@ def train_remote(
             raise typer.Exit(code=2)
         prompts = [
             _parse_eval_prompt_line(line.strip())
-            for line in eval_prompts.read_text().splitlines()
-            if line.strip()
+            for _, line in read_jsonl_lines(eval_prompts)
         ]
 
     provider_options: dict[str, object] | None = None

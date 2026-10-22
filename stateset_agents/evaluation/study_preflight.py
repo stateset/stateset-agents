@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import read_jsonl_lines
 from stateset_agents.data.refund_demonstrations import (
     RejectedTrajectory,
     _load_data,
@@ -42,11 +43,7 @@ async def _check_data(
     manifest, splits = _load_data(directory)
     if manifest["seed"] != seed or splits != config.splits(seed):
         raise ValueError("Prepared dataset differs from the planned seed or splits")
-    rows = [
-        json.loads(line)
-        for line in (directory / "train.jsonl").read_text().splitlines()
-        if line.strip()
-    ]
+    rows = [json.loads(line) for _, line in read_jsonl_lines(directory / "train.jsonl")]
     if (
         type(manifest.get("selected")) is not int
         or manifest["selected"] != len(rows)
