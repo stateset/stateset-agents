@@ -209,6 +209,27 @@ helm upgrade --install stateset-agents deployment/helm/stateset-agents \
   --set vllm.image.digest=sha256:YOUR_DIGEST
 ```
 
+## Network Policy
+
+vLLM is served without `--api-key`, so the chart ships a NetworkPolicy
+(`networkPolicy.enabled: true` by default) that only admits the API gateway
+pods to vLLM on port 8000. Your cluster CNI must enforce NetworkPolicy
+(e.g. GKE Dataplane V2 or Calico). To allow extra peers such as a metrics
+collector:
+
+```yaml
+networkPolicy:
+  vllm:
+    extraIngressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gmp-system
+```
+
+`--trust-remote-code` stays in the default vLLM args because the supported
+model repos ship custom modeling/tokenizer code; only serve pinned, reviewed
+model sources.
+
 ## Enable Ingress
 
 ```bash
