@@ -242,7 +242,8 @@ def test_builtin_executor_shares_one_timeout_across_setup_and_training(
                 dry_run=True,
             )
         )
-    assert timeouts == [10, 58, 56, 54]
+    # readiness probe, bounded pod-deadline arming, upload, install, training
+    assert timeouts == [10, 30, 56, 54, 52]
     assert clock.value == 60
     assert len(api.created) == 1 and api.terminated == ["pod-abc"]
     assert transport._host is None and transport._deadline is None

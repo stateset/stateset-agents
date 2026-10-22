@@ -210,6 +210,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cleaned up, pod deletion retries 429/5xx with backoff, and failures are
   reported together at the end with their leases kept; the command exits 1
   if any pod could not be confirmed terminated.
+- The RunPod cost ceiling no longer fails open when the submitting worker
+  dies. SIGTERM/SIGHUP now end a RunPod submission (and the fine-tuning
+  worker) through its cleanup, so the pod is terminated and its lease
+  cleared; the studio supervisor terminates any pod the exited worker had
+  allocated but never cleaned up (found by journaled id, or by its owned name
+  when creation was journaled without an id) and records the outcome in the
+  provider journal; and each pod arms a pod-side deadline that deletes it at
+  the run deadline using RunPod's own pod-scoped credentials (no user key is
+  copied to the pod), logging when those credentials are unavailable.
 
 ### Security
 
