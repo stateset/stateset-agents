@@ -180,7 +180,9 @@ def test_unknown_execution_never_claims_terminal_completion(status):
     assert workspace.run_terminal_status({"status": status}) is None
 
 
-def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(interrupted_run):
+def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(
+    interrupted_run, settle_preview
+):
     fixture = interrupted_run
     studio = Studio(fixture.run.parent)
     studio.tab, studio.run_filter = "runs", "active"
@@ -194,6 +196,7 @@ def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(interrupte
     assert not (fixture.run / "stop.json").exists()
     studio.handle("k")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert workspace.stop_requested(fixture.run)
     assert "worker exit remains unconfirmed" in studio.message
     assert "already terminal" not in studio.message

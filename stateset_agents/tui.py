@@ -14,6 +14,7 @@ import sys
 import textwrap
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from itertools import islice
 from pathlib import Path
@@ -65,7 +66,7 @@ from stateset_agents.finetune_workspace import (
 )
 from stateset_agents.tui_actions import ActionMenu
 from stateset_agents.tui_render import FrameRenderer, configure_terminal
-from stateset_agents.tui_tasks import BackgroundTask
+from stateset_agents.tui_tasks import BackgroundTask, TaskResult
 
 MIN_TERMINAL_COLUMNS = 32
 MIN_TERMINAL_ROWS = 16
@@ -344,6 +345,11 @@ class Studio:
         self.all_runs: list[dict[str, Any]] = []
         self.background_history = background_history
         self.history_task: BackgroundTask[list[dict[str, Any]]] = BackgroundTask()
+        # Launch, stop and prepared-run review verify retained bytes (dataset
+        # hashes, package identity) and must not freeze the terminal thread.
+        self.submission: BackgroundTask[Any] = BackgroundTask()
+        self.submission_kind = ""
+        self.submission_overlay: str | None = None
         self.history_loaded = False
         self.history_error = ""
         self.run_query = ""
@@ -404,6 +410,9 @@ class Studio:
 
     def refresh(self, *, history: bool = True) -> None:
         """Reconnect to retained runs without polling external services."""
+        submitted = self.submission.poll()
+        if submitted is not None:
+            self._finish_submission(submitted)
         selected = (
             self.runs[self.run_index]["id"]
             if self.runs and self.run_index < len(self.runs)
@@ -541,6 +550,75 @@ class Studio:
                 )
         except Empty:
             pass
+
+    def _submit(
+        self,
+        kind: str,
+        operation: Callable[[], Any],
+        message: str,
+        *,
+        authorized: bool,
+    ) -> bool:
+        """Run one launch, stop or review step off the terminal thread.
+
+        Authorized submissions use a non-daemon thread, so exiting the studio
+        waits for them instead of abandoning a half-submitted launch.
+        """
+        if self.submission.busy:
+            self.message = "A launch, stop or review is still being processed; try again when it finishes."
+            return False
+        self.submission_kind, self.submission_overlay = kind, self.overlay
+        self.submission.start(operation, daemon=not authorized, name=f"stateset-{kind}")
+        self.message = message
+        return True
+
+    def _show_submitted_run(self, run: Path) -> None:
+        """Select a newly launched run unless the user moved on meanwhile."""
+        self.pending_run_id = run.name
+        if self.overlay is None and self.editing is None:
+            self.tab = "runs"
+            self.run_index = 0
+            self.run_query, self.run_filter = "", "all"
+
+    def _finish_submission(self, result: TaskResult[Any]) -> None:
+        """Apply a completed submission on the terminal thread."""
+        kind, error, value = self.submission_kind, result.error, result.value
+        if kind == "stop":
+            if error is not None or not isinstance(value, dict):
+                self.message = (
+                    "Stop request rejected; inspect current run and reviewed plan."
+                )
+            elif value.get("stop_requested"):
+                self.message = (
+                    "Local stop receipt saved; supervisor lost, so worker exit remains unconfirmed."
+                    if value.get("execution_unconfirmed")
+                    else "Local stop requested; workers check at safe boundaries. Queue entries remain until admitted."
+                )
+            else:
+                self.message = "Run already terminal; no stop was requested."
+        elif kind in {"launch", "launch-prepared"}:
+            if error is not None or not isinstance(value, Path):
+                self.message = f"Launch failed: {error}"
+            else:
+                self._show_submitted_run(value)
+                self.message = (
+                    f"Launched {value.name}. Logs and artifacts stay in {value}."
+                    if kind == "launch"
+                    else f"Launched prepared run {value.name}."
+                )
+        elif kind == "review":
+            if error is not None or not isinstance(value, PreparedRunReview):
+                self.prepared_review = None
+                self.message = f"Cannot review prepared run: {error}"
+            elif self.overlay != self.submission_overlay:
+                self.message = "Prepared run review is ready; press r to open it."
+            else:
+                self.prepared_review = value
+                self.overlay = "prepared-review"
+                self.dialog_offset = 0
+                self.message = (
+                    "Review the retained plan. Enter launches this same run ID."
+                )
 
     def _open_workflow(self) -> None:
         self.overlay, self.dialog_offset = "workflow", 0
@@ -1386,24 +1464,14 @@ class Studio:
             elif self.overlay == "recovery-review" and key == "ENTER":
                 self._prepare_recovery()
             elif self.overlay == "stop" and key == "ENTER" and self.stop_run:
-                try:
-                    result = request_stop(
-                        self.stop_run, expected_plan_sha256=self.stop_digest
-                    )
-                    if result.get("stop_requested"):
-                        self.message = (
-                            "Local stop receipt saved; supervisor lost, so worker exit remains unconfirmed."
-                            if result.get("execution_unconfirmed")
-                            else "Local stop requested; workers check at safe boundaries. Queue entries remain until admitted."
-                        )
-                    else:
-                        self.message = "Run already terminal; no stop was requested."
-                except (OSError, ValueError, TypeError):
-                    self.message = (
-                        "Stop request rejected; inspect current run and reviewed plan."
-                    )
-                self.overlay = None
-                self.refresh()
+                run, digest = self.stop_run, self.stop_digest
+                if self._submit(
+                    "stop",
+                    lambda: request_stop(run, expected_plan_sha256=digest),
+                    "Saving the local stop request in the background.",
+                    authorized=True,
+                ):
+                    self.overlay = None
             elif self.overlay == "quality":
                 if key == "e":
                     self._scan_quality()
@@ -1538,29 +1606,21 @@ class Studio:
             elif self.overlay == "prepared-review" and key == "ENTER":
                 self._launch_prepared()
             elif self.overlay == "review" and key == "ENTER" and self.plan:
-                try:
-                    require_backend_credentials(self.plan.config.provider)
-                    run = create_run(self.workspace, self.plan)
+                plan, workspace = self.plan, self.workspace
+
+                def launch_reviewed() -> Path:
+                    require_backend_credentials(plan.config.provider)
+                    run = create_run(workspace, plan)
                     launch_run(run)
-                    self.message = (
-                        f"Launched {run.name}. Logs and artifacts stay in {run}."
-                    )
-                    self.tab = "runs"
-                    self.run_index = 0
-                    self.pending_run_id = run.name
-                    self.run_query, self.run_filter = "", "all"
-                    self.refresh()
-                    self.run_index = next(
-                        (
-                            index
-                            for index, row in enumerate(self.runs)
-                            if row["id"] == run.name
-                        ),
-                        0,
-                    )
-                except (OSError, ValueError, TypeError) as error:
-                    self.message = f"Launch failed: {error}"
-                self.overlay = None
+                    return run
+
+                if self._submit(
+                    "launch",
+                    launch_reviewed,
+                    "Submitting the reviewed launch in the background; closing the studio waits for it.",
+                    authorized=True,
+                ):
+                    self.overlay = None
             elif self.overlay == "details" and key == "c":
                 self._reuse_run()
                 self.overlay = None
@@ -2168,10 +2228,12 @@ class Studio:
                     target=inspect, daemon=True, name="stateset-recovery-review"
                 ).start()
                 return
-            self.prepared_review = review_prepared_run(run)
-            self.overlay = "prepared-review"
-            self.dialog_offset = 0
-            self.message = "Review the retained plan. Enter launches this same run ID."
+            self._submit(
+                "review",
+                lambda: review_prepared_run(run),
+                "Verifying the retained plan and dataset bytes in the background.",
+                authorized=False,
+            )
         except (OSError, ValueError, TypeError, KeyError, RecursionError) as error:
             self.prepared_review = None
             self.message = f"Cannot review prepared run: {error}"
@@ -2202,28 +2264,23 @@ class Studio:
                 target=launch, daemon=False, name="stateset-recovery-launch"
             ).start()
             return
-        try:
-            if review is None:
-                raise ValueError("Open a prepared run review first")
+        if review is None:
+            self.prepared_review, self.overlay = None, None
+            self.message = "Launch failed: Open a prepared run review first"
+            return
+
+        def launch_prepared() -> Path:
             require_backend_credentials(review.plan.config.provider)
             launch_run(review.run, expected_plan_sha256=review.plan_sha256)
-            self.tab = "runs"
-            self.run_query, self.run_filter = "", "all"
-            self.pending_run_id = review.run.name
-            self.refresh()
-            self.run_index = next(
-                (
-                    index
-                    for index, row in enumerate(self.runs)
-                    if row["id"] == review.run.name
-                ),
-                0,
-            )
-            self.message = f"Launched prepared run {review.run.name}."
-        except (OSError, ValueError, TypeError, KeyError, RecursionError) as error:
-            self.message = f"Launch failed: {error}"
-        self.prepared_review = None
-        self.overlay = None
+            return review.run
+
+        if self._submit(
+            "launch-prepared",
+            launch_prepared,
+            "Submitting the reviewed run in the background; closing the studio waits for it.",
+            authorized=True,
+        ):
+            self.prepared_review, self.overlay = None, None
 
     def _review_lines(self, plan: RunPlan | None = None) -> list[str]:
         plan = plan or self.plan

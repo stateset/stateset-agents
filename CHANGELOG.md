@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it launches and reaps them when status is refreshed, so finished supervisors
   no longer linger as zombies (which on macOS also looked alive to owner
   checks).
+- The terminal studio no longer freezes while it verifies retained bytes:
+  launching a reviewed run, launching a prepared run, opening a prepared-run
+  review and saving a stop request now run in the background (single-flight,
+  with progress shown in the status line). Exiting the studio waits for an
+  authorized launch or stop submission to finish.
 
 ### Security
 

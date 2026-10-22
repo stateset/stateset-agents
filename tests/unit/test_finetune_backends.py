@@ -142,7 +142,7 @@ def test_reviewed_gpu_selection_reaches_remote_spec(
 
 @pytest.mark.parametrize("provider", ["modal", "river"])
 def test_cli_paid_opt_in_and_tui_handoff_apply_to_every_remote_backend(
-    settings, tmp_path, monkeypatch, provider
+    settings, tmp_path, monkeypatch, provider, settle_preview
 ):
     config = replace(settings, provider=provider, cost_policy="provider_billed")
     source = tmp_path / "config.json"
@@ -180,10 +180,12 @@ def test_cli_paid_opt_in_and_tui_handoff_apply_to_every_remote_backend(
     studio = Studio(root)
     studio.tab = "runs"
     studio.handle("r")
+    settle_preview(studio)
     text = "\n".join(studio.lines(110, 70))
     assert "NO enforced dollar ceiling" in text
     assert ("hosted_pointer" if provider == "river" else "local_weights") in text
     studio.handle("ENTER")
+    settle_preview(studio)
     assert len(calls) == 1
     replay = runner.invoke(api.app, argv + ["--allow-paid"])
     assert json.loads(replay.stdout)["result"]["already_submitted"] and len(calls) == 1
@@ -297,7 +299,7 @@ def test_modal_does_not_accept_pointer_or_empty_output_as_weights(
 
 @pytest.mark.parametrize("count", [2, True])
 def test_prepared_modal_review_uses_saved_hardware_and_rejects_malformed_counts(
-    settings, tmp_path, count
+    settings, tmp_path, count, settle_preview
 ):
     config = replace(settings, provider="modal", cost_policy="provider_billed")
     plan = workspace.plan_run(config)
@@ -309,6 +311,7 @@ def test_prepared_modal_review_uses_saved_hardware_and_rejects_malformed_counts(
     studio = Studio(root)
     studio.tab = "runs"
     studio.handle("r")
+    settle_preview(studio)
     if type(count) is bool:
         assert studio.prepared_review is None
         assert "Malformed retained resource metadata" in studio.message

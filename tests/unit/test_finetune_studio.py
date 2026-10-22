@@ -314,6 +314,7 @@ def test_ui_plan_model_search_edit_cancel_and_launch_review(
     reviewed_data = studio.plan.data
     Path(settings.dataset).write_text("changed after launch review")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert len(calls) == 1 and studio.tab == "runs"
     assert (calls[0] / "dataset").read_bytes() == reviewed_data
     assert studio.handle("q") is False
@@ -329,6 +330,7 @@ def test_missing_runpod_key_blocks_launch_and_never_persists_secrets(
     settle_preview(studio)
     assert studio.overlay == "review"
     studio.handle("ENTER")
+    settle_preview(studio)
     assert "RUNPOD_API_KEY is missing" in studio.message
     assert not studio.workspace.exists()
     monkeypatch.setenv("RUNPOD_API_KEY", "synthetic-secret-never-save")

@@ -28,8 +28,18 @@ class BackgroundTask(Generic[T]):
         self._cancelled = False
         self._results: SimpleQueue[TaskResult[T]] = SimpleQueue()
 
-    def start(self, operation: Callable[[], T]) -> bool:
-        """Start without blocking, or reject a concurrent request."""
+    def start(
+        self,
+        operation: Callable[[], T],
+        *,
+        daemon: bool = True,
+        name: str = "stateset-preview",
+    ) -> bool:
+        """Start without blocking, or reject a concurrent request.
+
+        Pass ``daemon=False`` for work that must finish even if the terminal
+        exits first, such as an authorized launch submission.
+        """
         if self.busy:
             return False
         self.busy, self._cancelled = True, False
@@ -42,7 +52,7 @@ class BackgroundTask(Generic[T]):
             self._results.put(result)
 
         try:
-            threading.Thread(target=run, daemon=True, name="stateset-preview").start()
+            threading.Thread(target=run, daemon=daemon, name=name).start()
         except Exception:
             self.busy = False
             raise
