@@ -361,6 +361,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training runs, a success whose `result.json` still binds the reviewed plan
   is final, and the late error is kept as `teardown_error` /
   `teardown_exit_code` in the evaluation status.
+- On macOS (and on Windows when `psutil` is installed) studio owner checks
+  compare process creation-time tokens, as Linux does with `/proc` start
+  ticks, so a reused PID no longer keeps a dead supervisor or worker looking
+  alive. Records written without a token keep presence-only checks.
 
 ### Security
 

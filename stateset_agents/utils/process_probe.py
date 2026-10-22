@@ -78,3 +78,59 @@ def probe_process(pid: int) -> None:
     finally:
         if not api.CloseHandle(handle):
             raise OSError(_last_windows_error(), "Cannot close process presence handle")
+
+
+def process_start_token(pid: int) -> str | None:
+    """A token that differs between a process and a later one reusing its PID.
+
+    Linux reads the start time in clock ticks from ``/proc/<pid>/stat``.
+    Elsewhere the process creation time comes from ``psutil`` when it is
+    installed, or ``ps -o lstart=`` on macOS. ``None`` means no token is
+    available: the process is gone or a zombie, or the platform offers none.
+    Reading a token never signals the process.
+    """
+    if type(pid) is not int or pid < 1 or pid > 0xFFFFFFFF:
+        return None
+    if sys.platform.startswith("linux"):
+        try:
+            with open(f"/proc/{pid}/stat", encoding="utf-8") as stream:
+                fields = stream.read().rsplit(")", 1)[1].split()
+            return None if fields[0] in {"Z", "X"} else fields[19]
+        except (OSError, IndexError, UnicodeDecodeError):
+            return None
+    try:
+        import psutil
+    except ImportError:
+        psutil = None
+    if psutil is not None:
+        try:
+            process = psutil.Process(pid)
+            if process.status() == psutil.STATUS_ZOMBIE:
+                return None
+            return f"{process.create_time():.6f}"
+        except (psutil.Error, OSError, ValueError):
+            return None
+    if sys.platform == "darwin":
+        return _ps_start_token(pid)
+    return None
+
+
+def _ps_start_token(pid: int) -> str | None:
+    """macOS fallback without psutil: the process start time reported by ps."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["/bin/ps", "-o", "stat=", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    line = result.stdout.strip()
+    if result.returncode != 0 or not line or line.startswith("Z"):
+        return None
+    parts = line.split(None, 1)
+    return parts[1].strip() if len(parts) == 2 and parts[1].strip() else None

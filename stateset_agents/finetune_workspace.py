@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_remote_code import RemoteCodeSelection
-from stateset_agents.utils.process_probe import probe_process
+from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 MAX_DATA_BYTES = 64 * 1024 * 1024
 MAX_STUDIO_CHECKPOINTS = 100
@@ -1376,14 +1376,20 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
 
 
 def process_token(pid: int) -> str | None:
-    """Use Linux process start ticks to distinguish a worker from a reused PID."""
+    """A start-time token that distinguishes a worker from a reused PID.
+
+    Linux reads start ticks from ``/proc``. Other platforms use the process
+    creation time (``psutil``, or ``ps`` on macOS); ``None`` when unavailable.
+    """
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
         if fields[0] in {"Z", "X"}:
             return None
         return fields[19]
     except (OSError, IndexError):
-        return None
+        if sys.platform == "linux":
+            return None
+    return process_start_token(pid)
 
 
 def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
@@ -1471,10 +1477,13 @@ def _owner_confirmed(path: Path) -> bool:
         if sys.platform == "linux":
             return owner_evidence(path, probe=False, max_bytes=4096) == "alive"
         else:
-            return owner_evidence(path, use_tokens=False, max_bytes=4096) in {
-                "running",
-                "denied",
-            }
+            # A recorded creation-time token tells a reused PID apart; records
+            # without one (or hosts that cannot read one now) fall back to
+            # presence, where an answering PID counts as the owner.
+            recorded = read_json(path, max_bytes=4096).get("process_token")
+            return owner_evidence(
+                path, use_tokens=isinstance(recorded, str), max_bytes=4096
+            ) in {"alive", "running", "denied"}
     except (OSError, ValueError, TypeError, RecursionError, OverflowError):
         return False
 
