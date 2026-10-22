@@ -14,7 +14,9 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import ValidationError
 
 from ..config import get_config
 from ..dependencies import (
@@ -149,18 +151,43 @@ async def chat_completions(
             detail=f"Too many messages (max {config.validation.max_conversation_messages})",
         )
 
-    messages_request = MessagesRequest(
-        model=raw_payload.pop("model"),
-        messages=[MessageInput(**m) for m in raw_messages],
-        max_tokens=raw_payload.pop("max_tokens", None),
-        temperature=raw_payload.pop("temperature", None),
-        top_p=raw_payload.pop("top_p", None),
-        stop_sequences=stop_sequences,
-        stream=bool(raw_payload.pop("stream", False)),
-        tools=raw_payload.pop("tools", None),
-        tool_choice=raw_payload.pop("tool_choice", None),
-        **raw_payload,
-    )
+    # OpenAI's ``response_format`` ({"type": ...}) is unrelated to the gateway's
+    # Messages ``response_format`` ("anthropic" | "openai") and must not be
+    # forwarded into it. Plain text is the default; structured output is not
+    # implemented by this gateway, so say so instead of ignoring it.
+    openai_response_format = raw_payload.pop("response_format", None)
+    if openai_response_format is not None:
+        format_type = (
+            openai_response_format.get("type")
+            if isinstance(openai_response_format, dict)
+            else None
+        )
+        if format_type != "text":
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "response_format type "
+                    f"{format_type!r} is not supported; only 'text' is accepted"
+                ),
+            )
+
+    try:
+        messages_request = MessagesRequest(
+            model=raw_payload.pop("model"),
+            messages=[MessageInput(**m) for m in raw_messages],
+            max_tokens=raw_payload.pop("max_tokens", None),
+            temperature=raw_payload.pop("temperature", None),
+            top_p=raw_payload.pop("top_p", None),
+            stop_sequences=stop_sequences,
+            stream=bool(raw_payload.pop("stream", False)),
+            tools=raw_payload.pop("tools", None),
+            tool_choice=raw_payload.pop("tool_choice", None),
+            **raw_payload,
+        )
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=422, detail=jsonable_encoder(exc.errors())
+        ) from exc
     _validate_openai_request_messages(
         messages_request.messages,
         config.validation.max_conversation_messages,
