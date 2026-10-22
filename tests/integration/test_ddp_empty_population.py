@@ -255,7 +255,12 @@ def _worker(rank, directory, shard):
         dist.destroy_process_group()
 
 
-@pytest.mark.timeout(120)
+# Spawned Gloo workers re-import torch per process; on loaded Windows runners a
+# shard that takes ~25 s on Linux has exceeded 90 s, so Windows gets more room.
+SHARD_BUDGET_SECONDS = 180 if sys.platform == "win32" else 90
+
+
+@pytest.mark.timeout(SHARD_BUDGET_SECONDS + 30)
 @pytest.mark.parametrize("shard", range(SHARDS), ids=lambda value: f"shard-{value}")
 def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path, shard):
     torch = pytest.importorskip("torch")
@@ -268,10 +273,13 @@ def test_empty_ddp_populations_match_combined_updates_and_resume(tmp_path, shard
         _worker, args=(str(tmp_path.resolve()), shard), nprocs=2, join=False
     )
     try:
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + SHARD_BUDGET_SECONDS
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail(f"empty population shard {shard} exceeded 90 seconds")
+                pytest.fail(
+                    f"empty population shard {shard} exceeded "
+                    f"{SHARD_BUDGET_SECONDS} seconds"
+                )
     finally:
         for process in context.processes:
             if process.is_alive():
