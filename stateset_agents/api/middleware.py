@@ -11,13 +11,12 @@ import logging
 import time
 import uuid
 from collections import defaultdict, deque
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
-from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -170,7 +169,9 @@ if HAS_PROMETHEUS:
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     """Add comprehensive security headers to all responses."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         response = await call_next(request)
 
         # Add all security headers from constants
@@ -212,7 +213,9 @@ class RequestContext:
 class RequestContextMiddleware(BaseHTTPMiddleware):
     """Attach request context and trace ID to all requests."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Get or generate request ID
         request_id = (
             request.headers.get(HEADER_REQUEST_ID)
@@ -424,7 +427,7 @@ REDIS_RETRY_COOLDOWN_SECONDS = 60.0
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Rate limiting middleware with sliding window algorithm."""
 
-    def __init__(self, app: FastAPI, limiter: UnifiedRateLimiter | None = None):
+    def __init__(self, app: ASGIApp, limiter: UnifiedRateLimiter | None = None):
         super().__init__(app)
         config = get_config()
         self.limiter = limiter or get_rate_limiter(
@@ -514,7 +517,9 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         return str(request.client.host) if request.client else "unknown"
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         config = get_config()
 
         if not config.rate_limit.enabled:
@@ -668,7 +673,9 @@ def get_metrics() -> APIMetrics:
 class MetricsMiddleware(BaseHTTPMiddleware):
     """Collect API metrics."""
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         start_time = time.monotonic()
 
         route = request.scope.get("route")
@@ -724,7 +731,9 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
     # Paths to exclude from logging
     EXCLUDED_PATHS = {"/health", "/healthz", "/ready", "/metrics"}
 
-    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+    async def dispatch(
+        self, request: Request, call_next: RequestResponseEndpoint
+    ) -> Response:
         # Skip logging for health checks and metrics
         if request.url.path in self.EXCLUDED_PATHS:
             return await call_next(request)

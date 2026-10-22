@@ -5,15 +5,18 @@ Unified error handling with consistent response format across all API services.
 """
 
 import logging
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import ExceptionHandler
 
 logger = logging.getLogger(__name__)
 
@@ -678,12 +681,31 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ============================================================================
 
 
+_ExcT = TypeVar("_ExcT", bound=Exception)
+
+
+def _add_exception_handler(
+    app: FastAPI,
+    exc_class: type[_ExcT],
+    handler: Callable[[Request, _ExcT], Awaitable[Response]],
+) -> None:
+    """Register ``handler`` for ``exc_class`` with the handler/type pairing checked.
+
+    Starlette types every handler as accepting a bare ``Exception`` even though
+    it only dispatches instances of the registered class, so narrower handlers
+    need a cast at the registration boundary.
+    """
+    app.add_exception_handler(exc_class, cast(ExceptionHandler, handler))
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers."""
-    app.add_exception_handler(APIError, api_error_handler)
-    app.add_exception_handler(HTTPException, http_exception_handler)
-    app.add_exception_handler(StarletteHTTPException, starlette_http_exception_handler)
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(Exception, unhandled_exception_handler)
+    _add_exception_handler(app, APIError, api_error_handler)
+    _add_exception_handler(app, HTTPException, http_exception_handler)
+    _add_exception_handler(
+        app, StarletteHTTPException, starlette_http_exception_handler
+    )
+    _add_exception_handler(app, RequestValidationError, validation_exception_handler)
+    _add_exception_handler(app, Exception, unhandled_exception_handler)
 
     logger.info("Exception handlers configured successfully")

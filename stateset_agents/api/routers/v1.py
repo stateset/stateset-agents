@@ -634,7 +634,7 @@ async def chat_v1(
     try:
         openai_request = MessagesRequest(
             model=model,
-            messages=[MessageInput(**message) for message in messages],
+            messages=[MessageInput.model_validate(message) for message in messages],
             max_tokens=payload.max_tokens,
             temperature=payload.temperature,
         )

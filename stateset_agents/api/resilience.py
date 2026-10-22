@@ -513,7 +513,7 @@ class HealthChecker:
         health = await checker.check_all()
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._checks: dict[str, Callable] = {}
         self._results: dict[str, HealthCheckResult] = {}
 

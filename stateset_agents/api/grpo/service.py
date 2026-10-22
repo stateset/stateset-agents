@@ -44,7 +44,10 @@ from .state import get_state_manager
 logger = get_logger(__name__)
 
 GRPO_INIT_EXCEPTIONS = MODEL_IO_EXCEPTIONS
-GRPO_REQUEST_EXCEPTIONS = (HTTPException, *INFERENCE_EXCEPTIONS)
+GRPO_REQUEST_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    HTTPException,
+    *INFERENCE_EXCEPTIONS,
+)
 
 
 # Global services and handlers

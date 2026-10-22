@@ -724,7 +724,7 @@ async def create_experiment(
 
     exp_id = str(uuid.uuid4())
     now = time.time()
-    experiment = {
+    experiment: dict[str, Any] = {
         "id": exp_id,
         "name": req.name,
         "description": req.description,
