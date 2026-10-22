@@ -490,7 +490,7 @@ async def test_correctness_requires_the_answer_as_a_whole_token(reply):
 
 async def test_correctness_still_credits_the_exact_answer():
     reward = CorrectnessReward(ground_truth={"answer": "4"})
-    assert (await reward.compute_reward(_conversation("It's 4."))).score == 0.5
+    assert (await reward.compute_reward(_conversation("It's 4."))).score == 1.0
 
 
 async def test_model_based_component_without_client_warns_once(caplog):

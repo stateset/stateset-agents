@@ -326,3 +326,53 @@ async def test_tutoring_reward_scores_a_string_ground_truth():
         assert "reward_error" not in trajectory.metadata
         totals[reply] = await score_episode(trajectory, reward, environment, scenario)
     assert totals["The answer is 4."] > totals["The answer is 5."]
+
+
+# --- Correctness: a correct answer is a full score, unlabeled is flagged -----
+
+
+async def test_correct_answer_scores_full_marks_not_the_neutral_value():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+
+    reward = CorrectnessReward(ground_truth={"answer": "4"})
+    right = await reward.compute_reward(_turns("The answer is 4."))
+    wrong = await reward.compute_reward(_turns("The answer is 5."))
+    assert (right.score, wrong.score) == (1.0, 0.0)
+    assert "no_ground_truth" not in right.metadata
+
+
+async def test_unlabeled_correctness_is_neutral_and_flagged():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+
+    result = await CorrectnessReward().compute_reward(_turns("The answer is 4."))
+    assert result.score == 0.5
+    assert result.metadata["no_ground_truth"] is True
+
+
+async def test_evaluation_counts_correct_answers_as_successes_not_neutrals():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+    from stateset_agents.training.evaluation import EvaluationConfig, evaluate_agent
+
+    labeled = {"id": "m", "user_turns": ["What is 2+2?"], "ground_truth": "4"}
+    unlabeled = {"id": "u", "user_turns": ["What is 2+2?"]}
+
+    async def answer(history, context):
+        return "The answer is 4."
+
+    for scenario, expected in ((labeled, 1.0), (unlabeled, 0.0)):
+        metrics = await evaluate_agent(
+            agent=SimpleNamespace(generate_response=answer),
+            environment=ConversationEnvironment(
+                [scenario], max_turns=1, reward_fn=CorrectnessReward()
+            ),
+            scenarios=[scenario],
+            config=EvaluationConfig(num_episodes=1, concurrency=1),
+        )
+        assert metrics["eval_success_rate"] == expected
+
+
+def _turns(reply: str) -> list[ConversationTurn]:
+    return [
+        ConversationTurn(role="user", content="What is 2+2?"),
+        ConversationTurn(role="assistant", content=reply),
+    ]

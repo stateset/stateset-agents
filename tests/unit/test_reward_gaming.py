@@ -152,7 +152,7 @@ async def test_listing_candidate_numbers_earns_far_less_than_answering(listing):
     reward = CorrectnessReward(ground_truth={"answer": "4"})
     answered = await reward.compute_reward(_conversation("2 + 2 = 4", QUESTION))
     listed = await reward.compute_reward(_conversation(listing, QUESTION))
-    assert answered.score == 0.5
+    assert answered.score == 1.0
     assert listed.score <= answered.score / 4
 
 
@@ -169,7 +169,7 @@ async def test_listing_candidate_text_answers_earns_a_share_at_most(listing):
     question = "What is the capital of France?"
     answered = await reward.compute_reward(_conversation("It is Paris.", question))
     listed = await reward.compute_reward(_conversation(listing, question))
-    assert answered.score == 0.5
+    assert answered.score == 1.0
     assert listed.score <= answered.score / 3 + 1e-9
 
 
