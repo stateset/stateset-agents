@@ -224,10 +224,14 @@ class TestNormalizationMetrics:
         assert stats["num_trajectories"] == 0 and stats["mean_reward"] == 0.0
 
     def test_terminal_rewards_standardize_across_trajectories(self):
-        from hypothesis import given, settings
+        from hypothesis import HealthCheck, given, settings
         from hypothesis import strategies as st
 
-        @settings(max_examples=80, deadline=None)
+        @settings(
+            max_examples=80,
+            deadline=None,
+            suppress_health_check=[HealthCheck.too_slow],
+        )
         @given(
             st.lists(
                 st.tuples(

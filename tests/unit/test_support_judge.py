@@ -591,10 +591,14 @@ def _judge_results():
 
 
 def test_summary_metrics_are_bounded_order_free_means() -> None:
-    from hypothesis import given, settings
+    from hypothesis import HealthCheck, given, settings
     from hypothesis import strategies as st
 
-    @settings(max_examples=200, deadline=None)
+    # Generation is slow on a loaded runner; the property, not the clock, is
+    # under test.
+    @settings(
+        max_examples=200, deadline=None, suppress_health_check=[HealthCheck.too_slow]
+    )
     @given(_judge_results(), st.randoms(use_true_random=False))
     def check(results, rng):  # type: ignore[no-untyped-def]
         summary = summarize(results)
