@@ -10,6 +10,7 @@ these commands.
 
 from __future__ import annotations
 
+import functools
 import importlib
 import json
 import typing as t
@@ -298,7 +299,9 @@ def _echo_objective_catalog() -> None:
         )
 
 
-def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
+def _register_model_command(
+    app: typer.Typer, preset: ModelPreset, *, legacy_alias: bool = False
+) -> None:
     """Register one per-model GSPO starter command for ``preset``.
 
     Every packaged starter exposes the same nine symbols and the commands that
@@ -614,7 +617,35 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
     assert command_name is not None
     model_command.__name__ = command_name.replace("-", "_")
     model_command.__doc__ = f"Preview or run the dedicated {display} GSPO starter path."
-    app.command(command_name)(model_command)
+    if not legacy_alias:
+        app.command(command_name)(model_command)
+        return
+
+    @functools.wraps(model_command)
+    def legacy_command(**kwargs: t.Any) -> None:
+        # Keep JSON output parseable: the notice goes to stderr, and only for
+        # human-readable runs.
+        if not kwargs.get("json_output"):
+            typer.echo(
+                f"Deprecated: `stateset-agents {command_name}` will be removed in "
+                f"{LEGACY_MODEL_COMMAND_REMOVAL}; use "
+                f"`stateset-agents model {command_name}`.",
+                err=True,
+            )
+        model_command(**kwargs)
+
+    app.command(command_name, hidden=True)(legacy_command)
+
+
+# One command group for every preset keeps the top-level help readable; the
+# old top-level names stay as hidden aliases for one minor release.
+LEGACY_MODEL_COMMAND_REMOVAL = "v0.69.0"
+model_app = typer.Typer(
+    help="Preview or run a packaged per-model GSPO starter "
+    "(`stateset-agents model --help` lists every preset).",
+    no_args_is_help=True,
+)
+app.add_typer(model_app, name="model")
 
 
 GENERATED_MODEL_COMMANDS: tuple[str, ...] = tuple(
@@ -623,4 +654,5 @@ GENERATED_MODEL_COMMANDS: tuple[str, ...] = tuple(
 
 for _preset in PRESETS.values():
     if _preset.cli_command is not None:
-        _register_model_command(app, _preset)
+        _register_model_command(model_app, _preset)
+        _register_model_command(app, _preset, legacy_alias=True)

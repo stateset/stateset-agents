@@ -923,18 +923,18 @@ StateSet Agents ships first-class starters (with dedicated CLI commands, configu
 
 | Model | HF ID | CLI |
 |-------|-------|-----|
-| Qwen 3.5 0.8B | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` |
-| Gemma 4 31B IT | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` |
-| Kimi-K2.6 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` |
+| Qwen 3.5 0.8B | `Qwen/Qwen3.5-0.8B` | `stateset-agents model qwen3-5-0-8b` |
+| Gemma 4 31B IT | `google/gemma-4-31B-it` | `stateset-agents model gemma-4-31b` |
+| Kimi-K2.6 | `moonshotai/Kimi-K2.6` | `stateset-agents model kimi-k2-6` |
 | GLM 5.1 (754B MoE) | `zai-org/GLM-5.1` | module + example (QLoRA-only) |
 | GLM 5.2 (754B MoE) | `zai-org/GLM-5.2` | module + example (QLoRA-only) |
-| Kimi-K3 (released; MXFP4 training loader blocked) | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` |
-| Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` |
-| Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` |
-| Qwen3.8 27B | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` |
-| Qwen3 Coder 30B A3B | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` |
-| gpt-oss 20B | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` |
-| DeepSeek V4 Flash (MoE) | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` |
+| Kimi-K3 (released; MXFP4 training loader blocked) | `moonshotai/Kimi-K3` | `stateset-agents model kimi-k3` |
+| Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents model muse-glimmer` |
+| Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents model nemotron-3-5` |
+| Qwen3.8 27B | `Qwen/Qwen3.8-27B` | `stateset-agents model qwen3-8-27b` |
+| Qwen3 Coder 30B A3B | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents model qwen3-coder` |
+| gpt-oss 20B | `openai/gpt-oss-20b` | `stateset-agents model gpt-oss` |
+| DeepSeek V4 Flash (MoE) | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents model deepseek-v4` |
 
 Reference models with examples and Kubernetes manifests: Qwen 3.5 27B, Qwen 3, Qwen 2.5 3B Instruct, Kimi-K2.5, Gemma 3 / 2 27B IT, Llama 3, Llama 2 7B, Mistral 7B, GPT-2. Generic support: any Hugging Face causal LM compatible with `AutoModelForCausalLM` and TRL GRPO.
 

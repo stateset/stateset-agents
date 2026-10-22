@@ -1310,7 +1310,7 @@ results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
 **v0.29.0:**
 
-- **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
+- **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents model qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
 - **LoRA inference learned about hybrid attention — and it mattered.** Qwen3.8 puts Mamba-style `linear_attn` (`in_proj_qkv`, `out_proj`, …) in most of its 64 text layers and standard `self_attn` in a minority. Our candidate list only knew llama-style names, so `train-remote` would have adapted the minority and silently skipped the rest. Both families are now targeted, proven on real weights, and the two-pass vision exclusion correctly keeps `out_proj` (it exists in the text stack) while dropping vision-only names. The same fix also improves Qwen3.5, which turns out to be hybrid too.
 
 **v0.28.0:**
@@ -1352,18 +1352,18 @@ results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
 **v0.23.0:**
 
-- **Three new first-class starters.** `stateset-agents qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
+- **Three new first-class starters.** `stateset-agents model qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents model gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents model deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
 
 **v0.22.0:**
 
 - **Architecture consolidation.** The four flagship trainers (GSPO/DAPO/GEPO/VAPO) share one model-loading/checkpoint runtime (`training/trainer_runtime.py`); the seven model starters are thin definition layers over `training/starter_common.py`; research modules moved to `stateset_agents.experimental` (old paths warn for one cycle). All RL math and public APIs unchanged — the full suite passes unmodified.
-- **NVIDIA Nemotron 3.5 Lightning starter.** `stateset-agents nemotron-3-5` targets `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (hybrid Mamba‑2 + MoE, 30B total / 3B active, 256K ctx, OpenMDW‑1.1) with Mamba-aware LoRA targets. [`docs/nemotron_3_5_starter.rst`](docs/nemotron_3_5_starter.rst)
+- **NVIDIA Nemotron 3.5 Lightning starter.** `stateset-agents model nemotron-3-5` targets `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (hybrid Mamba‑2 + MoE, 30B total / 3B active, 256K ctx, OpenMDW‑1.1) with Mamba-aware LoRA targets. [`docs/nemotron_3_5_starter.rst`](docs/nemotron_3_5_starter.rst)
 - **Quality gates that enforce themselves.** Coverage and mypy-allowlist ratchets fail CI when floors fall behind reality; the security workflow's scanners now actually gate (45 HIGH/CRITICAL findings cleared); `make benchmark-loop` scores the improvement loop against planted ground truth (precision 0.818 / recall 1.0); a weekly `gpu-verify` workflow re-proves the training job on rented hardware.
 - **Slimmer repo.** `dashboard/` and `mobile/` moved to their own repositories.
 
 **v0.21.0:**
 
-- **Muse Glimmer 30B first‑class starter.** `stateset-agents muse-glimmer` targets `meta-models/Muse-Glimmer-30B` — Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache‑2.0) — with the standard balanced/memory/quality QLoRA profiles, `init --preset muse-glimmer`, and a `muse-glimmer` preset in the unified finetune driver. [`docs/muse_glimmer_starter.rst`](docs/muse_glimmer_starter.rst)
+- **Muse Glimmer 30B first‑class starter.** `stateset-agents model muse-glimmer` targets `meta-models/Muse-Glimmer-30B` — Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache‑2.0) — with the standard balanced/memory/quality QLoRA profiles, `init --preset muse-glimmer`, and a `muse-glimmer` preset in the unified finetune driver. [`docs/muse_glimmer_starter.rst`](docs/muse_glimmer_starter.rst)
 - **RunPod provider for `train-remote`.** `--provider runpod` rents a GPU pod over SSH, runs the same packaged job every other provider runs, and copies the adapter back. GPU defaults are now per‑provider — `RemoteJobSpec.gpu` no longer hard‑codes a Modal‑specific name.
 
 **v0.20.0:**
@@ -1614,37 +1614,37 @@ wired up:
 
 | Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
-| `ibm-granite/granite-4.0-micro` | `stateset-agents granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `allenai/Olmo-3-7B-Instruct` | `stateset-agents olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `ibm-granite/granite-4.0-micro` | `stateset-agents model granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents model llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents model llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents model qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `allenai/Olmo-3-7B-Instruct` | `stateset-agents model olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents model deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents model deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
 | `google/functiongemma-270m-it` | `python -m stateset_agents.training.sft --base-model google/functiongemma-270m-it ...` | | Tool-calling SFT only; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
-| `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
+| `Qwen/Qwen3.5-0.8B` | `stateset-agents model qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
+| `meta-models/Muse-Glimmer-30B` | `stateset-agents model muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `meta-models/Muse-Spark-Open-816B-A42B` | `stateset-agents muse-spark-open` | GPU unverified | Distributed BF16 text LoRA SFT; separate text GSPO preset; gated access and cluster-scale memory; [guide](docs/MUSE_SPARK_OPEN.md) |
-| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents model nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
 | `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16` | `stateset-agents nemotron-3-5-super-vl` | CPU contracts | Image-conditioned LoRA SFT; full-size GPU training unverified; [guide](docs/NEMOTRON_3_5_VL.md) |
 | `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | `stateset-agents nemotron-3-5-bolt` | CPU contracts | Image-conditioned LoRA SFT; BF16 training uses more memory than the 24GB inference artifact; [guide](docs/NEMOTRON_3_5_VL.md) |
-| `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
+| `Qwen/Qwen3.8-27B` | `stateset-agents model qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
 | `Qwen/Qwen3.8-Flash-Next` | `python examples/finetune_gspo.py --model qwen3.8-flash-next` | | Qwen4 architecture preview; 125B main / 6B active + 51B n-gram embeddings; native multimodal, 262K ctx |
-| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
-| `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
-| `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
-| `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
-| `google/gemma-4-E2B-it` | `stateset-agents gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
-| `google/gemma-4-E4B-it` | `stateset-agents gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
-| `Qwen/Qwen3.5-2B` | `stateset-agents qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `Qwen/Qwen3.5-4B` | `stateset-agents qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `Qwen/Qwen3.5-9B` | `stateset-agents qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `microsoft/Phi-4-mini-instruct` | `stateset-agents phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `LiquidAI/LFM2.5-2.6B` | `stateset-agents lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
+| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents model qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
+| `openai/gpt-oss-20b` | `stateset-agents model gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
+| `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents model deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
+| `google/gemma-4-31B-it` | `stateset-agents model gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
+| `google/gemma-4-E2B-it` | `stateset-agents model gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
+| `google/gemma-4-E4B-it` | `stateset-agents model gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
+| `Qwen/Qwen3.5-2B` | `stateset-agents model qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-4B` | `stateset-agents model qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-9B` | `stateset-agents model qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents model smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `microsoft/Phi-4-mini-instruct` | `stateset-agents model phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents model ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents model ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `LiquidAI/LFM2.5-2.6B` | `stateset-agents model lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `moonshotai/Kimi-K2.6` | `stateset-agents model kimi-k2-6` | | |
 | `moonshotai/Kimi-K3` | `stateset-agents frontier-models --model kimi-k3` | | Released MXFP4 checkpoint pinned; training loader blocked; see [frontier guide](docs/FRONTIER_FINETUNING.md) |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |

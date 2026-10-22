@@ -155,3 +155,36 @@ def test_preset_model_id_is_supported_by_starter(command: str) -> None:
     starter = _import_starter(preset)
     variants = getattr(starter, f"{preset.cli_symbol_prefix}_SUPPORTED_VARIANTS")
     assert preset.model_id in variants
+
+
+def test_presets_live_under_model_group_with_hidden_legacy_aliases() -> None:
+    """`stateset-agents model <preset>` is canonical; top-level names are
+    hidden deprecated aliases until LEGACY_MODEL_COMMAND_REMOVAL."""
+    import typer
+
+    from stateset_agents.cli import app
+    from stateset_agents.cli_train import model_app
+
+    top = typer.main.get_command(app).commands
+    group = typer.main.get_command(model_app).commands
+    for name in cli_train.GENERATED_MODEL_COMMANDS:
+        assert name in group and not group[name].hidden
+        assert top[name].hidden
+
+
+def test_legacy_alias_warns_on_stderr_but_keeps_json_clean() -> None:
+    from typer.testing import CliRunner
+
+    from stateset_agents.cli import app
+
+    name = cli_train.GENERATED_MODEL_COMMANDS[0]
+    runner = CliRunner()
+    human = runner.invoke(app, [name, "--list-profiles"])
+    assert human.exit_code == 0, human.output
+    assert f"stateset-agents model {name}" in human.stderr
+
+    machine = runner.invoke(app, [name, "--list-profiles", "--json"])
+    assert machine.exit_code == 0, machine.output
+    assert machine.stderr == ""
+    canonical = runner.invoke(app, ["model", name, "--list-profiles", "--json"])
+    assert machine.stdout == canonical.stdout

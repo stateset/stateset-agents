@@ -904,7 +904,7 @@ config = DAPOConfig(objective="dr_grpo")  # max_completion_length is filled in
 ```bash
 stateset-agents train --list-objectives
 stateset-agents train --objective rloo --no-dry-run
-stateset-agents qwen3-5-0-8b --objective gspo_token --write-config run.json
+stateset-agents model qwen3-5-0-8b --objective gspo_token --write-config run.json
 ```
 
 Rules, implemented by `objectives.resolve_objective`:
