@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Type checking utility for the StateSet Agents repo.
 
-The default mypy configuration gates the whole packaged source tree. Selected
-modules also check bodies of untyped functions.
+The default mypy configuration gates the whole packaged source tree and checks
+the bodies of untyped functions everywhere; selected modules also require full
+annotations.
 """
 
 from __future__ import annotations

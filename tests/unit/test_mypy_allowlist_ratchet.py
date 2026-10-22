@@ -84,3 +84,21 @@ def test_mypy_follows_imports_and_never_skips_them() -> None:
         assert not parser.getboolean(
             section, "ignore_errors", fallback=False
         ), f"[{section}] sets ignore_errors; fix the module's type errors instead."
+
+
+def test_mypy_checks_untyped_function_bodies_globally() -> None:
+    """Without `check_untyped_defs`, mypy skips the bodies of unannotated
+    functions entirely; it already caught calls on None, wrong attributes and
+    wrong arguments there. The global flag must stay on."""
+    parser = configparser.ConfigParser()
+    parser.read(MYPY_INI)
+    assert parser.getboolean("mypy", "check_untyped_defs", fallback=False), (
+        "mypy.ini's [mypy] section must keep `check_untyped_defs = true`; "
+        "fix the newly reported errors instead of turning it off."
+    )
+    for section in parser.sections():
+        if section.startswith("mypy-stateset_agents"):
+            assert parser.getboolean(section, "check_untyped_defs", fallback=True), (
+                f"[{section}] disables check_untyped_defs; fix its type errors "
+                "instead."
+            )
