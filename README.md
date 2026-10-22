@@ -1597,7 +1597,7 @@ trains until you ask:
 
 ```bash
 pip install "stateset-agents[training,trl]"
-python examples/finetune_gspo.py --list-models              # 20 presets
+python examples/finetune_gspo.py --list-models              # every packaged preset
 python examples/finetune_gspo.py --model qwen3.5-0.8b       # dry run: show the resolved config
 python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run   # actually train
 ```

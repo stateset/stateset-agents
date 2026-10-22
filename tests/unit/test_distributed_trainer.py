@@ -350,16 +350,21 @@ class TestDistributedSampler:
 
     def test_epoch_shuffling_concept(self):
         """Test epoch shuffling in distributed sampler."""
-        # Different shuffle per epoch
-        seed = 42
-        epoch = 5
+        pytest.importorskip("torch")
+        from torch.utils.data import DistributedSampler
 
-        import random
+        sampler = DistributedSampler(
+            list(range(64)), num_replicas=4, rank=2, shuffle=True, seed=42
+        )
+        sampler.set_epoch(0)
+        epoch0 = list(sampler)
+        sampler.set_epoch(1)
+        epoch1 = list(sampler)
+        sampler.set_epoch(0)
 
-        random.seed(seed + epoch)
-
-        # Shuffled indices would differ per epoch
-        assert True
+        assert len(epoch0) == len(epoch1) == 16
+        assert epoch0 != epoch1  # a new epoch reshuffles
+        assert list(sampler) == epoch0  # and the same epoch is reproducible
 
 
 class TestSyncBatchNorm:
