@@ -570,6 +570,37 @@ class TestDistributedGRPOLoss:
         assert loss_a.item() != pytest.approx(loss_b.item())
         assert loss_a.requires_grad
 
+    def test_setup_model_uses_agent_model_and_builds_optimizer(self):
+        """Regression: setup_model called nonexistent Agent.get_model/get_optimizer."""
+        from stateset_agents.training import distributed_trainer
+
+        trainer = self._make_trainer()
+        trainer.is_initialized = True
+        trainer.device = torch.device("cpu")
+        agent_model = trainer.agent.model
+
+        with patch.object(
+            distributed_trainer, "DDP", side_effect=lambda module, **_: module
+        ) as ddp:
+            trainer.setup_model()
+
+        assert ddp.call_args.args[0] is agent_model
+        assert ddp.call_args.kwargs["device_ids"] is None
+        assert trainer.model is agent_model
+        assert isinstance(trainer.optimizer, torch.optim.AdamW)
+        group = trainer.optimizer.param_groups[0]
+        assert group["lr"] == trainer.training_config.learning_rate
+        assert group["params"][0] is agent_model.p
+
+    def test_setup_model_requires_loaded_agent_model(self):
+        trainer = self._make_trainer()
+        trainer.is_initialized = True
+        trainer.device = torch.device("cpu")
+        trainer.agent.model = None
+
+        with pytest.raises(RuntimeError, match="no loaded model"):
+            trainer.setup_model()
+
     def test_compute_rewards_uses_reward_function(self):
         """_compute_rewards must delegate to the configured reward function."""
         import asyncio

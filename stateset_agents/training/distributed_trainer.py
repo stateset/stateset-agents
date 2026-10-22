@@ -187,26 +187,43 @@ class DistributedGRPOTrainer:
         if not self.is_initialized:
             raise RuntimeError("Distributed training not initialized")
 
-        # Get model from agent
-        self.model = self.agent.get_model()
+        device = self.device
+        if device is None:
+            raise RuntimeError("Distributed device not set; call setup_distributed")
+
+        # Get model from agent. ``Agent`` exposes the loaded model as ``.model``
+        # (there is no ``get_model()``); it is None until the agent initializes.
+        model = getattr(self.agent, "model", None)
+        if model is None:
+            raise RuntimeError(
+                "Agent has no loaded model; await agent.initialize() before "
+                "setup_model()"
+            )
 
         # Move to device
-        self.model.to(self.device)
+        model.to(device)
 
         # Enable gradient checkpointing for memory efficiency
         if self.distributed_config.activation_checkpointing:
-            self.model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable()
 
         # Wrap with DDP
+        on_cuda = device.type == "cuda"
         self.model = DDP(
-            self.model,
-            device_ids=[self.device.index] if self.device.type == "cuda" else None,
-            output_device=self.device.index if self.device.type == "cuda" else None,
+            model,
+            device_ids=[device.index] if on_cuda else None,
+            output_device=device.index if on_cuda else None,
             find_unused_parameters=self.distributed_config.find_unused_parameters,
         )
 
-        # Setup optimizer
-        self.optimizer = self.agent.get_optimizer()
+        # Setup optimizer. ``Agent`` has no ``get_optimizer()``; build one from
+        # the training config, as the single-process trainers do.
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.training_config.learning_rate,
+            betas=(self.training_config.adam_beta1, self.training_config.adam_beta2),
+            weight_decay=self.training_config.weight_decay,
+        )
 
         # Setup mixed precision scaler
         if self.distributed_config.mixed_precision:
@@ -219,6 +236,9 @@ class DistributedGRPOTrainer:
         """Setup Weights & Biases for distributed training"""
         if not WANDB_AVAILABLE or not self.is_master:
             return
+        model = self.model
+        if model is None:
+            raise RuntimeError("setup_model() must run before setup_wandb()")
 
         # Initialize wandb only on master process
         wandb.init(
@@ -231,10 +251,10 @@ class DistributedGRPOTrainer:
         )
 
         # Log model architecture
-        if hasattr(self.model, "module"):
-            wandb.watch(self.model.module)
+        if hasattr(model, "module"):
+            wandb.watch(model.module)
         else:
-            wandb.watch(self.model)
+            wandb.watch(model)
 
     async def train(self) -> dict[str, Any]:
         """
