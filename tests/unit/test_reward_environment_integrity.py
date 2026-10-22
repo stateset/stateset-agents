@@ -8,7 +8,9 @@ failures and gameable heuristics.
 
 from __future__ import annotations
 
+import json
 import logging
+import types
 from types import SimpleNamespace
 
 import pytest
@@ -36,8 +38,12 @@ from stateset_agents.core.reward_factories import create_adaptive_reward
 from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_components import (
+    EmpathyRewardComponent,
     ModelBasedRewardComponent,
     ProfessionalismRewardComponent,
+)
+from stateset_agents.rewards.multi_objective_reward import (
+    MultiObjectiveRewardFunction,
 )
 
 
@@ -361,6 +367,65 @@ async def test_task_completion_reward_requires_actions_over_keywords():
     assert done.score == 1.0
 
 
+# --- 7. RULER ----------------------------------------------------------------
+
+
+def _ruler(monkeypatch, scores):
+    import stateset_agents.rewards.llm_reward as lr
+
+    monkeypatch.setattr(lr, "LITELLM_AVAILABLE", True)
+    reward = lr.RulerRewardFunction(model="judge", max_retries=1)
+
+    async def fake_completion(messages):
+        content = json.dumps({"scores": scores})
+        message = types.SimpleNamespace(content=content)
+        return types.SimpleNamespace(choices=[types.SimpleNamespace(message=message)])
+
+    reward._make_completion_call = fake_completion
+    return reward
+
+
+def _batch():
+    return [_conversation("bad"), _conversation("great")]
+
+
+async def test_ruler_maps_scores_by_trajectory_id(monkeypatch):
+    reward = _ruler(
+        monkeypatch,
+        [
+            {"trajectory_id": "2", "explanation": "great", "score": 0.9},
+            {"trajectory_id": "1", "explanation": "bad", "score": 0.1},
+        ],
+    )
+    results = await reward.compute_batch_rewards(_batch())
+    assert [r.score for r in results] == pytest.approx([0.1, 0.9])
+
+
+@pytest.mark.parametrize(
+    "scores",
+    [
+        [{"trajectory_id": "2", "explanation": "", "score": 9}],
+        [
+            {"trajectory_id": "1", "explanation": "", "score": 9},
+            {"trajectory_id": "2", "explanation": "", "score": 1},
+        ],
+        [
+            {"trajectory_id": "1", "explanation": "", "score": 0.2},
+            {"trajectory_id": "1", "explanation": "", "score": 0.3},
+        ],
+        [
+            {"trajectory_id": "1", "explanation": "", "score": 0.2},
+            {"trajectory_id": "7", "explanation": "", "score": 0.3},
+        ],
+    ],
+    ids=["missing", "out-of-range", "duplicate", "unknown"],
+)
+async def test_ruler_rejects_invalid_judgements(monkeypatch, scores):
+    reward = _ruler(monkeypatch, scores)
+    with pytest.raises(ValueError):
+        await reward.compute_batch_rewards(_batch())
+
+
 # --- 8. Reward failures are visible ------------------------------------------
 
 
@@ -389,6 +454,22 @@ async def test_failed_step_reward_is_logged_and_marked(caplog):
         r.levelno >= logging.WARNING and "judge outage" in r.getMessage()
         for r in caplog.records
     )
+
+
+async def test_multi_objective_redistributes_a_failed_component_weight():
+    class Boom(EmpathyRewardComponent):
+        async def compute_score(self, turns, context=None):
+            raise RuntimeError("down")
+
+    reward = MultiObjectiveRewardFunction(
+        [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)]
+    )
+    result = await reward.compute_reward(
+        [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
+    )
+    assert result.score == pytest.approx(1.0)
+    assert result.metadata["failed_components"] == ["judge"]
+    assert "judge" not in result.metadata["components"]
 
 
 # --- 9. Gameable heuristics --------------------------------------------------

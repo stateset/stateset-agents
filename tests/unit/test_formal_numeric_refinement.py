@@ -52,15 +52,19 @@ async def test_bounded_weighted_reward_matches_integer_model(
             normalization_method=normalization_method,
         )
         result = await reward.compute_reward(turns=[])
-        total = weight_a + weight_b
-        expected = (
-            (
-                (0 if fail_a else weight_a * score_a)
-                + (0 if fail_b else weight_b * score_b)
+        # Lean composedScore: failed components are dropped and their weight
+        # redistributed, i.e. the weighted average of the survivors.
+        survivors = [
+            (weight, score)
+            for weight, score, failed in (
+                (weight_a, score_a, fail_a),
+                (weight_b, score_b, fail_b),
             )
-            / total
-            if total
-            else 0.0
+            if not failed
+        ]
+        total = sum(weight for weight, _ in survivors)
+        expected = (
+            sum(weight * score for weight, score in survivors) / total if total else 0.0
         )
         assert result.score == pytest.approx(expected)
         assert 0.0 <= result.score <= 1.0
@@ -82,7 +86,7 @@ def test_reward_rejects_weights_outside_lean_domain(weight: float) -> None:
 
 
 @pytest.mark.asyncio
-async def test_nonfinite_component_score_contributes_zero() -> None:
+async def test_nonfinite_component_score_is_dropped_like_a_failure() -> None:
     """An invalid component is a failed component in the Lean abstraction."""
     reward = MultiObjectiveRewardFunction(
         components=[
@@ -91,8 +95,9 @@ async def test_nonfinite_component_score_contributes_zero() -> None:
         ]
     )
     result = await reward.compute_reward(turns=[])
-    assert result.score == pytest.approx(0.5)
-    assert result.components == {"invalid": 0.0, "valid": 1.0}
+    assert result.score == pytest.approx(1.0)
+    assert result.components == {"valid": 1.0}
+    assert result.metadata["failed_components"] == ["invalid"]
 
 
 @pytest.mark.asyncio

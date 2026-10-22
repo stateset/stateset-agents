@@ -160,8 +160,9 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         # Compute scores for each component
         component_scores: dict[str, float] = {}
-        weighted_scores: list[float] = []
         raw_scores: list[float] = []
+        scored_weights: list[float] = []
+        failed: list[str] = []
 
         for component, component_weight in zip(
             components, component_weights, strict=True
@@ -170,39 +171,61 @@ class MultiObjectiveRewardFunction(RewardFunction):
                 score = await component.compute_score(normalized_turns, context)
                 if not math.isfinite(score):
                     raise ValueError("component score must be finite")
-                component_scores[component.name] = score
-                raw_scores.append(score)
-                weighted_scores.append(score * component_weight)
-
-                # Track component performance
-                if component.name not in self.component_scores:
-                    self.component_scores[component.name] = []
-                self.component_scores[component.name].append(score)
-
             except MULTI_REWARD_EXCEPTIONS as e:
-                logger.error(f"Component {component.name} failed: {e}")
-                component_scores[component.name] = 0.0
-                raw_scores.append(0.0)
-                weighted_scores.append(0.0)
+                logger.warning(
+                    "Reward component %s failed; its weight is spread over the "
+                    "other components: %s",
+                    component.name,
+                    e,
+                )
+                failed.append(component.name)
+                continue
+            component_scores[component.name] = score
+            raw_scores.append(score)
+            scored_weights.append(component_weight)
+
+            # Track component performance
+            if component.name not in self.component_scores:
+                self.component_scores[component.name] = []
+            self.component_scores[component.name].append(score)
+
+        # A failed component is left out and its weight redistributed over
+        # the components that scored (as CompositeReward does), so a judge
+        # outage neither scores as 0 nor biases advantages within a group.
+        configured_weight = float(sum(component_weights))
+        surviving_weight = float(sum(scored_weights))
+        if failed and surviving_weight > 0:
+            scale = configured_weight / surviving_weight
+            scored_weights = [weight * scale for weight in scored_weights]
+        weighted_scores = [
+            score * weight
+            for score, weight in zip(raw_scores, scored_weights, strict=True)
+        ]
+        if not raw_scores:
+            logger.error("All reward components failed: %s", ", ".join(failed))
 
         # Combine scores
         if self.normalization_method == "weighted_sum":
             final_score = sum(weighted_scores)
         elif self.normalization_method == "weighted_average":
-            total_weight = sum(component_weights)
+            total_weight = sum(scored_weights)
             final_score = (
                 sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
             )
         elif self.normalization_method == "geometric_mean":
             # Weighted geometric mean: prod(score_i ** w_i) with weights
             # summing to 1, so all-perfect components score 1.0.
-            total_weight = sum(component_weights)
-            if total_weight > 0 and all(s > 0 for s in raw_scores):
+            total_weight = sum(scored_weights)
+            if (
+                raw_scores
+                and total_weight > 0
+                and all(score > 0 for score in raw_scores)
+            ):
                 final_score = float(
                     math.exp(
                         sum(
-                            w * math.log(s)
-                            for s, w in zip(raw_scores, component_weights, strict=True)
+                            w * math.log(score)
+                            for score, w in zip(raw_scores, scored_weights, strict=True)
                         )
                         / total_weight
                     )
@@ -229,11 +252,14 @@ class MultiObjectiveRewardFunction(RewardFunction):
             "weights": weights,
             "normalization_method": self.normalization_method,
         }
-        metadata = {
+        metadata: dict[str, Any] = {
             "components": component_scores,
             "weights": weights,
             "normalization_method": self.normalization_method,
+            "failed_components": failed,
         }
+        if failed and not raw_scores:
+            metadata["error"] = "All reward components failed"
 
         # Log metrics
         if self.monitoring:

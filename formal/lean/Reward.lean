@@ -76,8 +76,7 @@ theorem normalized_weighted_sum_bound (components : List (Nat × Nat))
   omega
 
 /-- The weighted-average branch divides by the total weight, returning zero
-    when every weight is zero. Failed components are represented by score zero
-    while their weights remain in the denominator. -/
+    when every weight is zero. -/
 def weightedAverage (components : List (Nat × Nat)) : Nat :=
   if totalWeight components = 0 then 0
   else weightedSum components / totalWeight components
@@ -98,6 +97,31 @@ theorem weightedAverage_at_most_100 (components : List (Nat × Nat))
     have quotient_bound := (Nat.div_lt_iff_lt_mul positive).2 strict_bound
     simp only [weightedAverage, zero, ite_false]
     omega
+
+/-- Python's composition: a component is `(succeeded, weight, score)`. A
+    failed component is left out of both the weighted sum and the total
+    weight, so its weight is redistributed over the components that scored
+    (the weighted-sum branch rescales normalized weights by
+    configured / surviving weight, which is this same average). -/
+def survivors (components : List (Bool × Nat × Nat)) : List (Nat × Nat) :=
+  (components.filter (fun c => c.1)).map (fun c => c.2)
+
+def composedScore (components : List (Bool × Nat × Nat)) : Nat :=
+  weightedAverage (survivors components)
+
+theorem failed_component_is_dropped (weight score : Nat)
+    (rest : List (Bool × Nat × Nat)) :
+    composedScore ((false, weight, score) :: rest) = composedScore rest := by
+  simp [composedScore, survivors]
+
+theorem composedScore_at_most_100 (components : List (Bool × Nat × Nat))
+    (bounded : ∀ c ∈ components, c.2.2 ≤ 100) :
+    composedScore components ≤ 100 := by
+  apply weightedAverage_at_most_100
+  intro pair member
+  simp only [survivors, List.mem_map, List.mem_filter] at member
+  obtain ⟨c, ⟨inComponents, _⟩, rfl⟩ := member
+  exact bounded c inComponents
 
 /-- Two group-mean advantages sum to zero, matching TrajectoryGroup's
     centered reward computation before floating-point conversion. -/

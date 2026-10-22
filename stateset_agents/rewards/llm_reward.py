@@ -9,6 +9,8 @@ import asyncio
 import hashlib
 import json
 import logging
+import math
+import re
 from textwrap import dedent
 from typing import Any
 
@@ -57,6 +59,49 @@ class RulerResponse(BaseModel):
     """Response from the ruler LLM judge"""
 
     scores: list[TrajectoryScore] = Field(description="The scores for each trajectory.")
+
+
+_TRAJECTORY_ID = re.compile(r"^\s*(?:trajectory[\s_-]*)?#?\s*(\d+)\s*$", re.IGNORECASE)
+
+
+def _normalize_trajectory_id(value: str) -> str:
+    """Canonical form of a judge's trajectory id ("2", "trajectory 2", "#2")."""
+    match = _TRAJECTORY_ID.match(str(value))
+    return str(int(match.group(1))) if match else str(value).strip()
+
+
+def _scores_by_trajectory_id(parsed: RulerResponse, count: int) -> list[float]:
+    """Order judge scores by the trajectory ids the prompt assigned (1..count).
+
+    Judges often list trajectories best-first, so list position says nothing
+    about which trajectory a score belongs to. A response must score every
+    trajectory exactly once with a finite score in [0, 1]; anything else is a
+    ``ValueError`` so the call is retried rather than misattributed.
+    """
+    expected = {str(index) for index in range(1, count + 1)}
+    by_id: dict[str, float] = {}
+    for item in parsed.scores:
+        key = _normalize_trajectory_id(item.trajectory_id)
+        if key in by_id:
+            raise ValueError(f"RULER judge scored trajectory {key!r} more than once")
+        by_id[key] = item.score
+    if set(by_id) != expected:
+        missing = sorted(expected - set(by_id), key=int)
+        unexpected = sorted(set(by_id) - expected)
+        raise ValueError(
+            f"RULER judge must score trajectories 1..{count} exactly once "
+            f"(missing {missing}, unexpected {unexpected})"
+        )
+    scores: list[float] = []
+    for index in range(1, count + 1):
+        score = float(by_id[str(index)])
+        if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+            raise ValueError(
+                f"RULER judge score for trajectory {index} must be in [0, 1], "
+                f"got {score}"
+            )
+        scores.append(score)
+    return scores
 
 
 # Pre-defined rubrics for different domains
@@ -466,21 +511,7 @@ class RulerRewardFunction(RewardFunction):
             logger.error(f"Raw content: {content}")
             raise
 
-        if len(parsed.scores) != len(message_lists):
-            logger.warning(
-                f"Expected {len(message_lists)} scores, got {len(parsed.scores)}. "
-                f"Padding/truncating to match."
-            )
-
-            # Pad or truncate to match expected length
-            scores = [s.score for s in parsed.scores]
-            while len(scores) < len(message_lists):
-                scores.append(0.5)  # Default neutral score
-            scores = scores[: len(message_lists)]
-
-            return scores
-
-        return [s.score for s in parsed.scores]
+        return _scores_by_trajectory_id(parsed, len(message_lists))
 
     async def _make_completion_call(self, messages: list[dict[str, Any]]) -> Any:
         """Make async completion call (wrapper for sync litellm)"""
