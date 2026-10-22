@@ -16,11 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from .reward_context import (
-    LATEST_TURN_SCOPE,
-    REWARD_SCOPE_KEY,
-    scores_latest_turn_only,
-)
+from .reward_context import build_reward_context
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -225,16 +221,12 @@ class CompositeReward(RewardFunction):
                     self.requires_environment_context
                     and not getattr(reward_fn, "requires_environment_context", False)
                     and isinstance(context, dict)
-                    and isinstance(context.get("scenario"), dict)
                 ):
-                    # Ordinary components retain their historical scenario
-                    # context; outcome components receive executed tool state.
-                    child_context = context["scenario"]
-                    if scores_latest_turn_only(context):
-                        child_context = {
-                            **child_context,
-                            REWARD_SCOPE_KEY: LATEST_TURN_SCOPE,
-                        }
+                    # This composite was handed the evidence context (state
+                    # plus "scenario", no lifted keys). Ordinary components get
+                    # the standard context built from it, so they see both the
+                    # scenario's keys and the environment state.
+                    child_context = build_reward_context(context, reward_fn=reward_fn)
                 result = await reward_fn.compute_reward(turns, child_context)
                 if not math.isfinite(float(result.score)):
                     # A NaN/inf component would silently poison the total.
