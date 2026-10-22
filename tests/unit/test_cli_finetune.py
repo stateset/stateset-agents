@@ -1,6 +1,7 @@
 """Agent JSON protocol, reviewed inputs and once-only submission without GPUs."""
 
 import json
+import os
 import subprocess
 import sys
 from dataclasses import asdict, replace
@@ -104,7 +105,8 @@ def test_prepare_freezes_data_and_is_visible_in_tui_without_launching(setup):
     assert (path / "dataset").read_bytes() == Path(setup.settings.dataset).read_bytes()
     assert "PRIVATE CUSTOMER QUESTION" not in result.stdout
     assert "PRIVATE SUPPORT REPLY" not in result.stdout
-    assert path.stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert path.stat().st_mode & 0o077 == 0
     studio = Studio(setup.root)
     assert studio.runs[0]["id"] == run["run_id"]
     assert "AI AGENT ACCESS / JSON" in "\n".join(studio._run_details())

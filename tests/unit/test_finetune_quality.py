@@ -132,7 +132,8 @@ def test_quality_recomputes_paired_evidence_and_keeps_stronger_gate_separate(
     assert summary["mean_success_gain"] == 1
     assert inspect_quality(run) == summary
     assert "PRIVATE-ID" not in json.dumps(summary)
-    assert (run / "quality.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (run / "quality.json").stat().st_mode & 0o077 == 0
     assert all((run / name).read_bytes() == raw for name, raw in before.items())
 
 
@@ -234,6 +235,8 @@ def test_quality_sources_are_bounded_regular_files(
     if kind == "symlink":
         path.symlink_to(run / "dataset")
     elif kind == "fifo":
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFO unavailable")
         os.mkfifo(path)
     elif kind == "directory":
         path.mkdir()
@@ -423,6 +426,8 @@ def test_stop_receipts_are_bounded_and_bound_to_plan(completed, bad):
     if bad == "symlink":
         path.symlink_to(run / "dataset")
     elif bad == "fifo":
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFO unavailable")
         os.mkfifo(path)
     else:
         ws.write_json(

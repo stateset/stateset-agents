@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -88,7 +89,8 @@ def test_interrupted_work_can_be_stopped_without_inferring_worker_exit(
     repeated = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
     assert repeated["stop_requested"] is True
     assert (fixture.run / "stop.json").read_bytes() == raw
-    assert (fixture.run / "stop.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (fixture.run / "stop.json").stat().st_mode & 0o077 == 0
     # An already running learner consumes the same receipt at its next boundary.
     with pytest.raises(workspace.FinetuneFailure) as stopped:
         worker._check_stop(fixture.run)

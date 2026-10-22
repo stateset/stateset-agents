@@ -79,6 +79,8 @@ def test_python_m_traceforge_rl_help_runs() -> None:
         [sys.executable, "-m", "traceforge_rl", "--help"],
         capture_output=True,
         text=True,
+        # The CLI always writes UTF-8; Windows would otherwise decode as cp1252.
+        encoding="utf-8",
         timeout=60,
     )
     assert result.returncode == 0, result.stderr

@@ -162,6 +162,8 @@ def test_fresh_process_inspects_receipt_after_original_journal_object_is_gone(
             "PYTHONPATH": str(Path(submission.__file__).parents[1]),
             "PYTHONDONTWRITEBYTECODE": "1",
             "HF_HUB_OFFLINE": "1",
+            # Windows Python may need it to seed hash randomization at startup.
+            **{key: os.environ[key] for key in ("SYSTEMROOT",) if key in os.environ},
         },
         check=False,
     )

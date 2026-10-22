@@ -80,6 +80,16 @@ def install_training(monkeypatch, run, config, observe=lambda: None):
         monkeypatch.setattr(registry, "get_executor", lambda _name: Executor())
 
 
+def lose_owners(monkeypatch):
+    """Report every recorded owner as exited on Linux and non-Linux probes."""
+
+    def absent(_pid):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    monkeypatch.setattr(workspace, "probe_process", absent)
+
+
 def supervised(run):
     token = "a" * 64
     assert worker._claim_admission(run, "supervised", token)
@@ -125,7 +135,7 @@ def test_worker_success_survives_lost_supervision_without_claiming_judge_quality
 ):
     run, config = make_run(provider)
     token = supervised(run)
-    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    lose_owners(monkeypatch)
 
     def during_training():
         status = workspace.run_status(run)
@@ -320,7 +330,7 @@ def test_success_metadata_failure_never_reports_a_successful_worker_return(
     else:
         assert worker.execute(run) == 1
     assert (run / "completion.json").exists()
-    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    lose_owners(monkeypatch)
     reported = workspace.run_status(run)
     if failure == "temporary":
         assert reported["status"] == "failed"

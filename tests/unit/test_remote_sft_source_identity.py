@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import stat
 from pathlib import Path
 
@@ -144,7 +145,8 @@ def test_fireworks_upload_and_restarted_fetch_use_captured_source(
     def record_upload(dataset_id, *, file):
         temp_path = Path(file.name)
         temp_paths.append(temp_path)
-        assert stat.S_IMODE(temp_path.stat().st_mode) == 0o600
+        if os.name != "nt":  # Windows st_mode carries no POSIX permission bits.
+            assert stat.S_IMODE(temp_path.stat().st_mode) == 0o600
         uploaded.append(file.read())
 
     client.datasets.create = change_source
