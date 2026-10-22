@@ -39,6 +39,7 @@ except ImportError:  # pragma: no cover
     PSUTIL_AVAILABLE = False
 
 from stateset_agents.core.advanced_monitoring import (
+    MetricsCollector,
     get_monitoring_service,
     monitor_async_function,
 )
@@ -1083,26 +1084,29 @@ class AdvancedTrainingOrchestrator:
         if persistence_errors:
             raise persistence_errors[0]
 
+    def _record_monitoring_metrics(self, collector: MetricsCollector) -> None:
+        """Record resource-utilization and queue gauges on ``collector``."""
+        resource_util = self.resource_manager.get_resource_utilization()
+        for resource_type, utilization in resource_util.items():
+            collector.record_metric(
+                f"orchestrator.resource_utilization.{resource_type.value}",
+                utilization,
+            )
+
+        queue_status = self.scheduler.get_queue_status()
+        for metric_name, value in queue_status.items():
+            if isinstance(value, (int, float)):
+                collector.record_metric(f"orchestrator.queue.{metric_name}", value)
+
     async def _monitoring_loop(self):
         """Background monitoring loop"""
         while True:
             try:
-                # Record system metrics
-                resource_util = self.resource_manager.get_resource_utilization()
-
-                for resource_type, utilization in resource_util.items():
-                    self.monitoring.metrics_collector.record_metric(
-                        f"orchestrator.resource_utilization.{resource_type.value}",
-                        utilization,
-                    )
-
-                # Record queue metrics
-                queue_status = self.scheduler.get_queue_status()
-                for metric_name, value in queue_status.items():
-                    if isinstance(value, (int, float)):
-                        self.monitoring.metrics_collector.record_metric(
-                            f"orchestrator.queue.{metric_name}", value
-                        )
+                # The monitoring service may run with metrics disabled; skip
+                # recording instead of raising (and logging) every iteration.
+                collector = self.monitoring.metrics_collector
+                if collector is not None:
+                    self._record_monitoring_metrics(collector)
 
                 await asyncio.sleep(30)  # Monitor every 30 seconds
 
