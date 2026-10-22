@@ -822,7 +822,8 @@ security-scan: ## Run basic security scanning tools
 	bandit -c pyproject.toml -r stateset_agents || true
 	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
 	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip || true
-	semgrep --config=auto . || true
+	# Semgrep is not in [dev] (its mcp pin is vulnerable); run it isolated.
+	pipx run semgrep --config=auto . || true
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json || true

@@ -67,6 +67,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **The development lock no longer contains a vulnerable MCP SDK.** Semgrep pins
+  `mcp==1.29.0` (CVE-2026-59951), so it moved out of the `[dev]` extra; CI's
+  security jobs install it separately and `make security-scan` runs it via
+  `pipx`. `cryptography` and `jsonschema`, previously transitive through
+  Semgrep, are now explicit `[dev]` test dependencies. The strict dependency
+  audit passes with no override or waiver.
+- `virtualenv` 21.7.13 -> 21.14.12 in the development lock (five CVEs).
+- Windows: timed-out fine-tune workers are stopped with `taskkill /T /F` (there
+  is no `os.killpg`), refund recovery bundles are written with LF so their hash
+  audit passes, directory datasets get the normal validation error, and worker
+  logs are UTF-8.
+
 - GRPO loss loops propagate rollout-contract violations and out-of-memory
   errors instead of skipping the trajectory, and raise when every trajectory in
   a group fails instead of returning a constant zero loss.

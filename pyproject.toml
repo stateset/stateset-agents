@@ -95,12 +95,14 @@ dev = [
     "ruff>=0.1.0",
     "bandit>=1.7.0",
     "pip-audit>=2.10.1,<3.0.0",
-    # Older releases pin an unsafe MCP SDK. Current upstream Semgrep still
-    # pins mcp==1.29.0, now affected by CVE-2026-59951; the strict dev audit
-    # remains blocked until upstream permits a patched SDK. Do not override
-    # its exact dependency or waive the advisory. See SECURITY.md. Install
-    # the product [mcp] extra separately from [dev] until this is resolved.
-    "semgrep>=1.173.0",
+    # Semgrep is not a [dev] dependency: upstream pins mcp==1.29.0
+    # (CVE-2026-59951), which would put a vulnerable SDK in this lock. CI's
+    # security jobs install it in their own step; locally use
+    # `pipx run semgrep` (or `pipx install semgrep`). See SECURITY.md.
+    # Test-only dependencies that used to arrive transitively via Semgrep:
+    # secret-encryption tests (cryptography) and schema validation tests.
+    "cryptography>=46.0.0",
+    "jsonschema>=4.23.0",
     "pip-tools>=7.0.0",
     "torch>=2.6.0,<3",
     "transformers>=4.57.1",
