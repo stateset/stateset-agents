@@ -62,17 +62,27 @@ class MultiObjectiveRewardFunction(RewardFunction):
         self.evaluation_count = 0
         self.component_scores: dict[str, list[float]] = {}
 
-    def _normalize_component_weights(self) -> None:
-        """Normalize component weights to a stable sum of 1.0."""
-        for component in self.components:
+    def _normalized_weight_snapshot(
+        self, components: tuple[BaseRewardComponent, ...]
+    ) -> tuple[float, ...]:
+        """Validated component weights scaled to sum to 1 (unchanged if 0)."""
+        for component in components:
             self._validate_component_weight(component)
-        total_weight = sum(component.weight for component in self.components)
+        weights = tuple(float(component.weight) for component in components)
+        total_weight = math.fsum(weights)
         if not math.isfinite(total_weight):
             raise ValueError("total component weight must be finite")
         if total_weight <= 0:
-            return
-        for component in self.components:
-            component.weight = component.weight / total_weight
+            return weights
+        return tuple(weight / total_weight for weight in weights)
+
+    def _normalize_component_weights(self) -> None:
+        """Normalize component weights to a stable sum of 1.0."""
+        components = tuple(self.components)
+        for component, weight in zip(
+            components, self._normalized_weight_snapshot(components), strict=True
+        ):
+            component.weight = weight
 
     @staticmethod
     def _validate_component_weight(component: BaseRewardComponent) -> None:
@@ -146,17 +156,14 @@ class MultiObjectiveRewardFunction(RewardFunction):
             ]
 
         if not self.components:
-            return RewardResult(
-                score=0.0,
-                breakdown={"total_score": 0.0},
-                metadata={"error": "No components configured"},
-            )
+            raise ValueError("MultiObjectiveRewardFunction has no components")
 
         # Components are mutable and their callbacks may suspend. Revalidate
-        # and use one weight snapshot for the whole evaluation.
-        self._normalize_component_weights()
+        # and use one normalized weight snapshot for the whole evaluation,
+        # without writing it back: renormalizing stored weights on every call
+        # drifts them by an ulp per call and made scores differ between calls.
         components = tuple(self.components)
-        component_weights = tuple(component.weight for component in components)
+        component_weights = self._normalized_weight_snapshot(components)
 
         # Compute scores for each component
         component_scores: dict[str, float] = {}
@@ -192,8 +199,8 @@ class MultiObjectiveRewardFunction(RewardFunction):
         # A failed component is left out and its weight redistributed over
         # the components that scored (as CompositeReward does), so a judge
         # outage neither scores as 0 nor biases advantages within a group.
-        configured_weight = float(sum(component_weights))
-        surviving_weight = float(sum(scored_weights))
+        configured_weight = math.fsum(component_weights)
+        surviving_weight = math.fsum(scored_weights)
         if failed and surviving_weight > 0:
             scale = configured_weight / surviving_weight
             scored_weights = [weight * scale for weight in scored_weights]
@@ -202,20 +209,24 @@ class MultiObjectiveRewardFunction(RewardFunction):
             for score, weight in zip(raw_scores, scored_weights, strict=True)
         ]
         if not raw_scores:
-            logger.error("All reward components failed: %s", ", ".join(failed))
+            # No component scored: fail rather than return a valid-looking 0.0.
+            raise ValueError(
+                "MultiObjectiveRewardFunction: every component failed "
+                f"({', '.join(failed)})"
+            )
 
         # Combine scores
         if self.normalization_method == "weighted_sum":
-            final_score = sum(weighted_scores)
+            final_score = math.fsum(weighted_scores)
         elif self.normalization_method == "weighted_average":
-            total_weight = sum(scored_weights)
+            total_weight = math.fsum(scored_weights)
             final_score = (
-                sum(weighted_scores) / total_weight if total_weight > 0 else 0.0
+                math.fsum(weighted_scores) / total_weight if total_weight > 0 else 0.0
             )
         elif self.normalization_method == "geometric_mean":
             # Weighted geometric mean: prod(score_i ** w_i) with weights
             # summing to 1, so all-perfect components score 1.0.
-            total_weight = sum(scored_weights)
+            total_weight = math.fsum(scored_weights)
             if (
                 raw_scores
                 and total_weight > 0
@@ -223,7 +234,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
             ):
                 final_score = float(
                     math.exp(
-                        sum(
+                        math.fsum(
                             w * math.log(score)
                             for score, w in zip(raw_scores, scored_weights, strict=True)
                         )
@@ -233,7 +244,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
             else:
                 final_score = 0.0
         else:
-            final_score = sum(weighted_scores)
+            final_score = math.fsum(weighted_scores)
 
         # Ensure score is in [0, 1]
         final_score = max(0.0, min(1.0, final_score))
@@ -258,8 +269,6 @@ class MultiObjectiveRewardFunction(RewardFunction):
             "normalization_method": self.normalization_method,
             "failed_components": failed,
         }
-        if failed and not raw_scores:
-            metadata["error"] = "All reward components failed"
 
         # Log metrics
         if self.monitoring:

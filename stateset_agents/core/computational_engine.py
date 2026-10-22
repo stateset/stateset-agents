@@ -13,6 +13,7 @@ This module provides a computation-first GRPO training engine that:
 
 import asyncio
 import logging
+import math
 import os
 import time
 import uuid
@@ -47,7 +48,7 @@ class ComputationalTrajectory:
     id: str
     prompt: str
     response: str
-    raw_reward_signal: float  # Direct signal from environment
+    raw_reward_signal: float | None  # Environment signal (None: no reward_fn)
     learned_reward: float  # Reward from learned reward model
     computational_cost: float  # Tracks computation used
     timestamp: datetime
@@ -115,8 +116,20 @@ class ComputationalGRPOEngine:
             task = asyncio.create_task(self._generate_single_trajectory(prompt))
             tasks.append(task)
 
-        # Collect results
-        trajectories = await asyncio.gather(*tasks)
+        # Collect results; a trajectory whose reward failed is dropped and
+        # counted, never kept with a stand-in reward.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        trajectories: list[ComputationalTrajectory] = []
+        failed = 0
+        for result in results:
+            if isinstance(result, ENGINE_EXCEPTIONS):
+                failed += 1
+                logger.warning("Dropping trajectory whose reward failed: %s", result)
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                trajectories.append(result)
+        self.metrics["failed_trajectories"] = float(failed)
 
         # Update metrics
         # Windows clocks can report zero elapsed time for fast batches.
@@ -132,24 +145,27 @@ class ComputationalGRPOEngine:
             # Generate response using agent
             response = await self.agent.generate_response(prompt)
 
-            # Get raw reward signal from environment
+            # Raw reward signal from the environment, when it has one.
             raw_reward = await self._get_environmental_reward(prompt, response)
 
-            # Get learned reward if enabled
-            learned_reward = raw_reward
+            # The learned reward is the training signal. A failure propagates
+            # (the batch drops this trajectory); no other value stands in.
             if self.use_learned_rewards:
-                try:
-                    # Use reward function to compute learned reward
-                    reward_result = await self.reward_function.compute_reward(
-                        [
-                            ConversationTurn(role="user", content=prompt),
-                            ConversationTurn(role="assistant", content=response),
-                        ]
-                    )
-                    learned_reward = reward_result.score
-                except ENGINE_EXCEPTIONS as e:
-                    logger.warning(f"Failed to compute learned reward: {e}")
-                    learned_reward = raw_reward
+                reward_result = await self.reward_function.compute_reward(
+                    [
+                        ConversationTurn(role="user", content=prompt),
+                        ConversationTurn(role="assistant", content=response),
+                    ]
+                )
+                learned_reward = float(reward_result.score)
+            elif raw_reward is None:
+                raise ValueError(
+                    "use_learned_rewards=False needs an environment reward_fn"
+                )
+            else:
+                learned_reward = raw_reward
+            if not math.isfinite(learned_reward):
+                raise ValueError(f"reward must be finite, got {learned_reward}")
 
             # Track computational cost
             computational_cost = len(prompt) + len(response)  # Simplified
@@ -170,7 +186,9 @@ class ComputationalGRPOEngine:
 
             return trajectory
 
-    async def _get_environmental_reward(self, prompt: str, response: str) -> float:
+    async def _get_environmental_reward(
+        self, prompt: str, response: str
+    ) -> float | None:
         """Get reward signal from environment (not hand-crafted features)"""
         # In practice, this would come from:
         # - User feedback
@@ -178,22 +196,19 @@ class ComputationalGRPOEngine:
         # - Environmental outcomes
         # NOT from hand-crafted heuristics
 
-        # Use environment to get reward
-        try:
-            # Create a simple trajectory for environment evaluation
-            trajectory = Trajectory()
-            trajectory.add_turn({"role": "user", "content": prompt})
-            trajectory.add_turn({"role": "assistant", "content": response})
+        # An environment without a reward function has no raw signal; that is
+        # recorded as None rather than a fabricated neutral score.
+        if (
+            getattr(self.environment, "reward_fn", None) is None
+            and type(self.environment).get_reward is Environment.get_reward
+        ):
+            return None
 
-            # Get reward from environment
-            reward = await self.environment.get_reward(trajectory)
-            reward_value = float(reward)
-            return reward_value
-        except ENGINE_EXCEPTIONS as e:
-            logger.warning(f"Failed to get environmental reward: {e}")
-            # Return a neutral reward instead of random noise
-            # Random rewards would corrupt training and make results non-reproducible
-            return 0.5
+        trajectory = Trajectory()
+        trajectory.add_turn({"role": "user", "content": prompt})
+        trajectory.add_turn({"role": "assistant", "content": response})
+        # Failures propagate: the batch drops this trajectory.
+        return float(await self.environment.get_reward(trajectory))
 
     async def train_iteration(self, prompts: list[str]) -> dict[str, Any]:
         """
@@ -203,6 +218,11 @@ class ComputationalGRPOEngine:
 
         # Generate trajectory batch in parallel
         trajectories = await self.generate_trajectory_batch(prompts)
+        if prompts and not trajectories:
+            raise RuntimeError(
+                "No trajectory in the batch has a reward: all "
+                f"{len(prompts)} reward computations failed"
+            )
 
         # Add to buffer
         self.trajectory_buffer.extend(trajectories)
@@ -219,11 +239,16 @@ class ComputationalGRPOEngine:
 
         # Calculate metrics
         iteration_time = time.time() - iteration_start
-        avg_reward = np.mean([t.learned_reward for t in trajectories])
+        avg_reward = (
+            float(np.mean([t.learned_reward for t in trajectories]))
+            if trajectories
+            else 0.0
+        )
 
         results = {
             "iteration_time": iteration_time,
             "trajectories_generated": len(trajectories),
+            "trajectories_failed": int(self.metrics.get("failed_trajectories", 0)),
             "average_reward": avg_reward,
             "policy_loss": policy_loss,
             "total_computation_used": self.total_computation,
@@ -254,7 +279,9 @@ class ComputationalGRPOEngine:
         self, trajectories: list[ComputationalTrajectory]
     ) -> NDArray[np.float64]:
         """Compute advantages for GRPO"""
-        rewards = np.array([t.learned_reward for t in trajectories])
+        rewards = np.array([t.learned_reward for t in trajectories], dtype=float)
+        if rewards.size == 0:
+            return np.zeros(0, dtype=float)
         baseline = np.mean(rewards)
         advantages = rewards - baseline
 

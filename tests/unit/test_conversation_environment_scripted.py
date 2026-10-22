@@ -6,6 +6,7 @@ import asyncio
 from typing import Any
 
 from stateset_agents.core.conversation_environment import ConversationEnvironment
+from stateset_agents.core.reward_base import RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 
 
@@ -62,6 +63,10 @@ def test_step_reward_sees_the_opening_message() -> None:
     contexts: list[list[str]] = []
 
     class Recorder:
+        # Per-step scoring needs a per-step reward type; an untyped reward is
+        # applied once at episode end.
+        reward_type = RewardType.IMMEDIATE
+
         async def compute_reward(self, turns: list[ConversationTurn], context: Any):
             contexts.append([t.content for t in turns])
             return 0.0

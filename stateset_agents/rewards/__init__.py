@@ -40,6 +40,7 @@ try:
         EvaluationCriteria,
         JudgeConfig,
         JudgeProvider,
+        JudgeUnavailableError,
         LLMJudge,
         create_llm_judge_reward,
     )
@@ -92,6 +93,7 @@ if LLM_JUDGE_AVAILABLE:
             "LLMJudge",
             "JudgeConfig",
             "JudgeProvider",
+            "JudgeUnavailableError",
             "EvaluationCriteria",
             "create_llm_judge_reward",
         ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import re
 from abc import ABC, abstractmethod
@@ -489,18 +490,17 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 response = await client.generate(prompt)
                 score = self._parse_score_from_response(response)
             else:
-                logger.warning(
-                    "Unknown API client configuration for provider %s, using heuristic",
-                    effective_provider,
+                raise TypeError(
+                    f"{self.name}: api_client for provider {effective_provider!r} "
+                    "has no chat/completions/messages/generate interface"
                 )
-                score = min(1.0, len(assistant_response) / 200.0)
-
-            return max(0.0, min(1.0, score))
         except MULTI_REWARD_EXCEPTIONS as exc:
-            if self.strict:
-                raise
-            logger.error("Model judge failed: %s", exc)
-            return 0.5
+            # Fail closed: the composer leaves this component out and spreads
+            # its weight; a neutral 0.5 would be trained on as a verdict.
+            raise RuntimeError(f"{self.name}: model judge failed: {exc}") from exc
+        if not math.isfinite(score) or not 0.0 <= score <= 1.0:
+            raise ValueError(f"{self.name}: judge score {score} is outside [0, 1]")
+        return score
 
     async def _call_openai_api(self, prompt: str) -> str:
         """Call OpenAI API for scoring."""
@@ -549,22 +549,18 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             raise
 
     def _parse_score_from_response(self, response: str) -> float:
-        """Parse a numerical score from a model response."""
-        try:
-            numbers = re.findall(r"\d+\.?\d*", response)
-            if numbers:
-                score = float(numbers[0])
-                if score > 1.0:
-                    score = score / 10.0
-                return min(1.0, max(0.0, score))
-            return 0.5
-        except (IndexError, ValueError) as exc:
-            logger.warning(
-                "Failed to parse score from response %r: %s",
-                response,
-                exc,
-            )
-            return 0.5
+        """Parse a numerical score from a model response.
+
+        A reply with no number is a judge failure (``ValueError``), not a
+        neutral 0.5; a 0-10 score is rescaled to [0, 1].
+        """
+        numbers = re.findall(r"\d+\.?\d*", response)
+        if not numbers:
+            raise ValueError(f"judge response has no score: {response!r}")
+        score = float(numbers[0])
+        if score > 1.0:
+            score = score / 10.0
+        return min(1.0, max(0.0, score))
 
 
 class ReasoningRewardComponent(BaseRewardComponent):

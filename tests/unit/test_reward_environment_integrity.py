@@ -165,8 +165,9 @@ async def test_trainer_reuses_per_step_rewards_without_rescoring():
     steps = len(SCRIPTED["user_turns"])
     assert len(reward.contexts) == 2 * steps  # one call per step, none on top
     for trajectory in trajectories:
-        assert trajectory.turn_rewards == [0.5] * steps
-        assert trajectory.total_reward == pytest.approx(0.5 * steps)
+        # Per-step scores are averaged: the episode is worth their mean.
+        assert trajectory.turn_rewards == pytest.approx([0.5 / steps] * steps)
+        assert trajectory.total_reward == pytest.approx(0.5)
 
 
 async def test_trainer_with_its_own_reward_resets_turn_rewards_to_its_score():
@@ -255,9 +256,10 @@ async def test_immediate_step_rewards_weight_every_turn_equally():
     late = await environment.run_episode(_replies(BAD, BAD, GOOD), scenario)
     good = (await HelpfulnessReward().compute_reward(_conversation(GOOD))).score
     bad = (await HelpfulnessReward().compute_reward(_conversation(BAD))).score
-    assert early.turn_rewards == pytest.approx([good, bad, bad])
-    assert late.turn_rewards == pytest.approx([bad, bad, good])
+    assert early.turn_rewards == pytest.approx([good / 3, bad / 3, bad / 3])
+    assert late.turn_rewards == pytest.approx([bad / 3, bad / 3, good / 3])
     assert early.total_reward == pytest.approx(late.total_reward)
+    assert early.total_reward == pytest.approx((good + 2 * bad) / 3)
 
 
 async def test_composite_routes_the_step_scope_to_scenario_children():
@@ -322,7 +324,7 @@ async def test_task_environment_applies_immediate_reward_functions():
     )
     trajectory = await environment.run_episode(_replies("x", "y", "z"), TASK)
     assert len(reward.contexts) == 3
-    assert trajectory.total_reward == pytest.approx(1.5)
+    assert trajectory.total_reward == pytest.approx(0.5)  # mean of step scores
     assert reward.contexts[0][REWARD_SCOPE_KEY] == LATEST_TURN_SCOPE
 
 
@@ -331,7 +333,7 @@ async def test_task_environment_pays_the_completion_bonus_once():
         [TASK], success_criteria=lambda turns, ctx: False, max_turns=4
     )
     trajectory = await environment.run_episode(
-        _replies("load it", "stall", "stall", "stall"), TASK
+        _replies('{"action": "load"}', "stall", "stall", "stall"), TASK
     )
     assert trajectory.turn_rewards == [15.0, 0.0, 0.0, 0.0]
 
@@ -344,7 +346,9 @@ async def test_task_completion_reward_accepts_task_environment_actions():
         max_turns=2,
         reward_fn=TaskCompletionReward(),
     )
-    trajectory = await environment.run_episode(_replies("load data"), task)
+    trajectory = await environment.run_episode(
+        _replies('Loading. {"action": "load"}'), task
+    )
     # 10 progress + 5 completion bonus + 1.0 task completion
     assert trajectory.total_reward == pytest.approx(16.0)
 

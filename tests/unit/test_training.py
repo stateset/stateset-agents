@@ -334,7 +334,7 @@ class TestSingleTurnGRPOTrainer:
 
     @pytest.mark.asyncio
     async def test_single_turn_trainer_accepts_environment_state(
-        self, mock_agent, training_config
+        self, mock_agent, training_config, mock_reward_fn
     ):
         """Ensure EnvironmentState-compatible environments work in the train loop."""
 
@@ -355,6 +355,7 @@ class TestSingleTurnGRPOTrainer:
         trainer = SingleTurnGRPOTrainer(
             agent=mock_agent,
             environment=StateEnv(max_turns=1),
+            reward_fn=mock_reward_fn,
             config=training_config,
         )
 

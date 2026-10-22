@@ -38,17 +38,72 @@ logger = logging.getLogger(__name__)
 NSRClient = Callable[[dict[str, Any]], Awaitable[dict[str, Any]]]
 NSRPoster = Callable[[str, dict[str, Any]], Awaitable[dict[str, Any]]]
 
-_APPROVE_RE = re.compile(r"\bapprov\w*\b", re.IGNORECASE)
-_DENY_RE = re.compile(r"\bden(y|ies|ied|ial)\w*\b", re.IGNORECASE)
-_REFUSE_RE = re.compile(r"\b(refus\w*|escalat\w*|can(?:no|')t verify)\b", re.IGNORECASE)
+_APPROVE_RE = re.compile(r"\bapprov(?:e|es|ed|ing)\b", re.IGNORECASE)
+_APPROVAL_NOUN_RE = re.compile(r"\bapprovals?\b", re.IGNORECASE)
+_DENY_RE = re.compile(r"\bden(?:y|ies|ied|ying|ial)\b", re.IGNORECASE)
+_REFUSE_RE = re.compile(
+    r"\b(?:refus\w*|escalat\w*|can(?:no|')t verify)\b", re.IGNORECASE
+)
+#: Splits a reply into clauses; a cue only applies inside its own clause.
+_CLAUSE_SPLIT_RE = re.compile(r"[.;:!?\n]+|,|\bbut\b|\bhowever\b", re.IGNORECASE)
+#: Negation before a verdict word in its clause ("I cannot approve").
+_NEGATION_RE = re.compile(
+    r"\b(?:not|never|no longer|cannot|can't|won't|wouldn't|couldn't|shouldn't|"
+    r"isn't|wasn't|aren't|weren't|don't|doesn't|didn't|unable to|decline to)\b",
+    re.IGNORECASE,
+)
+#: Conditional or hypothetical framing ("if approved", "could be denied").
+_CONDITIONAL_BEFORE_RE = re.compile(
+    r"\b(?:if|once|unless|until|whether|could|would|might|may)\b", re.IGNORECASE
+)
+_CONDITIONAL_AFTER_RE = re.compile(
+    r"^\s*(?:if|once|unless|until|provided|pending|subject to|after|when)\b",
+    re.IGNORECASE,
+)
+#: Approval that is still to be given is an escalation, not a decision.
+_PENDING_APPROVAL_RE = re.compile(
+    r"\b(?:needs?|requires?|required|pending|awaiting|subject to|for|seek\w*|"
+    r"request\w*|manager|supervisor)\b",
+    re.IGNORECASE,
+)
+
+
+def _clause_verdicts(clause: str) -> set[str]:
+    """Verdicts a single clause commits to, honouring negation and conditions."""
+    found: set[str] = set()
+    for match in _APPROVE_RE.finditer(clause):
+        before, after = clause[: match.start()], clause[match.end() :]
+        if _CONDITIONAL_BEFORE_RE.search(before) or _CONDITIONAL_AFTER_RE.match(after):
+            continue  # "if approved", "could approve", "approved once ..."
+        found.add("denied" if _NEGATION_RE.search(before) else "approved")
+    for match in _APPROVAL_NOUN_RE.finditer(clause):
+        if _PENDING_APPROVAL_RE.search(clause[: match.start()]):
+            found.add("refused")  # "needs manager approval": deferred
+    for match in _DENY_RE.finditer(clause):
+        before, after = clause[: match.start()], clause[match.end() :]
+        if (
+            _NEGATION_RE.search(before)
+            or _CONDITIONAL_BEFORE_RE.search(before)
+            or _CONDITIONAL_AFTER_RE.match(after)
+        ):
+            continue  # "not denied" is no denial; it is not an approval either
+        found.add("denied")
+    for match in _REFUSE_RE.finditer(clause):
+        if not _NEGATION_RE.search(clause[: match.start()]):
+            found.add("refused")
+    return found
 
 
 def extract_verdict(text: str) -> str | None:
     """Extract the model's decision verdict from its response text.
 
-    Tries a JSON ``{"decision": ...}`` field first, then keyword scanning.
-    Returns ``"approved"``, ``"denied"``, ``"refused"``, or ``None`` when no
-    verdict (or an ambiguous mix of verdicts) is found.
+    Tries a JSON ``{"decision": ...}`` field first, then keyword scanning
+    clause by clause. A negated approval ("I cannot approve this") is a
+    denial; a conditional or hypothetical one ("if approved", "could be
+    approved") is no verdict; approval still to be given ("needs manager
+    approval") is an escalation (``"refused"``); a negated denial or refusal
+    is no verdict. Returns ``"approved"``, ``"denied"``, ``"refused"``, or
+    ``None`` when no verdict (or an ambiguous mix of verdicts) is found.
     """
     try:
         data = json.loads(text)
@@ -59,13 +114,9 @@ def extract_verdict(text: str) -> str | None:
     except (json.JSONDecodeError, ValueError):
         pass
 
-    found = set()
-    if _APPROVE_RE.search(text):
-        found.add("approved")
-    if _DENY_RE.search(text):
-        found.add("denied")
-    if _REFUSE_RE.search(text):
-        found.add("refused")
+    found: set[str] = set()
+    for clause in _CLAUSE_SPLIT_RE.split(text):
+        found |= _clause_verdicts(clause)
     if len(found) == 1:
         return found.pop()
     return None

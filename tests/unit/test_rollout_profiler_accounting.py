@@ -99,14 +99,17 @@ class FailingReward:
 
 
 @pytest.mark.asyncio
-async def test_scoring_failure_keeps_discarded_batch_and_fallback_separate():
-    trainer = learner(reward=FailingReward())
+async def test_batched_scoring_failure_drops_only_that_episode():
+    reward = FailingReward()
+    trainer = learner(reward=reward)
     groups = await trainer.generate_trajectories(SCENARIOS)
-    assert sum(len(g.trajectories) for g in groups) == 6
+    # One reward failure no longer discards the batch and rolls it out again.
+    assert [len(g.trajectories) for g in groups] == [1, 2, 2]
+    assert reward.calls == 6
     report = trainer.profiler.snapshot()
-    assert report["attempted_rollouts"] == 12 and report["accepted_rollouts"] == 6
-    assert report["generated_tokens"] == 36  # Discarded six plus accepted six.
-    assert report["verified_successes"] == report["unknown_successes"] == 2
+    assert report["attempted_rollouts"] == 6 and report["accepted_rollouts"] == 5
+    assert report["generated_tokens"] == 18
+    assert report["verified_successes"] == 1 and report["unknown_successes"] == 2
     assert report["stages"]["reward_evaluation"]["failures"] == 1
 
 

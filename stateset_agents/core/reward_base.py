@@ -14,13 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import numpy as np
-
-from .reward_context import (
-    LATEST_TURN_SCOPE,
-    REWARD_SCOPE_KEY,
-    scores_latest_turn_only,
-)
+from .reward_context import build_reward_context
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -207,14 +201,10 @@ class CompositeReward(RewardFunction):
     ) -> RewardResult:
         """Compute composite reward from all functions"""
 
-        # Handle empty reward functions
+        # An empty composite has nothing to score with; a 0.0 would look like
+        # a real (worst) score.
         if not self.reward_functions:
-            logger.warning("CompositeReward has no reward functions configured")
-            return RewardResult(
-                score=0.0,
-                breakdown={},
-                metadata={"error": "No reward functions configured"},
-            )
+            raise ValueError("CompositeReward has no reward functions configured")
 
         results: list[tuple[RewardFunction, RewardResult]] = []
         failed: list[str] = []
@@ -225,16 +215,12 @@ class CompositeReward(RewardFunction):
                     self.requires_environment_context
                     and not getattr(reward_fn, "requires_environment_context", False)
                     and isinstance(context, dict)
-                    and isinstance(context.get("scenario"), dict)
                 ):
-                    # Ordinary components retain their historical scenario
-                    # context; outcome components receive executed tool state.
-                    child_context = context["scenario"]
-                    if scores_latest_turn_only(context):
-                        child_context = {
-                            **child_context,
-                            REWARD_SCOPE_KEY: LATEST_TURN_SCOPE,
-                        }
+                    # This composite was handed the evidence context (state
+                    # plus "scenario", no lifted keys). Ordinary components get
+                    # the standard context built from it, so they see both the
+                    # scenario's keys and the environment state.
+                    child_context = build_reward_context(context, reward_fn=reward_fn)
                 result = await reward_fn.compute_reward(turns, child_context)
                 if not math.isfinite(float(result.score)):
                     # A NaN/inf component would silently poison the total.
@@ -248,49 +234,44 @@ class CompositeReward(RewardFunction):
                 # Continue with other reward functions
                 continue
 
-        # Handle case where all reward functions failed
+        # No component scored: there is no reward, so fail rather than
+        # return a valid-looking 0.0 that environments and trainers would use.
         if not results:
-            logger.error("All reward functions failed to compute")
-            return RewardResult(
-                score=0.0,
-                components={},
-                metadata={"error": "All reward functions failed"},
+            raise ValueError(
+                "CompositeReward: every reward function failed "
+                f"({', '.join(failed)})"
             )
 
-        # Combine rewards with safe defaults for empty results
+        # Combine rewards. math.fsum keeps the totals exactly rounded and
+        # independent of summation order and Python version.
         component_weights = [float(rf.weight) for rf, _ in results]
-        if self.normalize_weights and sum(component_weights) > 0:
-            weight_sum = float(sum(component_weights))
+        if self.normalize_weights and math.fsum(component_weights) > 0:
+            weight_sum = math.fsum(component_weights)
             component_weights = [w / weight_sum for w in component_weights]
-        elif failed and sum(component_weights) > 0:
+        elif failed and math.fsum(component_weights) > 0:
             # Spread a failed component's weight over the survivors so the
             # score keeps its scale; otherwise a failure scores as 0 and
             # biases advantages within the group.
-            configured = float(sum(float(rf.weight) for rf in self.reward_functions))
-            scale = configured / float(sum(component_weights))
+            configured = math.fsum(float(rf.weight) for rf in self.reward_functions)
+            scale = configured / math.fsum(component_weights)
             component_weights = [w * scale for w in component_weights]
 
+        weighted_sum = math.fsum(
+            rr.score * w for (_, rr), w in zip(results, component_weights, strict=True)
+        )
         if self.combination_method == "weighted_sum":
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
         elif self.combination_method == "average":
-            total_score = (
-                float(np.mean([r.score for _, r in results])) if results else 0.0
-            )
+            total_score = math.fsum(r.score for _, r in results) / len(results)
         elif self.combination_method == "min":
-            total_score = min((r.score for _, r in results), default=0.0)
+            total_score = min(r.score for _, r in results)
         elif self.combination_method == "max":
-            total_score = max((r.score for _, r in results), default=0.0)
+            total_score = max(r.score for _, r in results)
         else:
             logger.warning(
                 f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum"
             )
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
 
         components: dict[str, float] = {}
         for reward_fn, result in results:

@@ -19,6 +19,7 @@ Factory functions:
 from __future__ import annotations
 
 import logging
+import math
 from typing import Any
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
@@ -88,11 +89,12 @@ class LLMJudgeReward(RewardFunction):
         if not response:
             return RewardResult(score=0.0, metadata={"error": "no response"})
 
-        try:
-            score = await self.judge.evaluate(query=query, response=response)
-        except Exception as exc:
-            logger.warning("LLMJudge evaluation failed: %s", exc)
-            score = 0.5  # Neutral fallback
+        # A judge failure propagates: composers redistribute the component's
+        # weight, environments flag the episode and trainers drop it. A
+        # neutral stand-in score would be trained on as if it were a verdict.
+        score = _checked_judge_score(
+            await self.judge.evaluate(query=query, response=response)
+        )
 
         return RewardResult(
             score=float(score),
@@ -101,6 +103,16 @@ class LLMJudgeReward(RewardFunction):
                 "judge_model": getattr(self.judge.config, "model_name", "unknown")
             },
         )
+
+
+def _checked_judge_score(score: Any) -> float:
+    """A judge verdict as a float in [0, 1]; anything else is a judge failure."""
+    value = float(score)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(
+            f"LLM judge score must be a finite value in [0, 1], got {score}"
+        )
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -152,11 +164,11 @@ class LLMJudgeRewardComponent:
         if not response:
             return 0.0
 
-        try:
-            return float(await self.judge.evaluate(query=query, response=response))
-        except Exception as exc:
-            logger.warning("LLMJudge component failed: %s", exc)
-            return 0.5
+        # Failures propagate so MultiObjectiveRewardFunction leaves this
+        # component out and spreads its weight, instead of scoring it 0.5.
+        return _checked_judge_score(
+            await self.judge.evaluate(query=query, response=response)
+        )
 
     def get_info(self) -> dict[str, Any]:
         return {"name": self.name, "weight": self.weight, "config": self.config}
@@ -226,7 +238,9 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         if self._judge_available and self.judge is not None:
             query, response = _extract_query_and_response(turns, context)
             try:
-                judge_score = await self.judge.evaluate(query=query, response=response)
+                judge_score = _checked_judge_score(
+                    await self.judge.evaluate(query=query, response=response)
+                )
                 combined = (
                     self.judge_weight * judge_score
                     + self.heuristic_weight * heuristic_score
@@ -240,7 +254,17 @@ class LLMJudgeRewardWithFallback(RewardFunction):
                     metadata={"mode": "llm_judge"},
                 )
             except Exception as exc:
+                # The documented fallback of this class; the failure is
+                # flagged in metadata rather than hidden.
                 logger.warning("LLM judge failed, using heuristic: %s", exc)
+                return RewardResult(
+                    score=heuristic_score,
+                    components={"heuristic": heuristic_score},
+                    metadata={
+                        "mode": "heuristic_fallback",
+                        "judge_error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
 
         # Fallback to heuristic only
         return RewardResult(

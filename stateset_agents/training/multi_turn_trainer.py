@@ -18,11 +18,7 @@ from typing import Any, TypeAlias
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
-from stateset_agents.core.reward_context import (
-    environment_applied_reward,
-    set_episode_reward,
-    trajectory_reward_context,
-)
+from stateset_agents.core.reward_context import score_episode
 from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
@@ -769,40 +765,19 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
     ) -> None:
-        """Make sure a finished episode carries exactly one reward.
+        """Give a finished episode its one reward (``reward_context.score_episode``).
 
-        When the trainer's reward function is the environment's own and the
-        environment already applied it (per step or at episode end), that
-        reward is kept: scoring again would double the cost of an LLM judge,
-        spend a judge budget twice and replace the environment's reward with
-        one computed under a different context. Otherwise the trainer scores
-        the whole episode once, with the shared reward-context contract, and
-        credits the score to the final step so ``turn_rewards`` sum to it.
+        Training, periodic evaluation, post-training evaluation and the
+        distributed trainer share that helper, so the same episode earns the
+        same reward on every path. A failed reward raises, and the caller
+        drops the episode.
         """
-        if not self.reward_fn:
-            if trajectory.metadata.get("reward_source") == "default_length_heuristic":
-                self._warn_default_reward()
-            return
-        if environment_applied_reward(trajectory, self.reward_fn, self.environment):
-            error = trajectory.metadata.get("reward_error")
-            if error:
-                raise RuntimeError(f"Episode reward failed: {error}")
-            trajectory.metadata.setdefault("reward_breakdown", {})
-            return
-        context = trajectory_reward_context(
-            trajectory, scenario, reward_fn=self.reward_fn
-        )
+        if not self.reward_fn and (
+            trajectory.metadata.get("reward_source") == "default_length_heuristic"
+        ):
+            self._warn_default_reward()
         with self.profiler.measure("reward_evaluation"):
-            result = await self.reward_fn.compute_reward(trajectory.turns, context)
-        score, breakdown = await self._coerce_reward_result(result)
-        if not math.isfinite(score):
-            raise ValueError(f"Episode reward must be finite, got {score}")
-        set_episode_reward(trajectory, score)
-        trajectory.metadata["reward_breakdown"] = breakdown
-        error = trajectory.metadata.pop("reward_error", None)
-        if error:
-            # The environment's own reward failed, but the trainer's scored.
-            trajectory.metadata["environment_reward_error"] = error
+            await score_episode(trajectory, self.reward_fn, self.environment, scenario)
 
     def _warn_default_reward(self) -> None:
         if getattr(self, "_warned_default_reward", False):
@@ -837,40 +812,54 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         ):
             return None
         flat = [s for s in scenarios for _ in range(num_generations)]
-        episodes: list[MultiTurnTrajectory] = []
-        accepted = False
+        strict = bool(
+            getattr(self.reward_fn, "fail_on_error", False)
+            or getattr(self, "_stateset_native_rollout", False)
+        )
         try:
             await self._reset_agent()
             with self.profiler.measure("environment_rollout"):
-                episodes = await run_batched(
+                episodes: list[MultiTurnTrajectory] = await run_batched(
                     lambda histories, contexts: batch_turns(histories, contexts), flat
                 )
-            for trajectory, scenario in zip(episodes, flat, strict=True):
-                await self._score_trajectory(trajectory, scenario)
-            accepted = True
-        except MULTI_TRAINER_EXCEPTIONS as e:
-            if getattr(self.reward_fn, "fail_on_error", False) or getattr(
-                self, "_stateset_native_rollout", False
-            ):
+        except BaseException as e:
+            # Discarded work remains attempted even when the sequential
+            # fallback succeeds.
+            for _ in flat:
+                self._record_rollout(None, accepted=False)
+            if strict or not isinstance(e, MULTI_TRAINER_EXCEPTIONS):
                 raise
             logger.warning(
                 "Batched rollout failed (%s); rolling episodes out one at a time", e
             )
             return None
-        finally:
-            # A batch is accepted only after every score succeeds. Discarded
-            # work remains attempted even when sequential fallback succeeds.
-            for index in range(len(flat)):
-                observed = (
-                    episodes[index]
-                    if isinstance(episodes, list) and index < len(episodes)
-                    else None
-                )
-                self._record_rollout(observed, accepted=accepted)
-        return [
-            list(episodes[i * num_generations : (i + 1) * num_generations])
-            for i in range(len(scenarios))
-        ]
+
+        # Score each episode on its own: one failed reward drops that episode
+        # rather than the whole batch (which used to roll every episode out
+        # again). A strict failure still rejects the batch as a whole.
+        scored: list[bool] = []
+        for index, (trajectory, scenario) in enumerate(
+            zip(episodes, flat, strict=True)
+        ):
+            try:
+                await self._score_trajectory(trajectory, scenario)
+            except MULTI_TRAINER_EXCEPTIONS as e:
+                if strict:
+                    for observed in episodes:
+                        self._record_rollout(observed, accepted=False)
+                    raise
+                logger.warning("Dropping episode %d: its reward failed: %s", index, e)
+                scored.append(False)
+            else:
+                scored.append(True)
+        groups: list[list[MultiTurnTrajectory]] = [[] for _ in scenarios]
+        for index, (trajectory, accepted) in enumerate(
+            zip(episodes, scored, strict=True)
+        ):
+            self._record_rollout(trajectory, accepted=accepted)
+            if accepted:
+                groups[index // num_generations].append(trajectory)
+        return groups
 
     async def _coerce_reward_result(
         self, reward_result: Any

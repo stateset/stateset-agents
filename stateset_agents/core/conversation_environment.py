@@ -11,6 +11,7 @@ import uuid
 from typing import Any, cast
 
 from .environment_base import (
+    STEP_REWARD_FN_SCORE,
     Environment,
     EnvironmentState,
     EpisodeStatus,
@@ -71,7 +72,9 @@ class ConversationEnvironment(Environment):
     never end early on a farewell: the script defines the episode length.
     """
 
-    scores_steps = True
+    # An untyped reward function (no ``reward_type``) judges the whole
+    # episode once at the end, as it does when a trainer holds it.
+    scores_steps = False
     supports_concurrent_episodes = True
 
     def __init__(
@@ -214,6 +217,9 @@ class ConversationEnvironment(Environment):
             step_reward = await self._apply_step_reward(new_state, reward_turns)
         elif self.reward_fn is None:
             step_reward = float(await self._calculate_step_reward(agent_turn, state))
+            if self._uses_default_step_reward():
+                # A stand-in reward function: averaged over the episode.
+                new_state.metadata[STEP_REWARD_FN_SCORE] = step_reward
 
         scripted = _scripted_user_turns(new_state.context.get("scenario"))
         user_response: ConversationTurn | None
@@ -305,22 +311,16 @@ class ConversationEnvironment(Environment):
         )
 
     async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
-        """Average the built-in length heuristic over the episode's steps.
+        """Tag episodes scored by the built-in length heuristic.
 
-        Summed per step it pays an agent for stalling (ten padded replies
-        outscore resolving and saying goodbye), so without a ``reward_fn`` an
-        episode is worth the mean of its step heuristics instead. Each step's
-        reward is scaled by ``1 / steps`` so ``turn_rewards`` still sum to the
-        total. Subclasses that override ``_calculate_step_reward`` keep their
-        summed per-step rewards.
+        Like a per-step reward function, the heuristic is averaged over the
+        episode's steps (see :meth:`Environment._finish_episode`), so an
+        agent gains nothing by stalling. Subclasses that override
+        ``_calculate_step_reward`` keep their step rewards as the
+        environment's own, summed.
         """
-        default = self._uses_default_step_reward()
-        if default and episode.turn_rewards:
-            steps = len(episode.turn_rewards)
-            episode.turn_rewards = [r / steps for r in episode.turn_rewards]
-            episode.total_reward = float(sum(episode.turn_rewards))
         trajectory = await super()._finish_episode(episode)
-        if default:
+        if self._uses_default_step_reward():
             trajectory.metadata["reward_source"] = "default_length_heuristic"
         return trajectory
 

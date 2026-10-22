@@ -421,7 +421,7 @@ class TestCompositeRewardEdgeCases:
 
     @pytest.mark.asyncio
     async def test_composite_reward_empty_results(self):
-        """Test CompositeReward handles empty results gracefully."""
+        """A composite in which no component scored has no reward: it raises."""
         from stateset_agents.core.reward_base import CompositeReward, RewardFunction
 
         class FailingReward(RewardFunction):
@@ -433,10 +433,9 @@ class TestCompositeRewardEdgeCases:
         failing_reward.weight = 1.0
         composite = CompositeReward(reward_functions=[failing_reward])
 
-        # Should not raise, should return default result
-        result = await composite.compute_reward([])
-        assert result is not None
-        assert result.score == 0.0  # Default for no successful components
+        # A valid-looking 0.0 would be trained on; failing is the contract.
+        with pytest.raises(ValueError, match="every reward function failed"):
+            await composite.compute_reward([])
 
     @pytest.mark.asyncio
     async def test_composite_reward_with_valid_functions(self):
@@ -461,15 +460,13 @@ class TestCompositeRewardEdgeCases:
 
     @pytest.mark.asyncio
     async def test_composite_reward_no_functions(self):
-        """Test CompositeReward handles no reward functions."""
+        """An empty composite is a configuration error, not a 0.0 score."""
         from stateset_agents.core.reward_base import CompositeReward
 
         composite = CompositeReward(reward_functions=[])
 
-        # Should handle gracefully without errors
-        result = await composite.compute_reward([])
-        assert result is not None
-        assert result.score == 0.0
+        with pytest.raises(ValueError, match="no reward functions"):
+            await composite.compute_reward([])
 
 
 class TestEnvironmentGetReward:

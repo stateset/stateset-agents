@@ -17,6 +17,7 @@ from stateset_agents.core.basic_rewards import (
     TaskCompletionReward,
 )
 from stateset_agents.core.conversation_environment import ConversationEnvironment
+from stateset_agents.core.reward_context import score_episode
 from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_components import (
@@ -156,6 +157,23 @@ async def test_listing_candidate_numbers_earns_far_less_than_answering(listing):
 
 
 @pytest.mark.parametrize(
+    "listing",
+    [
+        "London, Paris, Berlin, Madrid, Rome",
+        "Maybe London, Paris, or Rome.",
+        "paris / lyon / marseille / nice",
+    ],
+)
+async def test_listing_candidate_text_answers_earns_a_share_at_most(listing):
+    reward = CorrectnessReward(ground_truth={"answer": "Paris"})
+    question = "What is the capital of France?"
+    answered = await reward.compute_reward(_conversation("It is Paris.", question))
+    listed = await reward.compute_reward(_conversation(listing, question))
+    assert answered.score == 0.5
+    assert listed.score <= answered.score / 3 + 1e-9
+
+
+@pytest.mark.parametrize(
     "reply",
     [
         "The answer is 14.",
@@ -209,12 +227,31 @@ async def test_stalling_after_task_completion_earns_nothing_more():
     environment = TaskEnvironment(
         [task], success_criteria=lambda turns, ctx: False, max_turns=6
     )
-    finished = await environment.run_episode(_replies("load", *["ok"] * 5), task)
+    load = '{"action": "load"}'
+    finished = await environment.run_episode(_replies(load, *["ok"] * 5), task)
     quick = TaskEnvironment(
         [task], success_criteria=lambda turns, ctx: True, max_turns=6
     )
-    done = await quick.run_episode(_replies("load"), task)
+    done = await quick.run_episode(_replies(load), task)
+    assert done.total_reward == pytest.approx(15.0)
     assert finished.total_reward == pytest.approx(done.total_reward)
+
+
+@pytest.mark.parametrize("reply", ["load plot", "I will load the data and plot it."])
+async def test_naming_task_keywords_does_not_complete_actions(reply):
+    task = {
+        "id": "t",
+        "required_actions": [
+            {"name": "load_data", "keywords": ["load"]},
+            {"name": "visualize", "keywords": ["plot"]},
+        ],
+    }
+    environment = TaskEnvironment(
+        [task], success_criteria=lambda t, c: c["task_progress"] >= 1, max_turns=1
+    )
+    trajectory = await environment.run_episode(_replies(reply), task)
+    assert trajectory.final_state["completed_actions"] == []
+    assert trajectory.total_reward == 0.0
 
 
 async def test_stalling_never_beats_resolving_under_the_default_reward():
@@ -224,3 +261,65 @@ async def test_stalling_never_beats_resolving_under_the_default_reward():
     resolved = await environment.run_episode(_always(RESOLVED), scenario)
     assert len(stalled.turn_rewards) > len(resolved.turn_rewards) == 1
     assert stalled.total_reward <= resolved.total_reward
+
+
+# --- Shipped reward factories in a real environment --------------------------
+
+
+def _shipped_factories():
+    """Every create_*_reward factory that runs offline, with its arguments."""
+    import importlib
+    import inspect
+    import re
+
+    from stateset_agents.core.basic_rewards import ConcisenessReward
+
+    arguments = {
+        "create_adaptive_reward": lambda f: f(
+            [HelpfulnessReward(), ConcisenessReward()]
+        ),
+        "create_task_agent_reward": lambda f: f({"goal_keywords": ["resolved"]}),
+        "create_domain_reward": lambda f: f("customer_service"),
+    }
+    networked = {"create_llm_judge_reward", "create_rlaif_reward"}
+    found = {}
+    for module_name in ("stateset_agents.core.reward", "stateset_agents.rewards"):
+        module = importlib.import_module(module_name)
+        for name, value in vars(module).items():
+            if (
+                inspect.isfunction(value)
+                and re.fullmatch(r"create_\w*reward", name)
+                and name not in networked
+            ):
+                build = arguments.get(name, lambda f: f())
+                found[f"{value.__module__}.{name}"] = (value, build)
+    return found
+
+
+FACTORIES = _shipped_factories()
+
+
+def test_every_offline_factory_is_covered():
+    assert len(FACTORIES) >= 10
+
+
+@pytest.mark.parametrize("name", sorted(FACTORIES))
+async def test_shipped_factories_never_pay_for_stalling(name):
+    factory, build = FACTORIES[name]
+    scenario = {"id": "s", "user_query": "Can you close my ticket?"}
+
+    async def episode(max_turns, attach_to_environment):
+        reward = build(factory)
+        environment = ConversationEnvironment(
+            [scenario],
+            max_turns=max_turns,
+            reward_fn=reward if attach_to_environment else None,
+        )
+        trajectory = await environment.run_episode(_always(PADDED), scenario)
+        return await score_episode(trajectory, reward, environment, scenario)
+
+    once = await episode(1, attach_to_environment=True)
+    for attach in (True, False):
+        stalled = await episode(10, attach_to_environment=attach)
+        assert stalled <= once + 1e-9, (name, attach, stalled, once)
+        assert 0.0 <= stalled <= 1.0 + 1e-9
