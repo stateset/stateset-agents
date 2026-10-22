@@ -120,6 +120,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The evaluation panel's background work runs through the shared
   `BackgroundTask` (owned submissions on non-daemon threads) instead of its
   own thread and result queue.
+- The studio's run details, metrics, run comparison, launch review and
+  resource summaries are pure renderers in `stateset_agents.tui_views`
+  (testable without a `Studio`); rendered frames are unchanged.
 
 ### Fixed
 
