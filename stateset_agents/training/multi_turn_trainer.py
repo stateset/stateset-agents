@@ -630,6 +630,9 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
     async def _init_wandb(self):
         """Initialize Weights & Biases tracking"""
+        wandb_logger = self.wandb_logger
+        if wandb_logger is None:
+            return
         try:
             # Prepare configuration for W&B
             config_dict = {
@@ -643,7 +646,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             if hasattr(self.agent.config, "__dict__"):
                 config_dict.update(self.agent.config.__dict__)
 
-            self.wandb_logger.init_run(
+            wandb_logger.init_run(
                 config=config_dict,
                 name=getattr(self.config, "run_name", None),
                 tags=getattr(self.config, "wandb_tags", ["grpo", "multi-turn"]),

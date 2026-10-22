@@ -759,7 +759,7 @@ class WandBIntegration:
             self.create_summary_report()
 
             # Finish run
-            wandb.finish()
+            _require_wandb().finish()
 
             self.is_initialized = False
             logger.info("Finished W&B run")

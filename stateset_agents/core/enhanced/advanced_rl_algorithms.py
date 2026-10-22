@@ -357,10 +357,10 @@ class PPOTrainer:
         dones = torch.tensor(self.dones, dtype=torch.bool).to(self.device)
 
         # Compute advantages and returns
-        advantages = self.compute_advantages(
+        advantage_values = self.compute_advantages(
             rewards.tolist(), values.tolist(), dones.tolist()
         )
-        advantages = torch.tensor(advantages, dtype=torch.float32).to(self.device)
+        advantages = torch.tensor(advantage_values, dtype=torch.float32).to(self.device)
         returns = advantages + values
 
         # Normalize advantages
@@ -683,14 +683,14 @@ class A2CTrainer:
         values = torch.tensor(self.values, dtype=torch.float32).to(self.device)
 
         # Compute returns and advantages
-        returns: list[float] = []
+        discounted_returns: list[float] = []
 
         R = 0.0
         for r in reversed(self.rewards):
             R = r + self.config.gamma * R
-            returns.insert(0, R)
+            discounted_returns.insert(0, R)
 
-        returns = torch.tensor(returns, dtype=torch.float32).to(self.device)
+        returns = torch.tensor(discounted_returns, dtype=torch.float32).to(self.device)
         advantages = returns - values
 
         # Normalize advantages

@@ -18,7 +18,7 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any
+from typing import Any, TypedDict
 
 import requests
 
@@ -434,6 +434,16 @@ class PagerDutyNotificationHandler(NotificationHandler):
             return False
 
 
+class _AlertStatistics(TypedDict):
+    """Running counters kept by :class:`AlertManager`."""
+
+    total_alerts: int
+    alerts_by_severity: defaultdict[str, int]
+    alerts_by_rule: defaultdict[str, int]
+    notifications_sent: int
+    notifications_failed: int
+
+
 class AlertManager:
     """Advanced alert manager"""
 
@@ -443,7 +453,7 @@ class AlertManager:
         self.alert_history: deque[Alert] = deque(maxlen=1000)
         self.notification_handlers: list[NotificationHandler] = []
         self.silenced_rules: dict[str, datetime] = {}
-        self.statistics = {
+        self.statistics: _AlertStatistics = {
             "total_alerts": 0,
             "alerts_by_severity": defaultdict(int),
             "alerts_by_rule": defaultdict(int),

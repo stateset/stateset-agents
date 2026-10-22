@@ -145,10 +145,10 @@ def train(
         _echo(f"Details: {e}")
         raise typer.Exit(code=2) from e
 
-    train_fn = None
+    train_fn: t.Callable[..., t.Awaitable[t.Any]] | None = None
     if not stub:
         try:
-            from stateset_agents.training.train import train as train_fn  # type: ignore
+            from stateset_agents.training.train import train as train_fn
         except CLI_IMPORT_EXCEPTIONS as e:
             _echo("Training components unavailable. Falling back to stub mode.")
             _echo(f"Details: {e}")
@@ -230,9 +230,16 @@ def train(
 
     import asyncio
 
+    # Non-stub runs reach here only after ``train_fn`` imported successfully
+    # (an import failure flips ``stub`` and exits above); narrow it explicitly.
+    run_training = train_fn
+    if run_training is None:  # pragma: no cover - defensive
+        _echo("Training components unavailable.")
+        raise typer.Exit(code=2)
+
     async def _run():
         await agent.initialize()
-        await train_fn(
+        await run_training(
             agent=agent,
             environment=environment,
             reward_fn=reward_fn,

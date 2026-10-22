@@ -144,7 +144,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         # GRPO enhancements
         self._global_reward_mean: float = 0.0
         self._global_reward_count: int = 0
-        self.reference_model = None
+        self.reference_model: Any | None = None
         self.continual_manager: ContinualLearningManager | None = None
         self._current_task_id: str | None = None
 
@@ -194,9 +194,10 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                 getattr(self.config, "use_reference_model", False)
                 and self.reference_model is None
             ):
-                self.reference_model = deepcopy(self.agent.model).eval()
-                for param in self.reference_model.parameters():
+                reference_model = deepcopy(self.agent.model).eval()
+                for param in reference_model.parameters():
                     param.requires_grad = False
+                self.reference_model = reference_model
                 logger.info("Reference model initialized for KL regularization")
         except SINGLE_TRAINER_EXCEPTIONS as ref_err:
             logger.warning(f"Could not initialize reference model: {ref_err}")

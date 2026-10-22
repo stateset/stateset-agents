@@ -71,9 +71,9 @@ except ImportError:
     logger.warning("NumPy not available")
 
 # Lazy import transformers
-AutoModelForCausalLM = None
-AutoTokenizer = None
-get_cosine_schedule_with_warmup = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
+get_cosine_schedule_with_warmup: Any | None = None
 
 
 def _load_transformers_ppo():

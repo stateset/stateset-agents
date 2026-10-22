@@ -314,8 +314,8 @@ async def lifespan(app: FastAPI):
         pending_jobs = [
             job_id
             for job_id in list(state.jobs.keys())
-            if state.get_job(job_id)
-            and state.get_job(job_id).status in ("starting", "running")
+            if (job := state.get_job(job_id)) is not None
+            and job.status in ("starting", "running")
         ]
         for job_id in pending_jobs:
             state.update_job(job_id, status="cancelled")
@@ -341,7 +341,7 @@ async def lifespan(app: FastAPI):
         state = get_state_manager()
         for engine_id in list(state.engines.keys()):
             engine = state.unregister_engine(engine_id)
-            if hasattr(engine, "cleanup"):
+            if engine is not None and hasattr(engine, "cleanup"):
                 engine.cleanup()
             logger.debug("Cleaned up engine: %s", engine_id)
 

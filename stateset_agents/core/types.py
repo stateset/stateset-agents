@@ -60,7 +60,9 @@ class ConversationTurn:
     metadata: MetadataDict = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.metadata is None:
+        # Untyped callers may pass ``metadata=None`` explicitly; normalize it.
+        metadata: MetadataDict | None = self.metadata
+        if metadata is None:
             self.metadata = {}
 
 
@@ -99,7 +101,9 @@ class RewardResult:
     metadata: MetadataDict = field(default_factory=dict)
 
     def __post_init__(self):
-        if self.metadata is None:
+        # Untyped callers may pass ``metadata=None`` explicitly; normalize it.
+        metadata: MetadataDict | None = self.metadata
+        if metadata is None:
             self.metadata = {}
 
 
