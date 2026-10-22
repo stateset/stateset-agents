@@ -217,8 +217,16 @@ def print_training_plan(
     if sample:
         print("  First example:")
         for msg in sample.get("messages", [])[:2]:
-            content = msg.get("content", "")[:60]
-            print(f"    [{msg.get('role')}] {content}…")
+            content = msg.get("content")
+            if not isinstance(content, str):  # e.g. a pure tool call
+                calls = msg.get("tool_calls") or []
+                names = [
+                    str((c.get("function") or {}).get("name"))
+                    for c in calls
+                    if isinstance(c, dict)
+                ]
+                content = f"<tool call: {', '.join(names) or '?'}>"
+            print(f"    [{msg.get('role')}] {content[:60]}…")
     print()
     print("  To execute, run this script on a host with a CUDA-capable GPU.")
     print("=" * 60)
@@ -635,6 +643,74 @@ def infer_lora_target_modules(model: Any) -> list[str]:
     return text_lora_targets(model, sorted(text_found))
 
 
+def encode_chat_prompt(tokenizer: Any, prompt: str, device: Any) -> Any:
+    """Render one user prompt with the generation prompt and encode it.
+
+    The single prompt path for evaluation, harvesting and the SFT eval: the
+    chat template already supplies the model's special tokens, so encoding
+    adds none (a second BOS on Llama/Gemma-style tokenizers otherwise), and
+    reasoning models get ``enable_thinking=False`` where the template accepts
+    it, so the budget is not spent on a reasoning preamble (hit for real with
+    NVIDIA Nemotron 3.5 Lightning on an H100 pod). Templates that reject the
+    kwarg (Muse Glimmer's) get the plain call.
+    """
+    messages = [{"role": "user", "content": prompt}]
+    try:
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+            enable_thinking=False,
+        )
+    except TypeError:
+        text = tokenizer.apply_chat_template(
+            messages,
+            tokenize=False,
+            add_generation_prompt=True,
+        )
+    return tokenizer(text, return_tensors="pt", add_special_tokens=False).to(device)
+
+
+def generate_from_prompt(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    *,
+    max_new_tokens: int,
+    num_return_sequences: int = 1,
+    temperature: float | None = None,
+    top_p: float | None = None,
+) -> list[str]:
+    """Completions for one prompt: greedy, or sampled when ``temperature`` is set.
+
+    Shared by :func:`generate_completions` (greedy evals) and the harvest's
+    best-of-N sampling, so both see the prompt SFT trains on and the same
+    generation-compatibility settings.
+    """
+    import torch
+
+    inputs = encode_chat_prompt(tokenizer, prompt, model.device)
+    sampling: dict[str, Any] = {"do_sample": False}
+    if temperature is not None:
+        sampling = {"do_sample": True, "temperature": temperature}
+        if top_p is not None:
+            sampling["top_p"] = top_p
+    with torch.no_grad():
+        output = model.generate(
+            **inputs,
+            **sampling,
+            num_return_sequences=num_return_sequences,
+            max_new_tokens=max_new_tokens,
+            pad_token_id=tokenizer.eos_token_id,
+            **generation_compat_kwargs(model),
+        )
+    prompt_length = inputs["input_ids"].shape[1]
+    return [
+        tokenizer.decode(row[prompt_length:], skip_special_tokens=True)
+        for row in output
+    ]
+
+
 def generate_completions(
     model: Any,
     tokenizer: Any,
@@ -643,53 +719,28 @@ def generate_completions(
 ) -> list[str]:
     """Greedily generate one completion per prompt through ``model``.
 
-    Used for the post-train base-vs-tuned comparison: each prompt is rendered
-    through the model's chat template (with the generation prompt appended)
-    and decoded back to just the completion text. Greedy decoding keeps the
-    two runs comparable — sampling noise would swamp the tuning signal.
-
-    Reasoning models (e.g. NVIDIA Nemotron 3.5 Lightning) default to thinking
-    mode in their chat template, so the whole ``max_new_tokens`` budget goes
-    to the reasoning preamble and the comparison is truncated garbage (hit
-    for real on an H100 pod). ``enable_thinking=False`` turns that off;
-    templates that don't accept the kwarg (e.g. Muse Glimmer's) raise
-    TypeError and get the plain call instead.
+    Used for the post-train base-vs-tuned comparison: each prompt is encoded
+    by :func:`encode_chat_prompt` and decoded back to just the completion
+    text. Greedy decoding keeps the two runs comparable — sampling noise
+    would swamp the tuning signal.
     """
-    import torch
+    return [
+        generate_from_prompt(model, tokenizer, prompt, max_new_tokens=max_new_tokens)[0]
+        for prompt in prompts
+    ]
 
-    completions: list[str] = []
-    for prompt in prompts:
-        messages = [{"role": "user", "content": prompt}]
-        try:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-                enable_thinking=False,
-            )
-        except TypeError:
-            text = tokenizer.apply_chat_template(
-                messages,
-                tokenize=False,
-                add_generation_prompt=True,
-            )
-        # The chat template already supplies the model's special tokens.
-        inputs = tokenizer(text, return_tensors="pt", add_special_tokens=False).to(
-            model.device
-        )
-        with torch.no_grad():
-            output = model.generate(
-                **inputs,
-                do_sample=False,
-                max_new_tokens=max_new_tokens,
-                pad_token_id=tokenizer.eos_token_id,
-                **generation_compat_kwargs(model),
-            )
-        prompt_length = inputs["input_ids"].shape[1]
-        completions.append(
-            tokenizer.decode(output[0][prompt_length:], skip_special_tokens=True)
-        )
-    return completions
+
+def load_tokenizer_for(base_model: str, *, revision: str | None = None) -> Any:
+    """The tokenizer SFT, evaluation and harvesting load for ``base_model``.
+
+    Repository code runs only for curated presets that need it.
+    """
+    from transformers import AutoTokenizer
+
+    revision_kwargs = {"revision": revision} if revision is not None else {}
+    return AutoTokenizer.from_pretrained(  # nosec: B615 - caller pins revision
+        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
+    )
 
 
 #: Keys an eval prompt-spec dict may carry. Anything else is a typo the user
@@ -1123,7 +1174,6 @@ def run_sft(
     from datasets import Dataset
     from peft import LoraConfig, TaskType, get_peft_model
     from transformers import (
-        AutoTokenizer,
         DataCollatorForSeq2Seq,
         Trainer,
         TrainingArguments,
@@ -1136,9 +1186,7 @@ def run_sft(
     # not attacker-controlled input; pinning a fixed revision would break
     # support for arbitrary user-chosen base models.
     revision_kwargs = {"revision": model_revision} if model_revision is not None else {}
-    tokenizer = AutoTokenizer.from_pretrained(
-        base_model, trust_remote_code=_trust_remote_code(base_model), **revision_kwargs
-    )  # nosec: B615
+    tokenizer = load_tokenizer_for(base_model, revision=model_revision)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     model = load_base_model_for_sft(base_model, **revision_kwargs)
