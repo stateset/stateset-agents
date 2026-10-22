@@ -1222,7 +1222,9 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
   define success; they are mandatory.
 - `--eval-prompts PATH` (required): JSON list of specs that score each
   generation. Must be disjoint from the harvest prompts even with digits
-  (reference numbers) masked; an overlap is rejected as a usage error.
+  (reference numbers) masked; an overlap is rejected as a usage error. Every
+  spec in both files needs `expect`, `forbid` or (for episode scripts)
+  `turn_expect` checks: a spec without checks passes trivially.
 - `--output-root PATH`: Where generations and the report land (default
   `outputs/flywheel`).
 - `--initial-adapter PATH`: Existing adapter to start from (defaults to the

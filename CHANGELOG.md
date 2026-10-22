@@ -79,7 +79,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   partition issue combinations between eval and harvest, so the same seed
   yields different prompts than before; reference bases shift upward only when
   a set would run into the next. `FlywheelConfig` rejects eval prompts that
-  match a harvest prompt with digits masked.
+  match a harvest prompt with digits masked. `build_ladder` requires
+  `depth >= 2` (depth-1 eval prompts were training rows with another
+  reference) and checks eval against the training rows too;
+  `build_episode_ladder` takes `train_count` so episode references clear the
+  training rows.
+- **SFT rows may become several sequences.** When a chat template renders an
+  assistant turn differently once it is history (Qwen3 drops the newest
+  turn's empty `<think>` block, Qwen3.5 omits its generation-prompt stub, both
+  strip earlier reasoning), the row is split into one sequence per target
+  turn, each rendered as the newest turn, instead of training contradictory
+  targets in one sequence. Assistant messages with `"weight": 0` (the OpenAI
+  fine-tuning convention) are context, not targets. The adapter manifest
+  records `training_sequences`, `split_per_turn_rows` and
+  `untargeted_rows_dropped`; `final_turn_only_rows` is gone with the fallback
+  it counted.
+- Curated SFT rows mark every earlier assistant reply `"weight": 0`, so only
+  the graded, passing reply is trained (a failed reply was trained whenever a
+  later reply in its transcript passed, and the first reply of a transcript
+  with k passing replies k times). `prepare_sft_dataset.py --format
+  hf-trainer` is single-turn again: plain text cannot keep earlier replies out
+  of the loss.
+- `stateset_agents.data.identity` is the one request identity (NFKC, casefold,
+  collapsed whitespace; optional reference or digit masking) shared by
+  `split_finetuning_data`, `ConversationDataset.split`, the text SFT and
+  held-out evaluation leakage checks, the eval ladder and the flywheel.
+- The flywheel scores every generation with one scorer
+  (`sft.score_eval_rows`, used by the harvest baseline and `_eval_score`), and
+  `FlywheelConfig` and `stateset-agents flywheel` reject specs with no
+  `expect`, `forbid` or `turn_expect` checks.
 - `scripts/grade_transcript.py` fails on malformed or role-less transcript
   lines and on a context file whose length differs from the number of
   assistant turns, instead of skipping or padding. Curated examples carry
@@ -87,14 +115,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   every format (`--flatten` restores single-turn pairs), drops unscored
   entries under `--min-score`, and reads UTF-8 regardless of locale.
 - `ConversationDataset.split()` defaults to a fixed seed and keeps
-  trajectories with the same normalized content or `group_id`/`source_id`
-  together. `ConversationDatasetConfig.min/max_trajectory_length` are
+  trajectories with the same normalized content, the same first user request
+  (rollouts of one prompt) or `group_id`/`source_id` together. `ConversationDatasetConfig.min/max_trajectory_length` are
   enforced; `max_turns` is deprecated and ignored.
 - Text SFT and finetune evaluation leakage checks compare initial requests
   under NFKC/casefold/whitespace normalization
   (`finetuning.normalize_identity_text`).
 - Judge `summarize()` computes `self_disagreement` only over items whose two
-  passes parsed (`self_disagreement_n` counts them). The flagship matrix
+  passes parsed (`self_disagreement_n` counts them), with exactly rounded sums
+  so the summary does not depend on result order. The flagship matrix
   requires `judge_parse_failure_rate` and rejects a seed above 0.02; the
   rejudge summary reports it against the same ceiling.
 - A fine-tuning success the worker committed (its `completion.json` artifact
@@ -121,16 +150,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helpers live in `stateset_agents.tui_text`. Rendered frames are unchanged.
 - Local SFT labeled every token, system and user turns included, when a chat
   template rewrote earlier turns (Qwen3/Qwen3.5 strip earlier `<think>`
-  blocks). Such rows now supervise only their final assistant turn (or are
-  dropped), and the adapter manifest counts `final_turn_only_rows`,
-  `unmaskable_rows_dropped`, `truncated_rows_dropped` and
+  blocks); such turns are now trained in their own sequences, and the adapter
+  manifest counts `unmaskable_rows_dropped`, `truncated_rows_dropped` and
   `partially_truncated_rows`.
-- Pure tool-call turns followed by more turns were labeled only on their first
-  characters under Qwen3-style templates; the whole call is now supervised.
+- Assistant spans ended at the first occurrence of the reply text after the
+  turn start, even inside reasoning or template text: with reasoning "9*2=18
+  dollars." and answer "18" the rest of the reasoning, `</think>`, the answer
+  and `<|im_end|>` were unlabeled, and replies such as "hi" or "think" labeled
+  only `<think>` (local SFT, River SFT and sequence GRPO). Spans now end where
+  the turn's own render ends; pure tool-call turns are supervised in full.
 - Eval ladder eval and harvest prompts overlapped (7 of 12 identical modulo
   the reference at 6 issues / depth 2), and refs collided past 1100 evals.
 - Forbid checks no longer fail replies that negate the forbidden remedy
-  ("I won't rebook you") and match only at word starts.
+  ("I won't rebook you") and match only at word starts. A negation counts
+  only when it governs the phrase, so "I won't hesitate to rebook you", "Not
+  only will I rebook you" and "I can't wait to rebook you!" still fail
+  (the same check filters harvested samples).
+- The flywheel's harvest baseline counted check-less eval specs (which pass
+  trivially) while post-training scores did not, so real improvements were
+  read as plateaus.
 - Conversation datasets with only `total_reward` had all-zero turn rewards,
   returns-to-go and transitions, and normalization zeroed `total_reward`.
 - Transcript grading misaligned contexts after a dropped line and reported
