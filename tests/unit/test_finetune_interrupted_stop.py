@@ -132,7 +132,9 @@ def test_detached_queued_worker_honors_stop_before_model_or_queue_access(
     assert not (fixture.run / "completion.json").exists()
 
 
-@pytest.mark.parametrize("invalid", ["checksum", "package", "remote"])
+@pytest.mark.parametrize(
+    "invalid", ["checksum", "legacy-package", "unknown-protocol", "remote"]
+)
 def test_interrupted_stop_keeps_reviewed_plan_code_and_local_scope_guards(
     interrupted_run, invalid
 ):
@@ -142,8 +144,13 @@ def test_interrupted_stop_keeps_reviewed_plan_code_and_local_scope_guards(
         digest = "0" * 64
     else:
         plan, _ = workspace.read_run_plan(fixture.run)
-        if invalid == "package":
+        if invalid == "legacy-package":
+            # Before plans recorded a stop protocol, only identical code could
+            # vouch that the worker reads this receipt.
+            del plan["stop_protocol"]
             plan["package_implementation_sha256"] = "0" * 64
+        elif invalid == "unknown-protocol":
+            plan["stop_protocol"] = workspace.STOP_PROTOCOL_VERSION + 1
         else:
             plan["config"]["provider"] = "river"
         workspace.write_json(fixture.run / "plan.json", plan)
@@ -357,3 +364,21 @@ def test_supervisor_records_failure_when_it_cannot_claim_supervision(
     state = workspace.read_json(fixture.run / "state.json")
     assert state["status"] == "failed"
     assert workspace.read_json(fixture.run / "failure.json")["stage"] == "supervisor"
+
+
+def test_stop_survives_package_source_changes_after_launch(interrupted_run):
+    """The running worker keeps its own code and honors v1 stop receipts."""
+    fixture = interrupted_run
+    plan, _ = workspace.read_run_plan(fixture.run)
+    assert plan["stop_protocol"] == workspace.STOP_PROTOCOL_VERSION
+    plan["package_implementation_sha256"] = "0" * 64  # any later source edit
+    workspace.write_json(fixture.run / "plan.json", plan)
+    _, digest = workspace.read_run_plan(fixture.run)
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=digest)
+    assert result["stop_requested"] is True
+    assert workspace.read_json(fixture.run / "stop.json") == {
+        "schema_version": 1,
+        "plan_sha256": digest,
+    }
+    with pytest.raises(workspace.FinetuneFailure):
+        worker._check_stop(fixture.run)

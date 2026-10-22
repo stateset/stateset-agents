@@ -97,6 +97,11 @@ def require_backend_credentials(provider: str) -> None:
         raise ValueError(f"{name} is missing from this session's environment")
 
 
+#: Version of the ``stop.json`` receipt this package's workers honor. A plan
+#: records it, so a later package can still stop that run's (older) worker as
+#: long as it writes the same receipt version.
+STOP_PROTOCOL_VERSION = 1
+
 TERMINAL_STATES = frozenset({"succeeded", "failed", "interrupted", "cancelled"})
 FAILURE_GUIDANCE = {
     "cancelled": (
@@ -832,6 +837,7 @@ class RunPlan:
             "resources": self.resources,
             "notes": list(self.notes),
             "quality_gain_verified": False,
+            "stop_protocol": STOP_PROTOCOL_VERSION,
             **({"resume": self.resume} if self.resume is not None else {}),
             **(
                 {"remote_code": self.remote_code.describe()}
@@ -1294,11 +1300,30 @@ def stop_requested(run: Path) -> bool:
         len(raw) > 4096
         or not isinstance(value, dict)
         or type(value.get("schema_version")) is not int
-        or value["schema_version"] != 1
+        or value["schema_version"] != STOP_PROTOCOL_VERSION
         or value.get("plan_sha256") != read_run_plan(run)[1]
     ):
         raise ValueError("Stop receipt differs from the reviewed plan")
     return True
+
+
+def _stop_protocol_supported(plan: Mapping[str, Any]) -> bool:
+    """Whether this package writes a stop receipt the run's worker honors.
+
+    A worker runs the package that planned it, and the plan records the
+    receipt version that package checks. Source changes since then do not
+    matter while the version matches. Plans from before the version was
+    recorded fall back to requiring the identical package implementation.
+    """
+    if "stop_protocol" in plan:
+        version = plan["stop_protocol"]
+        return type(version) is int and version == STOP_PROTOCOL_VERSION
+    from stateset_agents.evaluation.agent_runs import content_hash
+    from stateset_agents.evaluation.implementation import package_implementation
+
+    return plan.get("package_implementation_sha256") == content_hash(
+        package_implementation()
+    )
 
 
 def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
@@ -1318,18 +1343,16 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
             "execution_unconfirmed": False,
             "stop_requested": stop_requested(run),
         }
-    from stateset_agents.evaluation.agent_runs import content_hash
-    from stateset_agents.evaluation.implementation import package_implementation
-
-    if plan.get("package_implementation_sha256") != content_hash(
-        package_implementation()
-    ):
+    if not _stop_protocol_supported(plan):
         raise ValueError(
-            "Stop support requires the run's matching package implementation"
+            "Stop support requires a stop receipt version the run's worker honors"
         )
     if not stop_requested(run):
         # Publish a complete receipt atomically; concurrent callers are idempotent.
-        write_json(run / "stop.json", {"schema_version": 1, "plan_sha256": digest})
+        write_json(
+            run / "stop.json",
+            {"schema_version": STOP_PROTOCOL_VERSION, "plan_sha256": digest},
+        )
     # The stop receipt is published before this check, and every supervisor or
     # direct worker claims admission before it checks for a stop. So a launch
     # that no process has claimed yet can be cancelled outright: any process

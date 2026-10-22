@@ -224,6 +224,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer makes Windows import `fcntl` (three studio tests failed on hosted
   Windows CI). The validation-comparison submit lock uses the same shared
   `finetune_workspace.private_file_lock` instead of a direct `fcntl` call.
+- A cooperative stop is no longer refused just because the package source
+  changed after launch. Plans now record the stop-receipt protocol their
+  worker honors (`stop_protocol`), and `request_stop` checks that version
+  instead of the whole-package source hash; plans from before the field
+  existed keep the old identical-code requirement.
 
 ### Security
 
