@@ -87,11 +87,22 @@ class JWTHandler:
         return str(jwt.encode(payload, self.secret, algorithm=self.algorithm))
 
     def decode(self, token: str) -> dict[str, Any] | None:
-        """Decode and verify a JWT token."""
+        """Decode and verify a JWT token.
+
+        Tokens must carry an ``exp`` claim: a signed token without one would
+        otherwise stay valid forever, bypassing ``API_JWT_EXPIRY_HOURS``.
+        """
         import jwt
 
         try:
-            return dict(jwt.decode(token, self.secret, algorithms=[self.algorithm]))
+            return dict(
+                jwt.decode(
+                    token,
+                    self.secret,
+                    algorithms=[self.algorithm],
+                    options={"require": ["exp"]},
+                )
+            )
         except jwt.ExpiredSignatureError:
             logger.warning("JWT token expired")
             return None
