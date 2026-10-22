@@ -110,3 +110,42 @@ def test_unstable_turns_split_into_sequences_rendered_as_generated():
         "<think>\n\n</think>\n\na2<|im_end|>\n",
     ]
     assert assistant_token_mask(tok, messages, require_stable=True) is None
+
+
+def test_last_action_is_located_when_the_template_rewrites_history():
+    """Qwen3/Qwen3.5 strip earlier ``<think>`` blocks, so the whole-
+    conversation spans do not exist; last_assistant_token_mask returned None
+    and ConversationDataset.to_policy_training_format raised for the whole
+    dataset."""
+    from stateset_agents.core.chat_masking import last_assistant_token_mask
+    from stateset_agents.data.conversation_dataset import (
+        ConversationDataset,
+        ConversationDatasetConfig,
+    )
+    from tests.unit.test_sft_label_masking import THINK_STRIPPING
+
+    tok = _byte_tokenizer(THINK_STRIPPING)
+    messages = [
+        {"role": "user", "content": "2+2?"},
+        {"role": "assistant", "content": "<think>add</think>4"},
+        {"role": "user", "content": "3+3?"},
+        {"role": "assistant", "content": "6"},
+    ]
+    masked = last_assistant_token_mask(tok, messages)
+    assert masked is not None and _supervised(tok, masked) == "6<|im_end|>\n"
+    dataset = ConversationDataset.from_dict(
+        {"trajectories": [{"turns": messages, "total_reward": 1.0}]},
+        ConversationDatasetConfig(normalize_rewards=False),
+    )
+    rows = dataset.to_policy_training_format(tok, max_length=512)
+    actions = [
+        tok.decode(
+            [
+                t
+                for t, label in zip(r["input_ids"], r["labels"], strict=True)
+                if label != -100
+            ]
+        )
+        for r in rows
+    ]
+    assert actions == ["<think>add</think>4<|im_end|>\n", "6<|im_end|>\n"]

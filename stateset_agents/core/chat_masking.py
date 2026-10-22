@@ -277,12 +277,20 @@ def final_turn_token_mask(
 def last_assistant_token_mask(
     tokenizer: Any, messages: Sequence[dict[str, Any]]
 ) -> tuple[list[int], list[bool]] | None:
-    """Locate only the last assistant action for transition-weighted offline RL."""
+    """Locate only the last assistant action for transition-weighted offline RL.
+
+    When the template rewrites earlier turns (Qwen3/Qwen3.5 strip earlier
+    ``<think>`` blocks) the whole-conversation spans do not exist, but the
+    action does: it is the final turn, generated after the history exactly
+    as the template renders it, so :func:`final_turn_token_mask` locates it.
+    """
+    if not messages or messages[-1].get("role") != "assistant":
+        return None
     located = assistant_char_spans(
         chat_template_render(tokenizer), messages, honor_weights=False
     )
-    if located is None or not located[1] or messages[-1].get("role") != "assistant":
-        return None
+    if located is None or not located[1]:
+        return final_turn_token_mask(tokenizer, messages)
     full, spans = located
     return _token_mask_for_spans(tokenizer, full, spans[-1:])
 
