@@ -565,7 +565,7 @@ class ConversationDataset(TorchDataset):
         zeros stay zero, so a longer conversation is not penalized for its
         length). ``total_reward`` becomes the sum of the normalized rewards.
         """
-        all_rewards = []
+        all_rewards: list[float] = []
         for t in self.trajectories:
             all_rewards.extend(t.turn_rewards[i] for i in _reward_positions(t))
 
