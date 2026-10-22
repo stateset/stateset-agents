@@ -33,6 +33,34 @@ from stateset_agents.api.distributed_cache import (
     init_cache,
 )
 
+
+class _ManualClock:
+    """Stands in for the cache module's ``time``: ``time()`` only moves when
+    a test advances it, so TTL expiry never races platform timer resolution
+    (Windows clocks tick in ~15.6 ms steps)."""
+
+    def __init__(self) -> None:
+        self.now = 1_000_000.0
+
+    def time(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+    def __getattr__(self, name: str):
+        return getattr(time, name)
+
+
+@pytest.fixture
+def manual_clock(monkeypatch):
+    from stateset_agents.api import distributed_cache
+
+    clock = _ManualClock()
+    monkeypatch.setattr(distributed_cache, "time", clock)
+    return clock
+
+
 # ============================================================================
 # Cache Configuration Tests
 # ============================================================================
@@ -281,7 +309,7 @@ class TestMemoryCache:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_set_with_ttl(self, cache):
+    async def test_set_with_ttl(self, cache, manual_clock):
         """Test setting with custom TTL."""
         await cache.set("expiring", "value", ttl=0.05)
 
@@ -290,7 +318,7 @@ class TestMemoryCache:
         assert result == "value"
 
         # Should expire after TTL
-        await asyncio.sleep(0.06)
+        manual_clock.advance(0.06)
         result = await cache.get("expiring")
         assert result is None
 
@@ -334,11 +362,12 @@ class TestMemoryCache:
         assert await cache.exists("not_exists") is False
 
     @pytest.mark.asyncio
-    async def test_exists_expired(self, cache):
+    async def test_exists_expired(self, cache, manual_clock):
         """Test exists returns False for expired keys."""
         await cache.set("expiring", "value", ttl=0.02)
+        assert await cache.exists("expiring") is True
 
-        await asyncio.sleep(0.03)
+        manual_clock.advance(0.03)
         assert await cache.exists("expiring") is False
 
     @pytest.mark.asyncio
