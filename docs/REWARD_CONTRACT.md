@@ -84,7 +84,7 @@ use it, so the same episode earns the same reward on every path.
 | --- | --- | --- |
 | `IMMEDIATE`, `DENSE` | After every assistant turn, before the next user message | Mean of the step scores, credited as `score / steps` per step |
 | `CUMULATIVE`, `SPARSE` | Once, at episode end, on the whole conversation | That one score, on the last step |
-| untyped (no `reward_type`) | Per step in environments that set `scores_steps` (`ConversationEnvironment`), otherwise at episode end | As above |
+| untyped (no `reward_type`) | Once, at episode end (per step only in a custom environment that sets `scores_steps`) | As above |
 
 A reward function therefore contributes at most its range to an episode,
 however long the episode runs: padding or stalling never pays.

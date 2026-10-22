@@ -121,8 +121,9 @@ class Environment(ABC):
 
     #: Whether step() applies untyped reward functions (no ``reward_type``)
     #: per step. Environments that score steps always apply IMMEDIATE/DENSE
-    #: rewards per step; an untyped one is applied per step only when this is
-    #: set, and otherwise once at episode end.
+    #: rewards per step; an untyped one is applied per step only when a
+    #: subclass sets this, and otherwise once at episode end (the default for
+    #: every built-in environment, matching how a trainer applies it).
     scores_steps: bool = False
 
     def _get_reward_type(self) -> RewardType | None:

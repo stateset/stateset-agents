@@ -197,3 +197,34 @@ async def test_one_reward_failure_drops_one_batched_episode_not_the_batch():
     assert generated == {"batched": 8, "sequential": 0}
     assert reward.calls == 8
     assert all(t.total_reward == pytest.approx(0.7) for t in group.trajectories)
+
+
+class LastReply:
+    """Untyped (duck-typed) reward judging the last assistant reply."""
+
+    def __init__(self):
+        self.calls = 0
+
+    async def compute_reward(self, turns, context=None):
+        self.calls += 1
+        last = [t for t in turns if t.role == "assistant"][-1]
+        return 1.0 if last.content == "final answer" else 0.0
+
+
+@pytest.mark.parametrize("attach_to_environment", [True, False])
+async def test_untyped_rewards_judge_the_whole_episode_once(attach_to_environment):
+    scenario = {"id": "s", "user_turns": ["q", "and again"]}
+    reward = LastReply()
+    environment = ConversationEnvironment(
+        [scenario],
+        max_turns=2,
+        reward_fn=reward if attach_to_environment else None,
+    )
+
+    async def respond(history, context):
+        return "draft" if len(history) == 1 else "final answer"
+
+    trajectory = await environment.run_episode(respond, scenario)
+    total = await score_episode(trajectory, reward, environment, scenario)
+    assert total == 1.0  # only the final reply counts, not their mean
+    assert reward.calls == 1

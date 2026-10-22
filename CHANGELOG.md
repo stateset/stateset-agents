@@ -48,6 +48,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (credited as `score / steps` per step) instead of the sum, like the default
   heuristic, so an episode's reward-function score stays within the reward's
   range whatever the episode length. Episode-end rewards are unchanged.
+- An untyped reward function (no `reward_type`) is applied once at episode end
+  by `ConversationEnvironment` too (it used to score every step there), so it
+  judges the same thing whether the environment or the trainer holds it.
 - Reward functions receive one context shape from every caller
   (`stateset_agents.core.reward_context.build_reward_context`): scenario keys
   at the top level, environment state over them, and the scenario under

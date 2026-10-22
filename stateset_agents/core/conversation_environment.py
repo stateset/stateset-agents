@@ -72,7 +72,9 @@ class ConversationEnvironment(Environment):
     never end early on a farewell: the script defines the episode length.
     """
 
-    scores_steps = True
+    # An untyped reward function (no ``reward_type``) judges the whole
+    # episode once at the end, as it does when a trainer holds it.
+    scores_steps = False
     supports_concurrent_episodes = True
 
     def __init__(
