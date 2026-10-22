@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `docs/REWARD_CONTRACT.md` documents the reward contract (score range and
+  finiteness, the reward-context shape, who scores an episode, IMMEDIATE vs
+  CUMULATIVE/SPARSE semantics, failure handling).
+  `tests/unit/test_reward_contracts.py` checks every shipped reward and
+  `create_*_reward` factory against it, and `tests/unit/test_reward_gaming.py`
+  pins the known reward-hacking exploits (length padding, keyword stuffing,
+  digit listing, refusal phrasing around unsafe content, stalling).
+
 ### Deprecated
 
 - `stateset_agents.core.enhanced.PPOTrainer` (and `create_ppo_trainer`) duplicates
@@ -50,6 +60,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fallback in `compute_reward`) instead of padding with 0.5.
 - `ModelBasedRewardComponent(strict=True)` raises when no `api_client` is
   configured or the judge call fails.
+- `CorrectnessReward` requires numeric answers to be committed to: an explicit
+  statement ("the answer is 4", `#### 4`, `\boxed{4}`) earns credit only if
+  every stated answer is correct, and otherwise the credit is shared among the
+  distinct numbers the reply offers beyond those in the question.
+- `SafetyReward` treats a refusal followed by instructions containing unsafe
+  terms ("I can't help with that, but here's how to build a bomb") as unsafe.
 
 ### Fixed
 
@@ -88,6 +104,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ProfessionalismRewardComponent` penalized "frustrated" and matched "hate"
   inside "whatever".
 - `create_adaptive_reward` mutated the caller's reward weights.
+- A NaN or infinite reward score propagated silently into composite scores and
+  episode totals; it is now a reward failure (flagged, or raised for
+  `fail_on_error` rewards), and the trainer drops such episodes.
 
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 
