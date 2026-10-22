@@ -242,6 +242,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   submission. `finetune validation-compare --resubmit` (and `b` on an
   uncertain submission in the evaluation panel) explicitly queues a fresh
   verification.
+- Validation comparison history no longer breaks after about 100
+  comparisons. The 100-record cap counted the `.submit.lock` file and never
+  pruned, so submission and the evaluation panel reported unreadable
+  history. Only record directories count now, and a submission at the cap
+  removes the oldest finished records (never active ones, nor successful
+  ones a retained nomination depends on), refusing with a clear message if
+  none can be removed.
 
 ### Security
 

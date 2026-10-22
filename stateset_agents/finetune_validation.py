@@ -8,6 +8,7 @@ import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -537,6 +538,7 @@ def submit_comparison(
                 and previous["state"]["status"] in ACTIVE_COMPARISON_STATUSES
             ):
                 return latest
+        _prune_history(run, directory)
         return _submit_request(run, plan, queue, directory)
 
 
@@ -995,6 +997,86 @@ def _public_result(result: dict[str, Any]) -> dict[str, Any]:
     return public
 
 
+#: Directory entries read from the history (records plus the submit lock and
+#: any stray files); a larger directory is reported rather than scanned.
+_HISTORY_SCAN_LIMIT = 4 * MAX_COMPARISON_RECORDS
+
+
+def _history_records(directory: Path) -> list[Path]:
+    """Own comparison record directories, oldest first; other entries ignored."""
+    entries = list(islice(directory.iterdir(), _HISTORY_SCAN_LIMIT + 1))
+    if len(entries) > _HISTORY_SCAN_LIMIT:
+        raise ValidationComparisonError(
+            f"Comparison history has more than {_HISTORY_SCAN_LIMIT} entries; "
+            f"remove stray files from {DIRECTORY}."
+        )
+    return sorted(
+        path
+        for path in entries
+        if re.fullmatch(RECORD_ID, path.name)
+        and path.is_dir()
+        and not path.is_symlink()
+    )
+
+
+def _nominated_comparisons(run: Path) -> set[str] | None:
+    """Comparison IDs that retained nominations depend on; ``None`` if unknown."""
+    directory = run / "nominations"
+    if not directory.exists():
+        return set()
+    if directory.is_symlink():
+        return None
+    referenced: set[str] = set()
+    try:
+        for path in islice(directory.iterdir(), _HISTORY_SCAN_LIMIT + 1):
+            if not re.fullmatch(RECORD_ID, path.name) or path.is_symlink():
+                continue
+            receipt = path / "receipt.json"
+            if not receipt.exists():
+                continue  # an interrupted nomination authorizes nothing
+            plan = read_json(receipt).get("plan")
+            identifier = plan.get("comparison_id") if isinstance(plan, dict) else None
+            if not isinstance(identifier, str):
+                return None
+            referenced.add(identifier)
+    except (OSError, ValueError, RecursionError):
+        return None
+    return referenced
+
+
+def _prune_history(run: Path, directory: Path) -> None:
+    """Make room for one more record by deleting the oldest finished ones.
+
+    Active verifications, and successful ones a retained nomination depends
+    on, are kept. If nothing can be removed the submission is refused with a
+    clear message instead of failing later as unreadable history.
+    """
+    records = _history_records(directory)
+    excess = len(records) - (MAX_COMPARISON_RECORDS - 1)
+    if excess <= 0:
+        return
+    nominated = _nominated_comparisons(run)
+    for path in records:
+        if excess <= 0:
+            return
+        try:
+            status = comparison_status(path)["state"]["status"]
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
+            status = "unreadable"
+        if status in ACTIVE_COMPARISON_STATUSES or (
+            status == "succeeded" and (nominated is None or path.name in nominated)
+        ):
+            continue
+        shutil.rmtree(path)
+        excess -= 1
+    if excess > 0:
+        raise ValidationComparisonError(
+            f"Comparison history already holds {MAX_COMPARISON_RECORDS} records "
+            "that are still active or back a nomination; wait for active "
+            "verifications to finish before submitting another."
+        )
+
+
 def latest_comparison(run: Path) -> Path | None:
     """Find the newest own request without loading results or model libraries."""
     directory = run / DIRECTORY
@@ -1002,17 +1084,7 @@ def latest_comparison(run: Path) -> Path | None:
         return None
     if directory.is_symlink():
         raise ValidationComparisonError("Comparison history must be regular.")
-    paths = list(islice(directory.iterdir(), MAX_COMPARISON_RECORDS + 1))
-    if len(paths) > MAX_COMPARISON_RECORDS:
-        raise ValidationComparisonError("Comparison history exceeds 100 entries.")
-    regular = [
-        path
-        for path in paths
-        if re.fullmatch(RECORD_ID, path.name)
-        and path.is_dir()
-        and not path.is_symlink()
-    ]
-    return max(regular, default=None)
+    return max(_history_records(directory), default=None)
 
 
 if __name__ == "__main__":
