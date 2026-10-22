@@ -6,6 +6,7 @@ scale depend on its contents."""
 
 from __future__ import annotations
 
+import itertools
 import random
 
 import pytest
@@ -189,3 +190,115 @@ class TestLengthLimits:
     def test_max_turns_is_deprecated(self):
         with pytest.warns(DeprecationWarning, match="max_trajectory_length"):
             ConversationDatasetConfig(max_turns=5)
+
+
+class TestNormalizationMetrics:
+    """Aggregate semantics of reward normalization, so they cannot regress."""
+
+    def test_empty_dataset_normalizes_and_reports_zero_statistics(self):
+        ds = ConversationDataset([])
+        stats = ds.get_statistics()
+        assert stats["num_trajectories"] == 0 and stats["mean_reward"] == 0.0
+
+    def test_terminal_rewards_standardize_across_trajectories(self):
+        from hypothesis import given, settings
+        from hypothesis import strategies as st
+
+        @settings(max_examples=80, deadline=None)
+        @given(
+            st.lists(
+                st.tuples(
+                    st.floats(-5, 5, allow_nan=False),
+                    st.integers(min_value=2, max_value=6),
+                ),
+                min_size=2,
+                max_size=12,
+            )
+        )
+        def check(specs):
+            rows = []
+            for i, (reward, turns) in enumerate(specs):
+                rows.append(
+                    {
+                        "trajectory_id": str(i),
+                        "turns": [
+                            {
+                                "role": "user" if t % 2 == 0 else "assistant",
+                                "content": "x",
+                            }
+                            for t in range(turns)
+                        ],
+                        "total_reward": reward,
+                    }
+                )
+            ds = ConversationDataset.from_dict({"trajectories": rows})
+            raw = [r for r, _ in specs]
+            totals = [t.total_reward for t in ds.trajectories]
+            # Length never moves a total: padding turns stay exactly zero.
+            for t in ds.trajectories:
+                assert t.turn_rewards[:-1] == [0.0] * (len(t.turns) - 1)
+                assert t.total_reward == t.turn_rewards[-1]
+            assert [t.metadata["raw_total_reward"] for t in ds.trajectories] == raw
+            assert sum(totals) / len(totals) == pytest.approx(0.0, abs=1e-6)
+            spread = max(raw) - min(raw)
+            if spread > 1e-3:
+                mean = sum(totals) / len(totals)
+                std = (sum((x - mean) ** 2 for x in totals) / len(totals)) ** 0.5
+                assert std == pytest.approx(1.0, rel=1e-3)
+                for i, j in itertools.combinations(range(len(raw)), 2):
+                    if abs(raw[i] - raw[j]) > 1e-6:  # order is preserved
+                        assert (raw[i] < raw[j]) == (totals[i] < totals[j])
+            assert ds.get_statistics()["mean_reward"] == pytest.approx(
+                sum(totals) / len(totals)
+            )
+
+        check()
+
+    def test_minmax_maps_terminal_rewards_into_the_unit_interval(self):
+        rows = [
+            {
+                "trajectory_id": str(i),
+                "turns": [
+                    {"role": "user", "content": "q"},
+                    {"role": "assistant", "content": "a"},
+                ],
+                "total_reward": reward,
+            }
+            for i, reward in enumerate([2.0, -1.0, 0.5])
+        ]
+        config = ConversationDatasetConfig(reward_normalization_method="minmax")
+        ds = ConversationDataset.from_dict({"trajectories": rows}, config)
+        totals = [t.total_reward for t in ds.trajectories]
+        assert totals == pytest.approx([1.0, 0.0, 0.5], abs=1e-6)
+
+    def test_mixed_datasets_share_one_scale(self):
+        per_turn = TrajectoryData(
+            "p",
+            [
+                ConversationTurnData(role="user", content="q"),
+                ConversationTurnData(role="assistant", content="a"),
+            ],
+            total_reward=1.0,
+            turn_rewards=[0.0, 1.0],
+        )
+        terminal = {
+            "trajectory_id": "t",
+            "turns": [
+                {"role": "user", "content": "q2"},
+                {"role": "assistant", "content": "b"},
+            ],
+            "total_reward": 1.0,
+        }
+        parsed = ConversationDataset.from_dict(
+            {"trajectories": [terminal]},
+            ConversationDatasetConfig(normalize_rewards=False),
+        ).trajectories
+        ds = ConversationDataset([per_turn, *parsed])
+        # Stats come from [0.0, 1.0] (per-turn) plus [1.0] (terminal only).
+        mean, std = 2 / 3, (2 / 9) ** 0.5
+        assert ds.trajectories[1].turn_rewards == pytest.approx(
+            [0.0, (1.0 - mean) / std], rel=1e-6
+        )
+        assert ds.trajectories[0].turn_rewards == pytest.approx(
+            [(0.0 - mean) / std, (1.0 - mean) / std], rel=1e-6
+        )

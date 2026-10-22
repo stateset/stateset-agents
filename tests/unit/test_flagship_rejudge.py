@@ -554,3 +554,40 @@ def test_rejudge_poll_fails_fast_when_the_provider_exits_the_pod() -> None:
         rejudge._poll_until_exit(
             DeadSsh(), deadline_s=3600, poll_s=0, pod_status=lambda: next(statuses)
         )
+
+
+def _phase(baseline: dict[str, float], final: dict[str, float]) -> dict[str, Any]:
+    return {
+        "rubric_revision": "r",
+        "backend": "fake",
+        "groups": {
+            name: {"results": [], "summary": {"mean_score": 0.5, **values}}
+            for name, values in (("baseline", baseline), ("final", final))
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "baseline,final,disagreement_ok,parse_ok",
+    [
+        ({"self_disagreement": 0.05, "parse_failure_rate": 0.02}, {}, True, True),
+        ({"self_disagreement": 0.051, "parse_failure_rate": 0.0}, {}, False, True),
+        ({}, {"self_disagreement": 0.0, "parse_failure_rate": 0.021}, True, False),
+    ],
+)
+def test_rejudge_summary_reports_the_worst_group_against_each_gate(
+    baseline, final, disagreement_ok, parse_ok
+):
+    clean = {"self_disagreement": 0.0, "parse_failure_rate": 0.0}
+    summary = rejudge.build_summary(
+        _phase({**clean, **baseline}, {**clean, **final}), {}
+    )
+    assert summary["judge_self_disagreement"] == max(
+        baseline.get("self_disagreement", 0.0), final.get("self_disagreement", 0.0)
+    )
+    assert summary["judge_parse_failure_rate"] == max(
+        baseline.get("parse_failure_rate", 0.0), final.get("parse_failure_rate", 0.0)
+    )
+    assert summary["self_disagreement_within_gate"] is disagreement_ok
+    assert summary["parse_failure_within_gate"] is parse_ok
+    assert summary["parse_failure_gate"] == 0.02
