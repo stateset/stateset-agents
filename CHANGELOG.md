@@ -42,6 +42,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stops with a `budget`/`deadline` error. Previously a replacement got a fresh
   timeout and a retried run could spend about twice `max_cost_usd`.
 
+### Security
+
+- The fine-tuning studio no longer falls back to hard-coded developer paths
+  (`/home/dom/agent-builds/...`) when looking for the shared Buildr queue. Only
+  `STATESET_BUILDR` or `buildr` on `PATH` is used, so a shared host can no
+  longer run another user's binary with the launching user's environment. A
+  test now rejects absolute home-directory paths in packaged modules.
+
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 
 ### Changed

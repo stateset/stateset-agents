@@ -987,19 +987,20 @@ def create_run(workspace: Path, plan: RunPlan) -> Path:
 
 
 def queue_executable() -> str | None:
-    """Find an installed shared queue, honoring an explicit executable path."""
+    """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
+
+    There is deliberately no fixed-path fallback: the queue wrapper runs with
+    the caller's environment, so only an executable the user configured or
+    put on their own PATH may be chosen.
+    """
     configured = os.environ.get("STATESET_BUILDR")
     if configured:
         if not Path(configured).is_file() or not os.access(configured, os.X_OK):
             raise ValueError("STATESET_BUILDR must point to an executable")
         return configured
-    for candidate in (
-        shutil.which("buildr"),
-        "/home/dom/agent-builds/buildr",
-        "/home/dom/agent-builds/agent-builds",
-    ):
-        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+    candidate = shutil.which("buildr")
+    if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
     return None
 
 
