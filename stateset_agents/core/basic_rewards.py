@@ -89,14 +89,15 @@ def _numbers(text: str) -> set[float]:
 def _answer_credit(content: str, answer: str, question: str = "") -> float:
     """Fraction of answer credit ``content`` earns for the expected ``answer``.
 
-    Text answers need a whole-token match. Numeric answers must be committed
-    to: if the reply states an answer explicitly, every stated answer must be
-    correct; otherwise the credit is shared among the distinct numbers it
-    offers beyond those quoted from ``question``.
+    Answers must be committed to. A text answer needs a whole-token match,
+    and a sentence that merely lists it among alternatives ("London, Paris,
+    Berlin") shares the credit among them. A numeric answer stated explicitly
+    must be the only stated answer; otherwise the credit is shared among the
+    distinct numbers the reply offers beyond those quoted from ``question``.
     """
     expected = _as_number(answer.strip())
     if expected is None:
-        return 1.0 if _contains_term(content, answer) else 0.0
+        return _text_answer_credit(content, answer)
     stated = {
         value
         for pattern in _STATED_ANSWER_PATTERNS
@@ -110,6 +111,33 @@ def _answer_credit(content: str, answer: str, question: str = "") -> float:
         return 0.0
     candidates = (offered - _numbers(question)) | {expected}
     return 1.0 / len(candidates)
+
+
+_SENTENCE_SPLIT = re.compile(r"(?<!\d)[.!?\n]+|[.!?]+(?=\s|$)")
+_LIST_SPLIT = re.compile(r"\s*(?:[,/;|]|\bor\b|\band\b)\s*", re.IGNORECASE)
+
+
+def _text_answer_credit(content: str, answer: str) -> float:
+    """Credit for a text answer: 1 if committed to, 1/k if listed among k items.
+
+    A sentence counts as a list of alternatives when it splits on commas,
+    slashes, "or" and "and" into two or more short items (no longer than the
+    answer plus two words). The reply earns the best credit over the
+    sentences that contain the answer.
+    """
+    if not _contains_term(content, answer):
+        return 0.0
+    longest_item = max(3, len(answer.split()) + 2)
+    best = 0.0
+    for sentence in _SENTENCE_SPLIT.split(content):
+        if not _contains_term(sentence, answer):
+            continue
+        items = [item for item in _LIST_SPLIT.split(sentence.strip()) if item]
+        listed = len(items) >= 2 and all(
+            len(item.split()) <= longest_item for item in items
+        )
+        best = max(best, 1.0 / len(items) if listed else 1.0)
+    return best
 
 
 def _action_name(action: Any) -> str | None:

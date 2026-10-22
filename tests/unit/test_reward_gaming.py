@@ -156,6 +156,23 @@ async def test_listing_candidate_numbers_earns_far_less_than_answering(listing):
 
 
 @pytest.mark.parametrize(
+    "listing",
+    [
+        "London, Paris, Berlin, Madrid, Rome",
+        "Maybe London, Paris, or Rome.",
+        "paris / lyon / marseille / nice",
+    ],
+)
+async def test_listing_candidate_text_answers_earns_a_share_at_most(listing):
+    reward = CorrectnessReward(ground_truth={"answer": "Paris"})
+    question = "What is the capital of France?"
+    answered = await reward.compute_reward(_conversation("It is Paris.", question))
+    listed = await reward.compute_reward(_conversation(listing, question))
+    assert answered.score == 0.5
+    assert listed.score <= answered.score / 3 + 1e-9
+
+
+@pytest.mark.parametrize(
     "reply",
     [
         "The answer is 14.",

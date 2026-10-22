@@ -7,6 +7,8 @@ scores the policy model on whether its verdict agrees with the verified
 decision. Transport is injectable so tests never hit the network.
 """
 
+import pytest
+
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.nsr_verifier import (
     NSRVerifierConfig,
@@ -75,6 +77,41 @@ class TestExtractVerdict:
 
     def test_no_verdict_is_none(self):
         assert extract_verdict("The weather is nice today.") is None
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Unfortunately I cannot approve this refund.",
+            "This is not approved.",
+            "I'm unable to approve this refund, so it is denied.",
+        ],
+    )
+    def test_negated_approval_is_a_denial(self, text):
+        assert extract_verdict(text) == "denied"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "This needs manager approval.",
+            "I'll escalate this to a supervisor for approval.",
+        ],
+    )
+    def test_approval_still_to_be_given_is_an_escalation(self, text):
+        assert extract_verdict(text) == "refused"
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Your refund is approved if you return the item.",
+            "It could be approved after review.",
+        ],
+    )
+    def test_conditional_approval_is_no_verdict(self, text):
+        assert extract_verdict(text) is None
+
+    def test_negated_denial_does_not_compete_with_an_approval(self):
+        text = "I won't deny the item arrived late, but I approve the refund."
+        assert extract_verdict(text) == "approved"
 
 
 # ===========================
