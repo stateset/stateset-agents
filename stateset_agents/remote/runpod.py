@@ -29,11 +29,14 @@ import math
 import os
 import re
 import shlex
+import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 import time
 import uuid
+import weakref
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -406,6 +409,26 @@ class SshTransport:
         self._deadline: float | None = None
         self._host: str | None = None
         self._port: int | None = None
+        self._known_hosts: Path | None = None
+
+    def _known_hosts_file(self) -> Path:
+        """This transport's private known_hosts file, created on first use.
+
+        Each transport talks to one freshly created pod, so its host key
+        cannot be known in advance. ``StrictHostKeyChecking=accept-new``
+        records the key on first contact into this per-transport file (trust
+        on first use), and every later connection — reconnects included — is
+        then pinned to it: a host key that changes mid-session is rejected.
+        The file is never shared between transports, so a new pod that
+        happens to reuse an ip:port starts with an empty pin set.
+        """
+        if self._known_hosts is None:
+            directory = Path(tempfile.mkdtemp(prefix="stateset-ssh-"))
+            path = directory / "known_hosts"
+            path.touch(mode=0o600)
+            self._known_hosts = path
+            weakref.finalize(self, shutil.rmtree, str(directory), True)
+        return self._known_hosts
 
     @staticmethod
     def _positive_timeout(value: float) -> float:
@@ -487,13 +510,22 @@ class SshTransport:
             ) from None
 
     def _base_opts(self) -> list[str]:
+        known_hosts = str(self._known_hosts_file())
+        if any(ch.isspace() for ch in known_hosts):
+            # ssh splits this option's value on whitespace (it accepts a list).
+            known_hosts = f'"{known_hosts}"'
         opts = [
-            # The pod is created fresh for this job and destroyed after, so
-            # its host key is new every time and pinning it is meaningless.
+            # The pod is created fresh for this job, so its host key cannot
+            # be known in advance: trust it on first use and pin it in a
+            # per-transport file for the rest of the session (see
+            # ``_known_hosts_file``). System/user known_hosts are ignored so a
+            # stale entry for a recycled ip:port cannot block a fresh pod.
             "-o",
-            "StrictHostKeyChecking=no",
+            "StrictHostKeyChecking=accept-new",
             "-o",
-            "UserKnownHostsFile=/dev/null",
+            f"UserKnownHostsFile={known_hosts}",
+            "-o",
+            "GlobalKnownHostsFile=/dev/null",
             "-o",
             "LogLevel=ERROR",
             "-o",
