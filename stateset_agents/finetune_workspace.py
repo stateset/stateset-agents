@@ -1356,24 +1356,79 @@ def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
     return None
 
 
-def _owner_confirmed(path: Path) -> bool:
-    """Boundedly inspect one local owner without signaling it or proving exit."""
+OWNER_EVIDENCE = frozenset(
+    {"alive", "reused", "gone", "running", "denied", "malformed"}
+)
+
+
+def owner_evidence(
+    path: Path,
+    *,
+    use_tokens: bool = True,
+    probe: bool = True,
+    max_bytes: int = 128 * 1024,
+) -> str:
+    """Classify the process named by one owner record, without signalling it.
+
+    * ``"alive"``: its Linux start-time token matches the record;
+    * ``"reused"``: the PID now belongs to a different process;
+    * ``"gone"``: no process has that PID;
+    * ``"running"``: a process with that PID answers, identity unproven
+      (no token available: non-Linux, a zombie, or an unreadable ``/proc``);
+    * ``"denied"``: a process exists but may not be inspected;
+    * ``"malformed"``: the record names no valid PID.
+
+    ``use_tokens``/``probe`` select which evidence to gather (a skipped probe
+    reports ``"running"`` as unknown would). An unreadable record raises.
+    """
+    owner = read_json(path, max_bytes=max_bytes)
+    pid = owner.get("pid")
+    if type(pid) is not int or pid < 1:
+        return "malformed"
+    if use_tokens:
+        current = process_token(pid)
+        if current is not None:
+            return "alive" if current == owner.get("process_token") else "reused"
+    if not probe:
+        return "running"
     try:
-        owner = read_json(path, max_bytes=4096)
-        pid = owner.get("pid")
-        if type(pid) is not int or pid < 1:
-            return False
+        probe_process(pid)
+    except ProcessLookupError:
+        return "gone"
+    except PermissionError:
+        return "denied"
+    return "running"
+
+
+def owner_alive(path: Path) -> bool | None:
+    """Whether a recorded owner is provably running (True) or gone (False).
+
+    ``None`` means the evidence cannot decide: a PID that answers without a
+    matching start-time token, a process that may not be inspected, or a
+    record without a valid PID. Callers choose how cautious to be about it.
+    """
+    evidence = owner_evidence(path)
+    if evidence == "alive":
+        return True
+    if evidence in {"gone", "reused"}:
+        return False
+    return None
+
+
+def _owner_confirmed(path: Path) -> bool:
+    """Boundedly inspect one local owner without signaling it or proving exit.
+
+    Linux trusts only a matching start-time token. Without tokens, a PID that
+    still answers (or refuses inspection) is taken as the owner.
+    """
+    try:
         if sys.platform == "linux":
-            token = process_token(pid)
-            return token is not None and token == owner.get("process_token")
+            return owner_evidence(path, probe=False, max_bytes=4096) == "alive"
         else:
-            try:
-                probe_process(pid)
-                return True
-            except PermissionError:
-                return True
-            except ProcessLookupError:
-                return False
+            return owner_evidence(path, use_tokens=False, max_bytes=4096) in {
+                "running",
+                "denied",
+            }
     except (OSError, ValueError, TypeError, RecursionError, OverflowError):
         return False
 

@@ -627,7 +627,7 @@ def test_recovery_still_requires_exited_owner_after_committed_success(
     assert worker.execute(run) == 0
     with pytest.raises(ValueError, match="Wait for the parent worker"):
         recovery.inspect_checkpoints(run)
-    monkeypatch.setattr(recovery, "process_token", lambda _pid: None)
+    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
 
     def exited(*_args):
         raise ProcessLookupError()

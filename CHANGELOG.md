@@ -34,6 +34,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   finished run is a no-op instead of an overwrite, a refused failure leaves no
   `failure.json` behind, and an evaluation supervisor starts no queue work once
   an outcome is recorded.
+- Studio owner-liveness checks (run status, checkpoint recovery and validation
+  comparisons) share one classifier, `finetune_workspace.owner_evidence`, with
+  a tri-state `owner_alive(path)` (alive / gone / undecided). Each caller keeps
+  its existing decisions and messages.
 
 ### Fixed
 
