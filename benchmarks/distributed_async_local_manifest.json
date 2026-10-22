@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "stateset-distributed-async-manifest",
   "protocol": "stateset-distributed-async-v1",
-  "framework_version": "0.67.0",
+  "framework_version": "0.68.0",
   "provider": "local",
   "cost_source": "local-meter",
   "diagnostic_note": "Process groups on one host over loopback TCP. Exercises the full driver/runner/validator pipeline; the publication gate rejects provider=local. Run with --preflight (the runner's measured mode requires a 12 h soak minimum).",

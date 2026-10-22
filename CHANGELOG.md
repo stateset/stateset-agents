@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
+
 ### Changed
 
 - **Per-model starter commands moved under `stateset-agents model <preset>`.**
