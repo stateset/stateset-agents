@@ -6,7 +6,7 @@ import inspect
 import math
 from collections.abc import Awaitable, Callable
 from copy import deepcopy
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from stateset_agents.core.environment_base import (
     Environment,
@@ -15,6 +15,10 @@ from stateset_agents.core.environment_base import (
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash
+
+if TYPE_CHECKING:
+    # Annotation only: older river_client releases have no renderers module.
+    from river_client.renderers import Message
 
 
 async def _settle(value: Any) -> Any:
@@ -60,7 +64,6 @@ def river_environment_factory(
         raise ValueError("truncation_reward must be a finite number")
     try:
         from river_client import rl
-        from river_client.renderers import Message
     except ImportError as exc:
         raise ImportError("Install stateset-agents[river] on Python >=3.12") from exc
 
