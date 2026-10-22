@@ -181,7 +181,8 @@ class ValueHead(nn.Module):
         Returns:
             values: [batch, seq_len, 1]
         """
-        return self.network(hidden_states)
+        values: torch.Tensor = self.network(hidden_states)
+        return values
 
 
 class LengthAdaptiveGAE:
@@ -540,7 +541,7 @@ class VAPOTrainer(TrainingRuntime):
                 output_hidden_states=True,
             )
             # Use last hidden state
-            hidden_states = outputs.hidden_states[-1]
+            hidden_states: torch.Tensor = outputs.hidden_states[-1]
         return hidden_states
 
     def compute_values(
@@ -560,7 +561,9 @@ class VAPOTrainer(TrainingRuntime):
         # policy backbone to run in bf16/fp16.  Linear layers require matching
         # dtypes (the live CUDA ``BFloat16 and Float`` matmul failure).
         value_dtype = next(self.value_head.parameters()).dtype
-        values = self.value_head(hidden_states.detach().to(dtype=value_dtype))
+        values: torch.Tensor = self.value_head(
+            hidden_states.detach().to(dtype=value_dtype)
+        )
         return values.squeeze(-1)
 
     def compute_rollout_values(
@@ -594,6 +597,7 @@ class VAPOTrainer(TrainingRuntime):
         outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
         if response_mask is None:
             response_mask = torch.ones_like(input_ids)
+        token_log_probs: torch.Tensor
         token_log_probs, _ = rl_losses.gather_token_logprobs(
             outputs.logits, input_ids, response_mask, dtype=self._logprob_dtype
         )

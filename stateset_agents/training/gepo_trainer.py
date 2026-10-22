@@ -371,7 +371,8 @@ class GEPOTrainer(TrainingRuntime):
         # Same overflow guard as DAPO/VAPO, at GEPO's historical +/-30 bound:
         # group coefficients are not ratios against a clip boundary, so the
         # wider window is kept.
-        return rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
+        coef: torch.Tensor = rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
+        return coef
 
     def compute_gepo_coefficient(
         self,

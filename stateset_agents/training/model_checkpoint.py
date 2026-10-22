@@ -21,6 +21,7 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def _read_weights(path: Path, torch: Any, *, trusted: bool) -> dict[str, Any]:
+    state: object
     if path.suffix == ".safetensors":
         from safetensors.torch import load_file
 
@@ -149,7 +150,9 @@ def load_model_checkpoint(
             ):
                 raise ValueError(f"Invalid adapter checkpoint tensor: {name}")
         result = set_peft_model_state_dict(model, state, adapter_name=adapter)
-        if result.unexpected_keys:
+        # peft annotates the return as ``namedtuple``; it is torch's
+        # ``_IncompatibleKeys`` from ``Module.load_state_dict``.
+        if result.unexpected_keys:  # type: ignore[attr-defined, unused-ignore]
             raise ValueError("Adapter checkpoint has unexpected parameters")
         return True
     expected = model.state_dict() if strict else {}

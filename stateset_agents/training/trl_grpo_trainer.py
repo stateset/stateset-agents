@@ -64,12 +64,17 @@ except ImportError:  # pragma: no cover - optional dependency
 Dataset: Any | None = _DatasetType
 
 try:
-    from peft import (
-        LoraConfig,
-        TaskType,
-        get_peft_model,
-        prepare_model_for_kbit_training,
-    )
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+    from peft import prepare_model_for_kbit_training as _prepare_kbit
+
+    # Optional-dependency slots: rebound to ``None`` when peft is missing and
+    # monkeypatched by tests, so they are deliberately typed ``Any``.
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
+    prepare_model_for_kbit_training: Any = _prepare_kbit
 except ImportError:  # pragma: no cover - optional dependency
     LoraConfig = None
     TaskType = None

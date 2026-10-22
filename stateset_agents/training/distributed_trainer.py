@@ -445,7 +445,7 @@ class DistributedGRPOTrainer:
             global_reward_count=self._global_reward_count,
             update_global_stats=self._update_global_stats,
         )
-        loss = loss_dict["total_loss"]
+        loss: torch.Tensor = loss_dict["total_loss"]
         if self.device is not None:
             loss = loss.to(self.device)
         return loss

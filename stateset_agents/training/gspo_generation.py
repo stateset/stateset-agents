@@ -129,7 +129,7 @@ def _get_model_device(model: Any) -> torch.device | None:
     if model is None:
         return None
     try:
-        first_param = next(model.parameters())
+        first_param: torch.Tensor = next(model.parameters())
         return first_param.device
     except StopIteration:
         return getattr(model, "device", None)

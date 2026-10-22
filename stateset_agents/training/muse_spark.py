@@ -227,7 +227,9 @@ def train_muse_spark(config: MuseSparkSFTConfig) -> dict[str, Any]:
             "revision": config.revision,
             "trust_remote_code": False,
             "dtype": "bfloat16",
-            "distributed_config": DistributedConfig(
+            # ``ep_size`` exists from transformers 5.20 (gated above); older
+            # installed stubs do not declare it.
+            "distributed_config": DistributedConfig(  # type: ignore[call-arg, unused-ignore]
                 fsdp_size=world_size, ep_size=config.expert_parallel_size
             ),
         },
@@ -286,6 +288,8 @@ def train_muse_spark(config: MuseSparkSFTConfig) -> dict[str, Any]:
             bias="none",
         ),
     )
+    if trainer.model is None:
+        raise RuntimeError("SFTTrainer did not initialise a model")
     trainable = [
         name
         for name, parameter in trainer.model.named_parameters()

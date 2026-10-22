@@ -1016,7 +1016,7 @@ class AdvancedTrainingOrchestrator:
 
         logger.info(f"Started training job {job.job_id} on worker {worker_id}")
 
-    async def _cleanup_completed_tasks(self):
+    async def _cleanup_completed_tasks(self) -> None:
         """Clean up completed worker tasks"""
         async with self._cleanup_lock:
             errors: list[Exception] = []

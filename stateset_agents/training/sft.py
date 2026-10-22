@@ -996,7 +996,7 @@ def run_sft(
         args=args,
         train_dataset=dataset,
         data_collator=DataCollatorForSeq2Seq(tokenizer, label_pad_token_id=-100),
-        **({"callbacks": callbacks} if callbacks is not None else {}),
+        callbacks=callbacks,  # ``None`` is Trainer's own default
     )
 
     logger.info("Starting SFT…")

@@ -77,13 +77,20 @@ def export_merged_model_for_serving(
         logger.warning("Missing dependencies for merge export: %s", exc)
         return ""
 
+    # Optional on older transformers builds; resolved to ``None`` when absent.
+    AutoModelForImageTextToText: Any | None
     try:
-        from transformers import AutoModelForImageTextToText
+        from transformers import AutoModelForImageTextToText as _AutoImageTextToText
+
+        AutoModelForImageTextToText = _AutoImageTextToText
     except ImportError:  # pragma: no cover - older transformers builds
         AutoModelForImageTextToText = None
 
+    AutoProcessor: Any | None
     try:
-        from transformers import AutoProcessor
+        from transformers import AutoProcessor as _AutoProcessor
+
+        AutoProcessor = _AutoProcessor
     except ImportError:  # pragma: no cover - older transformers builds
         AutoProcessor = None
 
@@ -127,8 +134,8 @@ def export_merged_model_for_serving(
 
     if Path(adapter_dir).is_dir():
         validate_local_shard_indexes(adapter_dir)
-    model = PeftModel.from_pretrained(model, adapter_dir)
-    merged = model.merge_and_unload()
+    peft_model = PeftModel.from_pretrained(model, adapter_dir)
+    merged = peft_model.merge_and_unload()
 
     output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)

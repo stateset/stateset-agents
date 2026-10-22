@@ -34,8 +34,8 @@ except ImportError:
     nn = cast(Any, None)
     F = cast(Any, None)
     optim = cast(Any, None)
-    DataLoader = cast(Any, None)
-    Dataset = cast(Any, None)
+    # DataLoader/Dataset are not rebound: the module-level nn.Module subclasses
+    # below already require torch at import time.
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
 _transformers_reward_loaded = False
@@ -369,7 +369,7 @@ class TransformerRewardModel(nn.Module):
         embedding_dim = self.prompt_encoder.config.hidden_size
 
         # Reward head
-        layers = []
+        layers: list[nn.Module] = []
         input_dim = embedding_dim * 2  # Concatenate prompt + response embeddings
 
         for i in range(num_layers):
@@ -433,7 +433,7 @@ class TransformerRewardModel(nn.Module):
         combined = torch.cat([prompt_embedding, response_embedding], dim=-1)
 
         # Pass through reward head
-        reward = self.reward_head(combined)
+        reward: torch.Tensor = self.reward_head(combined)
 
         return reward
 
