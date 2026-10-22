@@ -65,3 +65,22 @@ def test_ratchet_floor_matches_reality() -> None:
             f"{ALLOWLIST_FLOOR}. Raise the floor to {len(files)} to lock in "
             "the gain."
         )
+
+
+def test_mypy_follows_imports_and_never_skips_them() -> None:
+    """`follow_imports = skip` makes every imported name Any, hiding
+    cross-module type errors; the gate must keep following imports."""
+    parser = configparser.ConfigParser()
+    parser.read(MYPY_INI)
+    for section in parser.sections():
+        if section == "mypy" or section.startswith("mypy-stateset_agents"):
+            value = parser.get(section, "follow_imports", fallback=None)
+            assert value in (None, "silent", "normal"), (
+                f"[{section}] sets follow_imports = {value}; imported types would "
+                "become Any. Fix the type errors instead."
+            )
+    assert parser.get("mypy", "follow_imports") in ("silent", "normal")
+    for section in parser.sections():
+        assert not parser.getboolean(section, "ignore_errors", fallback=False), (
+            f"[{section}] sets ignore_errors; fix the module's type errors instead."
+        )
