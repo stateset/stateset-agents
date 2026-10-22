@@ -20,9 +20,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - mypy checks the bodies of untyped functions across the whole package
   (`check_untyped_defs`), guarded by the mypy ratchet test.
+- **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
+  partition issue combinations between eval and harvest, so the same seed
+  yields different prompts than before; reference bases shift upward only when
+  a set would run into the next. `FlywheelConfig` rejects eval prompts that
+  match a harvest prompt with digits masked.
+- `scripts/grade_transcript.py` fails on malformed or role-less transcript
+  lines and on a context file whose length differs from the number of
+  assistant turns, instead of skipping or padding. Curated examples carry
+  `messages`, the full graded context; `prepare_sft_dataset.py` emits it for
+  every format (`--flatten` restores single-turn pairs), drops unscored
+  entries under `--min-score`, and reads UTF-8 regardless of locale.
+- `ConversationDataset.split()` defaults to a fixed seed and keeps
+  trajectories with the same normalized content or `group_id`/`source_id`
+  together. `ConversationDatasetConfig.min/max_trajectory_length` are
+  enforced; `max_turns` is deprecated and ignored.
+- Text SFT and finetune evaluation leakage checks compare initial requests
+  under NFKC/casefold/whitespace normalization
+  (`finetuning.normalize_identity_text`).
+- Judge `summarize()` computes `self_disagreement` only over items whose two
+  passes parsed (`self_disagreement_n` counts them). The flagship matrix
+  requires `judge_parse_failure_rate` and rejects a seed above 0.02; the
+  rejudge summary reports it against the same ceiling.
 
 ### Fixed
 
+- Local SFT labeled every token, system and user turns included, when a chat
+  template rewrote earlier turns (Qwen3/Qwen3.5 strip earlier `<think>`
+  blocks). Such rows now supervise only their final assistant turn (or are
+  dropped), and the adapter manifest counts `final_turn_only_rows`,
+  `unmaskable_rows_dropped`, `truncated_rows_dropped` and
+  `partially_truncated_rows`.
+- Pure tool-call turns followed by more turns were labeled only on their first
+  characters under Qwen3-style templates; the whole call is now supervised.
+- Eval ladder eval and harvest prompts overlapped (7 of 12 identical modulo
+  the reference at 6 issues / depth 2), and refs collided past 1100 evals.
+- Forbid checks no longer fail replies that negate the forbidden remedy
+  ("I won't rebook you") and match only at word starts.
+- Conversation datasets with only `total_reward` had all-zero turn rewards,
+  returns-to-go and transitions, and normalization zeroed `total_reward`.
+- Transcript grading misaligned contexts after a dropped line and reported
+  the wrong `user_query`; curated SFT pairs lost the graded multi-turn context.
+- GSM8K answer extraction graded the first "answer is" instead of the final
+  answer; `####` and `\boxed{}` now win and the last match is used.
+- Judge parse failures were counted as self-disagreement, and a skipped
+  `min_judge_score` gate left no trace; eval rows now carry
+  `judge_unavailable` and the manifest records `eval_judge_gates_skipped`.
 - `DistributedGRPOTrainer.setup_model()` called agent methods that do not exist;
   it now uses `agent.model` and builds AdamW from the training config.
 - FSDP received the `"full_shard"` string instead of a `ShardingStrategy`.
