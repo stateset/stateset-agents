@@ -35,6 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and span processors attach to the provider that was created.
 - helm-based tests bound their subprocesses, so a stalled `helm` on a loaded
   Windows runner fails one test instead of aborting the xdist run.
+- RunPod `timeout_s` and `max_cost_usd` now bound the whole run instead of each
+  pod. A pod that dies mid-job is replaced only within the time left on the
+  first pod's deadline (readiness waits included), and only when the spend so
+  far plus the replacement's worst case fits the ceiling; otherwise the run
+  stops with a `budget`/`deadline` error. Previously a replacement got a fresh
+  timeout and a retried run could spend about twice `max_cost_usd`.
 
 ## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
 
