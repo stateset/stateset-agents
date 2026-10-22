@@ -329,3 +329,30 @@ class TestNormalizationMetrics:
         assert ds.trajectories[0].turn_rewards == pytest.approx(
             [(0.0 - mean) / std, (1.0 - mean) / std], rel=1e-6
         )
+
+
+class TestNonFiniteRewards:
+    """json.loads accepts NaN: one NaN reward made every normalized reward NaN
+    and filter_by_quality silently dropped trajectories."""
+
+    @pytest.mark.parametrize("literal", ["NaN", "Infinity", "-Infinity"])
+    def test_non_finite_total_reward_is_rejected(self, tmp_path, literal):
+        path = tmp_path / "data.jsonl"
+        good = '{"turns": [{"role": "user", "content": "a"}, {"role": "assistant", "content": "x"}], "total_reward": 1.0}'
+        bad = good.replace('"total_reward": 1.0', f'"total_reward": {literal}')
+        path.write_text(good + "\n" + bad + "\n")
+        with pytest.raises(ValueError, match="non-finite reward"):
+            ConversationDataset.from_jsonl(str(path))
+
+    def test_non_finite_turn_reward_is_rejected(self):
+        trajectory = TrajectoryData(
+            trajectory_id="t",
+            turns=[
+                ConversationTurnData(role="user", content="q"),
+                ConversationTurnData(role="assistant", content="a"),
+            ],
+            total_reward=1.0,
+            turn_rewards=[0.0, float("nan")],
+        )
+        with pytest.raises(ValueError, match="non-finite reward"):
+            ConversationDataset([trajectory])
