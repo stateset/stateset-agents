@@ -40,7 +40,7 @@ babel==2.18.0
     # via sphinx
 bandit==1.9.4
     # via stateset-agents (pyproject.toml)
-black==26.5.1
+black==26.10.1
     # via stateset-agents (pyproject.toml)
 boolean-py==5.0
     # via license-expression
