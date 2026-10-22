@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `create_*_reward` factory against it, and `tests/unit/test_reward_gaming.py`
   pins the known reward-hacking exploits (length padding, keyword stuffing,
   digit listing, refusal phrasing around unsafe content, stalling).
+  `tests/unit/test_episode_scoring_paths.py` checks that training, periodic and
+  post-training evaluation and the distributed trainer give an episode the same
+  reward, wherever the reward is attached.
 
 ### Deprecated
 
@@ -30,15 +33,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - mypy checks the bodies of untyped functions across the whole package
   (`check_untyped_defs`), guarded by the mypy ratchet test.
-- **Each episode is scored exactly once.** When `MultiTurnGRPOTrainer`'s
+- **Each episode is scored exactly once, on one path.**
+  `reward_context.score_episode` settles an episode's reward for training
+  (including batched rollouts), periodic evaluation (`evaluate_agent`),
+  post-training evaluation and the distributed trainer. When the trainer's
   `reward_fn` is the environment's own (the default `train()` wiring) and the
-  environment applied it, the trainer keeps the environment's reward instead of
-  re-scoring the episode. For IMMEDIATE/DENSE rewards the training reward is
-  therefore the sum of per-step scores rather than one whole-conversation
-  score (use a CUMULATIVE/SPARSE reward for a whole-conversation score), and
-  environments with their own step rewards (e.g. `TaskEnvironment` progress)
-  keep them in the total. When the trainer scores an episode itself, the score
-  is credited to the final step so `sum(turn_rewards) == total_reward`.
+  environment applied it, that reward stands; otherwise the reward is applied
+  as the environment would apply it and added to the environment's own step
+  rewards, so the total no longer depends on where the reward is attached
+  (`TaskEnvironment` + `TaskCompletionReward` is 16.0 either way, not 1.0
+  through the trainer). `evaluate_agent(reward_fn=...)` passes the standard
+  reward context instead of the bare scenario or final state.
+- **Per-step reward functions contribute the mean of their step scores**
+  (credited as `score / steps` per step) instead of the sum, like the default
+  heuristic, so an episode's reward-function score stays within the reward's
+  range whatever the episode length. Episode-end rewards are unchanged.
 - Reward functions receive one context shape from every caller
   (`stateset_agents.core.reward_context.build_reward_context`): scenario keys
   at the top level, environment state over them, and the scenario under
@@ -59,7 +68,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unknown trajectory ids or scores outside [0, 1] (retried, then the heuristic
   fallback in `compute_reward`) instead of padding with 0.5.
 - `ModelBasedRewardComponent(strict=True)` raises when no `api_client` is
-  configured or the judge call fails.
+  configured.
+- **Reward failures fail closed.** Judges raise instead of returning a neutral
+  score: `LLMJudge` raises `JudgeUnavailableError` (exported from
+  `stateset_agents.rewards`) when it gets no verdict, and `LLMJudgeReward`,
+  `LLMJudgeRewardComponent` and `ModelBasedRewardComponent` propagate judge
+  failures, replies without a score and scores outside [0, 1].
+  `CompositeReward` and `MultiObjectiveRewardFunction` raise `ValueError` when
+  no component scored or none is configured. `Environment.get_reward` raises
+  for a failed or non-finite reward and when there is no `reward_fn`.
+  `ComputationalGRPOEngine` and `SingleTurnGRPOTrainer` drop trajectories or
+  generations whose reward failed (`raw_reward_signal` is `None` without an
+  environment `reward_fn`). `LLMJudgeRewardWithFallback` keeps its heuristic
+  fallback and records `judge_error` in metadata.
+- **`TaskEnvironment` completes required actions only from explicit
+  declarations**: a structured tool call, an `"action"`/`"actions"` entry in
+  turn metadata, or a JSON object such as `{"action": "load_data"}` in the
+  reply. Keyword matching is opt-in and gameable (`match_action_keywords=True`);
+  the `data_analysis` preset tells the agent how to declare steps.
+- Inside a `CompositeReward` holding an evidence reward, ordinary children get
+  the standard reward context (scenario keys and environment state) instead
+  of only `context["scenario"]`.
+- NSR verdict extraction reads clauses: a negated approval is a denial, a
+  conditional one is no verdict, and approval still to be given ("needs
+  manager approval") is an escalation.
+- `CorrectnessReward` shares a text answer's credit among the alternatives
+  when a sentence only lists it ("London, Paris, Berlin" earns a third).
 - `CorrectnessReward` requires numeric answers to be committed to: an explicit
   statement ("the answer is 4", `#### 4`, `\boxed{4}`) earns credit only if
   every stated answer is correct, and otherwise the credit is shared among the
@@ -69,6 +103,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Periodic evaluation re-scored episodes with a scenario-only, whole-episode
+  call and dropped environment step rewards, so best-checkpoint selection and
+  early stopping saw a different reward than training (4.0 vs 1.0 for a
+  4-turn HelpfulnessReward episode; 16.0 vs 0.0 for TaskEnvironment +
+  TaskCompletionReward).
+- Judge failures became a neutral 0.5 (a raising judge client scored 0.25 in
+  a multi-objective reward with no failed component reported), and a
+  composite in which every component failed returned a valid-looking 0.0
+  that environments marked as applied and trainers trained on.
+- Every shipped `create_*_reward` factory paid for stalling in unscripted
+  conversations (customer_service: 7.35 for ten padded turns vs 0.685 for
+  resolving).
+- `TaskCompletionReward` scored a constant 0.5 in `TaskEnvironment`, which
+  stores `required_actions` at the task's top level; it now reads that shape.
+- `TaskEnvironment` marked actions done when their keywords appeared in a reply
+  ("load plot" completed a two-step task and earned the progress reward).
+- NSR verdicts read "I cannot approve this refund", "This is not approved" and
+  "needs manager approval" as approvals.
+- One reward failure in a batched rollout discarded the whole batch and rolled
+  every episode out again; only the failed episode is dropped now.
+- `MultiObjectiveRewardFunction` renormalized its stored weights on every call,
+  so repeated calls differed in the last bit under Python < 3.12; composers now
+  use a fixed normalized snapshot and `math.fsum`, and averaged episode rewards
+  are exact for equal step scores.
 - `train(uncertainty_weighted=True)` scored every episode twice (the environment
   with the base reward, the trainer with the wrapper); the environment now uses
   the same wrapper for the duration of training and its reward is restored after.
