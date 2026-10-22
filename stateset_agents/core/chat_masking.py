@@ -48,6 +48,14 @@ def assistant_char_spans(
         span_start = len(os.path.commonprefix([before, full]))
         if span_start < len(context) or not full.startswith(context):
             return None
+        if span_start < len(before):
+            # The turn omits part of the generation prompt (e.g. a ``<think>``
+            # stub added only to new turns); characters that merely happen to
+            # match ("<t" of "<think>" vs "<tool_call>") belong to the reply.
+            # Back off to the last line break of the matched prompt part.
+            line_end = full.rfind("\n", len(context), span_start)
+            if line_end >= 0:
+                span_start = line_end + 1
         span_end = _reply_end(full, after, span_start, message.get("content"))
         if span_end is None:
             return None
@@ -68,8 +76,37 @@ def _reply_end(full: str, after: str, start: int, content: Any) -> int | None:
         suffix_at = after.rfind(candidate)
         suffix = after[suffix_at + len(candidate) :] if suffix_at >= 0 else ""
         return end + len(os.path.commonprefix([suffix, full[end:]]))
-    # No reply text to anchor on (e.g. a pure tool call): the turn ends where
-    # rendering it stops agreeing with the full conversation.
+    if not text.strip():
+        return _unanchored_reply_end(full, after, start)
+    # The reply text was rewritten in the full render (e.g. an earlier
+    # ``<think>`` block stripped): the turn ends where rendering it stops
+    # agreeing with the full conversation, which usually means no span.
+    shared = len(os.path.commonprefix([after, full]))
+    return shared if shared > start else None
+
+
+def _unanchored_reply_end(full: str, after: str, start: int) -> int | None:
+    """End of a turn with no reply text to anchor on (e.g. a pure tool call).
+
+    ``after`` renders this turn as the LAST message, which templates may
+    decorate (Qwen3 adds an empty ``<think>`` block), so it can stop agreeing
+    with ``full`` right at the start of the turn. The turn's tail — the call
+    and its end-of-turn suffix — renders identically, so the turn ends where
+    the longest suffix of ``after`` that occurs at or after ``start`` ends.
+    Every shorter suffix of an occurring suffix also occurs, so the boundary
+    is binary-searched.
+    """
+    low, high = 0, len(after)
+    while low < high:
+        middle = (low + high) // 2
+        if full.find(after[middle:], start) >= 0:
+            high = middle
+        else:
+            low = middle + 1
+    tail = after[low:]
+    found = full.find(tail, start) if tail else -1
+    if found >= 0 and found + len(tail) > start:
+        return found + len(tail)
     shared = len(os.path.commonprefix([after, full]))
     return shared if shared > start else None
 

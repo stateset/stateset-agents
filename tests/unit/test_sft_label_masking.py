@@ -128,3 +128,28 @@ def test_tokenize_sft_rows_counts_every_outcome():
         _byte_tokenizer(REVERSING), [{"messages": CONVERSATION}], max_length=4096
     )
     assert unmaskable["dropped_unmaskable"] == 1
+
+
+def test_tool_call_turn_followed_by_more_turns_is_fully_supervised():
+    """Qwen3-style templates decorate only the LAST assistant turn, so the
+    tool-call turn's own render stopped agreeing with the full conversation
+    right after ``<t`` and only that sliver was labeled; the call itself
+    went unsupervised."""
+    from tests.unit.test_river_sft_masking import QWEN3_LIKE
+
+    messages = [
+        {"role": "user", "content": "Refund order 8"},
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [{"type": "function", "function": {"name": "refund"}}],
+        },
+        {"role": "tool", "content": "refunded"},
+        {"role": "assistant", "content": "Done."},
+    ]
+    tok = _byte_tokenizer(QWEN3_LIKE)
+    out = tokenize_sft_row(tok, {"messages": messages}, max_length=4096)
+    supervised = _supervised(tok, out)
+    assert "<tool_call>refund</tool_call><|im_end|>" in supervised
+    assert "Done." in supervised
+    assert "Refund order 8" not in supervised and "refunded" not in supervised
