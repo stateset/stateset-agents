@@ -115,7 +115,7 @@ stateset-agents chat --model Qwen/Qwen3.5-0.8B --checkpoint outputs/sft_v2 \
                      --replay transcripts/session_2026_01.jsonl
 ```
 
-**Iteration:** each round shifts curated.jsonl. The dedup in step 1 ensures duplicate (prompt, response) pairs are skipped — safe to re-run as your reward function evolves.
+**Iteration:** each round shifts curated.jsonl. The dedup in step 1 ensures an example whose full graded conversation is already curated is skipped — safe to re-run as your reward function evolves. Curated rows keep that conversation in `messages`, so SFT trains on the same context the reward graded.
 
 **Why this works:** the curated set captures what your model + reward function **agree** is good. Training on that set tightens the model toward the reward; spot-checking via chat tightens the reward toward your judgment.
 

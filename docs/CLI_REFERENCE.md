@@ -1221,7 +1221,8 @@ stateset-agents flywheel --base-model meta-models/Muse-Glimmer-30B \
   `{prompt, expect, forbid}` specs sampled during harvest. The checks
   define success; they are mandatory.
 - `--eval-prompts PATH` (required): JSON list of specs that score each
-  generation. Keep disjoint from the harvest prompts.
+  generation. Must be disjoint from the harvest prompts even with digits
+  (reference numbers) masked; an overlap is rejected as a usage error.
 - `--output-root PATH`: Where generations and the report land (default
   `outputs/flywheel`).
 - `--initial-adapter PATH`: Existing adapter to start from (defaults to the
