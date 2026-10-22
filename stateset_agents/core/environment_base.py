@@ -35,6 +35,12 @@ STEP_REWARD_FN_SCORE = "_step_reward_fn_score"
 #: ``EnvironmentState.metadata`` key a step may use to report the
 #: environment's own share of its step reward exactly.
 STEP_ENVIRONMENT_REWARD = "_step_environment_reward"
+#: ``EnvironmentState.metadata`` key a step uses to record the state a
+#: per-step reward is scored against (see :meth:`Environment._snapshot_step_state`).
+STEP_REWARD_STATE = "_step_reward_state"
+#: ``EnvironmentState.metadata`` key holding the episode's system prompt, so
+#: per-step rewards see the same turns as the finished trajectory.
+EPISODE_SYSTEM_PROMPT = "_episode_system_prompt"
 
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
 # AttributeError typically indicate programming bugs and should propagate
@@ -267,6 +273,27 @@ class Environment(ABC):
         state.metadata[STEP_REWARD_FN_SCORE] = score
         return score
 
+    def _snapshot_step_state(self, state: EnvironmentState) -> None:
+        """Record the state this step's reward is scored against.
+
+        Call it where the step scores (or would score) its reward, so a
+        per-step reward applied later by a trainer replays on the same state.
+        """
+        state.metadata[STEP_REWARD_STATE] = _snapshot(state.context)
+
+    def _step_reward_turns(
+        self, state: EnvironmentState, turns: list[ConversationTurn]
+    ) -> list[ConversationTurn]:
+        """The episode's turns up to this reply, system prompt included.
+
+        These are exactly the finished trajectory's turns up to the reply, so
+        a per-step reward sees the same conversation whoever applies it.
+        """
+        prompt = state.metadata.get(EPISODE_SYSTEM_PROMPT)
+        if isinstance(prompt, str) and prompt:
+            return [ConversationTurn(role="system", content=prompt), *turns]
+        return list(turns)
+
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
         """Expose public context while retaining evaluator references privately."""
         context = dict(state.context)
@@ -375,6 +402,7 @@ class Environment(ABC):
                     metadata={"scenario": scenario},
                 )
             )
+            state.metadata[EPISODE_SYSTEM_PROMPT] = initial_prompt
         episode.turns.extend(await self.get_initial_turns(state))
         return episode
 
@@ -394,6 +422,12 @@ class Environment(ABC):
         # over the episode at the end) and the environment's own reward.
         reward_fn_part = float(new_state.metadata.pop(STEP_REWARD_FN_SCORE, 0.0))
         intrinsic = new_state.metadata.pop(STEP_ENVIRONMENT_REWARD, None)
+        # The state this step's reward is scored against, kept so a reward
+        # applied later (by a trainer) sees what it would have seen here.
+        step_state = new_state.metadata.pop(STEP_REWARD_STATE, None)
+        episode.step_states.append(
+            step_state if step_state is not None else _snapshot(new_state.context)
+        )
         episode.reward_fn_scores.append(reward_fn_part)
         episode.environment_rewards.append(
             float(step_reward) - reward_fn_part if intrinsic is None else intrinsic
@@ -485,6 +519,9 @@ class Environment(ABC):
             turn_rewards=turn_rewards,
             initial_state={"scenario": scenario} if scenario else None,
             final_state=state.context,
+            # One entry per step: the state that step's reward was (or would
+            # be) scored against; score_episode replays per-step rewards on it.
+            state_history=list(episode.step_states),
             metadata=metadata,
         )
 
@@ -502,6 +539,16 @@ class _Episode:
     reward_fn_scores: list[float] = field(default_factory=list)
     #: Per step: the environment's own reward, without the reward function.
     environment_rewards: list[float] = field(default_factory=list)
+    #: Per step: a snapshot of the state the step's reward is scored against.
+    step_states: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _snapshot(context: dict[str, Any]) -> dict[str, Any]:
+    """A copy of ``context`` that later in-place changes cannot alter."""
+    try:
+        return copy.deepcopy(context)
+    except (TypeError, copy.Error, RecursionError):
+        return dict(context)
 
 
 def _record_reward_failure(

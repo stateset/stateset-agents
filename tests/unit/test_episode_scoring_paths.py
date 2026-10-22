@@ -290,3 +290,92 @@ async def test_gspo_and_trl_rewards_get_the_standard_context():
         assert context["ground_truth"] == {"answer": "4"}
         assert context["scenario"]["ground_truth"] == {"answer": "4"}
         assert context["user_query"] == "What is 2+2?"
+
+
+# --- Stateful per-step rewards and environment subclasses --------------------
+
+
+class TaskProgress(RewardFunction):
+    """IMMEDIATE reward reading executed evidence (task progress) per step."""
+
+    def __init__(self):
+        super().__init__(reward_type=RewardType.IMMEDIATE)
+
+    async def compute_reward(self, turns, context=None):
+        return RewardResult(score=float(context.get("task_progress", 0.0)))
+
+
+async def _both_attachments(make_env, reward_factory, respond, scenario):
+    totals = []
+    for attach in (True, False):
+        reward = reward_factory()
+        environment = make_env(reward if attach else None)
+        trajectory = await environment.run_episode(respond, scenario)
+        totals.append(await score_episode(trajectory, reward, environment, scenario))
+    return totals
+
+
+async def test_stateful_step_rewards_replay_on_the_state_they_saw():
+    def make_env(reward):
+        return TaskEnvironment(
+            [TASK], success_criteria=lambda t, c: False, max_turns=3, reward_fn=reward
+        )
+
+    attached, held = await _both_attachments(make_env, TaskProgress, task_agent, TASK)
+    # 15 environment reward + mean progress over the steps (0.5, 1.0, 1.0)
+    assert attached == pytest.approx(15.0 + 2.5 / 3)
+    assert held == pytest.approx(attached)
+
+
+async def test_environment_subclass_step_rewards_count_in_both_attachments():
+    class Penalized(ConversationEnvironment):
+        async def _calculate_step_reward(self, agent_turn, state):
+            return -1.0 if "refund" in (agent_turn.content or "") else 0.0
+
+    scenario = {
+        "id": "s",
+        "user_turns": ["a", "b"],
+        "task": {"goal_keywords": ["done"]},
+    }
+
+    async def respond(history, context):
+        return "refund issued, done"
+
+    attached, held = await _both_attachments(
+        lambda reward: Penalized([scenario], max_turns=2, reward_fn=reward),
+        TaskCompletionReward,
+        respond,
+        scenario,
+    )
+    assert attached == pytest.approx(-2.0 + 1.0)
+    assert held == pytest.approx(attached)
+
+
+class SeesConversation(RewardFunction):
+    """IMMEDIATE reward depending on the history and the system prompt."""
+
+    def __init__(self):
+        super().__init__(reward_type=RewardType.IMMEDIATE)
+
+    async def compute_reward(self, turns, context=None):
+        system = sum(t.role == "system" for t in turns)
+        return RewardResult(score=0.1 * len(context["history"]) + 0.01 * system)
+
+
+async def test_step_rewards_see_the_same_history_and_turns_either_way():
+    scenario = {"id": "s", "user_turns": ["a", "b", "c"], "system_prompt": "Be brief."}
+
+    async def respond(history, context):
+        return "ok"
+
+    attached, held = await _both_attachments(
+        lambda reward: ConversationEnvironment(
+            [scenario], max_turns=3, reward_fn=reward
+        ),
+        SeesConversation,
+        respond,
+        scenario,
+    )
+    # History at scoring time has 2, 4 and 6 messages; one system turn.
+    assert attached == pytest.approx(0.1 * (2 + 4 + 6) / 3 + 0.01)
+    assert held == pytest.approx(attached)

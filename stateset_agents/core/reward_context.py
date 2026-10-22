@@ -101,6 +101,23 @@ def build_reward_context(
     return context
 
 
+def _trajectory_scenario(
+    trajectory: Any, scenario: Mapping[str, Any] | None = None
+) -> Mapping[str, Any] | None:
+    """The scenario a trajectory ran: ``scenario`` or the one it recorded."""
+    if isinstance(scenario, dict):
+        return scenario
+    for source in (
+        getattr(trajectory, "metadata", None),
+        getattr(trajectory, "initial_state", None),
+    ):
+        if isinstance(source, Mapping):
+            recorded = source.get("scenario")
+            if isinstance(recorded, dict):
+                return recorded
+    return None
+
+
 def trajectory_reward_context(
     trajectory: Any,
     scenario: Mapping[str, Any] | None = None,
@@ -115,14 +132,9 @@ def trajectory_reward_context(
     """
     final_state = getattr(trajectory, "final_state", None)
     environment = final_state if isinstance(final_state, Mapping) else None
-    if not isinstance(scenario, dict):
-        metadata = getattr(trajectory, "metadata", None)
-        initial = getattr(trajectory, "initial_state", None)
-        for source in (metadata, initial):
-            if isinstance(source, Mapping) and isinstance(source.get("scenario"), dict):
-                scenario = source["scenario"]
-                break
-    return build_reward_context(environment, scenario, reward_fn=reward_fn)
+    return build_reward_context(
+        environment, _trajectory_scenario(trajectory, scenario), reward_fn=reward_fn
+    )
 
 
 def scores_latest_turn_only(context: Mapping[str, Any] | None) -> bool:
@@ -337,9 +349,28 @@ async def score_episode(
     breakdown: Any = None
     fallback: str | None = None
     if _scores_per_step(reward_fn, environment) and assistant:
-        step_context = {**context, REWARD_SCOPE_KEY: LATEST_TURN_SCOPE}
+        # Replay each step against the state it was scored at, recorded by
+        # the environment in state_history; fall back to the final state.
+        states = getattr(trajectory, "state_history", None)
+        per_step_states = (
+            states
+            if isinstance(states, list) and len(states) == len(assistant)
+            else None
+        )
+        final_step_context = {**context, REWARD_SCOPE_KEY: LATEST_TURN_SCOPE}
         scores = []
-        for index in assistant:
+        for step, index in enumerate(assistant):
+            step_context = (
+                build_reward_context(
+                    per_step_states[step],
+                    _trajectory_scenario(trajectory, scenario),
+                    reward_fn=reward_fn,
+                    latest_turn_only=True,
+                )
+                if per_step_states is not None
+                and isinstance(per_step_states[step], Mapping)
+                else final_step_context
+            )
             result = await _call(reward_fn, turns[: index + 1], step_context)
             scores.append(reward_score(result))
             breakdown = getattr(result, "breakdown", None)

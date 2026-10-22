@@ -164,9 +164,10 @@ class TaskEnvironment(Environment):
 
         step_reward = await self._calculate_task_reward(action, new_state)
         new_state.metadata[STEP_ENVIRONMENT_REWARD] = step_reward
+        self._snapshot_step_state(new_state)
         if self.reward_fn is not None and self._should_compute_step_reward():
             step_reward += await self._apply_step_reward(
-                new_state, prior_turns + [action]
+                new_state, self._step_reward_turns(new_state, prior_turns + [action])
             )
 
         task_complete = await self._check_task_completion(new_state)
