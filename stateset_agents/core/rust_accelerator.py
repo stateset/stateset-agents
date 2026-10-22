@@ -35,6 +35,12 @@ except ImportError:
     _rust_core = None
 
 
+def _as_array(value: Any, dtype: Any = None) -> np.ndarray:
+    """Coerce a Rust or NumPy result into an ``ndarray``."""
+    array: np.ndarray = np.asarray(value, dtype=dtype)
+    return array
+
+
 def is_rust_available() -> bool:
     """Check if Rust acceleration is available."""
     return _RUST_AVAILABLE
@@ -61,11 +67,8 @@ def compute_group_advantages(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE and rewards.ndim == 2:
-        return cast(
-            np.ndarray,
-            np.asarray(
-                _rust_core.compute_group_advantages(rewards, baseline_type, normalize)
-            ),
+        return _as_array(
+            _rust_core.compute_group_advantages(rewards, baseline_type, normalize)
         )
 
     # Pure Python fallback
@@ -90,7 +93,7 @@ def compute_group_advantages(
 
         all_advantages.extend(float(value) for value in advantages)
 
-    return cast(np.ndarray, np.array(all_advantages, dtype=np.float64))
+    return _as_array(all_advantages, dtype=np.float64)
 
 
 def compute_gae(
@@ -115,10 +118,7 @@ def compute_gae(
     values = np.asarray(values, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray,
-            np.asarray(_rust_core.compute_gae(rewards, values, gamma, gae_lambda)),
-        )
+        return _as_array(_rust_core.compute_gae(rewards, values, gamma, gae_lambda))
 
     # Pure Python fallback
     n = len(rewards)
@@ -159,7 +159,7 @@ def batch_compute_gae(
 
     if _RUST_AVAILABLE:
         return [
-            cast(np.ndarray, np.asarray(a))
+            _as_array(a)
             for a in _rust_core.batch_compute_gae(
                 all_rewards, all_values, gamma, gae_lambda
             )
@@ -199,7 +199,7 @@ def normalize_rewards(
             rewards, running_mean, running_var, count, epsilon
         )
         return (
-            cast(np.ndarray, np.asarray(raw_normalized)),
+            _as_array(raw_normalized),
             float(raw_mean),
             float(raw_var),
             int(raw_count),
@@ -233,11 +233,9 @@ def clip_rewards(
     rewards = np.asarray(rewards, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray, np.asarray(_rust_core.clip_rewards(rewards, min_val, max_val))
-        )
+        return _as_array(_rust_core.clip_rewards(rewards, min_val, max_val))
 
-    return cast(np.ndarray, np.clip(rewards, min_val, max_val))
+    return _as_array(np.clip(rewards, min_val, max_val))
 
 
 def compute_gspo_importance_ratios(
@@ -263,13 +261,10 @@ def compute_gspo_importance_ratios(
     sequence_lengths = np.asarray(sequence_lengths, dtype=np.int64)
 
     if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray,
-            np.asarray(
-                _rust_core.compute_gspo_importance_ratios(
-                    log_probs_new, log_probs_old, sequence_lengths
-                )
-            ),
+        return _as_array(
+            _rust_core.compute_gspo_importance_ratios(
+                log_probs_new, log_probs_old, sequence_lengths
+            )
         )
 
     # Pure Python fallback
@@ -301,13 +296,8 @@ def apply_gspo_clipping(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray,
-            np.asarray(
-                _rust_core.apply_gspo_clipping(
-                    ratios, advantages, clip_left, clip_right
-                )
-            ),
+        return _as_array(
+            _rust_core.apply_gspo_clipping(ratios, advantages, clip_left, clip_right)
         )
 
     # Pure Python fallback
@@ -341,11 +331,8 @@ def compute_ppo_surrogate(
     advantages = np.asarray(advantages, dtype=np.float64)
 
     if _RUST_AVAILABLE:
-        return cast(
-            np.ndarray,
-            np.asarray(
-                _rust_core.compute_ppo_surrogate(ratios, advantages, clip_epsilon)
-            ),
+        return _as_array(
+            _rust_core.compute_ppo_surrogate(ratios, advantages, clip_epsilon)
         )
 
     unclipped = ratios * advantages

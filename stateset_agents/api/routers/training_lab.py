@@ -112,8 +112,8 @@ _EVICTABLE_STATUSES = frozenset(
 
 
 class EnvironmentConfig(BaseModel):
-    env_type: str = Field("conversation", description="Environment type")
-    max_turns: int = Field(10, ge=1, le=1000)
+    env_type: str = Field(default="conversation", description="Environment type")
+    max_turns: int = Field(default=10, ge=1, le=1000)
     scenarios: list[dict[str, Any]] = Field(default_factory=list)
     reward_weights: dict[str, float] = Field(
         default_factory=lambda: {
@@ -123,38 +123,38 @@ class EnvironmentConfig(BaseModel):
             "coherence": 0.1,
         }
     )
-    difficulty: str = Field("medium", pattern="^(easy|medium|hard|expert)$")
+    difficulty: str = Field(default="medium", pattern="^(easy|medium|hard|expert)$")
 
 
 class AgentLabConfig(BaseModel):
     model_config = {"protected_namespaces": ()}
 
-    model_name: str = Field("gpt2", description="Model name or path")
-    use_stub: bool = Field(True, description="Use stub backend for testing")
-    temperature: float = Field(0.8, ge=0.0, le=2.0)
-    top_p: float = Field(0.9, ge=0.0, le=1.0)
-    max_new_tokens: int = Field(512, ge=1, le=4096)
+    model_name: str = Field(default="gpt2", description="Model name or path")
+    use_stub: bool = Field(default=True, description="Use stub backend for testing")
+    temperature: float = Field(default=0.8, ge=0.0, le=2.0)
+    top_p: float = Field(default=0.9, ge=0.0, le=1.0)
+    max_new_tokens: int = Field(default=512, ge=1, le=4096)
     system_prompt: str | None = None
-    memory_window: int = Field(10, ge=1, le=100)
+    memory_window: int = Field(default=10, ge=1, le=100)
 
 
 class TrainingLabConfig(BaseModel):
-    num_episodes: int = Field(100, ge=1, le=10000)
-    num_generations: int = Field(4, ge=1, le=32)
-    learning_rate: float = Field(1e-5, gt=0)
-    batch_size: int = Field(8, ge=1, le=256)
-    algorithm: str = Field("grpo", pattern="^(grpo|gspo|ppo|dapo|vapo)$")
+    num_episodes: int = Field(default=100, ge=1, le=10000)
+    num_generations: int = Field(default=4, ge=1, le=32)
+    learning_rate: float = Field(default=1e-5, gt=0)
+    batch_size: int = Field(default=8, ge=1, le=256)
+    algorithm: str = Field(default="grpo", pattern="^(grpo|gspo|ppo|dapo|vapo)$")
     use_kl_penalty: bool = True
-    kl_coef: float = Field(0.02, ge=0.0)
-    clip_ratio: float = Field(0.2, ge=0.0, le=1.0)
-    entropy_coef: float = Field(0.01, ge=0.0)
-    gamma: float = Field(0.99, ge=0.0, le=1.0)
+    kl_coef: float = Field(default=0.02, ge=0.0)
+    clip_ratio: float = Field(default=0.2, ge=0.0, le=1.0)
+    entropy_coef: float = Field(default=0.01, ge=0.0)
+    gamma: float = Field(default=0.99, ge=0.0, le=1.0)
     normalize_advantages: bool = True
 
 
 class CreateExperimentRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=200)
-    description: str = Field("", max_length=1000)
+    description: str = Field(default="", max_length=1000)
     environment: EnvironmentConfig = Field(default_factory=EnvironmentConfig)
     agent: AgentLabConfig = Field(default_factory=AgentLabConfig)
     training: TrainingLabConfig = Field(default_factory=TrainingLabConfig)
@@ -724,7 +724,7 @@ async def create_experiment(
 
     exp_id = str(uuid.uuid4())
     now = time.time()
-    experiment = {
+    experiment: dict[str, Any] = {
         "id": exp_id,
         "name": req.name,
         "description": req.description,

@@ -54,7 +54,9 @@ class ComponentHealthDetail(BaseModel):
 
     name: str = Field(..., description="Component name")
     status: str = Field(..., description="Health status (healthy, degraded, unhealthy)")
-    latency_ms: float = Field(0.0, description="Component response latency in ms")
+    latency_ms: float = Field(
+        default=0.0, description="Component response latency in ms"
+    )
     details: dict[str, Any] = Field(
         default_factory=dict, description="Additional details"
     )

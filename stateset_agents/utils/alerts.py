@@ -18,14 +18,15 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, cast
+from typing import Any
 
 import requests
 
 # Optional imports
 try:
-    import aiohttp
+    import aiohttp as _aiohttp
 
+    aiohttp: Any = _aiohttp
     HAS_AIOHTTP = True
 except ImportError:
     aiohttp = None
@@ -360,7 +361,8 @@ class WebhookNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return cast(int, response.status) < 400
+                        status: int = response.status
+                        return status < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10
@@ -416,7 +418,8 @@ class PagerDutyNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return cast(int, response.status) < 400
+                        status: int = response.status
+                        return status < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10

@@ -527,7 +527,8 @@ class SimToRealTransfer:
                     result: np.ndarray = np.zeros(dim, dtype=np.float32)
                     result[: min(len(emb), dim)] = emb[:dim]
                     return result
-                return cast(np.ndarray, np.asarray(emb, dtype=np.float32))
+                encoded: np.ndarray = np.asarray(emb, dtype=np.float32)
+                return encoded
 
             self._encoder = _st_encode
             return self._encoder

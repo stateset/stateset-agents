@@ -94,12 +94,13 @@ def load_checkpoint_file(
         # Imported here, not at module scope: torch is an optional dependency
         # and importing ``stateset_agents.core`` must not require it.
         try:
-            import torch  # type: ignore[no-redef]
+            import torch as _torch
         except ImportError as exc:  # pragma: no cover - import guarding
             raise ImportError(
                 "PyTorch is required to load checkpoints. "
                 "Install the 'training' extra: pip install stateset-agents[training]"
             ) from exc
+        torch = _torch
     try:
         options = {"mmap": True} if mmap else {}
         # The only unsafe mode requires the caller's explicit trusted=True.

@@ -22,7 +22,7 @@ from __future__ import annotations
 import logging
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, TypeAlias
 
 import numpy as np
 import torch
@@ -310,12 +310,12 @@ class PPOTrainer:
             if hidden_states is None:
                 raise RuntimeError("Model did not return hidden states")
             # Use last hidden state of [CLS] token or average pooling
-            embedding = np.asarray(
+            embedding: FloatArray = np.asarray(
                 hidden_states[-1][:, 0, :].cpu().numpy().flatten(),
                 dtype=np.float32,
             )
 
-        return cast(FloatArray, embedding)
+        return embedding
 
     def compute_advantages(
         self, rewards: list[float], values: list[float], dones: list[bool]
@@ -660,12 +660,12 @@ class A2CTrainer:
             hidden_states = getattr(outputs, "hidden_states", None)
             if hidden_states is None:
                 raise RuntimeError("Model did not return hidden states")
-            embedding = np.asarray(
+            embedding: FloatArray = np.asarray(
                 hidden_states[-1][:, 0, :].cpu().numpy().flatten(),
                 dtype=np.float32,
             )
 
-        return cast(FloatArray, embedding)
+        return embedding
 
     async def train_step(self):
         """Execute A2C training step"""

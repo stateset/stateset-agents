@@ -24,6 +24,12 @@ from stateset_agents.remote.registry import available_providers, get_executor
 _echo = _cli._echo
 
 
+def _given_on_command_line(ctx: typer.Context, name: str) -> bool:
+    """Return whether the user passed parameter ``name`` explicitly."""
+    source = ctx.get_parameter_source(name)
+    return source is not None and source.name == "COMMANDLINE"
+
+
 def _load_specs(path: Path, label: str) -> list[dict]:
     try:
         data = json.loads(path.read_text())
@@ -192,8 +198,7 @@ def flywheel(
             "reward",
             "reward_threshold",
         ):
-            source = ctx.get_parameter_source(name)
-            if source is not None and source.name == "COMMANDLINE":
+            if _given_on_command_line(ctx, name):
                 raise typer.BadParameter(f"--{name.replace('_', '-')} is RL-only")
     temperature = (
         temperature if temperature is not None else (0.9 if algorithm == "sft" else 1.0)
@@ -242,12 +247,7 @@ def flywheel(
             "importance_sampling": set(),
         }[algorithm]
         for name in ("eps_max", "clip_low", "clip_high"):
-            source = ctx.get_parameter_source(name)
-            if (
-                name not in loss_knobs
-                and source is not None
-                and source.name == "COMMANDLINE"
-            ):
+            if name not in loss_knobs and _given_on_command_line(ctx, name):
                 raise typer.BadParameter(
                     f"--{name.replace('_', '-')} does not apply to "
                     f"--algorithm {algorithm}"
@@ -271,8 +271,7 @@ def flywheel(
             "container_disk_gb",
             "num_epochs",
         ):
-            source = ctx.get_parameter_source(name)
-            if source is not None and source.name == "COMMANDLINE":
+            if _given_on_command_line(ctx, name):
                 raise typer.BadParameter(
                     f"--{name.replace('_', '-')} is SFT-only; RL uses --rounds"
                 )
@@ -300,7 +299,7 @@ def flywheel(
                 ),
                 rl_scorer_id=f"domain:{reward}:threshold={reward_threshold}:v1",
             )
-        elif ctx.get_parameter_source("reward_threshold").name == "COMMANDLINE":
+        elif _given_on_command_line(ctx, "reward_threshold"):
             raise typer.BadParameter("--reward-threshold requires --reward")
         runs = []
         try:

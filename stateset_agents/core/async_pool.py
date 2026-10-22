@@ -20,7 +20,9 @@ from typing import Any, Generic, TypeVar
 from .error_handling import ErrorCode, ResourceException
 
 try:  # pragma: no cover - optional dependency
-    import aiohttp
+    import aiohttp as _aiohttp
+
+    aiohttp: Any = _aiohttp
 except ImportError:  # pragma: no cover
     aiohttp = None
 

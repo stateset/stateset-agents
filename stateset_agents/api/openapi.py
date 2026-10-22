@@ -5,7 +5,7 @@ Enhanced OpenAPI schema customization, documentation, and examples
 for professional API documentation.
 """
 
-from typing import Any, cast
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.openapi.utils import get_openapi
@@ -85,7 +85,7 @@ API_LICENSE = {
     "url": "https://opensource.org/licenses/MIT",
 }
 
-API_TAGS = [
+API_TAGS: list[dict[str, Any]] = [
     {
         "name": "agents",
         "description": "Agent management operations - create, configure, and manage AI agents.",
@@ -251,10 +251,11 @@ def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
     - Response examples
     - Server definitions for different environments
     """
-    if app.openapi_schema:
-        return cast(dict[str, Any], app.openapi_schema)
+    cached_schema: dict[str, Any] | None = app.openapi_schema
+    if cached_schema:
+        return cached_schema
 
-    openapi_schema = get_openapi(
+    openapi_schema: dict[str, Any] = get_openapi(
         title=API_TITLE,
         version=API_VERSION,
         description=API_DESCRIPTION,
@@ -310,7 +311,7 @@ def custom_openapi_schema(app: FastAPI) -> dict[str, Any]:
     _enhance_paths(openapi_schema)
 
     app.openapi_schema = openapi_schema
-    return cast(dict[str, Any], app.openapi_schema)
+    return openapi_schema
 
 
 def _enhance_paths(schema: dict[str, Any]) -> None:
@@ -440,7 +441,14 @@ def _enhance_responses(operation: dict[str, Any]) -> None:
 
 def setup_openapi(app: FastAPI) -> None:
     """Set up custom OpenAPI schema for the application."""
-    app.openapi = lambda: custom_openapi_schema(app)
+
+    def _openapi() -> dict[str, Any]:
+        return custom_openapi_schema(app)
+
+    # FastAPI documents replacing ``app.openapi`` as its schema extension hook
+    # but declares it as a method. ``unused-ignore`` keeps this clean while the
+    # gate still runs with follow_imports=skip (FastAPI resolves to Any there).
+    app.openapi = _openapi  # type: ignore[method-assign, unused-ignore]
 
 
 # ============================================================================

@@ -47,24 +47,28 @@ class TrainingJobDetail(BaseModel):
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Current status")
     created_at: datetime = Field(..., description="Creation timestamp")
-    started_at: datetime | None = Field(None, description="Start timestamp")
-    completed_at: datetime | None = Field(None, description="Completion timestamp")
+    started_at: datetime | None = Field(default=None, description="Start timestamp")
+    completed_at: datetime | None = Field(
+        default=None, description="Completion timestamp"
+    )
     completion_scope: (
         Literal[
             "final_episode_reported", "partial_episode_progress", "no_episode_progress"
         ]
         | None
     ) = Field(
-        None,
+        default=None,
         description="Episode progress observed when the trainer returned normally; not proof of optimizer updates or saved artifacts",
     )
-    progress: float = Field(0.0, ge=0.0, le=100.0, description="Progress percentage")
-    current_episode: int = Field(0, description="Current training episode")
-    total_episodes: int = Field(0, description="Total episodes")
+    progress: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="Progress percentage"
+    )
+    current_episode: int = Field(default=0, description="Current training episode")
+    total_episodes: int = Field(default=0, description="Total episodes")
     metrics: dict[str, Any] = Field(
         default_factory=dict, description="Training metrics"
     )
-    error: str | None = Field(None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
     config: dict[str, Any] = Field(
         default_factory=dict, description="Training configuration"
     )

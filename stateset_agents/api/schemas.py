@@ -23,16 +23,28 @@ class AgentConfigRequest(BaseModel):
 
     model_name: str = Field(..., description="Name of the model to use")
     max_new_tokens: int = Field(
-        512, description="Maximum tokens to generate", ge=1, le=4096
+        default=512, description="Maximum tokens to generate", ge=1, le=4096
     )
-    temperature: float = Field(0.8, description="Sampling temperature", ge=0.0, le=2.0)
-    top_p: float = Field(0.9, description="Top-p sampling parameter", ge=0.0, le=1.0)
-    top_k: int = Field(50, description="Top-k sampling parameter", ge=1, le=1000)
-    system_prompt: str | None = Field(None, description="System prompt for the agent")
-    use_chat_template: bool = Field(True, description="Whether to use chat template")
-    enable_planning: bool = Field(False, description="Enable long-term planning")
+    temperature: float = Field(
+        default=0.8, description="Sampling temperature", ge=0.0, le=2.0
+    )
+    top_p: float = Field(
+        default=0.9, description="Top-p sampling parameter", ge=0.0, le=1.0
+    )
+    top_k: int = Field(
+        default=50, description="Top-k sampling parameter", ge=1, le=1000
+    )
+    system_prompt: str | None = Field(
+        default=None, description="System prompt for the agent"
+    )
+    use_chat_template: bool = Field(
+        default=True, description="Whether to use chat template"
+    )
+    enable_planning: bool = Field(
+        default=False, description="Enable long-term planning"
+    )
     planning_config: dict[str, Any] | None = Field(
-        None, description="Planning configuration overrides"
+        default=None, description="Planning configuration overrides"
     )
 
     @field_validator("planning_config")
@@ -76,14 +88,20 @@ class ConversationRequest(BaseModel):
             "List of conversation messages (append-only when conversation_id is set)"
         ),
     )
-    conversation_id: str | None = Field(None, description="Conversation identifier")
-    user_id: str | None = Field(None, description="User identifier")
-    max_tokens: int = Field(
-        512, description="Maximum tokens in response", ge=1, le=4096
+    conversation_id: str | None = Field(
+        default=None, description="Conversation identifier"
     )
-    temperature: float = Field(0.8, description="Response temperature", ge=0.0, le=2.0)
-    stream: bool = Field(False, description="Whether to stream the response")
-    context: dict[str, Any] | None = Field(None, description="Additional context")
+    user_id: str | None = Field(default=None, description="User identifier")
+    max_tokens: int = Field(
+        default=512, description="Maximum tokens in response", ge=1, le=4096
+    )
+    temperature: float = Field(
+        default=0.8, description="Response temperature", ge=0.0, le=2.0
+    )
+    stream: bool = Field(default=False, description="Whether to stream the response")
+    context: dict[str, Any] | None = Field(
+        default=None, description="Additional context"
+    )
 
     @field_validator("messages")
     @classmethod
@@ -234,18 +252,18 @@ class TrainingRequest(BaseModel):
         ..., description="Reward function configuration"
     )
     num_episodes: int = Field(
-        100, description="Number of training episodes", ge=1, le=10000
+        default=100, description="Number of training episodes", ge=1, le=10000
     )
-    profile: str = Field("balanced", description="Training profile")
+    profile: str = Field(default="balanced", description="Training profile")
     resume_from_checkpoint: str | None = Field(
-        None,
+        default=None,
         description=(
             "A previous training job id, or a checkpoint path under the "
             "server's training output root, to resume from"
         ),
     )
     training_config_overrides: dict[str, Any] | None = Field(
-        None, description="Optional training configuration overrides"
+        default=None, description="Optional training configuration overrides"
     )
 
     @field_validator("profile")
@@ -308,7 +326,9 @@ class TrainingResponse(BaseModel):
 
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Training status")
-    estimated_time: float | None = Field(None, description="Estimated completion time")
+    estimated_time: float | None = Field(
+        default=None, description="Estimated completion time"
+    )
     message: str = Field(..., description="Status message")
 
 
@@ -338,5 +358,7 @@ class ErrorResponse(BaseModel):
 
     error: str = Field(..., description="Error type")
     message: str = Field(..., description="Error message")
-    details: dict[str, Any] | None = Field(None, description="Additional error details")
+    details: dict[str, Any] | None = Field(
+        default=None, description="Additional error details"
+    )
     timestamp: float = Field(..., description="Error timestamp")

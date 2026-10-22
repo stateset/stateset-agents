@@ -83,7 +83,9 @@ class AgentCreatedResponse(BaseModel):
         default_factory=datetime.utcnow, description="Creation timestamp"
     )
     config: AgentConfigRequest = Field(..., description="Agent configuration")
-    message: str = Field("Agent created successfully", description="Status message")
+    message: str = Field(
+        default="Agent created successfully", description="Status message"
+    )
 
 
 class AgentDetailResponse(BaseModel):
@@ -94,12 +96,12 @@ class AgentDetailResponse(BaseModel):
     agent_id: str = Field(..., description="Agent identifier")
     model_name: str = Field(..., description="Model name")
     created_at: datetime = Field(..., description="Creation timestamp")
-    conversation_count: int = Field(0, description="Number of conversations")
-    total_tokens_used: int = Field(0, description="Total tokens used")
+    conversation_count: int = Field(default=0, description="Number of conversations")
+    total_tokens_used: int = Field(default=0, description="Total tokens used")
     config: dict[str, Any] = Field(
         default_factory=dict, description="Agent configuration"
     )
-    status: str = Field("active", description="Agent status")
+    status: str = Field(default="active", description="Agent status")
 
 
 class AgentListResponse(PaginatedResponse):
@@ -115,10 +117,12 @@ class ConversationSummary(BaseModel):
 
     conversation_id: str = Field(..., description="Conversation identifier")
     agent_id: str = Field(..., description="Associated agent ID")
-    message_count: int = Field(0, description="Number of messages")
+    message_count: int = Field(default=0, description="Number of messages")
     created_at: datetime = Field(..., description="Creation timestamp")
-    last_message_at: datetime | None = Field(None, description="Last message timestamp")
-    total_tokens: int = Field(0, description="Total tokens used")
+    last_message_at: datetime | None = Field(
+        default=None, description="Last message timestamp"
+    )
+    total_tokens: int = Field(default=0, description="Total tokens used")
 
 
 class ConversationListResponse(PaginatedResponse):

@@ -171,7 +171,13 @@ def _lease_response(
         issued_at=lease.issued_at,
         expires_at=lease.expires_at,
         artifact=(
-            PolicyArtifactResponse(**artifact.to_dict())
+            PolicyArtifactResponse(
+                policy_version=artifact.policy_version,
+                uri=artifact.uri,
+                sha256=artifact.sha256,
+                size_bytes=artifact.size_bytes,
+                published_at=artifact.published_at,
+            )
             if artifact is not None
             else None
         ),

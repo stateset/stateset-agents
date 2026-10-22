@@ -46,11 +46,13 @@ class AuthenticatedUser(BaseModel):
 
     user_id: str = Field(..., description="User identifier")
     roles: list[str] = Field(default_factory=list, description="User roles")
-    api_key: str | None = Field(None, description="API key used (masked)")
-    auth_method: str = Field("none", description="Authentication method used")
-    email: str | None = Field(None, description="User email address")
-    name: str | None = Field(None, description="User display name")
-    metadata: dict[str, Any] | None = Field(None, description="Extra user metadata")
+    api_key: str | None = Field(default=None, description="API key used (masked)")
+    auth_method: str = Field(default="none", description="Authentication method used")
+    email: str | None = Field(default=None, description="User email address")
+    name: str | None = Field(default=None, description="User display name")
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Extra user metadata"
+    )
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AuthenticatedUser":
