@@ -378,6 +378,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
   monotonic time is extended by wall-clock time it missed, never decreasing
   when the wall clock steps back.
+- A RunPod pod no longer bills indefinitely when its submitting host crashes
+  while the pod is still provisioning. For RunPod's `runpod/pytorch` images,
+  the pod's start command arms the run deadline before sshd starts (using the
+  pod-scoped key RunPod injects; no user key is copied). Each RunPod
+  submission, and the studio at start-up when `RUNPOD_API_KEY` is set, first
+  terminates leased pods whose submitting process on this host has provably
+  exited.
 
 ### Security
 

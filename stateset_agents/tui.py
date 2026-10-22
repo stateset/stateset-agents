@@ -302,6 +302,9 @@ class Studio:
         self.all_runs: list[dict[str, Any]] = []
         self.background_history = background_history
         self.history_task: BackgroundTask[list[dict[str, Any]]] = BackgroundTask()
+        self.lease_sweep: BackgroundTask[tuple[list[str], dict[str, str]]] = (
+            BackgroundTask()
+        )
         # Launch, stop and prepared-run review verify retained bytes (dataset
         # hashes, package identity) and must not freeze the terminal thread.
         self.submission: BackgroundTask[Any] = BackgroundTask()
@@ -362,6 +365,19 @@ class Studio:
 
     def refresh(self, *, history: bool = True) -> None:
         """Reconnect to retained runs without polling external services."""
+        swept = self.lease_sweep.poll()
+        if swept is not None and swept.value is not None:
+            reclaimed, failed = swept.value
+            if reclaimed or failed:
+                self.message = (
+                    f"Ended {len(reclaimed)} RunPod pod(s) left by exited jobs."
+                    + (
+                        f" {len(failed)} could not be confirmed; run "
+                        "`stateset-agents runpod-orphans`."
+                        if failed
+                        else ""
+                    )
+                )
         submitted = self.submission.poll()
         if submitted is not None:
             self._finish_submission(submitted)
@@ -481,6 +497,23 @@ class Studio:
             self.message = (
                 "Quality inspection complete; review gates and evidence limits."
             )
+
+    def start_lease_sweep(self) -> bool:
+        """End RunPod pods whose submitting process provably exited, in the background.
+
+        Only with ``RUNPOD_API_KEY`` set; live and unverifiable owners are kept.
+        """
+        import os
+
+        if not os.environ.get("RUNPOD_API_KEY", "").strip():
+            return False
+
+        def sweep() -> tuple[list[str], dict[str, str]]:
+            from stateset_agents.remote.runpod import RunPodExecutor
+
+            return RunPodExecutor(allow_environment_wheel=False).sweep_abandoned_pods()
+
+        return self.lease_sweep.start(sweep, name="stateset-lease-sweep")
 
     def _submit(
         self,
@@ -2798,6 +2831,7 @@ def run_studio(workspace: Path, config: FinetuneConfig | None = None) -> None:
         ) from error
 
     studio = Studio(workspace, config, background_history=True)
+    studio.start_lease_sweep()
 
     def main(screen: Any) -> None:
         configure_terminal(screen, curses)

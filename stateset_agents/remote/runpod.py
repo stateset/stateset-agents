@@ -89,7 +89,9 @@ with os.fdopen(descriptor, 'rb') as source:
 #: the container environment; no user credential is copied to the pod. It
 #: arms only when those identify the pod this executor created.
 _POD_WATCHDOG = r"""import os, sys, time, urllib.error, urllib.request
-delay, root, expected = float(sys.argv[1]), sys.argv[2], sys.argv[3]
+when, root, expected = sys.argv[1], sys.argv[2], sys.argv[3]
+# "@<epoch>" is an absolute wall-clock deadline; otherwise a delay in seconds.
+until = float(when[1:]) if when.startswith("@") else time.time() + float(when)
 env = dict(os.environ)
 if not (env.get("RUNPOD_POD_ID") and env.get("RUNPOD_API_KEY")):
     try:
@@ -100,7 +102,7 @@ if not (env.get("RUNPOD_POD_ID") and env.get("RUNPOD_API_KEY")):
     except OSError:
         pass
 pod, key = env.get("RUNPOD_POD_ID"), env.get("RUNPOD_API_KEY")
-if not pod or not key or pod != expected:
+if not pod or not key or expected not in ("*", pod):
     print("pod deadline unavailable", flush=True)
     sys.exit(0)
 if os.fork():
@@ -110,7 +112,8 @@ os.setsid()
 null = os.open(os.devnull, os.O_RDWR)
 for descriptor in (0, 1, 2):
     os.dup2(null, descriptor)
-time.sleep(max(0.0, delay))
+while time.time() < until:
+    time.sleep(min(60.0, max(0.0, until - time.time())))
 request = urllib.request.Request(
     root + "/pods/" + pod, method="DELETE",
     headers={"Authorization": "Bearer " + key},
@@ -128,6 +131,24 @@ for _ in range(5):
 """
 
 _API_ROOT = "https://rest.runpod.io/v1"
+#: RunPod's own PyTorch images start sshd (from PUBLIC_KEY) via /start.sh.
+_START_SCRIPT_IMAGES = ("runpod/pytorch:",)
+
+
+def _deadline_start_command(deadline_epoch: float) -> str:
+    """A pod start command that arms the deadline before sshd starts.
+
+    The watchdog runs from the first moment the container starts, so a pod
+    whose submitter dies while it is still provisioning (before SSH is ever
+    reachable) still deletes itself at the run deadline. It then hands over
+    to the image's own ``/start.sh``.
+    """
+    watchdog = shlex.join(
+        ["python3", "-c", _POD_WATCHDOG, f"@{deadline_epoch:.0f}", _API_ROOT, "*"]
+    )
+    return f"{watchdog} >/tmp/stateset-deadline.log 2>&1 & exec /start.sh"
+
+
 _HTTP_ATTEMPTS = 5
 _HTTP_BACKOFF_S = 2.0
 #: Official RunPod PyTorch image — ships a preconfigured sshd that reads
@@ -1185,6 +1206,23 @@ class RunPodExecutor(RemoteExecutor):
                 )
         return reclaimed, failed
 
+    def sweep_abandoned_pods(self) -> tuple[list[str], dict[str, str]]:
+        """Reclaim pods whose submitting process on this host has provably exited.
+
+        Runs before new work starts, so a pod left behind by a crashed
+        submitter (even mid-provisioning) is ended by the next session instead
+        of billing until someone notices. Live and unverifiable owners are
+        never touched.
+        """
+        abandoned = [
+            str(lease.get("pod_id", ""))
+            for lease in self.leases()
+            if lease["owner_state"] == "gone"
+        ]
+        if not abandoned:
+            return [], {}
+        return self.reclaim_pods(abandoned)
+
     def pods_named(self, names: Iterable[str]) -> list[str]:
         """Ids of account pods whose name is exactly one of ``names``."""
         wanted = set(names)
@@ -1432,6 +1470,18 @@ class RunPodExecutor(RemoteExecutor):
         job_id = uuid.uuid4().hex[:12]
         handle = JobHandle(provider=self.name, job_id=job_id)
         logs: list[str] = []
+        try:
+            swept, unswept = self.sweep_abandoned_pods()
+        except Exception as exc:  # noqa: BLE001 - never blocks new work
+            logs.append(f"could not sweep abandoned pods: {type(exc).__name__}")
+        else:
+            logs.extend(
+                f"terminated pod {pod} left by an exited submitter" for pod in swept
+            )
+            logs.extend(
+                f"could not terminate abandoned pod {pod} ({reason}); lease kept"
+                for pod, reason in unswept.items()
+            )
 
         # A network volume is datacenter-scoped, so the pod must be created
         # in the volume's datacenter. Resolved once, before any pod exists.
@@ -1655,6 +1705,17 @@ class RunPodExecutor(RemoteExecutor):
         allocation, without claiming that an acknowledgement ends billing.
         """
         self._observe_pod(job_id, "allocation_intent", attempt=attempt)
+        start: dict[str, Any] = {}
+        if self.image.startswith(_START_SCRIPT_IMAGES):
+            # The pod-side backstop is armed at creation: no local process has
+            # to survive provisioning for the pod to stop at the run deadline.
+            remaining = spec.timeout_s
+            if self._run_deadline is not None:
+                remaining = max(0.0, self._run_deadline - _billing_now())
+            start = {
+                "docker_entrypoint": ["/bin/bash", "-c"],
+                "docker_start_cmd": [_deadline_start_command(time.time() + remaining)],
+            }
         pod = api.create_pod(
             name=f"stateset-sft-{job_id}",
             image=self.image,
@@ -1667,6 +1728,7 @@ class RunPodExecutor(RemoteExecutor):
             network_volume_id=spec.network_volume_id,
             volume_mount_path=_REMOTE_WORKDIR if spec.network_volume_id else None,
             data_center_id=data_center_id,
+            **start,
         )
         pod_id = pod.get("id") if isinstance(pod, dict) else None
         if (
