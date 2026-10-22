@@ -41,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   far plus the replacement's worst case fits the ceiling; otherwise the run
   stops with a `budget`/`deadline` error. Previously a replacement got a fresh
   timeout and a retried run could spend about twice `max_cost_usd`.
+- A fine-tuning run whose supervisor was lost before it claimed the run (OOM,
+  reboot, import failure) no longer stays "prepared" forever. Run status now
+  checks the admitting process while a launch is being claimed, and reports a
+  launch that no process claimed within 120 seconds as `interrupted`. A stop
+  request cancels such an unclaimed launch outright, and a supervisor that
+  cannot claim supervision after admission records a failure.
 
 ### Security
 

@@ -271,3 +271,83 @@ async def test_http_stop_and_metadata_keep_supervisor_loss_explicit(
         assert rows[0]["terminal"] is None
         assert rows[0]["execution_unconfirmed"] is True
         assert rows[0]["stop_requested"] is True
+
+
+@pytest.fixture
+def submitted_run(interrupted_run):
+    """A launch receipt exists, but no supervisor or worker has claimed it yet."""
+    fixture = interrupted_run
+    (fixture.run / "supervisor.json").unlink()
+    workspace.write_json(fixture.run / "state.json", {"status": "prepared"})
+    return fixture
+
+
+def _age_launch(run, seconds):
+    submitted = os.stat(run / "launch.lock").st_mtime - seconds
+    os.utime(run / "launch.lock", (submitted, submitted))
+
+
+def test_unclaimed_launch_is_interrupted_after_its_grace_and_stop_cancels_it(
+    submitted_run, monkeypatch
+):
+    """A supervisor lost before admission must not leave a run "prepared" forever."""
+    fixture = submitted_run
+    # Within the startup grace window the launch is still in flight.
+    assert workspace.run_status(fixture.run)["status"] == "prepared"
+    _age_launch(fixture.run, workspace.LAUNCH_CLAIM_GRACE_SECONDS + 1)
+    status = workspace.run_status(fixture.run)
+    assert status["status"] == "interrupted"
+    assert status["execution_unconfirmed"] is True
+    assert workspace.read_json(fixture.run / "state.json")["status"] == "prepared"
+
+    # Nobody claimed admission, and any later claimant checks the stop receipt
+    # before doing work, so the stop is definitive.
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
+    assert result["status"] == "cancelled" and result["terminal"] is True
+    monkeypatch.setattr(worker.os, "umask", lambda _value: 0)
+    assert worker.supervise(fixture.run) == 1
+    assert not (fixture.run / "admission.json").exists()
+    assert workspace.run_status(fixture.run)["status"] == "cancelled"
+
+
+def test_stop_never_cancels_a_launch_that_a_process_already_claimed(submitted_run):
+    fixture = submitted_run
+    workspace.write_json(
+        fixture.run / "admission.json",
+        {"pid": 100001, "process_token": "admitting-supervisor"},
+    )
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
+    assert result["status"] == "interrupted" and result["terminal"] is None
+    assert workspace.read_json(fixture.run / "state.json")["status"] == "prepared"
+
+
+@pytest.mark.parametrize("alive", [True, False])
+def test_admitting_process_owns_a_prepared_launch(submitted_run, monkeypatch, alive):
+    fixture = submitted_run
+    workspace.write_json(
+        fixture.run / "admission.json",
+        {"pid": 100001, "process_token": "admitting-supervisor"},
+    )
+    monkeypatch.setattr(
+        workspace,
+        "process_token",
+        lambda _pid: "admitting-supervisor" if alive else None,
+    )
+    status = workspace.run_status(fixture.run)
+    assert status["status"] == ("prepared" if alive else "interrupted")
+    assert status["execution_unconfirmed"] is not alive
+
+
+def test_supervisor_records_failure_when_it_cannot_claim_supervision(
+    submitted_run, monkeypatch
+):
+    fixture = submitted_run
+    monkeypatch.setattr(worker.os, "umask", lambda _value: 0)
+    monkeypatch.setattr(worker, "_claim_owner", lambda *_: False)
+    monkeypatch.setattr(
+        worker, "_supervise", lambda *_a, **_k: pytest.fail("No work may start")
+    )
+    assert worker.supervise(fixture.run) == 1
+    state = workspace.read_json(fixture.run / "state.json")
+    assert state["status"] == "failed"
+    assert workspace.read_json(fixture.run / "failure.json")["stage"] == "supervisor"

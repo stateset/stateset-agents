@@ -1114,10 +1114,17 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
     if not stop_requested(run):
         # Publish a complete receipt atomically; concurrent callers are idempotent.
         write_json(run / "stop.json", {"schema_version": 1, "plan_sha256": digest})
-    if state.get("status") == "prepared" and not (run / "launch.lock").exists():
+    # The stop receipt is published before this check, and every supervisor or
+    # direct worker claims admission before it checks for a stop. So a launch
+    # that no process has claimed yet can be cancelled outright: any process
+    # that claims it later stops before doing work.
+    retained = read_json(run / "state.json")
+    if retained.get("status") == "prepared" and (
+        not (run / "launch.lock").exists() or launch_unclaimed(run)
+    ):
         write_json(
             run / "state.json",
-            {**state, "status": "cancelled", "finished_at": time.time()},
+            {**retained, "status": "cancelled", "finished_at": time.time()},
         )
     current = run_status(run)
     return {
@@ -1178,22 +1185,60 @@ def _owner_confirmed(path: Path) -> bool:
         return False
 
 
+#: How long a submitted launch may go without any process claiming it before
+#: its owner counts as lost. A supervisor normally claims admission within a
+#: second of ``launch_run``; this only bounds how long a launch whose process
+#: died first (OOM, reboot, import failure) can keep looking "prepared".
+LAUNCH_CLAIM_GRACE_SECONDS = 120.0
+
+
+def _present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def launch_unclaimed(directory: Path) -> bool:
+    """A launch receipt exists, but no admission/supervisor/execution owner does."""
+    return _present(directory / "launch.lock") and not any(
+        _present(directory / name)
+        for name in ("admission.json", "supervisor.json", "execution.json")
+    )
+
+
+def launch_claim_lost(
+    directory: Path, *, grace_seconds: float = LAUNCH_CLAIM_GRACE_SECONDS
+) -> bool:
+    """An unclaimed launch receipt is older than the startup grace window."""
+    if not launch_unclaimed(directory):
+        return False
+    try:
+        submitted = (directory / "launch.lock").lstat().st_mtime
+    except OSError:
+        return False
+    return time.time() - submitted > grace_seconds
+
+
 def run_status(run: Path) -> dict[str, Any]:
     """Read committed outcomes; missing owners leave unfinished work unconfirmed."""
     state = read_json(run / "state.json")
     if state.get("status") not in TERMINAL_STATES:
         supervisor = run / "supervisor.json"
         execution = run / "execution.json"
+        admission = run / "admission.json"
         owner = None
-        if supervisor.exists() or supervisor.is_symlink():
+        lost = False
+        if _present(supervisor):
             owner = supervisor
-        elif (
-            state.get("status") == "running"
-            or execution.exists()
-            or execution.is_symlink()
-        ):
+        elif state.get("status") == "running" or _present(execution):
             owner = execution
-        if owner is not None and not _owner_confirmed(owner):
+        elif state.get("status") == "prepared":
+            # Between admission and the supervisor/execution claim, the
+            # admitting process owns the run. A launch nobody ever claimed
+            # is lost once its startup grace window has passed.
+            if _present(admission):
+                owner = admission
+            else:
+                lost = launch_claim_lost(run)
+        if lost or (owner is not None and not _owner_confirmed(owner)):
             state = {
                 **state,
                 "status": "interrupted",

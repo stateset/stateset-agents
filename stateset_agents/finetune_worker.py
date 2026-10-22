@@ -307,6 +307,11 @@ def supervise(run: Path) -> int:
     if not _claim_admission(run, "supervised", supervisor_token):
         return 1
     if not _claim_owner(run, "supervisor.json"):
+        # This process holds admission, so no other supervisor or worker can
+        # start this run. Record the outcome rather than leave it "prepared".
+        _record_failure(
+            run, FinetuneFailure("unknown"), stage="supervisor", preserve=True
+        )
         return 1
     stage = "review"
     try:
