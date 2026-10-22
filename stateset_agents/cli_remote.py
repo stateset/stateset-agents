@@ -1182,12 +1182,21 @@ def runpod_orphans(
         _echo("Read-only. Re-run with --terminate after checking active jobs.")
         return
     try:
-        terminated = executor.cleanup_orphans()
+        terminated, failed = executor.reclaim_pods(
+            str(lease.get("pod_id", "")) for lease in leases
+        )
     except StateSetError as exc:
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
     for pod_id in terminated:
         _echo(f"Terminated {pod_id}; cleanup lease removed.")
+    for pod_id, reason in failed.items():
+        _echo(
+            f"Could not confirm termination of {pod_id} ({reason}); lease kept.",
+            err=True,
+        )
+    if failed:
+        raise typer.Exit(code=1)
 
 
 @app.command("undeploy")

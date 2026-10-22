@@ -16,6 +16,7 @@ from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.finetune_recovery import recovery_unavailable_reason
 from stateset_agents.finetune_workspace import (
     FAILURE_GUIDANCE,
     FinetuneConfig,
@@ -386,6 +387,7 @@ def _supervise(
             )
             # Buildr owns the timeout and its child cleanup. Without Buildr,
             # this supervisor owns the process group and bounds its lifetime.
+            exited = False
             try:
                 code = process.wait(
                     timeout=(
@@ -394,6 +396,7 @@ def _supervise(
                         else config.timeout_seconds
                     )
                 )
+                exited = True
             except subprocess.TimeoutExpired:
                 _stop_worker_group(process, force=False)
                 try:
@@ -401,7 +404,13 @@ def _supervise(
                 except subprocess.TimeoutExpired:
                     _stop_worker_group(process, force=True)
                     process.wait()
+                exited = True
                 raise FinetuneFailure("timeout") from None
+            finally:
+                # Only once the worker is known to have exited: reclaiming
+                # under a live worker would end its running pod.
+                if exited:
+                    _reclaim_remote_allocations(run, config)
         completed = (run / "completion.json").is_file()
         success = code == 0 and completed
         if success:
@@ -425,6 +434,64 @@ def _supervise(
         _record_failure(run, error, stage="supervisor", preserve=True)
         logging.exception("Fine-tuning supervisor failed")
         return 1
+
+
+def _reclaim_remote_allocations(run: Path, config: FinetuneConfig) -> None:
+    """After the worker exits, end any pod it allocated but never cleaned up.
+
+    A worker killed outright (SIGKILL, OOM, crash) skips its own cleanup and
+    a RunPod pod would keep billing. Never raises: the run's outcome stands.
+    """
+    if config.provider != "runpod":
+        return
+    try:
+        from stateset_agents.finetune_provider_submission import (
+            reclaim_abandoned_pods,
+        )
+
+        result = reclaim_abandoned_pods(run)
+    except Exception as error:  # noqa: BLE001 - outcome recording must continue
+        logging.error(
+            "Could not reclaim RunPod pods after the worker exited (%s); "
+            "run `stateset-agents remote runpod-orphans` to inspect leases",
+            type(error).__name__,
+        )
+        return
+    for pod_id in result["reclaimed"]:
+        logging.warning("Terminated pod %s left by the exited worker", pod_id)
+    for pod_id, reason in result["failed"].items():
+        logging.error(
+            "Could not confirm termination of pod %s (%s); its lease is kept",
+            pod_id,
+            reason,
+        )
+
+
+def _install_termination_handlers() -> None:
+    """Make SIGTERM/SIGHUP raise ``SystemExit`` so ``finally`` cleanup runs.
+
+    The default action ends the process immediately, skipping the cleanup
+    that terminates provider resources. Later signals are ignored so that
+    cleanup can finish; SIGKILL still ends the process.
+    """
+    import signal
+
+    numbers = [
+        number
+        for number in (
+            getattr(signal, "SIGTERM", None),
+            getattr(signal, "SIGHUP", None),
+        )
+        if number is not None
+    ]
+
+    def stop(signum: int, _frame: Any) -> None:
+        for number in numbers:
+            signal.signal(number, signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for number in numbers:
+        signal.signal(number, stop)
 
 
 def _check_stop(run: Path) -> None:
@@ -454,6 +521,24 @@ def _metrics(run: Path, step: int, metrics: dict[str, Any]) -> None:
     write_json(run / "metrics.json", event)
 
 
+def _publish_recovery(run: Path, checkpoint: Path, *, step: int) -> None:
+    """Publish a recovery receipt, or record why recovery is unavailable.
+
+    Recovery needs Linux ownership checks and a single training process. When
+    those are missing (Windows, an inherited ``WORLD_SIZE``) training must
+    still finish; the run records ``recovery_unavailable`` instead of failing
+    at its first checkpoint save.
+    """
+    from stateset_agents.finetune_recovery import publish_checkpoint
+
+    reason = recovery_unavailable_reason()
+    if reason is not None:
+        _state(run, recovery_unavailable=reason)
+        return
+    publish_checkpoint(run, checkpoint, step=step)
+    _state(run, recovery_checkpoint=str(checkpoint))
+
+
 def _train_sft(run: Path, config: FinetuneConfig) -> Path:
     from stateset_agents.training.sft import load_sft_dataset, run_sft
 
@@ -465,11 +550,8 @@ def _train_sft(run: Path, config: FinetuneConfig) -> Path:
 
     class Progress(TrainerCallback):
         def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> Any:
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
             path = run / "artifacts" / f"checkpoint-{state.global_step}"
-            publish_checkpoint(run, path, step=state.global_step)
-            _state(run, recovery_checkpoint=str(path))
+            _publish_recovery(run, path, step=state.global_step)
             return control
 
         def on_step_end(
@@ -563,10 +645,7 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
         ) -> None:
             if is_best:
                 return
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
-            publish_checkpoint(run, Path(path), step=step)
-            _state(run, recovery_checkpoint=path)
+            _publish_recovery(run, Path(path), step=step)
 
         def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
             _metrics(run, step, metrics)
@@ -576,7 +655,8 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
             if stop_requested(run):
                 name = f"stopped-step-{step}"
                 await trainer.save_checkpoint(checkpoint_name=name)
-                _state(run, recovery_checkpoint=str(run / "artifacts" / name))
+                if recovery_unavailable_reason() is None:
+                    _state(run, recovery_checkpoint=str(run / "artifacts" / name))
                 raise FinetuneFailure("cancelled")
 
     training = TrainingConfig(
@@ -832,6 +912,7 @@ def main() -> int:
     try:
         if args.supervise:
             return supervise(run)
+        _install_termination_handlers()
         return execute(run, supervisor_token=child_token if args.supervised else None)
     except Exception:
         # Public entrypoints retain their own owned failures. An unexpected

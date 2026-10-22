@@ -1004,3 +1004,35 @@ def test_real_terminal_edits_and_reviews_evaluation_without_submitting(tmp_path,
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+@pytest.mark.parametrize("receipt", ["bound", "missing", "other-plan"])
+def test_queue_exit_after_a_committed_evaluation_keeps_its_success(
+    tmp_path, monkeypatch, receipt
+):
+    """A teardown or queue error after the executor committed is not a failure."""
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    monkeypatch.setattr(worker, "queue_executable", lambda: "/queue")
+
+    def call(argv, **kwargs):
+        if receipt != "missing":
+            plan_sha = (
+                review.sha256 if receipt == "bound" else "0" * 64
+            )  # result.json binds the reviewed plan by hash
+            ws.write_json(
+                path / "result.json",
+                {"schema_version": 1, "evaluation_plan_sha256": plan_sha},
+            )
+        ws.write_json(path / "state.json", {"status": "succeeded"})
+        return 3
+
+    monkeypatch.setattr(worker.subprocess, "call", call)
+    assert worker.supervise(path) == 3
+    state = evaluation.evaluation_status(path)["state"]
+    if receipt == "bound":
+        assert state["status"] == "succeeded"
+        assert state["teardown_error"] == "queue_exit"
+        assert state["teardown_exit_code"] == 3
+    else:
+        assert state["status"] == "failed" and state["exit_code"] == 3

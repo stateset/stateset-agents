@@ -40,10 +40,10 @@ def write_chats(path, replies):
 
 def wait_for_scan(studio):
     deadline = time.monotonic() + 5
-    while studio.data_inspecting and time.monotonic() < deadline:
+    while studio.data_panel.busy and time.monotonic() < deadline:
         studio.refresh()
         time.sleep(0.005)
-    assert not studio.data_inspecting
+    assert not studio.data_panel.busy
 
 
 def test_sft_statistics_count_characters_and_duplicates_without_exposing_text(tmp_path):
@@ -280,7 +280,7 @@ def test_dataset_view_hides_private_text_scrolls_and_preserves_draft(
     studio.handle("u")
     wait_for_scan(studio)
     assert (
-        "error" not in studio.data_report
+        "error" not in studio.data_panel.report
     )  # Other draft settings need not be launch-valid.
     frame = studio.lines(width, height)
     assert len(frame) == height and "PRIVATE REPLY" not in "\n".join(frame)
@@ -295,7 +295,7 @@ def test_dataset_view_hides_private_text_scrolls_and_preserves_draft(
     studio.handle("ENTER")
     assert studio.plan is None and not studio.workspace.exists()
     studio.handle("ESC")
-    assert not studio.data_show_samples and studio.values == before
+    assert not studio.data_panel.show_samples and studio.values == before
     studio.handle("u")
     wait_for_scan(studio)
     assert "PRIVATE REPLY" not in "\n".join(studio.lines(width, height))
@@ -322,7 +322,7 @@ def test_background_scan_stays_responsive_and_reports_changed_settings(
         studio.handle("u")
         assert "already running" in studio.message
         studio.handle("ESC")
-        assert studio.overlay is None and studio.data_inspecting
+        assert studio.overlay is None and studio.data_panel.busy
         studio.values["dataset"] = str(tmp_path / "new.jsonl")
     finally:
         release.set()
@@ -348,7 +348,7 @@ def test_unexpected_background_errors_are_controlled_and_retryable(
     assert "Cannot inspect dataset" in text and "PRIVATE FAILURE" not in text
     studio.handle("u")
     wait_for_scan(studio)
-    assert "error" in studio.data_report
+    assert "error" in studio.data_panel.report
 
 
 @pytest.mark.parametrize(
@@ -385,7 +385,7 @@ def test_format_diagnostics_share_safe_one_based_locations(
     )
     studio.handle("u")
     wait_for_scan(studio)
-    assert studio.data_report["diagnostic"] == diagnostic
+    assert studio.data_panel.report["diagnostic"] == diagnostic
     assert "scan failed" in studio.message
     text = "\n".join(studio.lines(74, 44))
     assert "PRIVATE" not in text
@@ -423,15 +423,24 @@ def test_completed_background_scan_updates_only_its_own_pending_message(
 ):
     studio = Studio(tmp_path / "unused", FinetuneConfig(dataset="old.jsonl"))
     signature = studio._data_settings_signature()
-    studio.data_inspecting = True
+    release = threading.Event()
+
+    def scan():
+        assert release.wait(5)
+        return {"examples": 1}
+
+    assert studio.data_panel.start(signature, scan)
     studio.message = "Reading one dataset snapshot; no run is prepared or started."
     if outcome == "changed":
         studio.values["dataset"] = "new.jsonl"
     elif outcome == "other_action":
         studio.message = "Saved the draft."
-    studio._data_results.put((signature, {"examples": 1}))
-    studio.refresh()
-    assert not studio.data_inspecting
+    release.set()
+    deadline = time.monotonic() + 5
+    while studio.data_panel.busy and time.monotonic() < deadline:
+        studio.refresh()
+        time.sleep(0.005)
+    assert not studio.data_panel.busy
     assert (
         studio.message
         == {

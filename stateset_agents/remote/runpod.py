@@ -30,14 +30,17 @@ import os
 import re
 import shlex
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import weakref
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
@@ -78,6 +81,50 @@ with os.fdopen(descriptor, 'rb') as source:
         sys.exit('Reviewed wheel checksum differs')
 """
 
+#: Pod-side deadline: the pod deletes itself at the run deadline even if the
+#: submitting worker and its supervisor are both gone (SIGKILL, host crash).
+#: It reads RunPod's own pod-scoped ``RUNPOD_POD_ID``/``RUNPOD_API_KEY`` from
+#: the container environment; no user credential is copied to the pod. It
+#: arms only when those identify the pod this executor created.
+_POD_WATCHDOG = r"""import os, sys, time, urllib.error, urllib.request
+delay, root, expected = float(sys.argv[1]), sys.argv[2], sys.argv[3]
+env = dict(os.environ)
+if not (env.get("RUNPOD_POD_ID") and env.get("RUNPOD_API_KEY")):
+    try:
+        with open("/proc/1/environ", "rb") as stream:
+            for item in stream.read().split(b"\0"):
+                name, _, value = item.decode("utf-8", "replace").partition("=")
+                env.setdefault(name, value)
+    except OSError:
+        pass
+pod, key = env.get("RUNPOD_POD_ID"), env.get("RUNPOD_API_KEY")
+if not pod or not key or pod != expected:
+    print("pod deadline unavailable", flush=True)
+    sys.exit(0)
+if os.fork():
+    print("pod deadline armed", flush=True)
+    sys.exit(0)
+os.setsid()
+null = os.open(os.devnull, os.O_RDWR)
+for descriptor in (0, 1, 2):
+    os.dup2(null, descriptor)
+time.sleep(max(0.0, delay))
+request = urllib.request.Request(
+    root + "/pods/" + pod, method="DELETE",
+    headers={"Authorization": "Bearer " + key},
+)
+for _ in range(5):
+    try:
+        urllib.request.urlopen(request, timeout=30).read()
+        break
+    except urllib.error.HTTPError as error:
+        if error.code == 404:
+            break
+        time.sleep(30)
+    except OSError:
+        time.sleep(30)
+"""
+
 _API_ROOT = "https://rest.runpod.io/v1"
 _HTTP_ATTEMPTS = 5
 _HTTP_BACKOFF_S = 2.0
@@ -115,6 +162,51 @@ def package_pin(wheel: Path | None, package_version: str | None) -> str:
     if package_version:
         return f"stateset-agents[training]=={package_version}"
     return "stateset-agents[training]"
+
+
+def _pod_already_gone(exc: BaseException) -> bool:
+    """A termination refused with 404: the pod no longer exists, so nothing bills."""
+    response = getattr(exc, "response", None)
+    return getattr(response, "status_code", None) == 404
+
+
+@contextmanager
+def _signals_end_submission() -> Iterator[None]:
+    """Turn SIGTERM/SIGHUP into ``SystemExit`` while a submission holds pods.
+
+    Their default action kills the process outright, skipping the ``finally``
+    that terminates the pod and clears its lease, so a stopped worker could
+    leave a pod billing past every ceiling. Only the main thread can install
+    handlers, and a handler the application already installed is kept. After
+    the first signal, repeats are ignored so cleanup can finish.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        yield
+        return
+    previous: dict[int, Any] = {}
+
+    def stop(signum: int, _frame: Any) -> None:
+        for number in previous:
+            signal.signal(number, signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for name in ("SIGTERM", "SIGHUP"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            if signal.getsignal(number) is signal.SIG_DFL:
+                previous[number] = signal.signal(number, stop)
+        except (OSError, ValueError):
+            continue
+    try:
+        yield
+    finally:
+        for number, handler in previous.items():
+            try:
+                signal.signal(number, handler)
+            except (OSError, ValueError):
+                pass
 
 
 class RunPodApi:
@@ -376,12 +468,14 @@ class RunPodApi:
         return dict(response.json())
 
     def terminate_pod(self, pod_id: str) -> None:
+        """Delete a pod; DELETE is idempotent, so 429/5xx are retried with backoff."""
         import requests
 
-        response = requests.delete(
-            f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+        self._send(
+            lambda: requests.delete(
+                f"{self.root}/pods/{pod_id}", headers=self._headers(), timeout=60
+            )
         )
-        response.raise_for_status()
 
 
 class _SshTimeout(RemoteExecutionError):
@@ -890,7 +984,12 @@ class RunPodExecutor(RemoteExecutor):
         """Retain cleanup evidence without masking an existing primary failure."""
         primary_error = sys.exc_info()[1]
         try:
-            api.terminate_pod(pod_id)
+            try:
+                api.terminate_pod(pod_id)
+            except Exception as exc:
+                if not _pod_already_gone(exc):
+                    raise
+                logs.append(f"pod {pod_id} was already gone when cleanup ran")
         except Exception as exc:
             logs.append(
                 f"could not confirm termination of pod {pod_id}: {exc}; "
@@ -964,18 +1063,70 @@ class RunPodExecutor(RemoteExecutor):
                 leases.append(row)
         return leases
 
-    def cleanup_orphans(self) -> list[str]:
-        """Terminate every locally leased pod, clearing only confirmed leases."""
+    def reclaim_pods(self, pod_ids: Iterable[str]) -> tuple[list[str], dict[str, str]]:
+        """Terminate each pod independently, clearing a lease only once it is gone.
+
+        A 404 means the pod no longer exists and counts as reclaimed; the API
+        call itself retries 429/5xx. One failure never stops the others.
+        Returns the reclaimed pod ids and a credential-free reason per failure.
+        """
         api = self._require_api()
-        terminated: list[str] = []
-        for lease in self.orphaned_leases():
-            pod_id = str(lease.get("pod_id", "")).strip()
+        reclaimed: list[str] = []
+        failed: dict[str, str] = {}
+        for pod_id in dict.fromkeys(str(value).strip() for value in pod_ids):
             if not pod_id:
                 continue
-            api.terminate_pod(pod_id)
-            self._lease_path(pod_id).unlink(missing_ok=True)
-            terminated.append(pod_id)
-        return terminated
+            try:
+                api.terminate_pod(pod_id)
+            except Exception as exc:
+                if not _pod_already_gone(exc):
+                    status = getattr(
+                        getattr(exc, "response", None), "status_code", None
+                    )
+                    failed[pod_id] = type(exc).__name__ + (
+                        f" (HTTP {status})" if status is not None else ""
+                    )
+                    continue
+            reclaimed.append(pod_id)
+            try:
+                self._lease_path(pod_id).unlink(missing_ok=True)
+            except OSError:
+                failed[pod_id] = (
+                    "terminated, but its cleanup lease could not be removed"
+                )
+        return reclaimed, failed
+
+    def pods_named(self, names: Iterable[str]) -> list[str]:
+        """Ids of account pods whose name is exactly one of ``names``."""
+        wanted = set(names)
+        if not wanted:
+            return []
+        return [
+            str(pod["id"])
+            for pod in self._require_api().list_pods()
+            if pod.get("name") in wanted and isinstance(pod.get("id"), str)
+        ]
+
+    def cleanup_orphans(self) -> list[str]:
+        """Terminate every locally leased pod, clearing only confirmed leases.
+
+        Every lease is attempted; failures are reported together afterwards
+        and their leases kept for a later retry.
+        """
+        reclaimed, failed = self.reclaim_pods(
+            str(lease.get("pod_id", "")) for lease in self.orphaned_leases()
+        )
+        if failed:
+            raise RemoteExecutionError(
+                f"could not confirm termination of {len(failed)} leased pod(s): "
+                + "; ".join(f"{pod}: {reason}" for pod, reason in failed.items())
+                + (f" (terminated {', '.join(reclaimed)})" if reclaimed else "")
+                + "; their leases were kept, so retry or inspect the provider console",
+                provider=self.name,
+                reclaimed=reclaimed,
+                failed=sorted(failed),
+            )
+        return reclaimed
 
     # -- lazily resolved collaborators ------------------------------------
 
@@ -1044,6 +1195,33 @@ class RunPodExecutor(RemoteExecutor):
                     provider=self.name,
                 )
             time.sleep(max(0.0, min(self.poll_interval_s, deadline - now)))
+
+    def _arm_pod_deadline(
+        self, ssh: Any, pod_id: str, run_deadline: float, logs: list[str]
+    ) -> None:
+        """Best effort: have the pod delete itself at the run deadline.
+
+        Covers the case no local process survives to clean up. The job never
+        depends on it; whether it armed is logged.
+        """
+        delay = max(0, math.ceil(run_deadline - time.monotonic()))
+        try:
+            _, output = ssh.run(
+                shlex.join(
+                    ["python3", "-c", _POD_WATCHDOG, str(delay), _API_ROOT, pod_id]
+                ),
+                timeout_s=30,
+            )
+        except Exception as exc:  # noqa: BLE001 - the deadline is a backstop only
+            logs.append(f"could not arm the pod-side deadline: {type(exc).__name__}")
+            return
+        armed = "pod deadline armed" in output
+        logs.append(
+            f"pod-side deadline armed: pod {pod_id} deletes itself in {delay}s"
+            if armed
+            else "pod-side deadline unavailable (no pod-scoped RunPod credentials); "
+            "local cleanup and leases still apply"
+        )
 
     def _upload_adapter(self, ssh: Any, adapter_dir: Path) -> None:
         """Tar, upload, untar — ``SshTransport.upload`` moves single files."""
@@ -1144,6 +1322,12 @@ class RunPodExecutor(RemoteExecutor):
         return self._reviewed_commands(commands)
 
     def submit(self, spec: RemoteJobSpec) -> JobHandle:
+        # A stopped submitter still terminates the pods it holds (see
+        # ``_signals_end_submission``).
+        with _signals_end_submission():
+            return self._submit(spec)
+
+    def _submit(self, spec: RemoteJobSpec) -> JobHandle:
         self.validate_spec(spec)
         self._submission_observer_failed = False
         self._submission_started = True
@@ -1486,6 +1670,8 @@ class RunPodExecutor(RemoteExecutor):
                 ssh.wait_until_reachable(
                     host, port, min(self.ready_timeout_s, remaining_s)
                 )
+                if type(ssh) is SshTransport:
+                    self._arm_pod_deadline(ssh, pod_id, run_deadline, logs)
 
                 # The job phase: any transport failure past this point means the
                 # pod (or its network) died under us — the retryable case.

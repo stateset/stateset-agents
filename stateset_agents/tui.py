@@ -10,12 +10,10 @@ import hashlib
 import math
 import shlex
 import sys
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from queue import Empty, SimpleQueue
 from typing import Any, TypeGuard
 
 from rich.cells import cell_len, set_cell_size
@@ -61,6 +59,13 @@ from stateset_agents.finetune_workspace import (
 from stateset_agents.tui_actions import ActionMenu
 from stateset_agents.tui_panels import FilePicker, LogViewer
 from stateset_agents.tui_render import FrameRenderer, configure_terminal
+from stateset_agents.tui_reports import (
+    DataReport,
+    QualityReport,
+    ReadinessReport,
+    RecoveryPanel,
+    WorkflowReport,
+)
 from stateset_agents.tui_tasks import BackgroundTask, TaskResult
 from stateset_agents.tui_text import _clip, _safe, _wrap
 
@@ -280,30 +285,13 @@ class Studio:
         self.prepared_review: PreparedRunReview | None = None
         self.comparison_reference: Path | None = None
         self.comparison: dict[str, Any] | None = None
-        self.data_report: dict[str, Any] | None = None
-        self.data_signature = ""
-        self.data_inspecting = False
-        self.data_show_samples = False
-        self.data_sample_index = 0
-        self.workflow_report: dict[str, Any] | None = None
-        self.workflow_signature = ""
-        self.workflow_busy = False
-        self.workflow_index = 0
-        self._workflow_results: SimpleQueue[tuple[str, dict[str, Any]]] = SimpleQueue()
-        self.quality_run: Path | None = None
-        self.quality_report: dict[str, Any] | None = None
-        self.quality_busy = False
-        self._quality_results: SimpleQueue[dict[str, Any]] = SimpleQueue()
+        self.data_panel = DataReport()
+        self.workflow_panel = WorkflowReport()
+        self.quality_panel = QualityReport()
         self.evaluation_panel: EvaluationPanel | None = None
         self.stop_run: Path | None = None
         self.stop_digest = ""
-        self.recovery_run: Path | None = None
-        self.recovery_report: dict[str, Any] | None = None
-        self.recovery_choice: dict[str, Any] | None = None
-        self.recovery_index = 0
-        self.recovery_busy = False
-        self._recovery_results: SimpleQueue[dict[str, Any]] = SimpleQueue()
-        self._data_results: SimpleQueue[tuple[str, dict[str, Any]]] = SimpleQueue()
+        self.recovery_panel = RecoveryPanel()
         self.validation_issues: list[ConfigIssue] = []
         self.validation_index = 0
         self.validation_signature = ""
@@ -323,12 +311,7 @@ class Studio:
         self.history_error = ""
         self.run_query = ""
         self.run_filter = "all"
-        self.readiness: dict[str, Any] | None = None
-        self.readiness_signature = ""
-        self.inspecting = False
-        self._inspection_results: SimpleQueue[tuple[str, dict[str, Any]]] = (
-            SimpleQueue()
-        )
+        self.readiness_panel = ReadinessReport()
         self.refresh()
 
     def fields(self) -> list[Field]:
@@ -443,17 +426,10 @@ class Studio:
                     if self.overlay == "planning":
                         self.overlay = "review" if self.planning_review else None
                         self.dialog_offset = 0
-        try:
-            signature, report = self._inspection_results.get_nowait()
-            self.readiness_signature, self.readiness = signature, report
-            self.inspecting = False
-        except Empty:
-            pass
+        self.readiness_panel.poll()
 
-        try:
-            result = self._recovery_results.get_nowait()
-            self.recovery_busy = False
-            self.recovery_report = result
+        result = self.recovery_panel.poll()
+        if result is not None:
             if "prepared_review" in result:
                 review = result["prepared_review"]
                 if self.overlay == "recovery":
@@ -470,54 +446,41 @@ class Studio:
                     if "error" in result
                     else "Recovery choices verified; Enter reviews a selected checkpoint."
                 )
-        except Empty:
-            pass
-        try:
-            self.data_signature, self.data_report = self._data_results.get_nowait()
-            self.data_inspecting = False
-            self.data_show_samples = False
+        if self.data_panel.poll():
+            self.data_panel.show_samples = False
             if self.message in {
                 "Reading one dataset snapshot; no run is prepared or started.",
                 "Dataset scan is already running. Esc leaves it in the background.",
             }:
-                if self.data_signature != self._data_settings_signature():
+                if self.data_panel.signature != self._data_settings_signature():
                     self.message = "Dataset settings changed; press u to scan again."
-                elif "error" in self.data_report:
+                elif (
+                    self.data_panel.report is None or "error" in self.data_panel.report
+                ):
                     self.message = "Dataset scan failed; press u to inspect and retry."
                 else:
                     self.message = (
                         "Dataset scan complete; no run was prepared or started."
                     )
-        except Empty:
-            pass
 
-        try:
-            self.workflow_signature, self.workflow_report = (
-                self._workflow_results.get_nowait()
+        if (
+            self.workflow_panel.poll()
+            and self.message == "Checking guided setup in the background."
+        ):
+            self.message = (
+                "Setup snapshot ready; Enter opens the selected step."
+                if self.workflow_panel.signature == self._settings_signature()
+                else "Settings changed; press w for a current setup snapshot."
             )
-            self.workflow_busy = False
-            if self.message == "Checking guided setup in the background.":
-                self.message = (
-                    "Setup snapshot ready; Enter opens the selected step."
-                    if self.workflow_signature == self._settings_signature()
-                    else "Settings changed; press w for a current setup snapshot."
-                )
-        except Empty:
-            pass
         if self.evaluation_panel is not None:
             self.evaluation_panel.refresh()
-        try:
-            self.quality_report = self._quality_results.get_nowait()
-            self.quality_busy = False
-            if self.message in {
-                "Verifying recorded outcomes and artifact bytes in the background.",
-                "Previous artifact inspection is still running; Esc returns.",
-            }:
-                self.message = (
-                    "Quality inspection complete; review gates and evidence limits."
-                )
-        except Empty:
-            pass
+        if self.quality_panel.poll() and self.message in {
+            "Verifying recorded outcomes and artifact bytes in the background.",
+            "Previous artifact inspection is still running; Esc returns.",
+        }:
+            self.message = (
+                "Quality inspection complete; review gates and evidence limits."
+            )
 
     def _submit(
         self,
@@ -590,61 +553,26 @@ class Studio:
 
     def _open_workflow(self) -> None:
         self.overlay, self.dialog_offset = "workflow", 0
-        if self.workflow_busy:
+        if self.workflow_panel.busy:
             return
-        signature = self._settings_signature()
         values = dict(self.values)
-        self.workflow_busy = True
         self.message = "Checking guided setup in the background."
 
-        def inspect() -> None:
+        def inspect() -> dict[str, Any]:
             try:
-                report = inspect_workflow(values, self.workspace, parse_text=True)
+                return inspect_workflow(values, self.workspace, parse_text=True)
             except Exception:
-                report = {
+                return {
                     "error": "Setup inspection failed. Use v, u and i to inspect individual steps."
                 }
-            self._workflow_results.put((signature, report))
 
-        threading.Thread(
-            target=inspect, daemon=True, name="stateset-setup-inspection"
-        ).start()
-
-    def _workflow_lines(self) -> list[str]:
-        rows = ["GUIDED SETUP / check, repair, review, evaluate", ""]
-        if self.workflow_busy:
-            return rows + ["Checking in the background. Esc returns; no job starts."]
-        if self.workflow_report is None:
-            return rows + ["w checks the current settings."]
-        if self.workflow_signature != self._settings_signature():
-            return rows + [
-                "Settings changed; press w to recheck before choosing a step."
-            ]
-        if "error" in self.workflow_report:
-            return rows + [self.workflow_report["error"]]
-        steps = self.workflow_report["steps"]
-        rows += [
-            (" > " if index == self.workflow_index else "   ")
-            + f"[{step['status'].upper()}] {step['name']}"
-            for index, step in enumerate(steps)
-        ]
-        return rows + [
-            "",
-            steps[self.workflow_index]["detail"],
-            "",
-            *self.workflow_report["notes"],
-        ]
+        self.workflow_panel.start(self._settings_signature(), inspect)
 
     def _workflow_action(self) -> None:
-        if (
-            self.workflow_busy
-            or not self.workflow_report
-            or "error" in self.workflow_report
-            or self.workflow_signature != self._settings_signature()
-        ):
+        action = self.workflow_panel.action(self._settings_signature())
+        if action is None:
             self.message = "Press w to obtain a current setup snapshot first."
             return
-        action = self.workflow_report["steps"][self.workflow_index]["action"]
         self.overlay = None
         self.dialog_offset = 0
         if action == "settings":
@@ -663,20 +591,20 @@ class Studio:
             self._open_quality()
 
     def _open_quality(self) -> None:
-        if self.quality_busy:
+        if self.quality_panel.busy:
             self.overlay = "quality"
             self.message = "Previous artifact inspection is still running; Esc returns."
             return
         if not self.runs:
             self.message = "Choose a completed run on Runs to inspect quality evidence."
             return
-        self.quality_run = Path(self.runs[self.run_index]["path"])
+        self.quality_panel.run = Path(self.runs[self.run_index]["path"])
         self.overlay, self.dialog_offset = "quality", 0
         self._scan_quality()
 
     def _open_evaluation(self) -> None:
         run = (
-            self.quality_run
+            self.quality_panel.run
             if self.overlay == "quality"
             else (Path(self.runs[self.run_index]["path"]) if self.runs else None)
         )
@@ -692,80 +620,23 @@ class Studio:
         self.overlay = "evaluation"
 
     def _scan_quality(self, source: Path | None = None) -> None:
-        if self.quality_busy or self.quality_run is None:
+        run = self.quality_panel.run
+        if self.quality_panel.busy or run is None:
             return
-        run = self.quality_run
-        self.quality_busy = True
-        self.quality_report = None
+        self.quality_panel.report = None
         self.message = (
             "Verifying recorded outcomes and artifact bytes in the background."
         )
 
-        def inspect() -> None:
+        def inspect() -> dict[str, Any]:
             try:
-                report = record_quality(run, source) if source else inspect_quality(run)
+                return record_quality(run, source) if source else inspect_quality(run)
             except Exception:
-                report = {
+                return {
                     "error": "No verifiable quality evidence. Import a paired report file with f; local completed weights and matching checkpoint hashes are required."
                 }
-            self._quality_results.put(report)
 
-        threading.Thread(
-            target=inspect, daemon=True, name="stateset-quality-inspection"
-        ).start()
-
-    def _quality_lines(self) -> list[str]:
-        rows = [
-            "QUALITY / recorded base-versus-trained outcomes",
-            "Run: " + (self.quality_run.name if self.quality_run else "none"),
-            "",
-        ]
-        if self.quality_busy:
-            return rows + [
-                "Verifying reports and hashing weights... Esc returns while inspection finishes."
-            ]
-        report = self.quality_report
-        if not report:
-            return rows + ["e rechecks; f imports paired evidence."]
-        if "error" in report:
-            return rows + [
-                report["error"],
-                "",
-                "Evidence format: schema_version: 1, baselines: [...], candidates: [...].",
-                "Reports use the held-out evaluation schema documented in FINETUNING_AGENTS.md.",
-            ]
-        rows += [
-            f"Paired seeds: {report['seeds']} | Recorded training seed: {report.get('training_seed') if report.get('training_seed') is not None else 'not recorded'}",
-            f"Mean success gain: {100 * report['mean_success_gain']:+.1f} percentage points",
-            f"Recorded study gate: {'PASS' if report['recorded_study_passed'] else 'NOT PASSED'}",
-            f"Success regressions: {report['regressions_total']}",
-            "Artifact SHA256: " + report["artifact_sha256"],
-            "",
-            f"Required mean gain: {100 * report['thresholds']['min_gain']:.1f} points | min seeds: {report['thresholds']['min_seeds']}",
-            f"Seed sign-test p: {report['seed_inference']['bonferroni_adjusted_p_value']:.4g} | alpha: {report['thresholds']['alpha']:g}",
-        ]
-        for pair in report["pairs"]:
-            rows.append(
-                f"Seed {pair['seed']}: base {pair['baseline']['success_rate']:.1%} -> trained {pair['candidate']['success_rate']:.1%} | wins {pair['wins']} / regressions {pair['regressions']}"
-            )
-            rows.append(
-                f"Recorded reward: {pair['baseline']['mean_reward']:.4g} -> {pair['candidate']['mean_reward']:.4g} | violation rate: {pair['baseline']['violation_rate']:.1%} -> {pair['candidate']['violation_rate']:.1%}"
-            )
-        rows += [
-            "",
-            "STUDY GATES",
-            *[
-                f"[{'PASS' if passed else 'FAIL'}] {key}"
-                for key, passed in report["study_gates"].items()
-            ],
-            "",
-            "REGRESSION HANDLES (up to 50)",
-        ]
-        rows += [
-            f"Seed {row['seed']} | case {row['case_handle']} | reward {row['baseline_reward']:.4g} -> {row['candidate_reward']:.4g}"
-            for row in report["regressions"]
-        ]
-        return rows + ["", *report["notes"]]
+        self.quality_panel.start("", inspect)
 
     def _review_stop(self) -> None:
         if not self.runs:
@@ -820,28 +691,29 @@ class Studio:
     def _inspect(self) -> None:
         self.overlay = "readiness"
         self.dialog_offset = 0
-        if self.inspecting:
+        if self.readiness_panel.busy:
             return
         signature = self._settings_signature()
         try:
             config = self.config()
         except (ValueError, TypeError) as error:
-            self.readiness = {
-                "failed": 1,
-                "warnings": 0,
-                "checks": [
-                    {"name": "Settings", "status": "fail", "detail": str(error)}
-                ],
-            }
-            self.readiness_signature = signature
+            self.readiness_panel.set(
+                signature,
+                {
+                    "failed": 1,
+                    "warnings": 0,
+                    "checks": [
+                        {"name": "Settings", "status": "fail", "detail": str(error)}
+                    ],
+                },
+            )
             return
-        self.inspecting = True
 
-        def collect() -> None:
+        def collect() -> dict[str, Any]:
             try:
-                report = inspect_readiness(config, self.workspace)
+                return inspect_readiness(config, self.workspace)
             except Exception as error:
-                report = {
+                return {
                     "model": config.model,
                     "provider": config.provider,
                     "failed": 1,
@@ -854,9 +726,8 @@ class Studio:
                         }
                     ],
                 }
-            self._inspection_results.put((signature, report))
 
-        threading.Thread(target=collect, name="stateset-readiness", daemon=True).start()
+        self.readiness_panel.start(signature, collect)
 
     def _set_model(self, model: str) -> None:
         if model != self.values["model"] and self.values["revision"]:
@@ -904,7 +775,7 @@ class Studio:
         if selected is None:
             self.prepared_review = None
             self.comparison = None
-            self.data_show_samples = False
+            self.data_panel.show_samples = False
             self.dialog_offset = 0
         if selected is not None:
             self.values["dataset"] = str(selected)
@@ -958,20 +829,18 @@ class Studio:
     def _inspect_data(self) -> None:
         self.overlay = "data"
         self.dialog_offset = 0
-        self.data_show_samples = False
-        self.data_sample_index = 0
-        if self.data_inspecting:
+        self.data_panel.show_samples = False
+        self.data_panel.sample_index = 0
+        if self.data_panel.busy:
             self.message = (
                 "Dataset scan is already running. Esc leaves it in the background."
             )
             return
-        signature = self._data_settings_signature()
         dataset, method = self.values["dataset"], self.values["method"]
-        self.data_report = None
-        self.data_inspecting = True
+        self.data_panel.report = None
         self.message = "Reading one dataset snapshot; no run is prepared or started."
 
-        def inspect() -> None:
+        def inspect() -> dict[str, Any]:
             try:
                 if (
                     not isinstance(dataset, str)
@@ -979,87 +848,17 @@ class Studio:
                     or not isinstance(method, str)
                 ):
                     raise ValueError("Choose a dataset and method")
-                report = inspect_training_data(
+                return inspect_training_data(
                     Path(dataset), method, include_samples=True
                 )
             except DatasetFormatError as error:
-                report = {"error": str(error), "diagnostic": error.diagnostic}
+                return {"error": str(error), "diagnostic": error.diagnostic}
             except Exception:
-                report = {
+                return {
                     "error": "Cannot inspect dataset. Choose a regular file within 64 MiB matching the documented SFT/RL format."
                 }
-            self._data_results.put((signature, report))
 
-        threading.Thread(
-            target=inspect, daemon=True, name="stateset-data-inspection"
-        ).start()
-
-    def _data_lines(self) -> list[str]:
-        rows = ["DATASET INSPECTOR / statistics from one captured file", ""]
-        if self.data_inspecting:
-            return rows + [
-                "Reading and validating dataset... Esc returns while the scan finishes."
-            ]
-        report = self.data_report
-        if report is None:
-            return rows + ["Press u to scan the current dataset."]
-        if self.data_signature != self._data_settings_signature():
-            return rows + [
-                "Dataset path or method changed. Press u to scan the current settings."
-            ]
-        if "error" in report:
-            diagnostic = report.get("diagnostic", {})
-            location = diagnostic.get("location", {})
-            return rows + [
-                " | ".join(f"{key}: {value}" for key, value in location.items()),
-                report["error"],
-                "u retries after you fix the path or format.",
-            ]
-        rows += [
-            f"Method: {report['method']} | Examples: {report['examples']} | Bytes: {report['bytes']:,}",
-            "SHA256: " + report["dataset_sha256"],
-            "Characters per example: "
-            + " | ".join(
-                f"{key}={value:g}"
-                for key, value in report["characters_per_example"].items()
-            ),
-            "Turns ("
-            + report["turn_definition"]
-            + "): "
-            + " | ".join(
-                f"{key}={value:g}" for key, value in report["turns_per_example"].items()
-            ),
-            "Duplicate examples: " + str(report["duplicate_examples"]),
-            "Definition: " + report["duplicate_definition"],
-        ]
-        if report["role_counts"]:
-            rows.append(
-                "Messages: "
-                + " | ".join(
-                    f"{role}={count}" for role, count in report["role_counts"].items()
-                )
-            )
-        rows += ["", *report["warnings"], *report["notes"]]
-        samples = report.get("samples", [])
-        if self.data_show_samples and samples:
-            sample = samples[self.data_sample_index % len(samples)]
-            # Put explicit private output first so even a narrow pane can inspect it.
-            return [
-                rows[0],
-                "",
-                f"PRIVATE SAMPLE {sample['example']}/{len(samples)} / first three only",
-                "Left/Right selects; e hides private text.",
-                (
-                    "Excerpt clipped to 4,096 characters."
-                    if sample["truncated"]
-                    else "Complete example text."
-                ),
-                *sample["text"].splitlines(),
-                "",
-                "DATASET STATISTICS",
-                *rows[2:],
-            ]
-        return rows + ["", "Private samples hidden. Press e to show a bounded excerpt."]
+        self.data_panel.start(self._data_settings_signature(), inspect)
 
     def _check_settings(self) -> None:
         _, self.validation_issues = check_config_values(self.values, parse_text=True)
@@ -1094,7 +893,8 @@ class Studio:
         return [row for row in self.models if query in " ".join(row).casefold()]
 
     def _open_recovery(self, captured_run: Path | None = None) -> None:
-        if self.recovery_busy:
+        panel = self.recovery_panel
+        if panel.busy:
             self.overlay = "recovery"
             self.message = (
                 "Recovery work is still running; Esc leaves it in the background."
@@ -1105,97 +905,44 @@ class Studio:
                 "Select a retained local run to inspect recovery checkpoints."
             )
             return
-        self.recovery_run = captured_run or Path(self.runs[self.run_index]["path"])
-        self.recovery_report, self.recovery_choice = None, None
-        self.recovery_index, self.dialog_offset = 0, 0
-        self.overlay, self.recovery_busy = "recovery", True
+        run = captured_run or Path(self.runs[self.run_index]["path"])
+        panel.run, panel.report, panel.choice, panel.index = run, None, None, 0
+        self.dialog_offset = 0
+        self.overlay = "recovery"
         self.message = "Verifying recovery checkpoint bytes in the background."
-        run = self.recovery_run
 
-        def inspect() -> None:
+        def inspect() -> dict[str, Any]:
             try:
-                result = inspect_checkpoints(run)
+                return inspect_checkpoints(run)
             except Exception:
-                result = {
+                return {
                     "error": "Recovery requires a terminal local run, stopped workers, matching code, pinned model commit and complete published checkpoint state."
                 }
-            self._recovery_results.put(result)
 
-        threading.Thread(
-            target=inspect, daemon=True, name="stateset-recovery-inspection"
-        ).start()
+        panel.start(inspect, step="inspection", authorized=False)
 
     def _prepare_recovery(self) -> None:
-        run, choice = self.recovery_run, self.recovery_choice
-        if self.recovery_busy or run is None or choice is None:
+        panel = self.recovery_panel
+        run, choice = panel.run, panel.choice
+        if panel.busy or run is None or choice is None:
             return
-        self.recovery_busy, self.overlay = True, "recovery"
+        self.overlay = "recovery"
         self.message = "Copying the reviewed checkpoint into a new private run; no training is launched."
 
-        def prepare() -> None:
+        def prepare() -> dict[str, Any]:
             try:
                 child = prepare_resume(
                     run,
                     choice["checkpoint"],
                     expected_recovery_sha256=choice["recovery_sha256"],
                 )
-                result: dict[str, Any] = {"prepared_review": review_prepared_run(child)}
+                return {"prepared_review": review_prepared_run(child)}
             except Exception:
-                result = {
+                return {
                     "error": "Recovery preparation failed. Reinspect checkpoint state, current code, worker ownership and free disk space; no launch was attempted."
                 }
-            self._recovery_results.put(result)
 
-        threading.Thread(
-            target=prepare, daemon=False, name="stateset-recovery-preparation"
-        ).start()
-
-    def _recovery_lines(self) -> list[str]:
-        rows = [
-            "RECOVERY / exact local checkpoint",
-            "Parent run: " + (self.recovery_run.name if self.recovery_run else "none"),
-            "",
-        ]
-        if self.recovery_busy:
-            return rows + [
-                self.message,
-                "Esc returns while owned recovery work finishes. Launch requires its own confirmation.",
-                "Exiting waits for an authorized snapshot or launch submission to finish.",
-            ]
-        report = self.recovery_report or {}
-        if "error" in report:
-            return rows + [
-                report["error"],
-                "",
-                "z reinspects; Esc returns. Older unbound artifacts are not resumable here.",
-            ]
-        choices = report.get("checkpoints", [])
-        if not choices:
-            return rows + [
-                "No published recovery checkpoints for this run.",
-                "New local workers publish receipts after complete saves. A model-only export cannot restore optimizer progress.",
-            ]
-        rows += [
-            f"{' >' if index == self.recovery_index else '  '} {item['checkpoint']} | "
-            + (
-                f"step {item['step']} | {item['remaining']:g} {item['budget_unit']} remain"
-                if item["available"]
-                else "UNAVAILABLE"
-            )
-            for index, item in enumerate(choices)
-        ]
-        selected = choices[min(self.recovery_index, len(choices) - 1)]
-        rows += [""]
-        if selected["available"]:
-            rows += [
-                "Checkpoint SHA256: " + selected["checkpoint_sha256"],
-                "Recovery SHA256: " + selected["recovery_sha256"],
-                f"Private copy: {selected['bytes']:,} bytes / {selected['file_count']} files",
-                "Enter reviews this checkpoint; it does not launch training.",
-            ]
-        else:
-            rows.append(selected["reason"])
-        return rows + ["", *report.get("notes", [])]
+        panel.start(prepare, step="preparation", authorized=True)
 
     def handle(self, key: str) -> bool:
         """Apply a normalized key; return false only when the user exits."""
@@ -1319,15 +1066,13 @@ class Studio:
                 self.overlay = None
                 self.prepared_review = None
                 self.comparison = None
-                self.data_show_samples = False
+                self.data_panel.show_samples = False
                 self.dialog_offset = 0
             elif self.overlay == "workflow":
                 if key == "w":
                     self._open_workflow()
                 elif key in {"UP", "DOWN"}:
-                    self.workflow_index = (
-                        self.workflow_index + (1 if key == "DOWN" else -1)
-                    ) % 5
+                    self.workflow_panel.move(1 if key == "DOWN" else -1)
                 elif key == "ENTER":
                     self._workflow_action()
                 elif key in {"PAGEUP", "PAGEDOWN"}:
@@ -1335,24 +1080,13 @@ class Studio:
                         0, self.dialog_offset + (8 if key == "PAGEDOWN" else -8)
                     )
             elif self.overlay == "recovery":
-                if key == "z" and not self.recovery_busy:
-                    self._open_recovery(self.recovery_run)
-                elif not self.recovery_busy and self.recovery_report:
-                    choices = self.recovery_report.get("checkpoints", [])
-                    if key in {"UP", "DOWN"} and choices:
-                        self.recovery_index = max(
-                            0,
-                            min(
-                                len(choices) - 1,
-                                self.recovery_index + (1 if key == "DOWN" else -1),
-                            ),
-                        )
-                    elif (
-                        key == "ENTER"
-                        and choices
-                        and choices[self.recovery_index]["available"]
-                    ):
-                        self.recovery_choice = dict(choices[self.recovery_index])
+                panel = self.recovery_panel
+                if key == "z" and not panel.busy:
+                    self._open_recovery(panel.run)
+                elif not panel.busy and panel.report:
+                    if key in {"UP", "DOWN"}:
+                        panel.move(1 if key == "DOWN" else -1)
+                    elif key == "ENTER" and panel.select():
                         self.overlay, self.dialog_offset = "recovery-review", 0
                 if key in {"PAGEUP", "PAGEDOWN"}:
                     self.dialog_offset = max(
@@ -1374,7 +1108,7 @@ class Studio:
                     self._scan_quality()
                 elif key == "j":
                     self._open_evaluation()
-                elif key == "f" and not self.quality_busy:
+                elif key == "f" and not self.quality_panel.busy:
                     self.overlay, self.search = "quality-path", ""
                 elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
                     delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
@@ -1422,17 +1156,10 @@ class Studio:
             elif self.overlay == "data":
                 if key == "u":
                     self._inspect_data()
-                elif (
-                    key == "e" and self.data_report and "error" not in self.data_report
-                ):
-                    self.data_show_samples = not self.data_show_samples
+                elif key == "e" and self.data_panel.toggle_samples():
                     self.dialog_offset = 0
-                elif key in {"LEFT", "RIGHT"} and self.data_report:
-                    count = len(self.data_report.get("samples", []))
-                    if count:
-                        self.data_sample_index = (
-                            self.data_sample_index + (1 if key == "RIGHT" else -1)
-                        ) % count
+                elif key in {"LEFT", "RIGHT"} and self.data_panel.report:
+                    if self.data_panel.step_sample(1 if key == "RIGHT" else -1):
                         self.dialog_offset = 0
                 elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
                     delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
@@ -2099,29 +1826,24 @@ class Studio:
         try:
             run = self.workspace / self.runs[self.run_index]["id"]
             if "resume" in read_run_plan(run)[0]:
-                if self.recovery_busy:
+                if self.recovery_panel.busy:
                     self.message = "Recovery inspection is already running; no new review was opened."
                     return
-                self.recovery_run = run
-                self.recovery_busy, self.overlay = True, "recovery"
+                self.recovery_panel.run = run
+                self.overlay = "recovery"
                 self.message = (
                     "Verifying the prepared recovery snapshot in the background."
                 )
 
-                def inspect() -> None:
+                def inspect() -> dict[str, Any]:
                     try:
-                        result: dict[str, Any] = {
-                            "prepared_review": review_prepared_run(run)
-                        }
+                        return {"prepared_review": review_prepared_run(run)}
                     except Exception:
-                        result = {
+                        return {
                             "error": "Cannot verify the prepared recovery run; inspect state, code and checkpoint bytes."
                         }
-                    self._recovery_results.put(result)
 
-                threading.Thread(
-                    target=inspect, daemon=True, name="stateset-recovery-review"
-                ).start()
+                self.recovery_panel.start(inspect, step="review", authorized=False)
                 return
             self._submit(
                 "review",
@@ -2137,27 +1859,23 @@ class Studio:
         """Submit only the run and bytes captured when its review opened."""
         review = self.prepared_review
         if review is not None and review.plan.resume is not None:
-            if self.recovery_busy:
+            if self.recovery_panel.busy:
                 self.message = "Recovery work is already running; no duplicate launch was submitted."
                 return
-            self.recovery_busy = True
             self.overlay = "recovery"
             self.prepared_review = None
             self.message = "Submitting the reviewed recovery run in the background; closing this view does not cancel an authorized launch."
 
-            def launch() -> None:
+            def launch() -> dict[str, Any]:
                 try:
                     launch_run(review.run, expected_plan_sha256=review.plan_sha256)
-                    result = {"launched": True, "run_id": review.run.name}
+                    return {"launched": True, "run_id": review.run.name}
                 except Exception:
-                    result = {
+                    return {
                         "error": "Recovery launch failed; inspect the prepared run and retained logs before any retry."
                     }
-                self._recovery_results.put(result)
 
-            threading.Thread(
-                target=launch, daemon=False, name="stateset-recovery-launch"
-            ).start()
+            self.recovery_panel.start(launch, step="launch", authorized=True)
             return
         if review is None:
             self.prepared_review, self.overlay = None, None
@@ -2354,9 +2072,9 @@ class Studio:
                 width,
             )
         elif self.overlay == "data":
-            body = _wrap(self._data_lines(), width)
+            body = _wrap(self.data_panel.lines(self._data_settings_signature()), width)
         elif self.overlay == "workflow":
-            body = _wrap(self._workflow_lines(), width)
+            body = _wrap(self.workflow_panel.lines(self._settings_signature()), width)
         elif self.overlay == "evaluation" and self.evaluation_panel is not None:
             panel = self.evaluation_panel
             body = _wrap(panel.lines(), width)
@@ -2383,28 +2101,11 @@ class Studio:
             panel.offset = min(panel.offset, max(0, len(body) - available))
             body = body[panel.offset :]
         elif self.overlay == "quality":
-            body = _wrap(self._quality_lines(), width)
+            body = _wrap(self.quality_panel.lines(), width)
         elif self.overlay == "recovery":
-            body = _wrap(self._recovery_lines(), width)
+            body = _wrap(self.recovery_panel.lines(self.message), width)
         elif self.overlay == "recovery-review":
-            choice = self.recovery_choice or {}
-            body = _wrap(
-                [
-                    "REVIEW CHECKPOINT RECOVERY / prepare only",
-                    "",
-                    "Parent: "
-                    + (self.recovery_run.name if self.recovery_run else "none"),
-                    "Checkpoint: " + str(choice.get("checkpoint", "none")),
-                    "Checkpoint SHA256: " + str(choice.get("checkpoint_sha256", "")),
-                    "Recovery SHA256: " + str(choice.get("recovery_sha256", "")),
-                    f"Copy size: {choice.get('bytes', 0):,} bytes",
-                    "",
-                    "Enter copies the reviewed checkpoint and retained dataset into a NEW private run.",
-                    "Training settings and the original total budget stay fixed. Source artifacts are preserved.",
-                    "A separate prepared-run launch review follows. Esc prepares nothing.",
-                ],
-                width,
-            )
+            body = _wrap(self.recovery_panel.review_lines(), width)
         elif self.overlay == "quality-path":
             body = _wrap(
                 [
@@ -2432,7 +2133,10 @@ class Studio:
                 width,
             )
         elif self.overlay == "readiness":
-            body = _wrap(self._readiness_lines(), width)
+            body = _wrap(
+                self.readiness_panel.lines(self._settings_signature(), self.values),
+                width,
+            )
         elif self.overlay == "metrics":
             body = _wrap(self._metric_lines(width), width)
         elif self.overlay == "logs":
@@ -2505,47 +2209,6 @@ class Studio:
         result = header + body[:available]
         result += [""] * max(0, height - len(footer) - len(result))
         return [_clip(line, width) for line in (result + footer)[:height]]
-
-    def _readiness_lines(self) -> list[str]:
-        rows = [
-            "LOCAL READINESS / i refreshes this snapshot",
-            "",
-            "Checks do not load models, authenticate providers or provision compute.",
-        ]
-        if self.inspecting:
-            return [
-                *rows,
-                "",
-                "Checking local files, packages, hardware and queue in the background...",
-            ]
-        if self.readiness is None:
-            return [*rows, "", "Press i to inspect."]
-        if self.readiness_signature != self._settings_signature():
-            rows += [
-                "",
-                "[WARNING] Settings changed; press i to refresh before using this report.",
-            ]
-        rows += [
-            "",
-            "Draft model: " + str(self.readiness.get("model", self.values["model"])),
-            "Compute: " + str(self.readiness.get("provider", self.values["provider"])),
-        ]
-        rows += [
-            "",
-            f"{self.readiness['failed']} failed checks | {self.readiness['warnings']} warnings",
-        ]
-        for check in self.readiness["checks"]:
-            rows += [
-                "",
-                f"[{check['status'].upper()}] {check['name']}",
-                check["detail"],
-            ]
-        rows += [
-            "",
-            "A passing local check is not GPU/model conformance or a provider quote.",
-            "Press p separately to validate dataset contents and prepare a launch review.",
-        ]
-        return rows
 
     def _progress_lines(
         self, row: dict[str, Any], history: list[dict[str, Any]], width: int
@@ -2925,6 +2588,12 @@ class Studio:
         ]
         if state.get("teardown_error"):
             result.append(_teardown_note(state))
+        if state.get("recovery_unavailable"):
+            result.append(
+                "Recovery checkpoints: unavailable ("
+                + _safe(str(state["recovery_unavailable"]))
+                + "); training continued without recovery receipts."
+            )
         if state.get("execution_unconfirmed"):
             result += [
                 "Execution: unconfirmed; detached work may still be queued or running.",

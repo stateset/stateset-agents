@@ -731,6 +731,8 @@ def evaluation_status(path: Path) -> dict[str, Any]:
             "updated_at",
             "finished_at",
             "exit_code",
+            "teardown_error",
+            "teardown_exit_code",
         )
         if key in state
     }

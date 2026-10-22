@@ -89,10 +89,10 @@ def prepare(run):
 
 def wait(studio):
     deadline = time.monotonic() + 12
-    while studio.recovery_busy and time.monotonic() < deadline:
+    while studio.recovery_panel.busy and time.monotonic() < deadline:
         studio.refresh()
         time.sleep(0.005)
-    assert not studio.recovery_busy
+    assert not studio.recovery_panel.busy
 
 
 @pytest.mark.parametrize("kind", ["sft", "native"])
@@ -326,7 +326,7 @@ def test_resumed_launch_is_background_owned_exclusive_and_bound_to_review(
         assert entered.wait(3)
         studio.handle("ENTER")
         studio.handle("ESC")
-        assert studio.overlay is None and studio.recovery_busy
+        assert studio.overlay is None and studio.recovery_panel.busy
         studio.run_index = next(
             i for i, row in enumerate(studio.runs) if row["id"] == run.name
         )
@@ -434,7 +434,7 @@ def test_recovery_hashing_stays_bound_to_run_and_escape_remains_responsive(
         assert entered.wait(3)
         studio.handle("ESC")
         assert studio.overlay is None
-        assert studio.recovery_busy and studio.recovery_run == run
+        assert studio.recovery_panel.busy and studio.recovery_panel.run == run
     finally:
         release.set()
         wait(studio)

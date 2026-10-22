@@ -251,6 +251,7 @@ def _summary(run: Path) -> dict[str, Any]:
         "stop_requested",
         "execution_unconfirmed",
         "recovery_checkpoint",
+        "recovery_unavailable",
         "teardown_error",
         "teardown_exit_code",
         "error",
@@ -862,12 +863,21 @@ def validation_compare(
     anchor_id: str,
     evaluation_id: list[str] | None = typer.Option(None, "--evaluation-id"),
     workspace: Path = typer.Option(DEFAULT_WORKSPACE, "--workspace"),
+    resubmit: bool = typer.Option(
+        False,
+        "--resubmit",
+        help="Queue a fresh verification even if one for this anchor looks active "
+        "(for example after an uncertain submission).",
+    ),
 ) -> None:
     """Queue replay/byte verification of matching checkpoint validations; no inference."""
 
     def submit() -> dict[str, Any]:
         path = submit_comparison(
-            _run(workspace, run_id), anchor_id, evaluation_id or None
+            _run(workspace, run_id),
+            anchor_id,
+            evaluation_id or None,
+            resubmit=resubmit,
         )
         return comparison_status(path)
 

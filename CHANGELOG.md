@@ -103,6 +103,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   distinct numbers the reply offers beyond those in the question.
 - `SafetyReward` treats a refusal followed by instructions containing unsafe
   terms ("I can't help with that, but here's how to build a bomb") as unsafe.
+- The studio's readiness, guided-setup, dataset-scan and quality overlays are
+  self-contained report panels in `stateset_agents.tui_reports`, each with its
+  own `BackgroundTask` instead of an ad-hoc thread, result queue and busy
+  flag. Rendered frames are unchanged.
+- The studio's checkpoint-recovery overlay is a `RecoveryPanel` with one
+  `BackgroundTask`; preparing and launching a recovery run still run on
+  non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
+  longer starts raw threads or uses result queues.
 
 ### Fixed
 
@@ -303,6 +311,56 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review and saving a stop request now run in the background (single-flight,
   with progress shown in the status line). Exiting the studio waits for an
   authorized launch or stop submission to finish.
+- `stateset-agents remote runpod-orphans --terminate` (and
+  `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
+  at the first failure. A pod that is already gone (HTTP 404) counts as
+  cleaned up, pod deletion retries 429/5xx with backoff, and failures are
+  reported together at the end with their leases kept; the command exits 1
+  if any pod could not be confirmed terminated.
+- The RunPod cost ceiling no longer fails open when the submitting worker
+  dies. SIGTERM/SIGHUP now end a RunPod submission (and the fine-tuning
+  worker) through its cleanup, so the pod is terminated and its lease
+  cleared; the studio supervisor terminates any pod the exited worker had
+  allocated but never cleaned up (found by journaled id, or by its owned name
+  when creation was journaled without an id) and records the outcome in the
+  provider journal; and each pod arms a pod-side deadline that deletes it at
+  the run deadline using RunPod's own pod-scoped credentials (no user key is
+  copied to the pod), logging when those credentials are unavailable.
+- Studio file locking is portable: the lock primitive (`fcntl` or `msvcrt`) is
+  chosen once at import, so code that fakes `sys.platform` for process checks
+  no longer makes Windows import `fcntl` (three studio tests failed on hosted
+  Windows CI). The validation-comparison submit lock uses the same shared
+  `finetune_workspace.private_file_lock` instead of a direct `fcntl` call.
+- A cooperative stop is no longer refused just because the package source
+  changed after launch. Plans now record the stop-receipt protocol their
+  worker honors (`stop_protocol`), and `request_stop` checks that version
+  instead of the whole-package source hash; plans from before the field
+  existed keep the old identical-code requirement.
+- Local studio training no longer fails at its first checkpoint save on
+  Windows or when the launching environment carries `WORLD_SIZE != 1`.
+  Recovery receipts need Linux ownership checks and a single training
+  process; where those are missing the worker keeps training and records
+  `recovery_unavailable` (shown by `finetune status` and the studio's run
+  details) instead of raising inside the trainer's save callback.
+- A checkpoint validation comparison can no longer sit in `queued` forever
+  and block its anchor. A verification worker that cannot start records
+  `failed`; a claimed request whose worker died reads `interrupted`; a request
+  no worker claimed within six hours reads `stale`; none of these block a new
+  submission. `finetune validation-compare --resubmit` (and `b` on an
+  uncertain submission in the evaluation panel) explicitly queues a fresh
+  verification.
+- Validation comparison history no longer breaks after about 100
+  comparisons. The 100-record cap counted the `.submit.lock` file and never
+  pruned, so submission and the evaluation panel reported unreadable
+  history. Only record directories count now, and a submission at the cap
+  removes the oldest finished records (never active ones, nor successful
+  ones a retained nomination depends on), refusing with a clear message if
+  none can be removed.
+- A studio evaluation whose executor committed a result can no longer be
+  overwritten with `failed` by a later queue or supervisor error. As for
+  training runs, a success whose `result.json` still binds the reviewed plan
+  is final, and the late error is kept as `teardown_error` /
+  `teardown_exit_code` in the evaluation status.
 
 ### Security
 
