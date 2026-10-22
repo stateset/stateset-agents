@@ -32,6 +32,7 @@ import contextlib
 import io
 import json
 import logging
+import re
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -739,17 +740,48 @@ def normalize_eval_prompts(
     return specs
 
 
+#: A negation ending right before a forbidden phrase, in the same clause:
+#: "not"/"never"/"without"/"cannot"/"...n't" up to three words earlier
+#: ("I won't be able to rebook"), or "no" immediately before ("no rebooking").
+_NEGATED_BEFORE = re.compile(
+    r"(?:\b(?:not|never|without|cannot)|n['\u2019]t)\s+(?:[\w'\u2019-]+\s+){0,3}$"
+    r"|\bno\s+$",
+    re.IGNORECASE,
+)
+
+
+def _forbidden_phrase_used(completion: str, phrase: str) -> bool:
+    """True when ``phrase`` occurs in ``completion`` other than negated.
+
+    A user who declines a remedy is honored by "I won't rebook you" — the
+    forbidden token appears only to say it will not happen. Matches must
+    start at a word boundary ("rebook" still hits "rebooked") and count
+    unless an explicit negation directly precedes them in the same clause.
+    """
+    if not phrase:
+        return True
+    start = r"(?<!\w)" if re.match(r"\w", phrase) else ""
+    for match in re.finditer(start + re.escape(phrase), completion, re.IGNORECASE):
+        # The negation window is a few words; bound the regex's input.
+        before = completion[max(0, match.start() - 200) : match.start()]
+        if not _NEGATED_BEFORE.search(before):
+            return True
+    return False
+
+
 def evaluate_checks(
     completion: str, expect: list[str], forbid: list[str]
 ) -> dict[str, Any]:
-    """Case-insensitively match ``expect``/``forbid`` substrings.
+    """Case-insensitively match ``expect`` substrings and ``forbid`` phrases.
 
     Passes when every ``expect`` substring appears in ``completion`` and no
-    ``forbid`` substring does.
+    ``forbid`` phrase is used: a forbidden phrase must start at a word
+    boundary and does not count where it is explicitly negated ("I won't
+    rebook you", "no rebooking"); see :func:`_forbidden_phrase_used`.
     """
     haystack = completion.lower()
     expect_hits = [s for s in expect if s.lower() in haystack]
-    forbid_hits = [s for s in forbid if s.lower() in haystack]
+    forbid_hits = [s for s in forbid if _forbidden_phrase_used(completion, s)]
     return {
         "expect_hits": expect_hits,
         "forbid_hits": forbid_hits,

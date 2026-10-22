@@ -972,6 +972,38 @@ class TestEvaluateChecks:
     def test_no_assertions_trivially_passes(self):
         assert sft.evaluate_checks("anything", expect=[], forbid=[])["passed"]
 
+    @pytest.mark.parametrize(
+        "completion",
+        [
+            "Done. I won't rebook you, as you asked.",
+            "Understood: I will not be able to rebook that flight.",
+            "Refund issued, and no rebooking was made.",
+            "I've left the booking as is and did NOT rebook anything.",
+        ],
+    )
+    def test_negated_forbidden_phrase_honors_the_refusal(self, completion):
+        """A refusal-respecting reply names the declined remedy only to say it
+        will not happen; plain substring matching failed it."""
+        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
+        assert checks["forbid_hits"] == [] and checks["passed"] is True
+
+    @pytest.mark.parametrize(
+        "completion",
+        [
+            "I've rebooked you on the 9am flight.",
+            "No problem! I rebooked you.",
+            "I'm not sure why it failed, but I will rebook you now.",
+            "I did not only refund the fare but also rebook the trip.",
+        ],
+    )
+    def test_forbidden_phrase_still_hits_when_used(self, completion):
+        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
+        assert checks["forbid_hits"] == ["rebook"] and checks["passed"] is False
+
+    def test_forbidden_phrase_must_start_at_a_word_boundary(self):
+        checks = sft.evaluate_checks("Your prebooking is fine.", [], ["rebook"])
+        assert checks["passed"] is True
+
 
 class FakeJudge:
     """Stands in for a domain reward: async compute_reward -> .score."""
