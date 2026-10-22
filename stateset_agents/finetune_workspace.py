@@ -152,6 +152,10 @@ FAILURE_GUIDANCE = {
         "The worker produced no completion receipt",
         "Inspect worker and export logs. A zero exit code without an artifact receipt is not successful training.",
     ),
+    "supervisor_stopped": (
+        "The run's supervisor was stopped",
+        "The supervising process was interrupted (Ctrl+C, shutdown or a closed console) and stopped the worker it owned. Inspect run.log and supervisor.log, then prepare a fresh run.",
+    ),
     "permissions": (
         "A file or executable permission was denied",
         "Check access to the workspace, dataset, output directory and configured queue executable before a fresh review.",
@@ -1207,6 +1211,26 @@ def reap_children() -> None:
         _DETACHED_CHILDREN[:] = running
 
 
+#: Windows process-creation flags: a new process group (so the whole tree can
+#: be stopped together) with its own hidden console, detached from the
+#: launching terminal so that closing it cannot end the run.
+_WINDOWS_DETACHED = (
+    0x00000200 | 0x08000000
+)  # CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+
+
+def detached_process_options(*, windows: bool | None = None) -> dict[str, Any]:
+    """``Popen`` options for a child that must outlive the launching terminal.
+
+    POSIX starts a new session. Windows ignores ``start_new_session``, so a
+    supervisor or worker started without these flags shares the console and
+    dies (or sees Ctrl+C) with it.
+    """
+    if os.name == "nt" if windows is None else windows:
+        return {"creationflags": _WINDOWS_DETACHED}
+    return {"start_new_session": True}
+
+
 def queue_executable() -> str | None:
     """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
 
@@ -1259,7 +1283,7 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **detached_process_options(),
             )
         retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):

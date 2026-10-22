@@ -390,6 +390,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   top-level `runpod-orphans`), and a `--curated` help text named the
   `make grade-batch` target as a CLI command. A test now resolves every
   backtick-quoted `stateset-agents ...` hint in the package against the CLI.
+- On Windows, studio supervisors and workers are now really detached:
+  `start_new_session` is ignored there, so closing the launching console
+  killed the supervisor and worker (orphaning a RunPod pod). Launches use one
+  helper, `detached_process_options()`, which gives Windows children their
+  own process group and hidden console. A supervisor interrupted by Ctrl+C or
+  `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
+  failure instead of leaving no outcome.
 
 ### Security
 

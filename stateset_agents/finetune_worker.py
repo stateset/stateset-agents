@@ -21,6 +21,7 @@ from stateset_agents.finetune_workspace import (
     FAILURE_GUIDANCE,
     FinetuneConfig,
     FinetuneFailure,
+    detached_process_options,
     failure_info,
     process_token,
     queue_executable,
@@ -383,7 +384,7 @@ def _supervise(
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=environment,
-                start_new_session=True,
+                **detached_process_options(),
             )
             # Buildr owns the timeout and its child cleanup. Without Buildr,
             # this supervisor owns the process group and bounds its lifetime.
@@ -406,6 +407,25 @@ def _supervise(
                     process.wait()
                 exited = True
                 raise FinetuneFailure("timeout") from None
+            except BaseException:
+                # Ctrl+C, SystemExit or a closed console reached the
+                # supervisor itself. It owns the worker: stop it and record
+                # why, so the run never sits "running" with nobody watching.
+                if process.poll() is None:
+                    _stop_worker_group(process, force=False)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        _stop_worker_group(process, force=True)
+                        process.wait()
+                exited = True
+                _record_failure(
+                    run,
+                    FinetuneFailure("supervisor_stopped"),
+                    stage="supervisor",
+                    preserve=True,
+                )
+                raise
             finally:
                 # Only once the worker is known to have exited: reclaiming
                 # under a live worker would end its running pod.

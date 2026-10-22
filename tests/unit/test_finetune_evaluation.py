@@ -256,7 +256,8 @@ def test_launch_requires_queue_and_exact_once_receipt(tmp_path, monkeypatch):
         evaluation.launch_evaluation(path, expected_plan_sha256=review.sha256)
     assert len(calls) == 1
     assert calls[0][0][-2:] == ["--supervise", str(path)]
-    assert calls[0][1]["start_new_session"]
+    detached = ws.detached_process_options()
+    assert {key: calls[0][1].get(key) for key in detached} == detached
     assert not (review.run / "stop.json").exists()
 
 

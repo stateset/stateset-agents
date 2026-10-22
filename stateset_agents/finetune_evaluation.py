@@ -38,6 +38,7 @@ from stateset_agents.finetune_recovery import (
 )
 from stateset_agents.finetune_workspace import (
     detached_owner_lost,
+    detached_process_options,
     launch_unclaimed,
     queue_executable,
     read_json,
@@ -579,7 +580,7 @@ def launch_evaluation(path: Path, *, expected_plan_sha256: str) -> int:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **detached_process_options(),
             )
         retain_child(process)
         return int(process.pid)

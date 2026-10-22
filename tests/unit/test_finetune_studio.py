@@ -140,7 +140,9 @@ def test_launch_is_detached_shell_free_and_exclusive(settings, tmp_path, monkeyp
     assert workspace.launch_run(run) == 123
     argv, kwargs = calls[0]
     assert argv[-2:] == ["--supervise", str(run)]
-    assert kwargs["start_new_session"] and "shell" not in kwargs
+    detached = workspace.detached_process_options()
+    assert {key: kwargs.get(key) for key in detached} == detached
+    assert "shell" not in kwargs
     with pytest.raises(FileExistsError):
         workspace.launch_run(run)
     assert len(calls) == 1
