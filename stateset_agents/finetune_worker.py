@@ -9,12 +9,10 @@ import json
 import logging
 import os
 import secrets
-import stat
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
@@ -28,6 +26,7 @@ from stateset_agents.finetune_workspace import (
     read_json,
     read_scenarios,
     stop_requested,
+    transition_run,
     verified_run_settings,
     write_json,
 )
@@ -37,136 +36,21 @@ def _settings(run: Path) -> tuple[dict[str, Any], FinetuneConfig]:
     return verified_run_settings(run)
 
 
-_STATE_LOCK_TIMEOUT = 1.0
-
-
-def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
-    if sys.platform == "win32":
-        import msvcrt
-
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
-    else:
-        import fcntl
-
-        fcntl.flock(
-            descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
-        )
-
-
-@contextmanager
-def _state_lock(run: Path) -> Iterator[None]:
-    """Serialize bounded state transitions through a stable private descriptor."""
-    path = run / ".state.lock"
-    if path.is_symlink():
-        raise ValueError("Fine-tuning state lock is unavailable")
-    descriptor = os.open(
-        path,
-        os.O_RDWR
-        | os.O_CREAT
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0),
-        0o600,
-    )
-    try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or (
-            os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
-        ):
-            raise ValueError("Fine-tuning state lock is unavailable")
-        if os.name == "nt" and info.st_size == 0:
-            os.write(descriptor, b"\0")
-        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT
-        while True:
-            try:
-                _state_lock_operation(descriptor)
-                break
-            except OSError as error:
-                if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise ValueError("Fine-tuning state is busy") from None
-                time.sleep(0.01)
-        try:
-            yield
-        finally:
-            _state_lock_operation(descriptor, release=True)
-    finally:
-        os.close(descriptor)
-
-
-def _completion_verified(run: Path) -> bool:
-    """The worker's completion receipt still points at a usable artifact."""
-    try:
-        completion = read_json(run / "completion.json", max_bytes=128 * 1024)
-    except (OSError, ValueError, TypeError, RecursionError):
-        return False
-    if completion.get("result_kind") == "hosted_pointer":
-        checkpoint = completion.get("checkpoint")
-        return (
-            isinstance(checkpoint, str)
-            and checkpoint.startswith("river://")
-            and len(checkpoint) > len("river://")
-        )
-    output, weights = completion.get("output_dir"), completion.get("weights")
-    if not isinstance(output, str) or not isinstance(weights, list) or not weights:
-        return False
-    for name in weights:
-        if (
-            not isinstance(name, str)
-            or not name
-            or Path(name).is_absolute()
-            or ".." in Path(name).parts
-        ):
-            return False
-        path = Path(output) / name
-        try:
-            if path.is_symlink() or not path.is_file() or path.stat().st_size <= 0:
-                return False
-        except OSError:
-            return False
-    return True
-
-
-def _state(run: Path, **changes: Any) -> bool:
+def _state(
+    run: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
     """Merge progress without promoting a failed/cancelled run or demoting success.
 
     A success the worker committed (``completion.json`` whose artifact still
     verifies) is authoritative: a later failure cannot replace it.
     """
-    with _state_lock(run):
-        try:
-            state = read_json(run / "state.json")
-        except (OSError, ValueError):
-            state = {"previous_state_unreadable": True}
-        status = changes.get("status")
-        if (
-            state.get("status") in {"failed", "cancelled"}
-            and status is not None
-            and status not in {"failed", "cancelled"}
-        ):
-            return False
-        if (
-            state.get("status") == "succeeded"
-            and status in {"failed", "cancelled"}
-            and _completion_verified(run)
-        ):
-            return False
-        write_json(run / "state.json", {**state, **changes, "updated_at": time.time()})
-        return True
-
-
-def _keep_committed_success(run: Path, **teardown: Any) -> bool:
-    """Record a post-commit failure as non-fatal when success was committed."""
-    with _state_lock(run):
-        try:
-            state = read_json(run / "state.json")
-        except (OSError, ValueError):
-            return False
-        if state.get("status") != "succeeded" or not _completion_verified(run):
-            return False
-        write_json(run / "state.json", {**state, **teardown, "updated_at": time.time()})
-        return True
+    return transition_run(
+        run, allowed_from=allowed_from, before_write=before_write, **changes
+    )
 
 
 def _record_failure(
@@ -201,20 +85,10 @@ def _record_failure(
         code = "out_of_memory"
     else:
         code = "review_invalid" if stage == "review" else "unknown"
-    # A teardown crash or queue timeout observed after the worker committed a
-    # verified success must not demote it; keep the observation instead.
-    teardown: dict[str, Any] = {"teardown_error": code}
-    if exit_code is not None:
-        teardown["teardown_exit_code"] = exit_code
-    try:
-        if _keep_committed_success(run, **teardown):
-            logging.error(
-                "Fine-tuning %s failure (%s) after the worker committed success; "
-                "the committed result stands",
-                stage,
-                code,
-            )
-            return
+
+    def receipt(_state: dict[str, Any]) -> None:
+        # Written under the state lock, and only for a legal transition, so a
+        # refused failure never leaves a diagnosis behind.
         if not (previous and previous["recorded"]):
             write_json(
                 run / "failure.json",
@@ -225,16 +99,30 @@ def _record_failure(
                     "recorded_at": time.time(),
                 },
             )
-        changes: dict[str, Any] = {
-            "status": "cancelled" if code == "cancelled" else "failed",
-            "finished_at": time.time(),
-            "error": FAILURE_GUIDANCE[code][0] + "; open run details for next steps.",
-        }
+
+    changes: dict[str, Any] = {
+        "status": "cancelled" if code == "cancelled" else "failed",
+        "finished_at": time.time(),
+        "error": FAILURE_GUIDANCE[code][0] + "; open run details for next steps.",
+    }
+    if exit_code is not None:
+        changes["exit_code"] = exit_code
+    try:
+        if _state(run, before_write=receipt, **changes):
+            return
+        # Refused: either an earlier outcome stands, or the worker committed a
+        # verified success. A teardown crash or queue timeout after that commit
+        # is kept as a non-fatal observation instead of a demotion.
+        teardown: dict[str, Any] = {"teardown_error": code}
         if exit_code is not None:
-            changes["exit_code"] = exit_code
-        if not _state(run, **changes):
-            # The worker committed success between the check and this write.
-            _keep_committed_success(run, **teardown)
+            teardown["teardown_exit_code"] = exit_code
+        if _state(run, allowed_from={"succeeded"}, **teardown):
+            logging.error(
+                "Fine-tuning %s failure (%s) after the worker committed success; "
+                "the committed result stands",
+                stage,
+                code,
+            )
     except (OSError, ValueError):
         # Full or inaccessible storage must not replace the original failure
         # with a new exception or a successful exit. Logs remain the fallback.

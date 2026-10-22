@@ -27,13 +27,14 @@ from stateset_agents.finetune_workspace import (
     process_token,
     queue_executable,
     read_json,
+    transition_state,
     write_json,
 )
 
 
-def _state(path: Path, **changes: Any) -> None:
-    old = read_json(path / "state.json")
-    write_json(path / "state.json", {**old, **changes, "updated_at": time.time()})
+def _state(path: Path, **changes: Any) -> bool:
+    """Merge progress; a recorded outcome never moves to a different status."""
+    return transition_state(path, **changes)
 
 
 def _check_stop(path: Path) -> None:
@@ -106,7 +107,8 @@ def supervise(path: Path) -> int:
             str(path),
         ]
         write_json(path / "command.json", {"argv": command})
-        _state(path, status="queued")
+        if not _state(path, status="queued"):
+            return 1  # An outcome was already recorded; start no queue work.
         environment = dict(
             os.environ,
             OMP_NUM_THREADS=str(config["cpu_slots"]),
@@ -164,7 +166,8 @@ def execute(path: Path) -> int:
         for phase in ("baseline", "candidate", "judge"):
             _check_stop(path)
             read_evaluation(path)
-            _state(path, status="running", phase=phase, completed_cases=0)
+            if not _state(path, status="running", phase=phase, completed_cases=0):
+                raise RuntimeError("Evaluation outcome already recorded")
             code = subprocess.call(
                 [
                     sys.executable,

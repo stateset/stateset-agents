@@ -482,8 +482,8 @@ def test_concurrent_state_transitions_serialize_and_preserve_failure(
         threading.Event(),
         threading.Event(),
     )
-    write = worker.write_json
-    lock_operation = worker._state_lock_operation
+    write = workspace.write_json
+    lock_operation = workspace._state_lock_operation
     second = "failed" if first == "succeeded" else "succeeded"
 
     def held_write(path, value):
@@ -504,8 +504,8 @@ def test_concurrent_state_transitions_serialize_and_preserve_failure(
                 contended.set()
             raise
 
-    monkeypatch.setattr(worker, "write_json", held_write)
-    monkeypatch.setattr(worker, "_state_lock_operation", observed_lock)
+    monkeypatch.setattr(workspace, "write_json", held_write)
+    monkeypatch.setattr(workspace, "_state_lock_operation", observed_lock)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_result = executor.submit(
             worker._state, run, status=first, committed_updates=3
@@ -564,9 +564,9 @@ def test_busy_state_lock_refuses_boundedly_and_retains_stable_private_inode(
     make_run, monkeypatch
 ):
     run, _ = make_run()
-    monkeypatch.setattr(worker, "_STATE_LOCK_TIMEOUT", 0.0)
+    monkeypatch.setattr(workspace, "_STATE_LOCK_TIMEOUT", 0.0)
     before = (run / "state.json").read_bytes()
-    with worker._state_lock(run):
+    with workspace.state_lock(run):
         original = (run / ".state.lock").stat()
         with pytest.raises(ValueError, match="Fine-tuning state is busy"):
             worker._state(run, status="running")

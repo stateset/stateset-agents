@@ -27,6 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and the studio's run details, instead of demoting the run to `failed`.
   Failures recorded before the commit, or a commit whose artifact no longer
   verifies, still end the run as `failed`.
+- Every fine-tuning run and evaluation `state.json` change now goes through one
+  locked transition helper (`finetune_workspace.transition_run` /
+  `transition_state`). A recorded outcome (succeeded, failed, cancelled) never
+  moves to a different status, so a stop or launch failure that races a
+  finished run is a no-op instead of an overwrite, a refused failure leaves no
+  `failure.json` behind, and an evaluation supervisor starts no queue work once
+  an outcome is recorded.
 
 ### Fixed
 

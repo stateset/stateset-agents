@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -15,7 +16,8 @@ import tempfile
 import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -520,6 +522,167 @@ def write_json(path: Path, value: Any) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+_STATE_LOCK_TIMEOUT = 1.0
+#: Outcomes that, once recorded, only ever gain detail (exit codes, timings).
+FINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(
+            descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
+        )
+
+
+@contextmanager
+def state_lock(directory: Path) -> Iterator[None]:
+    """Serialize bounded state transitions through a stable private descriptor."""
+    path = directory / ".state.lock"
+    if path.is_symlink():
+        raise ValueError("Fine-tuning state lock is unavailable")
+    descriptor = os.open(
+        path,
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0),
+        0o600,
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or (
+            os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise ValueError("Fine-tuning state lock is unavailable")
+        if os.name == "nt" and info.st_size == 0:
+            os.write(descriptor, b"\0")
+        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT
+        while True:
+            try:
+                _state_lock_operation(descriptor)
+                break
+            except OSError as error:
+                if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise ValueError("Fine-tuning state is busy") from None
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            _state_lock_operation(descriptor, release=True)
+    finally:
+        os.close(descriptor)
+
+
+def transition_state(
+    directory: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    success_is_final: Callable[[Path], bool] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """Atomically merge ``changes`` into ``directory/state.json`` under its lock.
+
+    Writes nothing and returns ``False`` for an illegal transition:
+
+    * ``allowed_from`` is given and the current status is not in it;
+    * the current status is final (succeeded, failed, cancelled) and the
+      change would move it to any other status. The one exception is a
+      success that ``success_is_final`` does not confirm, which a failure or
+      cancellation may still replace (no callback: never confirmed).
+
+    ``before_write`` runs under the lock once the transition is known to be
+    legal, for records that must only exist alongside it (failure receipts).
+    An unreadable state is replaced, keeping a ``previous_state_unreadable``
+    marker, unless ``allowed_from`` demands a known status.
+    """
+    with state_lock(directory):
+        try:
+            state = read_json(directory / "state.json")
+        except (OSError, ValueError):
+            state = {"previous_state_unreadable": True}
+        current, status = state.get("status"), changes.get("status")
+        if allowed_from is not None and current not in allowed_from:
+            return False
+        if current in FINAL_STATUSES and status is not None and status != current:
+            demotable = (
+                current == "succeeded"
+                and status in {"failed", "cancelled"}
+                and not (success_is_final is not None and success_is_final(directory))
+            )
+            if not demotable:
+                return False
+        if before_write is not None:
+            before_write(state)
+        write_json(
+            directory / "state.json", {**state, **changes, "updated_at": time.time()}
+        )
+        return True
+
+
+def completion_verified(run: Path) -> bool:
+    """The worker's completion receipt still points at a usable artifact."""
+    try:
+        completion = read_json(run / "completion.json", max_bytes=128 * 1024)
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    if completion.get("result_kind") == "hosted_pointer":
+        checkpoint = completion.get("checkpoint")
+        return (
+            isinstance(checkpoint, str)
+            and checkpoint.startswith("river://")
+            and len(checkpoint) > len("river://")
+        )
+    output, weights = completion.get("output_dir"), completion.get("weights")
+    if not isinstance(output, str) or not isinstance(weights, list) or not weights:
+        return False
+    for name in weights:
+        if (
+            not isinstance(name, str)
+            or not name
+            or Path(name).is_absolute()
+            or ".." in Path(name).parts
+        ):
+            return False
+        path = Path(output) / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def transition_run(
+    run: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """The one way to change a fine-tuning run's ``state.json``.
+
+    A success whose committed artifact still verifies is final; see
+    :func:`transition_state` for every other rule.
+    """
+    return transition_state(
+        run,
+        allowed_from=allowed_from,
+        success_is_final=completion_verified,
+        before_write=before_write,
+        **changes,
+    )
 
 
 def read_json(path: Path, *, max_bytes: int = 128 * 1024) -> dict[str, Any]:
@@ -1071,13 +1234,14 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
             )
         retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
-        state = read_json(run / "state.json")
         cancelled = False
         try:
             cancelled = stop_requested(run)
         except (OSError, ValueError, TypeError, RecursionError):
             pass
-        state.update(
+        transition_run(
+            run,
+            allowed_from={"prepared"},
             status="cancelled" if cancelled else "failed",
             error=(
                 "Local stop requested before launch"
@@ -1085,7 +1249,6 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 else "Worker could not start or reviewed inputs changed"
             ),
         )
-        write_json(run / "state.json", state)
         raise
     return process.pid
 
@@ -1148,13 +1311,13 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
     # direct worker claims admission before it checks for a stop. So a launch
     # that no process has claimed yet can be cancelled outright: any process
     # that claims it later stops before doing work.
-    retained = read_json(run / "state.json")
-    if retained.get("status") == "prepared" and (
-        not (run / "launch.lock").exists() or launch_unclaimed(run)
-    ):
-        write_json(
-            run / "state.json",
-            {**retained, "status": "cancelled", "finished_at": time.time()},
+    if not (run / "launch.lock").exists() or launch_unclaimed(run):
+        # Only a still-prepared run changes; anything else is left as is.
+        transition_run(
+            run,
+            allowed_from={"prepared"},
+            status="cancelled",
+            finished_at=time.time(),
         )
     current = run_status(run)
     return {

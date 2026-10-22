@@ -44,6 +44,7 @@ from stateset_agents.finetune_workspace import (
     read_training_data,
     reap_children,
     retain_child,
+    transition_state,
     write_json,
 )
 
@@ -577,12 +578,11 @@ def launch_evaluation(path: Path, *, expected_plan_sha256: str) -> int:
         retain_child(process)
         return int(process.pid)
     except OSError:
-        write_json(
-            path / "state.json",
-            {
-                "status": "failed",
-                "error": "Supervisor submission failed; inspect logs before preparing a new evaluation",
-            },
+        transition_state(
+            path,
+            allowed_from={"prepared"},
+            status="failed",
+            error="Supervisor submission failed; inspect logs before preparing a new evaluation",
         )
         raise
 
@@ -776,13 +776,9 @@ def stop_evaluation(path: Path, *, expected_plan_sha256: str) -> None:
     if content_hash(plan) != expected_plan_sha256:
         raise ValueError("Evaluation checksum differs from the reviewed plan")
     write_json(path / "stop.json", {"plan_sha256": expected_plan_sha256})
-    state = read_json(path / "state.json")
-    if state.get("status") == "prepared" and (
-        not (path / "launch.lock").exists() or launch_unclaimed(path)
-    ):
-        write_json(
-            path / "state.json",
-            {**state, "status": "cancelled", "finished_at": time.time()},
+    if not (path / "launch.lock").exists() or launch_unclaimed(path):
+        transition_state(
+            path, allowed_from={"prepared"}, status="cancelled", finished_at=time.time()
         )
 
 
