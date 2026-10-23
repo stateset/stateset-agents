@@ -212,8 +212,6 @@ def __getattr__(name: str) -> Any:
     """Deprecation shim for names that moved out of this module."""
     canonical = _DEPRECATED_ERROR_ALIASES.get(name)
     if canonical is not None:
-        from stateset_agents._deprecation import warn_deprecated
-
         from . import errors
 
         warn_deprecated(
