@@ -604,3 +604,32 @@ async def test_dapo_math_verifier_needs_a_committed_whole_answer(monkeypatch):
     assert reward(prompt, "12 + 30 = 42.") == 1.0
     for gamed in ("142", "Maybe 41. Maybe 42. Maybe 43.", "It is not 42.", ""):
         assert reward(prompt, gamed) == 0.0, gamed
+
+
+# --- Heuristic keywords match whole words, not substrings ---------------------
+
+
+async def test_helpfulness_keywords_are_whole_words():
+    reward = HelpfulnessReward()
+    # "seen"/"there"/"thereby" contain "see"/"here" but are not those words.
+    substrings = "Seen there, thereby overseen; somewhere elsewhere nowhere."
+    words = "I see. Here it is; thereby overseen somewhere elsewhere."
+    assert reward._evaluate_helpfulness(substrings) < reward._evaluate_helpfulness(
+        words
+    )
+
+
+async def test_engagement_keywords_are_whole_words():
+    from stateset_agents.core.basic_rewards import EngagementReward
+
+    reward = EngagementReward()
+    assert reward._evaluate_engagement("The greatest ingratitude.") == pytest.approx(
+        reward._evaluate_engagement("The largest ingratitude.")
+    )
+
+
+async def test_goal_keywords_are_whole_words():
+    reward = TaskCompletionReward(task_criteria={"goal_keywords": ["refund"]})
+    partial = await reward.compute_reward(_conversation("This item is refundable."))
+    whole = await reward.compute_reward(_conversation("Your refund is done."))
+    assert (partial.score, whole.score) == (0.0, 1.0)

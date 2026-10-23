@@ -65,6 +65,13 @@ def _contains_term(text: str, term: str) -> bool:
     return re.search(pattern, _normalize_text(text)) is not None
 
 
+def _has_word(text: str, word: str) -> bool:
+    """Whether lower-cased ``text`` has ``word`` as a whole word, allowing the
+    inflections -s, -es, -ed, -d and -ing ("thanks", "checked", "helping")."""
+    pattern = rf"\b{re.escape(word)}(?:s|es|ed|d|ing)?\b"
+    return re.search(pattern, text) is not None
+
+
 _NUMBER = r"[-+]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
 _NUMBER_PATTERN = re.compile(r"(?<![\w.])" + _NUMBER + r"(?![\w]|\.\d)")
 _STATED_ANSWER_PATTERNS = (
@@ -362,12 +369,14 @@ class HelpfulnessReward(RewardFunction):
             "for you",
             "right away",
         ]
-        phrase_matches = sum(1 for phrase in helpful_phrases if phrase in content_lower)
+        phrase_matches = sum(
+            1 for phrase in helpful_phrases if _contains_term(content, phrase)
+        )
         score += min(phrase_matches * 0.10, 0.3)
 
         # Question answering
         if "?" in content and any(
-            word in content_lower for word in ["because", "since", "due to"]
+            _contains_term(content, word) for word in ["because", "since", "due to"]
         ):
             score += 0.2
 
@@ -395,8 +404,10 @@ class HelpfulnessReward(RewardFunction):
             "found",
             "details",
         ]
-        has_acknowledge = any(w in content_lower for w in acknowledge_words)
-        has_solve = any(w in content_lower for w in solve_words)
+        # Whole words with their inflections ("thanks", "checked"), not
+        # substrings ("there" is not "here", "seen" is not "see").
+        has_acknowledge = any(_has_word(content_lower, w) for w in acknowledge_words)
+        has_solve = any(_has_word(content_lower, w) for w in solve_words)
         if has_acknowledge and has_solve:
             score += 0.1
 
@@ -712,12 +723,14 @@ class EngagementReward(RewardFunction):
             "incredible",
             "fascinating",
         ]
-        emotion_matches = sum(1 for word in emotional_words if word in content_lower)
+        emotion_matches = sum(
+            1 for word in emotional_words if _contains_term(content, word)
+        )
         score += min(emotion_matches * 0.1, 0.2)
 
         # Personal touch
         personal_phrases = ["i think", "in my opinion", "i believe", "personally"]
-        if any(phrase in content_lower for phrase in personal_phrases):
+        if any(_contains_term(content, phrase) for phrase in personal_phrases):
             score += 0.2
 
         # Varied sentence structure
@@ -810,10 +823,9 @@ class TaskCompletionReward(RewardFunction):
             all_text = " ".join(
                 _turn_text(turn) for turn in turns if turn.role == "assistant"
             )
+            # Whole words only: "refund" is not credited by "refundable".
             goal_matches = sum(
-                1
-                for keyword in goal_keywords
-                if _normalize_text(str(keyword)) in _normalize_text(all_text)
+                1 for keyword in goal_keywords if _contains_term(all_text, str(keyword))
             )
             goal_score = min(goal_matches / len(goal_keywords), 1.0)
             breakdown["goal_achievement"] = goal_score
