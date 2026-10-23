@@ -1,13 +1,13 @@
 # StateSet Agents - Technical Architecture
 
-**Source version:** 0.41.0
-**Last updated:** May 2026
+**Source version:** 0.69.0
+**Last updated:** October 2026
 
 > **Versioning note.** Like the whitepaper, this document is pinned to the
 > source tree at the version above. The PyPI release may lag the source by
 > one or two patch versions; check `stateset_agents.__version__` for the
 > installed version. Section-level claims about file paths and line counts
-> are valid as of 0.41.0 — open an issue if they drift.
+> are valid as of 0.69.0 — open an issue if they drift.
 
 ---
 
@@ -596,9 +596,35 @@ The native trainers share one spine instead of each owning its loop:
 * `PromptGroupRollouts`, `VLLMEngineMixin` (`spine/rollouts.py`) and the
   scorers (`spine/scoring.py`) — sampling, the vLLM engine and reward
   scoring.
+* `optimizer_step_budget` / `build_lr_scheduler` (`spine/schedule.py`) — the
+  LR schedule of every spec trainer and VAPO: `lr_scheduler_type` over
+  `iterations × passes` committed steps (each commit steps the scheduler
+  once), clamped at the end so it never climbs back.
+
+Failure policy lives in the spine too, not in each trainer:
+
+* a non-finite gradient raises `NonFiniteGradientError` (a `TrainingError`
+  and `ValueError`); `nonfinite_grad_policy="skip"` is decided by that type;
+* a failed rollout-engine weight sync (engine `RuntimeError`/`OSError` only;
+  anything else is a bug and propagates) is reported in the step metrics
+  (`rollout_weights_stale`, `rollout_sync_failures`) and, under
+  `rollout_sync_failure="raise"` (default), stops training after
+  `max_consecutive_rollout_sync_failures` consecutive failures;
+* a reward-fallback score (`REWARD_FALLBACK_KEY` or left-out components) is
+  never trained on: the scorers' `score_checked` reports the flag,
+  `RewardFallbacks` / `exclude_flagged_groups` drop the reply or episode and
+  count it (`reward_fallback_responses` / `reward_fallback_episodes`), and a
+  step with nothing else raises `RewardUnavailableError`;
+* a failing callback is logged at WARNING with its traceback, or stops
+  training under `strict_callbacks=True`.
+
+The dedicated entry points share `dedicated_reporting.WandbRun` (W&B
+init/log/finish, inactive without a project) and `dedicated_deps`
+(transformers, PEFT and W&B loaded on demand).
 
 VAPO (a critic with value warmup and two optimizers) stays a specialised loop
-built from these parts.
+built from these parts; its value-warmup iteration holds its place in the LR
+schedule and trains the critic at its base learning rate.
 
 ---
 
@@ -1247,6 +1273,6 @@ modifies `pyproject.toml` without regenerating the locks.
 
 ---
 
-**Source version**: 0.41.0
-**Last updated**: May 2026
+**Source version**: 0.69.0
+**Last updated**: October 2026
 **Status**: Production-ready (BUSL-1.1)
