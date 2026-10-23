@@ -64,6 +64,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never absorb a failure, so the trainers' rollout policy (only
   `RewardUnavailableError` is dropped, an all-dropped step raises) is as
   before.
+- `stateset_agents.training.spine.GRPOUpdateMixin` is the GRPO update half
+  -- continual-learning reference and KL beta, autocast, the token-path
+  inner passes over frozen old-policy log-probs or one accumulated
+  backward, the streamed chunked backward, the EWC regularizer, the
+  optimizer commit and the step metrics -- extracted from
+  `MultiTurnGRPOTrainer.training_step`. `SingleTurnGRPOTrainer` now runs
+  each step's update through it instead of its own copy; the trainers
+  differ only in hooks (AMP scaler gating, how the reward baseline and
+  backward closure reach the loss, their optimizer-step and flush
+  signatures). Both trainers' step goldens are unchanged.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is

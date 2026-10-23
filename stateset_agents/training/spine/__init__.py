@@ -14,6 +14,9 @@ Currently provided:
   frozen old-policy log-probs (chunked or single-graph), each committed
   through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
   give the token- or row-share weights.
+* :class:`GRPOUpdateMixin` -- the GRPO update half (inner passes or an
+  accumulated backward, EWC, the optimizer commit) shared by
+  ``MultiTurnGRPOTrainer.training_step`` and ``SingleTurnGRPOTrainer``.
 * :class:`SpineLoopMixin` -- the GRPO trainers' outer loop (``train()``,
   update receipts, reporting cadence, resume, finalization), inherited by
   ``MultiTurnGRPOTrainer`` and ``DistributedTrainer``.
@@ -30,6 +33,7 @@ Importing this package does not import ``torch``.
 
 from __future__ import annotations
 
+from .grpo_update import GRPOUpdateMixin
 from .loop import SpineLoopMixin
 from .rollouts import (
     PromptGroupRollouts,
@@ -54,6 +58,7 @@ from .update import (
 )
 
 __all__ = [
+    "GRPOUpdateMixin",
     "CallableScorer",
     "EpisodeScorer",
     "ResponseScorer",

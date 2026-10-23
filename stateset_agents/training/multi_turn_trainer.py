@@ -24,14 +24,12 @@ from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
 from .ddp_population import run_token_local
 from .evaluation import EvaluationConfig, evaluate_agent
-from .grpo_accumulation import backward_accumulated_loss
 from .loss_computation import (
     _compute_group_policy_loss,
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
     compute_token_old_logprobs,
 )
-from .metric_reduction import carry_loss_metrics
 from .multi_turn_checkpointing import (
     load_multi_turn_checkpoint,
     save_multi_turn_checkpoint,
@@ -55,6 +53,7 @@ from .profiling import (
     profile_learner_step,
 )
 from .runtime_state import validate_training_config
+from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
 from .spine.scoring import EpisodeScorer
 from .trainer_utils import (
@@ -179,7 +178,7 @@ MULTI_TRAINER_EXCEPTIONS = (
 )
 
 
-class MultiTurnGRPOTrainer(SpineLoopMixin):
+class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     """
     GRPO trainer for multi-turn agents with HuggingFace and W&B integration
 
@@ -1119,106 +1118,67 @@ class MultiTurnGRPOTrainer(SpineLoopMixin):
     async def training_step(
         self, trajectory_groups: list[TrajectoryGroup]
     ) -> dict[str, Any]:
-        """Execute a single training step"""
-        torch = require_torch()
-        amp = get_amp()
-
+        """Execute a single training step (the spine's ``GRPOUpdateMixin``)."""
         self.agent.model.train()
+        _loss_dict, metrics = self._grpo_update(trajectory_groups)
+        return metrics
 
-        # Compute GRPO loss
-        use_amp = bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+    # --- GRPOUpdateMixin hooks ------------------------------------------------
+
+    def _update_modules(self) -> tuple[Any, Any]:
+        return require_torch(), get_amp()
+
+    def _update_old_logprobs(
+        self, trajectory_groups: list[TrajectoryGroup]
+    ) -> list[Any] | None:
+        old: list[Any] | None = run_token_local(
+            self.agent.model,
+            "old-policy",
+            lambda: compute_token_old_logprobs(
+                trajectory_groups, self.config, self.agent
+            ),
         )
-        device_type = "cuda" if torch.cuda.is_available() else "cpu"
-        base_beta = float(getattr(self.config, "beta", 0.0))
-        if self.continual_manager is not None:
-            reference_model = getattr(self.continual_manager, "reference_model", None)
-            if reference_model is not None:
-                self.reference_model = reference_model
-            base_beta = self.continual_manager.get_effective_beta(base_beta)
+        return old
 
-        use_enhanced = bool(
-            base_beta > 0.0
-            or getattr(self.config, "use_reference_model", False)
-            or self.reference_model is not None
-        )
+    def _update_baseline(self) -> dict[str, Any]:
+        return self._reward_baseline_kwargs()
 
-        autocast_ctx = (
-            amp.autocast(device_type=device_type, enabled=use_amp)
-            if amp is not None
+    def _update_loss(
+        self,
+        trajectory_groups: list[Any],
+        *,
+        enhanced: bool,
+        beta: float,
+        old_logprobs: list[Any] | None,
+        baseline: dict[str, Any] | None,
+        update_stats: bool,
+        backward_fn: Any,
+    ) -> dict[str, Any]:
+        frozen = (
+            self._frozen_reward_baseline(baseline, update=update_stats)
+            if baseline is not None
             else contextlib.nullcontext()
         )
-
-        inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
-        if inner > 1:
-            # Same precision as the inner-update losses, so the first ratio is 1.
-            with (
-                amp.autocast(device_type=device_type, enabled=use_amp)
-                if amp is not None
-                else contextlib.nullcontext()
-            ):
-                old_logprobs = run_token_local(
-                    self.agent.model,
-                    "old-policy",
-                    lambda: compute_token_old_logprobs(
-                        trajectory_groups, self.config, self.agent
-                    ),
-                )
+        with frozen, self._loss_backward(backward_fn):
+            # Call shapes as before the extraction (spies see the same calls).
             if old_logprobs is None:
-                self._warn_inner_updates_unavailable()
-            else:
-                return self._inner_update_steps(
-                    trajectory_groups,
-                    inner,
-                    old_logprobs,
-                    use_enhanced=use_enhanced,
-                    beta=base_beta,
-                    autocast_ctx_factory=lambda: (
-                        amp.autocast(device_type=device_type, enabled=use_amp)
-                        if amp is not None
-                        else contextlib.nullcontext()
-                    ),
-                    torch=torch,
+                if enhanced:
+                    return self.compute_enhanced_grpo_loss(trajectory_groups, beta=beta)
+                return self.compute_grpo_loss(trajectory_groups)
+            if enhanced:
+                return self.compute_enhanced_grpo_loss(
+                    trajectory_groups, beta=beta, old_logprobs=old_logprobs
                 )
+            return self.compute_grpo_loss(trajectory_groups, old_logprobs=old_logprobs)
 
-        grad_accum_steps = self._get_grad_accum_steps()
-        with (
-            autocast_ctx,
-            self._chunked_backward(torch, amp, device_type, grad_accum_steps),
-        ):
-            if use_enhanced:
-                loss_dict = self.compute_enhanced_grpo_loss(
-                    trajectory_groups, beta=base_beta
-                )
-            else:
-                loss_dict = self.compute_grpo_loss(trajectory_groups)
-            loss, ewc_penalty = self._regularized_loss(loss_dict)
+    def _update_regularizer(self, loss_dict: dict[str, Any]) -> tuple[Any, Any]:
+        return self._regularized_loss(loss_dict)
 
-        grad_accum_steps = self._get_grad_accum_steps()
-        backward_accumulated_loss(
-            self, loss, loss_dict, torch, scaler=self.scaler, regularizer=ewc_penalty
-        )
+    def _update_commit(self, torch: Any) -> bool:
+        return bool(self._apply_optimizer_step(torch))
 
-        self._grad_accum_step += 1
-        optimizer_step = False
-        if self._grad_accum_step % grad_accum_steps == 0:
-            optimizer_step = self._apply_optimizer_step(torch)
-
-        # Prepare metrics
-        optimizer = self.optimizer
-        metrics = {
-            **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": (
-                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
-            ),
-            "global_step": self.global_step,
-            "optimizer_step": optimizer_step,
-            "optimizer_updates": int(optimizer_step),
-            "grad_accum_step": self._grad_accum_step,
-            "inner_updates": 1,
-        }
-
-        return carry_loss_metrics(metrics, loss_dict)
+    def _update_flush(self, torch: Any) -> bool:
+        return self._flush_accumulation(torch)
 
     def _regularized_loss(self, loss_dict: dict[str, Any]) -> tuple[Any, Any]:
         """Coordinate local continual penalties before entering backward phases."""
@@ -1237,20 +1197,26 @@ class MultiTurnGRPOTrainer(SpineLoopMixin):
         return run_token_local(self.agent.model, "regularizer", local)
 
     @contextlib.contextmanager
+    def _loss_backward(self, backward_fn: Any) -> Iterator[Any]:
+        """Install the backward closure ``compute_*_grpo_loss`` stream into."""
+        previous = getattr(self, "_loss_backward_fn", None)
+        self._loss_backward_fn: Any = backward_fn
+        try:
+            yield backward_fn
+        finally:
+            self._loss_backward_fn = previous
+
+    @contextlib.contextmanager
     def _chunked_backward(
         self, torch: Any, amp: Any, device_type: str, divisor: int
     ) -> Any:
         """Stream chunks while preserving population and entropy gradient banks."""
         from .grpo_accumulation import NativeChunkedBackward
 
-        previous = getattr(self, "_loss_backward_fn", None)
-        self._loss_backward_fn: Any = NativeChunkedBackward(
-            self, torch, steps=divisor, scaler=self.scaler
-        )
-        try:
-            yield self._loss_backward_fn
-        finally:
-            self._loss_backward_fn = previous
+        with self._loss_backward(
+            NativeChunkedBackward(self, torch, steps=divisor, scaler=self.scaler)
+        ) as backward_fn:
+            yield backward_fn
 
     def _backward_remaining(
         self,
@@ -1281,74 +1247,6 @@ class MultiTurnGRPOTrainer(SpineLoopMixin):
             "these trajectories carry no token metadata, so a single on-policy "
             "update is applied."
         )
-
-    def _inner_update_steps(
-        self,
-        trajectory_groups: list[TrajectoryGroup],
-        inner: int,
-        old_logprobs: list[Any],
-        *,
-        use_enhanced: bool,
-        beta: float,
-        autocast_ctx_factory: Any,
-        torch: Any,
-    ) -> dict[str, Any]:
-        """PPO/DAPO-style mini-epochs: ``inner`` full optimizer steps against
-        the frozen old-policy log-probs of this rollout batch."""
-        ratio_means: list[float] = []
-        # old_logprobs was frozen before this flush. The first inner loss must
-        # therefore account for any policy change caused by the pending update.
-        accumulation_flush_updates = int(self._flush_accumulation(torch))
-        optimizer_updates = accumulation_flush_updates
-        loss_dict: dict[str, Any] = {}
-        baseline = self._reward_baseline_kwargs()
-        amp = get_amp()
-        device_type = "cuda" if torch.cuda.is_available() else "cpu"
-        for step_index in range(inner):
-            with (
-                self._frozen_reward_baseline(baseline, update=step_index == 0),
-                autocast_ctx_factory(),
-                self._chunked_backward(torch, amp, device_type, 1),
-            ):
-                if use_enhanced:
-                    loss_dict = self.compute_enhanced_grpo_loss(
-                        trajectory_groups,
-                        beta=beta,
-                        old_logprobs=old_logprobs,
-                    )
-                else:
-                    loss_dict = self.compute_grpo_loss(
-                        trajectory_groups,
-                        old_logprobs=old_logprobs,
-                    )
-                loss, ewc_penalty = self._regularized_loss(loss_dict)
-            backward_accumulated_loss(
-                self,
-                loss,
-                loss_dict,
-                torch,
-                scaler=self.scaler,
-                regularizer=ewc_penalty,
-                accumulation_steps=1,
-            )
-            optimizer_updates += int(self._apply_optimizer_step(torch))
-            ratio_means.append(float(loss_dict.get("ratio_mean", 1.0)))
-
-        optimizer = self.optimizer
-        metrics = {
-            **{k: v.item() if torch.is_tensor(v) else v for k, v in loss_dict.items()},
-            "learning_rate": (
-                optimizer.param_groups[0]["lr"] if optimizer is not None else 0.0
-            ),
-            "global_step": self.global_step,
-            "optimizer_step": optimizer_updates > 0,
-            "optimizer_updates": optimizer_updates,
-            "accumulation_flush_updates": accumulation_flush_updates,
-            "grad_accum_step": self._grad_accum_step,
-            "inner_updates": inner,
-            "ratio_mean_last": ratio_means[-1] if ratio_means else 1.0,
-        }
-        return carry_loss_metrics(metrics, loss_dict)
 
     async def _evaluate_local(
         self, eval_scenarios: list[dict[str, Any]], num_eval_episodes: int
