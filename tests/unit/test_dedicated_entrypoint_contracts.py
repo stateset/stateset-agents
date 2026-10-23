@@ -311,3 +311,95 @@ async def test_without_a_config_the_arguments_build_it(
     assert run.loaded == ["gpt2"]
     assert run.configs[0].output_dir == loops[0]["output_dir"] == f"./outputs/{name}"
     assert (tmp_path / "outputs" / name).is_dir()
+
+
+class _AbortAfter:
+    """A callback that records ``on_step_end`` and aborts after ``steps``."""
+
+    def __init__(self, steps: int) -> None:
+        self.steps = steps
+        self.seen: list[tuple[int, dict[str, Any]]] = []
+        self.should_abort = False
+        self.abort_reason = ""
+
+    def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
+        self.seen.append((step, dict(metrics)))
+        if len(self.seen) >= self.steps:
+            self.should_abort = True
+            self.abort_reason = f"stop after {self.steps}"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ALGORITHMS)
+async def test_callbacks_see_every_step_and_may_abort(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, name: str
+) -> None:
+    """Only ``train_with_gspo`` accepted callbacks."""
+    entry, run = _harness(monkeypatch, name)
+    callback = _AbortAfter(1)
+    await entry(
+        model_name="gpt2",
+        reward_fn=_reward,
+        train_prompts=PROMPTS,
+        config=_config(name, num_episodes=3, save_steps=1),
+        output_dir=str(tmp_path),
+        callbacks=[callback],
+    )
+    assert [step for step, _ in callback.seen] == [0]
+    assert "policy_loss" in callback.seen[0][1] or "warmup_value_loss" in (
+        callback.seen[0][1]
+    )
+    # the step's checkpoint precedes the callbacks; the final save follows
+    assert [os.path.basename(path) for path in run.saves] == ["checkpoint-1", "final"]
+
+
+@pytest.mark.asyncio
+async def test_train_with_gspo_token_takes_callbacks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    from types import SimpleNamespace
+
+    from stateset_agents.training import gspo_token_trainer as tok
+    from stateset_agents.training import gspo_trainer
+    from stateset_agents.training.gspo_config import GSPOConfig
+
+    saves: list[str] = []
+
+    class Manager:
+        ref_model = None
+
+        def __init__(self, config: Any) -> None:
+            pass
+
+        def load_model_and_tokenizer(self) -> tuple[Any, Any]:
+            return object(), object()
+
+    class FakeTokenTrainer:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def train_step_token_level(
+            self, queries: Any, num_groups: int = 1
+        ) -> dict[str, Any]:
+            return {"policy_loss": 0.5}
+
+        def save_model(self, path: str) -> None:
+            saves.append(os.path.basename(path))
+
+    monkeypatch.setattr(gspo_trainer, "GSPOModelManager", Manager)
+    monkeypatch.setattr(tok, "GSPOTokenTrainer", FakeTokenTrainer)
+    callback = _AbortAfter(2)
+    agent = SimpleNamespace(model=None, tokenizer=None)
+    result = await tok.train_with_gspo_token(
+        config=GSPOConfig(
+            output_dir=str(tmp_path), report_to="none", num_outer_iterations=5
+        ),
+        agent=agent,
+        environment=SimpleNamespace(scenarios=[]),
+        reward_model=SimpleNamespace(),
+        train_queries=["q"],
+        callbacks=[callback],
+    )
+    assert [step for step, _ in callback.seen] == [0, 1]
+    assert saves == ["final_model"]
+    assert result._training_aborted == "stop after 2"

@@ -79,11 +79,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the phases it passes to `_training_phase` and their order are unchanged.
 - `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
   the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
-  `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): batch ->
-  `train_step` -> report -> periodic `checkpoint-<n>` save -> callbacks
-  (GSPO's may abort) -> one final save, also after an abort; a failing
-  step propagates without a final save. Each entry point keeps its own
-  batching, logging, wandb, save names and resume rejection.
+  `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): seed ->
+  batch -> `train_step` -> report -> periodic `checkpoint-<n>` save ->
+  callbacks (`on_step_end`; `should_abort` stops) -> one final save, also
+  after an abort; a failing step propagates without a final save. It
+  returns a `DedicatedRun` (iterations, aborted, abort reasons, last
+  metrics). Each entry point keeps its public return shape, its iteration
+  count field, final directory and save format for backward compatibility:
+  the GSPO family returns the agent, runs `config.num_outer_iterations`
+  and exports the model to `final_model` (`save_model`); DAPO, GEPO and
+  VAPO return `(model, tokenizer, metrics_history)`, run
+  `config.num_episodes` and write resumable checkpoints to `final`
+  (`save_checkpoint`). Their log lines and W&B logging also stay their own.
+- `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` take `callbacks`, with `train_with_gspo`'s contract:
+  `on_step_end(step, metrics)` after each iteration and its checkpoint, and
+  a callback setting `should_abort` stops the run after the final save
+  (`train_with_gspo_token` then sets `agent._training_aborted`, as
+  `train_with_gspo` does). Only `train_with_gspo` accepted callbacks before.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is

@@ -289,20 +289,6 @@ async def train_with_gspo(
         if use_wandb and wb is not None:
             wb.log(metrics, step=iteration)
 
-    async def notify(iteration: int, metrics: dict[str, Any]) -> bool:
-        # Notify callbacks via the dispatch layer; any may request an abort.
-        if not _callbacks:
-            return False
-        from .callbacks import notify_step_end
-
-        await notify_step_end(_callbacks, step=iteration, metrics=metrics)
-        for cb in _callbacks:
-            if getattr(cb, "should_abort", False):
-                reason = getattr(cb, "abort_reason", "callback requested abort")
-                logger.warning("Training aborted by callback: %s", reason)
-                return True
-        return False
-
     run = await run_dedicated_loop(
         iterations=config.num_outer_iterations,
         batch=window,
@@ -312,24 +298,16 @@ async def train_with_gspo(
         save_steps=config.save_steps,
         final_name="final_model",
         report=report,
-        after_save=notify,
+        callbacks=_callbacks,
         seed=config.seed,
     )
-    aborted = run.aborted
 
     if use_wandb and wb is not None:
         wb.finish()
 
-    if aborted:
+    if run.aborted:
         logger.info("GSPO training aborted early.")
-        reasons = [
-            str(getattr(cb, "abort_reason", "") or "")
-            for cb in _callbacks
-            if getattr(cb, "should_abort", False)
-        ]
-        cast(Any, agent)._training_aborted = (
-            "; ".join(r for r in reasons if r) or "aborted"
-        )
+        cast(Any, agent)._training_aborted = "; ".join(run.abort_reasons) or "aborted"
     else:
         logger.info("GSPO training completed successfully.")
     setattr(agent, "_training_metrics", dict(trainer.training_metrics))  # noqa: B010

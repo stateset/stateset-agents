@@ -30,6 +30,7 @@ async def train_with_vapo(
     output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using VAPO algorithm.
@@ -38,6 +39,9 @@ async def train_with_vapo(
     ``model_name`` and an explicit ``output_dir`` override the config's fields;
     without ``output_dir``, ``config.output_dir`` is used (``./outputs/vapo``
     when no config is given). See :func:`spine.dedicated_run_config`.
+    ``callbacks`` get ``on_step_end`` after each iteration (after its
+    checkpoint); one setting ``should_abort`` stops training after the final
+    save.
     """
     from .vapo_trainer import VAPOModelManager, VAPOTrainer, _require_wandb, wandb
 
@@ -122,6 +126,7 @@ async def train_with_vapo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
+        callbacks=callbacks or [],
         seed=config.seed,
     )
     trainer.metrics_history["rollout_samples_total"] = [

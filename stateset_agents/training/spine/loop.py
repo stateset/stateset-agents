@@ -48,6 +48,7 @@ from ..callbacks import (
     notify_episode_end,
     notify_evaluation_end,
     notify_optimizer_step,
+    notify_step_end,
     notify_training_end,
     notify_training_start,
 )
@@ -493,8 +494,10 @@ class DedicatedRun:
 
     #: Iterations that completed a ``train_step``.
     iterations: int = 0
-    #: True when ``after_save`` asked to stop early.
+    #: True when a callback asked to stop early.
     aborted: bool = False
+    #: The aborting callbacks' ``abort_reason``\s (empty ones left out).
+    abort_reasons: list[str] = dataclasses.field(default_factory=list)
     #: The last iteration's metrics (``None`` before the first).
     metrics: dict[str, Any] | None = None
 
@@ -600,7 +603,7 @@ async def run_dedicated_loop(
     save_steps: int,
     final_name: str,
     report: Callable[[int, dict[str, Any]], Any] | None = None,
-    after_save: Callable[[int, dict[str, Any]], Any] | None = None,
+    callbacks: Sequence[Any] = (),
     seed: int | None = None,
 ) -> DedicatedRun:
     """The dedicated entry points' outer loop.
@@ -610,12 +613,16 @@ async def run_dedicated_loop(
     any randomness from the seeded generator ``rng`` (``None`` ends training
     early), ``step(prompts)`` runs one ``train_step``,
     ``report(i, metrics)`` logs it, every ``save_steps`` iterations
-    ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, and
-    ``after_save(i, metrics)`` (callbacks) may return True to abort. After the
-    loop -- also after an abort -- ``save(output_dir/<final_name>)`` publishes
-    the final model. An exception propagates without a final save, like
-    :class:`SpineLoopMixin`'s success-only finalization. ``report`` and
-    ``after_save`` may be sync or async.
+    ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, then the
+    ``callbacks`` get ``on_step_end(step=i, metrics)``; any whose
+    ``should_abort`` is then set stops training. After the loop -- also after
+    an abort -- ``save(output_dir/<final_name>)`` publishes the final model. An
+    exception propagates without a final save, like :class:`SpineLoopMixin`'s
+    success-only finalization. ``report`` may be sync or async.
+
+    Callbacks are step-level only: unlike :class:`SpineLoopMixin`, no
+    training start/end, episode or evaluation events are dispatched (as
+    ``train_with_gspo`` always behaved).
     """
     run = DedicatedRun()
     rng = seed_dedicated_run(seed)
@@ -629,11 +636,20 @@ async def run_dedicated_loop(
             await _maybe_await(report(iteration, metrics))
         if (iteration + 1) % save_steps == 0:
             save(os.path.join(output_dir, f"checkpoint-{iteration + 1}"))
-        if after_save is not None and await _maybe_await(
-            after_save(iteration, metrics)
-        ):
-            run.aborted = True
-            break
+        if callbacks:
+            await notify_step_end(callbacks, step=iteration, metrics=metrics)
+            aborting = [cb for cb in callbacks if getattr(cb, "should_abort", False)]
+            if aborting:
+                run.aborted = True
+                run.abort_reasons = [
+                    str(getattr(cb, "abort_reason", "") or "") for cb in aborting
+                ]
+                run.abort_reasons = [reason for reason in run.abort_reasons if reason]
+                logger.warning(
+                    "Training aborted by callback: %s",
+                    "; ".join(run.abort_reasons) or "callback requested abort",
+                )
+                break
     save(os.path.join(output_dir, final_name))
     return run
 

@@ -254,6 +254,7 @@ async def train_with_gspo_token(
     environment: ConversationEnvironment,
     reward_model: MultiObjectiveReward,
     train_queries: list[str] | None = None,
+    callbacks: list[Any] | None = None,
 ) -> Agent:
     """
     Train using GSPO-token variant with token-level advantages.
@@ -268,6 +269,9 @@ async def train_with_gspo_token(
         environment: Training environment
         reward_model: Reward function
         train_queries: Optional list of training queries
+        callbacks: Get ``on_step_end`` after each iteration; one setting
+            ``should_abort`` stops training (``agent._training_aborted``
+            then holds the reasons), as in ``train_with_gspo``
 
     Returns:
         Trained agent
@@ -350,7 +354,7 @@ async def train_with_gspo_token(
             wandb.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
-    await run_dedicated_loop(
+    run = await run_dedicated_loop(
         iterations=config.num_outer_iterations,
         batch=window,
         step=step,
@@ -359,8 +363,13 @@ async def train_with_gspo_token(
         save_steps=config.save_steps,
         final_name="final_model",
         report=report,
+        callbacks=callbacks or [],
         seed=config.seed,
     )
+    if run.aborted:
+        setattr(  # noqa: B010
+            agent, "_training_aborted", "; ".join(run.abort_reasons) or "aborted"
+        )
 
     # Finish wandb run
     if config.report_to == "wandb":

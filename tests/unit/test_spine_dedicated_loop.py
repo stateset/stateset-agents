@@ -60,17 +60,22 @@ async def test_iteration_order_save_cadence_and_final_save() -> None:
 async def test_callbacks_run_after_the_save_and_may_abort() -> None:
     events, hooks = _recorder()
 
-    async def after_save(iteration: int, metrics: dict[str, Any]) -> bool:
-        events.append(f"callbacks {iteration}")
-        return iteration == 1
+    class Callback:
+        should_abort = False
+        abort_reason = "enough"
 
+        def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
+            events.append(f"callbacks {step}")
+            self.should_abort = step == 1
+
+    quiet = SimpleNamespace(on_step_end=lambda step, metrics: None)
     run = await run_dedicated_loop(
         iterations=5,
         batch=lambda i, rng: i,
         output_dir="/out",
         save_steps=2,
         final_name="final_model",
-        after_save=after_save,
+        callbacks=[quiet, Callback()],
         **hooks,
     )
     assert events[-4:] == [
@@ -80,6 +85,7 @@ async def test_callbacks_run_after_the_save_and_may_abort() -> None:
         "save final_model",
     ]
     assert run.aborted and run.iterations == 2
+    assert run.abort_reasons == ["enough"]
 
 
 async def test_a_missing_batch_ends_training_with_a_final_save() -> None:

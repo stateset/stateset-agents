@@ -31,6 +31,7 @@ async def train_with_dapo(
     output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using the DAPO algorithm.
@@ -39,6 +40,9 @@ async def train_with_dapo(
     ``model_name`` and an explicit ``output_dir`` override the config's fields;
     without ``output_dir``, ``config.output_dir`` is used (``./outputs/dapo``
     when no config is given). See :func:`spine.dedicated_run_config`.
+    ``callbacks`` get ``on_step_end`` after each iteration (after its
+    checkpoint); one setting ``should_abort`` stops training after the final
+    save.
     """
     config = dedicated_run_config(
         config,
@@ -140,6 +144,7 @@ async def train_with_dapo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
+        callbacks=callbacks or [],
         seed=config.seed,
     )
     trainer.metrics_history["rollout_samples_total"] = [

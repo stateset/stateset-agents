@@ -716,6 +716,7 @@ async def train_with_gepo(
     output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using GEPO algorithm.
@@ -731,6 +732,9 @@ async def train_with_gepo(
             or ``./outputs/gepo`` when no config is given.
         use_wandb: Whether to log to Weights & Biases
         wandb_project: W&B project name
+        callbacks: Get ``on_step_end`` after each iteration (after its
+            checkpoint); one setting ``should_abort`` stops training after the
+            final save
 
     Returns:
         Tuple of (model, tokenizer, metrics_history)
@@ -803,6 +807,7 @@ async def train_with_gepo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
+        callbacks=callbacks or [],
         seed=config.seed,
     )
 
