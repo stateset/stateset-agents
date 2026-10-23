@@ -329,11 +329,14 @@ _UNCERTAINTY_PATTERN = re.compile(
     r"could be anything|just guessing|a guess|can't be sure|cannot be sure)\b"
 )
 #: Splits a reply into candidate segments: sentences, lines, list items
-#: (commas, slashes and pipes, with or without spaces, but not "1,299" or
-#: "1/2") and alternatives ("or", "and", "maybe", "perhaps", "possibly").
+#: (commas, slashes and pipes, with or without spaces, but not the "1,299"
+#: thousands separator) and alternatives ("or", "and", "maybe", "perhaps",
+#: "possibly"). A slash always splits: "3/6" offers 3 and 6, so the math
+#: verifier still reads an unsimplified fraction left without a stated
+#: answer as uncommitted.
 _SEGMENT_SPLIT = re.compile(
     r"(?<!\d)[.!?;\n]+|[.!?;]+(?=\s|$)"
-    r"|\s*(?:(?<!\d),|,(?!\d{3}\b)|(?<!\d)/|/(?!\d)|\|)\s*"
+    r"|\s*(?:(?<!\d),|,(?!\d{3}\b)|/|\|)\s*"
     r"|\s+(?:or|and|maybe|perhaps|possibly|probably)\s+",
     re.IGNORECASE,
 )
