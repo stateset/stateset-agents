@@ -19,6 +19,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from . import objectives, rl_losses
+from .config import config_value
 from .dedicated_reporting import WandbRun, reports_to_wandb
 from .gspo_generation import (
     _get_model_device,
@@ -382,6 +383,7 @@ async def _run_gspo_token(
         report=report,
         callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
     if run.aborted:
         setattr(  # noqa: B010

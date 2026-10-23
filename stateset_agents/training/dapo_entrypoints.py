@@ -9,6 +9,7 @@ import os
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from .config import config_value
 from .dapo_config import DAPOConfig
 from .dedicated_reporting import WandbRun
 from .runtime_state import _reject_unsupported_resume
@@ -151,6 +152,7 @@ async def _run_dapo(
         report=report,
         callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)

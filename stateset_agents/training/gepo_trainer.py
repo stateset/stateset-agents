@@ -748,6 +748,7 @@ async def _run_gepo(
         report=report,
         callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
 
     trainer.metrics_history["rollout_samples_total"] = [

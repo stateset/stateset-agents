@@ -654,6 +654,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 "optimizer-step",
                 notify_optimizer_step,
                 self.callbacks,
+                strict=self._strict_callbacks,
                 step=self.global_step,
                 metrics=dict(receipt),
             )
@@ -800,6 +801,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             "episode-end",
             notify_episode_end,
             self.callbacks,
+            strict=self._strict_callbacks,
             episode=episode,
             metrics={
                 "avg_reward": avg_reward,
@@ -840,6 +842,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             "training-end",
             notify_training_end,
             self.callbacks,
+            strict=self._strict_callbacks,
             metrics={"final_step": int(self.global_step)},
         )
 
@@ -871,6 +874,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             path=str(checkpoint_path),
             step=int(self.global_step),
             is_best=bool(is_best),
+            strict=self._strict_callbacks,
         )
 
     def add_callback(self, callback: Any):

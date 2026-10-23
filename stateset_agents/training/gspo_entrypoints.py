@@ -17,7 +17,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from .callbacks import has_no_policy_signal
-from .config import get_config_for_task
+from .config import config_value, get_config_for_task
 from .dedicated_reporting import WandbRun, reports_to_wandb
 from .gspo_config import GSPOConfig
 from .runtime_state import _reject_unsupported_resume
@@ -310,6 +310,7 @@ async def _run_gspo(
         report=report,
         callbacks=_callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
 
     if run.aborted:

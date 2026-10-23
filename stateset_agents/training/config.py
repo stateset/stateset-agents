@@ -65,6 +65,8 @@ class TrainingProfile(Enum):
 
 
 _NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
+#: ``rollout_sync_failure`` values: stop after repeated failures, or warn.
+ROLLOUT_SYNC_FAILURE_POLICIES: tuple[str, ...] = ("raise", "warn")
 
 
 def require_positive_ints(config: Any, *names: str) -> None:
@@ -328,6 +330,15 @@ class TrainingConfig:
     # every token (prompt included) if this is set; otherwise the loss raises
     # ``RolloutContractError``. Keyword-only so positional field order holds.
     allow_unmasked_labels: bool = field(default=False, kw_only=True)
+    # A training callback that raises is logged at WARNING with its traceback
+    # and training continues; True makes any callback failure stop training.
+    strict_callbacks: bool = field(default=False, kw_only=True)
+    # A failed rollout-engine weight sync leaves the engine serving the
+    # previous policy (``rollout_weights_stale`` in the step metrics).
+    # ``"raise"`` stops training after ``max_consecutive_rollout_sync_failures``
+    # consecutive failures; ``"warn"`` keeps training on stale rollouts.
+    rollout_sync_failure: str = field(default="raise", kw_only=True)
+    max_consecutive_rollout_sync_failures: int = field(default=3, kw_only=True)
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
@@ -583,9 +594,16 @@ class TrainingConfig:
             "allow_sequence_fallback",
             "allow_missing_sampler_logprobs",
             "allow_unmasked_labels",
+            "strict_callbacks",
         ):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean")
+        if self.rollout_sync_failure not in ROLLOUT_SYNC_FAILURE_POLICIES:
+            raise ConfigurationError(
+                "rollout_sync_failure must be one of "
+                f"{ROLLOUT_SYNC_FAILURE_POLICIES} (got {self.rollout_sync_failure!r})"
+            )
+        require_positive_ints(self, "max_consecutive_rollout_sync_failures")
 
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
