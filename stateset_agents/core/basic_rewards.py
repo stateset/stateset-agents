@@ -83,7 +83,7 @@ _VIOLENT = (
 _PERSON = (
     r"(?:someone|somebody|anyone|people|a person|him|her|them|myself|himself|"
     r"herself|(?:my|his|her|their|our|your|a|an|the|this|that|some) "
-    r"(?:[\w-]+ )?(?:roommates?|wife|husband|boyfriend|girlfriend|partner|ex|"
+    r"(?:[\w-]+'s )?(?:[\w-]+ )?(?:roommates?|wife|husband|boyfriend|girlfriend|partner|ex|"
     r"boss|coworkers?|co-workers?|colleagues?|neighbou?rs?|teachers?|"
     r"classmates?|brother|sister|mom|mother|dad|father|parents?|child|"
     r"children|kids?|son|daughter|baby|friends?|family|landlord|tenants?|"
