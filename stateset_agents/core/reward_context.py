@@ -54,10 +54,25 @@ class RewardUnavailableError(RuntimeError):
 #: ``score_episode`` copy it to the trajectory's metadata.
 REWARD_FALLBACK_KEY = "reward_fallback"
 
+#: ``RewardResult.metadata`` key a composer sets to the names of components
+#: it left out during an outage (with an opted-in renormalizing policy).
+#: Environments and ``score_episode`` copy it to the trajectory's metadata as
+#: :data:`FAILED_COMPONENTS_KEY`.
+COMPONENT_FAILURES_KEY = "failed_components"
+#: Trajectory metadata key listing the reward components an outage left out.
+FAILED_COMPONENTS_KEY = "reward_failed_components"
+
 #: Context key an environment sets when it asks for one step's reward.
 REWARD_SCOPE_KEY = "reward_scope"
 #: ``REWARD_SCOPE_KEY`` value: score only the newest assistant turn.
 LATEST_TURN_SCOPE = "latest_turn"
+
+#: Episode-state key in which a multi-turn environment records how an
+#: episode ended (``ToolUseEnvironment``: ``"final_answer"``,
+#: ``"budget_exhausted"``, ``"max_turns"``; ``None`` while it runs).
+TERMINATION_KEY = "termination"
+#: :data:`TERMINATION_KEY` value of an episode that ended with a final answer.
+FINAL_ANSWER_TERMINATION = "final_answer"
 
 
 def requires_environment_context(reward_fn: Any) -> bool:
@@ -149,6 +164,23 @@ def trajectory_reward_context(
     )
 
 
+def unanswered_termination(context: Mapping[str, Any] | None) -> str | None:
+    """How the episode ended, when the context says it ended without a final
+    answer; ``None`` otherwise.
+
+    Verifiers score such an episode 0: its last turn is not an answer, however
+    right the text beside its last tool call may be. A context without
+    :data:`TERMINATION_KEY` (a single reply, an environment that does not
+    record one) is not affected.
+    """
+    if not isinstance(context, Mapping) or TERMINATION_KEY not in context:
+        return None
+    termination = context.get(TERMINATION_KEY)
+    if termination == FINAL_ANSWER_TERMINATION:
+        return None
+    return str(termination)
+
+
 def scores_latest_turn_only(context: Mapping[str, Any] | None) -> bool:
     """Whether ``context`` asks for the newest assistant turn's score only."""
     return isinstance(context, Mapping) and (
@@ -202,15 +234,17 @@ def _real(value: Any) -> float | None:
     return None
 
 
-def reward_score(result: Any) -> float:
+def reward_score(result: Any, reward_fn: Any = None) -> float:
     """The finite score of a reward result: a ``RewardResult`` (anything with
     ``.score``, or its ``.total_reward`` alias), a mapping with ``"score"`` (or
     ``"total_reward"``), or a real scalar (Python, NumPy or a 0-d tensor).
 
     Raises ``TypeError`` for anything else (``None``, a string, a list) and
     ``ValueError`` for a non-finite score: neither is ever replaced by a
-    stand-in value. Every caller (environments, ``Environment.get_reward``,
-    ``score_episode``) uses this one parser.
+    stand-in value. With ``reward_fn``, a score outside the range that reward
+    declares (``score_range = (low, high)``) raises ``ValueError`` too; it is
+    never clamped. Every caller (environments, ``Environment.get_reward``,
+    ``score_episode``, ``score_response``) uses this one parser.
     """
     if isinstance(result, Mapping):
         candidates = [result.get("score"), result.get("total_reward")]
@@ -229,6 +263,40 @@ def reward_score(result: Any) -> float:
         )
     if not math.isfinite(score):
         raise ValueError(f"reward score must be finite, got {score}")
+    if reward_fn is not None:
+        check_score_range(reward_fn, score)
+    return score
+
+
+#: Rounding slack allowed at the edges of a declared score range.
+_RANGE_SLACK = 1e-9
+
+
+def declared_score_range(reward_fn: Any) -> tuple[float, float] | None:
+    """The ``(low, high)`` range ``reward_fn`` declares, if it declares one."""
+    declared = getattr(reward_fn, "score_range", None)
+    if not isinstance(declared, tuple) or len(declared) != 2:
+        return None
+    low, high = (_real(bound) for bound in declared)
+    if low is None or high is None:
+        return None
+    return low, high
+
+
+def check_score_range(reward_fn: Any, score: float) -> float:
+    """``score``, or ``ValueError`` when it lies outside ``reward_fn``'s
+    declared ``score_range`` (docs/REWARD_CONTRACT.md: never clamped)."""
+    declared = declared_score_range(reward_fn)
+    if declared is None:
+        return score
+    low, high = declared
+    slack = _RANGE_SLACK * max(1.0, abs(low), abs(high))
+    if not low - slack <= score <= high + slack:
+        name = getattr(reward_fn, "name", None) or type(reward_fn).__name__
+        raise ValueError(
+            f"reward {name} scored {score}, outside its declared score_range "
+            f"[{low}, {high}]"
+        )
     return score
 
 
@@ -240,11 +308,26 @@ def reward_fallback(result: Any) -> str | None:
     return None
 
 
+def failed_components(result: Any) -> list[str]:
+    """The components a composer left out of ``result`` during an outage."""
+    metadata = getattr(result, "metadata", None)
+    failed = (
+        metadata.get(COMPONENT_FAILURES_KEY) if isinstance(metadata, Mapping) else None
+    )
+    if not isinstance(failed, (list, tuple)):
+        return []
+    return [str(name) for name in failed]
+
+
 def note_fallback(metadata: dict[str, Any], result: Any) -> None:
-    """Record ``result``'s fallback flag (if any) in episode ``metadata``."""
+    """Record ``result``'s fallback flag and left-out components (if any) in
+    episode ``metadata``."""
     reason = reward_fallback(result)
     if reason is not None:
         metadata[REWARD_FALLBACK_KEY] = reason
+    failed = failed_components(result)
+    if failed:
+        metadata[FAILED_COMPONENTS_KEY] = failed
 
 
 def normalize_turns(turns: Any) -> list[ConversationTurn]:
@@ -373,7 +456,7 @@ async def score_response(
     )
     if _scores_per_step(reward_fn, None):
         context[REWARD_SCOPE_KEY] = LATEST_TURN_SCOPE
-    return reward_score(await _call(reward_fn, turns, context))
+    return reward_score(await _call(reward_fn, turns, context), reward_fn)
 
 
 async def score_trajectory(
@@ -394,7 +477,8 @@ async def score_trajectory(
     if not turns and hasattr(trajectory, "__iter__"):
         turns = list(trajectory)
     context = trajectory_reward_context(trajectory, scenario, reward_fn=reward_fn)
-    return reward_score(await _call(reward_fn, normalize_turns(turns), context))
+    result = await _call(reward_fn, normalize_turns(turns), context)
+    return reward_score(result, reward_fn)
 
 
 async def score_episode(
@@ -452,6 +536,7 @@ async def score_episode(
     ]
     breakdown: Any = None
     fallback: str | None = None
+    failed: list[str] = []
     if _scores_per_step(reward_fn, environment) and assistant:
         # Replay each step against the state it was scored at, recorded by
         # the environment in state_history; fall back to the final state.
@@ -476,18 +561,20 @@ async def score_episode(
                 else final_step_context
             )
             result = await _call(reward_fn, turns[: index + 1], step_context)
-            scores.append(reward_score(result))
+            scores.append(reward_score(result, reward_fn))
             breakdown = getattr(result, "breakdown", None)
             fallback = reward_fallback(result) or fallback
+            failed = failed_components(result) or failed
         parts = [score / len(scores) for score in scores]
         if len(parts) != len(intrinsic):
             # Steps and assistant turns do not line up; credit the mean once.
             parts = [0.0] * (len(intrinsic) - 1) + [math.fsum(parts)]
     else:
         result = await _call(reward_fn, turns, context)
-        parts = [0.0] * (len(intrinsic) - 1) + [reward_score(result)]
+        parts = [0.0] * (len(intrinsic) - 1) + [reward_score(result, reward_fn)]
         breakdown = getattr(result, "breakdown", None)
         fallback = reward_fallback(result)
+        failed = failed_components(result)
 
     turn_rewards = [base + part for base, part in zip(intrinsic, parts, strict=True)]
     total = math.fsum(turn_rewards)
@@ -508,17 +595,26 @@ async def score_episode(
             trajectory.metadata["environment_reward_error"] = error
         if fallback is not None:
             trajectory.metadata[REWARD_FALLBACK_KEY] = fallback
+        if failed:
+            trajectory.metadata[FAILED_COMPONENTS_KEY] = failed
     return total
 
 
 __all__ = [
+    "COMPONENT_FAILURES_KEY",
+    "FAILED_COMPONENTS_KEY",
+    "FINAL_ANSWER_TERMINATION",
     "LATEST_TURN_SCOPE",
     "RewardUnavailableError",
     "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
+    "TERMINATION_KEY",
     "assistant_turns_in_scope",
     "build_reward_context",
+    "check_score_range",
+    "declared_score_range",
     "environment_applied_reward",
+    "failed_components",
     "normalize_turns",
     "note_fallback",
     "reward_fallback",
@@ -531,4 +627,5 @@ __all__ = [
     "score_trajectory",
     "scores_latest_turn_only",
     "trajectory_reward_context",
+    "unanswered_termination",
 ]

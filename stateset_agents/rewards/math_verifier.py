@@ -17,7 +17,19 @@ read as an answer. There is no partial credit for hedging, as in
 ``CorrectnessReward`` (whose helpers this reuses): several different
 committed answers, a number offered as an alternative ("42, or maybe 41",
 "41 or 42"), an admission of not knowing ("not sure", "no idea") and a
-negated answer ("It is not 42.", "42 is not the answer") all score 0.
+negated answer ("It is not 42.", "42 is not the answer") all score 0. So do
+a box or statement that hedges inside itself (``\\boxed{84, 85}``,
+``\\boxed{84 \\pm 1}``, ``\\boxed{84 \\text{ or } 85}``, ``\\approx``, "84 or
+so") and an answer contradicted after it is given: a retraction ("I made an
+error"), or a different value offered for it ("it is 85", "it could also be
+85", "some textbooks say 85"). A committed answer may carry a unit ("42
+dollars") or restate itself ("84 (or 84.0)"), but text after its number that
+adds another number makes it no answer at all.
+
+In a tool-use episode the reply must also *be* the final answer: when the
+context records how the episode ended (``termination``, set by
+``ToolUseEnvironment``), anything but ``"final_answer"`` (a spent budget,
+``max_turns``) scores 0, whatever the last turn says.
 
 Equivalence (:mod:`stateset_agents.core.math_expressions`, which never calls
 ``eval``): a numeric reference must be matched by a number *written out*
@@ -26,7 +38,8 @@ fraction, or within ``abs_tolerance``/``rel_tolerance`` when set; restating
 the question's arithmetic (``\\boxed{12*7}``) earns nothing. A symbolic
 reference (``2x+2``) is matched by any equivalent expression (exact
 evaluation at fixed random rational points, or ``sympy.simplify`` for
-functions such as ``sqrt`` when sympy is installed); this cannot tell an
+functions such as ``sqrt`` when sympy is installed, in a worker process
+killed after ``sympy_timeout`` seconds; a timeout scores 0); this cannot tell an
 expanded form from an unexpanded one, so pass ``symbolic=False`` for
 form-sensitive tasks (expand, factor, simplify) to require the same
 canonical text. A reference that is not math is compared as normalized text.
@@ -34,6 +47,7 @@ canonical text. A reference that is not math is compared as normalized text.
 
 from __future__ import annotations
 
+import asyncio
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -50,6 +64,7 @@ from stateset_agents.core.basic_rewards import (
 )
 from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.core.math_expressions import (
+    SYMPY_TIMEOUT_SECONDS,
     ExpressionError,
     Node,
     equivalent,
@@ -60,7 +75,10 @@ from stateset_agents.core.math_expressions import (
     rational_value,
 )
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
-from stateset_agents.core.reward_context import assistant_turns_in_scope
+from stateset_agents.core.reward_context import (
+    assistant_turns_in_scope,
+    unanswered_termination,
+)
 from stateset_agents.core.tool_calls import strip_tool_calls
 
 __all__ = [
@@ -74,7 +92,8 @@ __all__ = [
 _LITERAL = re.compile(r"(?<![\w.])" + _NUMBER + r"(?:\s*/\s*\d+)?(?![\w]|\.\d)")
 _STATED = re.compile(
     r"(?:final\s+answer|answer)\s*(?:is|:|=|was)\s*:?\s*(.+?)"
-    r"(?=\.\s|\.$|[\n;]|\s+(?:because|since|as)\b|$)",
+    r"(?=\.\s|\.$|[\n;]|\s+(?:because|since|as)\b"
+    r"|,\s*(?:which|that|because|since|so|as|where|i\.e\.)\b|$)",
     re.IGNORECASE,
 )
 _HASHES = re.compile(r"####\s*([^\n]+)")
@@ -89,6 +108,40 @@ _HEDGE = re.compile(
     re.IGNORECASE,
 )
 _LEADING_OR = re.compile(r"(?P<num>" + _VALUE + r")\s*\}?\s*,?\s+or\b", re.IGNORECASE)
+#: Marks an answer as approximate or as a range: ``84 \\pm 1``, ``\\approx 84``.
+_HEDGE_MARK = re.compile(r"\\pm|\\mp|±|∓|\+/?-|\\approx|≈|\\simeq|\\sim(?![a-z])")
+#: Words that make an answer tentative or approximate.
+_HEDGE_WORD = re.compile(
+    r"\b(?:maybe|perhaps|possibly|probably|either|approximately|approx|about"
+    r"|around|roughly|nearly|almost|circa|ish"
+    r"|or\s+(?:so|thereabouts|more|less|fewer|greater|higher|lower))\b",
+    re.IGNORECASE,
+)
+#: A box holds the answer alone: "or" inside one offers an alternative.
+_BOX_OR = re.compile(r"\bor\b", re.IGNORECASE)
+_LIST_SEPARATOR = re.compile(r"[,;]")
+#: After the answer: a phrase offering a value as the answer ("it is 85",
+#: "it could also be 85", "some textbooks say 85", "actually 85").
+_OFFER = re.compile(
+    r"\b(?:it|this|that|the\s+(?:final\s+|correct\s+|real\s+|true\s+)?"
+    r"(?:answer|result|value))(?:['’]s|\s+(?:is|was|equals|should\s+be|must\s+be"
+    r"|would\s+be|(?:could|might|may|can)\s+(?:also\s+)?be))\b"
+    r"|\b(?:says?|said|claims?|suggests?|states?)\b"
+    r"|\b(?:actually|instead|alternatively|correction)\b(?=[\s:,]*[-+$\\\d(])",
+    re.IGNORECASE,
+)
+_OFFER_END = re.compile(r"[;!?\n,]|\.(?!\d)|\s\(")
+_OFFER_FILLER = re.compile(
+    r"^(?:\s*(?:actually|really|instead|in\s+fact|also|then|just|now|:))*\s*"
+    r"|(?:\s*(?:instead|then|actually|after\s+all|really|though|too))+\s*$",
+    re.IGNORECASE,
+)
+#: After the answer: the reply takes it back.
+_RETRACTION = re.compile(
+    r"\b(?:(?:made|make)\s+(?:an?\s+)?(?:error|mistake)|i\s+was\s+wrong"
+    r"|scratch\s+that|that(?:['’]s|\s+is|\s+was)\s+(?:wrong|incorrect|not\s+right))\b",
+    re.IGNORECASE,
+)
 _SENTENCE_END = re.compile(r"[!?\n]|\.(?!\d)")
 #: An answer as committed: its text and where it starts and ends in the reply.
 Answer = tuple[str, int, int]
@@ -160,7 +213,9 @@ def extract_final_answers(text: str, question: str = "") -> tuple[str, list[Answ
 
 
 def _parse_answer(text: str) -> Node | None:
-    """An answer's expression, or its leading number ("42 dollars" -> 42)."""
+    """An answer's expression, or its leading number when the rest is only a
+    unit or a restatement ("42 dollars", "84 (or 84.0)" -> the number; "84,
+    85" and "84 \\pm 1" -> no answer)."""
     normalized = normalize_answer_text(text)
     try:
         return parse_expression(normalized)
@@ -170,9 +225,80 @@ def _parse_answer(text: str) -> Node | None:
     if leading is None:
         return None
     try:
-        return parse_expression(normalize_answer_text(leading.group(0)))
+        node = parse_expression(normalize_answer_text(leading.group(0)))
     except ExpressionError:
         return None
+    if not _restates_only(normalized[leading.end() :], rational_value(node)):
+        return None
+    return node
+
+
+def _restates_only(rest: str, value: Fraction | None) -> bool:
+    """Whether ``rest`` adds only words (a unit) or the same number again."""
+    if _HEDGE_MARK.search(rest) or _HEDGE_WORD.search(rest):
+        return False
+    if _LIST_SEPARATOR.search(rest):
+        return False
+    if any(other != value for other, _, _, _ in _literal_values(rest)):
+        return False
+    return re.fullmatch(r"[\sA-Za-z().=]*", _LITERAL.sub(" ", rest)) is not None
+
+
+def _answer_hedged(answer: str, reference: str, boxed: bool) -> bool:
+    """Whether a box or stated answer hedges inside itself.
+
+    ``\\pm``, ``\\approx`` and words such as "about" or "or so" make it
+    approximate; a comma or semicolon lists several answers (unless the
+    reference itself is a list, "1, 2"); in a box, "or" offers an alternative.
+    """
+    plain = normalize_answer_text(answer)
+    reference_plain = normalize_answer_text(reference)
+    if _HEDGE_MARK.search(answer) or _HEDGE_MARK.search(plain):
+        return True
+    if _LIST_SEPARATOR.search(plain) and not _LIST_SEPARATOR.search(reference_plain):
+        return True
+    words = [_HEDGE_WORD, _BOX_OR] if boxed else [_HEDGE_WORD]
+    return any(
+        pattern.search(plain) and not pattern.search(reference_plain)
+        for pattern in words
+    )
+
+
+def _contradicted(after: str, answer: str, sympy_timeout: float | None) -> bool:
+    """Whether the text ``after`` a committed answer takes it back or offers
+    a different value for it ("Actually, it is 85", "it could also be 85")."""
+    if _RETRACTION.search(after):
+        return True
+    committed = _parse_answer(answer)
+    if committed is None:
+        return False  # a text answer: values cannot be compared
+    for match in _OFFER.finditer(after):
+        offered = _offered_value(after[match.end() :])
+        if offered is not None and not _same_value(offered, committed, sympy_timeout):
+            return True
+    return False
+
+
+def _offered_value(text: str) -> Node | None:
+    """The expression a phrase offers, when the rest of its clause is one."""
+    end = _OFFER_END.search(text)
+    clause = _OFFER_FILLER.sub("", text[: end.start()] if end else text)
+    clause = clause.strip().lstrip("$").rstrip("$").strip()
+    while clause.endswith((")", "]", "}")) and clause.count("(") < clause.count(")"):
+        clause = clause[:-1].rstrip()
+    if not clause:
+        return None
+    try:
+        return parse_expression(normalize_answer_text(clause))
+    except ExpressionError:
+        return None
+
+
+def _same_value(first: Node, second: Node, sympy_timeout: float | None) -> bool:
+    a, b = rational_value(first), rational_value(second)
+    if a is not None and b is not None:
+        return a == b
+    return equivalent(first, second, timeout=sympy_timeout) is True
 
 
 def _text_key(text: str) -> str:
@@ -229,7 +355,13 @@ class _Reference:
             and (self.value is not None)
         )
 
-    def matches(self, answer: str, abs_tol: float, rel_tol: float) -> bool:
+    def matches(
+        self,
+        answer: str,
+        abs_tol: float,
+        rel_tol: float,
+        sympy_timeout: float | None = None,
+    ) -> bool:
         if self.node is None:
             return _text_key(answer) == _text_key(self.text)
         node = _parse_answer(answer)
@@ -240,7 +372,7 @@ class _Reference:
             return value is not None and _close(value, self.value, abs_tol, rel_tol)
         if not self.symbolic:
             return _form_key(answer) == _form_key(self.text)
-        return equivalent(node, self.node) is True
+        return equivalent(node, self.node, timeout=sympy_timeout) is True
 
 
 def _form_key(text: str) -> str:
@@ -267,14 +399,25 @@ def verify_math_answer(
     abs_tolerance: float = 0.0,
     rel_tolerance: float = 0.0,
     symbolic: bool = True,
+    sympy_timeout: float | None = None,
 ) -> MathVerdict:
-    """Check one reply against one reference answer (see the module docs)."""
+    """Check one reply against one reference answer (see the module docs).
+
+    ``sympy_timeout`` bounds the seconds sympy may spend on an equivalence
+    (default ``math_expressions.SYMPY_TIMEOUT_SECONDS``); a timeout is
+    incorrect.
+    """
     text = strip_tool_calls(reply)
     if _UNCERTAINTY_PATTERN.search(_normalize_text(text)):
         return MathVerdict(False, "hedged")
     source, answers = extract_final_answers(text, question)
     if not answers:
         return MathVerdict(False, "no_answer")
+    if source in ("boxed", "stated") and any(
+        _answer_hedged(answer, str(reference), source == "boxed")
+        for answer, _, _ in answers
+    ):
+        return MathVerdict(False, "hedged", answers[-1][0])
     if len({_answer_key(answer) for answer, _, _ in answers}) != 1:
         return MathVerdict(False, "multiple_answers", answers[-1][0])
     answer = answers[-1][0]
@@ -293,8 +436,12 @@ def verify_math_answer(
         return MathVerdict(False, "hedged", answer)
     if _answer_negated(region, answer):
         return MathVerdict(False, "negated", answer)
+    if source != "last_number" and _contradicted(
+        text[answers[-1][2] :], answer, sympy_timeout
+    ):
+        return MathVerdict(False, "contradicted", answer)
     ref = _Reference(str(reference), symbolic)
-    correct = ref.matches(answer, abs_tolerance, rel_tolerance)
+    correct = ref.matches(answer, abs_tolerance, rel_tolerance, sympy_timeout)
     return MathVerdict(correct, "correct" if correct else "incorrect", answer)
 
 
@@ -318,8 +465,14 @@ class MathAnswerVerifier(RewardFunction):
     calls of a tool-use episode are not answers. The reference is the
     context's ``ground_truth`` (a bare value or ``{"answer": ...}``, as for
     ``CorrectnessReward``) or ``answer=``; without one it raises
-    ``ConfigurationError``.
+    ``ConfigurationError``. An episode whose context records that it ended
+    without a final answer (``termination`` other than ``"final_answer"``)
+    scores 0. Verification runs in a worker thread, so a slow check never
+    blocks the event loop, and sympy work is cut off after ``sympy_timeout``
+    seconds (scored 0).
     """
+
+    score_range = (0.0, 1.0)
 
     def __init__(
         self,
@@ -329,6 +482,7 @@ class MathAnswerVerifier(RewardFunction):
         abs_tolerance: float = 0.0,
         rel_tolerance: float = 0.0,
         symbolic: bool = True,
+        sympy_timeout: float = SYMPY_TIMEOUT_SECONDS,
         name: str = "MathAnswerVerifier",
     ) -> None:
         super().__init__(weight, RewardType.SPARSE, name)
@@ -336,6 +490,9 @@ class MathAnswerVerifier(RewardFunction):
         self.abs_tolerance = float(abs_tolerance)
         self.rel_tolerance = float(rel_tolerance)
         self.symbolic = bool(symbolic)
+        self.sympy_timeout = float(sympy_timeout)
+        if not self.sympy_timeout > 0:
+            raise ConfigurationError("sympy_timeout must be positive")
 
     def _reference(self, context: Mapping[str, Any] | None) -> str:
         truth = _ground_truth_mapping((context or {}).get("ground_truth"))
@@ -351,6 +508,13 @@ class MathAnswerVerifier(RewardFunction):
         self, turns: list[Any], context: dict[str, Any] | None = None
     ) -> RewardResult:
         reference = self._reference(context)
+        termination = unanswered_termination(context)
+        if termination is not None:
+            return RewardResult(
+                score=0.0,
+                breakdown={"correct": 0.0},
+                metadata={"status": "no_final_answer", "termination": termination},
+            )
         replies = assistant_turns_in_scope(turns, context)
         if not replies:
             return RewardResult(score=0.0, metadata={"status": "no_reply"})
@@ -360,13 +524,16 @@ class MathAnswerVerifier(RewardFunction):
             for turn in turns
             if getattr(turn, "role", None) == "user" and isinstance(turn.content, str)
         )
-        verdict = verify_math_answer(
+        # Off the event loop: parsing, exact checks and the sympy round trip.
+        verdict = await asyncio.to_thread(
+            verify_math_answer,
             reply if isinstance(reply, str) else "",
             reference,
             question=question,
             abs_tolerance=self.abs_tolerance,
             rel_tolerance=self.rel_tolerance,
             symbolic=self.symbolic,
+            sympy_timeout=self.sympy_timeout,
         )
         score = 1.0 if verdict.correct else 0.0
         return RewardResult(

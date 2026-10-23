@@ -337,7 +337,8 @@ async def test_task_environment_pays_the_completion_bonus_once():
     trajectory = await environment.run_episode(
         _replies('{"action": "load"}', "stall", "stall", "stall"), TASK
     )
-    assert trajectory.turn_rewards == [15.0, 0.0, 0.0, 0.0]
+    # Progress (2/3) and the one-time completion bonus (1/3): 1.0 in all.
+    assert trajectory.turn_rewards == pytest.approx([1.0, 0.0, 0.0, 0.0])
 
 
 async def test_task_completion_reward_accepts_task_environment_actions():
@@ -351,8 +352,8 @@ async def test_task_completion_reward_accepts_task_environment_actions():
     trajectory = await environment.run_episode(
         _replies('Loading. {"action": "load"}'), task
     )
-    # 10 progress + 5 completion bonus + 1.0 task completion
-    assert trajectory.total_reward == pytest.approx(16.0)
+    # 1.0 for progress and completion + 1.0 task completion
+    assert trajectory.total_reward == pytest.approx(2.0)
 
 
 async def test_task_completion_reward_requires_actions_over_keywords():

@@ -18,6 +18,11 @@ pytestmark = pytest.mark.integration
 
 class Sandbox(Environment):
     supports_concurrent_episodes = True
+    # The policy's context is an allowlist: this sandbox shows its trace and
+    # the scenario's public keys (so the test can try to forge them), while
+    # expected_response and expected_tool_calls stay hidden.
+    policy_state_keys = Environment.policy_state_keys | {"tool_trace"}
+    policy_scenario_keys = Environment.policy_scenario_keys | {"record_id", "public"}
 
     def __init__(self, *, legacy=False, reward=None):
         super().__init__(max_turns=2, reward_fn=reward)

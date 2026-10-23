@@ -233,7 +233,8 @@ async def test_stalling_after_task_completion_earns_nothing_more():
         [task], success_criteria=lambda turns, ctx: True, max_turns=6
     )
     done = await quick.run_episode(_replies(load), task)
-    assert done.total_reward == pytest.approx(15.0)
+    # The environment's own reward totals 1.0 for a completed task.
+    assert done.total_reward == pytest.approx(1.0)
     assert finished.total_reward == pytest.approx(done.total_reward)
 
 

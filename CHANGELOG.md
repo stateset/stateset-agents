@@ -178,6 +178,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **The policy's context is an allowlist** (`Environment.observation_context`):
+  only `Environment.policy_state_keys` (identifiers, the conversation, the
+  problem statement, observations) and, inside `"scenario"`/`"task"`,
+  `policy_scenario_keys` reach `agent_fn`. Reference and grading fields of any
+  name (`ground_truth`, `expected_answer`, `correct_facts`, `label`, code
+  `tests`, `required_actions`, `eligible`, `target_expression`...) stay
+  reward-side only; the old denylist hid only `expected_response` and
+  `expected_tool_calls`. `ToolUseEnvironment` adds its tool log and the
+  scenario's `entry_point`/`examples`; `TaskEnvironment` adds the agent's own
+  `completed_actions`/`task_progress`. Extra keys are an explicit opt-in:
+  `visible_context_keys=` (`ConversationEnvironment`, `TaskEnvironment`,
+  `ToolUseEnvironment`) or the `visible_context_keys` attribute. Custom
+  environments that relied on the policy seeing other state keys extend
+  `policy_state_keys`.
+- **`CompositeReward` no longer turns a component outage into a stand-in
+  score.** By default a component raising `RewardUnavailableError` makes the
+  composite raise it too, so the episode is dropped (with the judge down,
+  `CompositeReward([judge w=0.8, conciseness w=0.2])` scored "Bad answer."
+  1.0 instead of 0.36, and was trained on). Spreading the weight over the
+  survivors is an opt-in, `composite.outage_policy = "renormalize"`; the result
+  then lists `failed_components`, counts `breakdown["unavailable_components"]`
+  and is flagged `reward_fallback`, and environments and `score_episode` copy
+  both to the trajectory (`reward_failed_components`). An unknown policy is a
+  `ConfigurationError`. (`MultiObjectiveRewardFunction` is unchanged.)
+- **`TaskEnvironment` executes at most one action per step** (the first one a
+  reply declares; `max_actions_per_step=None` for real batches), so
+  `{"actions": ["load_data", "analyze", "write_report"]}` no longer completes a
+  three-step task in one reply. **Its own reward is normalized**: a completed
+  task totals `task_reward_scale` (default 1.0; two thirds progress, one third
+  completion bonus) instead of 15, so it no longer dwarfs a `[0, 1]` reward
+  function. `task_reward_scale=15.0` restores the old scale.
+- `ConversationEnvironment` and `TaskEnvironment` draw scenarios and simulated
+  user replies from their own `random.Random(seed)` (`seed=` keyword, kept by
+  `clone()`), never the global `random` module.
+- `RewardFunction.__call__` raises the typed `SyncRewardCallError` (a
+  `RuntimeError`) inside a running event loop instead of branching on
+  exception message text.
+
 - The evaluation panel's background work runs through the shared
   `BackgroundTask` (owned submissions on non-daemon threads) instead of its
   own thread and result queue.
@@ -492,6 +530,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- `core.reward_base.REWARD_EXCEPTIONS`: unused, never exported, and a
+  duplicate of `exceptions.ATTRIBUTE_VALUE_EXCEPTIONS`.
 - `stateset_agents.core.enhanced.PPOTrainer`, `PPOConfig`,
   `create_ppo_trainer`, `GSPOTrainerStub` and `create_gspo_trainer`,
   deprecated in v0.69.0 for removal in v0.70.0. Use
@@ -514,6 +554,39 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repo-root `core` package, which no longer exists.
 
 ### Fixed
+
+- `MathAnswerVerifier` hung on answers such as `\boxed{sqrt(x)+9^9^8}` (over
+  60 s; `9^9^7` took 3.9 s) because the sympy tree ignored the exact path's
+  exponent and size limits. `_to_sympy` now applies them, `sympy.simplify`
+  runs in a worker process killed after `sympy_timeout` seconds
+  (`math_expressions.SYMPY_TIMEOUT_SECONDS`, 5 s; a timeout scores 0), and
+  `compute_reward` verifies in a worker thread so it never blocks the event
+  loop. `equivalent()` takes `timeout=`.
+- `MathAnswerVerifier` credited hedged answers: `\boxed{84, 85}`,
+  `\boxed{84 \pm 1}`, `\boxed{84 \text{ or } 85}`, `\approx`, "84 or so", a
+  box retracted afterwards ("Actually, I think I made an error; it is 85."),
+  "(it could also be 85)" and "The answer is 84. Some textbooks say 85." all
+  score 0 now (status `hedged` or `contradicted`). The leading-number fallback
+  accepts only a trailing unit or a restatement ("42 dollars", "84 (or
+  84.0)"). Seven new verifier-exploit families cover these.
+- `MathAnswerVerifier` and `SandboxedCodeVerifier` scored a tool-use episode
+  that ran out of budget (or hit `max_turns`) 1.0 when its last turn stated
+  the answer beside another call. Both now score 0 unless the episode state
+  says `termination == "final_answer"` (`reward_context.unanswered_termination`),
+  on the environment and trainer paths alike.
+- A reward that declares `score_range` and returns a score outside it now
+  raises `ValueError` on every scoring path (environments, `score_episode`,
+  `score_response`, `score_trajectory`, `CompositeReward` children) instead of
+  being trained on; `MathAnswerVerifier` and `SandboxedCodeVerifier` declare
+  `(0.0, 1.0)`.
+- `ToolUseEnvironment` records `executed_tool_calls` (`{"tool", "args"}` for
+  each call that ran and returned), the trace `TaskOutcomeReward` compares
+  with `expected_tool_calls`; its `tool_log` alone was never read.
+- The refund, refund-policy, refund-delegation, refund-recovery and industry
+  support environments score only `ValueError` (an invalid action) as a policy
+  violation; a `TypeError` is a bug and propagates. A non-string `finish`
+  outcome in the refund-recovery environment is an invalid action instead of a
+  `TypeError` from the set lookup.
 
 - `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
   prompt, so a policy never saw tool results; they now render as

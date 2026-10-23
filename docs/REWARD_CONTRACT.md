@@ -136,7 +136,11 @@ verifier semantics:
 - They are **SPARSE**: applied once to the finished conversation, they score
   the newest assistant turn (`turns[-1]` for a single reply), so a tool-use
   episode's intermediate tool calls are never read as answers, and an
-  episode that ended without an answer scores 0.
+  episode that ended without an answer scores 0: when the context records
+  `termination` (`ToolUseEnvironment` does), anything but `"final_answer"`
+  scores 0 whatever the last turn says
+  (`reward_context.unanswered_termination`;
+  `tests/unit/test_tool_use_environment.py::test_an_episode_that_ran_out_of_budget_earns_nothing`).
 - Reference data is required: the math verifier reads `ground_truth` (bare or
   `{"answer": ...}`, as `CorrectnessReward` does) or `answer=`; the code
   verifier reads `tests` and `entry_point` (from the scenario or the
@@ -154,7 +158,9 @@ The exploit search covers both (cases of kind `"math"` and `"code"`,
 not preserve the answer plus math families (two answers, alternatives, "Maybe
 L.", uncertainty, negation, number dumps, near misses, unevaluated question
 arithmetic, answers only inside tool calls, `\text{}` hedges, Python
-injection, the reference with its answer removed or swapped) and code families
+injection, the reference with its answer removed or swapped, lists, `\pm`,
+`\approx` and "or" inside a box, and a box or statement retracted or
+contradicted afterwards) and code families
 (hard-coded or printed visible outputs, early `sys.exit`/`os._exit`,
 `__eq__` tricks, patching `json.dumps`, forged result records, reading a tests
 file, infinite loops, fork storms, threads, memory and recursion bombs, and
@@ -170,6 +176,14 @@ answer intact are not adversaries for a verifier.
   `score_range = (low, high)` class attribute. `CompositeReward` with
   `weighted_sum` spans `[0, sum of weights]` unless its weights sum to 1 or
   `normalize_weights=True`.
+- A declared range is enforced at runtime: when a reward that declares
+  `score_range` returns a score outside it, environments, `score_episode`,
+  `score_response`, `score_trajectory` and `CompositeReward` (for its
+  children) raise `ValueError` (`reward_context.check_score_range`); the score
+  is never clamped. Rewards without a declaration are not checked at runtime
+  (`tests/unit/test_reward_contracts.py` checks the shipped ones against
+  `[0, 1]`). `MathAnswerVerifier` and `SandboxedCodeVerifier` declare
+  `(0.0, 1.0)`.
 - The same turns and context give the same score on a repeated call, bit for
   bit: composers combine with `math.fsum` and never renormalize stored weights
   between calls.
@@ -261,11 +275,27 @@ assistant turns must then score only the newest one (use
 rewards, `CompositeReward` and `MultiObjectiveRewardFunction` honor the marker.
 
 Environments add their own step rewards to the reward function's score, for
-example `TaskEnvironment`'s progress reward and one-time completion bonus.
-`TaskEnvironment` completes a required action only when the agent declares it
-explicitly (a structured tool call, an `"action"` entry in the turn metadata,
-or a JSON object such as `{"action": "load_data"}`); keyword matching is an
-opt-in (`match_action_keywords=True`) and is gameable.
+example `TaskEnvironment`'s progress reward and one-time completion bonus,
+which total `task_reward_scale` (default 1.0: two thirds progress, one third
+completion) for a completed task, the same scale as a `[0, 1]` reward
+function. `TaskEnvironment` completes a required action only when the agent
+declares it explicitly (a structured tool call, an `"action"` entry in the
+turn metadata, or a JSON object such as `{"action": "load_data"}`), and
+executes at most one per step (the first declared; `max_actions_per_step=None`
+for real batches), so declaring every action in one reply is not doing them;
+keyword matching is an opt-in (`match_action_keywords=True`) and is gameable.
+
+## What the policy sees
+
+The policy's context (`Environment.observation_context`, passed to
+`agent_fn`) is an allowlist: `Environment.policy_state_keys` (identifiers,
+the conversation, the problem statement, observations) and, inside the
+state's `"scenario"`/`"task"`, `policy_scenario_keys`; subclasses add their
+own observation keys, and callers opt extra keys in with
+`visible_context_keys`. Reference and grading data (`ground_truth`,
+`expected_answer`, `tests`, `required_actions`, `expected_response`...) never
+reach the policy, whatever they are called, while the reward context above
+keeps all of it (`tests/unit/test_policy_context_allowlist.py`).
 
 ## Results
 
@@ -304,10 +334,18 @@ flagged episode is never trained on.
   to the judge and keys its cache on it. A model judge always sees the
   request (the last user turn, else `context["user_query"]`). `LLMJudgeRewardWithFallback` keeps its
   documented heuristic fallback and records `judge_error` in its metadata.
-- `CompositeReward` and `MultiObjectiveRewardFunction` leave an unavailable
-  component out, spread its weight over the components that scored, and list
+- `CompositeReward` raises `RewardUnavailableError` when any component is
+  unavailable (its default `outage_policy = "raise"`), so the episode is
+  dropped instead of being scored by the surviving components alone. With
+  `composite.outage_policy = "renormalize"` (an explicit opt-in) it leaves the
+  component out, spreads its weight over the components that scored, lists
+  it in `metadata["failed_components"]`, counts it in
+  `breakdown["unavailable_components"]` and flags the result
+  `metadata["reward_fallback"]`; environments and `score_episode` copy both to
+  the trajectory (`reward_failed_components`). `MultiObjectiveRewardFunction`
+  still leaves an unavailable component out and spreads its weight, listing
   it in `metadata["failed_components"]`. If every component was unavailable
-  they raise `RewardUnavailableError`; with none configured, `ValueError`.
+  both raise `RewardUnavailableError`; with none configured, `ValueError`.
 - Network rewards fail closed by default: `NSRVerifierReward` raises
   `RewardUnavailableError` when the verifier cannot be reached or replies
   without an `approved`/`denied`/`refused` decision

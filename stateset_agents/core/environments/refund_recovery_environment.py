@@ -313,11 +313,13 @@ class RefundRecoveryEnvironment(Environment):
                         "Reconcile requires an uncertain submission and no args"
                     )
             elif tool == "finish":
-                if set(args) != {"outcome"} or args["outcome"] not in {
-                    "resolved",
-                    "unauthorized",
-                    "handoff",
-                }:
+                # A non-string outcome (an unhashable list) is an invalid
+                # action, never a TypeError out of the set lookup.
+                if (
+                    set(args) != {"outcome"}
+                    or not isinstance(args["outcome"], str)
+                    or args["outcome"] not in {"resolved", "unauthorized", "handoff"}
+                ):
                     raise ValueError("Finish requires an explicit valid outcome")
                 finish = True
                 expected = {
@@ -331,7 +333,7 @@ class RefundRecoveryEnvironment(Environment):
                     )
             else:
                 raise ValueError("Unknown recovery tool")
-        except (ValueError, TypeError) as exc:
+        except ValueError as exc:
             ctx["violations"] += 1
             observation: dict[str, Any] = {"error": str(exc)}
         else:

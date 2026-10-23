@@ -22,13 +22,21 @@ reward attached to it or held by the trainer, through the shared reward path
 (``reward_context.score_episode``). Use a verifier such as
 :class:`~stateset_agents.rewards.math_verifier.MathAnswerVerifier` or
 :class:`~stateset_agents.rewards.code_verifier.SandboxedCodeVerifier`
-(SPARSE rewards, applied once to the finished conversation). The final state
-records the executed evidence: ``tool_log`` (every call with its arguments,
-result or error), ``tool_calls_used``, ``final_answer`` and ``termination``
-(``"final_answer"``, ``"budget_exhausted"`` or ``"max_turns"``).
+(SPARSE rewards, applied once to the finished conversation); both score 0
+unless ``termination`` is ``"final_answer"``. The final state records the
+executed evidence: ``tool_log`` (every call with its arguments, result or
+error), ``executed_tool_calls`` (the calls that ran and returned a result, as
+``{"tool": name, "args": arguments}``, the trace
+:class:`~stateset_agents.rewards.task_outcome.TaskOutcomeReward` compares with
+a scenario's ``expected_tool_calls``), ``tool_calls_used``, ``final_answer``
+and ``termination`` (``"final_answer"``, ``"budget_exhausted"`` or
+``"max_turns"``).
 
-Reference data in the scenario (``ground_truth``, ``tests`` ...) is hidden
-from the policy's context (:meth:`ToolUseEnvironment.observation_context`).
+The policy's context is an allowlist (:attr:`ToolUseEnvironment.policy_state_keys`,
+:attr:`~ToolUseEnvironment.policy_scenario_keys`): the question, the tool log
+and the scenario's descriptive keys. Reference data (``ground_truth``,
+``tests``, ``expected_answer``, ``label``...) never reaches it, whatever its
+name; ``visible_context_keys`` opts extra keys in explicitly.
 
 Tool observations are environment output, never policy output: the trainer's
 loss supervises assistant tokens only (``docs/TOOL_USE_RL.md`` states the
@@ -45,10 +53,13 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from ..environment_base import (
+    POLICY_SCENARIO_KEYS,
+    POLICY_STATE_KEYS,
     STEP_ENVIRONMENT_REWARD,
     Environment,
     EnvironmentState,
     EpisodeStatus,
+    _context_keys,
 )
 from ..errors import ConfigurationError
 from ..reward_base import RewardFunction
@@ -68,7 +79,9 @@ from ..trajectory import ConversationTurn
 
 __all__ = ["PRIVATE_SCENARIO_KEYS", "ToolUseEnvironment"]
 
-#: Scenario keys that hold reference data: never shown to the policy.
+#: Well-known scenario keys that hold reference data. Kept for reference: the
+#: policy's context is an allowlist, so these and any other unlisted key
+#: (``expected_answer``, ``correct_facts``, ``label``...) are never shown.
 PRIVATE_SCENARIO_KEYS = frozenset(
     {
         "answer",
@@ -95,8 +108,15 @@ def _question(scenario: dict[str, Any]) -> str:
     )
 
 
-def _public(mapping: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in mapping.items() if k not in PRIVATE_SCENARIO_KEYS}
+def _executed_call(entry: dict[str, Any]) -> dict[str, Any] | None:
+    """A tool-log entry as executed evidence, if the call ran and returned.
+
+    Calls that never ran (malformed, unknown tool, invalid arguments, over
+    budget) and calls that failed or timed out are not executed outcomes.
+    """
+    if entry.get("ok") is not True:
+        return None
+    return {"tool": entry.get("name"), "args": copy.deepcopy(entry.get("arguments"))}
 
 
 class ToolUseEnvironment(Environment):
@@ -117,9 +137,18 @@ class ToolUseEnvironment(Environment):
         json_actions: Also accept a whole-reply ``{"tool", "args"}`` action.
         max_observation_chars: Truncate longer observations.
         seed: Seeds scenario selection when ``reset()`` gets no scenario.
+        visible_context_keys: Extra state or scenario keys to show the policy
+            (an explicit opt-in; reference data is hidden by default).
     """
 
     supports_concurrent_episodes = True
+    policy_state_keys = POLICY_STATE_KEYS | {
+        "tool_log",
+        "tool_calls_used",
+        "final_answer",
+        "termination",
+    }
+    policy_scenario_keys = POLICY_SCENARIO_KEYS | {"entry_point", "examples"}
 
     def __init__(
         self,
@@ -134,6 +163,7 @@ class ToolUseEnvironment(Environment):
         max_observation_chars: int = DEFAULT_MAX_OBSERVATION_CHARS,
         seed: int | None = None,
         timeout_seconds: float | None = None,
+        visible_context_keys: Iterable[str] | None = None,
     ) -> None:
         if not scenarios:
             raise ConfigurationError("ToolUseEnvironment needs at least one scenario")
@@ -157,6 +187,7 @@ class ToolUseEnvironment(Environment):
         self.max_observation_chars = int(max_observation_chars)
         self.seed = seed
         self._rng = random.Random(seed)
+        self.visible_context_keys = _context_keys(visible_context_keys)
 
     # -- episode lifecycle -------------------------------------------------
 
@@ -177,6 +208,7 @@ class ToolUseEnvironment(Environment):
                 "messages": [{"role": "user", "content": question}],
                 "transcript": [{"role": "user", "content": question}],
                 "tool_log": [],
+                "executed_tool_calls": [],
                 "tool_calls_used": 0,
                 "final_answer": None,
                 "termination": None,
@@ -204,14 +236,6 @@ class ToolUseEnvironment(Environment):
             f"tool calls.\nTools:\n{self.registry.describe()}"
         )
 
-    def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
-        """The state without reference data or the private transcript."""
-        context = _public(super().observation_context(state))
-        context.pop("transcript", None)
-        if isinstance(context.get("scenario"), dict):
-            context["scenario"] = _public(context["scenario"])
-        return context
-
     async def step(
         self, state: EnvironmentState, action: ConversationTurn
     ) -> tuple[EnvironmentState, float, bool, dict[str, Any]]:
@@ -219,6 +243,9 @@ class ToolUseEnvironment(Environment):
         new_state = state.copy()
         context = new_state.context
         context["tool_log"] = copy.deepcopy(context.get("tool_log", []))
+        context["executed_tool_calls"] = copy.deepcopy(
+            context.get("executed_tool_calls", [])
+        )
         prior = [
             ConversationTurn(role=m["role"], content=m["content"])
             for m in context.get("transcript", [])
@@ -278,7 +305,11 @@ class ToolUseEnvironment(Environment):
                 else await self.registry.execute(item)
             )
             observations.append(observation)
-            context["tool_log"].append(observation.to_log())
+            entry = observation.to_log()
+            context["tool_log"].append(entry)
+            executed = _executed_call(entry)
+            if executed is not None:
+                context["executed_tool_calls"].append(executed)
         return observations
 
     async def _step_reward(
@@ -314,4 +345,5 @@ class ToolUseEnvironment(Environment):
             max_observation_chars=self.max_observation_chars,
             seed=self.seed,
             timeout_seconds=self.timeout_seconds,
+            visible_context_keys=self.visible_context_keys,
         )

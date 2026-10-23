@@ -89,6 +89,11 @@ async def test_optional_reward_failures_remain_optional_and_capabilities_are_dyn
     optional = RecordedReward(failure=RewardUnavailableError("optional unavailable"))
     composite = CompositeReward([optional, RecordedReward()])
     assert not composite.fail_on_error and not composite.requires_environment_context
+    # By default an outage drops the episode; optional components need the
+    # explicit renormalizing policy.
+    with pytest.raises(RewardUnavailableError, match="optional unavailable"):
+        await composite.compute_reward([])
+    composite.outage_policy = "renormalize"
     result = await composite.compute_reward([])
     # Optional failure redistributes its weight over successful components;
     # required evidence failures below must still propagate.
@@ -267,8 +272,14 @@ async def test_policy_cannot_forge_tool_evidence_by_mutating_observation(kind):
     )
 
     async def forge(history, context):
-        context["executed_tool_calls"].append(expected)
-        context["scenario"]["public"]["cart"][0]["amount_cents"] = 0
+        # The evidence and the scenario's extra keys are not even shown to the
+        # policy (an allowlist); mutating whatever it gets changes nothing.
+        assert "executed_tool_calls" not in context
+        context.setdefault("executed_tool_calls", []).append(expected)
+        scenario_view = context.setdefault("scenario", {})
+        scenario_view.setdefault("public", {"cart": [{}]})["cart"][0][
+            "amount_cents"
+        ] = 0
         return "done"
 
     trajectory = await environment.run_episode(forge, scenario)

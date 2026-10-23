@@ -10,7 +10,7 @@ import inspect
 import logging
 import math
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
@@ -18,6 +18,7 @@ from typing import Any
 from .reward import RewardFunction
 from .reward_base import RewardType, RewardUnavailableError
 from .reward_context import (
+    FAILED_COMPONENTS_KEY,
     REWARD_FALLBACK_KEY,
     build_reward_context,
     note_fallback,
@@ -40,6 +41,96 @@ STEP_REWARD_STATE = "_step_reward_state"
 #: ``EnvironmentState.metadata`` key holding the episode's system prompt, so
 #: per-step rewards see the same turns as the finished trajectory.
 EPISODE_SYSTEM_PROMPT = "_episode_system_prompt"
+
+#: Episode-state keys every environment shows the policy: identifiers, the
+#: conversation so far, the problem statement and what the environment
+#: presents as an observation. The policy's context is built from this
+#: allowlist (plus an environment's own additions and the caller's explicit
+#: ``visible_context_keys``), so reference and grading data (``ground_truth``,
+#: ``expected_answer``, ``tests``, ``required_actions``...) never reach it,
+#: whatever they are called.
+POLICY_STATE_KEYS = frozenset(
+    {
+        "conversation_id",
+        "scenario_id",
+        "task_id",
+        "messages",
+        "history",
+        "observation",
+        "observation_text",
+        "prompt",
+        "question",
+        "user_query",
+        "description",
+        "instructions",
+        "goal",
+        "persona",
+        "conversation_topic",
+        "user_goal",
+        "task_goal",
+        "task_type",
+        "plan_goal",
+        "plan_update",
+        "user_hint",
+    }
+)
+#: Scenario keys every environment shows the policy (inside the state's
+#: ``"scenario"`` or ``"task"`` mapping): the problem statement and its labels
+#: of kind, never its answer.
+POLICY_SCENARIO_KEYS = frozenset(
+    {
+        "id",
+        "conversation_id",
+        "scenario_id",
+        "task_id",
+        "title",
+        "topic",
+        "category",
+        "domain",
+        "type",
+        "user_query",
+        "question",
+        "prompt",
+        "query",
+        "task",
+        "description",
+        "instructions",
+        "context",
+        "goal",
+        "user_goal",
+        "persona",
+        "system_prompt",
+        "plan_goal",
+        "user_hint",
+    }
+)
+#: State keys holding the episode's scenario: shown filtered by the scenario
+#: allowlist.
+_SCENARIO_STATE_KEYS = ("scenario", "task")
+
+
+def _context_keys(keys: Iterable[str] | str | None) -> frozenset[str]:
+    """A caller's ``visible_context_keys`` as a set (a lone string is one key)."""
+    if keys is None:
+        return frozenset()
+    if isinstance(keys, str):
+        return frozenset({keys})
+    return frozenset(str(key) for key in keys)
+
+
+def _visible_scenario(
+    scenario: Mapping[str, Any], keys: frozenset[str]
+) -> dict[str, Any]:
+    """The allowlisted keys of a scenario, each with its whole value; a nested
+    scenario (``"task"``/``"scenario"`` holding a mapping) is filtered too."""
+    visible: dict[str, Any] = {}
+    for key, value in scenario.items():
+        if key not in keys:
+            continue
+        nested = key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping)
+        visible[key] = _visible_scenario(value, keys) if nested else value
+    return visible
+
 
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
 # AttributeError typically indicate programming bugs and should propagate
@@ -130,6 +221,15 @@ class Environment(ABC):
     @reward_function.setter
     def reward_function(self, value: RewardFunction | None) -> None:
         self.reward_fn = value
+
+    #: State keys this environment shows the policy (see POLICY_STATE_KEYS);
+    #: subclasses extend it with their own observation keys.
+    policy_state_keys: frozenset[str] = POLICY_STATE_KEYS
+    #: Scenario keys this environment shows the policy.
+    policy_scenario_keys: frozenset[str] = POLICY_SCENARIO_KEYS
+    #: Extra state or scenario keys a caller explicitly opted in to show the
+    #: policy (``visible_context_keys=`` where a constructor accepts it).
+    visible_context_keys: frozenset[str] = frozenset()
 
     #: Whether step() applies untyped reward functions (no ``reward_type``)
     #: per step. Environments that score steps always apply IMMEDIATE/DENSE
@@ -250,7 +350,7 @@ class Environment(ABC):
         score = 0.0
         try:
             result = await reward_fn.compute_reward(turns, context)
-            score = reward_score(result)
+            score = reward_score(result, reward_fn)
         except RewardUnavailableError as error:
             # Only an outage is recorded and skipped; any other exception is a
             # bug or bad data and propagates.
@@ -287,17 +387,22 @@ class Environment(ABC):
         return list(turns)
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
-        """Expose public context while retaining evaluator references privately."""
-        context = dict(state.context)
-        private = {"expected_response", "expected_tool_calls"}
-        for key in private:
-            context.pop(key, None)
-        if isinstance(context.get("scenario"), dict):
-            context["scenario"] = {
-                key: value
-                for key, value in context["scenario"].items()
-                if key not in private
-            }
+        """The context the policy sees: an allowlist of the episode state.
+
+        Only :attr:`policy_state_keys` (and, inside ``"scenario"``/``"task"``,
+        :attr:`policy_scenario_keys`), plus the caller's explicit
+        :attr:`visible_context_keys`, are shown. Every other key, reference and
+        grading data included, stays reward-side only.
+        """
+        extra = _context_keys(self.visible_context_keys)
+        state_keys = self.policy_state_keys | extra
+        scenario_keys = self.policy_scenario_keys | extra
+        context: dict[str, Any] = {}
+        for key, value in state.context.items():
+            if key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping):
+                context[key] = _visible_scenario(value, scenario_keys)
+            elif key in state_keys:
+                context[key] = value
         return context
 
     #: Whether ``reset``/``step`` keep all per-episode state in the
@@ -462,6 +567,7 @@ class Environment(ABC):
                 "reward_error",
                 "reward_breakdown",
                 REWARD_FALLBACK_KEY,
+                FAILED_COMPONENTS_KEY,
             )
             if state.metadata.get(key)
         }
@@ -477,7 +583,7 @@ class Environment(ABC):
             )
             try:
                 final_reward = await reward_fn.compute_reward(turns, context)
-                final_value = reward_score(final_reward)
+                final_value = reward_score(final_reward, reward_fn)
             except RewardUnavailableError as error:
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
@@ -540,6 +646,8 @@ def _snapshot(context: dict[str, Any]) -> dict[str, Any]:
     try:
         return copy.deepcopy(context)
     except (TypeError, copy.Error, RecursionError):
+        # TypeError is how deepcopy reports an uncopyable value (a lock, a
+        # generator, a socket); a shallow copy is the documented fallback.
         return dict(context)
 
 

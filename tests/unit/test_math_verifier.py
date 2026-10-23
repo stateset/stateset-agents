@@ -257,3 +257,130 @@ def test_pathological_answers_are_bounded():
     long_reply = "\\frac{1}{2} " * 5000 + "\\boxed{84}"
     assert verify_math_answer(long_reply, "84").correct
     assert time.monotonic() - started < 20
+
+
+# --- bounded sympy work (round 5) ---------------------------------------------
+
+
+@pytest.mark.parametrize("reply", [r"\boxed{sqrt(x)+9^9^8}", r"\boxed{sqrt(x)+9^9^7}"])
+def test_power_towers_beside_a_function_are_refused_quickly(reply):
+    """The exact path's size limits also bound the sympy path: a tower next to
+    ``sqrt`` used to build a multi-million-digit power (60 s and more)."""
+    import time
+
+    started = time.monotonic()
+    verdict = verify_math_answer(reply, "3x^2")
+    assert not verdict.correct
+    assert time.monotonic() - started < 2.0
+
+
+def test_sympy_conversion_applies_the_exact_path_limits():
+    sympy = pytest.importorskip("sympy")
+    from stateset_agents.core.math_expressions import _to_sympy
+
+    for text in ("9^9^8", "x^(9^9)", "(2^300)^300", "x^1000", "sqrt(x)^(10^5)"):
+        with pytest.raises(ExpressionError):
+            _to_sympy(parse_expression(text), sympy)
+    x = sympy.Symbol("x")
+    assert _to_sympy(parse_expression("x^256 + 2^10"), sympy) == x**256 + 1024
+
+
+def test_slow_simplification_hits_a_hard_timeout_and_scores_zero():
+    """A bounded but slow simplification (a minute or more in sympy) is cut off by
+    the worker's hard timeout; a timeout decides nothing, so it scores 0."""
+    import time
+
+    pytest.importorskip("sympy")
+    slow = "tan(x)^30 - sin(x)^30/cos(x)^30"  # over 60 s in sympy.simplify
+    # Start the worker first so the timing below measures only the timeout.
+    assert equivalent(parse_expression("sqrt(8)"), parse_expression("2sqrt(2)"))
+    started = time.monotonic()
+    assert (
+        equivalent(parse_expression(slow), parse_expression("1"), timeout=1.0) is None
+    )
+    verdict = verify_math_answer(rf"\boxed{{{slow} + x}}", "x + 1", sympy_timeout=1.0)
+    assert not verdict.correct
+    assert time.monotonic() - started < 20
+    # A fresh worker takes over after a timeout.
+    assert equivalent(parse_expression("sin(x)^2 + cos(x)^2"), parse_expression("1"))
+
+
+def test_compute_reward_does_not_block_the_event_loop(monkeypatch):
+    """Verification runs off the event loop, so a slow check never stalls the
+    trainer's other coroutines."""
+    import time
+
+    from stateset_agents.rewards import math_verifier
+
+    def slow_verify(*args, **kwargs):
+        time.sleep(0.5)
+        return math_verifier.MathVerdict(True, "correct", "84")
+
+    monkeypatch.setattr(math_verifier, "verify_math_answer", slow_verify)
+
+    async def main():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.01)
+                ticks += 1
+
+        task = asyncio.create_task(ticker())
+        await asyncio.sleep(0)
+        result = await MathAnswerVerifier(answer=84).compute_reward(
+            _turns("\\boxed{84}")
+        )
+        task.cancel()
+        return result, ticks
+
+    result, ticks = asyncio.run(main())
+    assert result.score == 1.0
+    assert ticks >= 10, f"the event loop ran only {ticks} ticks in 0.5 s"
+
+
+# --- hedges inside a box and later contradictions (round 5) -------------------
+
+HEDGED_OR_CONTRADICTED = [
+    r"\boxed{84, 85}",
+    r"\boxed{84 \pm 1}",
+    r"\boxed{84 \text{ or } 85}",
+    r"\boxed{84}. Actually, I think I made an error; it is 85.",
+    r"\boxed{84} (it could also be 85)",
+    "The answer is 84. Some textbooks say 85.",
+    r"\boxed{84 +/- 1}",
+    r"\boxed{\approx 84}",
+    r"\boxed{84;85}",
+    r"\boxed{84 \text{ or so}}",
+    r"\boxed{84}. Wait, I made a mistake.",
+    "The answer is 84. Actually it is 85.",
+    "The answer is 84, 85.",
+    "The answer is 84 or so.",
+    r"\boxed{3x^2 + 2}. Some books say 3x^2 + 3.",
+]
+
+
+@pytest.mark.parametrize("reply", HEDGED_OR_CONTRADICTED)
+def test_hedged_boxes_and_later_contradictions_score_zero(reply):
+    reference = "3x^2 + 2" if "x" in reply else "84"
+    verdict = verify_math_answer(reply, reference, question=QUESTION)
+    assert not verdict.correct, verdict
+    assert verdict.status in {"hedged", "contradicted"}, verdict
+
+
+COMMITTED_DESPITE_EXTRA_TEXT = [
+    (r"\boxed{1,299}", "1299"),
+    (r"\boxed{84 \text{ dollars}}", "84"),
+    (r"\boxed{84}. Check: 84 / 7 = 12.", "84"),
+    ("The answer is 84, which is 12 more than 72.", "84"),
+    (r"\boxed{84}. It is 7 * 12.", "84"),
+    (r"\boxed{84}, since the answer is 12 * 7.", "84"),
+    (r"\boxed{1, 2}", "1, 2"),
+]
+
+
+@pytest.mark.parametrize("reply,reference", COMMITTED_DESPITE_EXTRA_TEXT)
+def test_units_restatements_and_checks_keep_their_credit(reply, reference):
+    verdict = verify_math_answer(reply, reference, question=QUESTION)
+    assert verdict.correct, verdict
