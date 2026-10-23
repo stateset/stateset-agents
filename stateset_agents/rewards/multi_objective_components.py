@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import os
@@ -11,7 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from stateset_agents.core.grounding import task_grounding
+from stateset_agents.core.grounding import STYLE_SHARE, task_grounding
 from stateset_agents.core.reward_base import RewardUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -432,24 +433,28 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             "You are an impartial judge evaluating the quality of an AI assistant's response.\n"
             "User Query: {user_query}\n"
             "Assistant Response: {assistant_response}\n\n"
-            "Rate the response on a scale of 0 to 1 (float), focusing on helpfulness, accuracy, and tone.\n"
-            "Output ONLY the score."
+            "Rate the response from 0 to 1, focusing on helpfulness, accuracy, and tone.\n"
+            'Output ONLY a JSON object: {{"score": <number from 0 to 1>}}'
         )
         self.api_client = api_client
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
         assistant_responses = [t for t in turns if t.get("role") == "assistant"]
+        if not assistant_responses:
+            return 0.0  # no reply, nothing to credit
+        # The judge always sees the reply; the request comes from the last
+        # user turn, else the context's user_query. A reply is never scored
+        # 0.0 in place of a verdict because the request was not in ``turns``.
         user_turns = [t for t in turns if t.get("role") == "user"]
-        if not assistant_responses or not user_turns:
-            return 0.0
+        if user_turns:
+            user_query = str(user_turns[-1].get("content", "") or "")
+        else:
+            query = (context or {}).get("user_query")
+            user_query = query if isinstance(query, str) else ""
 
         assistant_response = assistant_responses[-1].get("content", "")
-        user_query = user_turns[-1].get("content", "")
         prompt = self.judge_prompt_template.format(
             user_query=user_query,
             assistant_response=assistant_response,
@@ -514,7 +519,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 response = await client.chat.completions.create(
                     model=self.model_name,
                     messages=[{"role": "user", "content": prompt}],
-                    max_tokens=10,
+                    max_tokens=20,
                     temperature=0.0,
                 )
                 content: object = response.choices[0].message.content
@@ -523,7 +528,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             response = await client.completions.create(
                 model=self.model_name,
                 prompt=prompt,
-                max_tokens=10,
+                max_tokens=20,
                 temperature=0.0,
             )
             text: object = response.choices[0].text
@@ -540,7 +545,7 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         try:
             response = await client.messages.create(
                 model=self.model_name,
-                max_tokens=10,
+                max_tokens=20,
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.0,
             )
@@ -551,18 +556,24 @@ class ModelBasedRewardComponent(BaseRewardComponent):
             raise
 
     def _parse_score_from_response(self, response: str) -> float:
-        """Parse a numerical score from a model response.
+        """Read the score from the judge's reply: exactly ``{"score": x}``.
 
-        A reply with no number is a judge failure (``ValueError``), not a
-        neutral 0.5; a 0-10 score is rescaled to [0, 1].
+        The reply must be one JSON object whose ``"score"`` is a number in
+        [0, 1]; anything else (prose, a bare number, "7/10", "85/100", a
+        negative or out-of-range score) raises ``ValueError``, which
+        ``compute_score`` reports as ``RewardUnavailableError``. No number is
+        salvaged from free text and nothing is rescaled or clamped.
         """
-        numbers = re.findall(r"\d+\.?\d*", response)
-        if not numbers:
-            raise ValueError(f"judge response has no score: {response!r}")
-        score = float(numbers[0])
-        if score > 1.0:
-            score = score / 10.0
-        return min(1.0, max(0.0, score))
+        try:
+            parsed = json.loads(str(response).strip())
+        except json.JSONDecodeError as error:
+            raise ValueError(f"judge reply is not strict JSON: {response!r}") from error
+        score = parsed.get("score") if isinstance(parsed, dict) else None
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ValueError(f"judge reply has no numeric score: {response!r}")
+        if not (math.isfinite(score) and 0.0 <= score <= 1.0):
+            raise ValueError(f"judge score {score} is outside [0, 1]")
+        return float(score)
 
 
 class ReasoningRewardComponent(BaseRewardComponent):
@@ -622,16 +633,17 @@ __all__ = [
 class GroundedComponent(BaseRewardComponent):
     """A style component that only pays for grounded replies.
 
-    ``score = grounding * (share + (1 - share) * component_score)`` (see
+    ``score = grounding * (share + (1 - share) * component_score)`` with
+    ``share`` defaulting to ``grounding.STYLE_SHARE`` (see
     ``stateset_agents.core.grounding``): a canned template or keyword stuffing
     has no grounding and scores 0. Name and weight are the wrapped
     component's, so the composite reports it under its own name.
     """
 
-    def __init__(self, component: BaseRewardComponent, share: float = 0.5):
+    def __init__(self, component: BaseRewardComponent, share: float | None = None):
         super().__init__(component.name, component.weight)
         self.component = component
-        self.share = float(share)
+        self.share = float(STYLE_SHARE if share is None else share)
         self.config = {"grounded": True, **getattr(component, "config", {})}
 
     async def compute_score(
@@ -643,7 +655,7 @@ class GroundedComponent(BaseRewardComponent):
 
 
 def ground_components(
-    components: list[BaseRewardComponent], share: float = 0.5
+    components: list[BaseRewardComponent], share: float | None = None
 ) -> list[BaseRewardComponent]:
     """Wrap each component in :class:`GroundedComponent`."""
     return [GroundedComponent(component, share) for component in components]

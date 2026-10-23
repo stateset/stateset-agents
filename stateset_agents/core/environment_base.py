@@ -16,14 +16,13 @@ from enum import Enum
 from typing import Any
 
 from .reward import RewardFunction
-from .reward_base import RewardType
+from .reward_base import RewardType, RewardUnavailableError
 from .reward_context import (
     REWARD_FALLBACK_KEY,
     build_reward_context,
-    normalize_turns,
     note_fallback,
     reward_score,
-    trajectory_reward_context,
+    score_trajectory,
 )
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
@@ -218,19 +217,10 @@ class Environment(ABC):
                 f"{type(self).__name__} has no reward_fn to score the trajectory "
                 "with; use trajectory.total_reward for the environment's own reward"
             )
-        turns = getattr(trajectory, "turns", [])
-        if not turns and hasattr(trajectory, "__iter__"):
-            turns = list(trajectory)
-        # Dict turns (Trajectory.add_turn) would make rewards that read
-        # turn.role score 0; normalize them.
-        turns = normalize_turns(turns)
-
-        if getattr(reward_fn, "requires_environment_context", False):
-            # Evidence rewards judge the recorded final state as is.
-            context = getattr(trajectory, "final_state", None)
-        else:
-            context = trajectory_reward_context(trajectory, reward_fn=reward_fn)
-        return reward_score(await reward_fn.compute_reward(turns, context))
+        # The shared trajectory path: the recorded final state and scenario
+        # (trajectory_reward_context), the context score_episode gives the
+        # same reward, also for rewards that judge environment evidence.
+        return await score_trajectory(reward_fn, trajectory)
 
     async def _apply_step_reward(
         self, state: EnvironmentState, turns: list[ConversationTurn]
@@ -261,7 +251,9 @@ class Environment(ABC):
         try:
             result = await reward_fn.compute_reward(turns, context)
             score = reward_score(result)
-        except ENVIRONMENT_EXCEPTIONS as error:
+        except RewardUnavailableError as error:
+            # Only an outage is recorded and skipped; any other exception is a
+            # bug or bad data and propagates.
             if getattr(reward_fn, "fail_on_error", False):
                 raise
             _record_reward_failure(state.metadata, reward_fn, error, "step")
@@ -486,7 +478,7 @@ class Environment(ABC):
             try:
                 final_reward = await reward_fn.compute_reward(turns, context)
                 final_value = reward_score(final_reward)
-            except ENVIRONMENT_EXCEPTIONS as error:
+            except RewardUnavailableError as error:
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
                 _record_reward_failure(reward_metadata, reward_fn, error, "episode")

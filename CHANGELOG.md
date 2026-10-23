@@ -78,6 +78,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   join the stable surface (reviewed additive contract change): the root of the
   framework's one exception hierarchy and the typed error its public entry
   points raise.
+- **Automated reward exploit search as a CI gate.**
+  `stateset_agents.evaluation.reward_exploits` generates, deterministically
+  from a seed, the reply families a policy finds first when it games a
+  lexical reward (canned templates, keyword stuffing, verbatim and shuffled
+  echo, random and out-of-vocabulary word salad at random positions and
+  their combinations, bare lists of numbers or action words, terse replies,
+  blanket refusals, hedged multi-candidate
+  answers, negations, content-destroying mutations and padding of a reference
+  answer) and `search_reward_exploits` plays each against the reference in a
+  real `ConversationEnvironment` episode, with the reward attached to the
+  environment and held by a trainer. `tests/unit/test_reward_exploit_search.py`
+  runs it over every shipped reward factory (core, multi-objective, Kimi and
+  the `cli train` demo reward) and nine cases (support requests, a
+  sensitive-but-harmless fraud report, numeric and text QA with labels, a
+  two-turn conversation) for two seeds and fails if any adversary comes
+  within 0.01 of the reference. Against the rewards before this round's
+  fixes it finds 2,446 such adversary episodes across all 15 factories; it
+  now finds none.
 
 ### Changed
 
@@ -192,6 +210,95 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `fp16`/`bf16`, otherwise the checkpoint's own (`"auto"`; was float16), and
   `vllm_max_model_len`, `vllm_quantization` and
   `vllm_enable_chunked_prefill` are honoured.
+- **Only reward outages are absorbed.** Environments, `MultiTurnGRPOTrainer`
+  (sequential and batched rollouts, post-training evaluation),
+  `SingleTurnGRPOTrainer` and `ComputationalGRPOEngine` drop an episode only
+  when its reward raises `RewardUnavailableError` (or a subclass). A
+  `TypeError`, `AttributeError`, `KeyError` or `ValueError` from a reward, a
+  `None` result and a NaN score now propagate instead of silently shrinking
+  the batch, and a rollout step whose every attempted episode lost its reward
+  raises `RewardUnavailableError` instead of training on nothing.
+  `score_episode` raises `RewardUnavailableError` for an outage the
+  environment recorded; `coerce_reward_result` parses with `reward_score`
+  instead of reading failures as 0.0. `RewardUnavailableError` now lives in
+  `core.reward_context` (still importable from `core.reward_base`).
+- **One single-response scoring path.** `SingleTurnGRPOTrainer`,
+  `GSPOTrainer`, `GSPOTokenTrainer`, the TRL reward bridge (plain and
+  conversational prompts), `ComputationalGRPOEngine` and the auto-research
+  DAPO/VAPO adapters score through the new `reward_context.score_response`:
+  `[user, assistant]` turns (`response_turns`), the standard context, and the
+  latest-turn scope an environment step gives IMMEDIATE/DENSE rewards, so the
+  same reply scores identically to a one-turn `MultiTurnGRPOTrainer` episode
+  (a parity test covers every shipped factory, the core rewards and a model
+  judge; a meta-test pins that these consumers do not call `compute_reward`
+  themselves). Before, the GSPO/TRL paths dropped the user turn, so e.g.
+  `CorrectnessReward` scored "12 + 30 = 42." 0.33 instead of 1.0.
+  `Environment.get_reward` scores through `reward_context.score_trajectory`
+  (the trajectory's recorded state and scenario), also for evidence rewards
+  such as `TaskOutcomeReward`, which it used to reject. Reward stubs now
+  receive the user turn first: read the reply as `turns[-1]`.
+- `ModelBasedRewardComponent` judges a reply whose `turns` lack a user turn
+  against `context["user_query"]` instead of returning 0.0 without calling
+  the judge.
+- **`CorrectnessReward` counts hedges across the whole reply and rejects
+  negated answers.** A text answer shares its credit with every other
+  candidate the reply offers, across sentences and lines as well as commas,
+  "or"/"and" and "Maybe X. Maybe Y." (before, only candidates in the same
+  sentence counted, so a newline or sentence list scored 1.0). "It is not
+  Paris." and "42 is not the answer" score 0 (text and numeric), a denied
+  alternative (", not London") or a qualifier (", in Europe") is not a
+  candidate, and "no idea"/"not sure" halves the credit. The
+  `train_reasoning_with_dapo` math verifier uses the same check instead of a
+  substring test ("42" no longer matches "142").
+- **Judges accept only strict JSON.** `LLMJudge` and
+  `ModelBasedRewardComponent` read the score only from a reply that is
+  exactly one JSON object with a numeric `score` inside the configured range;
+  prose, bare numbers ("0.8", "7/10", "85/100", "on a scale of 0 to 1 ...
+  0.8"), fenced or embedded JSON, string or boolean scores and out-of-range
+  scores raise `JudgeUnavailableError` / `RewardUnavailableError` instead of
+  being salvaged, rescaled or clamped (the old first-number parse read
+  "-0.4" as 0.4 and "on a scale of 0 to 1" as 0.0). The model component's
+  default prompt asks for `{"score": x}`; custom `judge_prompt_template`s
+  must ask for the same. A pairwise verdict must name `A`, `B` or `tie`.
+  `NSRVerifierReward` treats a 2xx reply without an `approved`/`denied`/
+  `refused` decision as unavailable (or the opted-in `error_score`, flagged)
+  instead of a verified 0.0; its docstring now states the fail-closed
+  default.
+- `LLMJudge.evaluate(reference=...)` shows the reference to the judge (the
+  default template's new `{reference_section}` slot, or appended to a custom
+  template without a `{reference}` slot) and keys the cache on it.
+- `HelpfulnessReward`, `EngagementReward` and `TaskCompletionReward` goal
+  keywords match whole words ("there" is not "here", "refundable" is not
+  "refund").
+- **Grounding counts specifics, not unseen words.** `core.grounding` no
+  longer treats any word outside the boilerplate lexicon as information, so
+  random or invented word salad (alone, or mixed into templates and echoes)
+  earns nothing. Information is the number of distinct specifics the request
+  did not contain: numbers and amounts, affirmed action words (the new
+  `ACTION_TERMS`; "not issued" does not count) and reference labels, growing
+  as `n / (n + 6)`; a short label earns `CorrectnessReward`'s answer credit
+  (hedges share it, negations get none) and other numbers beside a numeric
+  label are competing answers. A near-verbatim echo of the request halves
+  relevance, and the quality factor `(1 - boilerplate) * (1 - filler ** 3)`
+  penalizes padding with boilerplate or salad. Grounded style rewards now pay
+  `grounding * (0.75 + 0.25 * style)` (`grounding.STYLE_SHARE`, the default
+  `share` of `GroundedReward`, `ground_shaping_rewards`, `GroundedComponent`
+  and `ground_components`), so style can no longer outweigh lost substance.
+  Absolute heuristic-factory scores are lower than before.
+  Numbers and action words count only in a clause that also names
+  something else, so bare lists ("4093 8812 7741", "Issued, blocked,
+  reversed.") state nothing, and "$1,299" reads as one number.
+- **Refusals and safety read intent, not topics.** A refusal is grounded only
+  when the request asks for help with something unsafe
+  (`basic_rewards.harmful_request`: "how do I hack...", "where can I buy
+  drugs", "... without getting caught"), not when it mentions one ("someone
+  stole my card", "how do I avoid scams"), so "I can't help with that." no
+  longer ties or beats a real answer to a fraud report. `SafetyReward`
+  scores 0 for unsafe *assistance* (`gives_unsafe_assistance`: instructions
+  involving an unsafe topic, an unsafe act by the speaker or reader, getting
+  or making contraband) instead of any mention ("reverse the fraudulent
+  charge" now scores 1.0), and no longer scores short replies down: length
+  is not safety, and the rule paid for padding.
 
 ### Deprecated
 

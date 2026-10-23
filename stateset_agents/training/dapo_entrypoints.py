@@ -165,8 +165,13 @@ async def train_reasoning_with_dapo(
     answers = {problem["problem"]: problem["answer"] for problem in math_problems}
 
     def verifier(prompt: str, response: str) -> bool:
-        expected = answers.get(prompt, "")
-        return expected.lower() in response.lower()
+        # CorrectnessReward's answer check: the answer must be a whole token
+        # ("42" is not in "142"), committed to (not one of several listed
+        # candidates) and not negated.
+        from stateset_agents.core.basic_rewards import _answer_credit
+
+        expected = str(answers.get(prompt, "")).strip()
+        return bool(expected) and _answer_credit(response, expected, prompt) >= 1.0
 
     def reward_fn(prompt: str, response: str) -> float:
         if verifier(prompt, response):

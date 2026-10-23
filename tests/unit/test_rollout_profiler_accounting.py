@@ -10,6 +10,7 @@ from stateset_agents.core.environment_base import (
     EnvironmentState,
     EpisodeStatus,
 )
+from stateset_agents.core.reward_context import RewardUnavailableError
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 from stateset_agents.training.profiling import TrainingProfiler
@@ -94,7 +95,7 @@ class FailingReward:
     async def compute_reward(self, turns, context=None):
         self.calls += 1
         if self.calls == 2:
-            raise ValueError("score unavailable")
+            raise RewardUnavailableError("score unavailable")
         return 100.0  # Positive scores must not turn explicit failure into success.
 
 
@@ -133,7 +134,7 @@ async def test_strict_batch_failure_records_no_accepted_partial_batch(strict):
         reward.fail_on_error = True
     else:
         trainer._stateset_native_rollout = True
-    with pytest.raises(ValueError, match="score unavailable"):
+    with pytest.raises(RewardUnavailableError, match="score unavailable"):
         await trainer.generate_trajectories(SCENARIOS)
     report = trainer.profiler.snapshot()
     assert report["attempted_rollouts"] == 6 and report["accepted_rollouts"] == 0

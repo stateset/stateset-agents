@@ -35,6 +35,18 @@ from typing import Any
 
 from .trajectory import ConversationTurn
 
+
+class RewardUnavailableError(RuntimeError):
+    """A reward could not be computed for an external reason (judge or network
+    outage, a verifier that cannot be reached).
+
+    This is the only failure reward composers absorb: ``CompositeReward`` and
+    ``MultiObjectiveRewardFunction`` leave the component out and spread its
+    weight over the rest. Every other exception is a bug or bad data and
+    propagates, so it is never mistaken for an outage.
+    """
+
+
 #: ``RewardResult.metadata`` key a reward sets (to a short reason) when its
 #: score is an opted-in fallback rather than a real verdict, e.g.
 #: ``NSRVerifierConfig(error_score=0.0)`` or ``RulerRewardFunction(
@@ -286,12 +298,103 @@ def response_reward_context(
 
     The standard shape: the scenario's keys lifted to the top level, with
     ``"user_query"`` set to the prompt unless the scenario has one, and the
-    scenario under ``"scenario"``. ``GSPOTrainer``, ``GSPOTokenTrainer`` and
+    scenario under ``"scenario"``. ``scenario`` may also be an environment
+    state that carries its scenario under ``"scenario"`` or ``"task"``; the
+    state is then laid over the scenario as in :func:`build_reward_context`. ``GSPOTrainer``, ``GSPOTokenTrainer`` and
     the TRL reward bridge build their context here, so scenario labels such
     as ``ground_truth`` reach the reward as they do in a multi-turn episode.
     """
-    query = {"user_query": str(prompt), **dict(scenario or {})}
+    mapping = dict(scenario or {})
+    nested = _resolve_scenario(mapping, None)
+    if nested is not None:
+        # An environment state that carries its scenario (single-turn
+        # trainers pass the reset state's context): lay it over the scenario
+        # exactly as an episode's reward context does.
+        context = build_reward_context(mapping, nested, reward_fn=reward_fn)
+        context.setdefault("user_query", str(prompt))
+        return context
+    query = {"user_query": str(prompt), **mapping}
     return build_reward_context(None, query, reward_fn=reward_fn)
+
+
+def _prompt_text(prompt: Any) -> str:
+    """The user query of a prompt: the text, or a conversation's last user turn."""
+    if isinstance(prompt, str):
+        return prompt
+    if isinstance(prompt, Sequence):
+        users = [t for t in normalize_turns(prompt) if t.role == "user"]
+        return str(users[-1].content) if users else ""
+    return str(prompt)
+
+
+def response_turns(prompt: Any, response: Any) -> list[ConversationTurn]:
+    """The conversation one reply to one prompt forms: ``[user, assistant]``.
+
+    ``prompt`` is the user's text, or the chat messages so far (system and
+    user turns, as TRL's conversational format passes them); ``response`` is
+    the reply's text or its assistant ``ConversationTurn`` (kept as is, with
+    any generated token ids). The user turn is always included, as it is in
+    an episode, so rewards that read the request (correctness, grounding,
+    judges) see it on every path.
+    """
+    if isinstance(prompt, str):
+        turns = [ConversationTurn(role="user", content=prompt)]
+    elif isinstance(prompt, Sequence):
+        turns = normalize_turns(prompt)
+    else:
+        turns = [ConversationTurn(role="user", content=str(prompt))]
+    if isinstance(response, ConversationTurn):
+        reply = response
+    else:
+        reply = ConversationTurn(role="assistant", content=str(response))
+    return [*turns, reply]
+
+
+async def score_response(
+    reward_fn: Any,
+    prompt: Any,
+    response: Any,
+    scenario: Mapping[str, Any] | None = None,
+) -> float:
+    """Score one reply to one prompt exactly as a one-turn episode is scored.
+
+    The single-response paths (``SingleTurnGRPOTrainer``, ``GSPOTrainer``,
+    ``GSPOTokenTrainer``, the TRL reward bridge, ``ComputationalGRPOEngine``
+    and the auto-research adapters) all score here: the turns are
+    :func:`response_turns`, the context is :func:`response_reward_context`
+    (scenario labels lifted, ``user_query`` set), and IMMEDIATE/DENSE rewards
+    get the latest-turn scope an environment step would give them. The score
+    is parsed by :func:`reward_score`, so a failure, a ``None`` or a
+    non-finite score raises; nothing stands in for it.
+    """
+    turns = response_turns(prompt, response)
+    context = response_reward_context(
+        _prompt_text(prompt), scenario, reward_fn=reward_fn
+    )
+    if _scores_per_step(reward_fn, None):
+        context[REWARD_SCOPE_KEY] = LATEST_TURN_SCOPE
+    return reward_score(await _call(reward_fn, turns, context))
+
+
+async def score_trajectory(
+    reward_fn: Any,
+    trajectory: Any,
+    scenario: Mapping[str, Any] | None = None,
+) -> float:
+    """Score a finished trajectory's whole conversation once.
+
+    The context is :func:`trajectory_reward_context` (the recorded final state
+    and scenario), the same context :func:`score_episode` gives a
+    CUMULATIVE/SPARSE reward, also for rewards with
+    ``requires_environment_context``. ``Environment.get_reward`` scores here.
+    Nothing is replayed per step and the trajectory is not modified; a
+    failure, a ``None`` or a non-finite score raises.
+    """
+    turns = getattr(trajectory, "turns", None)
+    if not turns and hasattr(trajectory, "__iter__"):
+        turns = list(trajectory)
+    context = trajectory_reward_context(trajectory, scenario, reward_fn=reward_fn)
+    return reward_score(await _call(reward_fn, normalize_turns(turns), context))
 
 
 async def score_episode(
@@ -329,7 +432,8 @@ async def score_episode(
     ):
         error = metadata.get("reward_error")
         if error:
-            raise RuntimeError(f"Episode reward failed: {error}")
+            # The environment recorded an outage; the episode has no reward.
+            raise RewardUnavailableError(f"Episode reward failed: {error}")
         total = float(getattr(trajectory, "total_reward", 0.0))
         if not math.isfinite(total):
             raise ValueError(f"Episode reward must be finite, got {total}")
@@ -409,6 +513,7 @@ async def score_episode(
 
 __all__ = [
     "LATEST_TURN_SCOPE",
+    "RewardUnavailableError",
     "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
     "assistant_turns_in_scope",
@@ -419,8 +524,11 @@ __all__ = [
     "reward_fallback",
     "requires_environment_context",
     "response_reward_context",
+    "response_turns",
     "reward_score",
     "score_episode",
+    "score_response",
+    "score_trajectory",
     "scores_latest_turn_only",
     "trajectory_reward_context",
 ]

@@ -22,7 +22,6 @@ import json
 import logging
 import math
 import os
-import re
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
@@ -318,7 +317,7 @@ DEFAULT_SINGLE_EVAL_TEMPLATE = """Evaluate the following response based on the c
 
 **Assistant Response:**
 {response}
-
+{reference_section}
 **Evaluation Criteria:**
 {criteria}
 
@@ -435,37 +434,21 @@ class LLMJudgeBase(ABC):
         pass
 
     def _parse_json_response(self, response: str) -> dict[str, Any]:
-        """Parse JSON from LLM response."""
-        # Try to extract JSON from response
+        """Parse the judge's reply, which must be exactly one JSON object.
+
+        Nothing is salvaged from free text: a reply with prose around the
+        object, several objects, or a bare number ("7/10", "on a scale of 0
+        to 1 ... 0.8") yields ``judge_error`` (and the caller raises
+        ``JudgeUnavailableError``), because extracting the first number from
+        free text misreads scales, fractions and negative signs.
+        """
         try:
-            # Direct JSON parse
-            parsed = json.loads(response)
-            if isinstance(parsed, dict):
-                return cast(dict[str, Any], parsed)
-        except json.JSONDecodeError:
-            pass
-
-        # Try to find JSON in response
-        json_match = re.search(r"\{[^{}]*\}", response, re.DOTALL)
-        if json_match:
-            try:
-                parsed = json.loads(json_match.group())
-                if isinstance(parsed, dict):
-                    return cast(dict[str, Any], parsed)
-            except json.JSONDecodeError:
-                pass
-
-        # Fallback: extract score number
-        score_match = re.search(r"(\d+\.?\d*)", response)
-        if score_match:
-            score = float(score_match.group(1))
-            # Normalize if needed
-            if score > self.config.score_max:
-                score = score / 10.0  # Assume 0-10 scale
-            return {"score": score, "reasoning": "Extracted from response"}
-
-        # Default
-        return {"score": None, "judge_error": "Failed to parse response"}
+            parsed = json.loads(response.strip())
+        except (json.JSONDecodeError, AttributeError) as error:
+            return {"score": None, "judge_error": f"reply is not strict JSON: {error}"}
+        if not isinstance(parsed, dict):
+            return {"score": None, "judge_error": "reply is not a JSON object"}
+        return cast(dict[str, Any], parsed)
 
     def _build_criteria_text(self) -> str:
         """Build criteria description text."""
@@ -707,13 +690,17 @@ class LLMJudge:
         Args:
             query: User query/prompt
             response: Assistant response to evaluate
-            reference: Optional reference/gold response
+            reference: Optional reference/gold response; it is shown to the
+                judge and is part of the cache key
 
         Returns:
             Normalized score in [0, 1]
         """
-        # Check cache
+        # Check cache. The reference is part of the key: the same reply
+        # judged against a different reference is a different judgement.
         criteria_key = ",".join([c.value for c in self.config.criteria])
+        if reference is not None:
+            criteria_key += "\x00reference:" + reference
         if self.cache:
             cached = self.cache.get(query, response, criteria_key)
             if cached is not None:
@@ -725,13 +712,22 @@ class LLMJudge:
 
         criteria_text = self.backend._build_criteria_text()
 
+        reference_section = (
+            f"\n**Reference Response:**\n{reference}\n" if reference is not None else ""
+        )
         user_prompt = template.format(
             query=query,
             response=response,
             criteria=criteria_text,
             score_min=self.config.score_min,
             score_max=self.config.score_max,
+            reference=reference or "",
+            reference_section=reference_section,
         )
+        if reference is not None and "{reference" not in template:
+            # A custom template without a reference slot still shows the
+            # reference to the judge.
+            user_prompt += reference_section
 
         messages = [
             {"role": "system", "content": system_prompt},
@@ -751,10 +747,20 @@ class LLMJudge:
                 "LLM judge returned no score: "
                 f"{result.get('judge_error', 'missing score')}"
             )
-        score = float(result["score"])
-        if not math.isfinite(score):
+        raw_score = result["score"]
+        if isinstance(raw_score, bool) or not isinstance(raw_score, (int, float)):
             raise JudgeUnavailableError(
-                f"LLM judge returned a non-finite score {score}"
+                f"LLM judge score must be a JSON number, got {raw_score!r}"
+            )
+        score = float(raw_score)
+        if not (
+            math.isfinite(score)
+            and self.config.score_min <= score <= self.config.score_max
+        ):
+            # Out of range is a judge failure, not a value to clamp.
+            raise JudgeUnavailableError(
+                f"LLM judge score {score} is outside "
+                f"[{self.config.score_min}, {self.config.score_max}]"
             )
 
         # Normalize
@@ -847,7 +853,11 @@ class LLMJudge:
                 f"{result.get('judge_error', 'missing winner')}"
             )
 
-        winner = str(result.get("winner", "tie")).upper()
+        winner = str(result.get("winner")).upper()
+        if winner not in {"A", "B", "TIE"}:
+            raise JudgeUnavailableError(
+                f"LLM judge pairwise winner must be A, B or tie, got {winner!r}"
+            )
 
         # Assign scores based on winner
         if winner == "A":

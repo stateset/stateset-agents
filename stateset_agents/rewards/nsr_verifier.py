@@ -12,8 +12,10 @@ verdict:
 - model refuses/escalates when NSR ``refused`` (unprovable)     -> 1.0
 - any disagreement, or asserting a verdict NSR refused          -> 0.0
 - no response / no extractable verdict                          -> 0.0 (NSR not called)
-- NSR unreachable -> ``config.error_score`` (0.5 neutral by default;
-  set 0.0 for fail-closed gating, e.g. harvest curation)
+- NSR unreachable, or a 2xx reply without an ``approved``/``denied``/
+  ``refused`` decision -> ``RewardUnavailableError`` (the default,
+  ``config.error_score=None``); setting ``error_score`` opts in to that score
+  instead, flagged with ``reward_fallback`` (e.g. 0.0 for harvest curation)
 
 Scenario context supplies the decision request via ``context["nsr_request"]``
 (the /v1/decisions body: query, action, facts, rules, ...); without it the
@@ -128,6 +130,23 @@ def extract_verdict(text: str) -> str | None:
     return None
 
 
+_DECISIONS = frozenset({"approved", "denied", "refused"})
+
+
+def _decision_of(reply: Any) -> str:
+    """The verdict of an NSR /v1/decisions reply, or ``ValueError``.
+
+    A reply that parsed but carries no ``approved``/``denied``/``refused``
+    decision (schema drift, an error body with a 2xx status) is not a
+    verdict; scoring it as a disagreement would train on a fabricated 0.0.
+    """
+    decision = reply.get("decision") if isinstance(reply, dict) else None
+    value = str(decision).strip().lower() if isinstance(decision, str) else ""
+    if value not in _DECISIONS:
+        raise ValueError(f"NSR reply has no decision: {reply!r}")
+    return value
+
+
 @dataclass
 class NSRVerifierConfig:
     """Connection + scoring config; ``from_env`` follows the judge-key
@@ -192,7 +211,8 @@ class NSRVerifierReward(RewardFunction):
         payload = self._build_payload(turns, context)
         try:
             decision = await self._get_client()(payload)
-        except Exception as exc:  # any transport failure means no verdict
+            nsr_decision = _decision_of(decision)
+        except Exception as exc:  # no reply, or a reply without a decision
             if self.config.error_score is None:
                 raise RewardUnavailableError(
                     f"NSR verifier unavailable: {exc}"
@@ -208,7 +228,6 @@ class NSRVerifierReward(RewardFunction):
             result.metadata[REWARD_FALLBACK_KEY] = "nsr_error"
             return result
 
-        nsr_decision = str(decision.get("decision", "")).lower()
         score = 1.0 if model_verdict == nsr_decision else 0.0
         return self._result(
             score,

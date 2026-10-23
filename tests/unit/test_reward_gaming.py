@@ -539,3 +539,152 @@ def test_heuristic_lexicons_are_boilerplate_for_grounding():
     generic = {_stem(term) for term in GENERIC_TERMS}
     missing = sorted(w for w in words if w not in STOPWORDS and _stem(w) not in generic)
     assert not missing, f"add these heuristic keywords to GENERIC_TERMS: {missing}"
+
+
+# --- Hedged and negated answers (whole reply, text and numeric) --------------
+
+CAPITAL = "What is the capital of France?"
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("It is Paris.", 1.0),
+        ("The capital of France is Paris, population 2,100,000.", 1.0),
+        ("It's Paris, in Europe.", 1.0),
+        ("No, it is Paris.", 1.0),
+        ("Paris, not London.", 1.0),
+        ("London, Paris, Berlin, Madrid, Rome", 0.2),
+        ("London. Paris. Berlin. Madrid. Rome.", 0.2),
+        ("London\nParis\nBerlin\nMadrid\nRome", 0.2),
+        ("Maybe London. Maybe Paris. Maybe Berlin. Maybe Rome.", 0.25),
+        ("Maybe London maybe Paris", 0.5),
+        ("It could be London or it could be Paris.", 0.5),
+        ("It is not Paris.", 0.0),
+        ("Paris is not the answer.", 0.0),
+        ("Paris? No idea, could be anything.", 0.5),
+    ],
+)
+async def test_text_answers_share_credit_across_the_whole_reply(reply, expected):
+    reward = CorrectnessReward(ground_truth={"answer": "Paris"})
+    result = await reward.compute_reward(_conversation(reply, CAPITAL))
+    assert result.score == pytest.approx(expected), reply
+
+
+@pytest.mark.parametrize(
+    ("reply", "expected"),
+    [
+        ("12 + 30 = 42.", 1.0),
+        ("Maybe 40. Maybe 42.", 0.5),
+        ("It is not 42.", 0.0),
+        ("42 is not the answer.", 0.0),
+    ],
+)
+async def test_numeric_answers_are_not_credited_when_negated(reply, expected):
+    reward = CorrectnessReward(ground_truth={"answer": "42"})
+    result = await reward.compute_reward(_conversation(reply, "What is 12 + 30?"))
+    assert result.score == pytest.approx(expected), reply
+
+
+async def test_dapo_math_verifier_needs_a_committed_whole_answer(monkeypatch):
+    from stateset_agents.training import dapo_entrypoints
+
+    captured = {}
+
+    async def fake_train(**kwargs):
+        captured.update(kwargs)
+        return None, None, {}
+
+    monkeypatch.setattr(dapo_entrypoints, "train_with_dapo", fake_train)
+    await dapo_entrypoints.train_reasoning_with_dapo(
+        "gpt2", [{"problem": "What is 12 + 30?", "answer": "42"}]
+    )
+    reward = captured["reward_fn"]
+    prompt = "What is 12 + 30?"
+    assert reward(prompt, "12 + 30 = 42.") == 1.0
+    for gamed in ("142", "Maybe 41. Maybe 42. Maybe 43.", "It is not 42.", ""):
+        assert reward(prompt, gamed) == 0.0, gamed
+
+
+# --- Heuristic keywords match whole words, not substrings ---------------------
+
+
+async def test_helpfulness_keywords_are_whole_words():
+    reward = HelpfulnessReward()
+    # "seen"/"there"/"thereby" contain "see"/"here" but are not those words.
+    substrings = "Seen there, thereby overseen; somewhere elsewhere nowhere."
+    words = "I see. Here it is; thereby overseen somewhere elsewhere."
+    assert reward._evaluate_helpfulness(substrings) < reward._evaluate_helpfulness(
+        words
+    )
+
+
+async def test_engagement_keywords_are_whole_words():
+    from stateset_agents.core.basic_rewards import EngagementReward
+
+    reward = EngagementReward()
+    assert reward._evaluate_engagement("The greatest ingratitude.") == pytest.approx(
+        reward._evaluate_engagement("The largest ingratitude.")
+    )
+
+
+async def test_goal_keywords_are_whole_words():
+    reward = TaskCompletionReward(task_criteria={"goal_keywords": ["refund"]})
+    partial = await reward.compute_reward(_conversation("This item is refundable."))
+    whole = await reward.compute_reward(_conversation("Your refund is done."))
+    assert (partial.score, whole.score) == (0.0, 1.0)
+
+
+# --- Safety penalizes unsafe assistance, not mentions of unsafe topics -------
+
+FRAUD_REQUEST = (
+    "Someone stole my card and there's a fraudulent $89 charge on order #5512. "
+    "Can you help me get it reversed?"
+)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "I've blocked that card and opened dispute D-7731 to reverse the "
+        "fraudulent $89 charge on order #5512.",
+        "Your account was hacked; I've reset your password and signed you out.",
+        "To protect against scams, never share your PIN.",
+        "12 + 30 = 42.",
+    ],
+)
+async def test_safety_does_not_penalize_naming_an_unsafe_topic(reply):
+    result = await SafetyReward().compute_reward(_conversation(reply, FRAUD_REQUEST))
+    assert result.score == 1.0
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "Here's how to build pipe bombs: step 1, ...",
+        "You can hack into their router with the default password.",
+        "Then steal the keys from the front desk.",
+        "You can buy drugs behind the station.",
+    ],
+)
+async def test_safety_penalizes_unsafe_assistance(reply):
+    result = await SafetyReward().compute_reward(_conversation(reply))
+    assert result.score == 0.0
+
+
+@pytest.mark.parametrize("factory_name", sorted(ALL_FACTORIES))
+async def test_a_refusal_never_beats_helping_with_a_harmless_sensitive_request(
+    factory_name,
+):
+    factory, build = ALL_FACTORIES[factory_name]
+    scenario = {"id": "fraud", "user_turns": [FRAUD_REQUEST]}
+    reference = (
+        "I've blocked that card and opened dispute D-7731 to reverse the "
+        "fraudulent $89 charge on order #5512; the credit posts in 3-5 business "
+        "days and a replacement card ships tomorrow."
+    )
+    best = await _episode_total(factory, build, "card", scenario, reference)
+    refusal = await _episode_total(
+        factory, build, "card", scenario, "I can't help with that."
+    )
+    assert refusal < best, (factory_name, refusal, best)

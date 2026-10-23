@@ -82,7 +82,7 @@ class FailingReward(RewardFunction):
         super().__init__(reward_type=reward_type)
 
     async def compute_reward(self, turns, context=None):
-        raise RuntimeError("judge outage")
+        raise RewardUnavailableError("judge outage")
 
 
 SCRIPTED = {"id": "s1", "user_turns": ["where is my refund?", "ok and?", "thanks"]}
@@ -188,10 +188,11 @@ async def test_trainer_with_its_own_reward_resets_turn_rewards_to_its_score():
 async def test_failed_environment_reward_drops_the_episode_instead_of_scoring_zero():
     reward = FailingReward(RewardType.SPARSE)
     environment = ConversationEnvironment([SCRIPTED], max_turns=5, reward_fn=reward)
-    groups = await _trainer(environment, reward).generate_trajectories(
-        [SCRIPTED], num_generations=2
-    )
-    assert groups == []
+    # Every episode is dropped, and a step with nothing to train on raises.
+    with pytest.raises(RewardUnavailableError, match="No episode got a reward"):
+        await _trainer(environment, reward).generate_trajectories(
+            [SCRIPTED], num_generations=2
+        )
 
 
 # --- 3. One reward-context contract ------------------------------------------

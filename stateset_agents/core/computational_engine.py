@@ -28,7 +28,8 @@ from numpy.typing import NDArray
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction
-from .trajectory import ConversationTurn, Trajectory
+from .reward_context import RewardUnavailableError, score_response
+from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -116,15 +117,18 @@ class ComputationalGRPOEngine:
             task = asyncio.create_task(self._generate_single_trajectory(prompt))
             tasks.append(task)
 
-        # Collect results; a trajectory whose reward failed is dropped and
-        # counted, never kept with a stand-in reward.
+        # Collect results; a trajectory whose reward is unavailable (an
+        # outage) is dropped and counted, never kept with a stand-in reward.
+        # Any other error (a bug, bad data, a non-finite reward) propagates.
         results = await asyncio.gather(*tasks, return_exceptions=True)
         trajectories: list[ComputationalTrajectory] = []
         failed = 0
         for result in results:
-            if isinstance(result, ENGINE_EXCEPTIONS):
+            if isinstance(result, RewardUnavailableError):
                 failed += 1
-                logger.warning("Dropping trajectory whose reward failed: %s", result)
+                logger.warning(
+                    "Dropping trajectory: its reward is unavailable: %s", result
+                )
             elif isinstance(result, BaseException):
                 raise result
             else:
@@ -151,13 +155,10 @@ class ComputationalGRPOEngine:
             # The learned reward is the training signal. A failure propagates
             # (the batch drops this trajectory); no other value stands in.
             if self.use_learned_rewards:
-                reward_result = await self.reward_function.compute_reward(
-                    [
-                        ConversationTurn(role="user", content=prompt),
-                        ConversationTurn(role="assistant", content=response),
-                    ]
+                # The shared single-response path (score_response).
+                learned_reward = await score_response(
+                    self.reward_function, prompt, response
                 )
-                learned_reward = float(reward_result.score)
             elif raw_reward is None:
                 raise ValueError(
                     "use_learned_rewards=False needs an environment reward_fn"
