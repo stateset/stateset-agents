@@ -114,7 +114,7 @@ def build_training_scenarios(
     environment: Any,
     config: Any | None,
 ) -> list[dict[str, Any]]:
-    num_episodes = getattr(config, "num_episodes", 100)
+    num_episodes = config_value(config, "num_episodes")
     env_scenarios = get_environment_scenarios(environment, config)
     if env_scenarios:
         train_base, _ = split_scenarios(env_scenarios, config)

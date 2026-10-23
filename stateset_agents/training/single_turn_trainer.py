@@ -173,7 +173,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         try:
             import random
 
-            seed_value = getattr(self.config, "seed", None)
+            seed_value = config_value(self.config, "seed")
             if seed_value is not None and torch is not None:
                 random.seed(seed_value)
                 np.random.seed(seed_value)
@@ -222,7 +222,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         if self.agent.model is None or torch is None:
             return
 
-        learning_rate = getattr(self.config, "learning_rate", 5e-5)
+        learning_rate = config_value(self.config, "learning_rate")
         weight_decay = config_value(self.config, "weight_decay")
 
         # Separate parameters that should not have weight decay
@@ -248,7 +248,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
         betas = (
             float(config_value(self.config, "adam_beta1")),
-            float(getattr(self.config, "adam_beta2", 0.999)),
+            float(config_value(self.config, "adam_beta2")),
         )
         self.optimizer = torch.optim.AdamW(
             optimizer_grouped_parameters, lr=learning_rate, betas=betas
@@ -303,7 +303,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             self._current_task_id = task_id
 
     def _get_grad_accum_steps(self) -> int:
-        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        steps = int(config_value(self.config, "gradient_accumulation_steps"))
         return max(1, steps)
 
     def _apply_optimizer_step(
@@ -607,12 +607,14 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     _training_done_message = "Single-turn GRPO training completed"
 
     def _max_steps_per_episode(self) -> int:
-        return int(getattr(self.config, "max_steps_per_episode", 1) or 1)
+        """``max_steps_per_episode``; unset (``None``) means one turn."""
+        steps = config_value(self.config, "max_steps_per_episode")
+        return 1 if steps is None else int(steps)
 
     def _prepare_training_loop(self) -> tuple[int, list[dict[str, Any]], int]:
         """The episode count and optimizer-step budget; scenarios resolve per
         episode (:meth:`_scenario_for_episode`)."""
-        num_episodes = int(getattr(self.config, "num_episodes", 10))
+        num_episodes = int(config_value(self.config, "num_episodes"))
         total_updates = estimate_grpo_optimizer_steps(
             num_episodes * self._max_steps_per_episode(),
             gradient_accumulation_steps=self._get_grad_accum_steps(),
@@ -692,7 +694,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
         group, best_response = await self._generate_trajectory_group(
             prompt=str(prompt),
-            num_generations=getattr(self.config, "num_generations", 8),
+            num_generations=config_value(self.config, "num_generations"),
             context=context,
         )
 
@@ -776,7 +778,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         logger.info(
             "Episode %s/%s: Steps=%s AvgReward=%.3f",
             episode + 1,
-            int(getattr(self.config, "num_episodes", 10)),
+            int(config_value(self.config, "num_episodes")),
             len(episode_rewards),
             avg_reward,
         )

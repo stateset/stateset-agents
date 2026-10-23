@@ -140,7 +140,7 @@ def _schedule(trainer: Any) -> dict[str, Any]:
     if guard["failure"] is not None:
         raise ValueError("A failed native diagnostic guard requires a healthy reload")
     inner = _integer(config_value(config, "num_gradient_updates"), minimum=1)
-    steps = _integer(getattr(config, "gradient_accumulation_steps", 1), minimum=1)
+    steps = _integer(config_value(config, "gradient_accumulation_steps"), minimum=1)
     counter = _integer(trainer._grad_accum_step)
     # Chunk counts may differ across ranks, but must be locally usable before
     # an old-policy forward. They deliberately do not enter the digest.

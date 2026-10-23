@@ -17,6 +17,8 @@ from stateset_agents.core.reward_context import (
     score_episode,
 )
 
+from .config import config_value
+
 logger = logging.getLogger(__name__)
 
 
@@ -108,7 +110,7 @@ async def run_post_training_evaluation(
             "trajectories": [],
         }
 
-        num_eval_generations = min(4, getattr(trainer.config, "num_generations", 4))
+        num_eval_generations = min(4, config_value(trainer.config, "num_generations"))
 
         for gen_idx in range(num_eval_generations):
             try:

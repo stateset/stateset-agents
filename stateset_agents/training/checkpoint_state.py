@@ -14,6 +14,7 @@ from .checkpoint_publication import (
     checkpoint_write,
     validate_checkpoint_publication,
 )
+from .config import config_value
 from .learning_state import (
     apply_learning_state,
     capture_learning_state,
@@ -111,7 +112,7 @@ def _accumulation_steps(trainer: Any) -> int:
     getter = getattr(trainer, "_get_grad_accum_steps", None)
     if callable(getter):
         return int(getter())
-    return max(1, int(getattr(trainer.config, "gradient_accumulation_steps", 1) or 1))
+    return max(1, int(config_value(trainer.config, "gradient_accumulation_steps")))
 
 
 def _prepare_episode_cursor(state: dict[str, Any]) -> int:

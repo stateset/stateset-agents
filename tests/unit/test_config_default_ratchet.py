@@ -23,8 +23,10 @@ PACKAGE = Path(__file__).resolve().parents[2] / "stateset_agents" / "training"
 
 #: 261 inline-default config reads when the ratchet was introduced (S10 of
 #: the training spine); config_value took the 134 that restated the
-#: dataclass default verbatim.
-CEILING = 127
+#: dataclass default verbatim (127), then the trainers' drifting reads
+#: (learning rate, Adam beta2, group size, episode and accumulation budgets,
+#: seed, W&B tags) settled on the dataclass (108).
+CEILING = 108
 
 
 def inline_default_reads() -> list[str]:

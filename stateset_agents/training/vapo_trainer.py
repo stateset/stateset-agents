@@ -419,7 +419,7 @@ class VAPOTrainer(TrainingRuntime):
         self.config = config
         # Value warmup draws its prompts from ``config.seed``, not the global
         # NumPy generator.
-        self._warmup_rng = np.random.default_rng(getattr(config, "seed", None))
+        self._warmup_rng = np.random.default_rng(config_value(config, "seed"))
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
             getattr(config, "logprob_dtype", None)

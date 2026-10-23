@@ -917,6 +917,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A duck-typed config that omits a field trains with `TrainingConfig`'s
+  default.** Trainers restated defaults inline (`getattr(config, name,
+  default)`) and the copies drifted; they now read through
+  `training.config.config_value`, so the dataclass is the one source.
+  **Behaviour changes** (only for legacy configs without the field; a real
+  `TrainingConfig` already had these values):
+  - `SingleTurnGRPOTrainer`: learning rate 5e-6 (was 5e-5), Adam beta2 0.99
+    (was 0.999), 16 replies per prompt (was 8), 1000 episodes (was 10);
+  - `MultiTurnGRPOTrainer` and the spine loop: 1000 episodes (was 100), and
+    an explicit `num_episodes=0` is zero episodes (an `or` turned it into
+    100); `generate_trajectories(num_generations=0)` raises instead of
+    falling through to the config;
+  - both: 4 gradient-accumulation steps (was 1), also in native checkpoint
+    accounting and the learner preflight, and seed 42 (a missing seed used
+    to skip seeding); multi-turn W&B runs get the config's `wandb_tags`
+    (default none) instead of `["grpo", "multi-turn"]`.
+  Deliberately unchanged: a missing `bf16` still means fp32 on the GRPO
+  path (matching the loss computation), and agent-sampling checks keep
+  their neutral defaults. `tests/unit/test_config_default_ratchet.py` caps
+  the remaining `getattr(config, name, default)` reads in `training/` (108,
+  from 261) and may only go down.
 - **`train_with_vapo` rejects `resume_from_checkpoint`** before any setup,
   like the other dedicated entry points; it silently ignored it. `DAPOConfig`
   now also rejects a `group_size` below 2 (`ConfigurationError`), as GEPO

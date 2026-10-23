@@ -370,7 +370,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     def _planned_optimizer_steps(self) -> int:
         """Optimizer-step budget implied by ``num_episodes`` (one rollout
         batch per episode), accumulation and inner updates."""
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        num_episodes = int(config_value(self.config, "num_episodes"))
         return estimate_grpo_optimizer_steps(
             num_episodes,
             gradient_accumulation_steps=self._get_grad_accum_steps(),
@@ -528,7 +528,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             )
 
     def _get_grad_accum_steps(self) -> int:
-        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        steps = int(config_value(self.config, "gradient_accumulation_steps"))
         return max(1, steps)
 
     def _sync_rollout_backend(self) -> None:
@@ -641,7 +641,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             wandb_logger.init_run(
                 config=config_dict,
                 name=config_value(self.config, "run_name"),
-                tags=getattr(self.config, "wandb_tags", ["grpo", "multi-turn"]),
+                tags=config_value(self.config, "wandb_tags"),
                 notes=f"Training {type(self.agent).__name__} with GRPO",
             )
 
@@ -669,8 +669,12 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     ) -> list[TrajectoryGroup]:
         """Generate trajectory groups for training"""
         num_generations = int(
-            num_generations or config_value(self.config, "num_generations") or 16
+            config_value(self.config, "num_generations")
+            if num_generations is None
+            else num_generations
         )
+        if num_generations < 1:
+            raise ValueError("num_generations must be a positive integer")
         trajectory_groups: list[TrajectoryGroup] = []
         # Prefer generate_turn: it returns the assistant turn with the generated
         # token ids and log-probs, which unlocks the batched per-token GRPO
@@ -1344,7 +1348,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         """
         import random
 
-        seed_value = getattr(self.config, "seed", None)
+        seed_value = config_value(self.config, "seed")
         if seed_value is None:
             return False
         rank, world = self._data_parallel_rank_world()

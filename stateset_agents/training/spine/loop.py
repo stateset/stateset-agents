@@ -132,7 +132,7 @@ class SpineLoopMixin(TrainingRuntime):
 
     def _prepare_training_loop(self) -> tuple[int, list[dict[str, Any]], int]:
         """Capture local scenarios once and budget the resolved task windows."""
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        num_episodes = int(config_value(self.config, "num_episodes"))
         scenarios = self._get_training_scenarios()
         total_steps = estimate_grpo_optimizer_steps(
             num_episodes,
