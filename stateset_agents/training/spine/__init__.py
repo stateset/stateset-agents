@@ -14,6 +14,9 @@ Currently provided:
   frozen old-policy log-probs (chunked or single-graph), each committed
   through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
   give the token- or row-share weights.
+* :class:`SpineLoopMixin` -- the GRPO trainers' outer loop (``train()``,
+  update receipts, reporting cadence, resume, finalization), inherited by
+  ``MultiTurnGRPOTrainer`` and ``DistributedTrainer``.
 * :class:`PromptGroupRollouts` -- the prompt/response trainers' rollout phase
   (one sampled group per prompt, built into update items);
   :class:`VLLMEngineMixin` / :func:`vllm_engine_config` -- the one vLLM
@@ -24,6 +27,7 @@ Importing this package does not import ``torch``.
 
 from __future__ import annotations
 
+from .loop import SpineLoopMixin
 from .rollouts import (
     PromptGroupRollouts,
     VLLMEngineMixin,
@@ -46,6 +50,7 @@ from .update import (
 )
 
 __all__ = [
+    "SpineLoopMixin",
     "PromptGroupRollouts",
     "VLLMEngineMixin",
     "vllm_dtype",
