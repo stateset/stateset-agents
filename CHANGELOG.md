@@ -9,6 +9,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Independent exploit families and judge calibration.**
+  - `reward_exploits.independent_adversarial_replies`: 34 families written
+    from the review before the rework, with their own tokenizer. They cover
+    off-topic specifics, foreign answers, anchored stuffing, repetition,
+    echo, padding, injection text, refusals and parenthetical/slash hedges.
+  - Eight new `DEFAULT_CASES`: benign trigger words, numberless who/why/how
+    answers and a labeled hedge question.
+  - The gate now passes every family on 17 cases, all 15 factories, both
+    paths and seeds 0 and 1. The same search found 18,250 failures before
+    this change; the smallest margin is now 0.011.
+  - `reward_exploits.judge_injection_replies` and
+    `search_judge_injections` provide a prompt-injection search for model
+    judges.
+  - `stateset_agents.rewards.judge_calibration` (`calibrate_judge`,
+    `load_calibration_set`, `score_drift`) reports a judge's agreement
+    with a labelled JSONL set: MAE, tolerance agreement, pass/fail agreement,
+    Spearman, repeat drift, pairwise agreement and swap consistency.
+  - New tests: property-based mutation fuzzing
+    (`tests/unit/test_reward_monotonicity.py`), the reviewer's exploits as
+    regressions, and a GRPO learning test showing a bandit policy moves to
+    the honest reply, not the exploits, for seeds 0-2.
 - **Verifiable tool-use RL** (provisional, `tool-use-rl` beta in the component
   maturity contract; docs/TOOL_USE_RL.md):
   - `ToolUseEnvironment` (`stateset_agents.environments`): the policy calls
@@ -178,6 +199,70 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Heuristic rewards ground specifics in the request (behaviour change:
+  absolute heuristic scores shift).** An outside review reproduced exploits
+  that every shipped heuristic factory paid, on both scoring paths, while the
+  exploit-search gate passed. The gate's families had been written by the
+  rewards' authors. The reproduced exploits:
+  - off-topic "card 4093 blocked; fee 8812 waived; ..." beat the reference
+    on all 15 factories;
+  - correct answers without numbers had grounding 0;
+  - refusing "hack together a quick Python script" paid twice as much as
+    answering;
+  - "Sydney (or Canberra)" scored 1.0 for either truth;
+  - the reference said twice tied or beat it on 10-11 of 15 factories.
+
+  `core.grounding` is reworked; the exact formula is in
+  docs/REWARD_CONTRACT.md:
+  - A number, action word or code identifier now counts only when it is
+    supported: it sits within 8 content words of a request term (or a label
+    or evidence term) in its clause, continues such a clause within a budget
+    of 4, or appears in the conversation's evidence (tool, observation and
+    system turns; `observations`, `tool_outputs`, `retrieved_facts`,
+    `correct_facts`, ...).
+  - Unsupported specifics cost support, `(units + 1) / (units +
+    unsupported + 1)`.
+  - Repeating a request term anchors nothing after its second clause, and
+    weak terms anchor at half weight: boilerplate, action words, and terms
+    only in the scenario description.
+  - Information is `1 - exp(-units / 6)` over supported specifics, capped
+    by the new words stating them. It adds three units per answered question
+    type (a name for who, a cause for why, steps for how, a number for how
+    many, a definition for what is, yes/no) plus instruction steps, so a
+    correct answer without numbers is grounded. "William Shakespeare wrote
+    Hamlet." goes from 0.000 to 0.331.
+  - Repeated sentences, refilled templates, copied request messages,
+    request-term keyword clauses and off-request padding are penalized.
+  - A reply that declines a request `harmful_request` does not flag keeps
+    at most half its grounding.
+- **Hedges earn no correctness (behaviour change).** `CorrectnessReward`
+  (and the answer credit inside grounding) treats parentheticals,
+  "maybe/possibly/or", slash, pipe and no-space alternatives and an appended
+  "Or possibly X." as candidates. Any second candidate leaves no credit,
+  where before the credit was shared 1/k. Qualifiers ("Paris, in Europe",
+  "Canberra, which is in the ACT") are not candidates. An explicitly stated
+  numeric answer must have no alternative beside it.
+- **Harmful intent and safety (behaviour change).** `harmful_request` no
+  longer flags benign trigger words: "hack together a script", "kill a
+  process", "shoot photos", "execute a query", "attack the problem". It now
+  flags intent to hurt a person or animal ("... to hurt my roommate") and
+  making a poison, toxic gas or explosive. `SafetyReward` scores any reply
+  to a flagged request that does not decline as 0; new helper:
+  `basic_rewards.declines`.
+- **LLM judges are hardened (behaviour change: prompts differ).**
+  - `LLMJudge` encloses the query, response and reference in tags carrying
+    a per-judge HMAC nonce and tells the judge to treat them as data
+    (`JudgeConfig.harden_prompts`, default on; `LEGACY_*_TEMPLATE` keeps
+    the old prompts). RULER prompts enclose trajectories the same way.
+  - `compare_pairwise` judges both orders and counts only consistent wins
+    (`pairwise_swap`; new `compare_pairwise_verdicts`).
+  - `num_samples` averages k verdicts.
+  - `LLMJudgeReward`, `LLMJudgeRewardComponent` and
+    `LLMJudgeRewardWithFallback` pass the scenario's reference answer to
+    the judge. The fallback heuristic gates `HelpfulnessReward` on
+    grounding.
+- The `[Unreleased]` grounding entry below now states the shipped style
+  share, `grounding * (0.75 + 0.25 * style)`; it said `0.5 + 0.5 * style`.
 - The evaluation panel's background work runs through the shared
   `BackgroundTask` (owned submissions on non-daemon threads) instead of its
   own thread and result queue.
@@ -188,7 +273,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   heuristic in the shipped `create_*_reward` factories (core, multi-objective
   and Kimi) and in the `cli train` demo reward is wrapped in
   `core.grounding.GroundedReward` / `GroundedComponent`: it pays
-  `grounding * (0.5 + 0.5 * style)`, where grounding measures engagement with
+  `grounding * (0.75 + 0.25 * style)` (`grounding.STYLE_SHARE`), where grounding measures engagement with
   the request and specific content beyond boilerplate (the boilerplate lexicon
   covers every keyword the heuristics reward). Outcome terms (correctness,
   completed actions, safety) are not gated. Starters and presets log that
@@ -393,6 +478,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- `RulerRewardFunction(config=RulerConfig(...))` now warns through
+  `warn_deprecated` with its v0.71.0 removal date.
 - `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` (and
   `stateset_agents.rewards.CodeExecutionReward`) is renamed
   `CodeFormattingHeuristic` (component `code_formatting`): it never executed

@@ -107,9 +107,7 @@ def _row_id(row: Mapping[str, Any], index: int) -> str:
     return str(row.get("id", index))
 
 
-def _parse_row(
-    row: Any, index: int
-) -> CalibrationExample | PairwiseExample:
+def _parse_row(row: Any, index: int) -> CalibrationExample | PairwiseExample:
     if not isinstance(row, Mapping):
         raise ValueError(f"row {index}: expected a JSON object")
     query = row.get("query")
@@ -175,7 +173,9 @@ def _ranks(values: Sequence[float]) -> list[float]:
     position = 0
     while position < len(order):
         end = position
-        while end + 1 < len(order) and values[order[end + 1]] == values[order[position]]:
+        while (
+            end + 1 < len(order) and values[order[end + 1]] == values[order[position]]
+        ):
             end += 1
         average = (position + end) / 2.0
         for k in range(position, end + 1):
@@ -276,8 +276,10 @@ async def calibrate_judge(
     if repeats < 1:
         raise ValueError("repeats must be at least 1")
     items = list(examples) if not isinstance(examples, (str, Path)) else None
+    pointwise: list[CalibrationExample]
+    pairwise: list[PairwiseExample]
     if items is not None and all(isinstance(i, CalibrationExample) for i in items):
-        pointwise = list(items)
+        pointwise = [i for i in items if isinstance(i, CalibrationExample)]
         pairwise = list(pairs)
     else:
         pointwise, loaded_pairs = load_calibration_set(
@@ -309,9 +311,7 @@ async def calibrate_judge(
         spreads = [max(runs[e.id]) - min(runs[e.id]) for e in scored]
         report.drift_mean = math.fsum(spreads) / len(spreads)
         report.drift_max = max(spreads)
-        report.scores = {
-            e.id: m for e, m in zip(scored, means, strict=True)
-        }
+        report.scores = {e.id: m for e, m in zip(scored, means, strict=True)}
     if matches:
         report.pairwise_agreement = sum(matches) / len(matches)
         report.pairwise_consistency = sum(consistent) / len(consistent)

@@ -1,48 +1,94 @@
-"""Task grounding: does a reply engage with the request and add specifics?
+"""Task grounding: does a reply answer *this* request with supported content?
 
 Heuristic style rewards (helpfulness phrases, empathy and action keywords,
 length, engagement) can be maximized without answering the request: a canned
-"I understand, happy to help, let me check..." template, keyword stuffing, an
-echo of the request, or word salad. The shipped heuristic factories therefore
-gate their style terms on *grounding*, a request-specific score:
+template, keyword stuffing, an echo of the request, word salad, a list of
+invented account actions ("card 4093 blocked; fee 8812 waived"), a refusal, or
+the answer said twice. The shipped heuristic factories therefore gate their
+style terms on *grounding*, a request-specific score in ``[0, 1]``::
 
-* **information**: the specifics a reply adds that the request did not
-  contain: numbers and amounts (two or more characters, so a "step 1" list
-  marker is not one) and affirmed action words (``ACTION_TERMS``: "issued",
-  "blocked", "rejoin", "multiply"...; "not issued" does not count), each
-  only in a clause that also names something else, so a bare list of
-  numbers or verbs states nothing. Information grows with every distinct
-  specific, ``n / (n + INFO_HALF)``, so removing any of them lowers it. Words that
-  are none of these (including salad, real or invented) are not
-  information. With reference labels (``ground_truth``), a short label
-  earns the answer credit ``CorrectnessReward`` gives it (hedged lists share
-  it, negations get none) and numbers other than a numeric label are
-  competing answers, not information; other specifics then count at most
-  half;
-* **relevance**: content terms shared with the request (user messages,
-  ``user_query``/``prompt``/``context``/``user_goal``/``topic``/task
-  description and labels), saturating at two, halved for a near-verbatim
-  echo (at least 80% of a request of four or more terms);
-* **quality**: ``(1 - boilerplate) * (1 - filler ** 3)``, where
-  *boilerplate* is the share of the reply's terms that are request-independent
-  phrasing (``GENERIC_TERMS``, which covers every lexicon the heuristics
-  reward) and *filler* adds the share of words of no recognized kind.
-  Ordinary prose keeps some such words at little cost; padding a reply with
-  boilerplate or salad is penalized steeply.
+    grounding = information * (0.5 + 0.5 * relevance) * quality * support
+                * (1 - repeated) * max(0, 1 - 2 * echoed) * (1 - off_request)
 
-``grounding = information * (0.5 + 0.5 * relevance) * quality``
+**Anchoring.** A reply is read clause by clause (split at punctuation and at
+"and"/"or"/"but"/"then"/"while"/"plus"). A clause naming a request term, a
+reference label or an evidence term is *anchored*: the first clause a term
+anchors gets weight 1, the second 0.5, later ones nothing (``ANCHOR_WEIGHTS``);
+a weak term -- boilerplate (``GENERIC_TERMS``), an action word, or one only the
+scenario description names (``context``, ``user_goal``, ``topic``...) --
+anchors at half that (``WEAK_ANCHOR``). A clause continues the anchored clause
+before it after a comma, parenthesis or conjunction, or when it opens with
+"then", "which", "it", "this"... (``INHERIT_DEPTH`` = 3 clauses; a reference
+back restarts the chain once per anchor). Clauses after a semicolon or colon,
+and new sentences, stand alone. The request's own opening words copied to the
+front of a reply anchor nothing.
 
-Templates, keyword stuffing, echoes, salad, terse replies and blanket
-refusals therefore have no information and score 0. Declining is grounded
-only when the request asks for help with something unsafe
-(``basic_rewards.harmful_request``: "how do I hack...", "where can I buy
-drugs"), not when it merely mentions an unsafe topic ("my card was stolen").
+**Specifics** are numbers and amounts (two or more characters), affirmed
+action words (``ACTION_TERMS``; "not issued" is not one) and code identifiers
+("sqlite3.connect", "fetchall("), excluding request terms and answer labels.
+A specific is *supported* with the weight of a clause stating it if it lies
+within ``PROXIMITY`` (8) content words of an anchor term, or -- in a continuing
+clause -- within the anchor's budget of ``INHERIT_SPECIFICS`` (4); a bare list
+item ("card 4093 blocked", no function word, not an instruction) continuing a
+clause states nothing. A specific found in the conversation's evidence (tool,
+observation and system turns; the context's ``observations``,
+``tool_outputs``, ``retrieved_facts``, ``correct_facts``... fields) is supported
+with weight 1 wherever it appears. Anything else is *unsupported*.
 
-Grounding is lexical: it cannot tell a fabricated number or action from a
-real one, and it does not read word order. It is a shaping signal like the
-heuristics it gates; for a training objective prefer outcome, verifier or
-judge rewards (see ``docs/REWARD_CONTRACT.md``, which lists exactly what the
-exploit search in ``stateset_agents.evaluation.reward_exploits`` verifies).
+**information** is ``1 - exp(-units / INFO_SCALE)`` (``INFO_SCALE`` = 6), with::
+
+    units = max(S, E) + 3 * answered_types + 0.5 * min(4, steps)
+
+* ``S``: the summed support of the distinct supported specifics, at most
+  ``2 + 2 * w`` where ``w`` counts the new words (not request terms,
+  boilerplate or specifics) of the anchored clauses -- specifics need context;
+* ``E``: elaboration, 0.25 per new word in anchored clauses, at most 1 (it
+  stands in for specifics in an answer without them and adds nothing beside
+  them);
+* ``answered_types`` (at most 2): the question's answer types the reply meets
+  in an anchored clause -- a capitalized name for "who", a cause ("because",
+  "so", "due to") with new words for "why", an instruction step for "how" /
+  "what should I", a number for "how many/much", "when" or a cost, a
+  location phrase for "where", "yes"/"no" for a yes/no question, and a
+  definition ("X is/has ...", not negated) for "what is";
+* ``steps``: distinct anchored instructions -- an instruction verb opening a
+  clause or following "and"/"then"/"first", or "you can/should <verb>" --
+  that state something new.
+
+With reference labels (``ground_truth``), a short label is the answer:
+``information = max(answer_credit, 0.5 * (1 - exp(-units / 6)))`` with no type
+units, where ``answer_credit`` is ``CorrectnessReward``'s (0 for a hedged or
+negated answer). Numbers other than a numeric answer are competing answers,
+not specifics.
+
+**relevance** is ``min(1, shared / min(3, known))``: request and label terms
+the reply mentions. **quality** is ``(1 - b) * (1 - (b + u) ** 2)`` where ``b``
+and ``u`` are the shares of boilerplate and of unrecognized words among the
+reply's content words plus its function words (counted up to one per content
+word). **support** is ``(units + 1) / (units + unsupported + 1)``: every
+unsupported specific costs. **repeated** is the share of anchored tokens that
+repeat a sentence or clause, a run of four tokens, a template refilled with
+other request terms, numbers and actions ("The pixel 4278 was refunded. The
+wi-fi 2237 was escalated."), or a request term mentioned more than twice.
+**echoed** is the share of anchored tokens copied from a request message in a
+run of at least half of it (and six tokens), or four fifths of a short one, or
+in a clause of nothing but request terms. **off_request** is the share of
+content words in clauses tied to nothing. Repetition and echo are measured
+against the anchored text, so appending unrelated text cannot dilute them.
+
+**Refusals.** When ``basic_rewards.harmful_request`` flags the request
+("how do I hack into my ex's email", "make a toxic gas to hurt my roommate",
+"... without getting caught"), declining scores 1 and any other reply 0.
+Otherwise a reply that declines keeps at most ``REFUSAL_FACTOR`` (half) of
+its grounding, and a blanket refusal has none (0). Benign uses of
+trigger words ("hack together a script", "kill a process", "shoot photos",
+"execute a query", "attack the problem") are not harmful intent.
+
+Grounding is lexical: it cannot tell a fabricated number or action stated
+beside a request term from a true one, and harmful intent phrased without its
+cues is not detected. ``docs/REWARD_CONTRACT.md`` states exactly what the
+exploit search in ``stateset_agents.evaluation.reward_exploits`` verifies and
+what it does not. Prefer outcome, verifier or judge rewards as objectives.
 """
 
 from __future__ import annotations
@@ -262,6 +308,9 @@ ECHO_WEIGHT = 2.0
 #: request (fluent padding, an appended answer to another question) costs
 #: its share.
 OFF_REQUEST_WEIGHT = 1.0
+#: Share of its grounding a reply keeps when it declines a request that
+#: ``harmful_request`` does not flag ("I can't help with that, but ...").
+REFUSAL_FACTOR = 0.5
 #: Mentions of one request term beyond this many are repetition.
 TERM_MENTIONS = 2
 #: Units for answering the question's type (a name for "who", a cause for
@@ -418,9 +467,7 @@ _CAUSAL = re.compile(
 )
 #: Verbs that open an instruction ("Open a connection", "Put the camera on").
 #: Boilerplate verbs ("try", "check", "click", "restart") are not steps.
-INSTRUCTION_VERBS = frozenset(
-    _stem(word)
-    for word in """
+INSTRUCTION_VERBS = frozenset(_stem(word) for word in """
     open create call use run find put loop read format get fetch stop force
     press select type enter go choose make write import save copy paste start
     pick keep mount hold wait list search pass print replace iterate convert
@@ -431,8 +478,7 @@ INSTRUCTION_VERBS = frozenset(
     reboot multiply divide subtract differentiate integrate simplify
     substitute factor expand apply lower raise increase decrease reduce
     lock unlock close kill shoot execute point focus mount frame expose
-    """.split()
-)
+    """.split())
 #: An instruction: a verb opening a clause or following "and", "then",
 #: "first", ... or "you can/should/need to".
 _STEP = re.compile(
@@ -598,9 +644,7 @@ def _anchor_weights(
             owner, depth, topic = index, 0, -1
             continue
         continues = (
-            clause.sep in ",()[]&"
-            or opener in _CONTINUATIONS
-            or opener in _ANAPHORS
+            clause.sep in ",()[]&" or opener in _CONTINUATIONS or opener in _ANAPHORS
         )
         if owner >= 0 and continues and depth < INHERIT_DEPTH:
             depth += 1
@@ -780,7 +824,8 @@ class _Reading:
             elif owner >= 0 and not _is_statement(clause):
                 # A bare list item continuing a clause ("..., card 4093
                 # blocked, fee 8812 waived") states nothing.
-                found[clause.index] = near = []
+                found[clause.index] = []
+                near = []
             elif owner >= 0:
                 left = budget.get(owner, INHERIT_SPECIFICS)
                 near = [s for s, _ in pairs][:left]
@@ -844,9 +889,7 @@ class _Reading:
     def type_satisfied(self, kind: str) -> bool:
         anchored = self.anchored()
         if kind == "quantity":
-            return any(
-                _is_number(s) for c in anchored for s in self.specifics[c.index]
-            )
+            return any(_is_number(s) for c in anchored for s in self.specifics[c.index])
         if kind == "entity":
             return bool(self.entities())
         if kind == "place":
@@ -856,7 +899,9 @@ class _Reading:
         if kind == "procedure":
             return self.steps() > 0
         if kind == "yes_no":
-            first = self.clauses[0].low[0] if self.clauses and self.clauses[0].low else ""
+            first = (
+                self.clauses[0].low[0] if self.clauses and self.clauses[0].low else ""
+            )
             return first in _YES_NO_ANSWERS
         if kind == "reason":
             return any(
@@ -1186,8 +1231,7 @@ def _grounding(
     tokens = [stem for clause in reading.clauses for stem in clause.stems]
     lows = [low for clause in reading.clauses for low in clause.low]
     request_tokens = [
-        [stem for clause in _clauses(part) for stem in clause.stems]
-        for part in parts
+        [stem for clause in _clauses(part) for stem in clause.stems] for part in parts
     ]
     specifics = {s for found in reading.specifics for s in found}
     recognized = known | specifics | evidence_terms
@@ -1198,26 +1242,33 @@ def _grounding(
     ]
     # Function words count up to one per content word: ordinary prose keeps
     # its share, and padding with "the of and" buys nothing.
-    function_words = sum(1 for low in lows if low in STOPWORDS and low not in _NEGATIONS)
+    function_words = sum(
+        1 for low in lows if low in STOPWORDS and low not in _NEGATIONS
+    )
     size = max(1, len(content) + min(function_words, len(content)))
-    boilerplate = sum(
-        1 for _, s in content if s in _GENERIC and s not in recognized
-    ) / size
-    unknown = sum(
-        1
-        for _, s in content
-        if s not in _GENERIC
-        and s not in recognized
-        and not _is_number(s)
-        and s not in ACTION_TERMS
-    ) / size
+    boilerplate = (
+        sum(1 for _, s in content if s in _GENERIC and s not in recognized) / size
+    )
+    unknown = (
+        sum(
+            1
+            for _, s in content
+            if s not in _GENERIC
+            and s not in recognized
+            and not _is_number(s)
+            and s not in ACTION_TERMS
+        )
+        / size
+    )
     quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** QUALITY_POWER)
     support = (units + 1.0) / (units + unsupported + 1.0)
     # Repetition and echo are measured against the reply's anchored text, so
     # appending unrelated text cannot dilute them.
     anchored_size = sum(len(c.stems) for c in reading.anchored()) or len(tokens)
     repeated = min(1.0, _repeated_share(reading, tokens) * len(tokens) / anchored_size)
-    echoed = min(1.0, _echo_share(reading, tokens, request_tokens) * len(tokens) / anchored_size)
+    echoed = min(
+        1.0, _echo_share(reading, tokens, request_tokens) * len(tokens) / anchored_size
+    )
     off_request = _off_request_share(reading)
     originality = (1.0 - repeated) * max(0.0, 1.0 - ECHO_WEIGHT * echoed)
     score = (
@@ -1228,6 +1279,10 @@ def _grounding(
         * originality
         * (1.0 - OFF_REQUEST_WEIGHT * off_request)
     )
+    if declines(reply):
+        # Declining a request not flagged harmful is never the better reply:
+        # whatever else the reply says earns at most REFUSAL_FACTOR of it.
+        score *= REFUSAL_FACTOR
     details = {
         "information": information,
         "relevance": relevance,

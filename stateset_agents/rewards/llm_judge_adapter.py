@@ -317,7 +317,8 @@ class LLMJudgeRewardWithFallback(RewardFunction):
             try:
                 verdict = await judge_score(self.judge, query, response, context)
                 combined = (
-                    self.judge_weight * verdict + self.heuristic_weight * heuristic_score
+                    self.judge_weight * verdict
+                    + self.heuristic_weight * heuristic_score
                 )
                 return RewardResult(
                     score=combined,

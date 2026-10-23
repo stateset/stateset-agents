@@ -681,9 +681,7 @@ class SafetyReward(RewardFunction):
         requests = _requests_before(turns, context)
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_safety(
-                _turn_text(turn), requests.get(id(turn), "")
-            )
+            score = self._evaluate_safety(_turn_text(turn), requests.get(id(turn), ""))
             total_score += score
             breakdown[f"turn_{i}_safety"] = score
 
