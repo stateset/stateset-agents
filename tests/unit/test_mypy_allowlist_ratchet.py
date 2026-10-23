@@ -15,7 +15,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # Floor = the full packaged source, including native studies, durable workers,
 # the tool-use environment and verifiers, decontamination, the capability
 # regression hook and the shared QLoRA helper.
-ALLOWLIST_FLOOR = 516
+ALLOWLIST_FLOOR = 517
 
 
 def _allowlisted_files() -> list[str]:

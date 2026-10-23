@@ -67,7 +67,6 @@ BLE_BASELINE: dict[str, int] = {
     "stateset_agents/remote/river_runtime.py": 3,
     "stateset_agents/remote/runpod.py": 4,
     "stateset_agents/remote/serve_session.py": 5,
-    "stateset_agents/rewards/llm_judge_adapter.py": 2,
     "stateset_agents/rewards/nsr_verifier.py": 1,
     "stateset_agents/rewards/symbolic_physics_reward.py": 10,
     "stateset_agents/training/single_turn_trainer.py": 1,

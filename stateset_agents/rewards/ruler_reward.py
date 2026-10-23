@@ -11,9 +11,10 @@ while delegating to the modern backend.
 
 from __future__ import annotations
 
-import warnings
 from dataclasses import dataclass
 from typing import Any
+
+from stateset_agents._deprecation import warn_deprecated
 
 from .llm_reward import RulerRewardFunction as _LLMRulerRewardFunction
 
@@ -41,10 +42,10 @@ class RulerRewardFunction(_LLMRulerRewardFunction):
 
     def __init__(self, config: RulerConfig | None = None, **kwargs: Any):
         if config is not None:
-            warnings.warn(
-                "Passing RulerConfig is deprecated; instantiate "
-                "RulerRewardFunction with keyword args instead.",
-                DeprecationWarning,
+            warn_deprecated(
+                "Passing RulerConfig to RulerRewardFunction",
+                removal="0.71.0",
+                replacement="RulerRewardFunction keyword arguments",
                 stacklevel=2,
             )
             super().__init__(

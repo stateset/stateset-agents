@@ -519,7 +519,6 @@ ignore = [
 "stateset_agents/remote/river_runtime.py" = ["BLE001"]
 "stateset_agents/remote/runpod.py" = ["BLE001"]
 "stateset_agents/remote/serve_session.py" = ["BLE001"]
-"stateset_agents/rewards/llm_judge_adapter.py" = ["BLE001"]
 "stateset_agents/rewards/nsr_verifier.py" = ["BLE001"]
 "stateset_agents/rewards/symbolic_physics_reward.py" = ["BLE001"]
 "stateset_agents/training/single_turn_trainer.py" = ["BLE001"]

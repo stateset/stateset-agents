@@ -46,10 +46,7 @@ _UNDATED = re.compile(
 #: Deprecations in modules owned by other workstreams whose warning text does
 #: not (yet) carry the date. The removal release is recorded here and in the
 #: CHANGELOG; drop an entry once the module's own warning states the version.
-EXTERNAL_SCHEDULE: dict[str, str] = {
-    # ``RulerRewardFunction(config=RulerConfig(...))`` (deprecated since v0.6.0).
-    "stateset_agents/rewards/ruler_reward.py": "0.71.0",
-}
+EXTERNAL_SCHEDULE: dict[str, str] = {}
 
 
 def _version_tuple(text: str) -> tuple[int, int, int]:
