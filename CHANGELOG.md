@@ -93,6 +93,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the conversation route's 422 details). `tests/unit/test_complexity_ratchet.py`
   fails if the number of functions over 150 lines or 40 branches rises above
   77 (it was 82).
+- **Timezone-aware UTC everywhere.** The 47 `datetime.utcnow()` calls (and
+  the `default_factory=datetime.utcnow` fields), all in the gateway, use
+  `stateset_agents.utils.clock` (`utc_now`, `utc_isoformat`, `as_utc`)
+  instead of the naive API deprecated in Python 3.12. The `...Z` timestamp
+  strings (health, errors, `PaginatedResponse`) are byte-identical; datetime
+  fields in the non-v1 agent, training-job and metrics responses now carry a
+  `Z` (UTC) suffix, metrics and log timestamps that had no zone now end in
+  `Z`, and persisted naive timestamps are read back as UTC. Stable `/api/v1`
+  and `/v1` responses are unchanged.
 
 ### Deprecated
 

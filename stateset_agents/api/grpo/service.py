@@ -10,8 +10,9 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Any
+
+from stateset_agents.utils.clock import utc_isoformat
 
 try:
     import uvicorn
@@ -87,7 +88,7 @@ def _build_error_response(
         "error": {"message": message, "status_code": status_code},
         "request_id": request_id,
         "path": str(request.url.path),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_isoformat(),
     }
     if details is not None:
         payload["error"]["details"] = details

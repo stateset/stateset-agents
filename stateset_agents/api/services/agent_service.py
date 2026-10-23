@@ -3,13 +3,13 @@ import os
 import time
 import uuid
 from dataclasses import replace
-from datetime import datetime
 from typing import Any
 
 from fastapi import HTTPException
 
 from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
+from stateset_agents.utils.clock import utc_now
 from stateset_agents.utils.security import SecurityMonitor
 
 from ..schemas import AgentConfigRequest, ConversationRequest, ConversationResponse
@@ -67,7 +67,7 @@ class AgentService:
         conversation = {
             "id": conversation_id,
             "messages": [],
-            "created_at": datetime.utcnow(),
+            "created_at": utc_now(),
             "last_message_at": None,
             "total_tokens": 0,
             "metadata": {},
@@ -365,7 +365,7 @@ class AgentService:
                 # Rough approximation if no tokenizer
                 tokens_used = int(len(response_text.split()) * 1.3)
 
-            conversation["last_message_at"] = datetime.utcnow()
+            conversation["last_message_at"] = utc_now()
             conversation["total_tokens"] = int(
                 conversation.get("total_tokens", 0)
             ) + int(tokens_used)

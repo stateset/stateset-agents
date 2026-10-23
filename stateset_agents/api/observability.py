@@ -11,12 +11,12 @@ import time
 import uuid
 from collections.abc import Callable, Mapping
 from contextvars import ContextVar
-from datetime import datetime
 from functools import wraps
 from types import MappingProxyType
 from typing import Any
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.utils.clock import utc_isoformat, utc_now
 
 from .config import get_config
 
@@ -46,7 +46,7 @@ class StructuredLogFormatter(logging.Formatter):
         trace_ctx = _trace_context.get()
 
         log_entry: dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
@@ -117,7 +117,7 @@ class ConsoleLogFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         """Format log record for console."""
         color = self.COLORS.get(record.levelname, "")
-        timestamp = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = utc_now().strftime("%Y-%m-%d %H:%M:%S")
 
         # Get trace context
         trace_ctx = _trace_context.get()

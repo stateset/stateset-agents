@@ -9,12 +9,13 @@ from __future__ import annotations
 import logging
 import time
 import uuid
-from datetime import datetime
 from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
+
+from stateset_agents.utils.clock import utc_isoformat, utc_now
 
 from ..auth import RequestContext, get_request_context
 from ..config import get_config
@@ -297,7 +298,7 @@ async def health_v1(request: Request) -> dict[str, Any]:
         "version": config.api_version,
         "uptime_seconds": uptime_seconds,
         "components": components,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_isoformat(),
     }
 
 
@@ -379,7 +380,7 @@ async def start_training_v1(
     jobs[job_id] = {
         "job_id": job_id,
         "status": "running",
-        "created_at": datetime.utcnow(),
+        "created_at": utc_now(),
         "user_id": ctx.user.user_id,
         "strategy": payload.strategy,
         "num_iterations": payload.num_iterations,

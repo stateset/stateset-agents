@@ -6,7 +6,6 @@ Unified error handling with consistent response format across all API services.
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from enum import Enum
 from typing import Any, TypeVar, cast
 
@@ -17,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import ExceptionHandler
+
+from stateset_agents.utils.clock import utc_isoformat
 
 from ..core.errors import ErrorContext as _CoreErrorContext
 from ..core.errors import StateSetError
@@ -149,7 +150,7 @@ class APIError(StateSetError):
                 "message": self.message,
             },
             "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_isoformat(),
             "path": path,
         }
 
@@ -386,7 +387,7 @@ def build_error_response(
             "message": message,
         },
         "request_id": request_id,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_isoformat(),
         "path": str(request.url.path),
     }
 

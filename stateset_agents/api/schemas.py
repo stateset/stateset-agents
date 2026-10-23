@@ -8,6 +8,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
 
+from stateset_agents.utils.clock import utc_isoformat, utc_now
+
 
 class APIResponse(BaseModel):
     """Base response model with common fields."""
@@ -16,13 +18,13 @@ class APIResponse(BaseModel):
 
     request_id: str | None = Field(default=None, description="Request tracking ID")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
+        default_factory=utc_now, description="Response timestamp"
     )
 
     @field_serializer("timestamp")
     def _serialize_timestamp(self, timestamp: datetime) -> str:
-        # Consistent 'Z' suffix for naive UTC datetimes.
-        return timestamp.isoformat() + "Z"
+        # Consistent 'Z' suffix (naive values are taken as UTC).
+        return utc_isoformat(timestamp)
 
 
 class PaginatedResponse(APIResponse):
