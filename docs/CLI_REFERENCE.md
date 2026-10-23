@@ -122,10 +122,53 @@ object of `PreferenceConfig`/`RewardModelConfig` fields; unknown keys are
 refused; flags override it), `--model-revision`, `--beta`, `--learning-rate`,
 `--epochs`, `--max-steps`, `--batch-size`, `--gradient-accumulation-steps`,
 `--max-length`, `--max-prompt-length`, `--label-smoothing`, `--simpo-gamma`,
-`--lora/--no-lora`, `--precompute-reference/--no-precompute-reference`,
-`--seed`, `--device`, `--dry-run`. Policy-only flags are refused with
-`--method rm`. Prints a JSON plan (dry run) or report; exits 2 on invalid
+`--lora/--no-lora` (LoRA adapters on the policy, or on the reward-model
+backbone with `--method rm`),
+`--precompute-reference/--no-precompute-reference`, `--seed`, `--device`,
+`--dry-run`. Policy-only flags are refused with `--method rm`. Prints a JSON plan (dry run) or report; exits 2 on invalid
 data or settings.
+
+### `stateset-agents distill`
+
+Distil a frozen teacher into a student: offline logit KD (forward KL, reverse
+KL or generalized JSD over response tokens, with temperature; optionally from
+a top-k teacher cache) or on-policy GKD (`--lmbda`). Provisional; see
+[DISTILLATION.md](DISTILLATION.md).
+
+```bash
+# Validate data, split and settings without loading a model (torch-free)
+stateset-agents distill --train-data distill.jsonl --validation-fraction 0.05 --dry-run
+# Offline KD; shared alignment handles padded embedding widths
+stateset-agents distill --model Qwen/Qwen3.5-0.8B --teacher Qwen/Qwen3.5-9B \
+  --train-data distill.jsonl --validation-fraction 0.05 --vocab-alignment shared \
+  --lora --output-dir outputs/kd
+# On-policy GKD, half the batches on student samples
+stateset-agents distill --model student --teacher teacher --train-data distill.jsonl \
+  --lmbda 0.5 --divergence jsd --jsd-beta 0.5 --max-new-tokens 256
+# Build and save a top-k teacher cache, then train from it without the teacher
+stateset-agents distill --model student --teacher teacher --train-data distill.jsonl \
+  --teacher-top-k 32 --save-teacher-cache top32.pt
+stateset-agents distill --model student --teacher-cache top32.pt --teacher-top-k 32 \
+  --train-data distill.jsonl
+```
+
+Options: `--train-data` (required JSONL of `prompt`/`messages` with an
+optional `completion`; completions are required unless `--lmbda 1`),
+`--model` (student) and `--teacher` (Hugging Face ids or local directories;
+required unless `--dry-run`, the teacher unless `--teacher-cache`),
+`--eval-data` (must not share prompts, groups or sources with the training
+data) or `--validation-fraction`, `--output-dir` (final checkpoint in
+`<dir>/final` plus `distillation_metrics.json`), `--config` (JSON object of
+`DistillationConfig` fields; unknown keys are refused; flags override it),
+`--divergence` (`forward_kl`/`reverse_kl`/`jsd`), `--jsd-beta`,
+`--temperature`, `--lmbda`, `--on-policy-loss` (`full`/`sampled`),
+`--max-new-tokens`, `--teacher-top-k`, `--teacher-cache`,
+`--save-teacher-cache`, `--vocab-alignment` (`strict`/`shared`),
+`--learning-rate`, `--epochs`, `--max-steps`, `--batch-size`,
+`--gradient-accumulation-steps`, `--max-length`, `--max-prompt-length`,
+`--lora/--no-lora`, `--seed`, `--device`, `--model-revision`,
+`--teacher-revision`, `--dry-run`. Prints a JSON plan (dry run) or report;
+exits 2 on invalid data or settings (including a vocabulary mismatch).
 
 ### `stateset-agents provider-canary`
 

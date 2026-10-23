@@ -45,8 +45,10 @@ __all__ = [
     "group_preference_records",
     "load_preference_jsonl",
     "parse_preference_record",
+    "rank_groups",
     "resolve_splits",
     "split_preference_dataset",
+    "split_records",
     "write_preference_jsonl",
 ]
 
@@ -473,7 +475,7 @@ def write_preference_jsonl(dataset: PreferenceDataset, path: str | Path) -> Path
     return target
 
 
-def _identity_keys(record: PreferenceRecord) -> set[str]:
+def _identity_keys(record: Any) -> set[str]:
     keys = {"prompt:" + prompt_identity(record.identity_text)}
     if record.group_id is not None:
         keys.add("group:" + record.group_id)
@@ -482,17 +484,36 @@ def _identity_keys(record: PreferenceRecord) -> set[str]:
     return keys
 
 
-def _record_key(record: PreferenceRecord) -> str:
-    kind = "pair" if isinstance(record, PreferencePair) else "unpaired"
+def _record_key(record: Any) -> str:
+    if isinstance(record, PreferencePair):
+        kind = "pair"
+    elif isinstance(record, UnpairedExample):
+        kind = "unpaired"
+    else:  # another record type with the same identity fields (distillation)
+        kind = type(record).__name__
     return _canonical({"kind": kind, **record.to_dict()})
 
 
+def rank_groups(groups: Sequence[Sequence[Any]], seed: int) -> list[Sequence[Any]]:
+    """Groups in the deterministic, input-order-independent split order."""
+    return sorted(
+        groups,
+        key=lambda group: hashlib.sha256(
+            f"{seed}:{_canonical([_record_key(r) for r in group])}".encode()
+        ).hexdigest(),
+    )
+
+
 def group_preference_records(
-    records: Iterable[PreferenceRecord],
-) -> list[list[PreferenceRecord]]:
+    records: Iterable[Any],
+) -> list[list[Any]]:
     """Deduplicate records and group those transitively sharing a request
-    identity, ``group_id`` or ``source_id``. Input order does not matter."""
-    unique: dict[str, PreferenceRecord] = {}
+    identity, ``group_id`` or ``source_id``. Input order does not matter.
+
+    Any record type with ``identity_text``, ``group_id``, ``source_id`` and
+    ``to_dict()`` groups the same way (distillation examples do).
+    """
+    unique: dict[str, Any] = {}
     for record in records:
         unique.setdefault(_record_key(record), record)
     ordered = [unique[key] for key in sorted(unique)]
@@ -510,16 +531,15 @@ def group_preference_records(
             if key in owners:
                 parents[root(index)] = root(owners[key])
             owners[key] = index
-    groups: dict[int, list[PreferenceRecord]] = {}
+    groups: dict[int, list[Any]] = {}
     for index, record in enumerate(ordered):
         groups.setdefault(root(index), []).append(record)
     return list(groups.values())
 
 
-def check_preference_overlap(
-    train: PreferenceDataset, evaluation: PreferenceDataset
-) -> None:
-    """Reject a shared request identity, group or source across two splits."""
+def check_preference_overlap(train: Any, evaluation: Any) -> None:
+    """Reject a shared request identity, group or source across two splits
+    (any datasets exposing ``records``)."""
     train_keys: set[str] = set()
     for record in train.records:
         train_keys |= _identity_keys(record)
@@ -536,15 +556,12 @@ def check_preference_overlap(
         )
 
 
-def split_preference_dataset(
-    dataset: PreferenceDataset, validation_fraction: float = 0.1, seed: int = 42
-) -> tuple[PreferenceDataset, PreferenceDataset]:
-    """Deterministically split connected prompt/source groups.
-
-    The fraction applies to groups, so the record fraction may differ. Exact
-    duplicate records are removed. The result does not depend on input order,
-    and the two splits never share a request identity, group or source.
-    """
+def split_records(
+    records: Sequence[Any], validation_fraction: float, seed: int
+) -> tuple[list[Any], list[Any]]:
+    """``(train, evaluation)`` records: connected prompt/source groups (see
+    :func:`group_preference_records`) assigned whole to one side, in the
+    deterministic :func:`rank_groups` order. Exact duplicates are dropped."""
     if (
         isinstance(validation_fraction, bool)
         or not isinstance(validation_fraction, int | float)
@@ -554,25 +571,33 @@ def split_preference_dataset(
         raise ValueError("validation_fraction must be between 0 and 1")
     if isinstance(seed, bool) or not isinstance(seed, int):
         raise ValueError("seed must be an integer")
-    groups = group_preference_records(dataset.records)
+    groups = group_preference_records(records)
     if len(groups) < 2:
         raise ValueError("At least two independent prompt/source groups are required")
-    duplicates = len(dataset) - sum(len(group) for group in groups)
+    duplicates = len(records) - sum(len(group) for group in groups)
     if duplicates:
-        logger.info("Dropped %d duplicate preference records", duplicates)
-    ranked = sorted(
-        groups,
-        key=lambda group: hashlib.sha256(
-            f"{seed}:{_canonical([_record_key(r) for r in group])}".encode()
-        ).hexdigest(),
-    )
+        logger.info("Dropped %d duplicate records", duplicates)
+    ranked = rank_groups(groups, seed)
     count = max(1, min(len(ranked) - 1, round(len(ranked) * validation_fraction)))
-    evaluation = PreferenceDataset.from_records(
-        record for group in ranked[:count] for record in group
+    evaluation = [record for group in ranked[:count] for record in group]
+    train = [record for group in ranked[count:] for record in group]
+    return train, evaluation
+
+
+def split_preference_dataset(
+    dataset: PreferenceDataset, validation_fraction: float = 0.1, seed: int = 42
+) -> tuple[PreferenceDataset, PreferenceDataset]:
+    """Deterministically split connected prompt/source groups.
+
+    The fraction applies to groups, so the record fraction may differ. Exact
+    duplicate records are removed. The result does not depend on input order,
+    and the two splits never share a request identity, group or source.
+    """
+    train_records, eval_records = split_records(
+        dataset.records, validation_fraction, seed
     )
-    train = PreferenceDataset.from_records(
-        record for group in ranked[count:] for record in group
-    )
+    evaluation = PreferenceDataset.from_records(eval_records)
+    train = PreferenceDataset.from_records(train_records)
     check_preference_overlap(train, evaluation)
     return train, evaluation
 

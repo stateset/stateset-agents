@@ -24,6 +24,7 @@ REQUIRED_COMPONENT_IDS = {
     "core-agents",
     "data-decontamination",
     "deployment-assets",
+    "distillation",
     "distributed-rollouts",
     "environments-rewards",
     "external-training-backends",

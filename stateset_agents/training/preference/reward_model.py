@@ -11,6 +11,7 @@ finite, and deterministic (eval mode, no gradients).
 
 from __future__ import annotations
 
+import copy
 import importlib
 import logging
 import math
@@ -49,7 +50,12 @@ from .losses import (
     pairwise_accuracy,
     pairwise_auc,
 )
-from .trainer import PreferenceTrainingSummary, _PairItem, encode_pairs
+from .trainer import (
+    PreferenceTrainingSummary,
+    _apply_lora,
+    _PairItem,
+    encode_pairs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +150,9 @@ class RewardModelTrainer(_loop.WindowedTrainer):
 
     ``model`` is a ``PairwiseRewardModel`` or a backbone to wrap (a Hugging
     Face base or causal LM). Pairs' ``margin`` is used when
-    ``config.use_margin``; pair ``weight`` scales its loss.
+    ``config.use_margin``; pair ``weight`` scales its loss. With
+    ``config.use_lora`` the backbone is wrapped in LoRA adapters (``peft``)
+    and only the adapters and the reward head train.
     """
 
     trainer_kind = "reward_model"
@@ -169,6 +177,10 @@ class RewardModelTrainer(_loop.WindowedTrainer):
         _loop.seed_everything(self.config.seed)
         if not isinstance(model, PairwiseRewardModel):
             model = PairwiseRewardModel(model)
+        if self.config.use_lora:
+            model.backbone = _apply_lora(
+                model.backbone, self.config, task_type="FEATURE_EXTRACTION"
+            )
         self.model = model
         self.tokenizer = tokenizer
         self.device = _loop.resolve_device(self.config.device, model)
@@ -355,7 +367,12 @@ class RewardModelTrainer(_loop.WindowedTrainer):
         if meta.get("schema") != _TRAINER_SCHEMA:
             raise ValueError(f"{path} is not a reward-model checkpoint")
         model_dir = path / "reward_model"
-        _read_model_meta(model_dir)
+        saved = _read_model_meta(model_dir)
+        if bool(saved.get("lora")) != _is_peft(self.model.backbone):
+            raise ValueError(
+                "the checkpoint and this trainer disagree on use_lora; construct "
+                "the trainer with the checkpoint's settings"
+            )
         if not load_model_checkpoint(
             self.model.backbone, model_dir, torch_module=torch, trusted=trusted
         ):
@@ -387,47 +404,121 @@ def _load_head(model: PairwiseRewardModel, directory: Path, *, trusted: bool) ->
     model.head.load_state_dict(state, strict=True)
 
 
+def _is_peft(backbone: Any) -> bool:
+    return bool(getattr(backbone, "peft_config", None)) and callable(
+        getattr(backbone, "get_base_model", None)
+    )
+
+
+def _base_name(backbone: Any) -> str | None:
+    """The base model's ``name_or_path`` recorded by Hugging Face, if any."""
+    base = backbone.get_base_model() if _is_peft(backbone) else backbone
+    name = getattr(getattr(base, "config", None), "_name_or_path", None)
+    return name if isinstance(name, str) and name else None
+
+
 def save_reward_model(
     model: PairwiseRewardModel,
     tokenizer: Any,
     directory: str | Path,
     encoder: PreferenceEncoder,
+    *,
+    merge_lora: bool = False,
 ) -> Path:
     """Save the backbone (``save_pretrained``), head, tokenizer and the
-    encoder settings scoring must reuse."""
+    encoder settings scoring must reuse.
+
+    A LoRA backbone saves its adapter only (plus the base model's
+    ``name_or_path``, which loading needs); ``merge_lora=True`` saves a
+    merged, standalone backbone instead.
+    """
     from stateset_agents import __version__
 
     path = Path(directory)
-    _loop.save_model_dir(model.backbone, tokenizer, path)
+    backbone = model.backbone
+    lora = _is_peft(backbone)
+    if lora and merge_lora:
+        backbone = copy.deepcopy(backbone).merge_and_unload()
+        lora = False
+    _loop.save_model_dir(backbone, tokenizer, path)
     torch.save(model.head.state_dict(), path / _HEAD_FILE)
+    base = backbone.get_base_model() if lora else backbone
     _loop.write_json(
         path / _MODEL_META,
         {
             "schema": REWARD_MODEL_SCHEMA,
-            "backbone_class": type(model.backbone).__name__,
+            "backbone_class": type(base).__name__,
             "hidden_size": model.hidden_size,
             "encoder": encoder.settings(),
+            "lora": lora,
+            "base_model": _base_name(model.backbone) if lora else None,
             "package_version": __version__,
         },
     )
     return path
 
 
+def _backbone_class(transformers: Any, meta: dict[str, Any]) -> Any:
+    model_cls = getattr(transformers, str(meta.get("backbone_class")), None)
+    if not (isinstance(model_cls, type) and hasattr(model_cls, "from_pretrained")):
+        model_cls = transformers.AutoModel
+    return model_cls
+
+
+def _load_lora_backbone(
+    transformers: Any,
+    path: Path,
+    meta: dict[str, Any],
+    base_model: Any,
+    *,
+    trusted: bool,
+) -> Any:
+    """The saved adapter on its base model (a loaded module, a local path or
+    a cached model id; local files only)."""
+    from peft import LoraConfig, get_peft_model
+
+    from ..model_checkpoint import load_model_checkpoint
+
+    base = base_model if base_model is not None else meta.get("base_model")
+    if base is None:
+        raise ValueError(
+            f"{path} holds a LoRA adapter without a recorded base model; pass "
+            "base_model= (the backbone it was trained on)"
+        )
+    if isinstance(base, str | Path):
+        base = _backbone_class(transformers, meta).from_pretrained(
+            str(base), local_files_only=True, trust_remote_code=False
+        )
+    backbone = get_peft_model(base, LoraConfig.from_pretrained(str(path)))
+    if not load_model_checkpoint(backbone, path, torch_module=torch, trusted=trusted):
+        raise ValueError(f"{path} holds no adapter weights")
+    return backbone
+
+
 def load_reward_model(
-    directory: str | Path, *, trusted: bool = False, device: Any = None
+    directory: str | Path,
+    *,
+    trusted: bool = False,
+    device: Any = None,
+    base_model: Any = None,
 ) -> tuple[PairwiseRewardModel, Any, PreferenceEncoder]:
     """Load a saved reward model, its tokenizer and its encoder (local files
-    only, no remote code)."""
+    only, no remote code). A LoRA reward model loads its adapter onto
+    ``base_model`` (a backbone module or path; default: the recorded base)."""
     transformers = importlib.import_module("transformers")
     path = Path(directory)
     meta = _read_model_meta(path)
     validate_local_shard_indexes(path)
-    model_cls = getattr(transformers, str(meta.get("backbone_class")), None)
-    if not (isinstance(model_cls, type) and hasattr(model_cls, "from_pretrained")):
-        model_cls = transformers.AutoModel
-    backbone = model_cls.from_pretrained(
-        str(path), local_files_only=True, trust_remote_code=False
-    )
+    if meta.get("lora"):
+        backbone = _load_lora_backbone(
+            transformers, path, meta, base_model, trusted=trusted
+        )
+    else:
+        if base_model is not None:
+            raise ValueError("base_model applies to LoRA reward models only")
+        backbone = _backbone_class(transformers, meta).from_pretrained(
+            str(path), local_files_only=True, trust_remote_code=False
+        )
     tokenizer = transformers.AutoTokenizer.from_pretrained(
         str(path), local_files_only=True, trust_remote_code=False
     )
@@ -549,17 +640,21 @@ def load_reward_function(
     *,
     trusted: bool = False,
     device: Any = None,
+    base_model: Any = None,
     **kwargs: Any,
 ) -> PairwiseRewardFunction:
     """A :class:`PairwiseRewardFunction` from :func:`save_reward_model` output
-    (a trainer checkpoint's ``reward_model/`` directory, or the checkpoint)."""
+    (a trainer checkpoint's ``reward_model/`` directory, or the checkpoint).
+    ``base_model`` is the backbone a LoRA reward model's adapter loads onto."""
     path = Path(directory)
     if (
         not (path / _MODEL_META).exists()
         and (path / "reward_model" / _MODEL_META).exists()
     ):
         path = path / "reward_model"
-    model, tokenizer, encoder = load_reward_model(path, trusted=trusted, device=device)
+    model, tokenizer, encoder = load_reward_model(
+        path, trusted=trusted, device=device, base_model=base_model
+    )
     return PairwiseRewardFunction(model, tokenizer, encoder=encoder, **kwargs)
 
 
@@ -592,9 +687,10 @@ def train_reward_model(
 
     ``model`` is a backbone, a :class:`PairwiseRewardModel`, or a Hugging Face
     model id (loaded with ``AutoModel``, no remote code). Data handling and
-    ``overrides`` follow :func:`train_preference`. With ``config.output_dir``
-    the final checkpoint is saved to ``<output_dir>/final`` (its
-    ``reward_model/`` loads with :func:`load_reward_function`).
+    ``overrides`` follow :func:`train_preference`; ``use_lora=True`` trains
+    LoRA adapters and the head only. With ``config.output_dir`` the final
+    checkpoint is saved to ``<output_dir>/final`` (its ``reward_model/``
+    loads with :func:`load_reward_function`).
     """
     settings = replace(config or RewardModelConfig(), **overrides)
     settings.validate()

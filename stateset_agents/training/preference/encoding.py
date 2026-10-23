@@ -29,7 +29,10 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from stateset_agents.core.chat_masking import final_turn_token_mask
+from stateset_agents.core.chat_masking import (
+    chat_template_render,
+    final_turn_token_mask,
+)
 
 from .data import Message
 
@@ -203,6 +206,35 @@ class PreferenceEncoder:
         if not response_ids:
             raise ValueError("the response encodes to no tokens")
         return self._truncate(prompt_ids, response_ids)
+
+    def encode_prompt(self, prompt: str | Sequence[Message]) -> tuple[int, ...]:
+        """The generation prompt for ``prompt``: what a sampled response
+        continues (the chat template with its generation prompt, or the
+        ``plain``/``raw`` text), with ``max_prompt_length`` keeping its end.
+
+        On-policy trainers sample from these ids and score the sampled token
+        ids as they are, never a decode/re-encode of them.
+        """
+        rendering = self.resolve_format(prompt)
+        if rendering == "chat_template":
+            text = chat_template_render(self.tokenizer)(_as_messages(prompt), True)
+            if not text:
+                raise ValueError("the chat template could not render the prompt")
+            ids = self._tokenize(text, special=False)
+        else:
+            text = (
+                prompt
+                if rendering == "raw" and isinstance(prompt, str)
+                else render_plain_prompt(_as_messages(prompt))
+            )
+            ids = self._tokenize(text, special=True)
+        if not ids:
+            bos = getattr(self.tokenizer, "bos_token_id", None)
+            if not isinstance(bos, int) or isinstance(bos, bool):
+                raise ValueError("the prompt encodes to no tokens")
+            ids = [bos]
+        limit = self.max_prompt_length or self.max_length - 1
+        return tuple(ids[-limit:])
 
     def _encode_chat(
         self, prompt: str | Sequence[Message], response: str | Message

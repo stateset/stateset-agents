@@ -130,8 +130,13 @@ def encode_pairs(
     return items
 
 
-def _apply_lora(model: Any, config: PreferenceConfig) -> Any:
-    """Wrap ``model`` in a PEFT LoRA adapter on its text stack."""
+def _apply_lora(model: Any, config: Any, *, task_type: str = "CAUSAL_LM") -> Any:
+    """Wrap ``model`` in a PEFT LoRA adapter on its text stack.
+
+    ``config`` carries ``lora_r``/``lora_alpha``/``lora_dropout``/
+    ``lora_target_modules``; ``task_type`` is a ``peft.TaskType`` name
+    (``FEATURE_EXTRACTION`` for a reward-model backbone).
+    """
     try:
         from peft import LoraConfig, TaskType, get_peft_model
     except ImportError as exc:  # pragma: no cover - depends on the environment
@@ -154,7 +159,7 @@ def _apply_lora(model: Any, config: PreferenceConfig) -> Any:
         lora_dropout=config.lora_dropout,
         target_modules=targets or None,
         bias="none",
-        task_type=TaskType.CAUSAL_LM,
+        task_type=TaskType[task_type],
     )
     return get_peft_model(model, lora)
 

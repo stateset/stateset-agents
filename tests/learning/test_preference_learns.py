@@ -121,7 +121,9 @@ def test_other_methods_increase_the_margin(seed: int, method: str) -> None:
     assert after > before + 2.0, (method, before, after)
 
 
-def _train_reward_model(seed: int, *, prefer_digits: bool) -> dict[str, float]:
+def _train_reward_model(
+    seed: int, *, prefer_digits: bool, **lora: Any
+) -> dict[str, float]:
     from stateset_agents.training.preference import (
         RewardModelConfig,
         RewardModelTrainer,
@@ -139,13 +141,15 @@ def _train_reward_model(seed: int, *, prefer_digits: bool) -> dict[str, float]:
         max_prompt_length=None,
         device="cpu",
         seed=seed,
+        **lora,
     )
     trainer = RewardModelTrainer(
         make_model(seed).transformer, make_tokenizer(), config, train, heldout
     )
+    before = trainer.evaluate()
     summary = trainer.train()
     assert summary.eval_metrics is not None
-    return summary.eval_metrics
+    return {**summary.eval_metrics, "before/accuracy": before["eval/accuracy"]}
 
 
 @pytest.mark.parametrize("seed", seeds())
@@ -162,3 +166,29 @@ def test_bradley_terry_swapped_labels_invert_the_ranking(seed: int) -> None:
     metrics = _train_reward_model(seed, prefer_digits=False)
     assert metrics["eval/accuracy"] <= 0.125, metrics
     assert metrics["eval/auc"] <= 0.2, metrics
+
+
+LORA = {
+    "use_lora": True,
+    "lora_r": 8,
+    "lora_alpha": 16,
+    "lora_dropout": 0.0,
+}
+
+
+@pytest.mark.parametrize("seed", seeds())
+def test_lora_reward_model_learns_the_ranking(seed: int) -> None:
+    # Only the LoRA adapters (all attention/MLP projections) and the head
+    # train. Observed (seeds 0/1/2): held-out accuracy 0.375 / 0.5 / 0.5 ->
+    # 1.0 / 1.0 / 1.0, AUC 0.86 / 1.0 / 1.0.
+    pytest.importorskip("peft")
+    metrics = _train_reward_model(seed, prefer_digits=True, **LORA)
+    assert metrics["eval/accuracy"] >= 0.875 > metrics["before/accuracy"], metrics
+    assert metrics["eval/auc"] >= 0.8, metrics
+
+
+@pytest.mark.parametrize("seed", seeds())
+def test_lora_reward_model_swapped_labels_invert_the_ranking(seed: int) -> None:
+    pytest.importorskip("peft")
+    metrics = _train_reward_model(seed, prefer_digits=False, **LORA)
+    assert metrics["eval/accuracy"] <= 0.125, metrics

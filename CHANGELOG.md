@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Knowledge distillation** (provisional, `distillation` beta in the
+  component maturity contract; docs/DISTILLATION.md):
+  `stateset_agents.training.distillation` (`DistillationTrainer`,
+  `train_distillation`, `DistillationConfig`, `DistillationDataset`).
+  - Offline logit KD: per-token forward KL, reverse KL or GKD's generalized
+    JSD (`jsd_beta`) between temperature-scaled teacher and student
+    distributions over response tokens only (exact masks from the preference
+    encoder), token-mean reduced with exact gradient accumulation.
+  - On-policy distillation / GKD: with probability `lmbda` a micro-batch
+    trains on completions the student samples itself (exact token ids, a
+    deterministic per-seed draw); `on_policy_loss="full"` applies the
+    divergence at every sampled position, `"sampled"` the sampled-token
+    reverse-KL estimator (`sg(log S - log T) · log S`, whose expected
+    gradient is the per-token reverse-KL gradient).
+  - The teacher is frozen (no gradients, eval mode). A precomputed top-k
+    teacher cache (`teacher_top_k`, `TeacherCache`,
+    `precompute_teacher_cache`) trains offline without the teacher in memory
+    (top k plus a remaining-mass bucket; saved and loaded weights-only).
+  - Vocabularies: `vocab_alignment="strict"` rejects differing tokenizers or
+    logit widths (`VocabularyMismatchError`); `"shared"` aligns tokens by
+    string, renormalizes over the shared support, translates sequences to the
+    teacher's ids and suppresses student-only tokens when sampling. Nothing is
+    truncated silently.
+  - The losses are pinned to TRL's `GKDTrainer.generalized_jsd_loss` (values
+    and gradients, β ∈ {0, 0.1, 0.5, 0.9, 1}, τ ∈ {1, 2}) and the trainer's
+    window loss to `GKDTrainer.compute_loss` on real tiny models, on trl 1.9.1
+    and 1.16.0 (`tests/unit/test_distillation_trl_pin.py`).
+  - `stateset-agents distill` with a torch-free `--dry-run`.
+  - Evidence (CPU toy, seeds 0/1/2): a tiny student distilled from a tiny
+    digit-answering teacher cuts the held-out forward and on-policy reverse
+    KL by at least 65% in every mode; a shuffled-teacher control raises both
+    (`tests/learning/test_distillation_learns.py`).
+- **Online (iterative) DPO** (`OnlineDPOTrainer`, `train_online_dpo`,
+  `OnlineDPOConfig` in `stateset_agents.training.preference`): each round the
+  policy samples K completions per prompt, any `RewardFunction` judges them
+  through `reward_context.score_response` (a `PairwiseRewardFunction`
+  included; only `RewardUnavailableError` drops a completion, other errors
+  and non-finite scores raise), the best is paired against the worst with a
+  margin threshold and tie handling, and DPO/IPO trains on the exact sampled
+  tokens against a `fixed` or `previous_round` reference. Rounds checkpoint
+  and resume exactly. Evidence: three rounds raise a held-out judged digit
+  rate across seeds 0/1/2 with either reference schedule, and a sign-flipped
+  judge lowers it (`tests/learning/test_online_dpo_learns.py`).
+- **LoRA reward models**: `RewardModelConfig(use_lora=True, lora_*)` (and
+  `stateset-agents preference --method rm --lora`) trains `peft` adapters on
+  the backbone plus the reward head; adapters save with the base model's
+  name and load onto `base_model` (`load_reward_function(dir,
+  base_model=...)`), or save merged (`save_reward_model(...,
+  merge_lora=True)`). Learns the toy ranking at seeds 0/1/2.
+- `PreferenceEncoder.encode_prompt` (the generation prompt on-policy
+  trainers sample from) and `preference.sampling.sample_completions` (exact
+  token ids from an explicit `GenerationConfig`).
+
 - **Verifiable tool-use RL** (provisional, `tool-use-rl` beta in the component
   maturity contract; docs/TOOL_USE_RL.md):
   - `ToolUseEnvironment` (`stateset_agents.environments`): the policy calls

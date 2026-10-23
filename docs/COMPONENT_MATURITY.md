@@ -27,6 +27,7 @@ and `make release-governance` validates it on every pull request and release.
 | `core-agents` | Stable |
 | `data-decontamination` | Beta |
 | `deployment-assets` | Beta |
+| `distillation` | Beta |
 | `distributed-rollouts` | Beta |
 | `environments-rewards` | Stable |
 | `external-training-backends` | Beta |
