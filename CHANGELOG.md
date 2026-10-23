@@ -131,6 +131,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Trainer step goldens are portable across environments: an environment
+  fingerprint selects strict comparison where the goldens were captured and
+  magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's
+  eps no longer make goldens depend on RNG draw counts or thread counts.
 - RunPod's suspend-aware billing clock anchored its readings to the clock's
   `id()`. A clock created where a discarded one had lived inherited that
   clock's last reading, so its time stood still: run deadlines and readiness
