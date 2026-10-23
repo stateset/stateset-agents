@@ -29,6 +29,24 @@ def _finite_float(value: str) -> float:
     return result
 
 
+def strict_json_loads(text: str) -> Any:
+    """Parse model-written JSON, rejecting what plain ``json.loads`` accepts.
+
+    Duplicate object keys, ``NaN``/``Infinity`` and excessive nesting raise
+    ``ValueError`` (``json.JSONDecodeError`` is one), so ambiguous output is
+    never silently resolved to one reading.
+    """
+    try:
+        return json.loads(
+            text,
+            object_pairs_hook=_unique_object,
+            parse_constant=_reject_constant,
+            parse_float=_finite_float,
+        )
+    except RecursionError as exc:
+        raise ValueError("Action JSON is too deeply nested") from exc
+
+
 def parse_json_action(action: ConversationTurn) -> tuple[str, dict[str, Any]]:
     """Require one assistant JSON action without duplicate keys or tool calls.
 
@@ -44,15 +62,7 @@ def parse_json_action(action: ConversationTurn) -> tuple[str, dict[str, Any]]:
         raise ValueError(
             "Expected an assistant JSON action without separate tool calls"
         )
-    try:
-        parsed = json.loads(
-            action.content,
-            object_pairs_hook=_unique_object,
-            parse_constant=_reject_constant,
-            parse_float=_finite_float,
-        )
-    except RecursionError as exc:
-        raise ValueError("Action JSON is too deeply nested") from exc
+    parsed = strict_json_loads(action.content)
     if not isinstance(parsed, dict) or set(parsed) != {"tool", "args"}:
         raise ValueError("Expected JSON with exactly tool and args keys")
     tool, args = parsed["tool"], parsed["args"]

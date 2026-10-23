@@ -36,6 +36,7 @@ REQUIRED_COMPONENT_IDS = {
     "reward-learning-rlaif",
     "rust-acceleration",
     "sim-to-real",
+    "tool-use-rl",
     "vapo",
 }
 MATURITY_LEVELS = {"stable", "beta", "experimental"}

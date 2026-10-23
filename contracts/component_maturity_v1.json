@@ -487,6 +487,43 @@
     },
     {
       "docs": [
+        "docs/TOOL_USE_RL.md",
+        "docs/REWARD_CONTRACT.md"
+      ],
+      "evidence": [
+        "tests/learning/test_tool_use_learns.py",
+        "tests/integration/test_tool_use_grpo.py",
+        "tests/unit/test_tool_use_masking.py"
+      ],
+      "graduation_criteria": [
+        "Retain a three-seed tool-use GRPO run on a >=0.5B instruct model with held-out verifier pass rates and tool-call accuracy",
+        "Run the code verifier inside a container or microVM sandbox (no network, read-only root) with a retained isolation test suite",
+        "Promote the provisional ToolUseEnvironment, ToolRegistry, MathAnswerVerifier and SandboxedCodeVerifier names into the reviewed v1 contract"
+      ],
+      "id": "tool-use-rl",
+      "limitations": [
+        "Provisional API (stateset_agents.environments.ToolUseEnvironment and the stateset_agents.rewards verifiers): not in the v1 stable manifest and may change in minor releases",
+        "The code sandbox is resource isolation (python -I, empty environment, temporary working directory, rlimits, process-group kill), not a security boundary: candidate code keeps the trainer user's filesystem and network access, root ignores RLIMIT_NPROC, and it needs POSIX",
+        "Tool timeouts bound waiting only: a synchronous tool holding the GIL is not preempted",
+        "Math equivalence is exact for numbers and rational functions; other functions need sympy, and equivalent forms (expanded vs factored) are not told apart unless symbolic=False",
+        "Learning evidence is a CPU toy model with a supervised warm start and a KL anchor; no retained large-model runs yet"
+      ],
+      "maturity": "beta",
+      "name": "Tool-use environment with observation masking and verifiable rewards (math, sandboxed code)",
+      "owner": "core",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_tool_use_environment.py",
+        "tests/unit/test_tool_use_masking.py",
+        "tests/unit/test_math_verifier.py",
+        "tests/unit/test_code_verifier_sandbox.py",
+        "tests/unit/test_reward_exploit_search.py",
+        "tests/integration/test_tool_use_grpo.py",
+        "tests/learning/test_tool_use_learns.py"
+      ]
+    },
+    {
+      "docs": [
         "docs/WHITEPAPER.md"
       ],
       "evidence": [

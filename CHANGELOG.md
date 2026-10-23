@@ -9,6 +9,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Verifiable tool-use RL** (provisional, `tool-use-rl` beta in the component
+  maturity contract; docs/TOOL_USE_RL.md):
+  - `ToolUseEnvironment` (`stateset_agents.environments`): the policy calls
+    typed tools (`ToolSpec`: name, JSON-schema parameters, deterministic
+    callable, per-call timeout; `ToolRegistry`; an exact `calculator_tool()`)
+    in the chat-template `<tool_call>{...}</tool_call>` form, the repo's JSON
+    action form or structured `tool_calls`; results come back as `tool`-role
+    turns, malformed calls as structured error observations, every attempt
+    spends a `max_tool_calls` budget, and the episode ends on a final answer
+    (or the budget) and is scored through the shared reward path. Reference
+    data in scenarios is hidden from the policy's context.
+  - Masking guarantee: tool observations never receive policy gradient.
+    `tests/unit/test_tool_use_masking.py` proves on real episodes that the
+    gradient of the GRPO token loss reaches exactly the policy's own tokens
+    (tool-call text included) and no observation, user or system token, and
+    that the sequence path and the SFT masks (`core.chat_masking` with
+    `chat_template_render(tokenizer, tools)`) label only assistant text.
+    New: `chat_masking.OBSERVATION_ROLES`, `has_observation_turns`.
+  - `MathAnswerVerifier` (`stateset_agents.rewards`): 1.0 for one committed
+    final answer (boxed, stated or a lone number) equal to the reference;
+    exact fractions and decimals (tolerance opt-in), symbolic equivalence by
+    exact evaluation at rational points or `sympy.simplify` when installed,
+    never `eval`; hedged, multiple, negated, tentative or unevaluated answers
+    score 0, reusing `CorrectnessReward`'s candidate and negation rules.
+  - `SandboxedCodeVerifier`: the pass rate of the reply's code on hidden
+    function or stdin/stdout tests, run with `python -I -S`, an empty
+    environment, a fresh temporary directory, a wall-clock timeout, CPU,
+    address-space, file-size, process-count and open-file rlimits, capped
+    output and a process-group kill. Expected outputs never enter the sandbox
+    and results are compared outside it, framed by a per-run nonce, so
+    printing expected output, `sys.exit`/`os._exit` before the asserts,
+    monkeypatching the checker, `__eq__` tricks, reading a tests file, forged
+    records, infinite loops and fork bombs all score 0 (each pinned against a
+    naive verifier it fools). Resource isolation, not a security boundary:
+    use a container for untrusted code. POSIX only (`RewardUnavailableError`
+    elsewhere).
+  - The reward exploit search covers both verifiers with math and code
+    adversary families (`evaluation.verifier_exploits`, `ExploitCase.kind`);
+    every adversary scores at least 0.01 below the reference.
+  - Evidence: `tests/integration/test_tool_use_grpo.py` (MultiTurn GRPO on a
+    calculator `ToolUseEnvironment` with the math verifier: rewards flow, the
+    loss counts only reply tokens, runs are deterministic per seed) and
+    `tests/learning/test_tool_use_learns.py` (seeds 0, 1, 2: GRPO with the
+    verifier raises a tiny policy's correct-tool-call rate; a sign-flipped
+    reward lowers it).
+
 - **Unified RL training spine, first slices** (provisional;
   `docs/superpowers/plans/2026-10-22-unified-rl-spine.md`).
   `stateset_agents.training.spine.OptimizerStep` validates, clips and commits
@@ -347,6 +393,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` (and
+  `stateset_agents.rewards.CodeExecutionReward`) is renamed
+  `CodeFormattingHeuristic` (component `code_formatting`): it never executed
+  code, it scores code-block markers and keywords. The old name is a
+  deprecated alias removed in **v0.71.0**; to reward code that works use
+  `SandboxedCodeVerifier`.
 - **Every deprecation now names its removal release, enforced by CI.**
   `tests/unit/test_deprecation_schedule.py` reads every "will be removed in
   vX.Y.Z" / `removal="X.Y.Z"` marker in the package and fails once
@@ -463,6 +515,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
+  prompt, so a policy never saw tool results; they now render as
+  `Tool: <content>` lines.
+- The sequence-path GRPO loss fell back to supervising the whole token stream
+  when the chat template's assistant spans could not be located, which for a
+  conversation with tool observations trained the policy to predict tool
+  output; such conversations are now skipped (nothing supervised). Other
+  conversations keep the documented fallback.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's
@@ -607,14 +667,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DAPO pass with no response tokens, no longer advances the LR scheduler;
   `global_step` still counts `train_step` calls. Finite updates are
   numerically unchanged (step goldens).
-
-### Known issues
-
-- `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` never
-  executes code: it scores code-block markers and coding keywords in the last
-  assistant turn. The name overstates what it measures; a rename (for example
-  to a `CodeFormattingHeuristic`) with a deprecated alias is left to the
-  rewards workstream, which owns that module.
 
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 

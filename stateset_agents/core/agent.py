@@ -1409,6 +1409,10 @@ class MultiTurnAgent(Agent):
                 formatted += f"User: {content}\n"
             elif role == "assistant":
                 formatted += f"Assistant: {content}\n"
+            elif role == "tool":
+                # Tool results are observations the policy must see; the
+                # loss never supervises them (see core/chat_masking.py).
+                formatted += f"Tool: {content}\n"
 
         formatted += "Assistant: "
         return formatted

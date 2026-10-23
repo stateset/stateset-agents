@@ -8,8 +8,11 @@ This module provides various reward computation strategies:
 - Domain-specific reward templates
 """
 
+from typing import Any
+
+from .code_verifier import SandboxedCodeVerifier, SandboxLimits
 from .kimi_k25_reward import (
-    CodeExecutionReward,
+    CodeFormattingHeuristic,
     LongContextReward,
     MultimodalConsistencyReward,
     ThinkingModeReward,
@@ -17,6 +20,7 @@ from .kimi_k25_reward import (
     create_kimi_k25_customer_service_reward,
 )
 from .llm_reward import RewardResult
+from .math_verifier import MathAnswerVerifier
 from .multi_objective_reward import (
     MultiObjectiveRewardFunction,
     create_customer_service_reward,
@@ -80,8 +84,12 @@ __all__ = [
     "SymbolicRewardConfig",
     "ThinkingModeReward",
     "MultimodalConsistencyReward",
-    "CodeExecutionReward",
+    "CodeFormattingHeuristic",
     "LongContextReward",
+    # Verifiable rewards (provisional).
+    "MathAnswerVerifier",
+    "SandboxedCodeVerifier",
+    "SandboxLimits",
     "create_kimi_k25_customer_service_reward",
     "create_kimi_k25_conversational_reward",
 ]
@@ -111,3 +119,12 @@ __all__.extend(
         "NSRVerifierReward",
     ]
 )
+
+
+def __getattr__(name: str) -> Any:
+    """Serve deprecated names lazily, so importing the package does not warn."""
+    if name == "CodeExecutionReward":
+        from . import kimi_k25_reward
+
+        return kimi_k25_reward.__getattr__(name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

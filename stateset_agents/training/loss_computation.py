@@ -16,7 +16,7 @@ from typing import Any
 
 import numpy as np
 
-from ..core.chat_masking import assistant_char_spans
+from ..core.chat_masking import assistant_char_spans, has_observation_turns
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
@@ -38,6 +38,7 @@ __all__ = [
 
 _warned_missing_log_probs = False
 _warned_missing_assistant_mask = False
+_warned_observation_fallback = False
 
 
 def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
@@ -1600,6 +1601,28 @@ def _chat_template_prefix_mask(
     return input_ids, attention_mask, mask
 
 
+def _unsupervised_inputs(
+    tokenizer: Any, trajectory: Any, agent: Any, max_length: int
+) -> tuple[dict[str, Any], Any]:
+    """Inputs for ``trajectory`` with every label masked (nothing supervised)."""
+    global _warned_observation_fallback
+    if not _warned_observation_fallback:
+        logger.warning(
+            "Could not locate assistant tokens in a conversation with tool "
+            "observations; skipping it rather than training on tool output."
+        )
+        _warned_observation_fallback = True
+    text, _spans = _format_trajectory_with_spans(trajectory)
+    inputs = tokenizer(
+        text, return_tensors="pt", truncation=True, max_length=max_length
+    )
+    input_ids = inputs["input_ids"]
+    labels = input_ids.clone().fill_(-100)
+    device = agent.model.device
+    inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    return inputs, labels.to(device)
+
+
 def _prepare_inputs_and_labels(
     trajectory: Any, agent: Any, config: Any
 ) -> tuple[dict[str, Any], Any]:
@@ -1698,6 +1721,11 @@ def _prepare_inputs_and_labels(
                 pass
             except LOSS_EXCEPTIONS:
                 pass
+
+    if has_observation_turns(getattr(trajectory, "turns", [])):
+        # Tool observations must never be trained on: without faithful
+        # assistant spans, supervise nothing (the caller skips the row).
+        return _unsupervised_inputs(tokenizer, trajectory, agent, max_length)
 
     # Fallback: compute loss over the full token stream.
     if use_chat_template:

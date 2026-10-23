@@ -32,9 +32,36 @@ Render = Callable[[list[dict[str, Any]], bool], "str | None"]
 _SENTINEL = "\ue000\ue001"
 
 
+#: Roles whose turns the environment (a tool, a code interpreter) wrote.
+#: They are context for the policy and never a training target.
+OBSERVATION_ROLES = frozenset({"tool", "ipython", "function", "environment"})
+
+
 def is_supervised(message: dict[str, Any]) -> bool:
-    """An assistant message is a target unless it carries ``weight: 0``."""
+    """An assistant message is a target unless it carries ``weight: 0``.
+
+    Only assistant turns are ever targets: system, user and observation
+    turns (:data:`OBSERVATION_ROLES`, e.g. tool results) never are.
+    """
     return message.get("role") == "assistant" and message.get("weight", 1) != 0
+
+
+def has_observation_turns(messages: Sequence[Any]) -> bool:
+    """Whether ``messages`` (dicts or turns) include an observation turn.
+
+    A loss that cannot locate the assistant spans of such a conversation
+    must supervise nothing rather than fall back to the whole token stream,
+    which would train the policy to predict tool output.
+    """
+    for message in messages:
+        role = (
+            message.get("role")
+            if isinstance(message, dict)
+            else getattr(message, "role", None)
+        )
+        if role in OBSERVATION_ROLES:
+            return True
+    return False
 
 
 def assistant_char_spans(
@@ -375,10 +402,12 @@ def _mask_by_prefix_encoding(
 
 
 __all__ = [
+    "OBSERVATION_ROLES",
     "assistant_char_spans",
     "assistant_token_mask",
     "chat_template_render",
     "final_turn_token_mask",
+    "has_observation_turns",
     "is_supervised",
     "last_assistant_token_mask",
     "supervised_turn_sequences",
