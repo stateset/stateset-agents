@@ -42,7 +42,9 @@ try:
     from stateset_agents.core.multiturn_agent import (
         ConversationContext,
         DialogueDatabase,
-        MultiTurnAgent,
+    )
+    from stateset_agents.core.multiturn_agent import (
+        DialogueSessionAgent as MultiTurnAgent,
     )
     from stateset_agents.core.reward import RewardFunction, RewardResult
     from stateset_agents.core.trajectory import Trajectory

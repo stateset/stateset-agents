@@ -219,8 +219,12 @@ class TrainingConfigDict(TypedDict, total=False):
 TypedTrainingConfig = TrainingConfigDict
 
 
-class ConversationTurn(TypedDict):
-    """Type-safe conversation turn"""
+class ConversationTurnDict(TypedDict):
+    """Type-safe conversation turn (a plain dict).
+
+    Renamed from ``ConversationTurn``, which collided with the canonical
+    :class:`stateset_agents.core.trajectory.ConversationTurn`.
+    """
 
     role: Literal["user", "assistant", "system"]
     content: str
@@ -232,7 +236,7 @@ class TrajectoryData(TypedDict):
     """Type-safe trajectory data"""
 
     conversation_id: ConversationId
-    turns: list[ConversationTurn]
+    turns: list[ConversationTurnDict]
     total_tokens: TokenCount
     duration_seconds: float
     context_metadata: NotRequired[dict[str, Any]]
@@ -323,7 +327,7 @@ class Agent(Protocol):
 
     async def generate_response(
         self,
-        messages: str | list[ConversationTurn],
+        messages: str | list[ConversationTurnDict],
         **kwargs: Any,
     ) -> str:
         """Generate response to conversation"""
@@ -712,7 +716,7 @@ __all__ = [
     "ModelConfig",
     "TrainingConfigDict",
     "TypedTrainingConfig",
-    "ConversationTurn",
+    "ConversationTurnDict",
     "TrajectoryData",
     "RewardMetrics",
     # Protocols
@@ -736,10 +740,20 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Serve the renamed ``TrainingConfig`` TypedDict under its old name."""
+    """Serve renamed TypedDicts under their old names (with a warning)."""
+    if name == "ConversationTurn":
+        warnings.warn(
+            "stateset_agents.core.type_system.ConversationTurn is deprecated "
+            "and will be removed in v0.71.0; use ConversationTurnDict (or the "
+            "canonical stateset_agents.core.trajectory.ConversationTurn).",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return ConversationTurnDict
     if name == "TrainingConfig":
         warnings.warn(
-            "use TrainingConfigDict",
+            "use TrainingConfigDict; the TrainingConfig alias "
+            "will be removed in v0.71.0",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -130,109 +130,9 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
     if unknown_keys:
         warnings.append(f"Unknown top-level keys: {', '.join(unknown_keys)}")
 
-    agent_cfg = cfg.get("agent", {})
-    env_cfg = cfg.get("environment", {})
-    training_cfg = cfg.get("training", {})
-
-    if not isinstance(agent_cfg, dict):
-        errors.append("`agent` must be an object.")
-    else:
-        if "model_name" in agent_cfg and not isinstance(agent_cfg["model_name"], str):
-            errors.append("`agent.model_name` must be a string.")
-        if "max_new_tokens" in agent_cfg:
-            try:
-                value = int(agent_cfg["max_new_tokens"])
-            except (TypeError, ValueError):
-                errors.append("`agent.max_new_tokens` must be an integer.")
-            else:
-                if value <= 0:
-                    errors.append("`agent.max_new_tokens` must be a positive integer.")
-
-        if "temperature" in agent_cfg:
-            try:
-                float(agent_cfg["temperature"])
-            except (TypeError, ValueError):
-                errors.append("`agent.temperature` must be a number.")
-        if "use_stub_model" in agent_cfg and not isinstance(
-            agent_cfg["use_stub_model"], bool
-        ):
-            errors.append("`agent.use_stub_model` must be a boolean.")
-        if "stub_responses" in agent_cfg:
-            if not isinstance(agent_cfg["stub_responses"], list):
-                errors.append("`agent.stub_responses` must be a list.")
-            else:
-                for idx, response in enumerate(agent_cfg["stub_responses"]):
-                    if not isinstance(response, str):
-                        errors.append(
-                            f"`agent.stub_responses[{idx}]` must be a string."
-                        )
-
-    if not isinstance(env_cfg, dict):
-        errors.append("`environment` must be an object.")
-    else:
-        if "type" in env_cfg and not isinstance(env_cfg["type"], str):
-            errors.append("`environment.type` must be a string.")
-        if "scenarios" in env_cfg and not isinstance(env_cfg["scenarios"], list):
-            errors.append("`environment.scenarios` must be a list.")
-        elif isinstance(env_cfg.get("scenarios"), list):
-            scenarios = env_cfg["scenarios"]
-            for idx, scenario in enumerate(scenarios):
-                if not isinstance(scenario, dict):
-                    errors.append(f"`environment.scenarios[{idx}]` must be an object.")
-                    continue
-                if "id" in scenario and not isinstance(scenario["id"], str):
-                    errors.append(
-                        f"`environment.scenarios[{idx}].id` must be a string."
-                    )
-                if "topic" in scenario and not isinstance(scenario["topic"], str):
-                    errors.append(
-                        f"`environment.scenarios[{idx}].topic` must be a string."
-                    )
-                if "context" in scenario and not isinstance(scenario["context"], str):
-                    errors.append(
-                        f"`environment.scenarios[{idx}].context` must be a string."
-                    )
-                if "user_responses" in scenario:
-                    responses = scenario["user_responses"]
-                    if not isinstance(responses, list):
-                        errors.append(
-                            f"`environment.scenarios[{idx}].user_responses` must be a list."
-                        )
-                    else:
-                        for response_idx, response in enumerate(responses):
-                            if not isinstance(response, str):
-                                errors.append(
-                                    f"`environment.scenarios[{idx}].user_responses[{response_idx}]` must be a string."
-                                )
-
-    if not isinstance(training_cfg, dict):
-        errors.append("`training` must be an object.")
-    else:
-        if "num_episodes" in training_cfg:
-            try:
-                value = int(training_cfg["num_episodes"])
-            except (TypeError, ValueError):
-                errors.append("`training.num_episodes` must be an integer.")
-            else:
-                if value <= 0:
-                    errors.append("`training.num_episodes` must be a positive integer.")
-
-        if "max_turns" in training_cfg:
-            try:
-                value = int(training_cfg["max_turns"])
-            except (TypeError, ValueError):
-                errors.append("`training.max_turns` must be an integer.")
-            else:
-                if value <= 0:
-                    errors.append("`training.max_turns` must be a positive integer.")
-
-        unknown = _unknown_training_keys(training_cfg)
-        if unknown:
-            errors.append(
-                "`training` has unknown key(s): "
-                + ", ".join(f"`{name}`" for name in unknown)
-                + ". Use TrainingConfig field names (plus num_episodes, max_turns)."
-            )
+    _validate_agent_section(cfg.get("agent", {}), errors)
+    _validate_environment_section(cfg.get("environment", {}), errors)
+    _validate_training_section(cfg.get("training", {}), errors)
 
     if "profile" in cfg and _normalize_training_profile(cfg["profile"]) is None:
         errors.append(
@@ -241,6 +141,93 @@ def _validate_config(cfg: t.Any) -> tuple[list[str], list[str]]:
         )
 
     return errors, warnings
+
+
+def _check_positive_int(
+    section: dict[str, t.Any], key: str, label: str, errors: list[str]
+) -> None:
+    """Append an error unless ``section[key]`` (when present) is a positive int."""
+    if key not in section:
+        return
+    try:
+        value = int(section[key])
+    except (TypeError, ValueError):
+        errors.append(f"`{label}` must be an integer.")
+    else:
+        if value <= 0:
+            errors.append(f"`{label}` must be a positive integer.")
+
+
+def _check_string_list(value: t.Any, label: str, errors: list[str]) -> None:
+    """Append errors unless ``value`` is a list of strings."""
+    if not isinstance(value, list):
+        errors.append(f"`{label}` must be a list.")
+        return
+    for idx, item in enumerate(value):
+        if not isinstance(item, str):
+            errors.append(f"`{label}[{idx}]` must be a string.")
+
+
+def _validate_agent_section(agent_cfg: t.Any, errors: list[str]) -> None:
+    if not isinstance(agent_cfg, dict):
+        errors.append("`agent` must be an object.")
+        return
+    if "model_name" in agent_cfg and not isinstance(agent_cfg["model_name"], str):
+        errors.append("`agent.model_name` must be a string.")
+    _check_positive_int(agent_cfg, "max_new_tokens", "agent.max_new_tokens", errors)
+    if "temperature" in agent_cfg:
+        try:
+            float(agent_cfg["temperature"])
+        except (TypeError, ValueError):
+            errors.append("`agent.temperature` must be a number.")
+    if "use_stub_model" in agent_cfg and not isinstance(
+        agent_cfg["use_stub_model"], bool
+    ):
+        errors.append("`agent.use_stub_model` must be a boolean.")
+    if "stub_responses" in agent_cfg:
+        _check_string_list(agent_cfg["stub_responses"], "agent.stub_responses", errors)
+
+
+def _validate_environment_section(env_cfg: t.Any, errors: list[str]) -> None:
+    if not isinstance(env_cfg, dict):
+        errors.append("`environment` must be an object.")
+        return
+    if "type" in env_cfg and not isinstance(env_cfg["type"], str):
+        errors.append("`environment.type` must be a string.")
+    if "scenarios" in env_cfg and not isinstance(env_cfg["scenarios"], list):
+        errors.append("`environment.scenarios` must be a list.")
+    elif isinstance(env_cfg.get("scenarios"), list):
+        for idx, scenario in enumerate(env_cfg["scenarios"]):
+            _validate_scenario(idx, scenario, errors)
+
+
+def _validate_scenario(idx: int, scenario: t.Any, errors: list[str]) -> None:
+    label = f"environment.scenarios[{idx}]"
+    if not isinstance(scenario, dict):
+        errors.append(f"`{label}` must be an object.")
+        return
+    for key in ("id", "topic", "context"):
+        if key in scenario and not isinstance(scenario[key], str):
+            errors.append(f"`{label}.{key}` must be a string.")
+    if "user_responses" in scenario:
+        _check_string_list(
+            scenario["user_responses"], f"{label}.user_responses", errors
+        )
+
+
+def _validate_training_section(training_cfg: t.Any, errors: list[str]) -> None:
+    if not isinstance(training_cfg, dict):
+        errors.append("`training` must be an object.")
+        return
+    _check_positive_int(training_cfg, "num_episodes", "training.num_episodes", errors)
+    _check_positive_int(training_cfg, "max_turns", "training.max_turns", errors)
+    unknown = _unknown_training_keys(training_cfg)
+    if unknown:
+        errors.append(
+            "`training` has unknown key(s): "
+            + ", ".join(f"`{name}`" for name in unknown)
+            + ". Use TrainingConfig field names (plus num_episodes, max_turns)."
+        )
 
 
 def _unknown_training_keys(training_cfg: dict[str, t.Any]) -> list[str]:

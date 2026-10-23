@@ -10,8 +10,9 @@ import os
 import time
 import uuid
 from contextlib import asynccontextmanager
-from datetime import datetime
 from typing import Any
+
+from stateset_agents.utils.clock import utc_isoformat
 
 try:
     import uvicorn
@@ -87,7 +88,7 @@ def _build_error_response(
         "error": {"message": message, "status_code": status_code},
         "request_id": request_id,
         "path": str(request.url.path),
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": utc_isoformat(),
     }
     if details is not None:
         payload["error"]["details"] = details
@@ -290,11 +291,11 @@ async def lifespan(app: FastAPI):
     try:
         from stateset_agents.core.multiturn_agent import (
             DialogueDatabase,
-            MultiTurnAgent,
+            DialogueSessionAgent,
         )
 
         model_config = {"model_type": "gpt-oss", "model_name": "openai/gpt-oss-120b"}
-        _services["multiturn_agent"] = MultiTurnAgent(
+        _services["multiturn_agent"] = DialogueSessionAgent(
             model_config,
             dialogue_database=DialogueDatabase([]),
         )

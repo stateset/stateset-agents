@@ -36,6 +36,14 @@ try:
 except ImportError:
     HAS_OPENTELEMETRY = False
 
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.logging",
+    removal="0.71.0",
+    replacement="the standard library's logging.getLogger",
+)
+
 LOGGING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,

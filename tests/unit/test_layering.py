@@ -36,12 +36,15 @@ DEPRECATION_SHIMS = frozenset(
 
 MAX_SHIM_LINES = 30
 
-DEPRECATED_ROOT_PLANNING_NAMES = (
+# Deprecated in v0.38.0 ("one release"); removed from both lazy-export tables.
+REMOVED_PLANNING_NAMES = (
     "PlanningConfig",
     "PlanningManager",
+    "Planner",
     "Plan",
     "PlanStep",
     "PlanStatus",
+    "HeuristicPlanner",
 )
 
 
@@ -141,14 +144,15 @@ def test_deprecation_shims_stay_tiny() -> None:
         )
 
 
-@pytest.mark.parametrize("name", DEPRECATED_ROOT_PLANNING_NAMES)
-def test_root_planning_exports_warn(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("name", REMOVED_PLANNING_NAMES)
+def test_removed_planning_exports_are_gone(name: str) -> None:
     import stateset_agents
+    import stateset_agents.core
 
-    # Drop any cached value so __getattr__ runs again; monkeypatch restores it.
-    monkeypatch.delitem(vars(stateset_agents), name, raising=False)
-    with pytest.warns(DeprecationWarning, match="experimental.long_term_planning"):
-        assert getattr(stateset_agents, name) is not None
+    for package in (stateset_agents, stateset_agents.core):
+        assert name not in package.__all__
+        with pytest.raises(AttributeError):
+            getattr(package, name)
 
 
 def test_experimental_import_path_does_not_warn() -> None:

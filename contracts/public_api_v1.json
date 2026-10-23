@@ -2168,6 +2168,22 @@
           "parameters": []
         }
       },
+      "ConfigurationError": {
+        "module": "stateset_agents.core.errors",
+        "name": "ConfigurationError",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
       "ConversationDataset": {
         "module": "stateset_agents.data",
         "name": "ConversationDataset",
@@ -2349,140 +2365,6 @@
               "default": 0.4,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "priority_beta"
-            }
-          ]
-        }
-      },
-      "ConversationSimulator": {
-        "module": "stateset_agents.environments",
-        "name": "ConversationSimulator",
-        "signature": {
-          "parameters": [
-            {
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "config"
-            },
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "domain_randomization"
-            }
-          ]
-        }
-      },
-      "ConversationSimulatorConfig": {
-        "module": "stateset_agents.environments",
-        "name": "ConversationSimulatorConfig",
-        "signature": {
-          "parameters": [
-            {
-              "default": {
-                "repr": "<factory>"
-              },
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "personas"
-            },
-            {
-              "default": "uniform",
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "persona_sampling"
-            },
-            {
-              "default": {
-                "repr": "<factory>"
-              },
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "topic_distribution"
-            },
-            {
-              "default": {
-                "tuple": [
-                  0.3,
-                  0.9
-                ]
-              },
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "difficulty_range"
-            },
-            {
-              "default": true,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "use_curriculum"
-            },
-            {
-              "default": 5000,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "curriculum_steps"
-            },
-            {
-              "default": 0.1,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "noise_level"
-            },
-            {
-              "default": 0.02,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "typo_rate"
-            },
-            {
-              "default": 0.05,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "truncation_rate"
-            },
-            {
-              "default": "rule_based",
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "llm_backend"
-            },
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "llm_model"
-            },
-            {
-              "default": true,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "use_rule_based_fallback"
-            },
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "calibration_dataset_path"
-            },
-            {
-              "default": "mmd",
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "calibration_method"
-            },
-            {
-              "default": 20,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "max_turns"
-            },
-            {
-              "default": 0.05,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "timeout_probability"
-            },
-            {
-              "default": 0.1,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "early_exit_probability"
-            },
-            {
-              "default": 1.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "reward_scale"
-            },
-            {
-              "default": true,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "penalize_repetition"
-            },
-            {
-              "default": true,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "penalize_irrelevance"
             }
           ]
         }
@@ -3323,97 +3205,6 @@
           ]
         }
       },
-      "SimToRealEvaluator": {
-        "module": "stateset_agents.evaluation",
-        "name": "SimToRealEvaluator",
-        "signature": {
-          "parameters": [
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "simulator"
-            },
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "real_dataset"
-            },
-            {
-              "default": null,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "user_model"
-            }
-          ]
-        }
-      },
-      "SimToRealMetrics": {
-        "module": "stateset_agents.evaluation",
-        "name": "SimToRealMetrics",
-        "signature": {
-          "parameters": [
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "response_length_kl"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "vocabulary_js_divergence"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "turn_count_mmd"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "response_time_gap"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "reward_correlation"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "policy_performance_gap"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "success_rate_gap"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "user_model_likelihood"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "scenario_coverage"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "persona_diversity"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "overall_gap"
-            },
-            {
-              "default": 0.0,
-              "kind": "POSITIONAL_OR_KEYWORD",
-              "name": "reward_distribution_gap"
-            }
-          ]
-        }
-      },
       "SimilarityAwareReward": {
         "module": "stateset_agents.core.reward",
         "name": "SimilarityAwareReward",
@@ -3433,6 +3224,36 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "base_reward_fn"
+            }
+          ]
+        }
+      },
+      "StateSetError": {
+        "module": "stateset_agents.core.errors",
+        "name": "StateSetError",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.errors.ErrorCode",
+                "member": "UNKNOWN"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "code"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cause"
             }
           ]
         }
@@ -4165,7 +3986,7 @@
       },
       "TypedConversationTurn": {
         "module": "stateset_agents.core.type_system",
-        "name": "ConversationTurn"
+        "name": "ConversationTurnDict"
       },
       "TypedTrainingConfig": {
         "module": "stateset_agents.core.type_system",

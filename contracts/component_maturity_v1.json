@@ -472,18 +472,13 @@
       ],
       "id": "sim-to-real",
       "limitations": [
-        "Lives in stateset_agents.experimental.sim_to_real since v0.64.0; the old stateset_agents.training, .evaluation, and .environments import paths were removed in v0.65.0; the four root exports in the v1 contract stay deprecated through v0.65.x and are removed in v0.66.0",
+        "Lives in stateset_agents.experimental.sim_to_real since v0.64.0; the old stateset_agents.training, .evaluation, and .environments import paths were removed in v0.65.0, and the four deprecated root exports were removed from the v1 contract after their v0.66.0 deadline",
         "No learning test or retained benchmark demonstrates sim-to-real transfer; public benchmark evidence remains pending"
       ],
       "maturity": "experimental",
       "name": "Sim-to-real transfer, domain randomization, conversation simulator, and metrics",
       "owner": "research",
-      "public_contract_refs": [
-        "python:stateset_agents.ConversationSimulator",
-        "python:stateset_agents.ConversationSimulatorConfig",
-        "python:stateset_agents.SimToRealEvaluator",
-        "python:stateset_agents.SimToRealMetrics"
-      ],
+      "public_contract_refs": [],
       "tests": [
         "tests/unit/test_offline_rl_sim_to_real.py",
         "tests/unit/test_sim_to_real_reward_gap.py",

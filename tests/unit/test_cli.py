@@ -222,7 +222,7 @@ def test_cli_train_negative_episodes():
 
 def test_cli_qwen3_5_0_8b_dry_run_json():
     """Test the dedicated Qwen 3.5 starter preview payload."""
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--json-output"])
+    result = runner.invoke(app, ["model", "qwen3-5-0-8b", "--json-output"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["config"]["model_name"] == "Qwen/Qwen3.5-0.8B-Base"
@@ -236,7 +236,7 @@ def test_cli_qwen3_5_0_8b_memory_profile_json():
     """Test the low-memory Qwen starter profile."""
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--starter-profile", "memory", "--json-output"],
+        ["model", "qwen3-5-0-8b", "--starter-profile", "memory", "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -251,7 +251,14 @@ def test_cli_qwen3_5_0_8b_list_profiles_json():
     """Test the starter can describe all built-in profiles."""
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--task", "sales", "--list-profiles", "--json-output"],
+        [
+            "model",
+            "qwen3-5-0-8b",
+            "--task",
+            "sales",
+            "--list-profiles",
+            "--json-output",
+        ],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -263,7 +270,7 @@ def test_cli_qwen3_5_0_8b_list_profiles_json():
 
 def test_cli_qwen3_5_0_8b_list_profiles_text():
     """Test the human-readable profile catalog output."""
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--list-profiles"])
+    result = runner.invoke(app, ["model", "qwen3-5-0-8b", "--list-profiles"])
     assert result.exit_code == 0
     assert "Available Qwen3.5-0.8B starter profiles:" in result.stdout
     assert "- balanced:" in result.stdout
@@ -274,7 +281,7 @@ def test_cli_qwen3_5_0_8b_list_profiles_text():
 
 def test_cli_qwen3_5_0_8b_rejects_unknown_task():
     """Test the dedicated Qwen starter rejects unsupported task names."""
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--task", "unknown_task"])
+    result = runner.invoke(app, ["model", "qwen3-5-0-8b", "--task", "unknown_task"])
     assert result.exit_code != 0
     assert "unsupported task" in result.stdout.lower()
 
@@ -282,7 +289,7 @@ def test_cli_qwen3_5_0_8b_rejects_unknown_task():
 def test_cli_qwen3_5_0_8b_rejects_unknown_starter_profile():
     """Test the dedicated Qwen starter rejects unsupported profile names."""
     result = runner.invoke(
-        app, ["qwen3-5-0-8b", "--starter-profile", "unknown_profile"]
+        app, ["model", "qwen3-5-0-8b", "--starter-profile", "unknown_profile"]
     )
     assert result.exit_code != 0
     assert "unsupported starter profile" in result.stdout.lower()
@@ -291,7 +298,9 @@ def test_cli_qwen3_5_0_8b_rejects_unknown_starter_profile():
 def test_cli_qwen3_5_0_8b_write_config_json(tmp_path):
     """Test the dedicated Qwen starter can write a reusable config file."""
     cfg_path = tmp_path / "qwen3_5_0_8b.json"
-    result = runner.invoke(app, ["qwen3-5-0-8b", "--write-config", str(cfg_path)])
+    result = runner.invoke(
+        app, ["model", "qwen3-5-0-8b", "--write-config", str(cfg_path)]
+    )
     assert result.exit_code == 0
     assert cfg_path.exists()
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -317,7 +326,7 @@ def test_cli_qwen3_5_0_8b_load_config_json(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--config", str(cfg_path), "--json-output"],
+        ["model", "qwen3-5-0-8b", "--config", str(cfg_path), "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -334,7 +343,7 @@ def test_cli_qwen3_5_0_8b_rejects_config_with_overrides(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--config", str(cfg_path), "--use-4bit"],
+        ["model", "qwen3-5-0-8b", "--config", str(cfg_path), "--use-4bit"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -348,7 +357,14 @@ def test_cli_qwen3_5_0_8b_rejects_config_with_profile_override(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--config", str(cfg_path), "--starter-profile", "memory"],
+        [
+            "model",
+            "qwen3-5-0-8b",
+            "--config",
+            str(cfg_path),
+            "--starter-profile",
+            "memory",
+        ],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -362,7 +378,7 @@ def test_cli_qwen3_5_0_8b_rejects_list_profiles_with_config(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["qwen3-5-0-8b", "--config", str(cfg_path), "--list-profiles"],
+        ["model", "qwen3-5-0-8b", "--config", str(cfg_path), "--list-profiles"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -370,7 +386,7 @@ def test_cli_qwen3_5_0_8b_rejects_list_profiles_with_config(tmp_path):
 
 def test_cli_kimi_k2_6_dry_run_json():
     """Test the dedicated Kimi-K2.6 starter preview payload."""
-    result = runner.invoke(app, ["kimi-k2-6", "--json-output"])
+    result = runner.invoke(app, ["model", "kimi-k2-6", "--json-output"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["config"]["model_name"] == "moonshotai/Kimi-K2.6"
@@ -384,7 +400,7 @@ def test_cli_kimi_k2_6_memory_profile_json():
     """Test the low-memory Kimi starter profile."""
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--starter-profile", "memory", "--json-output"],
+        ["model", "kimi-k2-6", "--starter-profile", "memory", "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -399,7 +415,7 @@ def test_cli_kimi_k2_6_list_profiles_json():
     """Test the starter can describe all built-in Kimi profiles."""
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--task", "sales", "--list-profiles", "--json-output"],
+        ["model", "kimi-k2-6", "--task", "sales", "--list-profiles", "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -411,7 +427,7 @@ def test_cli_kimi_k2_6_list_profiles_json():
 
 def test_cli_kimi_k2_6_list_profiles_text():
     """Test the human-readable Kimi profile catalog output."""
-    result = runner.invoke(app, ["kimi-k2-6", "--list-profiles"])
+    result = runner.invoke(app, ["model", "kimi-k2-6", "--list-profiles"])
     assert result.exit_code == 0
     assert "Available Kimi-K2.6 starter profiles:" in result.stdout
     assert "- balanced:" in result.stdout
@@ -422,14 +438,16 @@ def test_cli_kimi_k2_6_list_profiles_text():
 
 def test_cli_kimi_k2_6_rejects_unknown_task():
     """Test the dedicated Kimi starter rejects unsupported task names."""
-    result = runner.invoke(app, ["kimi-k2-6", "--task", "unknown_task"])
+    result = runner.invoke(app, ["model", "kimi-k2-6", "--task", "unknown_task"])
     assert result.exit_code != 0
     assert "unsupported task" in result.stdout.lower()
 
 
 def test_cli_kimi_k2_6_rejects_unknown_starter_profile():
     """Test the dedicated Kimi starter rejects unsupported profile names."""
-    result = runner.invoke(app, ["kimi-k2-6", "--starter-profile", "unknown_profile"])
+    result = runner.invoke(
+        app, ["model", "kimi-k2-6", "--starter-profile", "unknown_profile"]
+    )
     assert result.exit_code != 0
     assert "unsupported starter profile" in result.stdout.lower()
 
@@ -437,7 +455,7 @@ def test_cli_kimi_k2_6_rejects_unknown_starter_profile():
 def test_cli_kimi_k2_6_write_config_json(tmp_path):
     """Test the dedicated Kimi starter can write a reusable config file."""
     cfg_path = tmp_path / "kimi_k2_6.json"
-    result = runner.invoke(app, ["kimi-k2-6", "--write-config", str(cfg_path)])
+    result = runner.invoke(app, ["model", "kimi-k2-6", "--write-config", str(cfg_path)])
     assert result.exit_code == 0
     assert cfg_path.exists()
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -463,7 +481,7 @@ def test_cli_kimi_k2_6_load_config_json(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--config", str(cfg_path), "--json-output"],
+        ["model", "kimi-k2-6", "--config", str(cfg_path), "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -480,7 +498,7 @@ def test_cli_kimi_k2_6_rejects_config_with_overrides(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--config", str(cfg_path), "--use-4bit"],
+        ["model", "kimi-k2-6", "--config", str(cfg_path), "--use-4bit"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -494,7 +512,14 @@ def test_cli_kimi_k2_6_rejects_config_with_profile_override(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--config", str(cfg_path), "--starter-profile", "memory"],
+        [
+            "model",
+            "kimi-k2-6",
+            "--config",
+            str(cfg_path),
+            "--starter-profile",
+            "memory",
+        ],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -508,7 +533,7 @@ def test_cli_kimi_k2_6_rejects_list_profiles_with_config(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k2-6", "--config", str(cfg_path), "--list-profiles"],
+        ["model", "kimi-k2-6", "--config", str(cfg_path), "--list-profiles"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -516,7 +541,7 @@ def test_cli_kimi_k2_6_rejects_list_profiles_with_config(tmp_path):
 
 def test_cli_kimi_k3_dry_run_json():
     """Test the dedicated Kimi-K3 starter preview payload."""
-    result = runner.invoke(app, ["kimi-k3", "--json-output"])
+    result = runner.invoke(app, ["model", "kimi-k3", "--json-output"])
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
     assert payload["config"]["model_name"] == "moonshotai/Kimi-K3"
@@ -530,7 +555,7 @@ def test_cli_kimi_k3_memory_profile_json():
     """Test the low-memory Kimi starter profile."""
     result = runner.invoke(
         app,
-        ["kimi-k3", "--starter-profile", "memory", "--json-output"],
+        ["model", "kimi-k3", "--starter-profile", "memory", "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -545,7 +570,7 @@ def test_cli_kimi_k3_list_profiles_json():
     """Test the starter can describe all built-in Kimi profiles."""
     result = runner.invoke(
         app,
-        ["kimi-k3", "--task", "sales", "--list-profiles", "--json-output"],
+        ["model", "kimi-k3", "--task", "sales", "--list-profiles", "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -557,7 +582,7 @@ def test_cli_kimi_k3_list_profiles_json():
 
 def test_cli_kimi_k3_list_profiles_text():
     """Test the human-readable Kimi profile catalog output."""
-    result = runner.invoke(app, ["kimi-k3", "--list-profiles"])
+    result = runner.invoke(app, ["model", "kimi-k3", "--list-profiles"])
     assert result.exit_code == 0
     assert "Available Kimi-K3 starter profiles:" in result.stdout
     assert "- balanced:" in result.stdout
@@ -568,14 +593,16 @@ def test_cli_kimi_k3_list_profiles_text():
 
 def test_cli_kimi_k3_rejects_unknown_task():
     """Test the dedicated Kimi starter rejects unsupported task names."""
-    result = runner.invoke(app, ["kimi-k3", "--task", "unknown_task"])
+    result = runner.invoke(app, ["model", "kimi-k3", "--task", "unknown_task"])
     assert result.exit_code != 0
     assert "unsupported task" in result.stdout.lower()
 
 
 def test_cli_kimi_k3_rejects_unknown_starter_profile():
     """Test the dedicated Kimi starter rejects unsupported profile names."""
-    result = runner.invoke(app, ["kimi-k3", "--starter-profile", "unknown_profile"])
+    result = runner.invoke(
+        app, ["model", "kimi-k3", "--starter-profile", "unknown_profile"]
+    )
     assert result.exit_code != 0
     assert "unsupported starter profile" in result.stdout.lower()
 
@@ -583,7 +610,7 @@ def test_cli_kimi_k3_rejects_unknown_starter_profile():
 def test_cli_kimi_k3_write_config_json(tmp_path):
     """Test the dedicated Kimi starter can write a reusable config file."""
     cfg_path = tmp_path / "kimi_k3.json"
-    result = runner.invoke(app, ["kimi-k3", "--write-config", str(cfg_path)])
+    result = runner.invoke(app, ["model", "kimi-k3", "--write-config", str(cfg_path)])
     assert result.exit_code == 0
     assert cfg_path.exists()
     loaded = json.loads(cfg_path.read_text(encoding="utf-8"))
@@ -609,7 +636,7 @@ def test_cli_kimi_k3_load_config_json(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k3", "--config", str(cfg_path), "--json-output"],
+        ["model", "kimi-k3", "--config", str(cfg_path), "--json-output"],
     )
     assert result.exit_code == 0
     payload = json.loads(result.stdout)
@@ -626,7 +653,7 @@ def test_cli_kimi_k3_rejects_config_with_overrides(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k3", "--config", str(cfg_path), "--use-4bit"],
+        ["model", "kimi-k3", "--config", str(cfg_path), "--use-4bit"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -640,7 +667,7 @@ def test_cli_kimi_k3_rejects_config_with_profile_override(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k3", "--config", str(cfg_path), "--starter-profile", "memory"],
+        ["model", "kimi-k3", "--config", str(cfg_path), "--starter-profile", "memory"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()
@@ -654,7 +681,7 @@ def test_cli_kimi_k3_rejects_list_profiles_with_config(tmp_path):
     )
     result = runner.invoke(
         app,
-        ["kimi-k3", "--config", str(cfg_path), "--list-profiles"],
+        ["model", "kimi-k3", "--config", str(cfg_path), "--list-profiles"],
     )
     assert result.exit_code != 0
     assert "cannot be combined" in result.stdout.lower()

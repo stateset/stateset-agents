@@ -479,7 +479,8 @@ stateset-agents model qwen3-5-0-8b --list-profiles --json-output
 ```
 
 The pre-0.68 top-level spellings (for example `stateset-agents qwen3-5-0-8b`)
-still work as hidden, deprecated aliases and are removed in v0.69.0.
+were deprecated in v0.68.0 and have been removed; use `stateset-agents model
+<preset>`.
 
 #### `stateset-agents model qwen3-5-0-8b`
 

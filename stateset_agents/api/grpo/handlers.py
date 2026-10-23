@@ -9,10 +9,10 @@ import json
 import time
 import uuid
 from collections import deque
-from datetime import datetime
 from typing import Any
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.utils.clock import utc_isoformat
 
 from ..logging_config import get_logger
 from .config import get_grpo_config
@@ -433,7 +433,7 @@ class ConversationHandler:
             context=context,
             metadata={
                 "strategy": request.strategy,
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_isoformat(),
             },
             tokens_used=tokens_used,
             processing_time_ms=processing_time,
@@ -664,7 +664,7 @@ class WebSocketHandler:
         await websocket.send_json(
             {
                 "type": "pong",
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": utc_isoformat(),
             }
         )
 

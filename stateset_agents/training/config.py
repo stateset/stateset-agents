@@ -13,6 +13,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
+from ..core.errors import ConfigurationError
+
 
 def estimate_grpo_optimizer_steps(
     rollout_batches: int,
@@ -273,12 +275,12 @@ class TrainingConfig:
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
-            raise ValueError(
+            raise ConfigurationError(
                 "nonfinite_grad_policy must be 'raise' or 'skip', got "
                 f"{self.nonfinite_grad_policy!r}"
             )
         if self.max_consecutive_nonfinite_skips < 0:
-            raise ValueError("max_consecutive_nonfinite_skips must be >= 0")
+            raise ConfigurationError("max_consecutive_nonfinite_skips must be >= 0")
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)
@@ -494,7 +496,9 @@ class TrainingConfig:
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
-            raise ValueError("zero_signal_patience must be a nonnegative integer")
+            raise ConfigurationError(
+                "zero_signal_patience must be a nonnegative integer"
+            )
         for name in (
             "num_episodes",
             "num_epochs",
@@ -511,7 +515,7 @@ class TrainingConfig:
         ):
             value = getattr(self, name)
             if type(value) is not int or value < 1:
-                raise ValueError(f"{name} must be a positive integer")
+                raise ConfigurationError(f"{name} must be a positive integer")
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (
@@ -519,7 +523,7 @@ class TrainingConfig:
                 or not math.isfinite(value)
                 or value <= 0
             ):
-                raise ValueError(f"{name} must be finite and positive")
+                raise ConfigurationError(f"{name} must be finite and positive")
         for name in ("warmup_ratio", "eval_split_size", "top_p", "lora_dropout"):
             value = getattr(self, name)
             if (
@@ -527,21 +531,23 @@ class TrainingConfig:
                 or not math.isfinite(value)
                 or not 0 <= value <= 1
             ):
-                raise ValueError(f"{name} must be between zero and one")
+                raise ConfigurationError(f"{name} must be between zero and one")
         if self.top_p == 0:
-            raise ValueError("top_p must be positive")
+            raise ConfigurationError("top_p must be positive")
         if self.bf16 and self.fp16:
-            raise ValueError("bf16 and fp16 are mutually exclusive")
+            raise ConfigurationError("bf16 and fp16 are mutually exclusive")
         if getattr(self, "use_4bit", False) and getattr(self, "use_8bit", False):
-            raise ValueError("use_4bit and use_8bit are mutually exclusive")
+            raise ConfigurationError("use_4bit and use_8bit are mutually exclusive")
         if type(self.seed) is not int or self.seed < 0:
-            raise ValueError("seed must be a nonnegative integer")
+            raise ConfigurationError("seed must be a nonnegative integer")
         if self.compute_cost_per_hour is not None and (
             type(self.compute_cost_per_hour) not in (int, float)
             or not math.isfinite(self.compute_cost_per_hour)
             or self.compute_cost_per_hour < 0
         ):
-            raise ValueError("compute_cost_per_hour must be finite and nonnegative")
+            raise ConfigurationError(
+                "compute_cost_per_hour must be finite and nonnegative"
+            )
         for name in (
             "beta",
             "entropy_coef",
@@ -551,33 +557,37 @@ class TrainingConfig:
         ):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
-                raise ValueError(f"{name} must be finite and nonnegative")
+                raise ConfigurationError(f"{name} must be finite and nonnegative")
         if self.old_logprobs_source not in {"recompute", "sampler"}:
-            raise ValueError("old_logprobs_source must be 'recompute' or 'sampler'")
+            raise ConfigurationError(
+                "old_logprobs_source must be 'recompute' or 'sampler'"
+            )
         if not self.rollout_sync and self.old_logprobs_source != "sampler":
-            raise ValueError(
+            raise ConfigurationError(
                 "Asynchronous rollouts require old_logprobs_source='sampler'"
             )
         if self.objective is not None:
             from .objectives import OBJECTIVES
 
             if self.objective not in OBJECTIVES:
-                raise ValueError(f"Unknown objective: {self.objective!r}")
+                raise ConfigurationError(f"Unknown objective: {self.objective!r}")
         if self.objective_overrides:
             from .objectives import OBJECTIVES
 
             OBJECTIVES[self.objective or "grpo"].with_(**self.objective_overrides)
         if not isinstance(self.model_name, str) or not self.model_name.strip():
-            raise ValueError("model_name must be nonempty")
+            raise ConfigurationError("model_name must be nonempty")
         if self.model_revision is not None and (
             not isinstance(self.model_revision, str) or not self.model_revision.strip()
         ):
-            raise ValueError("model_revision must be a nonempty string or None")
+            raise ConfigurationError("model_revision must be a nonempty string or None")
         if (
             self.resume_from_checkpoint
             and not Path(self.resume_from_checkpoint).is_dir()
         ):
-            raise ValueError("resume_from_checkpoint must be an existing directory")
+            raise ConfigurationError(
+                "resume_from_checkpoint must be an existing directory"
+            )
 
     def get_effective_batch_size(self) -> int:
         """Get effective batch size"""

@@ -18,10 +18,18 @@ from types import ModuleType
 
 import psutil
 
+from stateset_agents._deprecation import warn_deprecated
+
 from .performance_monitor import (
     monitor_operation,
     profile_async_function,
     profile_function,
+)
+
+warn_deprecated(
+    "stateset_agents.utils.profiler",
+    removal="0.71.0",
+    replacement="stateset_agents.utils.performance_monitor",
 )
 
 logger = logging.getLogger(__name__)

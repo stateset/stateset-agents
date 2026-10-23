@@ -23,18 +23,28 @@ def test_installed_cli_roundtrip_and_training_dispatch(size, tmp_path, monkeypat
     path = tmp_path / "config.json"
     result = runner.invoke(
         app,
-        [command, "--starter-profile", "memory", "--write-config", str(path), "--json"],
+        [
+            "model",
+            command,
+            "--starter-profile",
+            "memory",
+            "--write-config",
+            str(path),
+            "--json",
+        ],
     )
     assert result.exit_code == 0, result.output
     config = json.loads(result.output)["config"]
     assert config["model_name"] == f"google/gemma-4-{size.upper()}-it"
     assert config["output_dir"] == f"./outputs/gemma4_{size}_gspo"
-    result = runner.invoke(app, [command, "--config", str(path), "--json"])
+    result = runner.invoke(app, ["model", command, "--config", str(path), "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["config"] == config
     train = AsyncMock(return_value="trained")
     monkeypatch.setattr(starter, "run_gemma4_small_config", train)
-    result = runner.invoke(app, [command, "--config", str(path), "--no-dry-run"])
+    result = runner.invoke(
+        app, ["model", command, "--config", str(path), "--no-dry-run"]
+    )
     assert result.exit_code == 0, result.output
     train.assert_awaited_once()
     assert train.call_args.args[0].model_name == config["model_name"]
@@ -47,7 +57,7 @@ def test_installed_cli_honors_output_override(tmp_path):
     from stateset_agents.cli import app
 
     result = CliRunner().invoke(
-        app, ["gemma-4-e4b", "--output-dir", str(tmp_path), "--json"]
+        app, ["model", "gemma-4-e4b", "--output-dir", str(tmp_path), "--json"]
     )
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["config"]["output_dir"] == str(tmp_path)

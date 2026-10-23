@@ -18,6 +18,14 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, cast
 
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.observability",
+    removal="0.71.0",
+    replacement="stateset_agents.api.observability (tracing)",
+)
+
 logger = logging.getLogger(__name__)
 
 # Optional imports for enhanced functionality

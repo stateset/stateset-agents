@@ -49,8 +49,8 @@ that no stability guarantee applies. The previous `stateset_agents.training`,
 `stateset_agents.rewards` paths were deprecated in v0.64.0 and removed in
 v0.65.0. The four root sim-to-real exports (`stateset_agents.SimToRealMetrics`,
 `SimToRealEvaluator`, `ConversationSimulator`, `ConversationSimulatorConfig`)
-are stable v1-contract names, so they stay deprecated through v0.65.x and are
-removed in v0.66.0.
+were deprecated in v0.64.0 and, after their v0.66.0 deadline, removed from the
+v1 contract; import them from `stateset_agents.experimental.sim_to_real`.
 
 The JSON manifest supplies each component's owner, documentation, tests,
 retained evidence, limitations, graduation criteria, and stable-contract

@@ -63,11 +63,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     torch-free `--dry-run`);
   - learning tests on three seeds and the `preference-optimization` (beta)
     entry in the component maturity contract.
-
-### Deprecated
-
-- `stateset_agents.core.enhanced.DPOTrainer` warns and will be removed in
-  v0.71.0; use `stateset_agents.training.preference.PreferenceTrainer`.
+- `stateset_agents.StateSetError` and `stateset_agents.ConfigurationError`
+  join the stable surface (reviewed additive contract change): the root of the
+  framework's one exception hierarchy and the typed error its public entry
+  points raise.
 
 ### Changed
 
@@ -128,6 +127,148 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raising), `_apply_optimizer_step` returns whether the update
   committed, and the `optimizer_updates` metric counts committed passes
   rather than attempted ones.
+- The gateway's chat routes (`/v1/messages`, `/v1/chat/completions`,
+  `/api/v1/conversations`) share one message-limit check
+  (`api.messages_utils.validate_message_limits`, raising `MessageLimitError`,
+  a `ValueError`) and one backend error formatter (`inference_error_text`)
+  instead of three private copies. Responses, status codes and error details
+  are unchanged. `PaginatedResponse` and its `APIResponse` base now live in
+  `stateset_agents.api.schemas`.
+- **One exception hierarchy rooted at `StateSetError`.**
+  `train()` argument checks, `TrainingConfig` validation (`__post_init__`,
+  `validate_for_training`) and `AgentConfig` validation (`ConfigValidationError`)
+  raise `ConfigurationError`, which is also a `ValueError` and prints the same
+  message, so existing `except ValueError` handlers and output are unchanged.
+  The `GRPOException` family now also derives from the matching category
+  errors in `core.errors` (`ValidationException` is a `ValidationError`,
+  `ResourceException` a new `ResourceError`, ...) and carries
+  `code`/`context`/`to_dict()`; the gateway's `APIError` family derives from
+  `StateSetError` too (its `str()` and wire format are unchanged).
+- **Oversized functions split, and their count is ratcheted.**
+  `cli._validate_config`, `AgentConfig.validate`, the `/api/v1/conversations`
+  handler, `finetune_workspace.check_config_values` (81 branches) and
+  `data.finetuning.validate_finetuning_row` are split into ordered helpers
+  with identical results (checked differentially against the previous
+  implementations over tens of thousands of generated inputs; new tests pin
+  the conversation route's 422 details). `tests/unit/test_complexity_ratchet.py`
+  fails if the number of functions over 150 lines or 40 branches rises above
+  77 (it was 82).
+- **Timezone-aware UTC everywhere.** The 47 `datetime.utcnow()` calls (and
+  the `default_factory=datetime.utcnow` fields), all in the gateway, use
+  `stateset_agents.utils.clock` (`utc_now`, `utc_isoformat`, `as_utc`)
+  instead of the naive API deprecated in Python 3.12. The `...Z` timestamp
+  strings (health, errors, `PaginatedResponse`) are byte-identical; datetime
+  fields in the non-v1 agent, training-job and metrics responses now carry a
+  `Z` (UTC) suffix, metrics and log timestamps that had no zone now end in
+  `Z`, and persisted naive timestamps are read back as UTC. Stable `/api/v1`
+  and `/v1` responses are unchanged.
+
+### Deprecated
+
+- **Every deprecation now names its removal release, enforced by CI.**
+  `tests/unit/test_deprecation_schedule.py` reads every "will be removed in
+  vX.Y.Z" / `removal="X.Y.Z"` marker in the package and fails once
+  `__version__` reaches it, rejects undated "future release" promises, and
+  requires every module that emits a `DeprecationWarning` to state its
+  removal version. New helper: `stateset_agents._deprecation.warn_deprecated`.
+- Dated the remaining open-ended deprecations (all provisional, removed in
+  **v0.71.0**): the nine `stateset_agents.core.<module>` shims for modules
+  moved to `stateset_agents.experimental` in v0.22.0
+  (`adaptive_learning_controller`, `few_shot_adaptation`,
+  `intelligent_orchestrator`, `intelligent_orchestrator_logic`,
+  `intelligent_orchestrator_models`, `long_term_planning`,
+  `multi_agent_coordination`, `multimodal_processing`,
+  `neural_architecture_search`); the core-type re-exports from
+  `stateset_agents.training.trainer`; `TrainingConfig` aliases in
+  `core.types`, `core.type_system` and `training.advanced_training_models`;
+  `ConversationDatasetConfig.max_turns` (deprecated in v0.69.0); the
+  `stateset_agents.api.grpo` app modules (deprecated since v0.16.0); the
+  training-lab `API_LAB_WS_QUERY_TOKEN` query-string credential;
+  `RulerRewardFunction(config=RulerConfig(...))`; and
+  `DistributedGRPOTrainer`.
+
+- `stateset_agents.api.models` (17 request/response models, none served by
+  any route) duplicated `stateset_agents.api.schemas`; importing it warns and
+  it is removed in **v0.71.0**. `APIResponse`/`PaginatedResponse` are
+  re-exported from `schemas` until then.
+
+- **One monitoring path.** Metrics, alerts and health checks go through
+  `stateset_agents.utils.monitoring` (`MonitoringService`, `MetricsCollector`,
+  `AlertManager`); tracing for the gateway is `stateset_agents.api.observability`.
+  `utils.alerts` (a third `AlertManager`), `utils.observability` (a second
+  `Span`), `utils.logging` and `utils.profiler` had no in-package users or
+  tests; importing them warns and they are removed in **v0.71.0**, as are the
+  `stateset_agents.utils.AlertManager`, `ObservabilityManager`, `get_logger`
+  and `PerformanceReport` names (dropped from `utils.__all__`, still served
+  with a warning).
+- `core.advanced_monitoring.AlertManager` and `.MetricsCollector` are renamed
+  `ThresholdAlertManager` and `TimeSeriesMetricsCollector` (the windowed
+  components behind `AdvancedMonitoringService`) so they no longer share the
+  canonical names; the old names warn and are removed in **v0.71.0**.
+
+- **The secondary GRPO service app is deprecated as a whole.**
+  `stateset_agents.api.grpo` (a second `create_app` plus its own config,
+  handlers, metrics, models, state and auth; 3,766 lines) is used by nothing
+  outside the package. Its app modules were deprecated in v0.16.0 without a
+  date and only warned on package-attribute access; now importing any part of
+  the package warns, and it is removed in **v0.71.0**. Use
+  `stateset_agents.api.main` (rate limiting lives in
+  `stateset_agents.api.rate_limiter`).
+- `stateset_agents.core.multiturn_agent` (with `multiturn_context` and
+  `multiturn_analysis`), the dialogue backend used only by that app, warns on
+  import and is removed in **v0.71.0**. Its class is renamed
+  `DialogueSessionAgent` so it no longer collides with the stable
+  `stateset_agents.MultiTurnAgent` (`core.agent.MultiTurnAgent`);
+  `core.multiturn_agent.MultiTurnAgent` is a deprecated alias. The API
+  reference no longer lists these modules, `api.grpo` or `api.models`.
+- `stateset_agents.core.types.FrameworkError`, `AgentError`,
+  `EnvironmentError`, `TrainingError` and `ConfigurationError` (a second,
+  unused error root) are deprecated aliases of the `core.errors` classes and
+  are removed in **v0.71.0**.
+- **Stable surface pruning: 34 root names the framework never uses are
+  deprecated and removed in v0.72.0** (the policy's one further minor
+  release). Each access warns with its replacement; they stay in `__all__`
+  and the v1 contract until removal. `core.type_system`: `TypeValidator`,
+  `ConfigValidator`, `TypeSafeSerializer`, `create_typed_config`,
+  `ensure_type_safety`, `ensure_async_type_safety`, `ModelConfig`,
+  `TypedTrainingConfig`, `TypedConversationTurn`, `TrajectoryData`,
+  `RewardMetrics`, `DeviceType`, `ModelSize`, `TrainingStage`;
+  `core.performance_optimizer`: `PerformanceOptimizer`, `MemoryMonitor`,
+  `ModelOptimizer`, `BatchOptimizer`, `OptimizationLevel`, `MemoryConfig`,
+  `ComputeConfig`, `DataConfig`, `PerformanceMetrics`; `core.error_handling`:
+  `TrainingException`, `ModelException`, `DataException`, `NetworkException`
+  (use the `core.errors` categories, or catch `StateSetError`), `ErrorHandler`,
+  `RetryConfig`, `CircuitBreakerConfig`, `retry_async`, `circuit_breaker`,
+  `handle_error`, `get_error_summary`. `GRPOException`, `ValidationException`,
+  `ResourceException` and `ErrorCode` stay: the framework raises or uses them.
+  The provisional modules keep serving every name.
+- One `ConversationTurn`: `core.trajectory.ConversationTurn` is canonical.
+  The `core.type_system` TypedDict is renamed `ConversationTurnDict`
+  (`TypedConversationTurn` now records that name in the contract; same object)
+  and `core.type_system.ConversationTurn` is a deprecated alias (v0.71.0).
+  `stateset_agents.core.types`, imported by nothing in the framework, warns on
+  import and is removed in **v0.71.0**; its `ConversationTurn` is the
+  canonical class (same `(user_message, assistant_response, reward)` form).
+- `stateset_agents.core.enhanced.DPOTrainer` warns and will be removed in
+  v0.71.0; use `stateset_agents.training.preference.PreferenceTrainer`.
+
+### Removed
+
+- The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator` and `ConversationSimulatorConfig`, deprecated in
+  v0.64.0 with removal promised for v0.66.0, are removed from
+  `stateset_agents.__all__` and the v1 contract (`contracts/public_api_v1.json`;
+  the `sim-to-real` component no longer lists them). Import them from
+  `stateset_agents.experimental.sim_to_real.metrics` /
+  `.conversation_simulator`.
+- The `Planning*`/`Plan*`/`Planner` names served (with a warning) from
+  `stateset_agents` and `stateset_agents.core`, deprecated in v0.38.0 "for one
+  release". Import them from `stateset_agents.experimental.long_term_planning`.
+- The hidden top-level per-model CLI aliases (for example
+  `stateset-agents qwen3-5-0-8b`), deprecated in v0.68.0 with removal in
+  v0.69.0. Use `stateset-agents model <preset>`.
+- The opt-in `STATESET_AGENTS_ENABLE_CORE_DEPRECATION` warning about the
+  repo-root `core` package, which no longer exists.
 
 ### Fixed
 
@@ -145,7 +286,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review, and apply work that finishes during the last poll. Each of these
   hashes every package source file, which took several seconds per pass on a
   loaded Windows runner; a stuck task still fails, with its elapsed time.
-
+- Stale docs: `docs/GRPO_FRAMEWORK_ENHANCEMENTS_v2.md` imported the deleted
+  `stateset_agents.api.enhanced_ultimate_grpo_service` and drove nonexistent
+  `/api/v2` routes on port 8002 (now the stable `/api/v1` routes of
+  `stateset_agents.api.main`); `docs/RL_FRAMEWORK_GUIDE.md` imported the
+  missing `training.trl_grpo_wrapper` (now `training.trl_grpo_trainer`);
+  `docs/KIMIK25_INTEGRATION.md` imported a nonexistent
+  `training.kimi25_config` (now `examples/kimi_k25_config.get_kimi_k25_config`);
+  two guides imported `PerformanceMonitor` from `utils.monitoring` instead of
+  `utils.performance_monitor`. `AGENTS.md` no longer lists the removed
+  repo-root shim packages or `test_integration.py`. Docs and
+  `examples/advanced_features_demo.py` import the research modules from
+  `stateset_agents.experimental` instead of the deprecated `core` shims.
 - **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
   partition issue combinations between eval and harvest, so the same seed
   yields different prompts than before; reference bases shift upward only when
@@ -264,6 +416,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DAPO pass with no response tokens, no longer advances the LR scheduler;
   `global_step` still counts `train_step` calls. Finite updates are
   numerically unchanged (step goldens).
+
+### Known issues
+
+- `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` never
+  executes code: it scores code-block markers and coding keywords in the last
+  assistant turn. The name overstates what it measures; a rename (for example
+  to a `CodeFormattingHeuristic`) with a deprecated alias is left to the
+  rewards workstream, which owns that module.
 
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 

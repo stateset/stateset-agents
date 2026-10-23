@@ -12,7 +12,6 @@ import time
 import uuid
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from fastapi import FastAPI
@@ -21,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from stateset_agents.utils.clock import utc_isoformat
 from stateset_agents.utils.credentials import credential_fingerprint
 
 from .auth import extract_request_credential, get_jwt_handler
@@ -657,7 +657,7 @@ class APIMetrics:
                     round(sorted_latencies[p99_index], 2) if sorted_latencies else 0
                 ),
             },
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_isoformat(),
         }
 
 

@@ -10,6 +10,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.clock import utc_now
+
 from ..dependencies import (
     AuthenticatedUser,
     get_current_user,
@@ -17,8 +19,12 @@ from ..dependencies import (
     require_role,
 )
 from ..errors import InternalError, TrainingConfigError, TrainingJobNotFoundError
-from ..models import PaginatedResponse
-from ..schemas import ErrorResponse, TrainingRequest, TrainingResponse
+from ..schemas import (
+    ErrorResponse,
+    PaginatedResponse,
+    TrainingRequest,
+    TrainingResponse,
+)
 from ..services.training_service import TrainingService
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -236,7 +242,7 @@ async def list_training_jobs(
         TrainingJobDetail(
             training_id=job_id,
             status=job.get("status", "unknown"),
-            created_at=job.get("created_at", datetime.utcnow()),
+            created_at=job.get("created_at", utc_now()),
             started_at=job.get("started_at"),
             completed_at=job.get("completed_at"),
             completion_scope=job.get("completion_scope"),
@@ -297,7 +303,7 @@ async def get_training_status(
     return TrainingJobDetail(
         training_id=training_id,
         status=job.get("status", "unknown"),
-        created_at=job.get("created_at", datetime.utcnow()),
+        created_at=job.get("created_at", utc_now()),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
         completion_scope=job.get("completion_scope"),

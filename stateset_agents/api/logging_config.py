@@ -8,8 +8,9 @@ import contextvars
 import logging
 import sys
 from collections.abc import MutableMapping
-from datetime import datetime
 from typing import Any
+
+from stateset_agents.utils.clock import utc_isoformat
 
 # Context variable for request ID
 request_id_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
@@ -68,7 +69,7 @@ class StructuredFormatter(logging.Formatter):
         parts = []
 
         if self.include_timestamp:
-            timestamp = datetime.utcnow().isoformat()
+            timestamp = utc_isoformat()
             parts.append(f"[{timestamp}]")
 
         parts.append(f"[{record.levelname}]")
@@ -91,7 +92,7 @@ class StructuredFormatter(logging.Formatter):
         import json
 
         log_data: dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_isoformat(),
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),

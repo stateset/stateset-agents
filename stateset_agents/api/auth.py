@@ -15,6 +15,7 @@ from fastapi import Request
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.clock import utc_now
 from stateset_agents.utils.credentials import credential_fingerprint
 
 from .config import get_config
@@ -376,7 +377,7 @@ class RequestContext(BaseModel):
     request_id: str
     user: AuthenticatedUser
     client_ip: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    timestamp: datetime = Field(default_factory=utc_now)
 
 
 async def get_request_context(request: Request) -> RequestContext:

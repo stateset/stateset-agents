@@ -17,8 +17,8 @@ from stateset_agents.core.advanced_monitoring import (
     AlertSeverity,
     DistributedTracer,
     MetricPoint,
-    MetricsCollector,
     MetricType,
+    TimeSeriesMetricsCollector,
     TraceSpan,
 )
 
@@ -174,7 +174,7 @@ class TestMetricsCollector:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector(retention_period=3600)
+            collector = TimeSeriesMetricsCollector(retention_period=3600)
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
@@ -253,7 +253,7 @@ class TestMetricsCollectorWithPrometheus:
             patch("stateset_agents.core.advanced_monitoring.Histogram"),
             patch("stateset_agents.core.advanced_monitoring.Summary"),
         ):
-            collector = MetricsCollector()
+            collector = TimeSeriesMetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 
@@ -629,7 +629,7 @@ class TestMetricAggregation:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector()
+            collector = TimeSeriesMetricsCollector()
             # Cleanup task is now lazily initialized, so no need to cancel
 
             # Add sample metrics
@@ -666,7 +666,7 @@ class TestMetricRetention:
         with patch(
             "stateset_agents.core.advanced_monitoring.PROMETHEUS_AVAILABLE", False
         ):
-            collector = MetricsCollector(retention_period=1)  # 1 second
+            collector = TimeSeriesMetricsCollector(retention_period=1)  # 1 second
             # Cleanup task is now lazily initialized, so no need to cancel
             return collector
 

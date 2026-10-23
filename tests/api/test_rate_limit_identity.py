@@ -9,11 +9,11 @@ from fastapi import FastAPI
 
 from stateset_agents.api import config as api_config
 from stateset_agents.api.config import APIConfig, RateLimitConfig, SecurityConfig
-from stateset_agents.api.grpo.rate_limiter import UnifiedRateLimiter
 from stateset_agents.api.middleware import (
     RateLimitMiddleware,
     RedisSlidingWindowLimiter,
 )
+from stateset_agents.api.rate_limiter import UnifiedRateLimiter
 from stateset_agents.utils.credentials import credential_fingerprint
 
 

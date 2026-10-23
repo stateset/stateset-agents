@@ -1,6 +1,42 @@
+"""Request and response schemas for the API gateway (one module per concept).
+
+``stateset_agents.api.models`` duplicated these and is deprecated.
+"""
+
+from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, field_validator
+
+from stateset_agents.utils.clock import utc_isoformat, utc_now
+
+
+class APIResponse(BaseModel):
+    """Base response model with common fields."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    request_id: str | None = Field(default=None, description="Request tracking ID")
+    timestamp: datetime = Field(
+        default_factory=utc_now, description="Response timestamp"
+    )
+
+    @field_serializer("timestamp")
+    def _serialize_timestamp(self, timestamp: datetime) -> str:
+        # Consistent 'Z' suffix (naive values are taken as UTC).
+        return utc_isoformat(timestamp)
+
+
+class PaginatedResponse(APIResponse):
+    """Base model for paginated responses."""
+
+    total: int = Field(..., description="Total number of items")
+    page: int = Field(default=1, description="Current page number")
+    page_size: int = Field(default=20, description="Items per page")
+    has_next: bool = Field(default=False, description="Whether there are more pages")
+    has_prev: bool = Field(
+        default=False, description="Whether there are previous pages"
+    )
 
 
 class AgentConfigRequest(BaseModel):

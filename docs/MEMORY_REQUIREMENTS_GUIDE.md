@@ -339,7 +339,7 @@ print(f"Peak: {peak:.2f} GB")
 ### Built-in Monitoring
 
 ```python
-from stateset_agents.utils.monitoring import PerformanceMonitor
+from stateset_agents.utils.performance_monitor import PerformanceMonitor
 
 monitor = PerformanceMonitor()
 monitor.start()

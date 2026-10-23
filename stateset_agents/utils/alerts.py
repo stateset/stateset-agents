@@ -40,6 +40,14 @@ except ImportError:
     slack_sdk = None
     HAS_SLACK = False
 
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.alerts",
+    removal="0.71.0",
+    replacement="stateset_agents.utils.monitoring.AlertManager",
+)
+
 logger = logging.getLogger(__name__)
 
 SLACK_EXCEPTIONS: tuple[type[BaseException], ...] = ()

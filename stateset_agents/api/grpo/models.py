@@ -11,6 +11,8 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from stateset_agents.utils.clock import utc_now
+
 from .config import get_grpo_config
 
 
@@ -377,7 +379,7 @@ class GRPOHealthResponse(BaseModel):
 
     status: str = Field(..., description="Service status")
     timestamp: datetime = Field(
-        default_factory=datetime.utcnow,
+        default_factory=utc_now,
         description="Response timestamp",
     )
     version: str = Field(default="2.0.0", description="API version")

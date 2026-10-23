@@ -103,6 +103,9 @@ def _json(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False, allow_nan=False)
 
 
+_MESSAGE_ROLES = frozenset({"system", "developer", "user", "assistant", "tool"})
+
+
 def validate_finetuning_row(row: Any) -> dict[str, Any]:
     """Validate a text chat record without dropping metadata or typed arguments.
 
@@ -122,46 +125,14 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     messages = row.get("messages")
     if not isinstance(messages, list) or not messages:
         raise ValueError("messages must be a nonempty list")
-    tools = row.get("tools", [])
-    if not isinstance(tools, list):
-        raise ValueError("tools must be a list")
-    names: set[str] = set()
-    for tool in tools:
-        function = tool.get("function") if isinstance(tool, dict) else None
-        if not isinstance(function, dict) or tool.get("type") != "function":
-            raise ValueError(
-                "Each tool must declare type=function and a function object"
-            )
-        name = function.get("name")
-        if not isinstance(name, str) or not name.strip() or name in names:
-            raise ValueError("Tool names must be nonempty and unique")
-        if not isinstance(function.get("parameters", {}), dict):
-            raise ValueError("Tool parameters must be a JSON Schema object")
-        names.add(name)
+    names = _declared_tool_names(row.get("tools", []))
 
     pending: set[str] = set()
     seen_calls: set[str] = set()
     has_user = False
     for index, message in enumerate(messages):
-        if not isinstance(message, dict):
-            raise ValueError(f"message {index} must be an object")
-        role = message.get("role")
-        if not isinstance(role, str) or role not in {
-            "system",
-            "developer",
-            "user",
-            "assistant",
-            "tool",
-        }:
-            raise ValueError(f"message {index} has an unsupported role")
-        calls = message.get("tool_calls", [])
-        if not isinstance(calls, list) or (calls and role != "assistant"):
-            raise ValueError(f"message {index}: tool_calls must be an assistant list")
-        content = message.get("content")
-        if content is None and role == "assistant" and calls:
-            pass
-        elif not isinstance(content, str) or (not content.strip() and not calls):
-            raise ValueError(f"message {index}: nonempty text content is required")
+        calls = _validate_message_shape(index, message)
+        role = message["role"]
         if pending and role != "tool":
             raise ValueError(
                 f"message {index}: missing results for preceding tool calls"
@@ -177,30 +148,12 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
             if not isinstance(call_id, str) or call_id not in pending:
                 raise ValueError(f"message {index}: unknown or repeated tool_call_id")
             pending.remove(call_id)
+        terminal = index == len(messages) - 1
         for call in calls:
-            function = call.get("function") if isinstance(call, dict) else None
-            if not isinstance(function, dict) or call.get("type") != "function":
-                raise ValueError("Tool calls must contain type=function and a function")
-            if (
-                not isinstance(function.get("name"), str)
-                or function["name"] not in names
-            ):
-                raise ValueError("Tool call references an undeclared function")
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                try:
-                    arguments = json.loads(arguments, parse_constant=_reject_constant)
-                except ValueError as exc:
-                    raise ValueError("Tool arguments must contain valid JSON") from exc
-            if not isinstance(arguments, dict):
-                raise ValueError(
-                    "Tool arguments must be an object or JSON object string"
-                )
-            call_id = call.get("id")
-            if "id" not in call and index == len(messages) - 1:
-                # Native tool-only templates may omit IDs on terminal targets.
+            call_id = _validate_tool_call(call, names, terminal=terminal)
+            if call_id is None:
                 continue
-            if not isinstance(call_id, str) or not call_id or call_id in seen_calls:
+            if call_id in seen_calls:
                 raise ValueError(
                     "Tool call IDs must be nonempty and unique per conversation"
                 )
@@ -209,6 +162,68 @@ def validate_finetuning_row(row: Any) -> dict[str, Any]:
     if not has_user or messages[-1]["role"] != "assistant":
         raise ValueError("A training conversation must end with an assistant target")
     return row
+
+
+def _declared_tool_names(tools: Any) -> set[str]:
+    """Return the declared function names, rejecting malformed declarations."""
+    if not isinstance(tools, list):
+        raise ValueError("tools must be a list")
+    names: set[str] = set()
+    for tool in tools:
+        function = tool.get("function") if isinstance(tool, dict) else None
+        if not isinstance(function, dict) or tool.get("type") != "function":
+            raise ValueError(
+                "Each tool must declare type=function and a function object"
+            )
+        name = function.get("name")
+        if not isinstance(name, str) or not name.strip() or name in names:
+            raise ValueError("Tool names must be nonempty and unique")
+        if not isinstance(function.get("parameters", {}), dict):
+            raise ValueError("Tool parameters must be a JSON Schema object")
+        names.add(name)
+    return names
+
+
+def _validate_message_shape(index: int, message: Any) -> list[Any]:
+    """Check one message's role, tool-call list and content; return its calls."""
+    if not isinstance(message, dict):
+        raise ValueError(f"message {index} must be an object")
+    role = message.get("role")
+    if not isinstance(role, str) or role not in _MESSAGE_ROLES:
+        raise ValueError(f"message {index} has an unsupported role")
+    calls = message.get("tool_calls", [])
+    if not isinstance(calls, list) or (calls and role != "assistant"):
+        raise ValueError(f"message {index}: tool_calls must be an assistant list")
+    content = message.get("content")
+    if content is None and role == "assistant" and calls:
+        pass
+    elif not isinstance(content, str) or (not content.strip() and not calls):
+        raise ValueError(f"message {index}: nonempty text content is required")
+    return calls
+
+
+def _validate_tool_call(call: Any, names: set[str], *, terminal: bool) -> str | None:
+    """Validate one assistant tool call; return its ID (None if omitted at the end)."""
+    function = call.get("function") if isinstance(call, dict) else None
+    if not isinstance(function, dict) or call.get("type") != "function":
+        raise ValueError("Tool calls must contain type=function and a function")
+    if not isinstance(function.get("name"), str) or function["name"] not in names:
+        raise ValueError("Tool call references an undeclared function")
+    arguments = function.get("arguments")
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments, parse_constant=_reject_constant)
+        except ValueError as exc:
+            raise ValueError("Tool arguments must contain valid JSON") from exc
+    if not isinstance(arguments, dict):
+        raise ValueError("Tool arguments must be an object or JSON object string")
+    if "id" not in call and terminal:
+        # Native tool-only templates may omit IDs on terminal targets.
+        return None
+    call_id = call.get("id")
+    if not isinstance(call_id, str) or not call_id:
+        raise ValueError("Tool call IDs must be nonempty and unique per conversation")
+    return call_id
 
 
 def load_finetuning_data(

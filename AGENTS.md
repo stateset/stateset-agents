@@ -5,11 +5,14 @@
   - `stateset_agents/core/`: Core primitives (agents, environments, rewards, trajectories, data processing).
   - `stateset_agents/training/`: Trainers, configs, and training loops.
   - `stateset_agents/rewards/`: Advanced/domain reward functions.
-  - `stateset_agents/utils/`: Logging, monitoring, observability, W&B integration.
+  - `stateset_agents/utils/`: Monitoring (`utils/monitoring.py` is the one metrics/alerts path), UTC clock helpers (`utils/clock.py`), W&B integration.
   - `stateset_agents/api/`: FastAPI gateway (includes `/v1/messages` and OpenAI-compat endpoints).
-- `api/`, `core/`, `training/`, `rewards/`, `environments/`: Deprecated shim modules used in-repo only for backwards compatibility/tests. Prefer `stateset_agents.*`.
+  - `stateset_agents/experimental/`: Research code with no stability guarantee.
+- The stable surface is `stateset_agents.__all__`, `stateset_agents.api.__all__` and the HTTP routes in `contracts/public_api_v1.json` (see `docs/API_COMPATIBILITY.md`). The old repo-root shim packages (`api/`, `core/`, `training/`, `rewards/`, `environments/`) were removed; import from `stateset_agents.*`.
+- Deprecations go through `stateset_agents._deprecation.warn_deprecated` and must name the removal release; `tests/unit/test_deprecation_schedule.py` fails CI once a removal is due.
+- Errors derive from `stateset_agents.core.errors.StateSetError`; raise typed errors (e.g. `ConfigurationError`, also a `ValueError`) at public boundaries.
 - `examples/`: Runnable demos and quick starts.
-- `tests/` + `test_integration.py`: Unit and integration tests.
+- `tests/`: Unit (`tests/unit`), API (`tests/api`), integration (`tests/integration`) and end-to-end tests.
 - `scripts/`, `deployment/`, `benchmarks/`: Utilities for training, deployment, and performance.
 
 ## Build, Test, and Development Commands

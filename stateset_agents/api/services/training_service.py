@@ -12,6 +12,7 @@ from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
 from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
 from stateset_agents.utils.async_calls import drain_owned_operation, run_sync_owned
+from stateset_agents.utils.clock import utc_now
 
 from ..errors import ConflictError, ResourceExhaustedError, ServiceUnavailableError
 from ..schemas import TrainingRequest
@@ -299,7 +300,7 @@ class TrainingService:
         # The task can start after this coroutine returns. Own the accepted
         # inputs before constructors or caller code can mutate nested values.
         training_id = str(uuid.uuid4())
-        now = datetime.utcnow()
+        now = utc_now()
         output_dir = root / training_id
         request.training_config_overrides = {
             **(request.training_config_overrides or {}),
@@ -356,7 +357,7 @@ class TrainingService:
         if job["status"] not in TERMINAL_TRAINING_STATUSES:
             job.update(
                 status="cancelled" if task.cancelled() else "failed",
-                completed_at=datetime.utcnow(),
+                completed_at=utc_now(),
                 error=(
                     None
                     if task.cancelled()
@@ -405,7 +406,7 @@ class TrainingService:
                 {
                     "status": "completed",
                     "completion_scope": progress_cb.completion_scope,
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": utc_now(),
                 }
             )
 
@@ -414,7 +415,7 @@ class TrainingService:
             self.training_jobs[training_id].update(
                 {
                     "status": "cancelled",
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": utc_now(),
                 }
             )
 
@@ -426,7 +427,7 @@ class TrainingService:
                 {
                     "status": "failed",
                     "error": str(e),
-                    "completed_at": datetime.utcnow(),
+                    "completed_at": utc_now(),
                 }
             )
 

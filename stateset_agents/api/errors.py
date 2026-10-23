@@ -6,7 +6,6 @@ Unified error handling with consistent response format across all API services.
 
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from enum import Enum
 from typing import Any, TypeVar, cast
 
@@ -17,6 +16,11 @@ from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 from starlette.types import ExceptionHandler
+
+from stateset_agents.utils.clock import utc_isoformat
+
+from ..core.errors import ErrorContext as _CoreErrorContext
+from ..core.errors import StateSetError
 
 logger = logging.getLogger(__name__)
 
@@ -105,8 +109,15 @@ class ErrorResponse(BaseModel):
 # ============================================================================
 
 
-class APIError(Exception):
-    """Base API exception with consistent error information."""
+class APIError(StateSetError):
+    """Base API exception with consistent error information.
+
+    Part of the framework's one hierarchy (``except StateSetError`` catches
+    it); ``code`` is the wire :class:`ErrorCode` and ``str(exc)`` is the bare
+    message.
+    """
+
+    message_only_str = True
 
     def __init__(
         self,
@@ -117,13 +128,19 @@ class APIError(Exception):
         documentation_url: str | None = None,
         internal_error: Exception | None = None,
     ):
-        super().__init__(message)
+        Exception.__init__(self, message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.details = details or []
         self.documentation_url = documentation_url
         self.internal_error = internal_error
+        self.context = _CoreErrorContext(
+            operation="api_request",
+            component="api",
+            details={"status_code": status_code},
+        )
+        self.cause = internal_error
 
     def to_response(self, request_id: str, path: str) -> dict[str, Any]:
         """Convert to response dictionary."""
@@ -133,7 +150,7 @@ class APIError(Exception):
                 "message": self.message,
             },
             "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_isoformat(),
             "path": path,
         }
 
@@ -370,7 +387,7 @@ def build_error_response(
             "message": message,
         },
         "request_id": request_id,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_isoformat(),
         "path": str(request.url.path),
     }
 

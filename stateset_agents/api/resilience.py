@@ -18,6 +18,7 @@ from enum import Enum
 from typing import Any, TypeVar, cast
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.utils.clock import utc_now
 
 logger = logging.getLogger(__name__)
 
@@ -497,7 +498,7 @@ class HealthCheckResult:
     status: HealthStatus
     message: str | None = None
     latency_ms: float = 0.0
-    last_check: datetime = field(default_factory=datetime.utcnow)
+    last_check: datetime = field(default_factory=utc_now)
     details: dict[str, Any] = field(default_factory=dict)
 
 

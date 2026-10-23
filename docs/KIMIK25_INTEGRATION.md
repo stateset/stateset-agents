@@ -52,9 +52,10 @@ python examples/finetune_kimi25_gspo.py \
 ### Custom Configuration
 
 ```python
-from stateset_agents.training.kimi25_config import get_kimi25_config
+# examples/kimi_k25_config.py (run from the examples/ directory)
+from kimi_k25_config import get_kimi_k25_config
 
-config = get_kimi25_config(
+config = get_kimi_k25_config(
     model_name="moonshotai/Kimi-K2.5",
     task="customer_service",
     use_lora=True,
