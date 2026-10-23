@@ -679,8 +679,22 @@ class GSPOTrainer(TrainingRuntime):
             counter="none",
             **nonfinite_grad_settings(self.config),
             named_modules=[self.model],
+            on_commit=lambda: self._sync_rollout_backend(),
             label="GSPO",
         )
+
+    def _sync_rollout_backend(self) -> None:
+        """Keep the vLLM rollout engine on-policy after a committed update.
+
+        ``last_rollout_sync`` is True/False for the sync outcome and ``None``
+        when nothing was attempted (``config.rollout_sync`` off or no vLLM
+        engine in use); a failed sync leaves the engine stale and training
+        continues (``VLLMEngineMixin.sync_vllm_weights``).
+        """
+        self.last_rollout_sync: bool | None = None
+        if not bool(getattr(self.config, "rollout_sync", True)):
+            return
+        self.last_rollout_sync = self.generator.sync_vllm_weights(self.model)
 
     def _apply_optimizer_step(self, loss: torch.Tensor) -> bool:
         """Backpropagate ``loss`` and commit it; return whether it committed.

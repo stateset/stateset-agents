@@ -176,6 +176,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpineLoopMixin.train()` runs each episode through a new
   `_train_episode` method (task boundary, rollouts, step, reporting);
   the phases it passes to `_training_phase` and their order are unchanged.
+- `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
+  the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
+  `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): seed ->
+  batch -> `train_step` -> report -> periodic `checkpoint-<n>` save ->
+  callbacks (`on_step_end`; `should_abort` stops) -> one final save, also
+  after an abort; a failing step propagates without a final save. It
+  returns a `DedicatedRun` (iterations, aborted, abort reasons, last
+  metrics). Each entry point keeps its public return shape, its iteration
+  count field, final directory and save format for backward compatibility:
+  the GSPO family returns the agent, runs `config.num_outer_iterations`
+  and exports the model to `final_model` (`save_model`); DAPO, GEPO and
+  VAPO return `(model, tokenizer, metrics_history)`, run
+  `config.num_episodes` and write resumable checkpoints to `final`
+  (`save_checkpoint`). Their log lines and W&B logging also stay their own.
+- `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` take `callbacks`, with `train_with_gspo`'s contract:
+  `on_step_end(step, metrics)` after each iteration and its checkpoint, and
+  a callback setting `should_abort` stops the run after the final save
+  (`train_with_gspo_token` then sets `agent._training_aborted`, as
+  `train_with_gspo` does). Only `train_with_gspo` accepted callbacks before.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
@@ -390,6 +410,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns NaN or an infinite score now raises `ValueError` (round 4's rule
   for every reward path) instead of carrying the value into the group
   advantages.
+- `train_with_gspo` honours `config.use_gspo_token`: it trains with
+  `GSPOTokenTrainer.train_step_token_level` instead of plain GSPO.
 - `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
   (it called the reward synchronously, so an async one failed), and DAPO
   awaits any awaitable a reward returns, not only coroutines.
@@ -749,6 +771,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversation with tool observations trained the policy to predict tool
   output; such conversations are now skipped (nothing supervised). Other
   conversations keep the documented fallback.
+- **Dedicated GSPO and DAPO trainers keep their vLLM rollout engine
+  on-policy.** After every committed optimizer update (not after a skipped
+  one) the spine `OptimizerStep` pushes the policy weights into the engine
+  (`VLLMEngineMixin.sync_vllm_weights`, honouring `config.rollout_sync`);
+  before, vLLM kept sampling from the starting weights for the whole run.
+  A sync that fails with an engine error (runtime, I/O, missing
+  `sync_weights`, weight-name or layout mismatch) logs a warning, marks the
+  engine stale (`vllm_weights_stale`) and training continues; any other
+  exception is a bug and propagates. `DAPOTrainer` with
+  `use_vllm=True` now builds its engine: its gate read
+  `VLLM_BACKEND_AVAILABLE`, which only the setup it guarded sets, so DAPO
+  always generated with HuggingFace.
+- **Step cadences and scheduler names are validated before training.**
+  `TrainingConfig.validate_for_training` rejects a `logging_steps`,
+  `save_steps` or `eval_steps` that is not a positive integer (a 0 raised
+  `ZeroDivisionError` mid-run) and an `lr_scheduler_type` outside the native
+  set (`cosine`, `linear`, `constant`; before, an unknown name trained at a
+  constant rate). `TRLGRPOConfig` keeps TRL's wider scheduler set.
+  `SingleTurnGRPOTrainer` now raises when its scheduler cannot be built, as
+  `MultiTurnGRPOTrainer` does, instead of logging at DEBUG and training at a
+  constant rate.
+- **`train_with_gepo` no longer dies on a batch without a valid group.**
+  `GEPOTrainer.train_step` returned only `policy_loss`/`average_reward` when
+  every prompt produced fewer than two responses, and the entry point's log
+  line then raised `KeyError: 'gepo_coefficient_mean'`; the step now reports
+  every key an update step does (`optimizer_updates` 0, coefficient mean 1).
+  `GEPOConfig` and `VAPOConfig` reject a `group_size` below 2 with a
+  `ConfigurationError` (both drop groups smaller than two, so such a run
+  trained on nothing).
+- **`config.seed` seeds the dedicated entry points.** `train_with_gspo`,
+  `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` ignored it: DAPO/GEPO/VAPO drew batches from the global
+  NumPy generator and nothing seeded torch, so two runs with the same config
+  differed. Each now seeds Python, NumPy and torch from `config.seed` before
+  loading the model and again when `run_dedicated_loop` starts
+  (`spine.seed_dedicated_run`), and draws batches from a NumPy `Generator`
+  seeded with it (`spine.sample_prompts`), so a run repeats batch for batch.
+  Like `MultiTurnGRPOTrainer`, this reseeds the process-global generators.
+  VAPO's value warmup draws its prompts from a `Generator` seeded with
+  `config.seed`. `train_with_gepo` with no prompts now ends with the final
+  save, as DAPO and VAPO do, instead of stepping on empty batches.
+- **`train_with_dapo`, `train_with_gepo` and `train_with_vapo` have one
+  source of truth for the model and output directory.** The model manager
+  loaded `config.model_name` while the entry point logged and stub-checked
+  the `model_name` argument, and checkpoints went to the `output_dir`
+  argument (default `./outputs/<algo>`) while the config logged to W&B named
+  `config.output_dir`. Now explicit arguments win: `model_name` and a given
+  `output_dir` override the config's fields (a warning names any difference)
+  and the run uses a copy of the config with them applied
+  (`spine.dedicated_run_config`; the caller's config is not mutated).
+  `output_dir` defaults to `None`: with a config, `config.output_dir` is
+  used; without one, `./outputs/<algo>` as before. **Behaviour change:** a
+  call that passes a config but no `output_dir` now saves under
+  `config.output_dir` (default `./outputs`), not `./outputs/<algo>`.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's

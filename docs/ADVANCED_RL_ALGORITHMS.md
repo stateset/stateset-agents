@@ -17,6 +17,20 @@ Every trainer below evaluates a named `PolicyObjective`
 for the exact formulas, the eleven presets (including Dr. GRPO, BNPO, RLOO,
 REINFORCE++-baseline, and CISPO), and the numeric pin against TRL 1.12.
 
+The `train_with_gepo`, `train_with_dapo` and `train_with_vapo` entry points
+share one run contract:
+
+- `model_name` and an explicit `output_dir` override the config's fields;
+  without `output_dir` a given config's `output_dir` is used
+  (`./outputs/<algo>` when no config is passed).
+- `config.seed` seeds Python, NumPy and torch and the generator that draws
+  each batch of `per_device_train_batch_size` prompts, so a run repeats.
+- `callbacks` receive `on_step_end` after each iteration (and after that
+  iteration's checkpoint); one setting `should_abort` stops the run after a
+  final save.
+- Checkpoints go to `<output_dir>/checkpoint-<n>` every `save_steps`
+  iterations and to `<output_dir>/final` at the end.
+
 ## GEPO: Group Expectation Policy Optimization
 
 GEPO is designed for stable training in heterogeneous and distributed environments where network latency causes policy staleness.

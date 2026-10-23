@@ -19,9 +19,21 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any, TypeVar
 
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+
 logger = logging.getLogger(__name__)
 
 _Item = TypeVar("_Item")
+
+#: Engine failures a weight sync survives (the engine is marked stale): the
+#: engine's runtime/I-O errors, a missing ``sync_weights`` (TypeError) and
+#: weight-name or layout mismatches (KeyError, AttributeError, ValueError).
+#: Anything else is a bug in the sync path and propagates.
+_WEIGHT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    *INFERENCE_EXCEPTIONS,
+    KeyError,
+    AttributeError,
+)
 
 
 class PromptGroupRollouts:
@@ -128,6 +140,8 @@ class VLLMEngineMixin:
     config: Any
     vllm_generator: Any | None
     _vllm_initialized: bool
+    #: True after a failed weight sync, until one succeeds.
+    vllm_weights_stale: bool = False
     _vllm_label: str = "vLLM rollouts"
     _vllm_init_exceptions: tuple[type[BaseException], ...] = (
         RuntimeError,
@@ -177,6 +191,35 @@ class VLLMEngineMixin:
     def using_vllm(self) -> bool:
         """Whether generation goes through an initialized vLLM engine."""
         return bool(self._vllm_initialized and self.vllm_generator is not None)
+
+    def sync_vllm_weights(self, model: Any) -> bool | None:
+        """Push ``model``'s weights into the engine after a committed update.
+
+        Returns ``None`` when no engine is in use, True after a successful
+        sync, and False when the engine has no ``sync_weights`` or the sync
+        failed: the engine is then stale (``vllm_weights_stale``) and keeps
+        serving the previous policy, and training continues.
+        """
+        generator = self.vllm_generator
+        if not self.using_vllm or generator is None:
+            return None
+        sync = getattr(generator, "sync_weights", None)
+        try:
+            if not callable(sync):
+                raise TypeError(f"{type(generator).__name__} has no sync_weights")
+            sync(model)
+        except (
+            _WEIGHT_SYNC_EXCEPTIONS
+        ) as error:  # a stale engine must not stop training
+            self.vllm_weights_stale = True
+            logger.warning(
+                "%s: vLLM weight sync failed; rollouts lag the policy: %s",
+                self._vllm_label,
+                error,
+            )
+            return False
+        self.vllm_weights_stale = False
+        return True
 
 
 __all__ = [

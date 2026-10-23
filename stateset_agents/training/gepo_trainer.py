@@ -23,12 +23,19 @@ from typing import Any
 import numpy as np
 import torch
 
+from ..core.errors import ConfigurationError
 from . import objectives, rl_losses
 from .config import TrainingConfig
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
     validate_training_config,
+)
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
 )
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
@@ -161,6 +168,13 @@ class GEPOConfig(TrainingConfig):
     # committed inner update (a pass skipped under nonfinite_grad_policy="skip"
     # does not advance it); global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
+
+    def validate_for_training(self) -> None:
+        """GEPO drops groups of fewer than two responses, so a smaller
+        ``group_size`` would train on nothing."""
+        super().validate_for_training()
+        if type(self.group_size) is not int or self.group_size < 2:
+            raise ConfigurationError("group_size must be an integer of at least 2")
 
     @classmethod
     def from_training_config(
@@ -597,7 +611,7 @@ class GEPOTrainer(TrainingRuntime):
         num_groups = len(rollouts)
         if num_groups == 0:
             logger.warning("No valid groups in batch")
-            return {"policy_loss": 0.0, "average_reward": 0.0}
+            return self._step_metrics(0.0, [], [], [], updates=0)
 
         # --- Update phase --------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
@@ -648,17 +662,13 @@ class GEPOTrainer(TrainingRuntime):
             reduce=lambda total: total / num_groups,
         )
 
-        # Compute metrics
-        metrics = {
-            "policy_loss": passes.losses[-1],
-            "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
-            "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
-            "gepo_coefficient_mean": np.mean(all_gepo_coefs) if all_gepo_coefs else 1.0,
-            "gepo_coefficient_std": np.std(all_gepo_coefs) if all_gepo_coefs else 0.0,
-            "learning_rate": self.scheduler.get_last_lr()[0],
-            "global_step": self.global_step,
-            "optimizer_updates": passes.committed,
-        }
+        metrics = self._step_metrics(
+            passes.losses[-1],
+            all_rewards,
+            all_advantages,
+            all_gepo_coefs,
+            updates=passes.committed,
+        )
 
         # Store metrics
         for key in ["policy_loss", "average_reward"]:
@@ -666,6 +676,28 @@ class GEPOTrainer(TrainingRuntime):
                 self.metrics_history[key].append(metrics[key])
 
         return metrics
+
+    def _step_metrics(
+        self,
+        policy_loss: Any,
+        rewards: list[float],
+        advantages: list[float],
+        coefficients: list[float],
+        *,
+        updates: int,
+    ) -> dict[str, Any]:
+        """One ``train_step``'s metrics; a step without a valid group reports
+        the same keys (no updates, coefficient 1)."""
+        return {
+            "policy_loss": policy_loss,
+            "average_reward": np.mean(rewards) if rewards else 0.0,
+            "advantage_std": np.std(advantages) if advantages else 0.0,
+            "gepo_coefficient_mean": np.mean(coefficients) if coefficients else 1.0,
+            "gepo_coefficient_std": np.std(coefficients) if coefficients else 0.0,
+            "learning_rate": self.scheduler.get_last_lr()[0],
+            "global_step": self.global_step,
+            "optimizer_updates": updates,
+        }
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Publish a complete resumable checkpoint."""
@@ -681,9 +713,10 @@ async def train_with_gepo(
     reward_fn: Callable[[str, str], float | Awaitable[float]],
     train_prompts: list[str],
     config: GEPOConfig | None = None,
-    output_dir: str = "./outputs/gepo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using GEPO algorithm.
@@ -693,15 +726,27 @@ async def train_with_gepo(
         reward_fn: Function that takes (prompt, response) and returns reward
         train_prompts: List of training prompts
         config: GEPO configuration (uses defaults if None)
-        output_dir: Directory to save checkpoints
+        output_dir: Directory to save checkpoints; overrides
+            ``config.output_dir`` when given (``model_name`` likewise overrides
+            ``config.model_name``). Without it, ``config.output_dir`` is used,
+            or ``./outputs/gepo`` when no config is given.
         use_wandb: Whether to log to Weights & Biases
         wandb_project: W&B project name
+        callbacks: Get ``on_step_end`` after each iteration (after its
+            checkpoint); one setting ``should_abort`` stops training after the
+            final save
 
     Returns:
         Tuple of (model, tokenizer, metrics_history)
     """
-    if config is None:
-        config = GEPOConfig(model_name=model_name, output_dir=output_dir)
+    config = dedicated_run_config(
+        config,
+        GEPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/gepo",
+        entrypoint="train_with_gepo",
+    )
     _reject_unsupported_resume(config, "train_with_gepo")
 
     logger.info("=" * 60)
@@ -719,7 +764,8 @@ async def train_with_gepo(
         )
 
     # Load model and tokenizer
-    logger.info(f"Loading model: {model_name}")
+    seed_dedicated_run(config.seed)
+    logger.info(f"Loading model: {config.model_name}")
     model_manager = GEPOModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
 
@@ -737,18 +783,9 @@ async def train_with_gepo(
     logger.info(f"Group size: {config.group_size}")
     logger.info(f"Total iterations: {config.num_episodes}")
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
-        # Sample batch of prompts
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
-
-        # Train step
-        metrics = await trainer.train_step(batch_prompts)
-
-        # Log metrics
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
                 f"Iteration {iteration}/{config.num_episodes} | "
@@ -760,14 +797,20 @@ async def train_with_gepo(
             if use_wandb:
                 wandb.log(metrics, step=iteration)
 
-        # Save checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+        callbacks=callbacks or [],
+        seed=config.seed,
+    )
 
-    # Save final model
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]

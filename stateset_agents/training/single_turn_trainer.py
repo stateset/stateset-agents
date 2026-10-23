@@ -436,29 +436,29 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, TrainingRuntime):
             return
         cosine_schedule = get_cosine_schedule_with_warmup
         linear_schedule = get_linear_schedule_with_warmup
+        if cosine_schedule is None or linear_schedule is None:
+            raise ImportError("transformers scheduler helpers are unavailable")
 
         num_warmup_steps = int(
             num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
         )
         lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
 
-        try:
-            if lr_scheduler_type == "cosine" and cosine_schedule is not None:
-                self.lr_scheduler = cosine_schedule(
-                    self.optimizer,
-                    num_warmup_steps=num_warmup_steps,
-                    num_training_steps=num_training_steps,
-                )
-            elif lr_scheduler_type == "linear" and linear_schedule is not None:
-                self.lr_scheduler = linear_schedule(
-                    self.optimizer,
-                    num_warmup_steps=num_warmup_steps,
-                    num_training_steps=num_training_steps,
-                )
-            else:
-                self.lr_scheduler = None
-        except SINGLE_TRAINER_EXCEPTIONS as sched_err:
-            logger.debug("Scheduler initialization skipped: %s", sched_err)
+        # A failed build propagates, as in MultiTurn: training at a constant
+        # rate the config did not ask for is worse than stopping.
+        if lr_scheduler_type == "cosine":
+            self.lr_scheduler = cosine_schedule(
+                self.optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps,
+            )
+        elif lr_scheduler_type == "linear":
+            self.lr_scheduler = linear_schedule(
+                self.optimizer,
+                num_warmup_steps=num_warmup_steps,
+                num_training_steps=num_training_steps,
+            )
+        else:
             self.lr_scheduler = None
 
     def _update_global_stats(self, batch_mean: float, batch_size: int) -> None:

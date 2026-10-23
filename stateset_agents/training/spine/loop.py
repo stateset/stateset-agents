@@ -16,14 +16,28 @@ resume, task boundaries and success-only finalization -- moved here verbatim
 The host provides the algorithm (``training_step``,
 ``generate_trajectories``, ``evaluate``, scheduler, checkpoints, task and
 replay handling); see the declarations under ``TYPE_CHECKING``.
+
+:func:`run_dedicated_loop` is the outer loop of the dedicated prompt/response
+entry points (``train_with_gspo`` and GSPO-token, ``train_with_dapo``,
+``train_with_gepo``, ``train_with_vapo``; slice S9): a fixed number of
+iterations of batch -> ``train_step`` -> report -> periodic save -> optional
+callbacks, then one final save. ``config.seed`` seeds Python, NumPy and torch
+(:func:`seed_dedicated_run`) and the NumPy ``Generator`` the batches are drawn
+from (:func:`sample_prompts`).
 """
 
 from __future__ import annotations
 
 import asyncio
+import copy
+import dataclasses
 import inspect
 import logging
-from typing import TYPE_CHECKING, Any
+import os
+import random
+from collections.abc import Awaitable, Callable, Sequence
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import numpy as np
 
@@ -34,6 +48,7 @@ from ..callbacks import (
     notify_episode_end,
     notify_evaluation_end,
     notify_optimizer_step,
+    notify_step_end,
     notify_training_end,
     notify_training_start,
 )
@@ -473,4 +488,177 @@ class SpineLoopMixin(TrainingRuntime):
         return self.agent
 
 
-__all__ = ["SpineLoopMixin"]
+@dataclass
+class DedicatedRun:
+    """What :func:`run_dedicated_loop` did."""
+
+    #: Iterations that completed a ``train_step``.
+    iterations: int = 0
+    #: True when a callback asked to stop early.
+    aborted: bool = False
+    #: The aborting callbacks' ``abort_reason``\s (empty ones left out).
+    abort_reasons: list[str] = dataclasses.field(default_factory=list)
+    #: The last iteration's metrics (``None`` before the first).
+    metrics: dict[str, Any] | None = None
+
+
+async def _maybe_await(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
+_T = TypeVar("_T")
+
+
+def dedicated_run_config(
+    config: _T | None,
+    factory: Callable[..., _T],
+    *,
+    model_name: str,
+    output_dir: str | None,
+    default_output_dir: str,
+    entrypoint: str,
+) -> _T:
+    """The config a ``train_with_<algo>(model_name, ..., config, output_dir)``
+    entry point runs with: one source of truth for the model and directory.
+
+    Explicit arguments win: ``model_name`` (required) and ``output_dir`` (when
+    given) override the config's fields, with a warning when they differ.
+    Without an ``output_dir`` argument a given config keeps its own
+    ``output_dir``; without a config one is built from the arguments and
+    ``default_output_dir``. A given config (a dataclass or a legacy duck-typed
+    object) is copied, never mutated, and the copy's fields are what the run
+    loads, saves to and logs.
+    """
+    if config is None:
+        return factory(
+            model_name=model_name, output_dir=output_dir or default_output_dir
+        )
+    changes: dict[str, Any] = {"model_name": model_name}
+    if output_dir is not None:
+        changes["output_dir"] = output_dir
+    for name, value in changes.items():
+        current = getattr(config, name)
+        if current != value:
+            logger.warning(
+                "%s: the %s argument %r overrides config.%s=%r",
+                entrypoint,
+                name,
+                value,
+                name,
+                current,
+            )
+    if dataclasses.is_dataclass(config) and not isinstance(config, type):
+        return cast(_T, dataclasses.replace(config, **changes))
+    # A legacy duck-typed config: a shallow copy with the arguments applied.
+    effective = copy.copy(config)
+    for name, value in changes.items():
+        setattr(effective, name, value)
+    return effective
+
+
+def seed_dedicated_run(seed: int | None) -> np.random.Generator:
+    """Seed Python, NumPy and torch from ``seed``; return a batch generator.
+
+    The dedicated entry points call this before loading the model (so LoRA
+    and value-head initialisation repeat) and :func:`run_dedicated_loop` calls
+    it again when the loop starts, so the batches and sampling do not depend
+    on how much randomness model loading consumed. ``None`` seeds nothing and
+    returns an unseeded generator.
+    """
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed % 2**32)
+        try:
+            import torch
+        except ImportError:  # pragma: no cover - torch-free install
+            pass
+        else:
+            torch.manual_seed(seed)  # also seeds every CUDA device
+    return np.random.default_rng(seed)
+
+
+def sample_prompts(
+    prompts: Sequence[_T], batch_size: int
+) -> Callable[[int, np.random.Generator], list[_T] | None]:
+    """A :func:`run_dedicated_loop` batch hook: ``batch_size`` distinct
+    prompts per iteration (all of them when there are fewer), drawn from the
+    loop's generator. No prompts ends training."""
+
+    def batch(iteration: int, rng: np.random.Generator) -> list[_T] | None:
+        size = min(batch_size, len(prompts))
+        if size <= 0:
+            return None
+        return [prompts[int(i)] for i in rng.choice(len(prompts), size, replace=False)]
+
+    return batch
+
+
+async def run_dedicated_loop(
+    *,
+    iterations: int,
+    batch: Callable[[int, np.random.Generator], Any],
+    step: Callable[[Any], Awaitable[dict[str, Any]]],
+    save: Callable[[str], Any],
+    output_dir: str,
+    save_steps: int,
+    final_name: str,
+    report: Callable[[int, dict[str, Any]], Any] | None = None,
+    callbacks: Sequence[Any] = (),
+    seed: int | None = None,
+) -> DedicatedRun:
+    """The dedicated entry points' outer loop.
+
+    The loop first seeds the run (:func:`seed_dedicated_run`) with ``seed``.
+    Each iteration ``i``: ``batch(i, rng)`` gives the step's prompts, drawing
+    any randomness from the seeded generator ``rng`` (``None`` ends training
+    early), ``step(prompts)`` runs one ``train_step``,
+    ``report(i, metrics)`` logs it, every ``save_steps`` iterations
+    ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, then the
+    ``callbacks`` get ``on_step_end(step=i, metrics)``; any whose
+    ``should_abort`` is then set stops training. After the loop -- also after
+    an abort -- ``save(output_dir/<final_name>)`` publishes the final model. An
+    exception propagates without a final save, like :class:`SpineLoopMixin`'s
+    success-only finalization. ``report`` may be sync or async.
+
+    Callbacks are step-level only: unlike :class:`SpineLoopMixin`, no
+    training start/end, episode or evaluation events are dispatched (as
+    ``train_with_gspo`` always behaved).
+    """
+    run = DedicatedRun()
+    rng = seed_dedicated_run(seed)
+    for iteration in range(iterations):
+        prompts = batch(iteration, rng)
+        if prompts is None:
+            break
+        metrics = await step(prompts)
+        run.iterations, run.metrics = iteration + 1, metrics
+        if report is not None:
+            await _maybe_await(report(iteration, metrics))
+        if (iteration + 1) % save_steps == 0:
+            save(os.path.join(output_dir, f"checkpoint-{iteration + 1}"))
+        if callbacks:
+            await notify_step_end(callbacks, step=iteration, metrics=metrics)
+            aborting = [cb for cb in callbacks if getattr(cb, "should_abort", False)]
+            if aborting:
+                run.aborted = True
+                run.abort_reasons = [
+                    str(getattr(cb, "abort_reason", "") or "") for cb in aborting
+                ]
+                run.abort_reasons = [reason for reason in run.abort_reasons if reason]
+                logger.warning(
+                    "Training aborted by callback: %s",
+                    "; ".join(run.abort_reasons) or "callback requested abort",
+                )
+                break
+    save(os.path.join(output_dir, final_name))
+    return run
+
+
+__all__ = [
+    "DedicatedRun",
+    "SpineLoopMixin",
+    "dedicated_run_config",
+    "run_dedicated_loop",
+    "sample_prompts",
+    "seed_dedicated_run",
+]

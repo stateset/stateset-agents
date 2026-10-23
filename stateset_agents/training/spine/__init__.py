@@ -14,6 +14,10 @@ Currently provided:
   frozen old-policy log-probs (chunked or single-graph), each committed
   through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
   give the token- or row-share weights.
+* :func:`run_dedicated_loop` -- the dedicated GSPO/DAPO/GEPO/VAPO entry
+  points' outer loop (seeding, batch, step, report, saves, callbacks);
+  :func:`seed_dedicated_run` seeds a run from ``config.seed`` and
+  :func:`sample_prompts` draws its batches.
 * :class:`GRPOUpdateMixin` -- the GRPO update half (inner passes or an
   accumulated backward, EWC, the optimizer commit) shared by
   ``MultiTurnGRPOTrainer.training_step`` and ``SingleTurnGRPOTrainer``.
@@ -34,7 +38,13 @@ Importing this package does not import ``torch``.
 from __future__ import annotations
 
 from .grpo_update import GRPOUpdateMixin
-from .loop import SpineLoopMixin
+from .loop import (
+    DedicatedRun,
+    SpineLoopMixin,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 from .rollouts import (
     PromptGroupRollouts,
     VLLMEngineMixin,
@@ -63,6 +73,10 @@ __all__ = [
     "EpisodeScorer",
     "ResponseScorer",
     "SpineLoopMixin",
+    "DedicatedRun",
+    "run_dedicated_loop",
+    "sample_prompts",
+    "seed_dedicated_run",
     "PromptGroupRollouts",
     "VLLMEngineMixin",
     "vllm_dtype",
