@@ -15,7 +15,7 @@ Reference: https://arxiv.org/abs/2508.17850
 
 import logging
 import os
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -31,6 +31,7 @@ from .runtime_state import (
     validate_training_config,
 )
 from .spine.rollouts import PromptGroupRollouts
+from .spine.scoring import CallableScorer
 from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
@@ -217,7 +218,7 @@ class GEPOTrainer(TrainingRuntime):
         config: GEPOConfig,
         model: Any,
         tokenizer: Any,
-        reward_fn: Callable[[str, str], float],
+        reward_fn: Callable[[str, str], float | Awaitable[float]],
         ref_model: Any | None = None,
     ):
         # Ensure transformers is loaded for scheduler
@@ -456,6 +457,10 @@ class GEPOTrainer(TrainingRuntime):
         )
         return result.loss
 
+    async def _compute_reward(self, prompt: str, response: str) -> float:
+        """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
+        return await CallableScorer(self.reward_fn).score(prompt, response)
+
     def compute_group_advantages(
         self,
         rewards: torch.Tensor,
@@ -551,7 +556,8 @@ class GEPOTrainer(TrainingRuntime):
             prompt: str, group_responses: list[dict[str, Any]]
         ) -> dict[str, Any]:
             rewards = [
-                self.reward_fn(prompt, resp["response"]) for resp in group_responses
+                await self._compute_reward(prompt, resp["response"])
+                for resp in group_responses
             ]
             rewards_tensor = torch.tensor(
                 rewards, dtype=torch.float32, device=self.device
@@ -672,7 +678,7 @@ class GEPOTrainer(TrainingRuntime):
 
 async def train_with_gepo(
     model_name: str,
-    reward_fn: Callable[[str, str], float],
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
     train_prompts: list[str],
     config: GEPOConfig | None = None,
     output_dir: str = "./outputs/gepo",

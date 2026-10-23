@@ -30,6 +30,7 @@ from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.rollouts import PromptGroupRollouts
+from .spine.scoring import CallableScorer
 from .spine.update import (
     OptimizerStep,
     UpdateLoop,
@@ -558,11 +559,8 @@ class VAPOTrainer(TrainingRuntime):
         )
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
-        """Resolve sync or async reward callbacks to a float."""
-        reward = self.reward_fn(prompt, response)
-        if isinstance(reward, Awaitable):
-            reward = await reward
-        return float(reward)
+        """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
+        return await CallableScorer(self.reward_fn).score(prompt, response)
 
     def get_hidden_states(
         self,

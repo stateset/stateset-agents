@@ -21,7 +21,6 @@ import numpy as np
 from stateset_agents.core.reward_context import (
     RewardUnavailableError,
     normalize_turns,
-    score_response,
 )
 from stateset_agents.core.trajectory import (
     ConversationTurn,
@@ -60,6 +59,7 @@ from .single_turn_state import (
     merge_scenario_into_state,
     resolve_task_id,
 )
+from .spine.scoring import ResponseScorer
 from .trainer_utils import (
     apply_dropout_setting,
     get_amp,
@@ -402,11 +402,14 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         group; every other error propagates.
         """
         if self.reward_fn is not None:
-            # The shared single-response path (reward_context.score_response):
-            # [user, assistant] turns and the standard context, so the reply
-            # scores exactly as it would in a one-turn episode.
+            # The shared single-response path (spine ResponseScorer, i.e.
+            # reward_context.score_response): [user, assistant] turns and the
+            # standard context, so the reply scores exactly as it would in a
+            # one-turn episode.
             *prompt_turns, reply = normalize_turns(turns)
-            score = await score_response(self.reward_fn, prompt_turns, reply, context)
+            score = await ResponseScorer(self.reward_fn).score(
+                prompt_turns, reply, context
+            )
         else:
             get_reward = getattr(self.environment, "get_reward", None)
             if not callable(get_reward):

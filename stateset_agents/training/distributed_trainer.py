@@ -36,12 +36,12 @@ except ImportError:
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import Environment
 from stateset_agents.core.reward import RewardFunction
-from stateset_agents.core.reward_context import score_episode
 from stateset_agents.core.trajectory import TrajectoryGroup
 from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
 from .loss_computation import compute_grpo_loss
+from .spine.scoring import EpisodeScorer
 
 logger = logging.getLogger(__name__)
 
@@ -424,11 +424,9 @@ class DistributedGRPOTrainer:
         return trajectories
 
     async def _compute_rewards(self, trajectories: list[Any]) -> list[float]:
-        """Score each trajectory on the shared path (``score_episode``)."""
-        return [
-            await score_episode(trajectory, self.reward_function, self.environment)
-            for trajectory in trajectories
-        ]
+        """Score each trajectory on the shared path (spine ``EpisodeScorer``)."""
+        scorer = EpisodeScorer(self.reward_function, self.environment)
+        return [await scorer.score(trajectory) for trajectory in trajectories]
 
     def _compute_grpo_loss(
         self, trajectories: list[Any], rewards: list[float]

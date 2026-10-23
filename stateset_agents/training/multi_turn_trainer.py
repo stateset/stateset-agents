@@ -17,7 +17,7 @@ from typing import Any, TypeAlias
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
-from stateset_agents.core.reward_context import RewardUnavailableError, score_episode
+from stateset_agents.core.reward_context import RewardUnavailableError
 
 from .callbacks import _maybe_await, notify_checkpoint_saved
 from .config import estimate_grpo_optimizer_steps
@@ -56,6 +56,7 @@ from .profiling import (
 )
 from .runtime_state import validate_training_config
 from .spine.loop import SpineLoopMixin
+from .spine.scoring import EpisodeScorer
 from .trainer_utils import (
     apply_dropout_setting,
     backward_training_loss,
@@ -770,7 +771,8 @@ class MultiTurnGRPOTrainer(SpineLoopMixin):
     async def _score_trajectory(
         self, trajectory: MultiTurnTrajectory, scenario: dict[str, Any]
     ) -> None:
-        """Give a finished episode its one reward (``reward_context.score_episode``).
+        """Give a finished episode its one reward (spine ``EpisodeScorer``,
+        i.e. ``reward_context.score_episode``).
 
         Training, periodic evaluation, post-training evaluation and the
         distributed trainer share that helper, so the same episode earns the
@@ -782,7 +784,9 @@ class MultiTurnGRPOTrainer(SpineLoopMixin):
         ):
             self._warn_default_reward()
         with self.profiler.measure("reward_evaluation"):
-            await score_episode(trajectory, self.reward_fn, self.environment, scenario)
+            await EpisodeScorer(self.reward_fn, self.environment).score(
+                trajectory, scenario
+            )
 
     def _warn_default_reward(self) -> None:
         if getattr(self, "_warned_default_reward", False):

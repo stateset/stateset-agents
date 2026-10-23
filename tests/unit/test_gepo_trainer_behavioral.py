@@ -328,3 +328,28 @@ async def test_group_generation_batches_through_hf_generate_group():
     assert all(r["response_start_idx"] == prompt_length for r in responses)
     assert all(r["prompt_length"] == prompt_length for r in responses)
     assert model.training  # restored after sampling
+
+
+@pytest.mark.asyncio
+async def test_train_step_accepts_an_async_reward_function(monkeypatch):
+    """GEPO scores rewards through the spine's async-aware scorer like DAPO and
+    VAPO: an ``async def`` reward gives the same step as its sync twin."""
+    results = []
+    for asynchronous in (False, True):
+        trainer, fixed = _tiny_gepo_trainer(), _fixed_group_responses()
+
+        def sync_reward(prompt, response):
+            return 1.0 if response == "ok" else 0.0
+
+        async def async_reward(prompt, response):
+            return sync_reward(prompt, response)
+
+        trainer.reward_fn = async_reward if asynchronous else sync_reward
+
+        async def fake_generate(prompt, group_size, _fixed=fixed):
+            return _fixed
+
+        monkeypatch.setattr(trainer, "generate_group_responses", fake_generate)
+        results.append(await trainer.train_step(["p"]))
+    assert results[0]["average_reward"] == results[1]["average_reward"] == 0.5
+    assert results[0]["policy_loss"] == pytest.approx(results[1]["policy_loss"])

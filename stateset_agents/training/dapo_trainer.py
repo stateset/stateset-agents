@@ -25,6 +25,7 @@ from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.rollouts import PromptGroupRollouts, VLLMEngineMixin
+from .spine.scoring import CallableScorer
 from .spine.update import (
     OptimizerStep,
     UpdateLoop,
@@ -453,13 +454,8 @@ class DAPOTrainer(VLLMEngineMixin, TrainingRuntime):
         )
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
-        """Support sync or async reward callables."""
-        reward = self.reward_fn(prompt, response)
-        if asyncio.iscoroutine(reward):
-            reward_value = await cast(Awaitable[float], reward)
-        else:
-            reward_value = cast(float, reward)
-        return float(reward_value)
+        """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
+        return await CallableScorer(self.reward_fn).score(prompt, response)
 
     _vllm_label = "DAPO"
     _vllm_init_exceptions = DAPO_EXCEPTIONS

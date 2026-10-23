@@ -54,6 +54,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stateset_agents.training.spine.loop` logger, and code that patched
   `multi_turn_trainer.notify_training_start`/`notify_training_end` should
   patch `spine.loop` instead.
+- `stateset_agents.training.spine.EpisodeScorer`, `ResponseScorer` and
+  `CallableScorer` are the one reward-adapter layer every native trainer's
+  rollouts score through, built only on `core.reward_context`
+  (`score_episode` for MultiTurn and the distributed trainers,
+  `score_response` for SingleTurn, GSPO, GSPO-token and the TRL reward
+  bridge, a sync-or-async `reward_fn(prompt, response)` callable for DAPO,
+  GEPO and VAPO). Scores are unchanged (reward-path parity tests); scorers
+  never absorb a failure, so the trainers' rollout policy (only
+  `RewardUnavailableError` is dropped, an all-dropped step raises) is as
+  before.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
@@ -166,6 +176,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raising), `_apply_optimizer_step` returns whether the update
   committed, and the `optimizer_updates` metric counts committed passes
   rather than attempted ones.
+- `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
+  (it called the reward synchronously, so an async one failed), and DAPO
+  awaits any awaitable a reward returns, not only coroutines.
+- `GSPOTokenTrainer` samples and scores with `GSPOTrainer`'s step (one
+  shared rollout loop): a group's replies are now scored concurrently, as
+  GSPO already did, and with `beta > 0` the reference log-probs of a group
+  are scored in one batch (equal to the former per-reply scores up to fp32
+  rounding).
 - The gateway's chat routes (`/v1/messages`, `/v1/chat/completions`,
   `/api/v1/conversations`) share one message-limit check
   (`api.messages_utils.validate_message_limits`, raising `MessageLimitError`,

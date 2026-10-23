@@ -22,7 +22,7 @@ import torch
 # Import framework components
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_context import normalize_turns, score_response
+from stateset_agents.core.reward_context import normalize_turns
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
@@ -37,6 +37,7 @@ from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTI
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
 from .runtime_state import validate_training_config
+from .spine.scoring import ResponseScorer
 from .trl_grpo_config import TRLGRPOConfig
 
 logger = logging.getLogger(__name__)
@@ -801,7 +802,8 @@ class TRLGRPORewardFunction:
                 last = completion[-1]
                 completion = last.get("content", "") if isinstance(last, dict) else last
 
-            # The shared single-response path (reward_context.score_response):
+            # The shared single-response path (spine ResponseScorer, i.e.
+            # reward_context.score_response):
             # [user, assistant] turns and the standard context, so any
             # RewardFunction scores the completion as it would a one-turn
             # episode and scenario labels reach it.
@@ -820,8 +822,8 @@ class TRLGRPORewardFunction:
                     None,
                 )
             rewards.append(
-                await score_response(
-                    self.reward_model, conversation, str(completion), scenario
+                await ResponseScorer(self.reward_model).score(
+                    conversation, str(completion), scenario
                 )
             )
 
