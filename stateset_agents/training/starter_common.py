@@ -547,6 +547,7 @@ async def run_starter_config(
         CONVERSATION_CONFIGS,
         ConversationEnvironment,
     )
+    from stateset_agents.core.grounding import log_heuristic_reward_notice
     from stateset_agents.rewards.multi_objective_reward import create_domain_reward
     from stateset_agents.training.gspo_trainer import train_with_gspo
 
@@ -563,6 +564,9 @@ async def run_starter_config(
     ).copy()
     environment = ConversationEnvironment(**env_config)
     reward_model = create_domain_reward(config.task)
+    log_heuristic_reward_notice(
+        logger, display_name, f"create_domain_reward({config.task!r})"
+    )
 
     logger.info("Starting GSPO training for %s", config.model_name)
     return await train_with_gspo(

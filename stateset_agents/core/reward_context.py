@@ -29,8 +29,18 @@ from __future__ import annotations
 
 import inspect
 import math
+import numbers
 from collections.abc import Mapping, Sequence
 from typing import Any
+
+from .trajectory import ConversationTurn
+
+#: ``RewardResult.metadata`` key a reward sets (to a short reason) when its
+#: score is an opted-in fallback rather than a real verdict, e.g.
+#: ``NSRVerifierConfig(error_score=0.0)`` or ``RulerRewardFunction(
+#: fallback_enabled=True)`` during an outage. Environments and
+#: ``score_episode`` copy it to the trajectory's metadata.
+REWARD_FALLBACK_KEY = "reward_fallback"
 
 #: Context key an environment sets when it asks for one step's reward.
 REWARD_SCOPE_KEY = "reward_scope"
@@ -40,7 +50,8 @@ LATEST_TURN_SCOPE = "latest_turn"
 
 def requires_environment_context(reward_fn: Any) -> bool:
     """Whether ``reward_fn`` judges executed environment evidence."""
-    return bool(getattr(reward_fn, "requires_environment_context", False))
+    # Only an explicit True counts: a mock's auto-attribute is not a claim.
+    return getattr(reward_fn, "requires_environment_context", False) is True
 
 
 def _resolve_scenario(
@@ -90,6 +101,23 @@ def build_reward_context(
     return context
 
 
+def _trajectory_scenario(
+    trajectory: Any, scenario: Mapping[str, Any] | None = None
+) -> Mapping[str, Any] | None:
+    """The scenario a trajectory ran: ``scenario`` or the one it recorded."""
+    if isinstance(scenario, dict):
+        return scenario
+    for source in (
+        getattr(trajectory, "metadata", None),
+        getattr(trajectory, "initial_state", None),
+    ):
+        if isinstance(source, Mapping):
+            recorded = source.get("scenario")
+            if isinstance(recorded, dict):
+                return recorded
+    return None
+
+
 def trajectory_reward_context(
     trajectory: Any,
     scenario: Mapping[str, Any] | None = None,
@@ -104,14 +132,9 @@ def trajectory_reward_context(
     """
     final_state = getattr(trajectory, "final_state", None)
     environment = final_state if isinstance(final_state, Mapping) else None
-    if not isinstance(scenario, dict):
-        metadata = getattr(trajectory, "metadata", None)
-        initial = getattr(trajectory, "initial_state", None)
-        for source in (metadata, initial):
-            if isinstance(source, Mapping) and isinstance(source.get("scenario"), dict):
-                scenario = source["scenario"]
-                break
-    return build_reward_context(environment, scenario, reward_fn=reward_fn)
+    return build_reward_context(
+        environment, _trajectory_scenario(trajectory, scenario), reward_fn=reward_fn
+    )
 
 
 def scores_latest_turn_only(context: Mapping[str, Any] | None) -> bool:
@@ -151,23 +174,91 @@ def environment_applied_reward(
     return isinstance(metadata, Mapping) and bool(metadata.get("reward_fn_applied"))
 
 
-def reward_score(result: Any) -> float:
-    """The finite score of a reward result (object, mapping or bare number).
+def _real(value: Any) -> float | None:
+    """A Python or NumPy/torch scalar as a float, or None if it is not one."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, numbers.Real):
+        return float(value)
+    item = getattr(value, "item", None)
+    if callable(item) and getattr(value, "ndim", 0) == 0:
+        scalar: Any = item()
+        if isinstance(scalar, bool):
+            return None
+        if isinstance(scalar, numbers.Real):
+            return float(scalar)
+    return None
 
-    Raises ``TypeError`` for an unknown result type and ``ValueError`` for a
-    non-finite score: neither is ever replaced by a stand-in value.
+
+def reward_score(result: Any) -> float:
+    """The finite score of a reward result: a ``RewardResult`` (anything with
+    ``.score``, or its ``.total_reward`` alias), a mapping with ``"score"`` (or
+    ``"total_reward"``), or a real scalar (Python, NumPy or a 0-d tensor).
+
+    Raises ``TypeError`` for anything else (``None``, a string, a list) and
+    ``ValueError`` for a non-finite score: neither is ever replaced by a
+    stand-in value. Every caller (environments, ``Environment.get_reward``,
+    ``score_episode``) uses this one parser.
     """
-    if hasattr(result, "score"):
-        score = float(result.score)
-    elif isinstance(result, Mapping) and "score" in result:
-        score = float(result["score"])
-    elif isinstance(result, (int, float)) and not isinstance(result, bool):
-        score = float(result)
+    if isinstance(result, Mapping):
+        candidates = [result.get("score"), result.get("total_reward")]
     else:
-        raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+        # ``total_reward`` is RewardResult's compatibility alias.
+        candidates = [
+            getattr(result, "score", None),
+            getattr(result, "total_reward", None),
+            result,
+        ]
+    score = next((value for value in map(_real, candidates) if value is not None), None)
+    if score is None:
+        raise TypeError(
+            f"Unexpected reward result {type(result).__name__!r}: expected a "
+            "RewardResult, a mapping with 'score' or a real number"
+        )
     if not math.isfinite(score):
         raise ValueError(f"reward score must be finite, got {score}")
     return score
+
+
+def reward_fallback(result: Any) -> str | None:
+    """The fallback reason a reward result is flagged with, if any."""
+    metadata = getattr(result, "metadata", None)
+    if isinstance(metadata, Mapping) and metadata.get(REWARD_FALLBACK_KEY):
+        return str(metadata[REWARD_FALLBACK_KEY])
+    return None
+
+
+def note_fallback(metadata: dict[str, Any], result: Any) -> None:
+    """Record ``result``'s fallback flag (if any) in episode ``metadata``."""
+    reason = reward_fallback(result)
+    if reason is not None:
+        metadata[REWARD_FALLBACK_KEY] = reason
+
+
+def normalize_turns(turns: Any) -> list[ConversationTurn]:
+    """Conversation turns as ``ConversationTurn`` objects.
+
+    Accepts ``ConversationTurn`` objects and ``{"role": ..., "content": ...}``
+    mappings (the shape ``Trajectory.add_turn`` and many callers use), so
+    rewards that read ``turn.role`` never see a dict and silently score 0.
+    """
+    normalized: list[ConversationTurn] = []
+    for turn in list(turns or []):
+        if isinstance(turn, ConversationTurn):
+            normalized.append(turn)
+        elif isinstance(turn, Mapping):
+            normalized.append(
+                ConversationTurn(
+                    role=str(turn.get("role", "user")),
+                    content="" if turn.get("content") is None else str(turn["content"]),
+                    metadata=dict(turn.get("metadata") or {}),
+                )
+            )
+        elif hasattr(turn, "role") and hasattr(turn, "content"):
+            normalized.append(turn)
+        else:
+            raise TypeError(f"Unsupported conversation turn: {type(turn).__name__!r}")
+    return normalized
 
 
 def _scores_per_step(reward_fn: Any, environment: Any) -> bool:
@@ -183,6 +274,24 @@ async def _call(reward_fn: Any, turns: list[Any], context: dict[str, Any]) -> An
     if inspect.isawaitable(result):
         result = await result
     return result
+
+
+def response_reward_context(
+    prompt: str,
+    scenario: Mapping[str, Any] | None = None,
+    *,
+    reward_fn: Any = None,
+) -> dict[str, Any]:
+    """The reward context for one reply to one prompt (single-turn trainers).
+
+    The standard shape: the scenario's keys lifted to the top level, with
+    ``"user_query"`` set to the prompt unless the scenario has one, and the
+    scenario under ``"scenario"``. ``GSPOTrainer``, ``GSPOTokenTrainer`` and
+    the TRL reward bridge build their context here, so scenario labels such
+    as ``ground_truth`` reach the reward as they do in a multi-turn episode.
+    """
+    query = {"user_query": str(prompt), **dict(scenario or {})}
+    return build_reward_context(None, query, reward_fn=reward_fn)
 
 
 async def score_episode(
@@ -226,7 +335,7 @@ async def score_episode(
             raise ValueError(f"Episode reward must be finite, got {total}")
         return total
 
-    turns = list(getattr(trajectory, "turns", None) or [])
+    turns = normalize_turns(getattr(trajectory, "turns", None))
     context = trajectory_reward_context(trajectory, scenario, reward_fn=reward_fn)
     intrinsic = metadata.get("environment_rewards")
     if not isinstance(intrinsic, list) or not intrinsic:
@@ -238,13 +347,34 @@ async def score_episode(
         i for i, turn in enumerate(turns) if getattr(turn, "role", None) == "assistant"
     ]
     breakdown: Any = None
+    fallback: str | None = None
     if _scores_per_step(reward_fn, environment) and assistant:
-        step_context = {**context, REWARD_SCOPE_KEY: LATEST_TURN_SCOPE}
+        # Replay each step against the state it was scored at, recorded by
+        # the environment in state_history; fall back to the final state.
+        states = getattr(trajectory, "state_history", None)
+        per_step_states = (
+            states
+            if isinstance(states, list) and len(states) == len(assistant)
+            else None
+        )
+        final_step_context = {**context, REWARD_SCOPE_KEY: LATEST_TURN_SCOPE}
         scores = []
-        for index in assistant:
+        for step, index in enumerate(assistant):
+            step_context = (
+                build_reward_context(
+                    per_step_states[step],
+                    _trajectory_scenario(trajectory, scenario),
+                    reward_fn=reward_fn,
+                    latest_turn_only=True,
+                )
+                if per_step_states is not None
+                and isinstance(per_step_states[step], Mapping)
+                else final_step_context
+            )
             result = await _call(reward_fn, turns[: index + 1], step_context)
             scores.append(reward_score(result))
             breakdown = getattr(result, "breakdown", None)
+            fallback = reward_fallback(result) or fallback
         parts = [score / len(scores) for score in scores]
         if len(parts) != len(intrinsic):
             # Steps and assistant turns do not line up; credit the mean once.
@@ -253,6 +383,7 @@ async def score_episode(
         result = await _call(reward_fn, turns, context)
         parts = [0.0] * (len(intrinsic) - 1) + [reward_score(result)]
         breakdown = getattr(result, "breakdown", None)
+        fallback = reward_fallback(result)
 
     turn_rewards = [base + part for base, part in zip(intrinsic, parts, strict=True)]
     total = math.fsum(turn_rewards)
@@ -271,16 +402,23 @@ async def score_episode(
         if error:
             # The environment's own reward failed; this one scored.
             trajectory.metadata["environment_reward_error"] = error
+        if fallback is not None:
+            trajectory.metadata[REWARD_FALLBACK_KEY] = fallback
     return total
 
 
 __all__ = [
     "LATEST_TURN_SCOPE",
+    "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
     "assistant_turns_in_scope",
     "build_reward_context",
     "environment_applied_reward",
+    "normalize_turns",
+    "note_fallback",
+    "reward_fallback",
     "requires_environment_context",
+    "response_reward_context",
     "reward_score",
     "score_episode",
     "scores_latest_turn_only",

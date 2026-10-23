@@ -54,7 +54,10 @@ DEFAULT_RANGE = (0.0, 1.0)
 
 
 def _reward_modules() -> list[ModuleType]:
-    modules = [importlib.import_module("stateset_agents.core.reward")]
+    modules = [
+        importlib.import_module("stateset_agents.core.reward"),
+        importlib.import_module("stateset_agents.core.grounding"),
+    ]
     modules.append(rewards_package)
     for info in pkgutil.iter_modules(
         rewards_package.__path__, f"{rewards_package.__name__}."
@@ -106,7 +109,8 @@ class _FakeJudge:
 
 
 async def _fake_nsr(payload: dict[str, Any]) -> dict[str, Any]:
-    return {"decision": "approve", "decision_id": "d-1", "confidence": 0.9}
+    # A real verdict word, so the "verdict" inputs score both 1.0 and 0.0.
+    return {"decision": "approved", "decision_id": "d-1", "confidence": 0.9}
 
 
 #: Constructors for rewards that need arguments, keyed by qualified name.
@@ -119,6 +123,12 @@ CONSTRUCTORS: dict[str, Callable[[Any], Any]] = {
     ),
     "stateset_agents.rewards.nsr_verifier.NSRVerifierReward": lambda cls: cls(
         client=_fake_nsr
+    ),
+    "stateset_agents.core.grounding.GroundedReward": lambda cls: cls(
+        HelpfulnessReward()
+    ),
+    "stateset_agents.rewards.multi_objective_components.GroundedComponent": (
+        lambda cls: cls(EmpathyRewardComponent())
     ),
     "stateset_agents.rewards.multi_objective_reward.MultiObjectiveRewardFunction": (
         lambda cls: cls([EmpathyRewardComponent(), LengthRewardComponent()])
@@ -186,6 +196,14 @@ INPUTS: dict[str, list[ConversationTurn]] = {
     "blank_reply": [
         ConversationTurn(role="user", content="Hello?"),
         ConversationTurn(role="assistant", content=""),
+    ],
+    "verdict_approve": [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Approved: your refund is issued."),
+    ],
+    "verdict_deny": [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Denied: the item is past 90 days."),
     ],
 }
 CONTEXTS: dict[str, dict[str, Any] | None] = {
@@ -299,11 +317,11 @@ class _Scripted(RewardFunction):
         return RewardResult(score=self.score)
 
 
-async def test_composite_flags_a_nan_component_and_keeps_a_finite_total():
+async def test_composite_raises_for_a_nan_component():
+    # A NaN is a bug or garbage output, never an outage to reweight around.
     composite = CompositeReward([_Scripted(math.nan), _Scripted(0.5)])
-    result = await composite.compute_reward(INPUTS["multi_turn"])
-    assert math.isfinite(result.score)
-    assert result.metadata["failed_components"] == ["scripted" + str(math.nan)]
+    with pytest.raises(ValueError, match="non-finite"):
+        await composite.compute_reward(INPUTS["multi_turn"])
 
 
 async def test_composite_raises_for_a_critical_nan_component():
@@ -312,7 +330,7 @@ async def test_composite_raises_for_a_critical_nan_component():
         await composite.compute_reward(INPUTS["multi_turn"])
 
 
-async def test_multi_objective_flags_a_nan_component():
+async def test_multi_objective_raises_for_a_nan_component():
     class NaNComponent(EmpathyRewardComponent):
         async def compute_score(self, turns, context=None):
             return math.nan
@@ -320,11 +338,10 @@ async def test_multi_objective_flags_a_nan_component():
     reward = MultiObjectiveRewardFunction(
         [EmpathyRewardComponent(weight=0.5), NaNComponent(name="nan", weight=0.5)]
     )
-    result = await reward.compute_reward(
-        [{"role": "assistant", "content": "Sorry, I understand."}]
-    )
-    assert math.isfinite(result.score)
-    assert result.metadata["failed_components"] == ["nan"]
+    with pytest.raises(ValueError, match="non-finite"):
+        await reward.compute_reward(
+            [{"role": "assistant", "content": "Sorry, I understand."}]
+        )
 
 
 @pytest.mark.parametrize("reward_type", [RewardType.IMMEDIATE, RewardType.SPARSE])
@@ -358,3 +375,12 @@ async def test_trainer_drops_an_episode_with_a_nan_reward():
         config=TrainingConfig(num_generations=2),
     )
     assert await trainer.generate_trajectories([scenario], num_generations=2) == []
+
+
+async def test_nsr_contract_inputs_exercise_both_verdicts():
+    from stateset_agents.rewards.nsr_verifier import NSRVerifierReward
+
+    reward = NSRVerifierReward(client=_fake_nsr)
+    approve = await reward.compute_reward(INPUTS["verdict_approve"], {})
+    deny = await reward.compute_reward(INPUTS["verdict_deny"], {})
+    assert (approve.score, deny.score) == (1.0, 0.0)

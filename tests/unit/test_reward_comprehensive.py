@@ -24,6 +24,7 @@ from stateset_agents.core.reward import (
     create_helpful_agent_reward,
     create_tutoring_reward,
 )
+from stateset_agents.core.reward_base import RewardUnavailableError
 from stateset_agents.core.trajectory import ConversationTurn
 
 
@@ -447,7 +448,7 @@ class TestRewardErrorHandling:
 
         class FailingReward(RewardFunction):
             async def compute_reward(self, turns, context):
-                raise ValueError("Simulated failure")
+                raise RewardUnavailableError("Simulated outage")
 
         # Composite should handle failure gracefully
         components = [

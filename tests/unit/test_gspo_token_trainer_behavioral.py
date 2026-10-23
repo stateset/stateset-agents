@@ -219,7 +219,8 @@ async def test_reward_computed_via_compute_turn_reward(gspo_token_trainer_tiny):
     contents = {turn.content for turn, _context, _history in calls}
     assert contents == {"ok", "nope"}
     for _turn, context, _history in calls:
-        assert context == {"user_query": "hello"}
+        # The standard reward context: scenario keys lifted plus "scenario".
+        assert context == {"user_query": "hello", "scenario": {"user_query": "hello"}}
 
 
 def _set_old_log_probs(trainer, monkeypatch, log_ratios):

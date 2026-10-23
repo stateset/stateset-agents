@@ -152,7 +152,7 @@ async def test_listing_candidate_numbers_earns_far_less_than_answering(listing):
     reward = CorrectnessReward(ground_truth={"answer": "4"})
     answered = await reward.compute_reward(_conversation("2 + 2 = 4", QUESTION))
     listed = await reward.compute_reward(_conversation(listing, QUESTION))
-    assert answered.score == 0.5
+    assert answered.score == 1.0
     assert listed.score <= answered.score / 4
 
 
@@ -169,7 +169,7 @@ async def test_listing_candidate_text_answers_earns_a_share_at_most(listing):
     question = "What is the capital of France?"
     answered = await reward.compute_reward(_conversation("It is Paris.", question))
     listed = await reward.compute_reward(_conversation(listing, question))
-    assert answered.score == 0.5
+    assert answered.score == 1.0
     assert listed.score <= answered.score / 3 + 1e-9
 
 
@@ -323,3 +323,219 @@ async def test_shipped_factories_never_pay_for_stalling(name):
         stalled = await episode(10, attach_to_environment=attach)
         assert stalled <= once + 1e-9, (name, attach, stalled, once)
         assert 0.0 <= stalled <= 1.0 + 1e-9
+
+
+# --- Canned templates and keyword stuffing never beat a real answer ----------
+#
+# Every shipped heuristic factory, in a real environment, across several
+# scenarios: a task-specific reference answer must strictly outscore a canned
+# template, keyword stuffing (the heuristics' own lexicons), stuffing wrapped
+# around an echo of the request, and a terse acknowledgement.
+
+GAMING_SCENARIOS = {
+    "refund": (
+        {
+            "id": "refund",
+            "user_turns": ["I was double charged for order #1182, can I get a refund?"],
+        },
+        "refund",
+        "Your refund of $42.10 for order #1182 was issued to your Visa ending 4421 "
+        "today. It usually posts within 5-7 business days.",
+    ),
+    "wifi": (
+        {
+            "id": "wifi",
+            "user_turns": [
+                "My Pixel 7 drops Wi-Fi every few minutes since the March update."
+            ],
+        },
+        "wi-fi",
+        "On the Pixel 7, forget your home Wi-Fi network and rejoin it, then turn "
+        "off Adaptive Connectivity, which the March patch enabled by default.",
+    ),
+    "laptop": (
+        {
+            "id": "laptop",
+            "user_turns": [
+                "Does the X200 laptop come with 32GB RAM, and what does it cost?"
+            ],
+        },
+        "x200",
+        "Yes: the X200 ships with 16GB or 32GB RAM. The 32GB model is $1,299 and "
+        "includes a two-year warranty and free shipping within Canada.",
+    ),
+    "calculus": (
+        {"id": "calc", "user_turns": ["What is the derivative of x^3?"]},
+        "derivative",
+        "The derivative of x^3 is 3x^2: by the power rule, multiply by the "
+        "exponent 3 and lower the exponent to 2.",
+    ),
+    "starter_product": (
+        # An unscripted starter scenario: the request lives in its fields.
+        {
+            "id": "product_inquiry",
+            "topic": "product_inquiry",
+            "user_goal": "Learn about product features",
+            "context": "User is interested in purchasing a product",
+            "user_responses": ["What features does it have?"],
+        },
+        "product",
+        "The Aurora 2 product features a 12-hour battery, a 4K display and 256GB "
+        "storage; it costs $899 with a two-year warranty.",
+    ),
+}
+
+CANNED = (
+    "I understand your concern and I'm happy to help! Here are some options based "
+    "on your account: let me check right away. You can try the first step, then the "
+    "next. Is there anything else? Thank you, please let me know."
+)
+STUFFED = (
+    "I understand, I'm so sorry, happy to help! Let me check right away: here's "
+    "how, I recommend you try step 1, then next, finally. Thank you, please, "
+    "certainly, absolutely, of course. We value your satisfaction and trust our "
+    "quality service and support: resolved, processed, completed, fixed. Restart, "
+    "update, settings, verify, configure. Special limited offer, best deal, buy "
+    "now, discount, exclusive, perfect choice. Amazing, wonderful, fantastic!"
+)
+
+
+def _all_factories():
+    """Every create_*_reward factory in core.reward and stateset_agents.rewards."""
+    import importlib
+    import inspect
+    import pkgutil
+    import re
+
+    import stateset_agents.rewards as rewards_package
+    from stateset_agents.core.basic_rewards import ConcisenessReward
+
+    modules = [importlib.import_module("stateset_agents.core.reward"), rewards_package]
+    for info in pkgutil.iter_modules(
+        rewards_package.__path__, f"{rewards_package.__name__}."
+    ):
+        modules.append(importlib.import_module(info.name))
+    arguments = {
+        "create_adaptive_reward": lambda f, keyword: f(
+            [HelpfulnessReward(), ConcisenessReward()]
+        ),
+        "create_task_agent_reward": lambda f, keyword: f({"goal_keywords": [keyword]}),
+        "create_domain_reward": lambda f, keyword: f("customer_service"),
+    }
+    networked = {"create_llm_judge_reward", "create_rlaif_reward"}
+    found = {}
+    for module in modules:
+        for name, value in vars(module).items():
+            if (
+                inspect.isfunction(value)
+                and re.fullmatch(r"create_\w*reward", name)
+                and name not in networked
+                and value.__module__.startswith("stateset_agents.")
+            ):
+                build = arguments.get(name, lambda f, keyword: f())
+                found[f"{value.__module__}.{name}"] = (value, build)
+    return found
+
+
+ALL_FACTORIES = _all_factories()
+
+
+def test_every_shipped_factory_is_held_to_the_grounding_bar():
+    names = {name.rsplit(".", 1)[1] for name in ALL_FACTORIES}
+    assert {
+        "create_helpful_agent_reward",
+        "create_tutoring_reward",
+        "create_sales_reward",
+        "create_creative_reward",
+        "create_educational_reward",
+        "create_kimi_k25_conversational_reward",
+    } <= names
+    assert len(ALL_FACTORIES) >= 14
+
+
+async def _episode_total(factory, build, keyword, scenario, reply):
+    reward = build(factory, keyword)
+    environment = ConversationEnvironment([scenario], max_turns=1, reward_fn=reward)
+    trajectory = await environment.run_episode(_always(reply), scenario)
+    return await score_episode(trajectory, reward, environment, scenario)
+
+
+@pytest.mark.parametrize("scenario_name", sorted(GAMING_SCENARIOS))
+@pytest.mark.parametrize("factory_name", sorted(ALL_FACTORIES))
+async def test_specific_answers_beat_templates_and_keyword_stuffing(
+    factory_name, scenario_name
+):
+    factory, build = ALL_FACTORIES[factory_name]
+    scenario, keyword, reference = GAMING_SCENARIOS[scenario_name]
+    request = " ".join(scenario.get("user_turns", [])) or scenario["user_goal"]
+    exploits = {
+        "canned": CANNED,
+        "stuffed": STUFFED,
+        "stuffed_echo": f"{STUFFED} {request} {keyword} {request}",
+        "terse": "Thanks, happy to help!",
+    }
+    best = await _episode_total(factory, build, keyword, scenario, reference)
+    for label, reply in exploits.items():
+        exploit = await _episode_total(factory, build, keyword, scenario, reply)
+        assert exploit < best, (factory_name, scenario_name, label, exploit, best)
+
+
+def test_heuristic_lexicons_are_boilerplate_for_grounding():
+    """Every keyword a built-in heuristic rewards is boilerplate, so stuffing
+    those keywords cannot earn grounding."""
+    import inspect
+    import re
+
+    from stateset_agents.core import basic_rewards, domain_rewards
+    from stateset_agents.core.grounding import GENERIC_TERMS, STOPWORDS, _stem
+    from stateset_agents.rewards import multi_objective_reward as mor
+    from stateset_agents.rewards.multi_objective_components import (
+        EmpathyRewardComponent,
+        ProfessionalismRewardComponent,
+    )
+
+    words: set[str] = set()
+
+    def add(phrases):
+        for phrase in phrases:
+            words.update(re.findall(r"[a-z']+", phrase.lower()))
+
+    for source in (
+        inspect.getsource(basic_rewards.HelpfulnessReward._evaluate_helpfulness),
+        inspect.getsource(basic_rewards.EngagementReward._evaluate_engagement),
+        *(
+            inspect.getsource(cls._compute_turn_score)
+            for cls in (
+                domain_rewards.CustomerServiceReward,
+                domain_rewards.TechnicalSupportReward,
+                domain_rewards.SalesAssistantReward,
+            )
+        ),
+    ):
+        for listing in re.findall(r"\[(.*?)\]", source, re.S):
+            add(re.findall(r'"([^"]+)"', listing))
+    for cls in (
+        domain_rewards.CustomerServiceReward,
+        domain_rewards.TechnicalSupportReward,
+        domain_rewards.SalesAssistantReward,
+    ):
+        for keywords in cls().domain_keywords.values():
+            add(keywords)
+    add(EmpathyRewardComponent().empathy_keywords)
+    add(ProfessionalismRewardComponent().professional_indicators)
+    for factory in (
+        mor.create_customer_service_reward,
+        mor.create_technical_support_reward,
+        mor.create_sales_reward,
+        mor.create_educational_reward,
+        mor.create_creative_reward,
+    ):
+        for component in factory().components:
+            add(
+                getattr(
+                    getattr(component, "component", component), "action_keywords", []
+                )
+            )
+    generic = {_stem(term) for term in GENERIC_TERMS}
+    missing = sorted(w for w in words if w not in STOPWORDS and _stem(w) not in generic)
+    assert not missing, f"add these heuristic keywords to GENERIC_TERMS: {missing}"

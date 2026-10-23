@@ -6,6 +6,7 @@ from stateset_agents.core.reward_base import (
     CompositeReward,
     RewardFunction,
     RewardResult,
+    RewardUnavailableError,
 )
 
 
@@ -16,7 +17,7 @@ class _Fixed(RewardFunction):
 
     async def compute_reward(self, turns, context=None):
         if self.fail:
-            raise ValueError("boom")
+            raise RewardUnavailableError("boom")
         return RewardResult(score=self.score, breakdown={})
 
 

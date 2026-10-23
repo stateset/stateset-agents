@@ -10,6 +10,7 @@ from typing import Any
 
 from .multi_objective_reward import BaseRewardComponent
 from .multi_objective_reward import MultiObjectiveRewardFunction as MultiObjectiveReward
+from .multi_objective_reward import ground_components
 
 logger = logging.getLogger(__name__)
 
@@ -504,7 +505,8 @@ def create_kimi_k25_customer_service_reward(
             )
         )
 
-    reward_function = MultiObjectiveReward(components=components)
+    # Shaping heuristics: gate them on task grounding.
+    reward_function = MultiObjectiveReward(components=ground_components(components))
 
     return reward_function
 
@@ -565,8 +567,7 @@ def create_kimi_k25_conversational_reward(
             )
         )
 
-    reward_function = MultiObjectiveReward(
-        components=components,
-    )
+    # Shaping heuristics: gate them on task grounding.
+    reward_function = MultiObjectiveReward(components=ground_components(components))
 
     return reward_function

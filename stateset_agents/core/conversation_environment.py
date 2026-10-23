@@ -11,6 +11,7 @@ import uuid
 from typing import Any, cast
 
 from .environment_base import (
+    STEP_ENVIRONMENT_REWARD,
     STEP_REWARD_FN_SCORE,
     Environment,
     EnvironmentState,
@@ -208,18 +209,30 @@ class ConversationEnvironment(Environment):
         # Score the reply against the conversation it answers, before the
         # simulated user's next message exists. Only the newest reply is
         # scored, so an episode's step rewards weight every turn once.
-        step_reward = 0.0
+        self._snapshot_step_state(new_state)
+        # A subclass's _calculate_step_reward is the environment's own reward
+        # and always counts, whether or not a reward function is attached.
+        own_reward = 0.0
+        if self._overrides_step_reward():
+            own_reward = float(await self._calculate_step_reward(agent_turn, state))
+        new_state.metadata[STEP_ENVIRONMENT_REWARD] = own_reward
+        step_reward = own_reward
         if self.reward_fn is not None and self._should_compute_step_reward():
-            reward_turns = [
-                ConversationTurn(role=str(m["role"]), content=str(m["content"]))
-                for m in prior_history
-            ] + [agent_turn]
-            step_reward = await self._apply_step_reward(new_state, reward_turns)
-        elif self.reward_fn is None:
-            step_reward = float(await self._calculate_step_reward(agent_turn, state))
-            if self._uses_default_step_reward():
-                # A stand-in reward function: averaged over the episode.
-                new_state.metadata[STEP_REWARD_FN_SCORE] = step_reward
+            reward_turns = self._step_reward_turns(
+                new_state,
+                [
+                    ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+                    for m in prior_history
+                ]
+                + [agent_turn],
+            )
+            step_reward += await self._apply_step_reward(new_state, reward_turns)
+        elif self._uses_default_step_reward():
+            # A stand-in reward function: averaged over the episode, and
+            # dropped when a trainer supplies its own reward.
+            default = float(await self._calculate_step_reward(agent_turn, state))
+            new_state.metadata[STEP_REWARD_FN_SCORE] = default
+            step_reward += default
 
         scripted = _scripted_user_turns(new_state.context.get("scenario"))
         user_response: ConversationTurn | None
@@ -234,7 +247,10 @@ class ConversationEnvironment(Environment):
         else:
             user_response = None
         if user_response is not None:
-            history.append({"role": "user", "content": user_response.content})
+            # A new list: the snapshot taken above must not change under it.
+            new_state.context["history"] = history + [
+                {"role": "user", "content": user_response.content}
+            ]
 
         done = (
             new_state.turn_count >= self.max_turns
@@ -300,6 +316,13 @@ class ConversationEnvironment(Environment):
             role="user",
             content=response_content,
             metadata={"generated": True, "turn_number": state.turn_count},
+        )
+
+    def _overrides_step_reward(self) -> bool:
+        """Whether a subclass defines its own step reward."""
+        return (
+            type(self)._calculate_step_reward
+            is not ConversationEnvironment._calculate_step_reward
         )
 
     def _uses_default_step_reward(self) -> bool:

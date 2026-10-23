@@ -30,7 +30,13 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, cast
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
+from stateset_agents.core.reward_base import (
+    RewardFunction,
+    RewardResult,
+    RewardType,
+    RewardUnavailableError,
+)
+from stateset_agents.core.reward_context import REWARD_FALLBACK_KEY
 from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -132,7 +138,10 @@ class NSRVerifierConfig:
     api_key: str | None = None
     org_id: str | None = None
     timeout_seconds: float = 30.0
-    error_score: float = 0.5
+    #: Score to use when NSR cannot be reached. ``None`` (the default) fails
+    #: closed: the reward raises ``RewardUnavailableError``. Setting a value
+    #: is an explicit opt-in; such results carry ``reward_fallback``.
+    error_score: float | None = None
     mode: str = "safe"
 
     @classmethod
@@ -183,11 +192,21 @@ class NSRVerifierReward(RewardFunction):
         payload = self._build_payload(turns, context)
         try:
             decision = await self._get_client()(payload)
-        except Exception as exc:  # network-dependent verifier: degrade per config
-            logger.warning("NSR verifier call failed: %s", exc)
-            return self._result(
+        except Exception as exc:  # any transport failure means no verdict
+            if self.config.error_score is None:
+                raise RewardUnavailableError(
+                    f"NSR verifier unavailable: {exc}"
+                ) from exc
+            logger.warning(
+                "NSR verifier call failed; using the configured error_score %s: %s",
+                self.config.error_score,
+                exc,
+            )
+            result = self._result(
                 self.config.error_score, mode="nsr_error", error=str(exc)
             )
+            result.metadata[REWARD_FALLBACK_KEY] = "nsr_error"
+            return result
 
         nsr_decision = str(decision.get("decision", "")).lower()
         score = 1.0 if model_verdict == nsr_decision else 0.0

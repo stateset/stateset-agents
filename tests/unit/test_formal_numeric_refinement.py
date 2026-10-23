@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from stateset_agents.core.reward_base import RewardUnavailableError
 from stateset_agents.rewards.multi_objective_components import BaseRewardComponent
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
@@ -26,7 +27,7 @@ class FixedComponent(BaseRewardComponent):
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
         if self.fails:
-            raise ValueError("component failed")
+            raise RewardUnavailableError("component unavailable")
         return self.score
 
 
@@ -53,7 +54,7 @@ async def test_bounded_weighted_reward_matches_integer_model(
         )
         if fail_a and fail_b:
             # No survivor: Python raises instead of returning a score.
-            with pytest.raises(ValueError, match="every component failed"):
+            with pytest.raises(RewardUnavailableError, match="every component failed"):
                 await reward.compute_reward(turns=[])
             continue
         result = await reward.compute_reward(turns=[])
@@ -91,18 +92,16 @@ def test_reward_rejects_weights_outside_lean_domain(weight: float) -> None:
 
 
 @pytest.mark.asyncio
-async def test_nonfinite_component_score_is_dropped_like_a_failure() -> None:
-    """An invalid component is a failed component in the Lean abstraction."""
+async def test_nonfinite_component_score_is_an_error_not_an_outage() -> None:
+    """Only outages are dropped (Lean composedScore); a NaN score raises."""
     reward = MultiObjectiveRewardFunction(
         components=[
             FixedComponent("invalid", 1.0, float("nan")),
             FixedComponent("valid", 1.0, 1.0),
         ]
     )
-    result = await reward.compute_reward(turns=[])
-    assert result.score == pytest.approx(1.0)
-    assert result.components == {"valid": 1.0}
-    assert result.metadata["failed_components"] == ["invalid"]
+    with pytest.raises(ValueError, match="non-finite"):
+        await reward.compute_reward(turns=[])
 
 
 @pytest.mark.asyncio

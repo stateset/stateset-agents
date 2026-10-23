@@ -140,6 +140,23 @@ def _text_answer_credit(content: str, answer: str) -> float:
     return best
 
 
+def _ground_truth_mapping(ground_truth: Any) -> dict[str, Any]:
+    """Ground truth as a mapping; a bare string or number is the answer."""
+    if ground_truth is None:
+        return {}
+    if isinstance(ground_truth, dict):
+        return ground_truth
+    if isinstance(ground_truth, (str, int, float)) and not isinstance(
+        ground_truth, bool
+    ):
+        text = str(ground_truth).strip()
+        return {"answer": text} if text else {}
+    raise TypeError(
+        "ground_truth must be a mapping or an answer string/number, got "
+        f"{type(ground_truth).__name__}"
+    )
+
+
 def _action_name(action: Any) -> str | None:
     """Identify a required or completed action given as a name or a mapping."""
     if isinstance(action, str):
@@ -157,6 +174,9 @@ class HelpfulnessReward(RewardFunction):
     """
     Rewards helpful, informative responses
     """
+
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
 
     def __init__(self, weight: float = 1.0):
         super().__init__(weight, RewardType.IMMEDIATE, "HelpfulnessReward")
@@ -371,13 +391,24 @@ class SafetyReward(RewardFunction):
 
 
 class CorrectnessReward(RewardFunction):
+    """Rewards factually correct responses against ground truth.
+
+    With an expected ``answer`` a committed correct answer scores 1.0 (less
+    when it hedges between candidates) and a wrong one 0.0; listed
+    ``correct_facts`` add to it and ``incorrect_facts`` subtract. Without any
+    ground truth every reply scores the neutral 0.5 and the result carries
+    ``metadata["no_ground_truth"] = True``, so an unlabeled episode cannot be
+    mistaken for a correct one (evaluation counts only scores above 0.5 as
+    successes).
     """
-    Rewards factually correct responses
-    """
+
+    #: Share of the score the expected answer carries when ``correct_facts``
+    #: are also given.
+    ANSWER_WEIGHT = 0.7
 
     def __init__(self, weight: float = 1.0, ground_truth: dict[str, Any] | None = None):
         super().__init__(weight, RewardType.IMMEDIATE, "CorrectnessReward")
-        self.ground_truth = ground_truth or {}
+        self.ground_truth = _ground_truth_mapping(ground_truth)
 
     async def compute_reward(
         self, turns: list[ConversationTurn], context: dict[str, Any] | None = None
@@ -388,8 +419,9 @@ class CorrectnessReward(RewardFunction):
         if not assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
 
-        # Use ground truth from context if available
-        ground_truth = (
+        # Use ground truth from context if available. A bare label ("4", 4)
+        # is the expected answer, as in verl-style datasets.
+        ground_truth = _ground_truth_mapping(
             context.get("ground_truth", self.ground_truth)
             if context
             else self.ground_truth
@@ -417,11 +449,10 @@ class CorrectnessReward(RewardFunction):
 
         avg_score = total_score / len(assistant_turns)
 
-        return RewardResult(
-            score=avg_score,
-            breakdown=breakdown,
-            metadata={"num_assistant_turns": len(assistant_turns)},
-        )
+        metadata: dict[str, Any] = {"num_assistant_turns": len(assistant_turns)}
+        if not ground_truth:
+            metadata["no_ground_truth"] = True
+        return RewardResult(score=avg_score, breakdown=breakdown, metadata=metadata)
 
     def _evaluate_correctness(
         self, content: str, ground_truth: dict[str, Any], question: str = ""
@@ -437,20 +468,32 @@ class CorrectnessReward(RewardFunction):
         if not ground_truth:
             return 0.5  # Neutral score if no ground truth
 
-        score = 0.0
-
         # Facts and answers count only as whole tokens: "4" is not credited
         # by "14", and a run of digits does not contain every answer.
-        correct_facts = ground_truth.get("correct_facts", [])
-        for fact in correct_facts:
-            if isinstance(fact, str) and _contains_term(content, fact):
-                score += 0.3
-
-        # Check for correct answer
-        if "answer" in ground_truth:
-            score += 0.5 * _answer_credit(
-                content, str(ground_truth["answer"]), question
-            )
+        correct_facts = [
+            fact
+            for fact in ground_truth.get("correct_facts", [])
+            if isinstance(fact, str)
+        ]
+        facts = (
+            sum(_contains_term(content, fact) for fact in correct_facts)
+            / len(correct_facts)
+            if correct_facts
+            else None
+        )
+        answer = (
+            _answer_credit(content, str(ground_truth["answer"]), question)
+            if "answer" in ground_truth
+            else None
+        )
+        if answer is not None and facts is not None:
+            score = self.ANSWER_WEIGHT * answer + (1.0 - self.ANSWER_WEIGHT) * facts
+        elif answer is not None:
+            score = answer
+        elif facts is not None:
+            score = facts
+        else:
+            score = 0.0
 
         # Penalty for incorrect information
         incorrect_facts = ground_truth.get("incorrect_facts", [])
@@ -465,6 +508,9 @@ class ConcisenessReward(RewardFunction):
     """
     Rewards concise, to-the-point responses
     """
+
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
 
     def __init__(self, weight: float = 1.0, optimal_length: int = 150):
         super().__init__(weight, RewardType.IMMEDIATE, "ConcisenessReward")
@@ -517,6 +563,9 @@ class EngagementReward(RewardFunction):
     """
     Rewards engaging, interesting responses
     """
+
+    #: A style heuristic: shipped factories gate it on task grounding.
+    shaping = True
 
     def __init__(self, weight: float = 1.0):
         super().__init__(weight, RewardType.IMMEDIATE, "EngagementReward")

@@ -19,6 +19,7 @@ from stateset_agents.core.reward_base import (
     RewardFunction,
     RewardResult,
     RewardType,
+    RewardUnavailableError,
 )
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 from stateset_agents.rewards.llm_judge import (
@@ -52,7 +53,7 @@ class Boom(RewardFunction):
         super().__init__(reward_type=reward_type, name="boom")
 
     async def compute_reward(self, turns, context=None):
-        raise RuntimeError("judge down")
+        raise RewardUnavailableError("judge down")
 
 
 class NaNReward(RewardFunction):
@@ -142,7 +143,7 @@ async def test_fallback_reward_flags_the_judge_failure_it_falls_back_from():
 
 
 async def test_composite_with_no_scored_component_raises():
-    with pytest.raises(ValueError, match="every reward function failed"):
+    with pytest.raises(RewardUnavailableError, match="every reward function failed"):
         await CompositeReward([Boom()]).compute_reward(TURNS)
     with pytest.raises(ValueError, match="no reward functions"):
         await CompositeReward([]).compute_reward(TURNS)
@@ -151,9 +152,9 @@ async def test_composite_with_no_scored_component_raises():
 async def test_multi_objective_with_no_scored_component_raises():
     class Down(EmpathyRewardComponent):
         async def compute_score(self, turns, context=None):
-            raise RuntimeError("down")
+            raise RewardUnavailableError("down")
 
-    with pytest.raises(ValueError, match="every component failed"):
+    with pytest.raises(RewardUnavailableError, match="every component failed"):
         await MultiObjectiveRewardFunction([Down()]).compute_reward(DICT_TURNS)
     with pytest.raises(ValueError, match="no components"):
         await MultiObjectiveRewardFunction([]).compute_reward(DICT_TURNS)
@@ -265,3 +266,187 @@ async def test_single_turn_trainer_drops_generations_without_a_reward():
     trainer.reward_fn = None  # and the environment has no reward either
     with pytest.raises(RuntimeError, match="failed to get a reward"):
         await trainer._generate_trajectory_group("q", num_generations=2)
+
+
+# --- Only outages are absorbed; bugs propagate -------------------------------
+
+
+class Buggy(RewardFunction):
+    def __init__(self, error: Exception) -> None:
+        super().__init__(reward_type=RewardType.IMMEDIATE, name="buggy")
+        self.error = error
+
+    async def compute_reward(self, turns, context=None):
+        raise self.error
+
+
+class Half(RewardFunction):
+    async def compute_reward(self, turns, context=None):
+        return RewardResult(score=0.5)
+
+
+@pytest.mark.parametrize(
+    "error", [TypeError("bad call"), AttributeError("no .get"), KeyError("k")]
+)
+async def test_composite_reraises_programming_errors(error):
+    composite = CompositeReward([Buggy(error), Half()])
+    with pytest.raises(type(error)):
+        await composite.compute_reward(TURNS)
+
+
+async def test_composite_redistributes_only_an_unavailable_component():
+    composite = CompositeReward([Buggy(RewardUnavailableError("judge 503")), Half()])
+    result = await composite.compute_reward(TURNS)
+    assert result.metadata["failed_components"] == ["buggy"]
+    assert result.score == pytest.approx(1.0)  # Half's 0.5 x the whole weight 2
+
+
+async def test_multi_objective_reraises_programming_errors():
+    class Broken(EmpathyRewardComponent):
+        async def compute_score(self, turns, context=None):
+            raise AttributeError("'str' object has no attribute 'get'")
+
+    reward = MultiObjectiveRewardFunction(
+        [Broken(name="broken"), EmpathyRewardComponent()]
+    )
+    with pytest.raises(AttributeError):
+        await reward.compute_reward(DICT_TURNS)
+
+
+async def test_tutoring_reward_scores_a_string_ground_truth():
+    from stateset_agents.core.reward_context import score_episode
+    from stateset_agents.core.reward_factories import create_tutoring_reward
+
+    scenario = {"id": "m", "user_turns": ["What is 2+2?"], "ground_truth": "4"}
+    totals = {}
+    for reply in ("The answer is 4.", "The answer is 5."):
+        reward = create_tutoring_reward()
+        environment = ConversationEnvironment([scenario], max_turns=1, reward_fn=reward)
+        trajectory = await environment.run_episode(_replies(reply), scenario)
+        assert "reward_error" not in trajectory.metadata
+        totals[reply] = await score_episode(trajectory, reward, environment, scenario)
+    assert totals["The answer is 4."] > totals["The answer is 5."]
+
+
+# --- Correctness: a correct answer is a full score, unlabeled is flagged -----
+
+
+async def test_correct_answer_scores_full_marks_not_the_neutral_value():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+
+    reward = CorrectnessReward(ground_truth={"answer": "4"})
+    right = await reward.compute_reward(_turns("The answer is 4."))
+    wrong = await reward.compute_reward(_turns("The answer is 5."))
+    assert (right.score, wrong.score) == (1.0, 0.0)
+    assert "no_ground_truth" not in right.metadata
+
+
+async def test_unlabeled_correctness_is_neutral_and_flagged():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+
+    result = await CorrectnessReward().compute_reward(_turns("The answer is 4."))
+    assert result.score == 0.5
+    assert result.metadata["no_ground_truth"] is True
+
+
+async def test_evaluation_counts_correct_answers_as_successes_not_neutrals():
+    from stateset_agents.core.basic_rewards import CorrectnessReward
+    from stateset_agents.training.evaluation import EvaluationConfig, evaluate_agent
+
+    labeled = {"id": "m", "user_turns": ["What is 2+2?"], "ground_truth": "4"}
+    unlabeled = {"id": "u", "user_turns": ["What is 2+2?"]}
+
+    async def answer(history, context):
+        return "The answer is 4."
+
+    for scenario, expected in ((labeled, 1.0), (unlabeled, 0.0)):
+        metrics = await evaluate_agent(
+            agent=SimpleNamespace(generate_response=answer),
+            environment=ConversationEnvironment(
+                [scenario], max_turns=1, reward_fn=CorrectnessReward()
+            ),
+            scenarios=[scenario],
+            config=EvaluationConfig(num_episodes=1, concurrency=1),
+        )
+        assert metrics["eval_success_rate"] == expected
+
+
+def _turns(reply: str) -> list[ConversationTurn]:
+    return [
+        ConversationTurn(role="user", content="What is 2+2?"),
+        ConversationTurn(role="assistant", content=reply),
+    ]
+
+
+# --- Network rewards fail closed unless a fallback is opted into -------------
+
+
+async def _unreachable(payload):
+    raise ConnectionError("nsr unreachable")
+
+
+def _verdict_turns(reply: str) -> list[ConversationTurn]:
+    return [
+        ConversationTurn(role="user", content="Refund for #A1?"),
+        ConversationTurn(role="assistant", content=reply),
+    ]
+
+
+async def test_nsr_outage_is_unavailable_by_default_and_redistributed():
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    nsr = NSRVerifierReward(config=NSRVerifierConfig(), client=_unreachable)
+    with pytest.raises(RewardUnavailableError, match="nsr unreachable"):
+        await nsr.compute_reward(_verdict_turns("Decision: approve"), {})
+    composite = CompositeReward([nsr, Half()])
+    result = await composite.compute_reward(_verdict_turns("Decision: approve"), {})
+    assert result.metadata["failed_components"] == ["NSRVerifierReward"]
+
+
+async def test_opted_in_nsr_fallback_is_flagged_on_the_episode():
+    from stateset_agents.core.reward_context import score_episode
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    nsr = NSRVerifierReward(
+        config=NSRVerifierConfig(error_score=0.0), client=_unreachable
+    )
+    nsr.reward_type = RewardType.SPARSE
+    scenario = {"id": "r", "user_turns": ["Refund for #A1?"]}
+    for attach in (True, False):
+        environment = ConversationEnvironment(
+            [scenario], max_turns=1, reward_fn=nsr if attach else None
+        )
+        trajectory = await environment.run_episode(
+            _replies("Decision: approve"), scenario
+        )
+        assert await score_episode(trajectory, nsr, environment, scenario) == 0.0
+        assert trajectory.metadata["reward_fallback"] == "nsr_error"
+
+
+async def test_ruler_failure_is_unavailable_unless_fallback_is_enabled(monkeypatch):
+    import stateset_agents.rewards.llm_reward as lr
+
+    monkeypatch.setattr(lr, "LITELLM_AVAILABLE", True)
+
+    async def broken(messages):
+        raise RuntimeError("judge 503")
+
+    strict = lr.RulerRewardFunction(model="judge", max_retries=1)
+    strict._make_completion_call = broken
+    with pytest.raises(RewardUnavailableError, match="judge 503"):
+        await strict.compute_reward(TURNS)
+
+    lenient = lr.RulerRewardFunction(
+        model="judge", max_retries=1, fallback_enabled=True
+    )
+    lenient._make_completion_call = broken
+    result = await lenient.compute_reward(TURNS)
+    assert result.metadata["reward_fallback"] == "ruler_error"
+    composite = await CompositeReward([lenient, Half()]).compute_reward(TURNS)
+    assert "ruler_error" in composite.metadata["reward_fallback"]

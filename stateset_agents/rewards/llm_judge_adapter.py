@@ -22,7 +22,12 @@ import logging
 import math
 from typing import Any
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
+from stateset_agents.core.reward_base import (
+    RewardFunction,
+    RewardResult,
+    RewardType,
+    RewardUnavailableError,
+)
 from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -107,9 +112,12 @@ class LLMJudgeReward(RewardFunction):
 
 def _checked_judge_score(score: Any) -> float:
     """A judge verdict as a float in [0, 1]; anything else is a judge failure."""
-    value = float(score)
+    try:
+        value = float(score)
+    except (TypeError, ValueError) as exc:
+        raise RewardUnavailableError(f"LLM judge returned no score: {score!r}") from exc
     if not math.isfinite(value) or not 0.0 <= value <= 1.0:
-        raise ValueError(
+        raise RewardUnavailableError(
             f"LLM judge score must be a finite value in [0, 1], got {score}"
         )
     return value
@@ -253,9 +261,9 @@ class LLMJudgeRewardWithFallback(RewardFunction):
                     },
                     metadata={"mode": "llm_judge"},
                 )
-            except Exception as exc:
-                # The documented fallback of this class; the failure is
-                # flagged in metadata rather than hidden.
+            except RewardUnavailableError as exc:
+                # The documented fallback of this class covers judge outages
+                # only (flagged in metadata); bugs still propagate.
                 logger.warning("LLM judge failed, using heuristic: %s", exc)
                 return RewardResult(
                     score=heuristic_score,

@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .reward_context import build_reward_context
+from .reward_context import REWARD_FALLBACK_KEY, build_reward_context, reward_fallback
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -25,6 +25,17 @@ REWARD_EXCEPTIONS = (
     TypeError,
     AttributeError,
 )
+
+
+class RewardUnavailableError(RuntimeError):
+    """A reward could not be computed for an external reason (judge or network
+    outage, a verifier that cannot be reached).
+
+    This is the only failure reward composers absorb: ``CompositeReward`` and
+    ``MultiObjectiveRewardFunction`` leave the component out and spread its
+    weight over the rest. Every other exception is a bug or bad data and
+    propagates, so it is never mistaken for an outage.
+    """
 
 
 class RewardType(Enum):
@@ -99,6 +110,11 @@ class RewardFunction(ABC):
     """
     Abstract base class for reward functions
     """
+
+    #: True for style heuristics (keyword, phrase or length scoring) that a
+    #: canned reply can satisfy without answering the request. The shipped
+    #: factories wrap these in ``core.grounding.GroundedReward``.
+    shaping: bool = False
 
     def __init__(
         self,
@@ -222,22 +238,32 @@ class CompositeReward(RewardFunction):
                     # scenario's keys and the environment state.
                     child_context = build_reward_context(context, reward_fn=reward_fn)
                 result = await reward_fn.compute_reward(turns, child_context)
-                if not math.isfinite(float(result.score)):
-                    # A NaN/inf component would silently poison the total.
-                    raise ValueError(f"returned a non-finite score {result.score}")
-                results.append((reward_fn, result))
-            except REWARD_EXCEPTIONS as e:
+            except RewardUnavailableError as e:
+                # An outage: leave the component out and spread its weight.
+                # Anything else (TypeError, AttributeError, bad data) is a bug
+                # and propagates rather than silently reweighting the reward.
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
-                logger.warning(f"Reward function {reward_fn.name} failed: {e}")
+                logger.warning(
+                    "Reward function %s is unavailable; its weight is spread "
+                    "over the other components: %s",
+                    reward_fn.name,
+                    e,
+                )
                 failed.append(str(reward_fn.name))
-                # Continue with other reward functions
                 continue
+            if not math.isfinite(float(result.score)):
+                # A NaN/inf component would silently poison the total.
+                raise ValueError(
+                    f"Reward function {reward_fn.name} returned a non-finite "
+                    f"score {result.score}"
+                )
+            results.append((reward_fn, result))
 
         # No component scored: there is no reward, so fail rather than
         # return a valid-looking 0.0 that environments and trainers would use.
         if not results:
-            raise ValueError(
+            raise RewardUnavailableError(
                 "CompositeReward: every reward function failed "
                 f"({', '.join(failed)})"
             )
@@ -280,6 +306,15 @@ class CompositeReward(RewardFunction):
                 name = name[: -len("reward")]
             components[name] = float(result.score)
 
+        metadata: dict[str, Any] = {}
+        fallbacks = [
+            f"{rf.name}: {reason}"
+            for rf, rr in results
+            if (reason := reward_fallback(rr)) is not None
+        ]
+        if fallbacks:
+            # A child's opted-in fallback score is part of this score too.
+            metadata[REWARD_FALLBACK_KEY] = "; ".join(fallbacks)
         return RewardResult(
             score=total_score,
             components=components,
@@ -291,6 +326,7 @@ class CompositeReward(RewardFunction):
                 "combination_method": self.combination_method,
                 "normalize_weights": self.normalize_weights,
                 "failed_components": failed,
+                **metadata,
             },
         )
 

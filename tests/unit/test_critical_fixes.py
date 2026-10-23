@@ -422,11 +422,15 @@ class TestCompositeRewardEdgeCases:
     @pytest.mark.asyncio
     async def test_composite_reward_empty_results(self):
         """A composite in which no component scored has no reward: it raises."""
-        from stateset_agents.core.reward_base import CompositeReward, RewardFunction
+        from stateset_agents.core.reward_base import (
+            CompositeReward,
+            RewardFunction,
+            RewardUnavailableError,
+        )
 
         class FailingReward(RewardFunction):
             async def compute_reward(self, turns, context=None):
-                raise ValueError("Simulated failure")
+                raise RewardUnavailableError("Simulated outage")
 
         # Create composite with a failing reward function
         failing_reward = FailingReward()
@@ -434,7 +438,9 @@ class TestCompositeRewardEdgeCases:
         composite = CompositeReward(reward_functions=[failing_reward])
 
         # A valid-looking 0.0 would be trained on; failing is the contract.
-        with pytest.raises(ValueError, match="every reward function failed"):
+        with pytest.raises(
+            RewardUnavailableError, match="every reward function failed"
+        ):
             await composite.compute_reward([])
 
     @pytest.mark.asyncio

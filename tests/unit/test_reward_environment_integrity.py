@@ -28,6 +28,7 @@ from stateset_agents.core.reward_base import (
     RewardFunction,
     RewardResult,
     RewardType,
+    RewardUnavailableError,
 )
 from stateset_agents.core.reward_context import (
     LATEST_TURN_SCOPE,
@@ -426,7 +427,7 @@ async def test_ruler_maps_scores_by_trajectory_id(monkeypatch):
 )
 async def test_ruler_rejects_invalid_judgements(monkeypatch, scores):
     reward = _ruler(monkeypatch, scores)
-    with pytest.raises(ValueError):
+    with pytest.raises(RewardUnavailableError, match="RULER judge unavailable"):
         await reward.compute_batch_rewards(_batch())
 
 
@@ -463,15 +464,16 @@ async def test_failed_step_reward_is_logged_and_marked(caplog):
 async def test_multi_objective_redistributes_a_failed_component_weight():
     class Boom(EmpathyRewardComponent):
         async def compute_score(self, turns, context=None):
-            raise RuntimeError("down")
+            raise RewardUnavailableError("down")
 
     reward = MultiObjectiveRewardFunction(
         [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)]
     )
-    result = await reward.compute_reward(
-        [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
-    )
-    assert result.score == pytest.approx(1.0)
+    turns = [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
+    result = await reward.compute_reward(turns)
+    alone = await EmpathyRewardComponent().compute_score(turns)
+    # The failed half's weight goes to empathy: the total is empathy's score.
+    assert result.score == pytest.approx(alone)
     assert result.metadata["failed_components"] == ["judge"]
     assert "judge" not in result.metadata["components"]
 
@@ -489,7 +491,7 @@ async def test_correctness_requires_the_answer_as_a_whole_token(reply):
 
 async def test_correctness_still_credits_the_exact_answer():
     reward = CorrectnessReward(ground_truth={"answer": "4"})
-    assert (await reward.compute_reward(_conversation("It's 4."))).score == 0.5
+    assert (await reward.compute_reward(_conversation("It's 4."))).score == 1.0
 
 
 async def test_model_based_component_without_client_warns_once(caplog):

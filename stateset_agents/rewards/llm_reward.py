@@ -27,7 +27,12 @@ except ImportError:
     LITELLM_AVAILABLE = False
     ChatCompletionMessageParam = dict[str, Any]
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult
+from stateset_agents.core.reward_base import (
+    RewardFunction,
+    RewardResult,
+    RewardUnavailableError,
+)
+from stateset_agents.core.reward_context import REWARD_FALLBACK_KEY
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
@@ -178,7 +183,7 @@ class RulerRewardFunction(RewardFunction):
         rubric_type: str = "default",
         custom_rubric: str | None = None,
         temperature: float = 0.0,
-        fallback_enabled: bool = True,
+        fallback_enabled: bool = False,
         cache_ttl: int = 3600,
         batch_size: int = 10,
         max_retries: int = 3,
@@ -195,7 +200,9 @@ class RulerRewardFunction(RewardFunction):
             rubric_type: Pre-defined rubric type to use
             custom_rubric: Custom rubric text (overrides rubric_type)
             temperature: Temperature for judge model
-            fallback_enabled: Whether to use heuristic fallback on failure
+            fallback_enabled: Opt in to a heuristic score when the judge
+                fails (flagged ``reward_fallback``). Off by default: a judge
+                failure raises ``RewardUnavailableError``.
             cache_ttl: Cache TTL in seconds
             batch_size: Number of trajectories to judge in one call
             max_retries: Maximum retries for failed API calls
@@ -331,10 +338,9 @@ class RulerRewardFunction(RewardFunction):
                         "ruler_score": fallback_score,
                         "fallback_used": 1.0,
                     },
-                    metadata={"error": str(e)},
+                    metadata={"error": str(e), REWARD_FALLBACK_KEY: "ruler_error"},
                 )
-            else:
-                raise
+            raise RewardUnavailableError(f"RULER judge unavailable: {e}") from e
 
     async def compute_batch_rewards(
         self,
@@ -361,7 +367,10 @@ class RulerRewardFunction(RewardFunction):
         all_scores = []
         for i in range(0, len(all_messages), self.batch_size):
             batch = all_messages[i : i + self.batch_size]
-            scores = await self._compute_scores(batch, context)
+            try:
+                scores = await self._compute_scores(batch, context)
+            except LLM_REWARD_EXCEPTIONS as e:
+                raise RewardUnavailableError(f"RULER judge unavailable: {e}") from e
             all_scores.extend(scores)
 
         # Create results

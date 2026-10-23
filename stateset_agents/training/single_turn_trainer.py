@@ -18,6 +18,11 @@ from typing import Any
 
 import numpy as np
 
+from stateset_agents.core.reward_context import (
+    build_reward_context,
+    normalize_turns,
+    reward_score,
+)
 from stateset_agents.core.trajectory import (
     ConversationTurn,
     MultiTurnTrajectory,
@@ -396,15 +401,14 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         the generation is dropped from its group.
         """
         if self.reward_fn is not None:
-            result = await self.reward_fn.compute_reward(turns, context)
-            if hasattr(result, "score"):
-                score = float(result.score)
-            elif isinstance(result, dict) and "score" in result:
-                score = float(result["score"])
-            elif isinstance(result, (int, float)) and not isinstance(result, bool):
-                score = float(result)
-            else:
-                raise TypeError(f"Unexpected reward result type: {type(result)!r}")
+            # The standard reward context (scenario keys lifted, environment
+            # state over them), so scenario labels such as ground_truth reach
+            # the reward exactly as in a multi-turn episode.
+            result = await self.reward_fn.compute_reward(
+                normalize_turns(turns),
+                build_reward_context(context, reward_fn=self.reward_fn),
+            )
+            score = reward_score(result)
         else:
             get_reward = getattr(self.environment, "get_reward", None)
             if not callable(get_reward):

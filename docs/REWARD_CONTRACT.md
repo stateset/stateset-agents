@@ -11,8 +11,34 @@ The rules are enforced by:
   strategies (including every shipped factory in a real environment);
 - `tests/unit/test_episode_scoring_paths.py`, which checks that every scoring
   path gives an episode the same reward;
-- `tests/unit/test_reward_fail_closed.py` and
+- `tests/unit/test_reward_fail_closed.py`,
+  `tests/unit/test_reward_result_parsing.py` and
   `tests/unit/test_reward_determinism.py`.
+
+## Heuristic factories are shaping signals
+
+The `create_*_reward` factories (`create_helpful_agent_reward`,
+`create_customer_service_reward`, `create_domain_reward`, the multi-objective
+and Kimi factories, ...) and the starters and presets that default to them
+score style: helpfulness phrasing, empathy and action keywords, length,
+engagement. They are **shaping signals, not training objectives**. Train
+against an outcome, verifier or judge reward wherever one exists
+(`TaskOutcomeReward`, `NSRVerifierReward`, `LLMJudgeReward`, a dataset's
+ground truth); the starters and presets log this recommendation.
+
+Style alone is gameable, so every style heuristic in a shipped factory is gated
+on **task grounding** (`stateset_agents.core.grounding`): a reply earns style
+credit only in proportion to how much it engages with the request (terms from
+the user's messages and the scenario's `user_query`/`prompt`/`context`/
+`user_goal`/`topic`/task description and ground-truth labels) and adds
+specific content beyond boilerplate. The boilerplate lexicon covers every
+keyword the heuristics reward. A canned template ("I understand, happy to help,
+let me check...") or keyword stuffing has no grounding and earns no style
+credit, so in every shipped factory, in a real environment, they score
+strictly below a task-specific answer (`tests/unit/test_reward_gaming.py`).
+Outcome terms (correctness against ground truth, completed actions, safety)
+are not gated. Keyword matching in the heuristics is whole-word with
+diminishing returns per distinct keyword.
 
 ## Scores
 
@@ -69,9 +95,15 @@ use it, so the same episode earns the same reward on every path.
   environment's reward stands; the reward is not called again.
 - Otherwise `score_episode` applies `reward_fn` exactly as an environment
   would (per step or at the end, see below) and adds the result to the
-  environment's own step rewards. The total therefore does not depend on
-  whether the reward is attached to the environment or the trainer; per-step
-  rewards it applies are scored against the final environment state.
+  environment's own step rewards (including a subclass's own
+  `_calculate_step_reward`). The total therefore does not depend on whether the
+  reward is attached to the environment or the trainer: environments record
+  the state each step's reward is scored against in `trajectory.state_history`,
+  and per-step rewards are replayed on those snapshots with the same turns
+  (system prompt included) the environment would have passed.
+- Single-turn trainers (`SingleTurnGRPOTrainer`, `GSPOTrainer`,
+  `GSPOTokenTrainer`, the TRL reward bridge) build the same context shape
+  (`build_reward_context` / `response_reward_context`).
 - `sum(turn_rewards) == total_reward` always holds.
 - A `ConversationEnvironment` without any reward uses a built-in length
   heuristic. It is a stand-in reward function: averaged over the episode's
@@ -102,10 +134,24 @@ explicitly (a structured tool call, an `"action"` entry in the turn metadata,
 or a JSON object such as `{"action": "load_data"}`); keyword matching is an
 opt-in (`match_action_keywords=True`) and is gameable.
 
+## Results
+
+A reward returns a `RewardResult` (or anything with `.score`, or its
+`.total_reward` alias), a mapping with `"score"`, or a real scalar (Python,
+NumPy or a 0-d tensor). Every caller parses results with
+`reward_context.reward_score`; anything else (`None`, a string, a list) raises
+`TypeError` on every path. Turns given as `{"role", "content"}` mappings are
+normalized to `ConversationTurn` (`reward_context.normalize_turns`).
+
 ## Failures
 
 There are no stand-in scores. A failure either raises or is flagged, and a
 flagged episode is never trained on.
+
+- Only an outage is absorbed: `RewardUnavailableError` (judge, network or
+  verifier unavailable; `JudgeUnavailableError` is one). Any other exception
+  from a reward, including `TypeError`/`AttributeError` and non-finite scores,
+  is a bug and propagates.
 
 - A reward that sets `fail_on_error = True` may raise; environments,
   composers and trainers propagate the error.
@@ -114,10 +160,17 @@ flagged episode is never trained on.
   `ModelBasedRewardComponent` propagate judge failures, replies without a
   score and scores outside `[0, 1]`. `LLMJudgeRewardWithFallback` keeps its
   documented heuristic fallback and records `judge_error` in its metadata.
-- `CompositeReward` and `MultiObjectiveRewardFunction` leave a failed or
-  non-finite component out, spread its weight over the components that
-  scored, and list it in `metadata["failed_components"]`. If no component
-  scored (or none is configured) they raise `ValueError`.
+- `CompositeReward` and `MultiObjectiveRewardFunction` leave an unavailable
+  component out, spread its weight over the components that scored, and list
+  it in `metadata["failed_components"]`. If every component was unavailable
+  they raise `RewardUnavailableError`; with none configured, `ValueError`.
+- Network rewards fail closed by default: `NSRVerifierReward` raises
+  `RewardUnavailableError` when the verifier cannot be reached
+  (`NSRVerifierConfig.error_score` defaults to `None`) and
+  `RulerRewardFunction` raises when the judge fails (`fallback_enabled=False`).
+  Setting `error_score` or `fallback_enabled=True` is an explicit opt-in; such
+  results carry `metadata["reward_fallback"]`, which composites, environments
+  and `score_episode` copy to the trajectory's metadata.
 - Environments log a warning, record `metadata["reward_error"]` and contribute
   0.0 for that call. `score_episode` raises for such an episode, so the trainer
   drops it (in batched rollouts, only that episode) and `evaluate_agent`
@@ -127,8 +180,11 @@ flagged episode is never trained on.
   trajectories whose reward failed and `SingleTurnGRPOTrainer` drops
   generations whose reward failed.
 - `RulerRewardFunction` rejects judge responses with missing, duplicate or
-  unknown trajectory ids or out-of-range scores (retried, then the heuristic
-  fallback when enabled).
+  unknown trajectory ids or out-of-range scores (retried, then
+  `RewardUnavailableError`, or the flagged heuristic fallback when enabled).
+- `CorrectnessReward` without ground truth scores the neutral 0.5 and flags
+  `metadata["no_ground_truth"]`; a correct answer scores 1.0. Evaluation
+  counts only scores above 0.5 as successes, so neutral is never success.
 - `ModelBasedRewardComponent` without a client warns once that it scores by
   length, or raises with `strict=True`.
 
@@ -138,10 +194,14 @@ flagged episode is never trained on.
    is not `[0, 1]`.
 2. Read reference data from the context shape above; honor
    `reward_scope="latest_turn"` if you aggregate over assistant turns.
-3. Raise on failure rather than returning a neutral value; set
-   `fail_on_error = True` if a failure must stop training rather than drop the
-   episode.
-4. If the constructor needs arguments, register it in `CONSTRUCTORS` in
+3. Raise on failure rather than returning a neutral value: raise
+   `RewardUnavailableError` for an outage composites may route around, and
+   set `fail_on_error = True` if a failure must stop training rather than drop
+   the episode.
+4. If the reward scores style rather than outcome, set `shaping = True` so the
+   factories gate it on grounding, and add its keywords to
+   `core.grounding.GENERIC_TERMS` (a test checks the built-in lexicons).
+5. If the constructor needs arguments, register it in `CONSTRUCTORS` in
    `tests/unit/test_reward_contracts.py` (or in `SKIPPED` with a reason if it
    needs a network judge). Add any exploit you guard against to
    `tests/unit/test_reward_gaming.py`.

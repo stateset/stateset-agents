@@ -17,7 +17,14 @@ from typing import Any
 
 from .reward import RewardFunction
 from .reward_base import RewardType
-from .reward_context import build_reward_context, trajectory_reward_context
+from .reward_context import (
+    REWARD_FALLBACK_KEY,
+    build_reward_context,
+    normalize_turns,
+    note_fallback,
+    reward_score,
+    trajectory_reward_context,
+)
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
@@ -28,6 +35,12 @@ STEP_REWARD_FN_SCORE = "_step_reward_fn_score"
 #: ``EnvironmentState.metadata`` key a step may use to report the
 #: environment's own share of its step reward exactly.
 STEP_ENVIRONMENT_REWARD = "_step_environment_reward"
+#: ``EnvironmentState.metadata`` key a step uses to record the state a
+#: per-step reward is scored against (see :meth:`Environment._snapshot_step_state`).
+STEP_REWARD_STATE = "_step_reward_state"
+#: ``EnvironmentState.metadata`` key holding the episode's system prompt, so
+#: per-step rewards see the same turns as the finished trajectory.
+EPISODE_SYSTEM_PROMPT = "_episode_system_prompt"
 
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
 # AttributeError typically indicate programming bugs and should propagate
@@ -208,17 +221,16 @@ class Environment(ABC):
         turns = getattr(trajectory, "turns", [])
         if not turns and hasattr(trajectory, "__iter__"):
             turns = list(trajectory)
+        # Dict turns (Trajectory.add_turn) would make rewards that read
+        # turn.role score 0; normalize them.
+        turns = normalize_turns(turns)
 
         if getattr(reward_fn, "requires_environment_context", False):
             # Evidence rewards judge the recorded final state as is.
             context = getattr(trajectory, "final_state", None)
         else:
             context = trajectory_reward_context(trajectory, reward_fn=reward_fn)
-        result = await reward_fn.compute_reward(turns, context)
-        score = _reward_score(result)
-        if score is None:
-            raise TypeError(f"Unexpected reward result type: {type(result)!r}")
-        return score
+        return reward_score(await reward_fn.compute_reward(turns, context))
 
     async def _apply_step_reward(
         self, state: EnvironmentState, turns: list[ConversationTurn]
@@ -243,21 +255,44 @@ class Environment(ABC):
         state.metadata["reward_fn_calls"] = (
             int(state.metadata.get("reward_fn_calls", 0) or 0) + 1
         )
+        # An unknown result type (None, a string) raises TypeError from
+        # reward_score and propagates: it is a bug, not an outage.
+        score = 0.0
         try:
             result = await reward_fn.compute_reward(turns, context)
-            score = _reward_score(result)
+            score = reward_score(result)
         except ENVIRONMENT_EXCEPTIONS as error:
             if getattr(reward_fn, "fail_on_error", False):
                 raise
             _record_reward_failure(state.metadata, reward_fn, error, "step")
-            score = None
         else:
             breakdown = getattr(result, "breakdown", None)
             if isinstance(breakdown, dict):
                 state.metadata["reward_breakdown"] = dict(breakdown)
-        score = 0.0 if score is None else score
+            note_fallback(state.metadata, result)
         state.metadata[STEP_REWARD_FN_SCORE] = score
         return score
+
+    def _snapshot_step_state(self, state: EnvironmentState) -> None:
+        """Record the state this step's reward is scored against.
+
+        Call it where the step scores (or would score) its reward, so a
+        per-step reward applied later by a trainer replays on the same state.
+        """
+        state.metadata[STEP_REWARD_STATE] = _snapshot(state.context)
+
+    def _step_reward_turns(
+        self, state: EnvironmentState, turns: list[ConversationTurn]
+    ) -> list[ConversationTurn]:
+        """The episode's turns up to this reply, system prompt included.
+
+        These are exactly the finished trajectory's turns up to the reply, so
+        a per-step reward sees the same conversation whoever applies it.
+        """
+        prompt = state.metadata.get(EPISODE_SYSTEM_PROMPT)
+        if isinstance(prompt, str) and prompt:
+            return [ConversationTurn(role="system", content=prompt), *turns]
+        return list(turns)
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
         """Expose public context while retaining evaluator references privately."""
@@ -367,6 +402,7 @@ class Environment(ABC):
                     metadata={"scenario": scenario},
                 )
             )
+            state.metadata[EPISODE_SYSTEM_PROMPT] = initial_prompt
         episode.turns.extend(await self.get_initial_turns(state))
         return episode
 
@@ -386,6 +422,12 @@ class Environment(ABC):
         # over the episode at the end) and the environment's own reward.
         reward_fn_part = float(new_state.metadata.pop(STEP_REWARD_FN_SCORE, 0.0))
         intrinsic = new_state.metadata.pop(STEP_ENVIRONMENT_REWARD, None)
+        # The state this step's reward is scored against, kept so a reward
+        # applied later (by a trainer) sees what it would have seen here.
+        step_state = new_state.metadata.pop(STEP_REWARD_STATE, None)
+        episode.step_states.append(
+            step_state if step_state is not None else _snapshot(new_state.context)
+        )
         episode.reward_fn_scores.append(reward_fn_part)
         episode.environment_rewards.append(
             float(step_reward) - reward_fn_part if intrinsic is None else intrinsic
@@ -423,7 +465,12 @@ class Environment(ABC):
         ]
         reward_metadata = {
             key: state.metadata[key]
-            for key in ("reward_fn_calls", "reward_error", "reward_breakdown")
+            for key in (
+                "reward_fn_calls",
+                "reward_error",
+                "reward_breakdown",
+                REWARD_FALLBACK_KEY,
+            )
             if state.metadata.get(key)
         }
         reward_fn = self.reward_fn
@@ -438,20 +485,20 @@ class Environment(ABC):
             )
             try:
                 final_reward = await reward_fn.compute_reward(turns, context)
-                final_value = _reward_score(final_reward)
+                final_value = reward_score(final_reward)
             except ENVIRONMENT_EXCEPTIONS as error:
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
                 _record_reward_failure(reward_metadata, reward_fn, error, "episode")
             else:
-                if final_value is not None:
-                    if turn_rewards:
-                        turn_rewards[-1] += final_value
-                    else:
-                        turn_rewards.append(final_value)
+                if turn_rewards:
+                    turn_rewards[-1] += final_value
+                else:
+                    turn_rewards.append(final_value)
                 breakdown = getattr(final_reward, "breakdown", None)
                 if isinstance(breakdown, dict):
                     reward_metadata["reward_breakdown"] = dict(breakdown)
+                note_fallback(reward_metadata, final_reward)
 
         metadata: dict[str, Any] = {
             "episode_id": state.episode_id,
@@ -472,6 +519,9 @@ class Environment(ABC):
             turn_rewards=turn_rewards,
             initial_state={"scenario": scenario} if scenario else None,
             final_state=state.context,
+            # One entry per step: the state that step's reward was (or would
+            # be) scored against; score_episode replays per-step rewards on it.
+            state_history=list(episode.step_states),
             metadata=metadata,
         )
 
@@ -489,25 +539,16 @@ class _Episode:
     reward_fn_scores: list[float] = field(default_factory=list)
     #: Per step: the environment's own reward, without the reward function.
     environment_rewards: list[float] = field(default_factory=list)
+    #: Per step: a snapshot of the state the step's reward is scored against.
+    step_states: list[dict[str, Any]] = field(default_factory=list)
 
 
-def _reward_score(result: Any) -> float | None:
-    """Read the score from a reward result (object, mapping or bare number).
-
-    Raises ``ValueError`` for a non-finite score, so it is handled as a reward
-    failure instead of silently turning the episode's reward into NaN.
-    """
-    if hasattr(result, "score"):
-        score = float(result.score)
-    elif isinstance(result, dict) and "score" in result:
-        score = float(result["score"])
-    elif isinstance(result, (int, float)) and not isinstance(result, bool):
-        score = float(result)
-    else:
-        return None
-    if not math.isfinite(score):
-        raise ValueError(f"reward score must be finite, got {score}")
-    return score
+def _snapshot(context: dict[str, Any]) -> dict[str, Any]:
+    """A copy of ``context`` that later in-place changes cannot alter."""
+    try:
+        return copy.deepcopy(context)
+    except (TypeError, copy.Error, RecursionError):
+        return dict(context)
 
 
 def _record_reward_failure(
