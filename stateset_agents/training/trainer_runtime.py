@@ -51,11 +51,13 @@ class SharedModelManager:
     small hooks instead of re-implementing the whole flow.
 
     Hooks:
-    - ``_get_transformers()``: return ``(AutoTokenizer, AutoModelForCausalLM)``
-      after performing the module-specific availability checks. Must read the
-      subclass module's globals so test patching keeps working.
-    - ``_peft_components()``: return ``(LoraConfig, TaskType, get_peft_model)``
-      after module-specific PEFT availability checks.
+    - ``_get_transformers()``: return ``(AutoTokenizer, AutoModelForCausalLM)``.
+      The default resolves them through
+      :func:`~stateset_agents.training.dedicated_deps.transformers_components`
+      (``ImportError`` naming :attr:`algorithm`).
+    - ``_peft_components()``: return ``(LoraConfig, TaskType, get_peft_model)``;
+      the default uses :func:`~stateset_agents.training.dedicated_deps.
+      peft_components`.
     - ``_lora_target_modules()``: LoRA target modules (default q/v projections).
     - ``_prepare_model_kwargs(model_kwargs)``: mutate model-loading kwargs
       (e.g. quantization flags).
@@ -66,6 +68,8 @@ class SharedModelManager:
     """
 
     _loaded_message = "Model loaded on {device}"
+    #: Algorithm named in missing-dependency errors (``"GEPO"``, ...).
+    algorithm = "training"
 
     def __init__(self, config: Any) -> None:
         from .config import TrainingConfig
@@ -81,12 +85,16 @@ class SharedModelManager:
     # ------------------------------------------------------------------ hooks
 
     def _get_transformers(self) -> tuple[Any, Any]:
-        """Return (AutoTokenizer, AutoModelForCausalLM) or raise."""
-        raise NotImplementedError
+        """Return (AutoTokenizer, AutoModelForCausalLM) or raise ImportError."""
+        from . import dedicated_deps
+
+        return dedicated_deps.transformers_components(self.algorithm)
 
     def _peft_components(self) -> tuple[Any, Any, Any]:
-        """Return (LoraConfig, TaskType, get_peft_model) or raise."""
-        raise NotImplementedError
+        """Return (LoraConfig, TaskType, get_peft_model) or raise ImportError."""
+        from . import dedicated_deps
+
+        return dedicated_deps.peft_components(self.algorithm)
 
     def _lora_target_modules(self) -> list[str]:
         return ["q_proj", "v_proj"]

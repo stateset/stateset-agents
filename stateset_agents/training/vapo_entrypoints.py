@@ -7,9 +7,10 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any
 
+from .config import config_value
+from .dedicated_reporting import WandbRun
 from .runtime_state import _reject_unsupported_resume
 from .spine.loop import (
     dedicated_run_config,
@@ -44,8 +45,6 @@ async def train_with_vapo(
     checkpoint); one setting ``should_abort`` stops training after the final
     save.
     """
-    from .vapo_trainer import VAPOModelManager, VAPOTrainer, _require_wandb, wandb
-
     logger.info("=" * 60)
     logger.info("VAPO Training - Value-Augmented Policy Optimization")
     logger.info("=" * 60)
@@ -62,14 +61,28 @@ async def train_with_vapo(
     )
     _reject_unsupported_resume(config, "train_with_vapo")
 
-    if use_wandb and wandb_project:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"vapo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["vapo", "rl-training", "value-based", "reasoning"],
+    with WandbRun(
+        "vapo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["vapo", "rl-training", "value-based", "reasoning"],
+    ) as reporter:
+        return await _run_vapo(
+            config, reward_fn, train_prompts, verifier_fn, callbacks or [], reporter
         )
+
+
+async def _run_vapo(
+    config: VAPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    verifier_fn: Callable[[str, str], bool] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_vapo` after its config and W&B run are set up."""
+    from .vapo_trainer import VAPOModelManager, VAPOTrainer
 
     seed_dedicated_run(config.seed)
     logger.info("Loading model: %s", config.model_name)
@@ -115,8 +128,7 @@ async def train_with_vapo(
                     metrics.get("explained_variance", 0.0),
                 )
 
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
@@ -128,15 +140,13 @@ async def train_with_vapo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
-        callbacks=callbacks or [],
+        callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if use_wandb:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("VAPO Training Complete!")

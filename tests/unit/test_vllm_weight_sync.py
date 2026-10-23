@@ -133,8 +133,8 @@ async def test_dapo_falls_back_without_a_vllm_backend(monkeypatch, caplog) -> No
 
 @pytest.mark.asyncio
 async def test_an_unexpected_sync_error_is_not_swallowed() -> None:
-    """Only engine failures (runtime, I/O, layout and lookup errors) leave the
-    engine stale; anything else is a bug and propagates."""
+    """Only engine runtime and I/O failures leave the engine stale; anything
+    else is a bug and propagates."""
 
     class BrokenEngine(FakeEngine):
         def sync_weights(self, model: Any) -> None:
@@ -147,8 +147,11 @@ async def test_an_unexpected_sync_error_is_not_swallowed() -> None:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("error", [RuntimeError, OSError, KeyError, ValueError])
+@pytest.mark.parametrize("error", [RuntimeError, OSError])
 async def test_engine_failures_leave_the_engine_stale(error: type) -> None:
+    """Engine runtime/I-O failures; KeyError/ValueError/TypeError/AttributeError
+    are bugs and propagate (test_rollout_sync_policy.py)."""
+
     class FailingEngine(FakeEngine):
         def sync_weights(self, model: Any) -> None:
             raise error("engine")

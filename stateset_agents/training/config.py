@@ -65,6 +65,80 @@ class TrainingProfile(Enum):
 
 
 _NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
+#: ``rollout_sync_failure`` values: stop after repeated failures, or warn.
+ROLLOUT_SYNC_FAILURE_POLICIES: tuple[str, ...] = ("raise", "warn")
+
+
+def require_positive_ints(config: Any, *names: str) -> None:
+    """Each named field must be an ``int`` of at least 1 (``ConfigurationError``)."""
+    for name in names:
+        value = getattr(config, name)
+        if type(value) is not int or value < 1:
+            raise ConfigurationError(
+                f"{name} must be a positive integer (got {value!r})"
+            )
+
+
+def require_finite(
+    config: Any,
+    *names: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    exclusive_minimum: bool = False,
+    exclusive_maximum: bool = False,
+) -> None:
+    """Each named field must be a finite real number in the given range."""
+    for name in names:
+        value = getattr(config, name)
+        valid = type(value) in (int, float) and math.isfinite(value)
+        if valid and minimum is not None:
+            valid = value > minimum if exclusive_minimum else value >= minimum
+        if valid and maximum is not None:
+            valid = value < maximum if exclusive_maximum else value <= maximum
+        if not valid:
+            bounds = []
+            if minimum is not None:
+                bounds.append(f"{'>' if exclusive_minimum else '>='} {minimum}")
+            if maximum is not None:
+                bounds.append(f"{'<' if exclusive_maximum else '<='} {maximum}")
+            rule = f" {' and '.join(bounds)}" if bounds else ""
+            raise ConfigurationError(
+                f"{name} must be a finite number{rule} (got {value!r})"
+            )
+
+
+#: Release that removes the dead algorithm-config fields deprecated in 0.70.
+DEAD_FIELD_REMOVAL = "v0.71.0"
+
+
+def reject_dead_fields(config: Any, fields: dict[str, str | None]) -> None:
+    """Reject a non-default value for a field no trainer reads.
+
+    ``fields`` maps each dead field to the field to use instead (``None``:
+    nothing replaces it). The field keeps its default until its removal
+    (:data:`DEAD_FIELD_REMOVAL`), so existing configs that never set it
+    still load; setting it now fails with a dated deprecation instead of
+    being silently ignored.
+    """
+    from .._deprecation import deprecation_message
+
+    defaults = {
+        item.name: item.default
+        for item in dataclasses.fields(type(config))
+        if item.name in fields
+    }
+    for name, replacement in fields.items():
+        value = getattr(config, name)
+        if value != defaults[name]:
+            message = deprecation_message(
+                f"{type(config).__name__}.{name}",
+                removal="0.71.0",
+                replacement=replacement,
+            )
+            raise ConfigurationError(
+                f"{message} No trainer reads it, so {name}={value!r} would be "
+                f"silently ignored; leave it at its default ({defaults[name]!r})."
+            )
 
 
 def validate_group_size(group_size: object) -> None:
@@ -290,6 +364,15 @@ class TrainingConfig:
     # every token (prompt included) if this is set; otherwise the loss raises
     # ``RolloutContractError``. Keyword-only so positional field order holds.
     allow_unmasked_labels: bool = field(default=False, kw_only=True)
+    # A training callback that raises is logged at WARNING with its traceback
+    # and training continues; True makes any callback failure stop training.
+    strict_callbacks: bool = field(default=False, kw_only=True)
+    # A failed rollout-engine weight sync leaves the engine serving the
+    # previous policy (``rollout_weights_stale`` in the step metrics).
+    # ``"raise"`` stops training after ``max_consecutive_rollout_sync_failures``
+    # consecutive failures; ``"warn"`` keeps training on stale rollouts.
+    rollout_sync_failure: str = field(default="raise", kw_only=True)
+    max_consecutive_rollout_sync_failures: int = field(default=3, kw_only=True)
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
@@ -430,9 +513,12 @@ class TrainingConfig:
                 f"num_generations {self.num_generations} is low for GRPO, consider increasing"
             )
 
-        # Hardware checks
+        # Hardware checks (validate_for_training rejects this combination)
         if self.bf16 and self.fp16:
-            warnings.append("Both bf16 and fp16 enabled, bf16 will take precedence")
+            warnings.append(
+                "bf16 and fp16 are mutually exclusive; enable at most one "
+                "(training rejects this config)"
+            )
 
         # W&B checks
         if self.report_to == "wandb" and not self.wandb_project:
@@ -542,9 +628,16 @@ class TrainingConfig:
             "allow_sequence_fallback",
             "allow_missing_sampler_logprobs",
             "allow_unmasked_labels",
+            "strict_callbacks",
         ):
             if type(getattr(self, name)) is not bool:
                 raise ConfigurationError(f"{name} must be a boolean")
+        if self.rollout_sync_failure not in ROLLOUT_SYNC_FAILURE_POLICIES:
+            raise ConfigurationError(
+                "rollout_sync_failure must be one of "
+                f"{ROLLOUT_SYNC_FAILURE_POLICIES} (got {self.rollout_sync_failure!r})"
+            )
+        require_positive_ints(self, "max_consecutive_rollout_sync_failures")
 
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
@@ -842,41 +935,6 @@ def create_config_from_args(
         config = TrainingConfig.from_dict(config_dict)
 
     return config
-
-
-# Example usage and testing
-def example_config_usage():
-    """Example of how to use training configurations"""
-
-    # Create from profile
-    conservative_config = TrainingConfig.from_profile(TrainingProfile.CONSERVATIVE)
-    print(f"Conservative LR: {conservative_config.learning_rate}")
-
-    # Create for specific task
-    customer_config = get_config_for_task("customer_service", num_episodes=1200)
-    print(f"Customer service episodes: {customer_config.num_episodes}")
-
-    # Optimize for hardware
-    optimized_config = optimize_config_for_hardware(
-        customer_config, gpu_memory_gb=12.0, num_gpus=2
-    )
-    print(f"Optimized batch size: {optimized_config.per_device_train_batch_size}")
-
-    # Validate configuration
-    warnings = optimized_config.validate()
-    if warnings:
-        print("Configuration warnings:")
-        for warning in warnings:
-            print(f"  - {warning}")
-
-    # Save and load
-    optimized_config.save("config.json")
-    loaded_config = TrainingConfig.load("config.json")
-    print(f"Loaded config learning rate: {loaded_config.learning_rate}")
-
-
-if __name__ == "__main__":
-    example_config_usage()
 
 
 def cuda_is_available() -> bool:

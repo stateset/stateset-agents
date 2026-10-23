@@ -55,7 +55,9 @@ from .profiling import (
 from .runtime_state import validate_training_config
 from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
-from .spine.scoring import EpisodeScorer
+from .spine.rollouts import record_rollout_sync
+from .spine.scoring import EpisodeScorer, trajectory_reward_fallback
+from .spine.update import NonFiniteGradientError
 from .trainer_utils import (
     apply_dropout_setting,
     backward_training_loss,
@@ -218,6 +220,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         self.global_step = 0
         self.current_epoch = 0
         self._next_episode = 0
+        #: Episodes the last rollout dropped for a reward fallback.
+        self.reward_fallback_episodes = 0
         self.best_eval_metric = float("-inf")
         self.steps_without_improvement = 0
         self._grad_accum_step = 0
@@ -543,7 +547,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
-            self.last_rollout_sync = bool(sync())
+            # Applies config.rollout_sync_failure to a failed sync.
+            record_rollout_sync(self, bool(sync()), label="GRPO")
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
         skip_policy = config_value(self.config, "nonfinite_grad_policy") == "skip"
@@ -560,8 +565,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 scaler=self.scaler,
                 gradient_scale=gradient_scale,
             )
-        except ValueError as error:
-            if "gradients must be finite" not in str(error) or not skip_policy:
+        except NonFiniteGradientError as error:
+            if not skip_policy:
                 raise
             return self._skip_nonfinite_update(error)
         if applied:
@@ -604,7 +609,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             self.optimizer.zero_grad(set_to_none=True)
         limit = int(config_value(self.config, "max_consecutive_nonfinite_skips"))
         if self._consecutive_nonfinite > limit:
-            raise ValueError(
+            raise NonFiniteGradientError(
                 f"{self._consecutive_nonfinite} consecutive non-finite updates "
                 f"(limit {limit})"
             ) from error
@@ -690,6 +695,9 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                     return turn
             return await self.agent.generate_response(history, context)
 
+        # Episodes whose reward is an opted-in fallback are dropped like an
+        # outage: a flagged episode is never trained on.
+        self.reward_fallback_episodes = 0
         batched = await self._generate_batched_trajectories(scenarios, num_generations)
         attempted = 0
 
@@ -713,6 +721,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                         )
 
                     await self._score_trajectory(trajectory, scenario)
+                    if self._drop_reward_fallback(trajectory):
+                        continue
                     trajectories.append(trajectory)
                     accepted = True
 
@@ -746,12 +756,24 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
         if attempted and not trajectory_groups:
             # Training on nothing would silently stall: every attempted
-            # episode lost its reward to an outage.
+            # episode lost its reward to an outage or a reward fallback.
+            flagged = self.reward_fallback_episodes
             raise RewardUnavailableError(
                 f"No episode got a reward: all {attempted} attempted episodes "
-                "were dropped because their reward was unavailable"
+                f"were dropped ({attempted - flagged} with an unavailable "
+                f"reward, {flagged} with a reward fallback)"
             )
         return trajectory_groups
+
+    def _drop_reward_fallback(self, trajectory: MultiTurnTrajectory) -> bool:
+        """Whether a scored episode is a reward fallback to leave out
+        (``spine.scoring.trajectory_reward_fallback``); counts it."""
+        reason = trajectory_reward_fallback(trajectory)
+        if reason is None:
+            return False
+        self.reward_fallback_episodes = int(self.reward_fallback_episodes) + 1
+        logger.warning("Dropping an episode: its reward is a fallback (%s)", reason)
+        return True
 
     def _record_rollout(
         self, trajectory: MultiTurnTrajectory | None, *, accepted: bool
@@ -855,6 +877,9 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         ):
             try:
                 await self._score_trajectory(trajectory, scenario)
+                if self._drop_reward_fallback(trajectory):
+                    scored.append(False)
+                    continue
             except BaseException as e:
                 # Only a reward outage drops the episode; any other error (a
                 # bug, bad data, a None or NaN reward) rejects the batch.

@@ -188,8 +188,12 @@ def _domain_errors() -> list[tuple[type[BaseException], type[BaseException], str
     from stateset_agents.training.backends import BackendError, BackendExecutionError
     from stateset_agents.training.diagnostics import TrainingSignalError
     from stateset_agents.training.rollout_contract import RolloutContractError
+    from stateset_agents.training.spine.rollouts import RolloutSyncError
+    from stateset_agents.training.spine.update import NonFiniteGradientError
 
     return [
+        (NonFiniteGradientError, ValueError, "TRN_GRADIENT_EXPLODED"),
+        (RolloutSyncError, RuntimeError, "TRN_STEP_FAILED"),
         (RewardUnavailableError, RuntimeError, "RWD_UNAVAILABLE"),
         (RolloutContractError, ValueError, "TRN_ROLLOUT_CONTRACT"),
         (TrainingSignalError, RuntimeError, "TRN_NO_SIGNAL"),

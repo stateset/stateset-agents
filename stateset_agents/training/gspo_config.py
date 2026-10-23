@@ -12,7 +12,12 @@ from stateset_agents.exceptions import (
     IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
 )
 
-from .config import TrainingConfig, cuda_is_available
+from .config import (
+    TrainingConfig,
+    cuda_is_available,
+    require_finite,
+    require_positive_ints,
+)
 
 
 @dataclass
@@ -66,6 +71,21 @@ class GSPOConfig(TrainingConfig):
         config_dict.update(kwargs)
         return cls(**config_dict)
 
+    def validate_for_training(self) -> None:
+        """Also require GSPO's own loop sizes and clip bounds in range."""
+        super().validate_for_training()
+        require_positive_ints(
+            self,
+            "num_outer_iterations",
+            "num_iterations",
+            "generations_per_iteration",
+            "mini_batch_size",
+        )
+        require_finite(
+            self, "clip_range_left", minimum=0, maximum=1, exclusive_maximum=True
+        )
+        require_finite(self, "clip_range_right", minimum=0)
+
     def validate(self) -> list[str]:
         """Validate configuration and return warnings."""
         warnings = super().validate()
@@ -79,8 +99,8 @@ class GSPOConfig(TrainingConfig):
             warnings.append(
                 f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} "
                 "ignored by the GSPO trainer: train_step takes num_iterations "
-                "full-batch optimizer steps per outer iteration on a cosine "
-                "schedule, without reward clipping."
+                "full-batch optimizer steps per outer iteration, without reward "
+                "clipping."
             )
 
         if (
@@ -138,7 +158,6 @@ class GSPOConfig(TrainingConfig):
 _GSPO_IGNORED_FIELDS = (
     "mini_batch_size",
     "gradient_accumulation_steps",
-    "lr_scheduler_type",
     "reward_clip",
 )
 _GSPO_DEFAULTS = {f.name: f.default for f in dataclasses.fields(GSPOConfig)}

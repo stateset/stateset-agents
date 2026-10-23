@@ -27,8 +27,10 @@ MAX_BRANCHES = 40
 #: GRPO losses (token path, enhanced loss, label preparation), the flywheel
 #: command and the studio's key dispatch, refresh and rendering brought it
 #: to 65; moving SingleTurnGRPOTrainer's loop onto the spine (one turn per
-#: method) to 64.
-CEILING = 64
+#: method) to 64; splitting the dedicated entry points into setup and run
+#: (one W&B reporter) and the callback dispatchers into one guarded
+#: dispatcher to 62.
+CEILING = 62
 
 _BRANCH_NODES = (
     ast.If,

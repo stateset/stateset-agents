@@ -44,6 +44,7 @@ async def save_multi_turn_checkpoint(
         path=str(checkpoint_path),
         step=int(trainer.global_step),
         is_best=bool(is_best),
+        strict=bool(config_value(trainer.config, "strict_callbacks")),
     )
 
 

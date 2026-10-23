@@ -159,6 +159,11 @@ class SpineLoopMixin(TrainingRuntime):
         result = function(*args, **kwargs)
         return await result if inspect.isawaitable(result) else result
 
+    @property
+    def _strict_callbacks(self) -> bool:
+        """``config.strict_callbacks``: a failing callback stops training."""
+        return bool(config_value(self.config, "strict_callbacks"))
+
     def _resume_start(self, resumed: bool, num_episodes: int) -> int:
         return min(num_episodes, self._next_episode) if resumed else 0
 
@@ -228,6 +233,7 @@ class SpineLoopMixin(TrainingRuntime):
             "optimizer-step",
             notify_optimizer_step,
             self.callbacks,
+            strict=self._strict_callbacks,
             step=self.global_step,
             metrics=callback_metrics,
         )
@@ -244,6 +250,7 @@ class SpineLoopMixin(TrainingRuntime):
                 "evaluation-end",
                 notify_evaluation_end,
                 self.callbacks,
+                strict=self._strict_callbacks,
                 metrics=dict(eval_metrics),
             )
             logger.info(
@@ -289,7 +296,15 @@ class SpineLoopMixin(TrainingRuntime):
             for traj in group.trajectories
         ]
         reward = float(np.mean(rewards)) if rewards else 0.0
-        return {**metrics, "total_reward": reward, "episode_reward": reward}
+        result = {**metrics, "total_reward": reward, "episode_reward": reward}
+        # Episodes the rollout left out for a reward fallback, plus any the
+        # update excluded (never trained on).
+        dropped = int(getattr(self, "reward_fallback_episodes", 0) or 0)
+        if dropped:
+            result["reward_fallback_episodes"] = dropped + int(
+                metrics.get("reward_fallback_episodes", 0)
+            )
+        return result
 
     def _should_stop_training(self) -> bool:
         return bool(
@@ -359,6 +374,7 @@ class SpineLoopMixin(TrainingRuntime):
             "episode-end",
             notify_episode_end,
             self.callbacks,
+            strict=self._strict_callbacks,
             episode=episode,
             metrics=callback_metrics,
         )
@@ -416,6 +432,7 @@ class SpineLoopMixin(TrainingRuntime):
             "training-start",
             notify_training_start,
             self.callbacks,
+            strict=self._strict_callbacks,
             trainer=self,
             config=self.config,
         )
@@ -456,6 +473,7 @@ class SpineLoopMixin(TrainingRuntime):
             "training-end",
             notify_training_end,
             self.callbacks,
+            strict=self._strict_callbacks,
             metrics={
                 "final_step": self.global_step,
                 "best_eval_metric": self.best_eval_metric,
@@ -628,6 +646,7 @@ async def run_dedicated_loop(
     report: Callable[[int, dict[str, Any]], Any] | None = None,
     callbacks: Sequence[Any] = (),
     seed: int | None = None,
+    strict_callbacks: bool = False,
 ) -> DedicatedRun:
     """The dedicated entry points' outer loop.
 
@@ -638,7 +657,8 @@ async def run_dedicated_loop(
     ``report(i, metrics)`` logs it, every ``save_steps`` iterations
     ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, then the
     ``callbacks`` get ``on_step_end(step=i, metrics)``; any whose
-    ``should_abort`` is then set stops training. After the loop -- also after
+    ``should_abort`` is then set stops training. A failing callback is
+    logged at WARNING, or raises with ``strict_callbacks``. After the loop -- also after
     an abort -- ``save(output_dir/<final_name>)`` publishes the final model. An
     exception propagates without a final save, like :class:`SpineLoopMixin`'s
     success-only finalization. ``report`` may be sync or async.
@@ -660,7 +680,9 @@ async def run_dedicated_loop(
         if (iteration + 1) % save_steps == 0:
             save(os.path.join(output_dir, f"checkpoint-{iteration + 1}"))
         if callbacks:
-            await notify_step_end(callbacks, step=iteration, metrics=metrics)
+            await notify_step_end(
+                callbacks, step=iteration, metrics=metrics, strict=strict_callbacks
+            )
             aborting = [cb for cb in callbacks if getattr(cb, "should_abort", False)]
             if aborting:
                 run.aborted = True

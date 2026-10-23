@@ -37,6 +37,7 @@ from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTI
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
 from .config import config_value
+from .quantization import QuantizationConfig, quantized_load_kwargs
 from .runtime_state import validate_training_config
 from .spine.scoring import ResponseScorer
 from .trl_grpo_config import TRLGRPOConfig
@@ -47,18 +48,6 @@ TRL_GRPO_AVAILABLE = False
 GRPOConfig = None
 TRLGRPOTrainer = None
 
-
-def _try_import_wandb() -> Any | None:
-    try:
-        import wandb
-
-        return wandb
-    except ImportError:  # pragma: no cover - optional dependency
-        return None
-
-
-_wandb: Any | None = _try_import_wandb()
-wandb: Any | None = _wandb
 
 try:
     from datasets import Dataset as _DatasetType
@@ -148,15 +137,6 @@ def _require_transformers() -> None:
         raise ImportError(
             "transformers is required for TRL GRPO training. "
             "Install with `pip install stateset-agents[trl]` or `pip install transformers`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for TRL GRPO logging. "
-            "Install with `pip install stateset-agents[trl]` or `pip install wandb`."
         )
 
 
@@ -313,9 +293,11 @@ def _trl_generation_batch_kwargs(config: Any) -> dict[str, Any]:
     short, round up to the smallest batch that is a multiple of both the
     group size and the per-step global batch.
     """
+    # The same fields the bridge hands TRL (``config.<field>``): sizing the
+    # batch from invented fallbacks disagreed with what TRL was given.
     per_device = max(1, int(config_value(config, "per_device_train_batch_size") or 1))
-    accumulation = max(1, int(getattr(config, "gradient_accumulation_steps", 1) or 1))
-    group = max(1, int(getattr(config, "num_generations", 1) or 1))
+    accumulation = max(1, int(config.gradient_accumulation_steps))
+    group = max(1, int(config.num_generations))
     world = max(1, int(os.environ.get("WORLD_SIZE", "1") or 1))
     step_batch = per_device * world
     default = step_batch * accumulation
@@ -528,7 +510,7 @@ class ModelManager:
     """Manages model loading and LoRA configuration for TRL training"""
 
     def __init__(self, config: TRLGRPOConfig):
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = None
         self.tokenizer = None
@@ -595,15 +577,17 @@ class ModelManager:
                 "revision": self.config.model_revision,
             }
 
-            # Add quantization if specified
-            if self.config.use_8bit:
+            # Add quantization if specified: the shared QLoRA config
+            # (Transformers 5 removed the legacy load_in_* model kwargs).
+            if self.config.use_8bit or self.config.use_4bit:
                 _require_bitsandbytes()
                 _require_kbit_training_support()
-                model_kwargs["load_in_8bit"] = True
-            elif self.config.use_4bit:
-                _require_bitsandbytes()
-                _require_kbit_training_support()
-                model_kwargs["load_in_4bit"] = True
+                model_kwargs = quantized_load_kwargs(
+                    QuantizationConfig.from_trainer_flags(
+                        self.config, model_kwargs["torch_dtype"]
+                    ),
+                    model_kwargs,
+                )
 
             # Load base model
             base_model = model_cls.from_pretrained(
@@ -849,7 +833,7 @@ class TRLGRPOTrainerWrapper:
         ref_model: Any | None = None,
     ) -> None:
         _require_trl_grpo()
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer

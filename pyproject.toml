@@ -467,6 +467,8 @@ select = [
     "TRY201", # `raise exc` instead of a bare `raise`
     "TRY203", # try/except that only re-raises
     "TRY401", # exception object repeated in logger.exception
+    "T20", # print/pprint: libraries log; package baseline below, ratchet in
+           # tests/unit/test_print_ratchet.py
 ]
 ignore = [
     "E501",  # line too long, handled by black
@@ -476,7 +478,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]
-"stateset_agents/core/advanced_monitoring.py" = ["E402"]
+"stateset_agents/core/advanced_monitoring.py" = ["E402", "T20"]  # T20: baseline
 "stateset_agents/core/agent.py" = ["E402"]
 "stateset_agents/training/dapo_trainer.py" = ["E402"]
 "stateset_agents/training/gspo_trainer.py" = ["E402"]
@@ -484,13 +486,13 @@ ignore = [
 "stateset_agents/training/trl_grpo_trainer.py" = ["E402"]
 "stateset_agents/training/vapo_trainer.py" = ["E402"]
 "stateset_agents/utils/wandb_integration.py" = ["E402", "BLE001"]  # BLE001: baseline
-"tests/**/*" = ["B011", "BLE001"]  # assert false; blind excepts allowed in tests
-# Blind-except is a library rule: demos, benchmarks, scripts and deployment
-# helpers are exempt.
-"examples/**/*" = ["BLE001"]
-"benchmarks/**/*" = ["BLE001"]
-"scripts/**/*" = ["BLE001"]
-"deployment/**/*" = ["BLE001"]
+"tests/**/*" = ["B011", "BLE001", "T20"]  # assert false; blind excepts and prints allowed in tests
+# Blind-except and print are library rules: demos, benchmarks, scripts and
+# deployment helpers are exempt.
+"examples/**/*" = ["BLE001", "T20"]
+"benchmarks/**/*" = ["BLE001", "T20"]
+"scripts/**/*" = ["BLE001", "T20"]
+"deployment/**/*" = ["BLE001", "T20"]
 # Package files that predate BLE001. Only shrinks: lower the count in
 # tests/unit/test_blind_except_ratchet.py and drop the file here at zero.
 "stateset_agents/api/distributed_cache.py" = ["BLE001"]
@@ -501,18 +503,18 @@ ignore = [
 "stateset_agents/api/routers/training_lab.py" = ["BLE001"]
 "stateset_agents/api/services/training_service.py" = ["BLE001"]
 "stateset_agents/api/training_worker.py" = ["BLE001"]
-"stateset_agents/cli.py" = ["BLE001"]
+"stateset_agents/cli.py" = ["BLE001", "T20"]
 "stateset_agents/cli_advanced.py" = ["BLE001"]
-"stateset_agents/cli_chat.py" = ["BLE001"]
+"stateset_agents/cli_chat.py" = ["BLE001", "T20"]
 "stateset_agents/cli_finetune.py" = ["BLE001"]
-"stateset_agents/cli_research.py" = ["BLE001"]
+"stateset_agents/cli_research.py" = ["BLE001", "T20"]
 "stateset_agents/evaluation/industry.py" = ["BLE001"]
 "stateset_agents/evaluation/reward_audit.py" = ["BLE001"]
 "stateset_agents/experimental/ppo_online.py" = ["BLE001"]
 "stateset_agents/finetune_evaluation_tui.py" = ["BLE001"]
 "stateset_agents/finetune_evaluation_worker.py" = ["BLE001"]
 "stateset_agents/finetune_validation.py" = ["BLE001"]
-"stateset_agents/finetune_worker.py" = ["BLE001"]
+"stateset_agents/finetune_worker.py" = ["BLE001", "T20"]
 "stateset_agents/remote/chat_session.py" = ["BLE001"]
 "stateset_agents/remote/modal.py" = ["BLE001"]
 "stateset_agents/remote/river_rl_runner.py" = ["BLE001"]
@@ -526,5 +528,18 @@ ignore = [
 "stateset_agents/tui.py" = ["BLE001"]
 "stateset_agents/tui_tasks.py" = ["BLE001"]
 "stateset_agents/utils/async_calls.py" = ["BLE001"]
+# Package files that predate T20 (print). CLI front ends print by design but
+# are still count-locked; library files should shrink to zero. Only shrinks:
+# lower the count in tests/unit/test_print_ratchet.py and drop the file here at
+# zero. (cli.py, cli_chat.py, cli_research.py, finetune_worker.py and
+# core/advanced_monitoring.py carry T20 on their entries above.)
+"stateset_agents/cli_evaluate.py" = ["T20"]
+"stateset_agents/cli_remote.py" = ["T20"]
+"stateset_agents/api/grpo/service.py" = ["T20"]
+"stateset_agents/core/enhanced_state_management.py" = ["T20"]
+"stateset_agents/evaluation/capability_regression.py" = ["T20"]
+"stateset_agents/remote/fireworks.py" = ["T20"]
+"stateset_agents/remote/river.py" = ["T20"]
+"stateset_agents/remote/worker.py" = ["T20"]
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
 "tests/unit/test_rl_losses.py" = ["E402"]

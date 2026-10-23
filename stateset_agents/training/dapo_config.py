@@ -6,7 +6,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import TrainingConfig, validate_group_size
+from ..core.errors import ConfigurationError
+from .config import (
+    TrainingConfig,
+    reject_dead_fields,
+    require_finite,
+    require_positive_ints,
+    validate_group_size,
+)
 
 
 @dataclass
@@ -35,6 +42,8 @@ class DAPOConfig(TrainingConfig):
     clip_eps_high: float = 0.28
 
     group_size: int = 16
+    # Deprecated (removed in v0.71.0): never read. Prompts per iteration are
+    # per_device_train_batch_size; a non-default value is rejected.
     prompt_batch_size: int = 512
     mini_batch_size: int = 512
     # Inner gradient updates per rollout (mu). Cadence (shared with GEPO and
@@ -72,12 +81,49 @@ class DAPOConfig(TrainingConfig):
     vllm_tensor_parallel_size: int = 1
     vllm_enable_prefix_caching: bool = True
 
+    # Deprecated (removed in v0.71.0): DAPO has no evaluation loop to repeat;
+    # a non-default value is rejected.
     eval_repeats: int = 32
 
     def validate_for_training(self) -> None:
-        """Also require two responses per group (:func:`validate_group_size`)."""
+        """Also require two responses per group (:func:`validate_group_size`)
+        and DAPO's own numeric fields in range."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        reject_dead_fields(
+            self,
+            {"prompt_batch_size": "per_device_train_batch_size", "eval_repeats": None},
+        )
+        require_positive_ints(
+            self,
+            "dynamic_sampling_buffer_size",
+            "max_generation_length",
+            "mini_batch_size",
+        )
+        if (
+            type(self.overlong_cache_length) is not int
+            or self.overlong_cache_length < 0
+        ):
+            raise ConfigurationError(
+                "overlong_cache_length must be a nonnegative integer "
+                f"(got {self.overlong_cache_length!r})"
+            )
+        require_finite(
+            self, "clip_eps_low", minimum=0, maximum=1, exclusive_maximum=True
+        )
+        require_finite(self, "clip_eps_high", minimum=0)
+        require_finite(
+            self,
+            "min_accuracy_threshold",
+            "max_accuracy_threshold",
+            minimum=0,
+            maximum=1,
+        )
+        if self.min_accuracy_threshold > self.max_accuracy_threshold:
+            raise ConfigurationError(
+                "min_accuracy_threshold must not exceed max_accuracy_threshold"
+            )
+        require_finite(self, "overlong_penalty")
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> DAPOConfig:

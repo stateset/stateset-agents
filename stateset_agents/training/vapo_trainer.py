@@ -17,6 +17,7 @@ Reference: https://arxiv.org/abs/2504.05118
 """
 
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -31,6 +32,7 @@ from . import objectives, rl_losses
 from .config import config_value
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.rollouts import PromptGroupRollouts
+from .spine.schedule import build_lr_scheduler, optimizer_step_budget
 from .spine.scoring import CallableScorer
 from .spine.update import (
     OptimizerStep,
@@ -48,102 +50,15 @@ from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
 
-try:
-    import wandb as _wandb
-
-    wandb: Any = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_vapo_loaded = False
-AutoModelForCausalLM: Any | None = None
-AutoTokenizer: Any | None = None
-get_cosine_schedule_with_warmup: Any | None = None
-
-
-def _load_transformers_vapo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_vapo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup
-    if _transformers_vapo_loaded:
-        return True
-    # Allow pre-injected mocks without importing transformers.
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_vapo_loaded = True
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_vapo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_transformers_vapo() -> None:
-    """Ensure transformers components are available before model loading."""
-    if not _load_transformers_vapo():
-        raise ImportError(
-            "transformers is required for VAPO training. "
-            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
-        )
-
-
-def _require_peft() -> None:
-    """Ensure PEFT is available before using LoRA features."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for VAPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for VAPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
-
 
 class VAPOModelManager(SharedModelManager):
-    """Manages model loading for VAPO training"""
+    """Manages model loading for VAPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "VAPO"
 
     def __init__(self, config: VAPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        _require_transformers_vapo()
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise ImportError("transformers is required for VAPO training")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        if get_peft_model is None:
-            raise ImportError("PEFT is required for VAPO LoRA training")
-        return LoraConfig, TaskType, get_peft_model
 
 
 class ValueHead(nn.Module):
@@ -412,10 +327,7 @@ class VAPOTrainer(TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_vapo()
-
-        validate_training_config(config)
+        validate_training_config(config, VAPOConfig)
         self.config = config
         # Value warmup draws its prompts from ``config.seed``, not the global
         # NumPy generator.
@@ -485,30 +397,28 @@ class VAPOTrainer(TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Schedulers
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.actor_scheduler = get_cosine_schedule_with_warmup(
-                self.actor_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-
-            self.critic_scheduler = get_cosine_schedule_with_warmup(
-                self.critic_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.actor_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.actor_optimizer, factor=1.0, total_iters=total_steps
-            )
-            self.critic_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.critic_optimizer, factor=1.0, total_iters=total_steps
-            )
+        # Schedulers: ``lr_scheduler_type`` over every update pass of the run
+        # (num_episodes x num_gradient_updates, the spine budget), clamped at
+        # the end. Sizing them over num_episodes alone made the cosine reach
+        # 0 halfway through a two-pass run and then climb back to the full LR.
+        # The value-warmup iteration holds its K positions (train_step).
+        total_steps = optimizer_step_budget(
+            int(config.num_episodes), self._update_passes()
+        )
+        self.actor_scheduler = build_lr_scheduler(
+            torch,
+            self.actor_optimizer,
+            kind=str(config.lr_scheduler_type),
+            total_steps=total_steps,
+            warmup_ratio=float(config.warmup_ratio),
+        )
+        self.critic_scheduler = build_lr_scheduler(
+            torch,
+            self.critic_optimizer,
+            kind=str(config.lr_scheduler_type),
+            total_steps=total_steps,
+            warmup_ratio=float(config.warmup_ratio),
+        )
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {
@@ -523,6 +433,25 @@ class VAPOTrainer(TrainingRuntime):
         self.global_step = 0
         self.value_warmup_complete = False
         self.rollout_samples_total = 0
+
+    def _update_passes(self) -> int:
+        """Inner update passes per rollout batch (``num_gradient_updates``)."""
+        return max(1, int(config_value(self.config, "num_gradient_updates")))
+
+    def _advance_schedulers(self, steps: int) -> None:
+        """Move both LR schedules ``steps`` positions without an update (the
+        value-warmup iteration and an empty batch keep their place).
+
+        Advancing before any ``optimizer.step()`` is deliberate here, so
+        PyTorch's call-order warning is silenced for these calls only.
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=r"Detected call of `lr_scheduler\.step\(\)`"
+            )
+            for _ in range(steps):
+                self.actor_scheduler.step()
+                self.critic_scheduler.step()
 
     def _build_optimizer_step(self, *, critic_only: bool = False) -> OptimizerStep:
         """The spine commit for one actor+critic update (or a critic warmup step).
@@ -560,6 +489,13 @@ class VAPOTrainer(TrainingRuntime):
             **nonfinite,
             named_modules=[self.model, self.value_head],
             label="VAPO",
+        )
+
+    async def _score_response(self, prompt: str, response: dict[str, Any]) -> Any:
+        """One sampled reply's reward and reward-fallback flag
+        (``spine.scoring.ScoredReply``)."""
+        return await CallableScorer(self.reward_fn).score_checked(
+            prompt, response["response"]
         )
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
@@ -675,10 +611,47 @@ class VAPOTrainer(TrainingRuntime):
             f"Starting value network warmup ({self.config.value_warmup_steps} steps)"
         )
 
-        total_value_loss = 0.0
-        explained_variances = []
+        explained_variances: list[float] = []
         critic_step = self._build_optimizer_step(critic_only=True)
 
+        # Value pretraining runs at the critic's base learning rate: the joint
+        # schedule's warmup ramp starts at 0, which left the value head
+        # untrained whenever warmup_ratio > 0.
+        scheduled = [group["lr"] for group in self.critic_optimizer.param_groups]
+        for group, base in zip(
+            self.critic_optimizer.param_groups,
+            self.critic_scheduler.base_lrs,
+            strict=True,
+        ):
+            group["lr"] = base
+        try:
+            total_value_loss = await self._value_warmup_steps(
+                prompts, critic_step, explained_variances
+            )
+        finally:
+            for group, rate in zip(
+                self.critic_optimizer.param_groups, scheduled, strict=True
+            ):
+                group["lr"] = rate
+
+        self.value_warmup_complete = True
+        logger.info("Value network warmup complete")
+
+        return {
+            "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
+            "warmup_explained_variance": (
+                float(np.mean(explained_variances)) if explained_variances else 0
+            ),
+        }
+
+    async def _value_warmup_steps(
+        self,
+        prompts: list[str],
+        critic_step: OptimizerStep,
+        explained_variances: list[float],
+    ) -> float:
+        """Run the value-warmup updates; return their summed value loss."""
+        total_value_loss = 0.0
         for step in range(self.config.value_warmup_steps):
             # Sample prompt
             prompt = prompts[int(self._warmup_rng.integers(len(prompts)))]
@@ -689,11 +662,17 @@ class VAPOTrainer(TrainingRuntime):
             if len(responses) == 0:
                 continue
 
-            # Compute rewards (Monte-Carlo returns)
-            rewards = []
-            for resp in responses:
-                reward = await self._compute_reward(prompt, resp["response"])
-                rewards.append(reward)
+            # Compute rewards (Monte-Carlo returns); a reply whose reward is a
+            # fallback never trains the critic either.
+            replies = [await self._score_response(prompt, resp) for resp in responses]
+            responses = [
+                resp
+                for resp, reply in zip(responses, replies, strict=True)
+                if reply.fallback is None
+            ]
+            rewards = [reply.score for reply in replies if reply.fallback is None]
+            if not responses:
+                continue
 
             # Prepare batch
             (
@@ -748,16 +727,7 @@ class VAPOTrainer(TrainingRuntime):
                     f"Value warmup step {step + 1}/{self.config.value_warmup_steps} | "
                     f"Loss: {avg_loss:.4f} | EV: {avg_ev:.4f}"
                 )
-
-        self.value_warmup_complete = True
-        logger.info("Value network warmup complete")
-
-        return {
-            "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
-            "warmup_explained_variance": (
-                float(np.mean(explained_variances)) if explained_variances else 0
-            ),
-        }
+        return total_value_loss
 
     def compute_value_loss(
         self,
@@ -912,9 +882,13 @@ class VAPOTrainer(TrainingRuntime):
         self.model.train()
         self.value_head.train()
 
-        # Warmup value network if not done
+        # Warmup value network if not done. The warmup iteration is one of
+        # the run's outer iterations, so the LR schedules advance by its K
+        # positions (as for an empty batch) and a run of num_episodes
+        # iterations still ends at the schedule's final value.
         if not self.value_warmup_complete:
             warmup_metrics = await self.warmup_value_network(prompts)
+            self._advance_schedulers(self._update_passes())
             return warmup_metrics
 
         # Per-update metrics are (re)initialised inside the update loop below,
@@ -928,15 +902,20 @@ class VAPOTrainer(TrainingRuntime):
         # here, before any inner update moves the weights. Recomputing them
         # from the current model made the importance ratio identically 1 and
         # the Clip-Higher trust region a no-op.
-        async def build(prompt: str, responses: list[dict[str, Any]]) -> dict[str, Any]:
-            # Compute rewards and identify correct samples
-            rewards = []
+        async def build(
+            prompt: str, responses: list[dict[str, Any]]
+        ) -> dict[str, Any] | None:
+            # Compute rewards and identify correct samples. A reply whose
+            # reward is a fallback is left out (never trained on); the group
+            # still needs two replies for group statistics.
+            responses, rewards = await sampler.score_group(
+                responses, lambda resp: self._score_response(prompt, resp)
+            )
+            if len(responses) < 2:
+                return None
             is_correct = []
 
-            for resp in responses:
-                reward = await self._compute_reward(prompt, resp["response"])
-                rewards.append(reward)
-
+            for resp, reward in zip(responses, rewards, strict=True):
                 if self.verifier_fn:
                     correct = self.verifier_fn(prompt, resp["response"])
                 else:
@@ -1013,16 +992,19 @@ class VAPOTrainer(TrainingRuntime):
             }
 
         # One group per prompt (at least two responses for group statistics).
-        rollouts = await PromptGroupRollouts(
+        sampler = PromptGroupRollouts(
             self.generate_group_responses, min_group_size=2, label="VAPO"
-        ).collect(prompts[: self.config.per_device_train_batch_size], build)
+        )
+        rollouts = await sampler.collect(
+            prompts[: self.config.per_device_train_batch_size], build
+        )
 
         # --- Update phase ---------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
         # against the frozen old log probs/values, exactly like DAPO. With the
         # default of 1 the formula is identical to the previous single-update
         # path (only dropout RNG ordering differs).
-        num_updates = max(1, config_value(self.config, "num_gradient_updates"))
+        num_updates = self._update_passes()
 
         # Every term aggregates over the whole batch, not per prompt: each
         # prompt's loss is a mean over its own rows/tokens, so weighting it by
@@ -1122,9 +1104,7 @@ class VAPOTrainer(TrainingRuntime):
         if not rollouts:
             # Nothing to update: the schedulers still advance once per inner
             # update, as VAPO always has for an empty batch.
-            for _ in range(num_updates):
-                self.actor_scheduler.step()
-                self.critic_scheduler.step()
+            self._advance_schedulers(num_updates)
 
         # Compute metrics
         metrics = {
@@ -1142,6 +1122,7 @@ class VAPOTrainer(TrainingRuntime):
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
             "optimizer_updates": passes.committed,
+            **sampler.fallbacks.metrics(),
         }
 
         # Store metrics

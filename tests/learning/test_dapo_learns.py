@@ -35,7 +35,6 @@ def _train(seed: int, *, sign: float) -> tuple[float, float]:
         use_lora=False,
         group_size=8,
         mini_batch_size=2,
-        prompt_batch_size=2,
         num_gradient_updates=1,
         max_prompt_length=32,
         max_completion_length=6,

@@ -17,7 +17,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import torch
@@ -32,7 +32,7 @@ from .spine.algorithm import (
     run_algorithm_step,
 )
 from .spine.rollouts import PromptGroupRollouts, VLLMEngineMixin
-from .spine.scoring import CallableScorer
+from .spine.scoring import CallableScorer, ScoredReply
 from .spine.update import UpdatePasses, batch_shares, share_size
 from .trainer_runtime import (
     SharedModelManager,
@@ -50,85 +50,6 @@ DAPO_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
-
-try:
-    import wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = cast(Any, None)
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_dapo_loaded = False
-AutoModelForCausalLM: Any = None
-AutoTokenizer: Any = None
-get_cosine_schedule_with_warmup: Any = None
-get_constant_schedule: Any = None
-
-
-def _load_transformers_dapo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_dapo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup, get_constant_schedule
-    if _transformers_dapo_loaded:
-        return True
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_dapo_loaded = True
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_constant_schedule as _get_constant
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        get_constant_schedule = _get_constant
-        _transformers_dapo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_transformers_dapo() -> None:
-    """Ensure transformers components are available before model loading."""
-    if not _load_transformers_dapo():
-        raise ImportError(
-            "transformers is required for DAPO training. "
-            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
-        )
-
-
-def _require_peft() -> None:
-    """Ensure PEFT is available before using LoRA features."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for DAPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for DAPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
-
 
 # Lazy import vLLM backend to avoid torch/torchvision compatibility issues
 # vllm imports transformers which imports torchvision at module level
@@ -163,20 +84,13 @@ def _load_vllm_backend() -> bool:
 
 
 class DAPOModelManager(SharedModelManager):
-    """Manages model loading for DAPO training"""
+    """Manages model loading for DAPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "DAPO"
 
     def __init__(self, config: DAPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        _require_transformers_dapo()
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise ImportError("transformers exports are unavailable for DAPO")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
 
 
 class DAPORewardShaper:
@@ -346,10 +260,7 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_dapo()
-
-        validate_training_config(config)
+        validate_training_config(config, DAPOConfig)
         self.config = config
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
@@ -401,16 +312,11 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Constant scheduler (DAPO uses constant LR)
-        if get_constant_schedule is not None:
-            self.scheduler = get_constant_schedule(self.optimizer)
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer,
-                factor=1.0,
-                total_iters=config.num_episodes * config.num_epochs,
-            )
+        # ``lr_scheduler_type`` (DAPOConfig's default: "constant", as in the
+        # paper) over every update pass of the run (num_episodes x
+        # num_gradient_updates, the spine budget). It used to be constant
+        # whatever the config asked for.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {
@@ -669,12 +575,16 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
             prompt: str, group_responses: list[dict[str, Any]]
         ) -> dict[str, Any] | None:
             # Score the group first: without a verifier, accuracy and the
-            # dynamic-sampling filter are both derived from these rewards.
-            base_rewards = []
-            for resp in group_responses:
-                base_reward = await self._compute_reward(prompt, resp["response"])
+            # dynamic-sampling filter are both derived from these rewards. A
+            # reply whose reward is a fallback is left out (never trained on).
+            group_responses, base_rewards = await rollouts.score_group(
+                group_responses,
+                lambda resp: self._score_reply_checked(prompt, resp["response"]),
+            )
+            if not group_responses:
+                return None
+            for resp, base_reward in zip(group_responses, base_rewards, strict=True):
                 resp["reward"] = base_reward
-                base_rewards.append(base_reward)
 
             accuracy = self.compute_group_accuracy(prompt, group_responses)
 
@@ -731,6 +641,7 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
         collected_samples = await rollouts.collect(
             prompts, build, limit=target_batch_size
         )
+        self._step_reward_fallbacks = rollouts.fallbacks.flagged
         prompts_processed = rollouts.prompts_processed
         prompts_filtered = rollouts.groups_dropped
         filter_ratio = prompts_filtered / max(prompts_processed, 1)
@@ -780,6 +691,12 @@ async def _dapo_score(
     return await CallableScorer(trainer.reward_fn).score(prompt, response)
 
 
+async def _dapo_score_checked(
+    trainer: DAPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
 async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollouts:
     """Dynamic-sampling rollouts, each group's batch tensors and old-policy
     log-probs frozen once, and its token (or row) share of the batch."""
@@ -787,9 +704,10 @@ async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollou
         prompts, trainer.config.mini_batch_size
     )
     step = _DAPOStep(filter_ratio)
+    fallbacks = int(getattr(trainer, "_step_reward_fallbacks", 0))
     if len(samples) == 0:
         logger.warning("No valid samples after dynamic sampling")
-        return StepRollouts(info=step)
+        return StepRollouts(info=step, reward_fallbacks=fallbacks)
 
     prepared = []
     for sample in samples:
@@ -833,7 +751,7 @@ async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollou
     step.shares = batch_shares(
         [share_size(group[2], trainer._objective.aggregate) for group in prepared]
     )
-    return StepRollouts(items=prepared, info=step)
+    return StepRollouts(items=prepared, info=step, reward_fallbacks=fallbacks)
 
 
 def _dapo_group_loss(
@@ -897,6 +815,7 @@ DAPO_SPEC = AlgorithmSpec(
     update_mode="chunked",
     passes=lambda config: max(1, config.num_gradient_updates),
     score=_dapo_score,
+    score_checked=_dapo_score_checked,
     rollouts=_dapo_rollouts,
     group_loss=_dapo_group_loss,
     metrics=_dapo_metrics,

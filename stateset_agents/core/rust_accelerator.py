@@ -26,9 +26,10 @@ try:
     import stateset_rl_core as _rust_core
 
     _RUST_AVAILABLE = True
-    logger.info("Rust acceleration enabled (stateset_rl_core)")
+    # DEBUG: a library import must not log at INFO in the user's process.
+    logger.debug("Rust acceleration enabled (stateset_rl_core)")
 except ImportError:
-    logger.info(
+    logger.debug(
         "Rust acceleration not available. Install with: "
         "cd rust_core && maturin develop --release"
     )

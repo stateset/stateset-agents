@@ -903,6 +903,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 path=str(checkpoint_path),
                 step=int(self.global_step),
                 is_best=bool(is_best),
+                strict=bool(
+                    config_value(getattr(self, "config", None), "strict_callbacks")
+                ),
             )
 
     def cleanup(self):

@@ -395,7 +395,7 @@ class AutoResearchLoop:
             experiment_num += 1
 
         self._finish_wandb()
-        self.tracker.print_summary()
+        logger.info("%s", self.tracker.format_summary())
         self._print_analysis()
         return self.tracker
 
@@ -940,7 +940,7 @@ class AutoResearchLoop:
         gc.collect()
 
     def _print_analysis(self) -> None:
-        """Print hyperparameter importance analysis after the run."""
+        """Log the hyperparameter importance analysis after the run."""
         if self.tracker.num_experiments < 6:
             return
         try:
@@ -951,7 +951,7 @@ class AutoResearchLoop:
                 objective_metric=self.config.objective_metric,
                 direction=self.config.direction,
             )
-            print(report)
+            logger.info("Hyperparameter analysis:\n%s", report)
 
             # Save to file
             report_path = self.config.output_path / "analysis.txt"

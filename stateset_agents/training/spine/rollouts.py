@@ -19,7 +19,7 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any, TypeVar
 
-from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.core.errors import TrainingError
 
 from ..config import config_value
 
@@ -27,15 +27,156 @@ logger = logging.getLogger(__name__)
 
 _Item = TypeVar("_Item")
 
-#: Engine failures a weight sync survives (the engine is marked stale): the
-#: engine's runtime/I-O errors, a missing ``sync_weights`` (TypeError) and
-#: weight-name or layout mismatches (KeyError, AttributeError, ValueError).
-#: Anything else is a bug in the sync path and propagates.
-_WEIGHT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    *INFERENCE_EXCEPTIONS,
-    KeyError,
-    AttributeError,
-)
+#: Engine failures a weight sync survives (the engine is marked stale and
+#: :func:`record_rollout_sync` applies ``config.rollout_sync_failure``): the
+#: engine's runtime and I/O errors (CUDA, RPC, timeouts). TypeError,
+#: KeyError, AttributeError and ValueError are bugs in the sync path (a
+#: wrong call, a weight-name or layout mismatch) and propagate.
+_WEIGHT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (RuntimeError, OSError)
+
+
+class RolloutSyncError(TrainingError, RuntimeError):
+    """The rollout engine could not be kept on-policy: weight syncs failed
+    ``max_consecutive_rollout_sync_failures`` times in a row under
+    ``rollout_sync_failure="raise"``. A :class:`TrainingError` that is still a
+    ``RuntimeError`` and prints its bare message."""
+
+    message_only_str = True
+
+
+def record_rollout_sync(trainer: Any, outcome: bool | None, *, label: str) -> None:
+    """Record one weight-sync outcome on ``trainer`` and apply its policy.
+
+    ``outcome`` is True after a successful sync, False after a failed one
+    (the engine keeps serving the previous policy) and ``None`` when nothing
+    was attempted. It becomes ``trainer.last_rollout_sync``; a success resets
+    the consecutive-failure count, a failure increments it, and under
+    ``config.rollout_sync_failure="raise"`` (the default) the
+    ``max_consecutive_rollout_sync_failures``-th consecutive failure raises
+    :class:`RolloutSyncError`. ``"warn"`` keeps training on stale rollouts.
+    """
+    trainer.last_rollout_sync = outcome
+    if outcome is None:
+        return
+    if outcome:
+        trainer._rollout_sync_failures = 0
+        return
+    failures = int(getattr(trainer, "_rollout_sync_failures", 0)) + 1
+    trainer._rollout_sync_failures = failures
+    policy = config_value(trainer.config, "rollout_sync_failure")
+    limit = int(config_value(trainer.config, "max_consecutive_rollout_sync_failures"))
+    if policy == "raise" and failures >= limit:
+        raise RolloutSyncError(
+            f"{label}: rollout-engine weight sync failed {failures} consecutive "
+            f"times (limit {limit}), so rollouts would keep sampling a stale "
+            "policy. Fix the engine, or set rollout_sync_failure='warn' to "
+            "keep training on stale rollouts."
+        )
+    logger.warning(
+        "%s: rollout-engine weights are stale (%d consecutive sync failure(s))",
+        label,
+        failures,
+    )
+
+
+def rollout_sync_metrics(trainer: Any) -> dict[str, Any]:
+    """The step metrics for the rollout engine's weights: whether they are
+    stale (the last sync failed) and the consecutive-failure count. Empty
+    until a sync was attempted, so trainers without an engine report
+    nothing new."""
+    outcome = getattr(trainer, "last_rollout_sync", None)
+    failures = int(getattr(trainer, "_rollout_sync_failures", 0))
+    if outcome is None and not failures:
+        return {}
+    return {
+        "rollout_weights_stale": outcome is False,
+        "rollout_sync_failures": failures,
+    }
+
+
+class RewardFallbacks:
+    """Count the replies (or episodes) left out of a step for a reward
+    fallback (``ScoredReply.fallback``): a flagged score is never trained on.
+
+    :meth:`keep` filters one group; :meth:`require_trainable` raises
+    ``RewardUnavailableError`` when every scored reply of the step was
+    flagged (training on nothing would silently stall); :meth:`metrics` is
+    the step's ``reward_fallback_responses`` count, reported only when
+    nonzero.
+    """
+
+    def __init__(self) -> None:
+        self.scored = 0
+        self.flagged = 0
+
+    def keep(
+        self, items: Sequence[_Item], replies: Sequence[Any]
+    ) -> tuple[list[_Item], list[float]]:
+        """The items whose reply score is genuine, with those scores."""
+        kept: list[_Item] = []
+        scores: list[float] = []
+        for item, reply in zip(items, replies, strict=True):
+            self.scored += 1
+            if reply.fallback is not None:
+                self.flagged += 1
+                logger.warning(
+                    "Leaving a reply out of training: its reward is a fallback " "(%s)",
+                    reply.fallback,
+                )
+                continue
+            kept.append(item)
+            scores.append(float(reply.score))
+        return kept, scores
+
+    def require_trainable(self, label: str) -> None:
+        """Raise when every scored reply of the step was flagged."""
+        if self.scored and self.flagged == self.scored:
+            from stateset_agents.core.reward_context import RewardUnavailableError
+
+            raise RewardUnavailableError(
+                f"{label}: all {self.scored} scored replies carry a reward "
+                "fallback flag, so nothing in this step can be trained on"
+            )
+
+    def metrics(self) -> dict[str, Any]:
+        return {"reward_fallback_responses": self.flagged} if self.flagged else {}
+
+
+def exclude_flagged_groups(groups: Sequence[Any]) -> tuple[list[Any], int]:
+    """Trajectory groups without their reward-fallback episodes, and how many
+    episodes were left out.
+
+    A flagged episode (``spine.scoring.trajectory_reward_fallback``) is
+    dropped from its group; the group's advantages are then relative to the
+    genuine rewards only. A group left empty is dropped. The input groups are
+    not modified (a group losing episodes is copied).
+    """
+    import copy
+    import dataclasses
+
+    from .scoring import trajectory_reward_fallback
+
+    kept: list[Any] = []
+    excluded = 0
+    for group in groups:
+        trajectories = getattr(group, "trajectories", None)
+        if not trajectories:
+            kept.append(group)
+            continue
+        clean = [t for t in trajectories if trajectory_reward_fallback(t) is None]
+        if len(clean) == len(trajectories):
+            kept.append(group)
+            continue
+        excluded += len(trajectories) - len(clean)
+        if not clean:
+            continue
+        if dataclasses.is_dataclass(group) and not isinstance(group, type):
+            kept.append(dataclasses.replace(group, trajectories=clean))
+        else:
+            copied = copy.copy(group)
+            copied.trajectories = clean
+            kept.append(copied)
+    return kept, excluded
 
 
 class PromptGroupRollouts:
@@ -47,7 +188,9 @@ class PromptGroupRollouts:
     group-relative advantage needs at least two samples). ``build(prompt,
     responses)`` scores the group and returns its item, or ``None`` to drop it
     (e.g. DAPO's dynamic sampling). :meth:`collect` stops once ``limit`` items
-    were built.
+    were built. ``build`` scores through :meth:`score_group`, which leaves
+    reward-fallback replies out (:attr:`fallbacks`); a step whose every
+    scored reply was flagged raises ``RewardUnavailableError``.
     """
 
     def __init__(
@@ -64,6 +207,18 @@ class PromptGroupRollouts:
         self.prompts_processed = 0
         #: Groups the last :meth:`collect` skipped (too small or dropped).
         self.groups_dropped = 0
+        #: Replies the last :meth:`collect` left out for a reward fallback.
+        self.fallbacks = RewardFallbacks()
+
+    async def score_group(
+        self,
+        responses: Sequence[_Item],
+        score: Callable[[_Item], Awaitable[Any]],
+    ) -> tuple[list[_Item], list[float]]:
+        """Score each reply (``score`` returns a ``ScoredReply``) in order and
+        keep the genuine ones: ``(kept replies, their scores)``."""
+        replies = [await score(response) for response in responses]
+        return self.fallbacks.keep(responses, replies)
 
     async def collect(
         self,
@@ -75,6 +230,7 @@ class PromptGroupRollouts:
         """Return the built items, in prompt order."""
         self.prompts_processed = 0
         self.groups_dropped = 0
+        self.fallbacks = RewardFallbacks()
         items: list[_Item] = []
         for prompt in prompts:
             if limit is not None and len(items) >= limit:
@@ -95,6 +251,7 @@ class PromptGroupRollouts:
                 self.groups_dropped += 1
             else:
                 items.append(item)
+        self.fallbacks.require_trainable(self.label)
         return items
 
 
@@ -199,20 +356,26 @@ class VLLMEngineMixin:
 
         Returns ``None`` when no engine is in use, True after a successful
         sync, and False when the engine has no ``sync_weights`` or the sync
-        failed: the engine is then stale (``vllm_weights_stale``) and keeps
-        serving the previous policy, and training continues.
+        failed with an engine runtime/I-O error: the engine is then stale
+        (``vllm_weights_stale``) and keeps serving the previous policy; the
+        caller's :func:`record_rollout_sync` decides whether training goes
+        on. Any other exception is a bug in the sync path and propagates.
         """
         generator = self.vllm_generator
         if not self.using_vllm or generator is None:
             return None
         sync = getattr(generator, "sync_weights", None)
+        if not callable(sync):
+            self.vllm_weights_stale = True
+            logger.warning(
+                "%s: %s has no sync_weights(model); rollouts lag the policy",
+                self._vllm_label,
+                type(generator).__name__,
+            )
+            return False
         try:
-            if not callable(sync):
-                raise TypeError(f"{type(generator).__name__} has no sync_weights")
             sync(model)
-        except (
-            _WEIGHT_SYNC_EXCEPTIONS
-        ) as error:  # a stale engine must not stop training
+        except _WEIGHT_SYNC_EXCEPTIONS as error:
             self.vllm_weights_stale = True
             logger.warning(
                 "%s: vLLM weight sync failed; rollouts lag the policy: %s",
@@ -226,7 +389,11 @@ class VLLMEngineMixin:
 
 __all__ = [
     "PromptGroupRollouts",
+    "RewardFallbacks",
+    "RolloutSyncError",
     "VLLMEngineMixin",
     "vllm_dtype",
+    "record_rollout_sync",
+    "rollout_sync_metrics",
     "vllm_engine_config",
 ]

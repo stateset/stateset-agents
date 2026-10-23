@@ -10,7 +10,6 @@ import json
 import logging
 import os
 from contextlib import nullcontext
-from datetime import datetime
 from typing import Any
 
 from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
@@ -18,16 +17,10 @@ from stateset_agents.core.environment import ConversationEnvironment
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
 from .config import get_config_for_task
+from .dedicated_reporting import WandbRun, reports_to_wandb
 from .trl_grpo_config import TRLGRPOConfig
 
 logger = logging.getLogger(__name__)
-
-
-def _should_report_to_wandb(report_to: str | None) -> bool:
-    """Return whether wandb logging is enabled in a report_to string."""
-    if not report_to or report_to == "none":
-        return False
-    return "wandb" in {target.strip() for target in report_to.split(",")}
 
 
 def _build_sync_reward_function(reward_wrapper: Any):
@@ -79,39 +72,40 @@ async def train_with_trl_grpo(
     eval_data: list[dict[str, Any]] | None = None,
 ) -> Agent:
     """Main training function using TRL GRPO."""
-    from .trl_grpo_trainer import (
-        ModelManager,
-        TRLGRPODatasetBuilder,
-        TRLGRPORewardFunction,
-        TRLGRPOTrainerWrapper,
-        _require_wandb,
-        wandb,
-    )
-
     logger.info("Initializing TRL GRPO training")
     logger.info("Configuration: %s", json.dumps(config.to_dict(), indent=2))
 
     os.makedirs(config.output_dir, exist_ok=True)
 
-    wants_wandb = _should_report_to_wandb(config.report_to)
-    wandb_enabled = wants_wandb and config.wandb_project is not None
-    if wants_wandb and not wandb_enabled:
-        logger.warning(
-            "report_to includes wandb but no wandb_project was provided; disabling wandb logging."
+    with WandbRun(
+        "trl-grpo",
+        enabled=reports_to_wandb(config.report_to),
+        project=config.wandb_project,
+        config=config,
+        tags=list(config.wandb_tags or []),
+        name=config.run_name,
+    ):
+        return await _run_trl_grpo(
+            config, agent, environment, reward_model, train_data, eval_data
         )
 
-    if wandb_enabled:
-        _require_wandb()
-        wb = wandb
-        if wb is None:
-            raise ImportError("wandb is unavailable")
-        wb.init(
-            project=config.wandb_project,
-            name=config.run_name
-            or f"trl-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=config.wandb_tags,
-        )
+
+async def _run_trl_grpo(
+    config: TRLGRPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveRewardFunction,
+    train_data: list[dict[str, Any]] | None,
+    eval_data: list[dict[str, Any]] | None,
+) -> Agent:
+    """:func:`train_with_trl_grpo` after its W&B run is set up (TRL itself
+    logs its metrics to that run through ``report_to``)."""
+    from .trl_grpo_trainer import (
+        ModelManager,
+        TRLGRPODatasetBuilder,
+        TRLGRPORewardFunction,
+        TRLGRPOTrainerWrapper,
+    )
 
     model_manager = ModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
@@ -168,11 +162,6 @@ async def train_with_trl_grpo(
             getattr(getattr(trainer, "trainer", None), "state", None)
         ),
     )
-
-    if wandb_enabled:
-        wb = wandb
-        if wb is not None:
-            wb.finish()
 
     logger.info("TRL GRPO training completed successfully.")
     return agent
@@ -238,40 +227,35 @@ async def train_iterative_grpo(
     2. Train for N epochs.
     3. Repeat.
     """
+    logger.info(
+        "Starting Iterative GRPO Training (%s iterations)",
+        config.num_outer_iterations,
+    )
+    with WandbRun(
+        "iterative-grpo",
+        enabled=reports_to_wandb(config.report_to),
+        project=config.wandb_project,
+        config=config,
+        tags=["iterative", "grpo"] + list(config.wandb_tags or []),
+        name=config.run_name,
+    ):
+        return await _run_iterative_grpo(config, agent, environment, reward_model)
+
+
+async def _run_iterative_grpo(
+    config: TRLGRPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveRewardFunction,
+) -> Agent:
+    """:func:`train_iterative_grpo` after its W&B run is set up."""
     from .trl_grpo_trainer import (
         ModelManager,
         TrajectoryGenerator,
         TRLGRPODatasetBuilder,
         TRLGRPORewardFunction,
         TRLGRPOTrainerWrapper,
-        _require_wandb,
-        wandb,
     )
-
-    logger.info(
-        "Starting Iterative GRPO Training (%s iterations)",
-        config.num_outer_iterations,
-    )
-
-    wants_wandb = _should_report_to_wandb(config.report_to)
-    wandb_enabled = wants_wandb and config.wandb_project is not None
-    if wants_wandb and not wandb_enabled:
-        logger.warning(
-            "report_to includes wandb but no wandb_project was provided; disabling wandb logging."
-        )
-
-    if wandb_enabled:
-        _require_wandb()
-        wb = wandb
-        if wb is None:
-            raise ImportError("wandb is unavailable")
-        wb.init(
-            project=config.wandb_project,
-            name=config.run_name
-            or f"iterative-grpo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["iterative", "grpo"] + (config.wandb_tags or []),
-        )
 
     model_manager = ModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
@@ -392,11 +376,6 @@ async def train_iterative_grpo(
             trainer_wrapper.save_model(checkpoint_dir)
 
     logger.info("Iterative training completed.")
-    if wandb_enabled:
-        wb = wandb
-        if wb is not None:
-            wb.finish()
-
     return agent
 
 

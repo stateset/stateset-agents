@@ -101,6 +101,18 @@ class QuantizationConfig:
         return cls(mode=mode, compute_dtype=compute_dtype)
 
     @classmethod
+    def from_trainer_flags(cls, config: Any, load_dtype: Any) -> QuantizationConfig:
+        """:meth:`from_flags` for a trainer config's ``use_4bit``/``use_8bit``,
+        computing 4-bit layers in the model's load dtype (a ``torch.dtype``
+        such as ``torch.bfloat16``, or its name)."""
+        name = str(load_dtype).rsplit(".", 1)[-1]
+        return cls.from_flags(
+            use_4bit=bool(config.use_4bit),
+            use_8bit=bool(config.use_8bit),
+            compute_dtype=name if name in COMPUTE_DTYPES else "bfloat16",
+        )
+
+    @classmethod
     def coerce(cls, value: Any) -> QuantizationConfig:
         """Accept ``None``, a mode string, a mapping, or a config."""
         if value is None:

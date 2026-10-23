@@ -37,9 +37,12 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from stateset_agents.core.reward_context import RewardUnavailableError
+
 from ..config import config_value
 from ..grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from ..metric_reduction import carry_loss_metrics
+from .rollouts import exclude_flagged_groups, rollout_sync_metrics
 
 
 class GRPOUpdateMixin:
@@ -115,8 +118,20 @@ class GRPOUpdateMixin:
         """Compute, backpropagate and (when due) commit one batch's update.
 
         Returns ``(loss_dict, metrics)``. ``backward=False`` only computes the
-        loss (a trainer without an optimizer).
+        loss (a trainer without an optimizer). A trajectory whose reward is a
+        fallback (``spine.scoring.trajectory_reward_fallback``) is left out of
+        the loss and counted (``reward_fallback_episodes``); a batch with
+        nothing else raises ``RewardUnavailableError``.
         """
+        trajectory_groups, flagged = exclude_flagged_groups(trajectory_groups)
+        self._update_reward_fallbacks = flagged
+        if flagged and not any(
+            getattr(group, "trajectories", None) for group in trajectory_groups
+        ):
+            raise RewardUnavailableError(
+                f"All {flagged} trajectories of this batch carry a reward "
+                "fallback flag, so there is nothing to train on"
+            )
         torch, amp = self._update_modules()
 
         use_amp = bool(
@@ -275,7 +290,12 @@ class GRPOUpdateMixin:
             ),
             "global_step": self.global_step,
             **step,
+            # Rollout-engine weight status once a sync was attempted.
+            **rollout_sync_metrics(self),
         }
+        flagged = int(getattr(self, "_update_reward_fallbacks", 0))
+        if flagged:
+            metrics["reward_fallback_episodes"] = flagged
         result: dict[str, Any] = carry_loss_metrics(metrics, loss_dict)
         return result
 

@@ -209,26 +209,34 @@ def print_training_plan(
     seed: int = 42,
     quantization: QuantizationConfig | None = None,
 ) -> None:
-    """Dump a human-readable summary of what training *would* do."""
-    print()
-    print("=" * 60)
-    print("SFT Training Plan (dry run — no GPU detected)")
-    print("=" * 60)
-    print(f"  Dataset size:     {len(rows)} examples")
-    print(f"  Base model:       {base_model}")
-    print(f"  Output dir:       {output_dir}")
-    print(f"  Epochs:           {num_epochs}")
-    print(f"  LoRA r:           {lora_r}")
-    print(f"  Learning rate:    {learning_rate}")
-    print(f"  Max sequence:     {max_length}")
-    print(f"  Training seed:    {seed}")
+    """Dump a human-readable summary of what training *would* do.
+
+    The plan goes to stdout: it is the dry-run report of the SFT job, which
+    ``run_sft_job`` captures into the job's logs.
+    """
+    lines = [
+        "",
+        "=" * 60,
+        "SFT Training Plan (dry run — no GPU detected)",
+        "=" * 60,
+        f"  Dataset size:     {len(rows)} examples",
+        f"  Base model:       {base_model}",
+        f"  Output dir:       {output_dir}",
+        f"  Epochs:           {num_epochs}",
+        f"  LoRA r:           {lora_r}",
+        f"  Learning rate:    {learning_rate}",
+        f"  Max sequence:     {max_length}",
+        f"  Training seed:    {seed}",
+    ]
     if quantization is not None and quantization.enabled:
         settings = ", ".join(f"{k}={v}" for k, v in quantization.to_dict().items())
-        print(f"  Quantization:     QLoRA ({settings}; needs CUDA + bitsandbytes)")
-    print()
+        lines.append(
+            f"  Quantization:     QLoRA ({settings}; needs CUDA + bitsandbytes)"
+        )
+    lines.append("")
     sample = rows[0] if rows else None
     if sample:
-        print("  First example:")
+        lines.append("  First example:")
         for msg in sample.get("messages", [])[:2]:
             content = msg.get("content")
             if not isinstance(content, str):  # e.g. a pure tool call
@@ -239,10 +247,13 @@ def print_training_plan(
                     if isinstance(c, dict)
                 ]
                 content = f"<tool call: {', '.join(names) or '?'}>"
-            print(f"    [{msg.get('role')}] {content[:60]}…")
-    print()
-    print("  To execute, run this script on a host with a CUDA-capable GPU.")
-    print("=" * 60)
+            lines.append(f"    [{msg.get('role')}] {content[:60]}…")
+    lines += [
+        "",
+        "  To execute, run this script on a host with a CUDA-capable GPU.",
+        "=" * 60,
+    ]
+    print("\n".join(lines))  # noqa: T201 - the dry-run plan is the job's stdout report
 
 
 #: Linear-layer names LoRA is normally applied to, across common decoder
@@ -1708,10 +1719,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             eval_prompts = json.loads(args.eval_prompts_json)
         except json.JSONDecodeError as exc:
-            print(f"--eval-prompts-json is not valid JSON: {exc}")
+            print(f"--eval-prompts-json is not valid JSON: {exc}")  # noqa: T201 - CLI
             return 2
         if not isinstance(eval_prompts, list):
-            print(
+            print(  # noqa: T201 - CLI usage error
                 "--eval-prompts-json must be a JSON list of strings or "
                 "prompt-spec objects"
             )
@@ -1719,7 +1730,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             normalize_eval_prompts(eval_prompts)
         except ValueError as exc:
-            print(f"--eval-prompts-json is invalid: {exc}")
+            print(f"--eval-prompts-json is invalid: {exc}")  # noqa: T201 - CLI
             return 2
 
     outcome = run_sft_job(
@@ -1750,19 +1761,16 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     for line in outcome["logs"]:
-        print(line)
+        print(line)  # noqa: T201 - CLI: the job's captured output
 
     if outcome["returncode"] != 0:
         return int(outcome["returncode"])
 
     path = outcome["output_dir"]
-    print()
-    print("Next steps:")
-    print(
+    print(  # noqa: T201 - CLI next-step hints
+        "\nNext steps:\n"
         f"  Chat with it:   stateset-agents chat "
-        f"--model {args.base_model} --checkpoint {path}"
-    )
-    print(
+        f"--model {args.base_model} --checkpoint {path}\n"
         f"  Serve it:       stateset-agents serve "
         f"--checkpoint {path} --base-model {args.base_model}"
     )

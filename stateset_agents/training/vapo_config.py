@@ -6,7 +6,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import TrainingConfig, validate_group_size
+from .config import (
+    TrainingConfig,
+    reject_dead_fields,
+    require_finite,
+    require_positive_ints,
+    validate_group_size,
+)
 
 
 @dataclass
@@ -19,6 +25,8 @@ class VAPOConfig(TrainingConfig):
     """
 
     model_name: str = "gpt2"
+    # Deprecated (removed in v0.71.0): never read; inner update passes are
+    # num_gradient_updates. A non-default value is rejected.
     num_iterations: int = 1
 
     max_prompt_length: int = 256
@@ -58,6 +66,8 @@ class VAPOConfig(TrainingConfig):
     positive_lm_weight: float = 0.1
 
     group_size: int = 16
+    # Deprecated (removed in v0.71.0): never read; prompts per iteration are
+    # per_device_train_batch_size. A non-default value is rejected.
     num_prompts_per_batch: int = 512
 
     actor_learning_rate: float = 1e-6
@@ -81,9 +91,41 @@ class VAPOConfig(TrainingConfig):
     entropy_coef: float = 0.0
 
     def validate_for_training(self) -> None:
-        """Also require two responses per group (:func:`validate_group_size`)."""
+        """Also require two responses per group (:func:`validate_group_size`)
+        and VAPO's own numeric fields in range (``value_warmup_steps=0`` used
+        to end value warmup with a ``ZeroDivisionError``)."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        reject_dead_fields(
+            self,
+            {
+                "num_prompts_per_batch": "per_device_train_batch_size",
+                "num_iterations": "num_gradient_updates",
+            },
+        )
+        require_positive_ints(
+            self, "value_warmup_steps", "value_hidden_size", "value_num_layers"
+        )
+        require_finite(self, "lambda_policy_alpha", minimum=0, exclusive_minimum=True)
+        require_finite(self, "gamma", "lambda_critic", minimum=0, maximum=1)
+        require_finite(
+            self, "clip_eps_low", minimum=0, maximum=1, exclusive_maximum=True
+        )
+        require_finite(
+            self,
+            "clip_eps_high",
+            "positive_lm_weight",
+            "value_loss_coef",
+            "value_clip",
+            minimum=0,
+        )
+        require_finite(
+            self,
+            "actor_learning_rate",
+            "critic_learning_rate",
+            minimum=0,
+            exclusive_minimum=True,
+        )
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> VAPOConfig:

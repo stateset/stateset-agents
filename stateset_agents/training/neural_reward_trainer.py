@@ -29,9 +29,12 @@ try:
 except ImportError:
     TORCH_AVAILABLE = False
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.core.reward import RewardFunction, RewardResult
+from stateset_agents.core.reward_context import RewardUnavailableError
 from stateset_agents.core.trajectory import ConversationTurn, Trajectory
 from stateset_agents.training.checkpoint_io import load_checkpoint_file
+from stateset_agents.training.spine.scoring import reward_outage_exceptions
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 
@@ -406,7 +409,7 @@ class NeuralRewardTrainer:
                     self.patience_counter += 1
                     if self.patience_counter >= self.patience:
                         if verbose:
-                            print(f"Early stopping at epoch {epoch + 1}")
+                            logger.info("Early stopping at epoch %d", epoch + 1)
                         break
 
             # Logging
@@ -416,7 +419,7 @@ class NeuralRewardTrainer:
                 )
                 if val_loss is not None:
                     msg += f", Val Loss: {val_loss:.4f}"
-                print(msg)
+                logger.info(msg)
 
             # Monitor metrics
             if self.monitoring:
@@ -572,15 +575,31 @@ class NeuralRewardFunction(RewardFunction):
         weight: float = 1.0,
         update_frequency: int = 100,
         min_trajectories: int = 50,
-        fallback_reward: float = 0.5,
+        fallback_reward: float | None = None,
+        *,
+        retrain_online: bool = False,
     ):
+        """``retrain_online=True`` retrains the model from its replay buffer
+        every ``update_frequency`` scored calls (once it holds
+        ``min_trajectories``); by default the reward model stays fixed, so the
+        reward cannot move under the policy unasked. ``fallback_reward`` is
+        deprecated and ignored: a failed prediction is never replaced."""
         super().__init__(weight=weight)
+        if fallback_reward is not None:
+            warn_deprecated(
+                "NeuralRewardFunction(fallback_reward=...)",
+                removal="0.71.0",
+                replacement=(
+                    "nothing: an outage raises RewardUnavailableError and any "
+                    "other failure propagates"
+                ),
+            )
 
         self.model = model or NeuralRewardModel()
         self.trainer = trainer or NeuralRewardTrainer(self.model)
         self.update_frequency = update_frequency
         self.min_trajectories = min_trajectories
-        self.fallback_reward = fallback_reward
+        self.retrain_online = bool(retrain_online)
 
         # Tracking
         self.evaluation_count = 0
@@ -600,46 +619,42 @@ class NeuralRewardFunction(RewardFunction):
         Returns:
             RewardResult with neural reward score
         """
+        # Extract prompt and response
+        prompt = self._extract_prompt(turns)
+        response = self._extract_response(turns)
+
+        # Get neural reward. An outage (I/O, out of memory, a timeout) is
+        # RewardUnavailableError, which the reward contract lets trainers
+        # drop; any other failure is a bug and propagates. Nothing stands in.
         try:
-            # Extract prompt and response
-            prompt = self._extract_prompt(turns)
-            response = self._extract_response(turns)
-
-            # Get neural reward
             reward = self.model.predict_reward(prompt, response)
+        except reward_outage_exceptions() as error:
+            raise RewardUnavailableError(
+                f"Neural reward model unavailable: {type(error).__name__}: {error}"
+            ) from error
 
-            # Normalize to [0, 1]
-            reward = max(0.0, min(1.0, reward))
+        # Normalize to [0, 1]
+        reward = max(0.0, min(1.0, reward))
 
-            self.evaluation_count += 1
+        self.evaluation_count += 1
 
-            # Periodic model updates
-            if (
-                self.evaluation_count % self.update_frequency == 0
-                and len(self.trainer.replay_buffer) >= self.min_trajectories
-            ):
-                await self._update_model()
+        # Opt-in periodic model updates
+        if (
+            self.retrain_online
+            and self.evaluation_count % self.update_frequency == 0
+            and len(self.trainer.replay_buffer) >= self.min_trajectories
+        ):
+            await self._update_model()
 
-            return RewardResult(
-                score=reward,
-                breakdown={
-                    "neural_reward": reward,
-                    "model_updates": float(self.update_count),
-                    "evaluation_count": float(self.evaluation_count),
-                    "replay_buffer_size": float(len(self.trainer.replay_buffer)),
-                },
-            )
-
-        except NEURAL_REWARD_EXCEPTIONS as e:
-            logger.error(f"Neural reward computation failed: {e}")
-            return RewardResult(
-                score=self.fallback_reward,
-                breakdown={
-                    "neural_reward": self.fallback_reward,
-                    "fallback_used": 1.0,
-                },
-                metadata={"error": str(e)},
-            )
+        return RewardResult(
+            score=reward,
+            breakdown={
+                "neural_reward": reward,
+                "model_updates": float(self.update_count),
+                "evaluation_count": float(self.evaluation_count),
+                "replay_buffer_size": float(len(self.trainer.replay_buffer)),
+            },
+        )
 
     async def _update_model(self):
         """Update the neural model from replay buffer"""
@@ -653,8 +668,14 @@ class NeuralRewardFunction(RewardFunction):
                 f"Neural reward model updated. Train loss: {results.get('final_train_loss', 'N/A')}"
             )
 
-        except NEURAL_REWARD_EXCEPTIONS as e:
-            logger.error(f"Neural model update failed: {e}")
+        except reward_outage_exceptions() as error:
+            # An outage leaves the current model in place; a bug propagates.
+            logger.warning(
+                "Neural reward model update skipped (%s: %s); keeping the "
+                "current model",
+                type(error).__name__,
+                error,
+            )
 
     def add_trajectory_feedback(
         self,

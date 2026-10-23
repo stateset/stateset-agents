@@ -17,14 +17,20 @@ import logging
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 import numpy as np
 import torch
 
 from . import objectives, rl_losses
-from .config import TrainingConfig, config_value, validate_group_size
+from .config import (
+    TrainingConfig,
+    config_value,
+    reject_dead_fields,
+    require_finite,
+    validate_group_size,
+)
+from .dedicated_reporting import WandbRun
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -43,7 +49,7 @@ from .spine.loop import (
     seed_dedicated_run,
 )
 from .spine.rollouts import PromptGroupRollouts
-from .spine.scoring import CallableScorer
+from .spine.scoring import CallableScorer, ScoredReply
 from .spine.update import UpdatePasses
 from .trainer_runtime import (
     SharedModelManager,
@@ -51,76 +57,7 @@ from .trainer_runtime import (
     hf_generate_group,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
-
-try:
-    import wandb as _wandb
-
-    wandb: Any = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_gepo_loaded = False
-AutoModelForCausalLM: Any | None = None
-AutoTokenizer: Any | None = None
-get_cosine_schedule_with_warmup: Any | None = None
-
-
-def _load_transformers_gepo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup
-    if _transformers_gepo_loaded:
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_gepo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_peft() -> None:
-    """Require PEFT only when LoRA model loading actually needs it."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for GEPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Require W&B only when experiment logging is enabled."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GEPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 @dataclass
@@ -163,8 +100,9 @@ class GEPOConfig(TrainingConfig):
     lora_alpha: int = 32
     lora_dropout: float = 0.05
 
-    # Advantage computation
-    use_group_baseline: bool = True  # Use within-group baseline normalization
+    # Advantage computation. Deprecated (removed in v0.71.0): GEPO always
+    # normalises within the group; a non-default value is rejected.
+    use_group_baseline: bool = True
 
     # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
     # strictly on-policy; values > 1 reuse each rollout, and the sampler
@@ -175,9 +113,12 @@ class GEPOConfig(TrainingConfig):
     num_gradient_updates: int = 1
 
     def validate_for_training(self) -> None:
-        """Also require two responses per group (:func:`validate_group_size`)."""
+        """Also require two responses per group (:func:`validate_group_size`)
+        and a PPO clip in [0, 1)."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        reject_dead_fields(self, {"use_group_baseline": None})
+        require_finite(self, "clip_eps", minimum=0, maximum=1, exclusive_maximum=True)
 
     @classmethod
     def from_training_config(
@@ -193,24 +134,13 @@ class GEPOConfig(TrainingConfig):
 
 
 class GEPOModelManager(SharedModelManager):
-    """Manages model loading for GEPO training"""
+    """Manages model loading for GEPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "GEPO"
 
     def __init__(self, config: GEPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        if not _load_transformers_gepo():
-            raise ImportError(
-                "transformers is required for GEPO training. "
-                "Install with `pip install stateset-agents[training]`."
-            )
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise RuntimeError("transformers GEPO loader did not initialize correctly")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
 
 
 class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
@@ -238,10 +168,7 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         ref_model: Any | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_gepo()
-
-        validate_training_config(config)
+        validate_training_config(config, GEPOConfig)
         if float(config_value(config, "beta") or 0.0) > 0:
             raise ValueError(
                 "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
@@ -265,29 +192,17 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Scheduler
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer, factor=1.0, total_iters=total_steps
-            )
+        # ``lr_scheduler_type`` over every committed update pass of the run
+        # (num_episodes x num_gradient_updates, the spine budget), clamped at
+        # the end. Sizing it over num_episodes alone made the cosine reach 0
+        # halfway through a two-pass run and then climb back to the full LR.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics tracking
+        # One entry per updating train_step for each key (_GEPO_HISTORY). GEPO has no
+        # KL term (beta must be 0), so there is no kl_divergence history.
         self.metrics_history: dict[str, list[float]] = {
-            "policy_loss": [],
-            "average_reward": [],
-            "kl_divergence": [],
-            "gepo_coefficient": [],
-            "advantage_std": [],
+            key: [] for key in _GEPO_HISTORY
         }
 
         self.global_step = 0
@@ -564,6 +479,15 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
 
+#: ``metrics_history`` key -> the step metric it records.
+_GEPO_HISTORY: dict[str, str] = {
+    "policy_loss": "policy_loss",
+    "average_reward": "average_reward",
+    "gepo_coefficient": "gepo_coefficient_mean",
+    "advantage_std": "advantage_std",
+}
+
+
 @dataclass
 class _GEPOStep:
     """One GEPO step's rollout and pass data (for the metrics)."""
@@ -579,6 +503,12 @@ async def _gepo_score(
     return await CallableScorer(trainer.reward_fn).score(prompt, response)
 
 
+async def _gepo_score_checked(
+    trainer: GEPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
 async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollouts:
     """One group per prompt (at least two responses for group advantages),
     with the sampler (old-policy) sequence log probs frozen here, before any
@@ -589,11 +519,15 @@ async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollou
 
     async def build(
         prompt: str, group_responses: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        rewards = [
-            await trainer._compute_reward(prompt, resp["response"])
-            for resp in group_responses
-        ]
+    ) -> dict[str, Any] | None:
+        # A reply whose reward is a fallback is left out (never trained on);
+        # the group still needs two replies for a group baseline.
+        group_responses, rewards = await rollouts.score_group(
+            group_responses,
+            lambda resp: trainer._score_reply_checked(prompt, resp["response"]),
+        )
+        if len(group_responses) < 2:
+            return None
         rewards_tensor = torch.tensor(
             rewards, dtype=torch.float32, device=trainer.device
         )
@@ -620,16 +554,19 @@ async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollou
             "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
         }
 
-    items = await PromptGroupRollouts(
+    rollouts = PromptGroupRollouts(
         lambda prompt: trainer.generate_group_responses(
             prompt, trainer.config.group_size
         ),
         min_group_size=2,
         label="GEPO",
-    ).collect(prompts, build)
+    )
+    items = await rollouts.collect(prompts, build)
     if not items:
         logger.warning("No valid groups in batch")
-    return StepRollouts(items=items, info=step)
+    return StepRollouts(
+        items=items, info=step, reward_fallbacks=rollouts.fallbacks.flagged
+    )
 
 
 def _gepo_group_loss(
@@ -693,9 +630,8 @@ def _gepo_metrics(
     )
 
     # Store metrics
-    for key in ["policy_loss", "average_reward"]:
-        if key in trainer.metrics_history:
-            trainer.metrics_history[key].append(metrics[key])
+    for key, source in _GEPO_HISTORY.items():
+        trainer.metrics_history.setdefault(key, []).append(float(metrics[source]))
     return metrics
 
 
@@ -716,6 +652,7 @@ GEPO_SPEC = AlgorithmSpec(
     update_mode="single_graph",
     passes=lambda config: max(1, config_value(config, "num_gradient_updates")),
     score=_gepo_score,
+    score_checked=_gepo_score_checked,
     rollouts=_gepo_rollouts,
     group_loss=_gepo_group_loss,
     metrics=_gepo_metrics,
@@ -769,16 +706,26 @@ async def train_with_gepo(
     logger.info("GEPO Training - Group Expectation Policy Optimization")
     logger.info("=" * 60)
 
-    # Initialize W&B
-    if use_wandb and wandb_project:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"gepo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["gepo", "rl-training"],
+    with WandbRun(
+        "gepo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["gepo", "rl-training"],
+    ) as reporter:
+        return await _run_gepo(
+            config, reward_fn, train_prompts, callbacks or [], reporter
         )
 
+
+async def _run_gepo(
+    config: GEPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_gepo` after its config and W&B run are set up."""
     # Load model and tokenizer
     seed_dedicated_run(config.seed)
     logger.info(f"Loading model: {config.model_name}")
@@ -810,8 +757,7 @@ async def train_with_gepo(
                 f"GEPO Coef: {metrics['gepo_coefficient_mean']:.4f}"
             )
 
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
@@ -823,16 +769,14 @@ async def train_with_gepo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
-        callbacks=callbacks or [],
+        callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
 
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if use_wandb:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("GEPO Training Complete!")

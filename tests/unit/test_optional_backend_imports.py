@@ -27,7 +27,9 @@ def test_rust_accelerator_import_does_not_emit_warning(caplog) -> None:
         / "rust_accelerator.py"
     )
 
-    with caplog.at_level(logging.INFO):
+    # The availability note is DEBUG (a library import must not log at INFO;
+    # test_import_logging_hygiene.py), and never a warning.
+    with caplog.at_level(logging.DEBUG):
         _load_module_from_path("rust_accelerator_test_import", module_path)
 
     rust_records = [

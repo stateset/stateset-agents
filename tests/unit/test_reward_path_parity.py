@@ -277,6 +277,9 @@ ALLOWED = {
     ("core/environment_base.py", "Environment._finish_episode"),
     # Reward wrappers delegating to the reward they wrap.
     ("training/reward_calibration.py", "CalibratedRewardFunction.compute_reward"),
+    # Keeps the result (for its reward-fallback flag) while score_response
+    # scores the reply.
+    ("training/spine/scoring.py", "_ResultRecorder.compute_reward"),
     ("training/train.py", "UncertaintyWeightedReward.compute_reward"),
     # Calibration statistics over caller-supplied episodes and contexts.
     ("training/reward_calibration.py", "MultiRewardCalibrator.calibrate"),

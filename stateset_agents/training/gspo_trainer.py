@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import functools
 import importlib.util
 import logging
 import math
@@ -49,6 +48,7 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
+from .quantization import QuantizationConfig, build_bnb_config
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.algorithm import (
     AlgorithmSpec,
@@ -56,7 +56,8 @@ from .spine.algorithm import (
     StepRollouts,
     run_algorithm_step,
 )
-from .spine.scoring import ResponseScorer
+from .spine.rollouts import RewardFallbacks
+from .spine.scoring import ResponseScorer, ScoredReply
 from .spine.update import UpdatePasses
 from .trainer_runtime import SharedModelManager
 
@@ -71,14 +72,7 @@ def _require_finite_vector(values: torch.Tensor, name: str) -> None:
         raise ValueError(f"{name} must contain only finite values")
 
 
-# Optional training dependencies
-try:
-    import wandb as _wandb
-
-    wandb: Any | None = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
+# Optional training dependencies (W&B reporting: dedicated_reporting.WandbRun)
 try:
     from peft import LoraConfig as _LoraConfig
     from peft import TaskType as _TaskType
@@ -129,15 +123,6 @@ def _require_bitsandbytes() -> None:
             "If you just installed it in a notebook, restart the runtime/kernel. "
             "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
         ) from exc
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GSPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
@@ -289,18 +274,14 @@ class GSPOModelManager(SharedModelManager):
         if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
             _require_peft()
 
-        # Add quantization if specified
+        # Add quantization if specified: the shared QLoRA config (Transformers
+        # 5 removed the legacy load_in_* model kwargs).
         if self.config.use_8bit or self.config.use_4bit:
             _require_bitsandbytes()
-            from transformers import BitsAndBytesConfig
-
-            # Transformers 5 removed the legacy load_in_* model kwargs.
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_8bit=self.config.use_8bit,
-                load_in_4bit=self.config.use_4bit and not self.config.use_8bit,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=model_kwargs.get("torch_dtype", torch.bfloat16),
+            model_kwargs["quantization_config"] = build_bnb_config(
+                QuantizationConfig.from_trainer_flags(
+                    self.config, model_kwargs.get("torch_dtype", torch.bfloat16)
+                )
             )
 
     def _prepare_base_model(self, base_model: Any) -> Any:
@@ -455,6 +436,8 @@ class _ScoredGroups:
     nonzero_advantages: int = 0
     advantage_count: int = 0
     zero_advantage_groups: int = 0
+    #: Replies left out for a reward fallback (never trained on).
+    fallbacks: RewardFallbacks = field(default_factory=RewardFallbacks)
 
 
 def _policy_iterations(config: Any) -> int:
@@ -465,24 +448,21 @@ def _policy_iterations(config: Any) -> int:
     return iterations
 
 
-def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
-    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
-    if step < warmup_steps:
-        return float(step) / float(max(1, warmup_steps))
-    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+def _outer_iterations(config: Any) -> int:
+    """Outer iterations of a GSPO run (``num_outer_iterations``)."""
+    return int(config.num_outer_iterations)
 
 
 class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
-    #: Preset evaluated when ``config.objective`` is unset (the spec's
-    #: ``objective``); the token variant overrides both.
-    _native_objective = "gspo"
-
     """
     Group Sequence Policy Optimization trainer
 
     Implements the GSPO algorithm from: https://arxiv.org/abs/2507.18071v2
     """
+
+    #: Preset evaluated when ``config.objective`` is unset (the spec's
+    #: ``objective``); the token variant overrides both.
+    _native_objective = "gspo"
 
     def __init__(
         self,
@@ -494,7 +474,7 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
         reward_model: MultiObjectiveReward,
         ref_model: Any | None = None,
     ):
-        validate_training_config(config)
+        validate_training_config(config, GSPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -521,20 +501,12 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             weight_decay=float(config.weight_decay),
         )
 
-        # Cosine schedule over the optimizer steps actually taken: train_step
-        # makes ``num_iterations`` per outer iteration. Progress is clamped so
-        # steps past the end hold the final LR (HF's cosine is periodic there
-        # and flipped the LR between full and zero on alternate steps).
-        total_steps = max(1, int(config.num_outer_iterations)) * _policy_iterations(
-            config
-        )
-        warmup_steps = int(total_steps * float(config.warmup_ratio))
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lr_lambda=functools.partial(
-                _clamped_cosine_lr, warmup_steps=warmup_steps, total_steps=total_steps
-            ),
-        )
+        # ``lr_scheduler_type`` over the optimizer steps actually taken:
+        # train_step makes ``num_iterations`` per outer iteration (the spine
+        # budget). Progress is clamped so steps past the end hold the final LR
+        # (HF's cosine is periodic there and flipped the LR between full and
+        # zero on alternate steps).
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -803,6 +775,23 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             context = query.get("context") if isinstance(query, dict) else None
             query_context = dict(context) if isinstance(context, dict) else {}
 
+            # A reply whose reward is a fallback is left out (never trained
+            # on): score first, then keep the genuine replies and their
+            # rollout log-probs.
+            replies = list(
+                await asyncio.gather(
+                    *[
+                        self._score_reply_checked(prompt, response, query_context)
+                        for response, _ in group_responses
+                    ]
+                )
+            )
+            kept, rewards = scored.fallbacks.keep(group_responses, replies)
+            if group_responses and not kept:
+                continue  # every reply was a fallback; the group is dropped
+            # (An empty group from the generator still fails validation below.)
+            group_responses = kept
+
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]
             old_log_probs = torch.tensor(
@@ -812,14 +801,6 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             )
             _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
-            rewards = list(
-                await asyncio.gather(
-                    *[
-                        self._reward_for_response(prompt, query_context, response)
-                        for response in responses
-                    ]
-                )
-            )
             rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
             scored.rewards.extend(rewards)
 
@@ -838,6 +819,7 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             scored.groups.append(
                 (prompt, responses, old_log_probs, advantages, ref_log_probs)
             )
+        scored.fallbacks.require_trainable("GSPO")
         return scored
 
     async def _gspo_step(
@@ -964,6 +946,14 @@ async def _gspo_score(
     )
 
 
+async def _gspo_score_checked(
+    trainer: GSPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await ResponseScorer(trainer.reward_model).score_checked(
+        prompt, response, dict(context)
+    )
+
+
 async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollouts:
     """Every query's group sampled in one batched generate, then scored
     (:meth:`GSPOTrainer._sample_and_score_groups`)."""
@@ -973,6 +963,7 @@ async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollou
     return StepRollouts(
         items=scored.groups,
         info=_GSPOStep(scored, device, frozen_old=[None] * len(scored.groups)),
+        reward_fallbacks=scored.fallbacks.flagged,
     )
 
 
@@ -1064,12 +1055,14 @@ GSPO_SPEC = AlgorithmSpec(
     update_mode="single_graph",
     passes=_policy_iterations,
     score=_gspo_score,
+    score_checked=_gspo_score_checked,
     rollouts=_gspo_rollouts,
     group_loss=_gspo_group_loss,
     metrics=_gspo_metrics,
     update_options=_gspo_update_options,
     update_empty=True,
     label="GSPO",
+    iterations=_outer_iterations,
 )
 #: GSPO-token: GSPO's step with per-token rows and the ``gspo_token``
 #: objective (``GSPOTokenTrainer`` scores and weighs the rows).

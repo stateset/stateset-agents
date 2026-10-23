@@ -7,10 +7,11 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any
 
+from .config import config_value
 from .dapo_config import DAPOConfig
+from .dedicated_reporting import WandbRun
 from .runtime_state import _reject_unsupported_resume
 from .spine.loop import (
     dedicated_run_config,
@@ -54,8 +55,6 @@ async def train_with_dapo(
     )
     _reject_unsupported_resume(config, "train_with_dapo")
 
-    from .dapo_trainer import DAPOModelManager, DAPOTrainer, _require_wandb, wandb
-
     logger.info("=" * 60)
     logger.info("DAPO Training - Decoupled Clip and Dynamic Sampling")
     logger.info("=" * 60)
@@ -63,20 +62,28 @@ async def train_with_dapo(
         "Key techniques: Clip-Higher, Dynamic Sampling, Token-Level Loss, Overlong Shaping"
     )
 
-    wandb_enabled = use_wandb and wandb_project is not None
-    if use_wandb and not wandb_enabled:
-        logger.warning(
-            "use_wandb=True but no wandb_project was provided; disabling wandb logging."
+    with WandbRun(
+        "dapo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["dapo", "rl-training", "reasoning"],
+    ) as reporter:
+        return await _run_dapo(
+            config, reward_fn, train_prompts, verifier_fn, callbacks or [], reporter
         )
 
-    if wandb_enabled:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"dapo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["dapo", "rl-training", "reasoning"],
-        )
+
+async def _run_dapo(
+    config: DAPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    verifier_fn: Callable[[str, str], bool] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_dapo` after its config and W&B run are set up."""
+    from .dapo_trainer import DAPOModelManager, DAPOTrainer
 
     seed_dedicated_run(config.seed)
     logger.info("Loading model: %s", config.model_name)
@@ -131,8 +138,7 @@ async def train_with_dapo(
                 metrics.get("filtered_ratio", 0.0) * 100,
             )
 
-            if wandb_enabled:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
@@ -144,15 +150,13 @@ async def train_with_dapo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
-        callbacks=callbacks or [],
+        callbacks=callbacks,
         seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
     )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if wandb_enabled:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("DAPO Training Complete!")

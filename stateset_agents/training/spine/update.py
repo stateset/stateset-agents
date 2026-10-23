@@ -40,9 +40,25 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, get_args
 
+from ...core.errors import ErrorCode, TrainingError
 from ..config import config_value
 
 logger = logging.getLogger(__name__)
+
+
+class NonFiniteGradientError(TrainingError, ValueError):
+    """An update's gradients are not finite (or too many consecutive updates
+    were skipped for it under ``nonfinite_grad_policy="skip"``).
+
+    A :class:`~stateset_agents.core.errors.TrainingError` that is still a
+    ``ValueError`` (what the commit raised before) and prints its bare
+    message, so ``except ValueError`` handlers and error output are unchanged.
+    Trainers decide to skip an update by this type, never by the message.
+    """
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_GRADIENT_EXPLODED
+
 
 StepCounter = Literal["commits", "train_steps", "none"]
 NonfiniteGradPolicy = Literal["raise", "skip"]
@@ -95,7 +111,8 @@ class OptimizerStep:
        non-finite gradient is an overflow: every optimizer of the pass is
        skipped together and the scaler lowers its scale. Otherwise
        ``nonfinite_grad_policy`` decides: ``"raise"`` raises
-       ``ValueError("<label> gradients must be finite")``; ``"skip"``
+       :class:`NonFiniteGradientError` (a ``ValueError``, "<label> gradients
+       must be finite"); ``"skip"``
        discards the update and returns False;
     6. multiplies gradients by ``gradient_scale`` (partial accumulation
        windows), after unscaling and before clipping;
@@ -251,7 +268,7 @@ class OptimizerStep:
                     return False
                 if self.nonfinite_grad_policy == "skip":
                     return self._skip_nonfinite()
-                raise ValueError(f"{self.label} gradients must be finite")
+                raise NonFiniteGradientError(f"{self.label} gradients must be finite")
             # Partial windows were accumulated as sum(loss / configured_steps).
             # Correct their mean after AMP unscaling, before clipping. Any
             # overflow introduced here must fail clipping, not masquerade as
@@ -375,7 +392,7 @@ class OptimizerStep:
         self._discard()
         limit = self.max_consecutive_nonfinite_skips
         if owner._consecutive_nonfinite > limit:
-            raise ValueError(
+            raise NonFiniteGradientError(
                 f"{owner._consecutive_nonfinite} consecutive non-finite updates "
                 f"(limit {limit})"
             )
@@ -541,6 +558,7 @@ class UpdateLoop:
 
 
 __all__ = [
+    "NonFiniteGradientError",
     "NONFINITE_GRAD_POLICIES",
     "STEP_COUNTERS",
     "UPDATE_MODES",

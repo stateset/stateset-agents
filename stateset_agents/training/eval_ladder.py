@@ -569,7 +569,7 @@ def main(argv: list[str] | None = None) -> int:
         (args.output_dir / "episode_harvest.json").write_text(
             json.dumps(episodes["harvest"], indent=1)
         )
-    print(
+    print(  # noqa: T201 - CLI summary line
         f"depth={args.depth} refusals={args.refusal_fraction}: "
         f"{len(kit['train'])} train rows, {len(kit['eval'])} evals, "
         f"{len(kit['harvest'])} harvest prompts -> {args.output_dir}"

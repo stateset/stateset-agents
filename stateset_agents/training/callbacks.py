@@ -8,6 +8,11 @@ The codebase currently supports two callback styles:
 
 This module provides a small, consistent dispatch layer so trainers can emit
 events without duplicating per-callback boilerplate.
+
+A callback that raises one of :data:`CALLBACK_EXCEPTIONS` is logged at
+WARNING with its traceback and training continues, unless the dispatch is
+strict (``TrainingConfig.strict_callbacks``, passed as ``strict=True``) or
+the callback sets ``fail_on_error = True``; then the error propagates.
 """
 
 from __future__ import annotations
@@ -75,24 +80,80 @@ async def _try_call_variants(func: Any, variants: Iterable[tuple[Any, ...]]) -> 
     signature.bind(*variants_list[0])
 
 
-async def _dispatch_callable(callback: Any, event: str, data: dict[str, Any]) -> None:
+def _fails_loudly(callback: Any, strict: bool) -> bool:
+    """Whether a failure of ``callback`` stops training: ``strict`` dispatch
+    (``TrainingConfig.strict_callbacks``) or the callback's own
+    ``fail_on_error``."""
+    return strict or getattr(callback, "fail_on_error", False) is True
+
+
+async def _guarded(
+    callback: Any,
+    hook: str,
+    func: Any,
+    variants: Iterable[tuple[Any, ...]],
+    *,
+    strict: bool,
+) -> bool:
+    """Call ``func`` with the first fitting argument variant.
+
+    A failure (one of :data:`CALLBACK_EXCEPTIONS`) is re-raised when it must
+    stop training (:func:`_fails_loudly`); otherwise it is logged at WARNING
+    with its traceback and dispatch continues. Returns False after a
+    tolerated failure.
+    """
+    try:
+        await _try_call_variants(func, variants)
+    except CALLBACK_EXCEPTIONS:
+        if _fails_loudly(callback, strict):
+            raise
+        logger.warning(
+            "Training callback %r failed in %s; training continues "
+            "(set strict_callbacks=True to stop on callback errors)",
+            callback,
+            hook,
+            exc_info=True,
+        )
+        return False
+    return True
+
+
+async def _dispatch_callable(
+    callback: Any, event: str, data: dict[str, Any], *, strict: bool = False
+) -> None:
     if not callable(callback):
         return
+    await _guarded(
+        callback,
+        event,
+        callback,
+        ((event, data), (event,), (data,), ()),
+        strict=strict,
+    )
 
-    try:
-        await _try_call_variants(
-            callback,
-            variants=(
-                (event, data),
-                (event,),
-                (data,),
-                (),
-            ),
-        )
-    except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover - callbacks are best-effort
-        if getattr(callback, "fail_on_error", False) is True:
-            raise
-        logger.debug("Callback %r failed for event %s: %s", callback, event, exc)
+
+async def _notify(
+    callbacks: Iterable[Any],
+    methods: tuple[str, ...],
+    variants: tuple[tuple[Any, ...], ...],
+    event: str,
+    payload: dict[str, Any],
+    *,
+    strict: bool,
+) -> None:
+    """Dispatch one event: each callback's first defined ``methods`` hook,
+    then the callback itself when it is callable (unless the hook failed)."""
+    for callback in callbacks:
+        hook, method = methods[0], None
+        for hook in methods:
+            method = getattr(callback, hook, None)
+            if method:
+                break
+        if callable(method) and not await _guarded(
+            callback, hook, method, variants, strict=strict
+        ):
+            continue
+        await _dispatch_callable(callback, event, payload, strict=strict)
 
 
 async def notify_training_start(
@@ -100,24 +161,17 @@ async def notify_training_start(
     *,
     trainer: Any,
     config: Any,
+    strict: bool = False,
 ) -> None:
     """Emit a training start signal to callbacks."""
-    payload = {"trainer": trainer, "config": config}
-    for callback in callbacks:
-        method = getattr(callback, "on_train_start", None) or getattr(
-            callback, "on_training_start", None
-        )
-        if callable(method):
-            try:
-                await _try_call_variants(
-                    method, variants=((trainer, config), (config,), ())
-                )
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_train_start failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, TRAINING_START_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_train_start", "on_training_start"),
+        ((trainer, config), (config,), ()),
+        TRAINING_START_EVENT,
+        {"trainer": trainer, "config": config},
+        strict=strict,
+    )
 
 
 async def notify_episode_end(
@@ -125,22 +179,17 @@ async def notify_episode_end(
     *,
     episode: int,
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> None:
     """Emit an episode end signal to callbacks."""
-    payload = {"episode": episode, **metrics}
-    for callback in callbacks:
-        method = getattr(callback, "on_episode_end", None)
-        if callable(method):
-            try:
-                await _try_call_variants(
-                    method, variants=((episode, metrics), (metrics,), ())
-                )
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_episode_end failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, EPISODE_END_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_episode_end",),
+        ((episode, metrics), (metrics,), ()),
+        EPISODE_END_EVENT,
+        {"episode": episode, **metrics},
+        strict=strict,
+    )
 
 
 async def notify_step_end(
@@ -148,22 +197,17 @@ async def notify_step_end(
     *,
     step: int,
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> None:
     """Emit a training step end signal to callbacks."""
-    payload = {"step": step, **metrics}
-    for callback in callbacks:
-        method = getattr(callback, "on_step_end", None)
-        if callable(method):
-            try:
-                await _try_call_variants(
-                    method, variants=((step, metrics), (metrics,), ())
-                )
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_step_end failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, STEP_END_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_step_end",),
+        ((step, metrics), (metrics,), ()),
+        STEP_END_EVENT,
+        {"step": step, **metrics},
+        strict=strict,
+    )
 
 
 async def notify_optimizer_step(
@@ -171,70 +215,55 @@ async def notify_optimizer_step(
     *,
     step: int,
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> None:
     """Report one receipt for committed updates, including accumulation flushes.
 
     A receipt may cover several inner updates. It is not a new rollout or
     policy-signal observation; diagnostic monitors ignore this event.
     """
-    payload = {"step": step, **metrics}
-    for callback in callbacks:
-        method = getattr(callback, "on_optimizer_step", None)
-        if callable(method):
-            try:
-                await _try_call_variants(
-                    method, variants=((step, metrics), (metrics,), ())
-                )
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_optimizer_step failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, OPTIMIZER_STEP_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_optimizer_step",),
+        ((step, metrics), (metrics,), ()),
+        OPTIMIZER_STEP_EVENT,
+        {"step": step, **metrics},
+        strict=strict,
+    )
 
 
 async def notify_evaluation_end(
     callbacks: Iterable[Any],
     *,
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> None:
     """Emit an evaluation end signal to callbacks."""
-    payload = dict(metrics)
-    for callback in callbacks:
-        method = getattr(callback, "on_evaluation_end", None) or getattr(
-            callback, "on_eval_end", None
-        )
-        if callable(method):
-            try:
-                await _try_call_variants(method, variants=((metrics,), ()))
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_evaluation_end failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, EVAL_END_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_evaluation_end", "on_eval_end"),
+        ((metrics,), ()),
+        EVAL_END_EVENT,
+        dict(metrics),
+        strict=strict,
+    )
 
 
 async def notify_training_end(
     callbacks: Iterable[Any],
     *,
     metrics: dict[str, Any],
+    strict: bool = False,
 ) -> None:
     """Emit a training end signal to callbacks."""
-    payload = dict(metrics)
-    for callback in callbacks:
-        method = getattr(callback, "on_train_end", None) or getattr(
-            callback, "on_training_end", None
-        )
-        if callable(method):
-            try:
-                await _try_call_variants(method, variants=((metrics,), ()))
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug("Callback %r on_train_end failed: %s", callback, exc)
-                continue
-        await _dispatch_callable(callback, TRAINING_END_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_train_end", "on_training_end"),
+        ((metrics,), ()),
+        TRAINING_END_EVENT,
+        dict(metrics),
+        strict=strict,
+    )
 
 
 async def notify_checkpoint_saved(
@@ -243,25 +272,18 @@ async def notify_checkpoint_saved(
     path: str,
     step: int,
     is_best: bool,
+    strict: bool = False,
 ) -> None:
     """Emit a checkpoint saved signal to callbacks."""
     payload = {"path": path, "step": step, "is_best": is_best}
-    for callback in callbacks:
-        method = getattr(callback, "on_checkpoint_saved", None)
-        if callable(method):
-            try:
-                await _try_call_variants(
-                    method,
-                    variants=((path, step, is_best), (payload,), ()),
-                )
-            except CALLBACK_EXCEPTIONS as exc:  # pragma: no cover
-                if getattr(callback, "fail_on_error", False) is True:
-                    raise
-                logger.debug(
-                    "Callback %r on_checkpoint_saved failed: %s", callback, exc
-                )
-                continue
-        await _dispatch_callable(callback, CHECKPOINT_SAVED_EVENT, payload)
+    await _notify(
+        callbacks,
+        ("on_checkpoint_saved",),
+        ((path, step, is_best), (payload,), ()),
+        CHECKPOINT_SAVED_EVENT,
+        payload,
+        strict=strict,
+    )
 
 
 def has_no_policy_signal(metrics: Mapping[str, Any]) -> bool:

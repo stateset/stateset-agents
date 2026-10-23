@@ -35,10 +35,6 @@ from ..training.config import TrainingConfig
 from ..training.runtime_state import TrainingRuntime, validate_training_config
 from ..training.trainer_utils import apply_dropout_setting
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 
@@ -393,7 +389,7 @@ class PPOTrainer(TrainingRuntime):
         # Ensure transformers is loaded
         _load_transformers_ppo()
 
-        validate_training_config(config)
+        validate_training_config(config, PPOConfig)
         self.config = config
         # PPO clipped surrogate as one declarative PolicyObjective; the KL
         # penalty is added separately in train_step (adaptive coefficient).
@@ -724,7 +720,7 @@ class PPOTrainer(TrainingRuntime):
         completion_ids: list[list[int]] | None = None,
     ) -> dict[str, float]:
         """Validate and update a text batch with deterministic model scoring."""
-        validate_training_config(self.config)
+        validate_training_config(self.config, PPOConfig)
         if self.config.beta > 0 and self.ref_model is None:
             raise ValueError("PPO beta > 0 requires a reference model")
         if (
