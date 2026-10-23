@@ -68,6 +68,7 @@ class _Run:
         self.prompts: list[str] = []
         self.saves: list[str] = []
         self.loaded: list[str] = []
+        self.configs: list[Any] = []
 
 
 def _harness(
@@ -106,6 +107,7 @@ def _harness(
 
         def load_model_and_tokenizer(self) -> tuple[Any, Any]:
             run.loaded.append(self.config.model_name)
+            run.configs.append(self.config)
             return _model(), None
 
     def sampled(prompt: str) -> list[dict[str, Any]]:
@@ -233,3 +235,79 @@ async def test_vapo_value_warmup_draws_prompts_from_the_config_seed() -> None:
     assert len(first) == 6
     assert await warmup_prompts(global_seed=1, seed=5) == first
     assert await warmup_prompts(global_seed=0, seed=6) != first
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ALGORITHMS)
+async def test_arguments_override_the_config_and_the_run_records_them(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Any,
+    name: str,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The model manager loaded ``config.model_name`` while the entry point
+    logged (and stub-checked) the ``model_name`` argument, and checkpoints
+    went to the ``output_dir`` argument while the config (logged to W&B)
+    named another directory."""
+    entry, run = _harness(monkeypatch, name)
+    config = _config(name, output_dir=str(tmp_path / "from-config"))
+    config.model_name = "config-model"
+    await entry(
+        model_name="argument-model",
+        reward_fn=_reward,
+        train_prompts=PROMPTS,
+        config=config,
+        output_dir=str(tmp_path / "from-argument"),
+    )
+    assert run.loaded == ["argument-model"]
+    effective = run.configs[0]
+    assert effective.output_dir == str(tmp_path / "from-argument")
+    assert {os.path.dirname(path) for path in run.saves} == {
+        str(tmp_path / "from-argument")
+    }
+    # the caller's config is not mutated
+    assert (config.model_name, config.output_dir) == (
+        "config-model",
+        str(tmp_path / "from-config"),
+    )
+    assert "overrides config.model_name" in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ALGORITHMS)
+async def test_without_an_output_dir_argument_the_config_decides(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, name: str
+) -> None:
+    entry, run = _harness(monkeypatch, name)
+    await entry(
+        model_name="gpt2",
+        reward_fn=_reward,
+        train_prompts=PROMPTS,
+        config=_config(name, output_dir=str(tmp_path / "from-config")),
+    )
+    assert {os.path.dirname(path) for path in run.saves} == {
+        str(tmp_path / "from-config")
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ALGORITHMS)
+async def test_without_a_config_the_arguments_build_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, name: str
+) -> None:
+    from stateset_agents.training.spine.loop import DedicatedRun
+
+    entry, run = _harness(monkeypatch, name)
+    loops: list[dict[str, Any]] = []
+
+    async def loop(**kwargs: Any) -> DedicatedRun:
+        loops.append(kwargs)
+        return DedicatedRun()
+
+    module = {"dapo": dapo_entrypoints, "gepo": gepo_trainer, "vapo": vapo_entrypoints}
+    monkeypatch.setattr(module[name], "run_dedicated_loop", loop)
+    monkeypatch.chdir(tmp_path)
+    await entry(model_name="gpt2", reward_fn=_reward, train_prompts=PROMPTS)
+    assert run.loaded == ["gpt2"]
+    assert run.configs[0].output_dir == loops[0]["output_dir"] == f"./outputs/{name}"
+    assert (tmp_path / "outputs" / name).is_dir()

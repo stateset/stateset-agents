@@ -31,7 +31,12 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
-from .spine.loop import run_dedicated_loop, sample_prompts, seed_dedicated_run
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
 from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
@@ -708,7 +713,7 @@ async def train_with_gepo(
     reward_fn: Callable[[str, str], float | Awaitable[float]],
     train_prompts: list[str],
     config: GEPOConfig | None = None,
-    output_dir: str = "./outputs/gepo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
@@ -720,15 +725,24 @@ async def train_with_gepo(
         reward_fn: Function that takes (prompt, response) and returns reward
         train_prompts: List of training prompts
         config: GEPO configuration (uses defaults if None)
-        output_dir: Directory to save checkpoints
+        output_dir: Directory to save checkpoints; overrides
+            ``config.output_dir`` when given (``model_name`` likewise overrides
+            ``config.model_name``). Without it, ``config.output_dir`` is used,
+            or ``./outputs/gepo`` when no config is given.
         use_wandb: Whether to log to Weights & Biases
         wandb_project: W&B project name
 
     Returns:
         Tuple of (model, tokenizer, metrics_history)
     """
-    if config is None:
-        config = GEPOConfig(model_name=model_name, output_dir=output_dir)
+    config = dedicated_run_config(
+        config,
+        GEPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/gepo",
+        entrypoint="train_with_gepo",
+    )
     _reject_unsupported_resume(config, "train_with_gepo")
 
     logger.info("=" * 60)
@@ -747,7 +761,7 @@ async def train_with_gepo(
 
     # Load model and tokenizer
     seed_dedicated_run(config.seed)
-    logger.info(f"Loading model: {model_name}")
+    logger.info(f"Loading model: {config.model_name}")
     model_manager = GEPOModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
 
@@ -765,7 +779,7 @@ async def train_with_gepo(
     logger.info(f"Group size: {config.group_size}")
     logger.info(f"Total iterations: {config.num_episodes}")
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
@@ -785,7 +799,7 @@ async def train_with_gepo(
         batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
         step=trainer.train_step,
         save=trainer.save_checkpoint,
-        output_dir=output_dir,
+        output_dir=config.output_dir,
         save_steps=config.save_steps,
         final_name="final",
         report=report,

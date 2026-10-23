@@ -199,3 +199,28 @@ def test_sample_prompts_takes_all_prompts_when_fewer_and_ends_on_none() -> None:
     rng = seed_dedicated_run(0)
     assert sorted(sample_prompts(["x", "y"], 5)(0, rng)) == ["x", "y"]
     assert sample_prompts([], 5)(0, rng) is None
+
+
+def test_dedicated_run_config_copies_duck_typed_configs() -> None:
+    from stateset_agents.training.spine.loop import dedicated_run_config
+
+    legacy = SimpleNamespace(model_name="a", output_dir="/config")
+    effective = dedicated_run_config(
+        legacy,
+        SimpleNamespace,
+        model_name="b",
+        output_dir=None,
+        default_output_dir="/default",
+        entrypoint="train_with_x",
+    )
+    assert (effective.model_name, effective.output_dir) == ("b", "/config")
+    assert legacy.model_name == "a"
+    built = dedicated_run_config(
+        None,
+        SimpleNamespace,
+        model_name="b",
+        output_dir=None,
+        default_output_dir="/default",
+        entrypoint="train_with_x",
+    )
+    assert (built.model_name, built.output_dir) == ("b", "/default")

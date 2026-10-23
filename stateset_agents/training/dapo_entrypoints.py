@@ -12,7 +12,12 @@ from typing import Any
 
 from .dapo_config import DAPOConfig
 from .runtime_state import _reject_unsupported_resume
-from .spine.loop import run_dedicated_loop, sample_prompts, seed_dedicated_run
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +28,7 @@ async def train_with_dapo(
     train_prompts: list[str],
     config: DAPOConfig | None = None,
     verifier_fn: Callable[[str, str], bool] | None = None,
-    output_dir: str = "./outputs/dapo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
@@ -31,9 +36,18 @@ async def train_with_dapo(
     Train a model using the DAPO algorithm.
 
     DAPO is optimized for long chain-of-thought reasoning tasks like math.
+    ``model_name`` and an explicit ``output_dir`` override the config's fields;
+    without ``output_dir``, ``config.output_dir`` is used (``./outputs/dapo``
+    when no config is given). See :func:`spine.dedicated_run_config`.
     """
-    if config is None:
-        config = DAPOConfig(model_name=model_name, output_dir=output_dir)
+    config = dedicated_run_config(
+        config,
+        DAPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/dapo",
+        entrypoint="train_with_dapo",
+    )
     _reject_unsupported_resume(config, "train_with_dapo")
 
     from .dapo_trainer import DAPOModelManager, DAPOTrainer, _require_wandb, wandb
@@ -61,8 +75,8 @@ async def train_with_dapo(
         )
 
     seed_dedicated_run(config.seed)
-    logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(
+    logger.info("Loading model: %s", config.model_name)
+    _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
     )
     if _is_stub:
@@ -99,7 +113,7 @@ async def train_with_dapo(
     )
     logger.info("Dynamic sampling: %s", config.use_dynamic_sampling)
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
@@ -122,7 +136,7 @@ async def train_with_dapo(
         batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
         step=trainer.train_step,
         save=trainer.save_checkpoint,
-        output_dir=output_dir,
+        output_dir=config.output_dir,
         save_steps=config.save_steps,
         final_name="final",
         report=report,

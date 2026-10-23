@@ -511,6 +511,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   VAPO's value warmup draws its prompts from a `Generator` seeded with
   `config.seed`. `train_with_gepo` with no prompts now ends with the final
   save, as DAPO and VAPO do, instead of stepping on empty batches.
+- **`train_with_dapo`, `train_with_gepo` and `train_with_vapo` have one
+  source of truth for the model and output directory.** The model manager
+  loaded `config.model_name` while the entry point logged and stub-checked
+  the `model_name` argument, and checkpoints went to the `output_dir`
+  argument (default `./outputs/<algo>`) while the config logged to W&B named
+  `config.output_dir`. Now explicit arguments win: `model_name` and a given
+  `output_dir` override the config's fields (a warning names any difference)
+  and the run uses a copy of the config with them applied
+  (`spine.dedicated_run_config`; the caller's config is not mutated).
+  `output_dir` defaults to `None`: with a config, `config.output_dir` is
+  used; without one, `./outputs/<algo>` as before. **Behaviour change:** a
+  call that passes a config but no `output_dir` now saves under
+  `config.output_dir` (default `./outputs`), not `./outputs/<algo>`.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's

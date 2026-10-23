@@ -29,13 +29,15 @@ from (:func:`sample_prompts`).
 from __future__ import annotations
 
 import asyncio
+import copy
+import dataclasses
 import inspect
 import logging
 import os
 import random
 from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeVar
+from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 import numpy as np
 
@@ -504,6 +506,53 @@ async def _maybe_await(value: Any) -> Any:
 _T = TypeVar("_T")
 
 
+def dedicated_run_config(
+    config: _T | None,
+    factory: Callable[..., _T],
+    *,
+    model_name: str,
+    output_dir: str | None,
+    default_output_dir: str,
+    entrypoint: str,
+) -> _T:
+    """The config a ``train_with_<algo>(model_name, ..., config, output_dir)``
+    entry point runs with: one source of truth for the model and directory.
+
+    Explicit arguments win: ``model_name`` (required) and ``output_dir`` (when
+    given) override the config's fields, with a warning when they differ.
+    Without an ``output_dir`` argument a given config keeps its own
+    ``output_dir``; without a config one is built from the arguments and
+    ``default_output_dir``. A given config (a dataclass or a legacy duck-typed
+    object) is copied, never mutated, and the copy's fields are what the run
+    loads, saves to and logs.
+    """
+    if config is None:
+        return factory(
+            model_name=model_name, output_dir=output_dir or default_output_dir
+        )
+    changes: dict[str, Any] = {"model_name": model_name}
+    if output_dir is not None:
+        changes["output_dir"] = output_dir
+    for name, value in changes.items():
+        current = getattr(config, name)
+        if current != value:
+            logger.warning(
+                "%s: the %s argument %r overrides config.%s=%r",
+                entrypoint,
+                name,
+                value,
+                name,
+                current,
+            )
+    if dataclasses.is_dataclass(config) and not isinstance(config, type):
+        return cast(_T, dataclasses.replace(config, **changes))
+    # A legacy duck-typed config: a shallow copy with the arguments applied.
+    effective = copy.copy(config)
+    for name, value in changes.items():
+        setattr(effective, name, value)
+    return effective
+
+
 def seed_dedicated_run(seed: int | None) -> np.random.Generator:
     """Seed Python, NumPy and torch from ``seed``; return a batch generator.
 
@@ -592,6 +641,7 @@ async def run_dedicated_loop(
 __all__ = [
     "DedicatedRun",
     "SpineLoopMixin",
+    "dedicated_run_config",
     "run_dedicated_loop",
     "sample_prompts",
     "seed_dedicated_run",

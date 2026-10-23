@@ -10,7 +10,12 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
-from .spine.loop import run_dedicated_loop, sample_prompts, seed_dedicated_run
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -22,7 +27,7 @@ async def train_with_vapo(
     train_prompts: list[str],
     config: VAPOConfig | None = None,
     verifier_fn: Callable[[str, str], bool] | None = None,
-    output_dir: str = "./outputs/vapo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
@@ -30,6 +35,9 @@ async def train_with_vapo(
     Train a model using VAPO algorithm.
 
     VAPO is the current SOTA for long-CoT reasoning (60.4 on AIME 2024).
+    ``model_name`` and an explicit ``output_dir`` override the config's fields;
+    without ``output_dir``, ``config.output_dir`` is used (``./outputs/vapo``
+    when no config is given). See :func:`spine.dedicated_run_config`.
     """
     from .vapo_trainer import VAPOModelManager, VAPOTrainer, _require_wandb, wandb
 
@@ -39,11 +47,14 @@ async def train_with_vapo(
     logger.info("SOTA: 60.4 on AIME 2024")
     logger.info("Key: Value warmup + Decoupled GAE + Length-adaptive lambda")
 
-    if config is None:
-        config = VAPOConfig(
-            model_name=model_name,
-            output_dir=output_dir,
-        )
+    config = dedicated_run_config(
+        config,
+        VAPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/vapo",
+        entrypoint="train_with_vapo",
+    )
 
     if use_wandb and wandb_project:
         _require_wandb()
@@ -55,8 +66,8 @@ async def train_with_vapo(
         )
 
     seed_dedicated_run(config.seed)
-    logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(
+    logger.info("Loading model: %s", config.model_name)
+    _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
     )
     if _is_stub:
@@ -80,7 +91,7 @@ async def train_with_vapo(
     logger.info("Value warmup steps: %s", config.value_warmup_steps)
     logger.info("Group size: %s", config.group_size)
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
@@ -107,7 +118,7 @@ async def train_with_vapo(
         batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
         step=trainer.train_step,
         save=trainer.save_checkpoint,
-        output_dir=output_dir,
+        output_dir=config.output_dir,
         save_steps=config.save_steps,
         final_name="final",
         report=report,
