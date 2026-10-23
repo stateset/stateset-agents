@@ -14,6 +14,9 @@ what differs between algorithms is declared in an :class:`AlgorithmSpec`:
   advantages and frozen old-policy log-probs) plus whatever the metrics need;
 * **update** -- ``update_mode``, ``passes`` and ``update_options`` for the
   spine :class:`UpdateLoop`, and the ``counter`` the commits use;
+* **schedule** -- ``iterations``, the outer iterations of a run; with
+  ``passes`` it sizes the LR schedule (:meth:`AlgorithmTrainer.
+  _optimizer_step_budget`, :mod:`~stateset_agents.training.spine.schedule`);
 * **metrics** -- ``metrics``, the step's metrics from its rollouts and passes.
 
 A trainer mixes in :class:`AlgorithmTrainer` and names its spec in
@@ -33,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from ..config import config_value
+from .schedule import build_lr_scheduler, optimizer_step_budget
 from .update import (
     OptimizerStep,
     StepCounter,
@@ -56,6 +60,11 @@ class StepRollouts:
 
 def _no_options(trainer: Any, rollouts: StepRollouts) -> dict[str, Any]:
     return {}
+
+
+def _episode_iterations(config: Any) -> int:
+    """Outer iterations of a dedicated run: ``config.num_episodes``."""
+    return int(config_value(config, "num_episodes"))
 
 
 @dataclass(frozen=True)
@@ -94,6 +103,9 @@ class AlgorithmSpec:
     update_empty: bool = False
     #: Prefix of the commit's error messages; defaults to ``name.upper()``.
     label: str = ""
+    #: Outer iterations of a run (the dedicated entry point's loop count);
+    #: times ``passes`` it is the LR schedule's optimizer-step budget.
+    iterations: Callable[[Any], int] = _episode_iterations
 
     @property
     def commit_label(self) -> str:
@@ -167,6 +179,26 @@ class AlgorithmTrainer:
     def _rollout_engine(self) -> Any:
         """The vLLM engine (``VLLMEngineMixin``) to keep on-policy, if any."""
         return None
+
+    def _optimizer_step_budget(self) -> int:
+        """Optimizer steps of a full run: the spec's outer ``iterations`` times
+        its update ``passes`` (each committed pass steps the scheduler once)."""
+        spec = self.algorithm
+        return optimizer_step_budget(spec.iterations(self.config), spec.passes(self.config))
+
+    def _build_lr_scheduler(self, optimizer: Any) -> Any:
+        """``config.lr_scheduler_type`` over :meth:`_optimizer_step_budget`
+        steps, warmup from ``config.warmup_ratio``, clamped at the end
+        (:func:`~stateset_agents.training.spine.schedule.build_lr_scheduler`)."""
+        from ..trainer_utils import require_torch
+
+        return build_lr_scheduler(
+            require_torch(),
+            optimizer,
+            kind=str(config_value(self.config, "lr_scheduler_type")),
+            total_steps=self._optimizer_step_budget(),
+            warmup_ratio=float(config_value(self.config, "warmup_ratio")),
+        )
 
     def _build_optimizer_step(self) -> OptimizerStep:
         """The spine commit for one update pass.

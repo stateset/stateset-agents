@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import dataclasses
-import functools
 import importlib.util
 import logging
 import math
@@ -465,24 +464,21 @@ def _policy_iterations(config: Any) -> int:
     return iterations
 
 
-def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
-    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
-    if step < warmup_steps:
-        return float(step) / float(max(1, warmup_steps))
-    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+def _outer_iterations(config: Any) -> int:
+    """Outer iterations of a GSPO run (``num_outer_iterations``)."""
+    return int(config.num_outer_iterations)
 
 
 class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
-    #: Preset evaluated when ``config.objective`` is unset (the spec's
-    #: ``objective``); the token variant overrides both.
-    _native_objective = "gspo"
-
     """
     Group Sequence Policy Optimization trainer
 
     Implements the GSPO algorithm from: https://arxiv.org/abs/2507.18071v2
     """
+
+    #: Preset evaluated when ``config.objective`` is unset (the spec's
+    #: ``objective``); the token variant overrides both.
+    _native_objective = "gspo"
 
     def __init__(
         self,
@@ -521,20 +517,12 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             weight_decay=float(config.weight_decay),
         )
 
-        # Cosine schedule over the optimizer steps actually taken: train_step
-        # makes ``num_iterations`` per outer iteration. Progress is clamped so
-        # steps past the end hold the final LR (HF's cosine is periodic there
-        # and flipped the LR between full and zero on alternate steps).
-        total_steps = max(1, int(config.num_outer_iterations)) * _policy_iterations(
-            config
-        )
-        warmup_steps = int(total_steps * float(config.warmup_ratio))
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lr_lambda=functools.partial(
-                _clamped_cosine_lr, warmup_steps=warmup_steps, total_steps=total_steps
-            ),
-        )
+        # ``lr_scheduler_type`` over the optimizer steps actually taken:
+        # train_step makes ``num_iterations`` per outer iteration (the spine
+        # budget). Progress is clamped so steps past the end hold the final LR
+        # (HF's cosine is periodic there and flipped the LR between full and
+        # zero on alternate steps).
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -1070,6 +1058,7 @@ GSPO_SPEC = AlgorithmSpec(
     update_options=_gspo_update_options,
     update_empty=True,
     label="GSPO",
+    iterations=_outer_iterations,
 )
 #: GSPO-token: GSPO's step with per-token rows and the ``gspo_token``
 #: objective (``GSPOTokenTrainer`` scores and weighs the rows).

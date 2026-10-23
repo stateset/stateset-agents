@@ -265,21 +265,11 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Scheduler
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer, factor=1.0, total_iters=total_steps
-            )
+        # ``lr_scheduler_type`` over every committed update pass of the run
+        # (num_episodes x num_gradient_updates, the spine budget), clamped at
+        # the end. Sizing it over num_episodes alone made the cosine reach 0
+        # halfway through a two-pass run and then climb back to the full LR.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics tracking
         self.metrics_history: dict[str, list[float]] = {

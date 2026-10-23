@@ -118,6 +118,10 @@ async def test_schedule_covers_actual_token_updates(
     assert rates == pytest.approx(
         [schedule_rate(step, horizon, warmup, schedule) for step in range(horizon)]
     )
+    # Monotone non-increasing after warmup over the whole run (never climbs
+    # back the way a too-short Hugging Face cosine does).
+    decay = rates[int(horizon * warmup) :]
+    assert all(later <= earlier for earlier, later in zip(decay, decay[1:]))
     assert trainer.global_step == trainer.lr_scheduler.last_epoch == horizon
     assert trainer.optimizer.param_groups[0]["lr"] == pytest.approx(0.0, abs=1e-15)
 

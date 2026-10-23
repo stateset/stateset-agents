@@ -401,16 +401,11 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Constant scheduler (DAPO uses constant LR)
-        if get_constant_schedule is not None:
-            self.scheduler = get_constant_schedule(self.optimizer)
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer,
-                factor=1.0,
-                total_iters=config.num_episodes * config.num_epochs,
-            )
+        # ``lr_scheduler_type`` (DAPOConfig's default: "constant", as in the
+        # paper) over every update pass of the run (num_episodes x
+        # num_gradient_updates, the spine budget). It used to be constant
+        # whatever the config asked for.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {

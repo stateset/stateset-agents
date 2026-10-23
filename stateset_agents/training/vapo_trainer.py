@@ -17,6 +17,7 @@ Reference: https://arxiv.org/abs/2504.05118
 """
 
 import logging
+import warnings
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -31,6 +32,7 @@ from . import objectives, rl_losses
 from .config import config_value
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.rollouts import PromptGroupRollouts
+from .spine.schedule import build_lr_scheduler, optimizer_step_budget
 from .spine.scoring import CallableScorer
 from .spine.update import (
     OptimizerStep,
@@ -485,30 +487,28 @@ class VAPOTrainer(TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Schedulers
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.actor_scheduler = get_cosine_schedule_with_warmup(
-                self.actor_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-
-            self.critic_scheduler = get_cosine_schedule_with_warmup(
-                self.critic_optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.actor_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.actor_optimizer, factor=1.0, total_iters=total_steps
-            )
-            self.critic_scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.critic_optimizer, factor=1.0, total_iters=total_steps
-            )
+        # Schedulers: ``lr_scheduler_type`` over every update pass of the run
+        # (num_episodes x num_gradient_updates, the spine budget), clamped at
+        # the end. Sizing them over num_episodes alone made the cosine reach
+        # 0 halfway through a two-pass run and then climb back to the full LR.
+        # The value-warmup iteration holds its K positions (train_step).
+        total_steps = optimizer_step_budget(
+            int(config.num_episodes), self._update_passes()
+        )
+        self.actor_scheduler = build_lr_scheduler(
+            torch,
+            self.actor_optimizer,
+            kind=str(config.lr_scheduler_type),
+            total_steps=total_steps,
+            warmup_ratio=float(config.warmup_ratio),
+        )
+        self.critic_scheduler = build_lr_scheduler(
+            torch,
+            self.critic_optimizer,
+            kind=str(config.lr_scheduler_type),
+            total_steps=total_steps,
+            warmup_ratio=float(config.warmup_ratio),
+        )
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {
@@ -523,6 +523,25 @@ class VAPOTrainer(TrainingRuntime):
         self.global_step = 0
         self.value_warmup_complete = False
         self.rollout_samples_total = 0
+
+    def _update_passes(self) -> int:
+        """Inner update passes per rollout batch (``num_gradient_updates``)."""
+        return max(1, int(config_value(self.config, "num_gradient_updates")))
+
+    def _advance_schedulers(self, steps: int) -> None:
+        """Move both LR schedules ``steps`` positions without an update (the
+        value-warmup iteration and an empty batch keep their place).
+
+        Advancing before any ``optimizer.step()`` is deliberate here, so
+        PyTorch's call-order warning is silenced for these calls only.
+        """
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore", message=r"Detected call of `lr_scheduler\.step\(\)`"
+            )
+            for _ in range(steps):
+                self.actor_scheduler.step()
+                self.critic_scheduler.step()
 
     def _build_optimizer_step(self, *, critic_only: bool = False) -> OptimizerStep:
         """The spine commit for one actor+critic update (or a critic warmup step).
@@ -675,10 +694,43 @@ class VAPOTrainer(TrainingRuntime):
             f"Starting value network warmup ({self.config.value_warmup_steps} steps)"
         )
 
-        total_value_loss = 0.0
-        explained_variances = []
+        explained_variances: list[float] = []
         critic_step = self._build_optimizer_step(critic_only=True)
 
+        # Value pretraining runs at the critic's base learning rate: the joint
+        # schedule's warmup ramp starts at 0, which left the value head
+        # untrained whenever warmup_ratio > 0.
+        scheduled = [group["lr"] for group in self.critic_optimizer.param_groups]
+        for group, base in zip(
+            self.critic_optimizer.param_groups, self.critic_scheduler.base_lrs
+        ):
+            group["lr"] = base
+        try:
+            total_value_loss = await self._value_warmup_steps(
+                prompts, critic_step, explained_variances
+            )
+        finally:
+            for group, rate in zip(self.critic_optimizer.param_groups, scheduled):
+                group["lr"] = rate
+
+        self.value_warmup_complete = True
+        logger.info("Value network warmup complete")
+
+        return {
+            "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
+            "warmup_explained_variance": (
+                float(np.mean(explained_variances)) if explained_variances else 0
+            ),
+        }
+
+    async def _value_warmup_steps(
+        self,
+        prompts: list[str],
+        critic_step: OptimizerStep,
+        explained_variances: list[float],
+    ) -> float:
+        """Run the value-warmup updates; return their summed value loss."""
+        total_value_loss = 0.0
         for step in range(self.config.value_warmup_steps):
             # Sample prompt
             prompt = prompts[int(self._warmup_rng.integers(len(prompts)))]
@@ -748,16 +800,7 @@ class VAPOTrainer(TrainingRuntime):
                     f"Value warmup step {step + 1}/{self.config.value_warmup_steps} | "
                     f"Loss: {avg_loss:.4f} | EV: {avg_ev:.4f}"
                 )
-
-        self.value_warmup_complete = True
-        logger.info("Value network warmup complete")
-
-        return {
-            "warmup_value_loss": total_value_loss / self.config.value_warmup_steps,
-            "warmup_explained_variance": (
-                float(np.mean(explained_variances)) if explained_variances else 0
-            ),
-        }
+        return total_value_loss
 
     def compute_value_loss(
         self,
@@ -912,9 +955,13 @@ class VAPOTrainer(TrainingRuntime):
         self.model.train()
         self.value_head.train()
 
-        # Warmup value network if not done
+        # Warmup value network if not done. The warmup iteration is one of
+        # the run's outer iterations, so the LR schedules advance by its K
+        # positions (as for an empty batch) and a run of num_episodes
+        # iterations still ends at the schedule's final value.
         if not self.value_warmup_complete:
             warmup_metrics = await self.warmup_value_network(prompts)
+            self._advance_schedulers(self._update_passes())
             return warmup_metrics
 
         # Per-update metrics are (re)initialised inside the update loop below,
@@ -1022,7 +1069,7 @@ class VAPOTrainer(TrainingRuntime):
         # against the frozen old log probs/values, exactly like DAPO. With the
         # default of 1 the formula is identical to the previous single-update
         # path (only dropout RNG ordering differs).
-        num_updates = max(1, config_value(self.config, "num_gradient_updates"))
+        num_updates = self._update_passes()
 
         # Every term aggregates over the whole batch, not per prompt: each
         # prompt's loss is a mean over its own rows/tokens, so weighting it by
@@ -1122,9 +1169,7 @@ class VAPOTrainer(TrainingRuntime):
         if not rollouts:
             # Nothing to update: the schedulers still advance once per inner
             # update, as VAPO always has for an empty batch.
-            for _ in range(num_updates):
-                self.actor_scheduler.step()
-                self.critic_scheduler.step()
+            self._advance_schedulers(num_updates)
 
         # Compute metrics
         metrics = {

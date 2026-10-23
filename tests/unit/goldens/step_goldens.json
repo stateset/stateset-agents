@@ -107,34 +107,34 @@
   },
   "gepo_k2": {
     "clip_norms": [
-      7.778136181734554,
-      0.04941363160436002
+      7.77813621500234,
+      0.04941360098366805
     ],
     "global_step": 1,
     "grad_norms": {
       "policy": [
-        0.99999989194023,
-        0.04941363160436002
+        0.9999998969775125,
+        0.04941360098366805
       ]
     },
     "lr": {
-      "policy": 0.0045225424859373685
+      "policy": 0.0048776412907378846
     },
     "metrics": {
       "advantage_std": 0.9999999637499661,
       "average_reward": 0.38888888888888884,
-      "gepo_coefficient_mean": 0.507411657522122,
-      "gepo_coefficient_std": 0.7033174021314363,
+      "gepo_coefficient_mean": 0.5074116572116812,
+      "gepo_coefficient_std": 0.7033173987844425,
       "global_step": 1,
-      "learning_rate": 0.0045225424859373685,
+      "learning_rate": 0.0048776412907378846,
       "optimizer_updates": 2,
-      "policy_loss": 0.2050326019525528
+      "policy_loss": 0.205032616853714
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.0172950519821493,
-    "param_delta_probe": 0.017730820455633334,
+    "param_delta_norm": 1.0247848811091422,
+    "param_delta_probe": 0.017224464800465387,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -584,14 +584,14 @@
       ]
     },
     "lr": {
-      "actor": 0.0045225424859373685,
-      "critic": 0.0045225424859373685
+      "actor": 0.0048776412907378846,
+      "critic": 0.0048776412907378846
     },
     "metrics": {
       "accuracy": 0.3333333333333333,
-      "actor_lr": 0.0045225424859373685,
+      "actor_lr": 0.0048776412907378846,
       "average_reward": 0.38888888888888884,
-      "critic_lr": 0.0045225424859373685,
+      "critic_lr": 0.0048776412907378846,
       "explained_variance": 0.051238834857940674,
       "global_step": 1,
       "optimizer_updates": 2,
@@ -603,8 +603,8 @@
       "actor": 2,
       "critic": 2
     },
-    "param_delta_norm": 1.4319653537210777,
-    "param_delta_probe": -0.0004602846463967866,
+    "param_delta_norm": 1.441738852812835,
+    "param_delta_probe": -0.0015693368806723115,
     "scheduler_last_epoch": {
       "actor": 2,
       "critic": 2

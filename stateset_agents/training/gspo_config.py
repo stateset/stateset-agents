@@ -79,8 +79,8 @@ class GSPOConfig(TrainingConfig):
             warnings.append(
                 f"{', '.join(ignored)} {'is' if len(ignored) == 1 else 'are'} "
                 "ignored by the GSPO trainer: train_step takes num_iterations "
-                "full-batch optimizer steps per outer iteration on a cosine "
-                "schedule, without reward clipping."
+                "full-batch optimizer steps per outer iteration, without reward "
+                "clipping."
             )
 
         if (
@@ -138,7 +138,6 @@ class GSPOConfig(TrainingConfig):
 _GSPO_IGNORED_FIELDS = (
     "mini_batch_size",
     "gradient_accumulation_steps",
-    "lr_scheduler_type",
     "reward_clip",
 )
 _GSPO_DEFAULTS = {f.name: f.default for f in dataclasses.fields(GSPOConfig)}
