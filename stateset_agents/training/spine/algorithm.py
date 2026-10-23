@@ -57,6 +57,9 @@ class StepRollouts:
     #: What the spec's ``group_loss``/``metrics`` share for this step
     #: (rewards, pass statistics, ...); the spec decides its type.
     info: Any = None
+    #: Replies left out of this step for a reward fallback (never trained
+    #: on); reported as ``reward_fallback_responses`` when nonzero.
+    reward_fallbacks: int = 0
 
 
 def _no_options(trainer: Any, rollouts: StepRollouts) -> dict[str, Any]:
@@ -107,6 +110,11 @@ class AlgorithmSpec:
     #: Outer iterations of a run (the dedicated entry point's loop count);
     #: times ``passes`` it is the LR schedule's optimizer-step budget.
     iterations: Callable[[Any], int] = _episode_iterations
+    #: ``score`` that also returns the reward-fallback flag
+    #: (``spine.scoring.ScoredReply``); without it a score is never flagged.
+    score_checked: (
+        Callable[[Any, str, str, Mapping[str, Any]], Awaitable[Any]] | None
+    ) = None
 
     @property
     def commit_label(self) -> str:
@@ -128,7 +136,9 @@ async def run_algorithm_step(
     trainer.model.train()
     rollouts = await spec.rollouts(trainer, prompts)
     if not rollouts.items and not spec.update_empty:
-        return spec.metrics(trainer, rollouts, None)
+        return _with_step_status(
+            trainer, rollouts, spec.metrics(trainer, rollouts, None)
+        )
     passes = UpdateLoop(
         trainer._build_optimizer_step(),
         passes=spec.passes(trainer.config),
@@ -140,9 +150,16 @@ async def run_algorithm_step(
         ),
         **spec.update_options(trainer, rollouts),
     )
-    metrics = spec.metrics(trainer, rollouts, passes)
-    # The rollout engine's weight status once a sync was attempted
-    # (``rollout_weights_stale``, ``rollout_sync_failures``).
+    return _with_step_status(trainer, rollouts, spec.metrics(trainer, rollouts, passes))
+
+
+def _with_step_status(
+    trainer: Any, rollouts: StepRollouts, metrics: dict[str, Any]
+) -> dict[str, Any]:
+    """Add the step's reward-fallback count (when nonzero) and the rollout
+    engine's weight status (once a sync was attempted) to its metrics."""
+    if rollouts.reward_fallbacks:
+        metrics["reward_fallback_responses"] = rollouts.reward_fallbacks
     metrics.update(rollout_sync_metrics(trainer))
     return metrics
 
@@ -259,6 +276,18 @@ class AlgorithmTrainer:
     ) -> float:
         """One sampled reply's reward through the spec's scorer."""
         return await self.algorithm.score(self, prompt, response, context or {})
+
+    async def _score_reply_checked(
+        self, prompt: str, response: str, context: Mapping[str, Any] | None = None
+    ) -> Any:
+        """One sampled reply's reward and reward-fallback flag
+        (``spine.scoring.ScoredReply``) through the spec's scorer."""
+        from .scoring import ScoredReply
+
+        spec = self.algorithm
+        if spec.score_checked is not None:
+            return await spec.score_checked(self, prompt, response, context or {})
+        return ScoredReply(await spec.score(self, prompt, response, context or {}))
 
 
 __all__ = [

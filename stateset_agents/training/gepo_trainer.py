@@ -48,7 +48,7 @@ from .spine.loop import (
     seed_dedicated_run,
 )
 from .spine.rollouts import PromptGroupRollouts
-from .spine.scoring import CallableScorer
+from .spine.scoring import CallableScorer, ScoredReply
 from .spine.update import UpdatePasses
 from .trainer_runtime import (
     SharedModelManager,
@@ -493,6 +493,12 @@ async def _gepo_score(
     return await CallableScorer(trainer.reward_fn).score(prompt, response)
 
 
+async def _gepo_score_checked(
+    trainer: GEPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
 async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollouts:
     """One group per prompt (at least two responses for group advantages),
     with the sampler (old-policy) sequence log probs frozen here, before any
@@ -503,11 +509,15 @@ async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollou
 
     async def build(
         prompt: str, group_responses: list[dict[str, Any]]
-    ) -> dict[str, Any]:
-        rewards = [
-            await trainer._compute_reward(prompt, resp["response"])
-            for resp in group_responses
-        ]
+    ) -> dict[str, Any] | None:
+        # A reply whose reward is a fallback is left out (never trained on);
+        # the group still needs two replies for a group baseline.
+        group_responses, rewards = await rollouts.score_group(
+            group_responses,
+            lambda resp: trainer._score_reply_checked(prompt, resp["response"]),
+        )
+        if len(group_responses) < 2:
+            return None
         rewards_tensor = torch.tensor(
             rewards, dtype=torch.float32, device=trainer.device
         )
@@ -534,16 +544,19 @@ async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollou
             "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
         }
 
-    items = await PromptGroupRollouts(
+    rollouts = PromptGroupRollouts(
         lambda prompt: trainer.generate_group_responses(
             prompt, trainer.config.group_size
         ),
         min_group_size=2,
         label="GEPO",
-    ).collect(prompts, build)
+    )
+    items = await rollouts.collect(prompts, build)
     if not items:
         logger.warning("No valid groups in batch")
-    return StepRollouts(items=items, info=step)
+    return StepRollouts(
+        items=items, info=step, reward_fallbacks=rollouts.fallbacks.flagged
+    )
 
 
 def _gepo_group_loss(
@@ -630,6 +643,7 @@ GEPO_SPEC = AlgorithmSpec(
     update_mode="single_graph",
     passes=lambda config: max(1, config_value(config, "num_gradient_updates")),
     score=_gepo_score,
+    score_checked=_gepo_score_checked,
     rollouts=_gepo_rollouts,
     group_loss=_gepo_group_loss,
     metrics=_gepo_metrics,

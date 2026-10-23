@@ -491,6 +491,13 @@ class VAPOTrainer(TrainingRuntime):
             label="VAPO",
         )
 
+    async def _score_response(self, prompt: str, response: dict[str, Any]) -> Any:
+        """One sampled reply's reward and reward-fallback flag
+        (``spine.scoring.ScoredReply``)."""
+        return await CallableScorer(self.reward_fn).score_checked(
+            prompt, response["response"]
+        )
+
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
         return await CallableScorer(self.reward_fn).score(prompt, response)
@@ -655,11 +662,17 @@ class VAPOTrainer(TrainingRuntime):
             if len(responses) == 0:
                 continue
 
-            # Compute rewards (Monte-Carlo returns)
-            rewards = []
-            for resp in responses:
-                reward = await self._compute_reward(prompt, resp["response"])
-                rewards.append(reward)
+            # Compute rewards (Monte-Carlo returns); a reply whose reward is a
+            # fallback never trains the critic either.
+            replies = [await self._score_response(prompt, resp) for resp in responses]
+            responses = [
+                resp
+                for resp, reply in zip(responses, replies, strict=True)
+                if reply.fallback is None
+            ]
+            rewards = [reply.score for reply in replies if reply.fallback is None]
+            if not responses:
+                continue
 
             # Prepare batch
             (
@@ -889,15 +902,20 @@ class VAPOTrainer(TrainingRuntime):
         # here, before any inner update moves the weights. Recomputing them
         # from the current model made the importance ratio identically 1 and
         # the Clip-Higher trust region a no-op.
-        async def build(prompt: str, responses: list[dict[str, Any]]) -> dict[str, Any]:
-            # Compute rewards and identify correct samples
-            rewards = []
+        async def build(
+            prompt: str, responses: list[dict[str, Any]]
+        ) -> dict[str, Any] | None:
+            # Compute rewards and identify correct samples. A reply whose
+            # reward is a fallback is left out (never trained on); the group
+            # still needs two replies for group statistics.
+            responses, rewards = await sampler.score_group(
+                responses, lambda resp: self._score_response(prompt, resp)
+            )
+            if len(responses) < 2:
+                return None
             is_correct = []
 
-            for resp in responses:
-                reward = await self._compute_reward(prompt, resp["response"])
-                rewards.append(reward)
-
+            for resp, reward in zip(responses, rewards, strict=True):
                 if self.verifier_fn:
                     correct = self.verifier_fn(prompt, resp["response"])
                 else:
@@ -974,9 +992,12 @@ class VAPOTrainer(TrainingRuntime):
             }
 
         # One group per prompt (at least two responses for group statistics).
-        rollouts = await PromptGroupRollouts(
+        sampler = PromptGroupRollouts(
             self.generate_group_responses, min_group_size=2, label="VAPO"
-        ).collect(prompts[: self.config.per_device_train_batch_size], build)
+        )
+        rollouts = await sampler.collect(
+            prompts[: self.config.per_device_train_batch_size], build
+        )
 
         # --- Update phase ---------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
@@ -1101,6 +1122,7 @@ class VAPOTrainer(TrainingRuntime):
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
             "optimizer_updates": passes.committed,
+            **sampler.fallbacks.metrics(),
         }
 
         # Store metrics

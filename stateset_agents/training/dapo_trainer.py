@@ -32,7 +32,7 @@ from .spine.algorithm import (
     run_algorithm_step,
 )
 from .spine.rollouts import PromptGroupRollouts, VLLMEngineMixin
-from .spine.scoring import CallableScorer
+from .spine.scoring import CallableScorer, ScoredReply
 from .spine.update import UpdatePasses, batch_shares, share_size
 from .trainer_runtime import (
     SharedModelManager,
@@ -575,12 +575,16 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
             prompt: str, group_responses: list[dict[str, Any]]
         ) -> dict[str, Any] | None:
             # Score the group first: without a verifier, accuracy and the
-            # dynamic-sampling filter are both derived from these rewards.
-            base_rewards = []
-            for resp in group_responses:
-                base_reward = await self._compute_reward(prompt, resp["response"])
+            # dynamic-sampling filter are both derived from these rewards. A
+            # reply whose reward is a fallback is left out (never trained on).
+            group_responses, base_rewards = await rollouts.score_group(
+                group_responses,
+                lambda resp: self._score_reply_checked(prompt, resp["response"]),
+            )
+            if not group_responses:
+                return None
+            for resp, base_reward in zip(group_responses, base_rewards, strict=True):
                 resp["reward"] = base_reward
-                base_rewards.append(base_reward)
 
             accuracy = self.compute_group_accuracy(prompt, group_responses)
 
@@ -637,6 +641,7 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
         collected_samples = await rollouts.collect(
             prompts, build, limit=target_batch_size
         )
+        self._step_reward_fallbacks = rollouts.fallbacks.flagged
         prompts_processed = rollouts.prompts_processed
         prompts_filtered = rollouts.groups_dropped
         filter_ratio = prompts_filtered / max(prompts_processed, 1)
@@ -686,6 +691,12 @@ async def _dapo_score(
     return await CallableScorer(trainer.reward_fn).score(prompt, response)
 
 
+async def _dapo_score_checked(
+    trainer: DAPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
 async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollouts:
     """Dynamic-sampling rollouts, each group's batch tensors and old-policy
     log-probs frozen once, and its token (or row) share of the batch."""
@@ -693,9 +704,10 @@ async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollou
         prompts, trainer.config.mini_batch_size
     )
     step = _DAPOStep(filter_ratio)
+    fallbacks = int(getattr(trainer, "_step_reward_fallbacks", 0))
     if len(samples) == 0:
         logger.warning("No valid samples after dynamic sampling")
-        return StepRollouts(info=step)
+        return StepRollouts(info=step, reward_fallbacks=fallbacks)
 
     prepared = []
     for sample in samples:
@@ -739,7 +751,7 @@ async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollou
     step.shares = batch_shares(
         [share_size(group[2], trainer._objective.aggregate) for group in prepared]
     )
-    return StepRollouts(items=prepared, info=step)
+    return StepRollouts(items=prepared, info=step, reward_fallbacks=fallbacks)
 
 
 def _dapo_group_loss(
@@ -803,6 +815,7 @@ DAPO_SPEC = AlgorithmSpec(
     update_mode="chunked",
     passes=lambda config: max(1, config.num_gradient_updates),
     score=_dapo_score,
+    score_checked=_dapo_score_checked,
     rollouts=_dapo_rollouts,
     group_loss=_dapo_group_loss,
     metrics=_dapo_metrics,

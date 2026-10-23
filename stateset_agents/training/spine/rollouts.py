@@ -94,6 +94,91 @@ def rollout_sync_metrics(trainer: Any) -> dict[str, Any]:
     }
 
 
+class RewardFallbacks:
+    """Count the replies (or episodes) left out of a step for a reward
+    fallback (``ScoredReply.fallback``): a flagged score is never trained on.
+
+    :meth:`keep` filters one group; :meth:`require_trainable` raises
+    ``RewardUnavailableError`` when every scored reply of the step was
+    flagged (training on nothing would silently stall); :meth:`metrics` is
+    the step's ``reward_fallback_responses`` count, reported only when
+    nonzero.
+    """
+
+    def __init__(self) -> None:
+        self.scored = 0
+        self.flagged = 0
+
+    def keep(
+        self, items: Sequence[_Item], replies: Sequence[Any]
+    ) -> tuple[list[_Item], list[float]]:
+        """The items whose reply score is genuine, with those scores."""
+        kept: list[_Item] = []
+        scores: list[float] = []
+        for item, reply in zip(items, replies, strict=True):
+            self.scored += 1
+            if reply.fallback is not None:
+                self.flagged += 1
+                logger.warning(
+                    "Leaving a reply out of training: its reward is a fallback " "(%s)",
+                    reply.fallback,
+                )
+                continue
+            kept.append(item)
+            scores.append(float(reply.score))
+        return kept, scores
+
+    def require_trainable(self, label: str) -> None:
+        """Raise when every scored reply of the step was flagged."""
+        if self.scored and self.flagged == self.scored:
+            from stateset_agents.core.reward_context import RewardUnavailableError
+
+            raise RewardUnavailableError(
+                f"{label}: all {self.scored} scored replies carry a reward "
+                "fallback flag, so nothing in this step can be trained on"
+            )
+
+    def metrics(self) -> dict[str, Any]:
+        return {"reward_fallback_responses": self.flagged} if self.flagged else {}
+
+
+def exclude_flagged_groups(groups: Sequence[Any]) -> tuple[list[Any], int]:
+    """Trajectory groups without their reward-fallback episodes, and how many
+    episodes were left out.
+
+    A flagged episode (``spine.scoring.trajectory_reward_fallback``) is
+    dropped from its group; the group's advantages are then relative to the
+    genuine rewards only. A group left empty is dropped. The input groups are
+    not modified (a group losing episodes is copied).
+    """
+    import copy
+    import dataclasses
+
+    from .scoring import trajectory_reward_fallback
+
+    kept: list[Any] = []
+    excluded = 0
+    for group in groups:
+        trajectories = getattr(group, "trajectories", None)
+        if not trajectories:
+            kept.append(group)
+            continue
+        clean = [t for t in trajectories if trajectory_reward_fallback(t) is None]
+        if len(clean) == len(trajectories):
+            kept.append(group)
+            continue
+        excluded += len(trajectories) - len(clean)
+        if not clean:
+            continue
+        if dataclasses.is_dataclass(group) and not isinstance(group, type):
+            kept.append(dataclasses.replace(group, trajectories=clean))
+        else:
+            copied = copy.copy(group)
+            copied.trajectories = clean
+            kept.append(copied)
+    return kept, excluded
+
+
 class PromptGroupRollouts:
     """Sample one response group per prompt and build an update item from it.
 
@@ -103,7 +188,9 @@ class PromptGroupRollouts:
     group-relative advantage needs at least two samples). ``build(prompt,
     responses)`` scores the group and returns its item, or ``None`` to drop it
     (e.g. DAPO's dynamic sampling). :meth:`collect` stops once ``limit`` items
-    were built.
+    were built. ``build`` scores through :meth:`score_group`, which leaves
+    reward-fallback replies out (:attr:`fallbacks`); a step whose every
+    scored reply was flagged raises ``RewardUnavailableError``.
     """
 
     def __init__(
@@ -120,6 +207,18 @@ class PromptGroupRollouts:
         self.prompts_processed = 0
         #: Groups the last :meth:`collect` skipped (too small or dropped).
         self.groups_dropped = 0
+        #: Replies the last :meth:`collect` left out for a reward fallback.
+        self.fallbacks = RewardFallbacks()
+
+    async def score_group(
+        self,
+        responses: Sequence[_Item],
+        score: Callable[[_Item], Awaitable[Any]],
+    ) -> tuple[list[_Item], list[float]]:
+        """Score each reply (``score`` returns a ``ScoredReply``) in order and
+        keep the genuine ones: ``(kept replies, their scores)``."""
+        replies = [await score(response) for response in responses]
+        return self.fallbacks.keep(responses, replies)
 
     async def collect(
         self,
@@ -131,6 +230,7 @@ class PromptGroupRollouts:
         """Return the built items, in prompt order."""
         self.prompts_processed = 0
         self.groups_dropped = 0
+        self.fallbacks = RewardFallbacks()
         items: list[_Item] = []
         for prompt in prompts:
             if limit is not None and len(items) >= limit:
@@ -151,6 +251,7 @@ class PromptGroupRollouts:
                 self.groups_dropped += 1
             else:
                 items.append(item)
+        self.fallbacks.require_trainable(self.label)
         return items
 
 
@@ -288,6 +389,7 @@ class VLLMEngineMixin:
 
 __all__ = [
     "PromptGroupRollouts",
+    "RewardFallbacks",
     "RolloutSyncError",
     "VLLMEngineMixin",
     "vllm_dtype",

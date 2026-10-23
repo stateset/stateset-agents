@@ -55,7 +55,8 @@ from .spine.algorithm import (
     StepRollouts,
     run_algorithm_step,
 )
-from .spine.scoring import ResponseScorer
+from .spine.rollouts import RewardFallbacks
+from .spine.scoring import ResponseScorer, ScoredReply
 from .spine.update import UpdatePasses
 from .trainer_runtime import SharedModelManager
 
@@ -438,6 +439,8 @@ class _ScoredGroups:
     nonzero_advantages: int = 0
     advantage_count: int = 0
     zero_advantage_groups: int = 0
+    #: Replies left out for a reward fallback (never trained on).
+    fallbacks: RewardFallbacks = field(default_factory=RewardFallbacks)
 
 
 def _policy_iterations(config: Any) -> int:
@@ -775,6 +778,21 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             context = query.get("context") if isinstance(query, dict) else None
             query_context = dict(context) if isinstance(context, dict) else {}
 
+            # A reply whose reward is a fallback is left out (never trained
+            # on): score first, then keep the genuine replies and their
+            # rollout log-probs.
+            replies = list(
+                await asyncio.gather(
+                    *[
+                        self._score_reply_checked(prompt, response, query_context)
+                        for response, _ in group_responses
+                    ]
+                )
+            )
+            group_responses, rewards = scored.fallbacks.keep(group_responses, replies)
+            if not group_responses:
+                continue
+
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]
             old_log_probs = torch.tensor(
@@ -784,14 +802,6 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             )
             _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
-            rewards = list(
-                await asyncio.gather(
-                    *[
-                        self._reward_for_response(prompt, query_context, response)
-                        for response in responses
-                    ]
-                )
-            )
             rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
             scored.rewards.extend(rewards)
 
@@ -810,6 +820,7 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
             scored.groups.append(
                 (prompt, responses, old_log_probs, advantages, ref_log_probs)
             )
+        scored.fallbacks.require_trainable("GSPO")
         return scored
 
     async def _gspo_step(
@@ -936,6 +947,14 @@ async def _gspo_score(
     )
 
 
+async def _gspo_score_checked(
+    trainer: GSPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await ResponseScorer(trainer.reward_model).score_checked(
+        prompt, response, dict(context)
+    )
+
+
 async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollouts:
     """Every query's group sampled in one batched generate, then scored
     (:meth:`GSPOTrainer._sample_and_score_groups`)."""
@@ -945,6 +964,7 @@ async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollou
     return StepRollouts(
         items=scored.groups,
         info=_GSPOStep(scored, device, frozen_old=[None] * len(scored.groups)),
+        reward_fallbacks=scored.fallbacks.flagged,
     )
 
 
@@ -1036,6 +1056,7 @@ GSPO_SPEC = AlgorithmSpec(
     update_mode="single_graph",
     passes=_policy_iterations,
     score=_gspo_score,
+    score_checked=_gspo_score_checked,
     rollouts=_gspo_rollouts,
     group_loss=_gspo_group_loss,
     metrics=_gspo_metrics,

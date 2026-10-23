@@ -296,7 +296,15 @@ class SpineLoopMixin(TrainingRuntime):
             for traj in group.trajectories
         ]
         reward = float(np.mean(rewards)) if rewards else 0.0
-        return {**metrics, "total_reward": reward, "episode_reward": reward}
+        result = {**metrics, "total_reward": reward, "episode_reward": reward}
+        # Episodes the rollout left out for a reward fallback, plus any the
+        # update excluded (never trained on).
+        dropped = int(getattr(self, "reward_fallback_episodes", 0) or 0)
+        if dropped:
+            result["reward_fallback_episodes"] = dropped + int(
+                metrics.get("reward_fallback_episodes", 0)
+            )
+        return result
 
     def _should_stop_training(self) -> bool:
         return bool(

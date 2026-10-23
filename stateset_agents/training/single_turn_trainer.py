@@ -59,7 +59,7 @@ from .single_turn_state import (
 from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
 from .spine.rollouts import record_rollout_sync
-from .spine.scoring import ResponseScorer
+from .spine.scoring import ResponseScorer, ScoredReply
 from .trainer_utils import (
     apply_dropout_setting,
     get_amp,
@@ -489,15 +489,26 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         an outage (``RewardUnavailableError``) drops the generation from its
         group; every other error propagates.
         """
+        return (await self._score_turns(turns, context)).score
+
+    async def _score_turns(
+        self,
+        turns: list[ConversationTurn],
+        context: dict[str, Any] | None = None,
+    ) -> ScoredReply:
+        """:meth:`_compute_reward_for_turns` plus the reward-fallback flag."""
         if self.reward_fn is not None:
             # The shared single-response path (spine ResponseScorer, i.e.
             # reward_context.score_response): [user, assistant] turns and the
             # standard context, so the reply scores exactly as it would in a
             # one-turn episode.
             *prompt_turns, reply = normalize_turns(turns)
-            score = await ResponseScorer(self.reward_fn).score(
+            scored = await ResponseScorer(self.reward_fn).score_checked(
                 prompt_turns, reply, context
             )
+            if not math.isfinite(scored.score):
+                raise ValueError(f"Reward must be finite, got {scored.score}")
+            return scored
         else:
             get_reward = getattr(self.environment, "get_reward", None)
             if not callable(get_reward):
@@ -509,7 +520,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             score = float(await get_reward(trajectory))
         if not math.isfinite(score):
             raise ValueError(f"Reward must be finite, got {score}")
-        return score
+        return ScoredReply(score)
 
     async def _generate_trajectory_group(
         self,
@@ -521,6 +532,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         trajectories: list[MultiTurnTrajectory] = []
         best_response = ""
         best_reward = float("-inf")
+        flagged = 0
 
         generate_turn = _usable_generate_turn(self.agent)
         for gen_idx in range(num_generations):
@@ -542,7 +554,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 assistant_turn,
             ]
             try:
-                reward = await self._compute_reward_for_turns(turns, context)
+                scored = await self._score_turns(turns, context)
             except RewardUnavailableError as error:
                 # Only a reward outage drops the generation; any other error
                 # (a bug, bad data, a None or NaN reward) propagates.
@@ -554,6 +566,16 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                     error,
                 )
                 continue
+            if scored.fallback is not None:
+                # A fallback score is never trained on: drop the generation.
+                flagged += 1
+                logger.warning(
+                    "Dropping generation %d: its reward is a fallback (%s)",
+                    gen_idx,
+                    scored.fallback,
+                )
+                continue
+            reward = scored.score
 
             trajectory = MultiTurnTrajectory(
                 turns=turns,
@@ -569,9 +591,14 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 best_reward = reward
                 best_response = str(response)
 
+        self.reward_fallback_episodes = (
+            int(getattr(self, "reward_fallback_episodes", 0) or 0) + flagged
+        )
         if not trajectories:
             raise RewardUnavailableError(
-                f"Every one of {num_generations} generations failed to get a reward"
+                f"Every one of {num_generations} generations failed to get a "
+                f"usable reward ({flagged} with a reward fallback, the rest "
+                "unavailable)"
             )
         group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(trajectories)
         group = TrajectoryGroup(
@@ -767,6 +794,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         episode_rewards: list[float] = []
         replay_group_count = 0
         policy_loss: Any = None
+        self.reward_fallback_episodes = 0  # generations this episode dropped
 
         for _ in range(self._max_steps_per_episode()):
             state, step_reward, done, replayed, policy_loss = await self._train_turn(
@@ -815,6 +843,11 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                         "replay_buffer_size": self.continual_manager.buffer.size,
                     }
                     if self.continual_manager is not None
+                    else {}
+                ),
+                **(
+                    {"reward_fallback_episodes": self.reward_fallback_episodes}
+                    if self.reward_fallback_episodes
                     else {}
                 ),
             },
