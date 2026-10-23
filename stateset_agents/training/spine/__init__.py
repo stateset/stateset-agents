@@ -35,7 +35,11 @@ Currently provided:
 * :class:`PromptGroupRollouts` -- the prompt/response trainers' rollout phase
   (one sampled group per prompt, built into update items);
   :class:`VLLMEngineMixin` / :func:`vllm_engine_config` -- the one vLLM
-  rollout-engine setup.
+  rollout-engine setup; :func:`record_rollout_sync` applies
+  ``rollout_sync_failure`` to a weight sync and :func:`rollout_sync_metrics`
+  reports it.
+* :func:`optimizer_step_budget` / :func:`build_lr_scheduler` -- the dedicated
+  trainers' LR schedule over every committed update pass, clamped at the end.
 
 Importing this package does not import ``torch``.
 """
@@ -59,15 +63,25 @@ from .loop import (
 from .presets import ALGORITHM_NAMES, algorithm_spec
 from .rollouts import (
     PromptGroupRollouts,
+    RolloutSyncError,
     VLLMEngineMixin,
+    record_rollout_sync,
+    rollout_sync_metrics,
     vllm_dtype,
     vllm_engine_config,
+)
+from .schedule import (
+    LR_SCHEDULE_KINDS,
+    build_lr_scheduler,
+    optimizer_step_budget,
+    schedule_factor,
 )
 from .scoring import CallableScorer, EpisodeScorer, ResponseScorer
 from .update import (
     NONFINITE_GRAD_POLICIES,
     STEP_COUNTERS,
     UPDATE_MODES,
+    NonFiniteGradientError,
     NonfiniteGradPolicy,
     OptimizerStep,
     StepCounter,
@@ -96,12 +110,20 @@ __all__ = [
     "sample_prompts",
     "seed_dedicated_run",
     "PromptGroupRollouts",
+    "RolloutSyncError",
     "VLLMEngineMixin",
+    "record_rollout_sync",
+    "rollout_sync_metrics",
     "vllm_dtype",
     "vllm_engine_config",
+    "LR_SCHEDULE_KINDS",
+    "build_lr_scheduler",
+    "optimizer_step_budget",
+    "schedule_factor",
     "NONFINITE_GRAD_POLICIES",
     "STEP_COUNTERS",
     "UPDATE_MODES",
+    "NonFiniteGradientError",
     "NonfiniteGradPolicy",
     "OptimizerStep",
     "StepCounter",

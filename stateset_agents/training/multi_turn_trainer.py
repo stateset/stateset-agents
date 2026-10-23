@@ -57,6 +57,7 @@ from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
 from .spine.rollouts import record_rollout_sync
 from .spine.scoring import EpisodeScorer
+from .spine.update import NonFiniteGradientError
 from .trainer_utils import (
     apply_dropout_setting,
     backward_training_loss,
@@ -562,8 +563,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 scaler=self.scaler,
                 gradient_scale=gradient_scale,
             )
-        except ValueError as error:
-            if "gradients must be finite" not in str(error) or not skip_policy:
+        except NonFiniteGradientError as error:
+            if not skip_policy:
                 raise
             return self._skip_nonfinite_update(error)
         if applied:
@@ -606,7 +607,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             self.optimizer.zero_grad(set_to_none=True)
         limit = int(config_value(self.config, "max_consecutive_nonfinite_skips"))
         if self._consecutive_nonfinite > limit:
-            raise ValueError(
+            raise NonFiniteGradientError(
                 f"{self._consecutive_nonfinite} consecutive non-finite updates "
                 f"(limit {limit})"
             ) from error
