@@ -1307,6 +1307,15 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
         "PairwiseRewardFunction",
     ),
     "train_reward_model": (f"{_PKG}.preference.reward_model", "train_reward_model"),
+    "OnlineDPOConfig": (f"{_PKG}.preference.config", "OnlineDPOConfig"),
+    "OnlineDPOTrainer": (f"{_PKG}.preference.online", "OnlineDPOTrainer"),
+    "train_online_dpo": (f"{_PKG}.preference.online", "train_online_dpo"),
+    # Knowledge distillation (provisional).
+    "DistillationConfig": (f"{_PKG}.distillation.config", "DistillationConfig"),
+    "DistillationDataset": (f"{_PKG}.distillation.data", "DistillationDataset"),
+    "DistillationTrainer": (f"{_PKG}.distillation.trainer", "DistillationTrainer"),
+    "TeacherCache": (f"{_PKG}.distillation.cache", "TeacherCache"),
+    "train_distillation": (f"{_PKG}.distillation.trainer", "train_distillation"),
 }
 
 #: The full public surface of :mod:`stateset_agents.training`, in the order it
@@ -1701,4 +1710,12 @@ PUBLIC_NAMES: tuple[str, ...] = (
     "RewardModelTrainer",
     "PairwiseRewardFunction",
     "train_reward_model",
+    "OnlineDPOConfig",
+    "OnlineDPOTrainer",
+    "train_online_dpo",
+    "DistillationConfig",
+    "DistillationDataset",
+    "DistillationTrainer",
+    "TeacherCache",
+    "train_distillation",
 )

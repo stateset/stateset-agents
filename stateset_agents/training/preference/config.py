@@ -9,10 +9,14 @@ from typing import Any, TypeVar
 from .encoding import PROMPT_FORMATS
 
 __all__ = [
+    "ONLINE_METHODS",
     "PREFERENCE_METHODS",
     "REFERENCE_FREE_METHODS",
+    "REFERENCE_UPDATES",
+    "OnlineDPOConfig",
     "PreferenceConfig",
     "RewardModelConfig",
+    "validate_lora",
 ]
 
 #: Policy optimization methods trained by :class:`PreferenceTrainer`.
@@ -56,6 +60,22 @@ def _float(
 def _choice(value: Any, name: str, choices: tuple[str, ...]) -> None:
     if value not in choices:
         raise ValueError(f"{name} must be one of {choices}, got {value!r}")
+
+
+def validate_lora(config: Any) -> None:
+    """Validate the ``use_lora`` / ``lora_*`` fields a config carries."""
+    if not isinstance(config.use_lora, bool):
+        raise ValueError("use_lora must be a boolean")
+    _int(config.lora_r, "lora_r", minimum=1)
+    _int(config.lora_alpha, "lora_alpha", minimum=1)
+    _float(config.lora_dropout, "lora_dropout", low=0.0, below=1.0)
+    targets = config.lora_target_modules
+    if targets is not None and (
+        not isinstance(targets, list)
+        or not targets
+        or not all(isinstance(name, str) and name for name in targets)
+    ):
+        raise ValueError("lora_target_modules must be a nonempty list of names")
 
 
 @dataclass
@@ -193,19 +213,7 @@ class PreferenceConfig(_LoopConfig):
                 "logprob_dtype",
                 ("fp32", "float32", "bf16", "bfloat16", "fp16", "float16", "half"),
             )
-        if not isinstance(self.use_lora, bool):
-            raise ValueError("use_lora must be a boolean")
-        _int(self.lora_r, "lora_r", minimum=1)
-        _int(self.lora_alpha, "lora_alpha", minimum=1)
-        _float(self.lora_dropout, "lora_dropout", low=0.0, below=1.0)
-        if self.lora_target_modules is not None and (
-            not isinstance(self.lora_target_modules, list)
-            or not self.lora_target_modules
-            or not all(
-                isinstance(name, str) and name for name in self.lora_target_modules
-            )
-        ):
-            raise ValueError("lora_target_modules must be a nonempty list of names")
+        validate_lora(self)
 
 
 @dataclass
@@ -214,19 +222,77 @@ class RewardModelConfig(_LoopConfig):
 
     ``use_margin`` subtracts each pair's ``margin`` inside the Bradley-Terry
     sigmoid; ``center_rewards_coefficient`` adds ``c (r_w + r_l)²``.
+    ``use_lora`` trains LoRA adapters on the backbone (needs ``peft``) plus
+    the full reward head instead of the whole backbone.
     """
 
     learning_rate: float = 1e-5
     use_margin: bool = True
     center_rewards_coefficient: float | None = None
+    use_lora: bool = False
+    lora_r: int = 16
+    lora_alpha: int = 32
+    lora_dropout: float = 0.05
+    lora_target_modules: list[str] | None = field(default=None)
 
     def validate(self) -> None:
         super().validate()
         if not isinstance(self.use_margin, bool):
             raise ValueError("use_margin must be a boolean")
+        validate_lora(self)
         if self.center_rewards_coefficient is not None:
             _float(
                 self.center_rewards_coefficient,
                 "center_rewards_coefficient",
                 low=0.0,
+            )
+
+
+#: Paired methods :class:`OnlineDPOTrainer` trains each round with.
+ONLINE_METHODS = ("dpo", "ipo")
+#: ``fixed``: every round uses the initial policy as its reference;
+#: ``previous_round``: round ``r`` uses the policy as it ended round ``r - 1``.
+REFERENCE_UPDATES = ("fixed", "previous_round")
+
+
+@dataclass
+class OnlineDPOConfig(PreferenceConfig):
+    """Settings for :class:`~stateset_agents.training.preference.OnlineDPOTrainer`.
+
+    Each of ``rounds`` rounds samples ``samples_per_prompt`` completions per
+    prompt from the current policy (``max_new_tokens``,
+    ``sampling_temperature``, ``top_p``; ``generation_batch_size`` rows at a
+    time), scores them with the judge, pairs the best against the worst when
+    their scores differ by more than ``min_score_margin``, and trains
+    ``method`` (``dpo`` or ``ipo``) on that round's pairs for ``num_epochs``
+    (or ``max_steps`` updates) with a fresh optimizer. ``reference_update``
+    keeps the initial policy as the reference or refreshes it each round.
+    """
+
+    rounds: int = 3
+    samples_per_prompt: int = 4
+    max_new_tokens: int = 128
+    sampling_temperature: float = 1.0
+    top_p: float = 1.0
+    min_score_margin: float = 0.0
+    reference_update: str = "fixed"
+    generation_batch_size: int = 16
+
+    def validate(self) -> None:
+        super().validate()
+        _choice(self.method, "method", ONLINE_METHODS)
+        _int(self.rounds, "rounds", minimum=1)
+        _int(self.samples_per_prompt, "samples_per_prompt", minimum=2)
+        _int(self.max_new_tokens, "max_new_tokens", minimum=1)
+        _float(self.sampling_temperature, "sampling_temperature", positive=True)
+        _float(self.top_p, "top_p", positive=True)
+        if float(self.top_p) > 1.0:
+            raise ValueError(f"top_p must be in (0, 1], got {self.top_p!r}")
+        _float(self.min_score_margin, "min_score_margin", low=0.0)
+        _choice(self.reference_update, "reference_update", REFERENCE_UPDATES)
+        _int(self.generation_batch_size, "generation_batch_size", minimum=1)
+        if self.validation_fraction:
+            raise ValueError(
+                "online DPO builds its pairs each round; pass eval_prompts "
+                "instead of validation_fraction"
             )

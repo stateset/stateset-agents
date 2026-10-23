@@ -5,9 +5,12 @@
   prompt-disjoint :func:`split_preference_dataset`.
 - Policy optimization: :class:`PreferenceTrainer` / :func:`train_preference`
   for DPO (and conservative DPO), IPO, SimPO, KTO and ORPO.
+- Online / iterative DPO: :class:`OnlineDPOTrainer` / :func:`train_online_dpo`
+  (sample, judge with any ``RewardFunction``, pair best vs worst, DPO
+  against a fixed or per-round reference; repeat).
 - Reward models: :class:`RewardModelTrainer` / :func:`train_reward_model`
-  (Bradley-Terry) and :class:`PairwiseRewardFunction`, a ``RewardFunction``
-  for the RL trainers.
+  (Bradley-Terry, full backbone or LoRA) and :class:`PairwiseRewardFunction`,
+  a ``RewardFunction`` for the RL trainers.
 - Losses: pure functions in :mod:`.losses`.
 
 See docs/PREFERENCE_TRAINING.md. Stability: provisional (not part of the v1
@@ -39,6 +42,7 @@ _EXPORTS: dict[str, str] = {
     "REFERENCE_FREE_METHODS": "config",
     "PreferenceConfig": "config",
     "RewardModelConfig": "config",
+    "OnlineDPOConfig": "config",
     "PreferenceLoss": "losses",
     "NonFiniteLossError": "losses",
     "dpo_loss": "losses",
@@ -64,6 +68,13 @@ _EXPORTS: dict[str, str] = {
     "save_reward_model": "reward_model",
     "load_reward_model": "reward_model",
     "load_reward_function": "reward_model",
+    "OnlineDPOTrainer": "online",
+    "OnlineDPOResult": "online",
+    "OnlinePrompt": "online",
+    "OnlineRoundSummary": "online",
+    "select_pair": "online",
+    "train_online_dpo": "online",
+    "sample_completions": "sampling",
 }
 
 __all__ = sorted(_EXPORTS)

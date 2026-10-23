@@ -37,6 +37,7 @@ TORCH_FREE_ENTRY_POINTS = (
     "stateset_agents.core",
     "stateset_agents.training",
     "stateset_agents.training.preference",
+    "stateset_agents.training.distillation",
     "stateset_agents.experimental.ppo_online",
     "stateset_agents.cli",
 )

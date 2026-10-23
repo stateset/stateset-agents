@@ -1,8 +1,9 @@
 # Preference training
 
 `stateset_agents.training.preference` trains a policy directly on preference
-data (DPO, conservative DPO, IPO, SimPO, KTO, ORPO) and trains Bradley-Terry
-pairwise reward models that plug into the RL trainers as a `RewardFunction`.
+data (DPO, conservative DPO, IPO, SimPO, KTO, ORPO), runs online (iterative)
+DPO against a judge, and trains Bradley-Terry pairwise reward models (full
+backbone or LoRA) that plug into the RL trainers as a `RewardFunction`.
 
 Stability: **provisional / beta** (`preference-optimization` in
 [COMPONENT_MATURITY.md](COMPONENT_MATURITY.md)). The names are importable
@@ -20,12 +21,15 @@ research `stateset_agents.core.enhanced.DPOTrainer` (removed in v0.71.0).
 | Pairs, no memory for a reference model, length bias matters | `simpo` | Reference-free, length-normalized, target margin `simpo_gamma`. Typical `β≈2`, `γ≈0.5–1.5`. |
 | Thumbs-up/down (unpaired) labels, or imbalanced data | `kto` | Pairs are split into one desirable and one undesirable example. |
 | Pairs and no SFT stage yet | `orpo` | Reference-free; SFT on `chosen` plus an odds-ratio penalty. |
-| Pairs, and you want an RL reward rather than a policy | `rm` | Bradley-Terry reward model, exported as `PairwiseRewardFunction`. |
+| Pairs, and you want an RL reward rather than a policy | `rm` | Bradley-Terry reward model, exported as `PairwiseRewardFunction`; `use_lora` for large backbones. |
+| Prompts and a judge (a reward model, a verifier, an LLM judge), no fixed pairs | online DPO | `OnlineDPOTrainer`: sample, judge, pair best vs worst, DPO; repeat. |
 
-Preference optimization is offline: it never samples from the policy. For
+The offline methods never sample from the policy. [Online DPO](#online-dpo)
+builds its pairs from the current policy's own samples each round. For
 on-policy RL with a verifiable or judged reward use the GRPO-family trainers
 ([OBJECTIVES.md](OBJECTIVES.md)); a reward model trained here is one way to
-supply that reward.
+supply that reward. To match a teacher model's distribution instead, see
+[DISTILLATION.md](DISTILLATION.md).
 
 ## Methods
 
@@ -190,6 +194,71 @@ resuming an interrupted run reproduces the uninterrupted one exactly.
 Construct the trainer from the original model before resuming: the reference
 comes from it.
 
+## Online DPO
+
+`OnlineDPOTrainer(model, tokenizer, reward_fn, prompts, OnlineDPOConfig(...),
+ref_model=None, eval_prompts=None)` / `train_online_dpo(...)` run `rounds`
+rounds of:
+
+1. **Sample**: the current policy samples `samples_per_prompt` (K ≥ 2)
+   completions per prompt (`max_new_tokens`, `sampling_temperature`,
+   `top_p`; plain sampling from an explicit `GenerationConfig`, seeded per
+   round), kept as exact token ids.
+2. **Judge**: each decoded completion is scored by `reward_fn`, any
+   `RewardFunction`, through the shared
+   `core.reward_context.score_response` path (the reply in a
+   `[user, assistant]` conversation with the standard context; a prompt's
+   `scenario` mapping, e.g. a `ground_truth`, is lifted into it). A
+   `PairwiseRewardFunction` (below) is one judge. Reward failures follow the
+   repo contract: only `RewardUnavailableError` drops that completion (unless
+   the reward sets `fail_on_error`); any other exception, a `None` and a
+   non-finite score raise. A round whose every completion is unavailable
+   raises `RewardUnavailableError`.
+3. **Pair**: each prompt's best completion is paired against its worst when
+   the gap is positive and at least `min_score_margin`; ties (`tie`), small
+   gaps (`below_margin`), fewer than two scored completions
+   (`too_few_scores`) and pairs that decode to identical text
+   (`identical_text`) are skipped and counted. Among equal scores the
+   earliest sample wins, a uniform choice since samples are i.i.d.
+   (`select_pair`).
+4. **Train**: `method` (`dpo` or `ipo`) on that round's pairs with a fresh
+   `PreferenceTrainer` (the settings above: `beta`, learning rate,
+   `num_epochs` or `max_steps` per round, LoRA, ...) on the exact sampled
+   token ids, not a re-tokenization of their text. The reference is
+   `reference_update="fixed"` (the initial policy every round: a frozen copy,
+   an explicit `ref_model`, or the adapter-disabled policy under LoRA) or
+   `"previous_round"` (a frozen copy of the policy as the previous round left
+   it). A round without pairs trains nothing.
+
+Each round's summary (`OnlineRoundSummary`) records samples, scored and
+unavailable counts, pairs, skip reasons, mean/chosen/rejected judge scores,
+the DPO training summary and, with `eval_prompts` (prompt-disjoint from the
+training prompts), `evaluate()`'s mean judge score of fixed-seed policy
+samples. With `output_dir` every round is checkpointed to
+`<output_dir>/round-<r>` (`model/`, the round's `pairs.jsonl`, the round
+history) and `train(resume_from=...)` continues from the next round exactly
+(construct the trainer from the original model first; a `fixed` reference
+comes from it).
+
+```python
+from stateset_agents.training.preference import (
+    OnlineDPOConfig, load_reward_function, train_online_dpo,
+)
+
+judge = load_reward_function("outputs/rm/final")            # or any RewardFunction
+result = train_online_dpo(
+    "Qwen/Qwen3.5-0.8B", judge,
+    [{"prompt": [{"role": "user", "content": q}]} for q in questions],
+    config=OnlineDPOConfig(rounds=3, samples_per_prompt=4, max_new_tokens=256,
+                           beta=0.1, learning_rate=5e-7, num_epochs=1,
+                           reference_update="previous_round", use_lora=True,
+                           output_dir="outputs/online-dpo"),
+    eval_prompts=heldout_questions,
+)
+for entry in result.rounds:
+    print(entry.round, entry.pairs, entry.mean_score, entry.eval_metrics)
+```
+
 ## Reward models as RL rewards
 
 `RewardModelTrainer` puts a linear head on a backbone's final hidden state at
@@ -204,7 +273,24 @@ rendered exactly as in training:
 - a non-finite model output raises `ValueError`.
 
 `load_reward_function(checkpoint_dir)` reloads a saved model (local files
-only, no remote code). Use it like any other reward, preferably composed with
+only, no remote code).
+
+### LoRA reward models
+
+`RewardModelConfig(use_lora=True, lora_r=16, lora_alpha=32, lora_dropout=0.05,
+lora_target_modules=None)` (or `--method rm --lora`) wraps the backbone in
+`peft` LoRA adapters (`FEATURE_EXTRACTION`; targets inferred like the SFT
+path when not given) and trains only the adapters and the scalar head. `peft`
+is an optional dependency (`pip install 'stateset-agents[training]'`); a clear
+`ImportError` names it when missing. A LoRA reward model saves its adapter,
+head, tokenizer and the base model's `name_or_path` (`reward_model.json`
+records `"lora": true`); `load_reward_function(dir, base_model=...)` loads the
+adapter onto `base_model` (a loaded backbone, a local path, or by default the
+recorded base from the local Hugging Face cache, no downloads), and adapter
+weights load through `training.model_checkpoint` (weights-only unless
+`trusted=True`). `save_reward_model(..., merge_lora=True)` writes a merged,
+standalone backbone instead. Trainer checkpoints resume exactly and refuse a
+`use_lora` mismatch. Use it like any other reward, preferably composed with
 an outcome or verifier reward (see [REWARD_CONTRACT.md](REWARD_CONTRACT.md)):
 learned rewards can be exploited by the policy they train.
 
@@ -215,14 +301,45 @@ stateset-agents preference --train-data pairs.jsonl --validation-fraction 0.05 -
 stateset-agents preference --method dpo --model Qwen/Qwen3.5-0.8B \
   --train-data pairs.jsonl --validation-fraction 0.05 --lora --output-dir outputs/dpo
 stateset-agents preference --method rm --model Qwen/Qwen3.5-0.8B \
-  --train-data pairs.jsonl --eval-data heldout.jsonl --output-dir outputs/rm
+  --train-data pairs.jsonl --eval-data heldout.jsonl --lora --output-dir outputs/rm
 ```
+
+Online DPO has a Python API only (it needs a judge object).
 
 See [CLI_REFERENCE.md](CLI_REFERENCE.md#stateset-agents-preference).
 
 ## Limitations
 
 - Single process: no DDP/FSDP, no gradient checkpointing, no fp16 GradScaler.
-- Reward models train the whole backbone (no LoRA).
+- Online DPO samples with `model.generate` (no vLLM), scores each completion
+  with its own reward call, and pairs only best vs worst per prompt.
+- A LoRA reward model's adapter needs its base model available locally to
+  load (or save it merged).
 - Learning is verified on CPU toy models (`tests/learning/test_preference_learns.py`,
-  three seeds); large-model evidence is a graduation criterion.
+  `tests/learning/test_online_dpo_learns.py`, three seeds); large-model
+  evidence is a graduation criterion.
+
+### Online DPO evidence
+
+`tests/learning/test_online_dpo_learns.py` (seeds 0, 1, 2): a tiny GPT-2
+policy, the `DigitReward` judge (fraction of digit characters), 12 training
+prompts, K = 8 six-token samples, 3 rounds of 4 DPO epochs. Held-out digit
+rate (32 fixed-seed samples on each of 4 unseen prompts):
+
+| seed | judge | reference | held-out digit rate | pairs per round |
+|---|---|---|---|---|
+| 0 | +digits | fixed | 0.105 → 0.999 | 12, 12, 12 |
+| 0 | +digits | previous_round | 0.105 → 0.999 | 12, 12, 12 |
+| 0 | −digits (control) | fixed | 0.105 → 0.000 | 12, 12, 6 |
+| 1 | +digits | fixed | 0.093 → 0.224 | 12, 12, 10 |
+| 1 | +digits | previous_round | 0.093 → 0.484 | 12, 12, 11 |
+| 1 | −digits (control) | fixed | 0.093 → 0.001 | 12, 12, 0 |
+| 2 | +digits | fixed | 0.093 → 0.884 | 11, 12, 12 |
+| 2 | +digits | previous_round | 0.093 → 0.999 | 11, 12, 12 |
+| 2 | −digits (control) | fixed | 0.093 → 0.000 | 11, 9, 2 |
+
+The test asserts a rise of at least 0.1 with the real judge and a fall of at
+least 0.05 with the sign-flipped one. Seed 1 with a fixed reference shows the
+toy's limit: the training prompts reach a 0.97 judged rate by round 3 while
+the held-out rate only doubles. Rounds without pairs (the control saturating
+at zero digits, so every group ties) train nothing, as designed.

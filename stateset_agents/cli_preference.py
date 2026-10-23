@@ -20,7 +20,6 @@ _POLICY_ONLY = (
     "beta",
     "label_smoothing",
     "simpo_gamma",
-    "use_lora",
     "precompute_reference_logps",
 )
 

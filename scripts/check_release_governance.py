@@ -22,6 +22,7 @@ REQUIRED_COMPONENT_IDS = {
     "bayesian-reward-model",
     "core-agents",
     "deployment-assets",
+    "distillation",
     "distributed-rollouts",
     "environments-rewards",
     "external-training-backends",

@@ -25,6 +25,7 @@ and `make release-governance` validates it on every pull request and release.
 | `bayesian-reward-model` | Experimental |
 | `core-agents` | Stable |
 | `deployment-assets` | Beta |
+| `distillation` | Beta |
 | `distributed-rollouts` | Beta |
 | `environments-rewards` | Stable |
 | `external-training-backends` | Beta |
