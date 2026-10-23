@@ -22,8 +22,9 @@ MAX_BRANCHES = 40
 #: 82 when the ratchet was introduced (v0.70.0 development); splitting
 #: cli._validate_config, AgentConfig.validate, the /api/v1/conversations
 #: handler, finetune_workspace.check_config_values and
-#: data.finetuning.validate_finetuning_row brought it to 77.
-CEILING = 75
+#: data.finetuning.validate_finetuning_row brought it to 77; splitting the
+#: spine loop's train() into an episode step brought it to 74.
+CEILING = 74
 
 _BRANCH_NODES = (
     ast.If,

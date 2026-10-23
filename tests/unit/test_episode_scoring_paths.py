@@ -406,3 +406,14 @@ async def test_callable_reward_trainers_score_replies_alike(trainer_path, reward
     scores = [await trainer._compute_reward("q", reply) for reply in ("12a", "abc")]
     assert scores == [pytest.approx(2 / 3), 0.0]
     assert all(type(score) is float for score in scores)
+
+
+@pytest.mark.parametrize("trainer_path", ["dapo", "gepo", "vapo"])
+async def test_callable_reward_trainers_reject_non_finite_rewards(trainer_path):
+    import importlib
+
+    module = importlib.import_module(f"stateset_agents.training.{trainer_path}_trainer")
+    trainer = object.__new__(getattr(module, f"{trainer_path.upper()}Trainer"))
+    trainer.reward_fn = lambda prompt, response: float("nan")
+    with pytest.raises(ValueError, match="finite"):
+        await trainer._compute_reward("q", "a")

@@ -8,7 +8,6 @@ agents on single-turn interactions (one prompt, one response).
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import inspect
 import logging
 import math
@@ -38,7 +37,6 @@ from .callbacks import (
 )
 from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
-from .grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from .loss_computation import (
     compute_enhanced_grpo_loss,
     compute_grpo_loss,
@@ -59,6 +57,7 @@ from .single_turn_state import (
     merge_scenario_into_state,
     resolve_task_id,
 )
+from .spine.grpo_update import GRPOUpdateMixin
 from .spine.scoring import ResponseScorer
 from .trainer_utils import (
     apply_dropout_setting,
@@ -108,7 +107,7 @@ async def _call_environment(method: Any, *argument_forms: tuple[Any, ...]) -> An
     raise TypeError("Environment method does not accept a supported argument form")
 
 
-class SingleTurnGRPOTrainer(TrainingRuntime):
+class SingleTurnGRPOTrainer(GRPOUpdateMixin, TrainingRuntime):
     """
     GRPO trainer for single-turn agents with HuggingFace and W&B integration
 
@@ -342,6 +341,93 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         self._grad_accum_step = 0
         return applied
 
+    # --- GRPOUpdateMixin hooks ------------------------------------------------
+
+    def _use_amp(self) -> bool:
+        return bool(
+            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+        )
+
+    def _update_modules(self) -> tuple[Any, Any]:
+        return self._get_torch_module(), get_amp()
+
+    def _update_scaler(self, use_amp: bool) -> Any:
+        return self.scaler if use_amp else None
+
+    def _update_old_logprobs(self, trajectory_groups: list[Any]) -> list[Any] | None:
+        old: list[Any] | None = compute_token_old_logprobs(
+            trajectory_groups, self.config, self.agent
+        )
+        return old
+
+    def _update_baseline(self) -> dict[str, Any]:
+        return {
+            "global_reward_mean": self._global_reward_mean,
+            "global_reward_count": self._global_reward_count,
+            "global_reward_sum": getattr(self, "_global_reward_sum", None),
+        }
+
+    def _update_loss(
+        self,
+        trajectory_groups: list[Any],
+        *,
+        enhanced: bool,
+        beta: float,
+        old_logprobs: list[Any] | None,
+        baseline: dict[str, Any] | None,
+        update_stats: bool,
+        backward_fn: Any,
+    ) -> dict[str, Any]:
+        kwargs: dict[str, Any] = {
+            **(self._update_baseline() if baseline is None else baseline),
+            "update_global_stats": self._update_global_stats if update_stats else None,
+            "backward_fn": backward_fn,
+            "old_logprobs": old_logprobs,
+        }
+        if enhanced:
+            enhanced_loss: dict[str, Any] = compute_enhanced_grpo_loss(
+                trajectory_groups=trajectory_groups,
+                beta=beta,
+                config=self.config,
+                agent=self.agent,
+                reference_model=self.reference_model,
+                **kwargs,
+            )
+            return enhanced_loss
+        loss: dict[str, Any] = compute_grpo_loss(
+            trajectory_groups=trajectory_groups,
+            config=self.config,
+            agent=self.agent,
+            **kwargs,
+        )
+        return loss
+
+    def _update_regularizer(self, loss_dict: dict[str, Any]) -> tuple[Any, Any]:
+        penalty = None
+        if self.continual_manager is not None:
+            penalty = self.continual_manager.compute_ewc_penalty(self.agent)
+        if penalty is not None:
+            loss_dict["ewc_penalty"] = penalty
+            if loss_dict.get("total_loss") is not None:
+                loss_dict["total_loss"] = loss_dict["total_loss"] + penalty
+        loss = loss_dict.get("total_loss")
+        if loss is None:
+            loss = loss_dict.get("policy_loss")
+        return loss, penalty
+
+    def _update_commit(self, torch: Any) -> bool:
+        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
+        return bool(self._apply_optimizer_step(torch, self._use_amp(), max_grad_norm))
+
+    def _update_flush(self, torch: Any) -> bool:
+        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
+        return self._flush_accumulation(torch, self._use_amp(), max_grad_norm)
+
+    def _warn_inner_updates_unavailable(self) -> None:
+        logger.warning(
+            "Inner updates require exact sampled tokens; applying one compatibility update"
+        )
+
     def _setup_scheduler(self, num_training_steps: int) -> None:
         """Set up learning rate scheduler."""
         require_transformers()
@@ -553,7 +639,6 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         logger.info("Starting single-turn GRPO training...")
 
         torch = self._get_torch_module()
-        amp = get_amp()
         use_amp = bool(
             getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
         )
@@ -624,180 +709,15 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                         replay_group_count += len(replay_groups)
                         training_groups = training_groups + replay_groups
 
-                # Compute GRPO loss
-                device_type = "cuda" if torch.cuda.is_available() else "cpu"
-                base_beta = float(getattr(self.config, "beta", 0.0))
-                if self.continual_manager is not None:
-                    reference_model = getattr(
-                        self.continual_manager, "reference_model", None
-                    )
-                    if reference_model is not None:
-                        self.reference_model = reference_model
-                    base_beta = self.continual_manager.get_effective_beta(base_beta)
-
-                use_enhanced = bool(
-                    base_beta > 0.0
-                    or getattr(self.config, "use_reference_model", False)
-                    or self.reference_model is not None
+                # The GRPO update (the spine's GRPOUpdateMixin, shared with
+                # MultiTurnGRPOTrainer.training_step): inner passes or one
+                # accumulated backward, EWC, and the optimizer commit.
+                loss_dict, _metrics = self._grpo_update(
+                    training_groups, backward=self.optimizer is not None
                 )
-
-                autocast_ctx = (
-                    amp.autocast(device_type=device_type, enabled=use_amp)
-                    if amp is not None
-                    else contextlib.nullcontext()
-                )
-
-                baseline: dict[str, Any] = {
-                    "global_reward_mean": self._global_reward_mean,
-                    "global_reward_count": self._global_reward_count,
-                    "global_reward_sum": getattr(self, "_global_reward_sum", None),
-                }
-                inner = max(
-                    1, int(getattr(self.config, "num_gradient_updates", 1) or 1)
-                )
-                old_logprobs = None
-                if inner > 1:
-                    with autocast_ctx:
-                        old_logprobs = compute_token_old_logprobs(
-                            training_groups, self.config, self.agent
-                        )
-                    if old_logprobs is not None:
-                        self._flush_accumulation(torch, use_amp, max_grad_norm)
-                    else:
-                        logger.warning(
-                            "Inner updates require exact sampled tokens; applying one compatibility update"
-                        )
-                        inner = 1
-                streaming: dict[str, Any] = {
-                    "backward_fn": (
-                        NativeChunkedBackward(
-                            self,
-                            torch,
-                            steps=1 if inner > 1 else grad_accum_steps,
-                            scaler=self.scaler if use_amp else None,
-                        )
-                        if self.optimizer is not None
-                        else None
-                    ),
-                    "old_logprobs": old_logprobs,
-                }
-                with autocast_ctx:
-                    if use_enhanced:
-                        loss_dict = compute_enhanced_grpo_loss(
-                            trajectory_groups=training_groups,
-                            beta=base_beta,
-                            config=self.config,
-                            agent=self.agent,
-                            reference_model=self.reference_model,
-                            **baseline,
-                            update_global_stats=self._update_global_stats,
-                            **streaming,
-                        )
-                    else:
-                        loss_dict = compute_grpo_loss(
-                            trajectory_groups=training_groups,
-                            config=self.config,
-                            agent=self.agent,
-                            **baseline,
-                            update_global_stats=self._update_global_stats,
-                            **streaming,
-                        )
-
-                    ewc_penalty = None
-                    if self.continual_manager is not None:
-                        ewc_penalty = self.continual_manager.compute_ewc_penalty(
-                            self.agent
-                        )
-                    if ewc_penalty is not None:
-                        loss_dict["ewc_penalty"] = ewc_penalty
-                        if loss_dict.get("total_loss") is not None:
-                            loss_dict["total_loss"] = (
-                                loss_dict["total_loss"] + ewc_penalty
-                            )
-
                 policy_loss = loss_dict.get("total_loss")
                 if policy_loss is None:
                     policy_loss = loss_dict.get("policy_loss")
-
-                # Backprop/update
-                if (
-                    inner > 1
-                    and self.optimizer is not None
-                    and policy_loss is not None
-                    and loss_dict.get("path") == "token"
-                ):
-                    # The old policy was frozen before flushing pending work;
-                    # the first streamed loss already sees the post-flush policy.
-                    for step_idx in range(inner):
-                        if step_idx > 0:
-                            with autocast_ctx:
-                                loss_dict = (
-                                    compute_enhanced_grpo_loss(
-                                        trajectory_groups=training_groups,
-                                        beta=base_beta,
-                                        config=self.config,
-                                        agent=self.agent,
-                                        reference_model=self.reference_model,
-                                        old_logprobs=old_logprobs,
-                                        **baseline,
-                                        update_global_stats=None,
-                                        backward_fn=NativeChunkedBackward(
-                                            self,
-                                            torch,
-                                            steps=1,
-                                            scaler=self.scaler if use_amp else None,
-                                        ),
-                                    )
-                                    if use_enhanced
-                                    else compute_grpo_loss(
-                                        trajectory_groups=training_groups,
-                                        config=self.config,
-                                        agent=self.agent,
-                                        **baseline,
-                                        update_global_stats=None,
-                                        backward_fn=NativeChunkedBackward(
-                                            self,
-                                            torch,
-                                            steps=1,
-                                            scaler=self.scaler if use_amp else None,
-                                        ),
-                                        old_logprobs=old_logprobs,
-                                    )
-                                )
-                                policy_loss = loss_dict["total_loss"]
-                                if self.continual_manager is not None:
-                                    ewc_penalty = (
-                                        self.continual_manager.compute_ewc_penalty(
-                                            self.agent
-                                        )
-                                    )
-                                    if ewc_penalty is not None:
-                                        loss_dict["ewc_penalty"] = ewc_penalty
-                                        policy_loss = policy_loss + ewc_penalty
-                                        loss_dict["total_loss"] = policy_loss
-                        backward_accumulated_loss(
-                            self,
-                            policy_loss,
-                            loss_dict,
-                            torch,
-                            scaler=self.scaler if use_amp else None,
-                            regularizer=ewc_penalty,
-                            accumulation_steps=1,
-                        )
-                        self._apply_optimizer_step(torch, use_amp, max_grad_norm)
-                elif self.optimizer is not None and policy_loss is not None:
-                    backward_accumulated_loss(
-                        self,
-                        policy_loss,
-                        loss_dict,
-                        torch,
-                        scaler=self.scaler if use_amp else None,
-                        regularizer=ewc_penalty,
-                    )
-
-                    self._grad_accum_step += 1
-                    if self._grad_accum_step % grad_accum_steps == 0:
-                        self._apply_optimizer_step(torch, use_amp, max_grad_norm)
 
                 from .diagnostics import DiagnosticsMonitor
 

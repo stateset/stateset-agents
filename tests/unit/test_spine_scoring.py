@@ -122,3 +122,16 @@ async def test_scorers_never_absorb_a_failure() -> None:
                 {"compute_reward": lambda self, t, c=None: RewardResult(float("nan"))},
             )()
         ).score(PROMPT, "4")
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), -float("inf")])
+async def test_callable_scorer_rejects_non_finite_scores(bad: float) -> None:
+    """Round 4's rule for every reward path: a NaN/Inf score raises, never
+    flows into advantages."""
+
+    async def async_bad(prompt: str, response: str) -> float:
+        return bad
+
+    for reward_fn in (lambda prompt, response: bad, async_bad):
+        with pytest.raises(ValueError, match="finite"):
+            await CallableScorer(reward_fn).score(PROMPT, "4")

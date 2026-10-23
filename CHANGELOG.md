@@ -64,6 +64,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   never absorb a failure, so the trainers' rollout policy (only
   `RewardUnavailableError` is dropped, an all-dropped step raises) is as
   before.
+- `stateset_agents.training.spine.GRPOUpdateMixin` is the GRPO update half
+  -- continual-learning reference and KL beta, autocast, the token-path
+  inner passes over frozen old-policy log-probs or one accumulated
+  backward, the streamed chunked backward, the EWC regularizer, the
+  optimizer commit and the step metrics -- extracted from
+  `MultiTurnGRPOTrainer.training_step`. `SingleTurnGRPOTrainer` now runs
+  each step's update through it instead of its own copy; the trainers
+  differ only in hooks (AMP scaler gating, how the reward baseline and
+  backward closure reach the loss, their optimizer-step and flush
+  signatures). Both trainers' step goldens are unchanged.
+- `SpineLoopMixin.train()` runs each episode through a new
+  `_train_episode` method (task boundary, rollouts, step, reporting);
+  the phases it passes to `_training_phase` and their order are unchanged.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
@@ -176,6 +189,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raising), `_apply_optimizer_step` returns whether the update
   committed, and the `optimizer_updates` metric counts committed passes
   rather than attempted ones.
+- A plain `reward_fn(prompt, response)` callable (DAPO, GEPO, VAPO) that
+  returns NaN or an infinite score now raises `ValueError` (round 4's rule
+  for every reward path) instead of carrying the value into the group
+  advantages.
 - `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
   (it called the reward synchronously, so an async one failed), and DAPO
   awaits any awaitable a reward returns, not only coroutines.

@@ -286,6 +286,79 @@ class SpineLoopMixin(TrainingRuntime):
         if self.wandb_logger:
             await run_sync_owned(self.wandb_logger.finish_run, summary)
 
+    async def _train_episode(
+        self,
+        episode: int,
+        scenario: dict[str, Any],
+        eval_scenarios: list[dict[str, Any]],
+    ) -> str | None:
+        """One episode of :meth:`train`: task boundary, rollouts, step, report.
+
+        Returns ``"boundary_stop"`` when early stopping fired at a task
+        boundary, ``"stop"`` when it fired after the step, else ``None``.
+        """
+        self.current_epoch = episode
+        task_id = await self._training_phase("task-id", self._resolve_task_id, scenario)
+        previous_step, previous_task = self.global_step, self._current_task_id
+        self._maybe_handle_task_switch(task_id)
+        boundary_receipt = self._optimizer_update_receipt(
+            previous_step, "task_boundary", task_id=previous_task
+        )
+        await self._report_optimizer_update(boundary_receipt, [], eval_scenarios)
+        if boundary_receipt is not None and self._should_stop_training():
+            # The outgoing task is complete; do not consolidate an
+            # incoming task that never generated a training population.
+            self._current_task_id = previous_task
+            return "boundary_stop"
+
+        # Generate trajectory groups
+        new_groups = await self._generate_training_rollouts([scenario])
+
+        if not self._rollouts_available(new_groups):
+            logger.warning(f"No trajectory groups generated for episode {episode}")
+            self._next_episode = episode + 1
+            return None
+
+        training_groups, replay_groups = await self._training_phase(
+            "replay", self._maybe_mix_replay, new_groups, task_id
+        )
+
+        # Training step
+        previous_step = self.global_step
+        metrics = await self.training_step(training_groups)
+        self._next_episode = episode + 1
+        if replay_groups:
+            metrics["replay_group_count"] = len(replay_groups)
+            if self.continual_manager is not None:
+                metrics["replay_buffer_size"] = self.continual_manager.buffer.size
+
+        # Native workers collectively report new/replay populations
+        # before invoking rank-local callback or logger implementations.
+        metrics = self._episode_metrics(metrics, new_groups, training_groups)
+        callback_metrics = dict(metrics)
+        if isinstance(callback_metrics.get("trajectory_metrics"), dict):
+            callback_metrics["trajectory_metrics"] = dict(
+                callback_metrics["trajectory_metrics"]
+            )
+        await self._training_phase(
+            "episode-end",
+            notify_episode_end,
+            self.callbacks,
+            episode=episode,
+            metrics=callback_metrics,
+        )
+
+        receipt = self._optimizer_update_receipt(
+            previous_step, "batch", metrics, task_id=self._current_task_id
+        )
+        await self._report_optimizer_update(receipt, training_groups, eval_scenarios)
+
+        # Early stopping check
+        if self._should_stop_training():
+            logger.info(f"Early stopping at step {self.global_step}")
+            return "stop"
+        return None
+
     async def train(self) -> Any:
         """Train, finalizing checkpoints only after a successful loop exit."""
         logger.info("Starting GRPO training")
@@ -325,77 +398,12 @@ class SpineLoopMixin(TrainingRuntime):
             start_episode = self._resume_start(resumed, num_episodes)
             boundary_stopped = False
             for episode in range(start_episode, num_episodes):
-                self.current_epoch = episode
-                scenario = training_scenarios[episode]
-                task_id = await self._training_phase(
-                    "task-id", self._resolve_task_id, scenario
+                outcome = await self._train_episode(
+                    episode, training_scenarios[episode], eval_scenarios
                 )
-                previous_step, previous_task = self.global_step, self._current_task_id
-                self._maybe_handle_task_switch(task_id)
-                boundary_receipt = self._optimizer_update_receipt(
-                    previous_step, "task_boundary", task_id=previous_task
-                )
-                await self._report_optimizer_update(
-                    boundary_receipt, [], eval_scenarios
-                )
-                if boundary_receipt is not None and self._should_stop_training():
-                    # The outgoing task is complete; do not consolidate an
-                    # incoming task that never generated a training population.
-                    self._current_task_id = previous_task
+                if outcome == "boundary_stop":
                     boundary_stopped = True
-                    break
-
-                # Generate trajectory groups
-                new_groups = await self._generate_training_rollouts([scenario])
-
-                if not self._rollouts_available(new_groups):
-                    logger.warning(
-                        f"No trajectory groups generated for episode {episode}"
-                    )
-                    self._next_episode = episode + 1
-                    continue
-
-                training_groups, replay_groups = await self._training_phase(
-                    "replay", self._maybe_mix_replay, new_groups, task_id
-                )
-
-                # Training step
-                previous_step = self.global_step
-                metrics = await self.training_step(training_groups)
-                self._next_episode = episode + 1
-                if replay_groups:
-                    metrics["replay_group_count"] = len(replay_groups)
-                    if self.continual_manager is not None:
-                        metrics["replay_buffer_size"] = (
-                            self.continual_manager.buffer.size
-                        )
-
-                # Native workers collectively report new/replay populations
-                # before invoking rank-local callback or logger implementations.
-                metrics = self._episode_metrics(metrics, new_groups, training_groups)
-                callback_metrics = dict(metrics)
-                if isinstance(callback_metrics.get("trajectory_metrics"), dict):
-                    callback_metrics["trajectory_metrics"] = dict(
-                        callback_metrics["trajectory_metrics"]
-                    )
-                await self._training_phase(
-                    "episode-end",
-                    notify_episode_end,
-                    self.callbacks,
-                    episode=episode,
-                    metrics=callback_metrics,
-                )
-
-                receipt = self._optimizer_update_receipt(
-                    previous_step, "batch", metrics, task_id=self._current_task_id
-                )
-                await self._report_optimizer_update(
-                    receipt, training_groups, eval_scenarios
-                )
-
-                # Early stopping check
-                if self._should_stop_training():
-                    logger.info(f"Early stopping at step {self.global_step}")
+                if outcome is not None:
                     break
 
             # Finalization closes the accumulation window. Saved state must not
