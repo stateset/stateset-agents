@@ -52,7 +52,7 @@ from ..callbacks import (
     notify_training_end,
     notify_training_start,
 )
-from ..config import estimate_grpo_optimizer_steps
+from ..config import config_value, estimate_grpo_optimizer_steps
 from ..runtime_state import TrainingRuntime
 
 logger = logging.getLogger(__name__)
@@ -137,7 +137,7 @@ class SpineLoopMixin(TrainingRuntime):
         total_steps = estimate_grpo_optimizer_steps(
             num_episodes,
             gradient_accumulation_steps=self._get_grad_accum_steps(),
-            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            num_gradient_updates=config_value(self.config, "num_gradient_updates"),
             task_ids=(
                 [
                     self._resolve_task_id(scenario)
@@ -231,11 +231,11 @@ class SpineLoopMixin(TrainingRuntime):
             step=self.global_step,
             metrics=callback_metrics,
         )
-        if self._step_event_due(getattr(self.config, "logging_steps", 10), receipt):
+        if self._step_event_due(config_value(self.config, "logging_steps"), receipt):
             await self._training_phase(
                 "training-log", self._log_training_metrics, receipt, groups
             )
-        if self._step_event_due(getattr(self.config, "eval_steps", 50), receipt):
+        if self._step_event_due(config_value(self.config, "eval_steps"), receipt):
             eval_metrics = await self.evaluate(eval_scenarios)
             await self._training_phase(
                 "evaluation-log", self._log_eval_metrics, eval_metrics
@@ -252,7 +252,7 @@ class SpineLoopMixin(TrainingRuntime):
                 receipt["update_source"],
                 eval_metrics["eval_reward"],
             )
-        if self._step_event_due(getattr(self.config, "save_steps", 100), receipt):
+        if self._step_event_due(config_value(self.config, "save_steps"), receipt):
             await self.save_checkpoint()
             return True
         return False
@@ -293,8 +293,8 @@ class SpineLoopMixin(TrainingRuntime):
 
     def _should_stop_training(self) -> bool:
         return bool(
-            getattr(self.config, "early_stopping", False)
-            and self.steps_without_improvement >= getattr(self.config, "patience", 50)
+            config_value(self.config, "early_stopping")
+            and self.steps_without_improvement >= config_value(self.config, "patience")
         )
 
     async def _finish_tracking(self, summary: dict[str, Any]) -> None:
@@ -389,7 +389,7 @@ class SpineLoopMixin(TrainingRuntime):
         """Resume from ``config.resume_from_checkpoint`` when one is set; a
         requested checkpoint that cannot be restored is an error, never a
         silent fresh start."""
-        resume_from = getattr(self.config, "resume_from_checkpoint", None)
+        resume_from = config_value(self.config, "resume_from_checkpoint")
         if resume_from is None:
             return False
         if isinstance(resume_from, str) and not resume_from.strip():

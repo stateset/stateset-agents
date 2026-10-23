@@ -6,6 +6,8 @@ from typing import Any
 
 from stateset_agents.core.environment import EnvironmentState
 
+from .config import config_value
+
 
 def get_environment_scenarios(environment: Any, config: Any) -> list[dict[str, Any]]:
     """Return sanitized environment scenarios for trainer consumption."""
@@ -22,7 +24,7 @@ def get_environment_scenarios(environment: Any, config: Any) -> list[dict[str, A
         else:
             cleaned.append({"id": f"scenario_{idx}", "context": str(scenario)})
 
-    max_examples = getattr(config, "max_examples", None)
+    max_examples = config_value(config, "max_examples")
     if isinstance(max_examples, int) and max_examples > 0:
         cleaned = cleaned[:max_examples]
     return cleaned
@@ -33,9 +35,9 @@ def apply_task_schedule(config: Any, scenario: dict[str, Any], episode: int) -> 
     if config is None:
         return
 
-    task_schedule = getattr(config, "task_schedule", None)
-    task_switch_steps = int(getattr(config, "task_switch_steps", 0) or 0)
-    task_key = getattr(config, "task_id_key", "task_id")
+    task_schedule = config_value(config, "task_schedule")
+    task_switch_steps = int(config_value(config, "task_switch_steps") or 0)
+    task_key = config_value(config, "task_id_key")
     if not task_schedule or task_switch_steps <= 0 or task_key in scenario:
         return
 
@@ -54,9 +56,9 @@ def get_episode_scenario(
     if scenarios:
         scenario = dict(scenarios[episode % len(scenarios)])
     else:
-        task_schedule = getattr(config, "task_schedule", None)
-        task_switch_steps = int(getattr(config, "task_switch_steps", 0) or 0)
-        task_key = getattr(config, "task_id_key", "task_id")
+        task_schedule = config_value(config, "task_schedule")
+        task_switch_steps = int(config_value(config, "task_switch_steps") or 0)
+        task_key = config_value(config, "task_id_key")
         if task_schedule and task_switch_steps > 0:
             task_idx = min(episode // task_switch_steps, len(task_schedule) - 1)
             scenario = {task_key: task_schedule[task_idx]}
@@ -71,7 +73,7 @@ def resolve_task_id(config: Any, context: dict[str, Any] | None) -> str | None:
     if context is None or config is None:
         return None
 
-    task_key = getattr(config, "task_id_key", "task_id")
+    task_key = config_value(config, "task_id_key")
     if task_key and task_key in context:
         value = context.get(task_key)
         return str(value) if value is not None else None
@@ -128,9 +130,7 @@ def merge_scenario_into_state(
     if scenario is None:
         return state
 
-    task_key = (
-        getattr(config, "task_id_key", "task_id") if config is not None else "task_id"
-    )
+    task_key = config_value(config, "task_id_key") if config is not None else "task_id"
     scenario_copy = dict(scenario)
     task_value = scenario_copy.get(task_key)
 

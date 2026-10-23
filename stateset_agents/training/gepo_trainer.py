@@ -24,7 +24,7 @@ import numpy as np
 import torch
 
 from . import objectives, rl_losses
-from .config import TrainingConfig, validate_group_size
+from .config import TrainingConfig, config_value, validate_group_size
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -242,7 +242,7 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         _load_transformers_gepo()
 
         validate_training_config(config)
-        if float(getattr(config, "beta", 0.0) or 0.0) > 0:
+        if float(config_value(config, "beta") or 0.0) > 0:
             raise ValueError(
                 "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
                 f"(got {config.beta}). Use the GRPO or GSPO trainer for a KL term."
@@ -714,7 +714,7 @@ GEPO_SPEC = AlgorithmSpec(
     },
     counter="train_steps",
     update_mode="single_graph",
-    passes=lambda config: max(1, getattr(config, "num_gradient_updates", 1)),
+    passes=lambda config: max(1, config_value(config, "num_gradient_updates")),
     score=_gepo_score,
     rollouts=_gepo_rollouts,
     group_loss=_gepo_group_loss,

@@ -31,6 +31,8 @@ from typing import TYPE_CHECKING, Any, TypeVar
 
 from stateset_agents.core.agent import AgentConfig
 
+from .config import config_value
+
 CONVERSATIONAL_DEFAULT = (
     "You are helpful, concise, and accurate. "
     "You answer clearly and stay grounded in the user's request."
@@ -367,7 +369,7 @@ def resolve_starter_config(
 
 def create_agent_config(config: Any, **extra_kwargs: Any) -> AgentConfig:
     """Create the matching AgentConfig for a starter config."""
-    if getattr(config, "model_revision", None) is not None:
+    if config_value(config, "model_revision") is not None:
         extra_kwargs.setdefault("model_revision", config.model_revision)
     return AgentConfig(
         model_name=config.model_name,

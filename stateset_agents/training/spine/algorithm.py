@@ -32,6 +32,7 @@ from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
+from ..config import config_value
 from .update import (
     OptimizerStep,
     StepCounter,
@@ -202,7 +203,7 @@ class AlgorithmTrainer:
         (``VLLMEngineMixin.sync_vllm_weights``).
         """
         self.last_rollout_sync = None
-        if not bool(getattr(self.config, "rollout_sync", True)):
+        if not bool(config_value(self.config, "rollout_sync")):
             return
         engine = self._rollout_engine()
         if engine is not None:

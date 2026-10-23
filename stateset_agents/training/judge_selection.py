@@ -25,6 +25,8 @@ from stateset_agents.evaluation.support_judge import (
 from stateset_agents.rewards.support_judge_reward import checked_judgement
 from stateset_agents.training.promotion import artifact_digest
 
+from .config import config_value
+
 
 class _JudgedValidation(list[Any]):
     """List-compatible results carrying a detached raw-evidence reference."""
@@ -84,7 +86,7 @@ def support_judge_evaluator(
         )
 
         items = []
-        seed = getattr(trainer.config, "seed", 42)
+        seed = config_value(trainer.config, "seed")
         seed = 42 if seed is None else seed
         for case in cases:
             env = environment.clone()
@@ -220,7 +222,7 @@ class JudgeCheckpointSelector:
         if (
             self._trainer is not None
             or getattr(trainer, "global_step", 0) != 0
-            or getattr(config, "resume_from_checkpoint", None)
+            or config_value(config, "resume_from_checkpoint")
         ):
             raise ValueError("Judge selection requires a fresh, non-resumed study")
         self._root = Path(config.output_dir).resolve()
@@ -267,7 +269,7 @@ class JudgeCheckpointSelector:
         # An evaluator cannot silently mutate the selector's held-out inputs.
         from stateset_agents.evaluation.isolation import isolated_evaluation
 
-        seed = getattr(self._trainer.config, "seed", 42)
+        seed = config_value(self._trainer.config, "seed")
         with isolated_evaluation(
             seed=42 if seed is None else seed, model=self._trainer.agent.model
         ):

@@ -36,7 +36,7 @@ from stateset_agents.core.reward import RewardFunction
 
 from .callbacks import notify_checkpoint_saved
 from .checkpoint_state import save_training_checkpoint
-from .config import TrainingConfig
+from .config import TrainingConfig, config_value
 from .trainer import MultiTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
@@ -569,9 +569,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 "episodes": plan[0],
                 "steps": plan[2],
                 "windows": windows,
-                "early_stopping": bool(getattr(self.config, "early_stopping", False)),
-                "patience": getattr(self.config, "patience", 50),
-                "resume": str(getattr(self.config, "resume_from_checkpoint", None)),
+                "early_stopping": bool(config_value(self.config, "early_stopping")),
+                "patience": config_value(self.config, "patience"),
+                "resume": str(config_value(self.config, "resume_from_checkpoint")),
             }
 
         group.run("controls", controls, agree=True)
@@ -728,7 +728,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             "episode_num_trajectories": episode["total_trajectories"],
             "episode_reward_scope": "ddp_global_new_rollouts",
         }
-        if self._step_event_due(getattr(self.config, "logging_steps", 10), metrics):
+        if self._step_event_due(config_value(self.config, "logging_steps"), metrics):
             result["trajectory_metrics"] = summarize_ddp_rollouts(
                 self, training_groups, phase="training", details=True
             )

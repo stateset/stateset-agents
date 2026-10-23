@@ -28,6 +28,7 @@ import torch.nn.functional as F
 from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
+from .config import config_value
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
@@ -1021,7 +1022,7 @@ class VAPOTrainer(TrainingRuntime):
         # against the frozen old log probs/values, exactly like DAPO. With the
         # default of 1 the formula is identical to the previous single-update
         # path (only dropout RNG ordering differs).
-        num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
+        num_updates = max(1, config_value(self.config, "num_gradient_updates"))
 
         # Every term aggregates over the whole batch, not per prompt: each
         # prompt's loss is a mean over its own rows/tokens, so weighting it by

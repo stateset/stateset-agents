@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from typing import Any, cast
 
+from .config import config_value
 from .ddp_control import DDPControlGroup, ddp_learner_poisoned
 from .state_fingerprint import state_fingerprint
 
@@ -150,7 +151,7 @@ def _admission(trainer: Any, episodes: int) -> dict[str, Any]:
     for buffer in model.module.buffers():
         if buffer.device != device or buffer.layout != torch.strided:
             raise ValueError("Native evaluation requires colocated dense buffers")
-    seed = getattr(trainer.config, "seed", 42)
+    seed = config_value(trainer.config, "seed")
     if seed is None:
         seed = 42
     _validate_seed(seed)
@@ -164,9 +165,9 @@ def _admission(trainer: Any, episodes: int) -> dict[str, Any]:
         "protocol": DDP_EVALUATION_PROTOCOL,
         "episodes": episodes,
         "seed": seed,
-        "generations": getattr(trainer.config, "eval_num_generations", 4),
-        "max_turns": getattr(trainer.config, "max_steps_per_episode", None),
-        "concurrency": getattr(trainer.config, "rollout_concurrency", 1),
+        "generations": config_value(trainer.config, "eval_num_generations"),
+        "max_turns": config_value(trainer.config, "max_steps_per_episode"),
+        "concurrency": config_value(trainer.config, "rollout_concurrency"),
         "best": float(best).hex(),
         "patience": patience,
         "learner_counters": counters,

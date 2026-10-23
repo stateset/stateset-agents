@@ -39,6 +39,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from . import objectives, rl_losses
+from .config import config_value
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -342,7 +343,7 @@ class GSPOModelManager(SharedModelManager):
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
                 trust_remote_code=self.config.trust_remote_code,
-                revision=getattr(self.config, "model_revision", None),
+                revision=config_value(self.config, "model_revision"),
             )
             if self.ref_model is not None:
                 self.ref_model.eval()

@@ -36,6 +36,7 @@ from stateset_agents.exceptions import INFERENCE_EXCEPTIONS as VLLM_EXCEPTIONS
 from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTIONS
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
+from .config import config_value
 from .runtime_state import validate_training_config
 from .spine.scoring import ResponseScorer
 from .trl_grpo_config import TRLGRPOConfig
@@ -236,7 +237,7 @@ def trl_objective_kwargs(config: Any) -> dict[str, Any]:
     """
     from . import objectives
 
-    name = getattr(config, "objective", None)
+    name = config_value(config, "objective")
     if name is None:
         return {}
     if name not in _TRL_LOSS_TYPES:
@@ -312,7 +313,7 @@ def _trl_generation_batch_kwargs(config: Any) -> dict[str, Any]:
     short, round up to the smallest batch that is a multiple of both the
     group size and the per-step global batch.
     """
-    per_device = max(1, int(getattr(config, "per_device_train_batch_size", 1) or 1))
+    per_device = max(1, int(config_value(config, "per_device_train_batch_size") or 1))
     accumulation = max(1, int(getattr(config, "gradient_accumulation_steps", 1) or 1))
     group = max(1, int(getattr(config, "num_generations", 1) or 1))
     world = max(1, int(os.environ.get("WORLD_SIZE", "1") or 1))
@@ -429,9 +430,7 @@ class TrajectoryGenerator:
             self.vllm_engine = LLM(
                 model=self.config.model_name,
                 revision=self.config.model_revision,
-                trust_remote_code=bool(
-                    getattr(self.config, "trust_remote_code", False)
-                ),
+                trust_remote_code=bool(config_value(self.config, "trust_remote_code")),
                 dtype="float16" if self.config.fp16 else "bfloat16",
                 gpu_memory_utilization=0.6,  # Reserve memory for training
             )
@@ -574,9 +573,7 @@ class ModelManager:
 
             self.tokenizer = tokenizer_cls.from_pretrained(
                 self.config.model_name,
-                trust_remote_code=bool(
-                    getattr(self.config, "trust_remote_code", False)
-                ),
+                trust_remote_code=bool(config_value(self.config, "trust_remote_code")),
                 padding_side="left",  # Important for generation
                 revision=self.config.model_revision,
             )
@@ -593,7 +590,7 @@ class ModelManager:
                 ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": bool(
-                    getattr(self.config, "trust_remote_code", False)
+                    config_value(self.config, "trust_remote_code")
                 ),
                 "revision": self.config.model_revision,
             }
@@ -940,7 +937,7 @@ class TRLGRPOTrainerWrapper:
         """Run training, resuming from ``config.resume_from_checkpoint`` if set."""
         logger.info("Starting TRL GRPO training...")
         self.trainer.train(
-            resume_from_checkpoint=getattr(self.config, "resume_from_checkpoint", None)
+            resume_from_checkpoint=config_value(self.config, "resume_from_checkpoint")
         )
 
     def save_model(self, output_dir: str) -> None:

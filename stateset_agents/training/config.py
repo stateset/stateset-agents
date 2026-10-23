@@ -5,6 +5,8 @@ This module provides training configurations that implement best practices
 and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
+import dataclasses
+import functools
 import json
 import math
 from collections.abc import Sequence
@@ -889,3 +891,36 @@ def cuda_is_available() -> bool:
     except ImportError:  # pragma: no cover - torch is installed in CI
         return False
     return bool(torch.cuda.is_available())
+
+
+_MISSING = object()
+
+
+@functools.cache
+def _training_field_defaults() -> dict[str, tuple[bool, Any]]:
+    """Each ``TrainingConfig`` field's ``(is_factory, default)``."""
+    defaults: dict[str, tuple[bool, Any]] = {}
+    for item in dataclasses.fields(TrainingConfig):
+        if item.default is not dataclasses.MISSING:
+            defaults[item.name] = (False, item.default)
+        elif item.default_factory is not dataclasses.MISSING:
+            defaults[item.name] = (True, item.default_factory)
+    return defaults
+
+
+def config_value(config: Any, name: str) -> Any:
+    """``config.<name>``, or ``TrainingConfig``'s default for that field.
+
+    Trainers accept legacy duck-typed configs that may lack a field. Reading
+    through this helper keeps the dataclass as the one source of defaults,
+    instead of a ``getattr(config, name, default)`` that restates (and can
+    drift from) it. ``name`` must be a ``TrainingConfig`` field.
+    """
+    value = getattr(config, name, _MISSING)
+    if value is not _MISSING:
+        return value
+    try:
+        is_factory, default = _training_field_defaults()[name]
+    except KeyError:
+        raise AttributeError(f"{name!r} is not a TrainingConfig field") from None
+    return default() if is_factory else default

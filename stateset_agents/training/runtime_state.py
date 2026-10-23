@@ -22,6 +22,7 @@ from .checkpoint_publication import (
     checkpoint_write,
     validate_checkpoint_publication,
 )
+from .config import config_value
 from .learning_state import (
     apply_learning_state,
     capture_learning_state,
@@ -33,7 +34,7 @@ from .profiling import _observed_assistant_tokens
 
 def _reject_unsupported_resume(config: Any, entry_point: str) -> None:
     """Reject an unsupported continuation request before starting fresh work."""
-    if getattr(config, "resume_from_checkpoint", None) is not None:
+    if config_value(config, "resume_from_checkpoint") is not None:
         raise ValueError(
             f"{entry_point} does not support resume_from_checkpoint; "
             "no fresh training started"
@@ -826,7 +827,7 @@ class TrainingRuntime:
             result["generated_tokens_per_second"] = (
                 float(rollout["generated_tokens"]) / elapsed
             )
-        hourly = getattr(self.config, "compute_cost_per_hour", None)
+        hourly = config_value(self.config, "compute_cost_per_hour")
         if isinstance(hourly, (int, float)) and not isinstance(hourly, bool):
             cost = elapsed * hourly / 3600
             result["estimated_compute_cost_usd"] = cost

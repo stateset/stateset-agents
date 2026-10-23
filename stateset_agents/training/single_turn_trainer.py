@@ -34,7 +34,7 @@ from .callbacks import (
     notify_optimizer_step,
     notify_training_end,
 )
-from .config import estimate_grpo_optimizer_steps
+from .config import config_value, estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
 from .loss_computation import (
     compute_enhanced_grpo_loss,
@@ -189,14 +189,14 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         # Initialize mixed precision scaler (CUDA only)
         if torch is not None and amp is not None and torch.cuda.is_available():
             bf16_enabled = getattr(self.config, "bf16", False)
-            fp16_enabled = getattr(self.config, "fp16", False)
+            fp16_enabled = config_value(self.config, "fp16")
             if bf16_enabled or fp16_enabled:
                 self.scaler = amp.GradScaler("cuda")
 
         # Optional reference model for KL penalty
         try:
             if (
-                getattr(self.config, "use_reference_model", False)
+                config_value(self.config, "use_reference_model")
                 and self.reference_model is None
             ):
                 reference_model = deepcopy(self.agent.model).eval()
@@ -223,7 +223,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             return
 
         learning_rate = getattr(self.config, "learning_rate", 5e-5)
-        weight_decay = getattr(self.config, "weight_decay", 0.01)
+        weight_decay = config_value(self.config, "weight_decay")
 
         # Separate parameters that should not have weight decay
         no_decay = ["bias", "LayerNorm.weight", "layer_norm.weight"]
@@ -247,7 +247,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         ]
 
         betas = (
-            float(getattr(self.config, "adam_beta1", 0.9)),
+            float(config_value(self.config, "adam_beta1")),
             float(getattr(self.config, "adam_beta2", 0.999)),
         )
         self.optimizer = torch.optim.AdamW(
@@ -321,7 +321,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         """Keep an attached rollout engine on-policy after an optimizer step
         (see ``MultiTurnGRPOTrainer._sync_rollout_backend``)."""
         self.last_rollout_sync = None
-        if not bool(getattr(self.config, "rollout_sync", True)):
+        if not bool(config_value(self.config, "rollout_sync")):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
@@ -345,7 +345,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
     def _use_amp(self) -> bool:
         return bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+            getattr(self.config, "bf16", False) or config_value(self.config, "fp16")
         )
 
     def _update_modules(self) -> tuple[Any, Any]:
@@ -416,11 +416,11 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         return loss, penalty
 
     def _update_commit(self, torch: Any) -> bool:
-        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
+        max_grad_norm = config_value(self.config, "max_grad_norm")
         return bool(self._apply_optimizer_step(torch, self._use_amp(), max_grad_norm))
 
     def _update_flush(self, torch: Any) -> bool:
-        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
+        max_grad_norm = config_value(self.config, "max_grad_norm")
         return self._flush_accumulation(torch, self._use_amp(), max_grad_norm)
 
     def _warn_inner_updates_unavailable(self) -> None:
@@ -440,9 +440,9 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             raise ImportError("transformers scheduler helpers are unavailable")
 
         num_warmup_steps = int(
-            num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
+            num_training_steps * config_value(self.config, "warmup_ratio")
         )
-        lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
+        lr_scheduler_type = config_value(self.config, "lr_scheduler_type")
 
         # A failed build propagates, as in MultiTurn: training at a constant
         # rate the config did not ask for is worse than stopping.
@@ -616,7 +616,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         total_updates = estimate_grpo_optimizer_steps(
             num_episodes * self._max_steps_per_episode(),
             gradient_accumulation_steps=self._get_grad_accum_steps(),
-            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            num_gradient_updates=config_value(self.config, "num_gradient_updates"),
         )
         return num_episodes, [], total_updates
 
@@ -822,7 +822,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         torch = self._get_torch_module()
         previous_step = self.global_step
         self._flush_accumulation(
-            torch, self._use_amp(), getattr(self.config, "max_grad_norm", 1.0)
+            torch, self._use_amp(), config_value(self.config, "max_grad_norm")
         )
         await self._report_committed_updates(previous_step, "final_flush")
 
