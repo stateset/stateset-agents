@@ -31,9 +31,7 @@ from .gspo_generation import (
 from .gspo_trainer import (
     GSPOConfig,
     GSPOTrainer,
-    _policy_iterations,
     _require_finite_vector,
-    normalize_total_loss,
 )
 from .runtime_state import _reject_unsupported_resume
 
@@ -317,60 +315,57 @@ class GSPOTokenTrainer(GSPOTrainer):
         # Rollouts are scored once; each iteration recomputes token log-probs
         # against old-policy scores frozen on the first pass (see GSPOTrainer).
         frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
-        iteration_losses: list[float] = []
-        for _iteration in range(_policy_iterations(self.config)):
-            total_loss = torch.tensor(0.0, device=model_device)
-            for index, (
-                query,
-                responses,
-                generation_log_probs,
+
+        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
+            nonlocal total_clipped, total_samples
+            query, responses, generation_log_probs, advantages, ref_log_probs = group
+            (
+                token_log_probs_list,
+                current_log_probs,
+                sequence_lengths,
+            ) = self._score_token_rows(query, responses, system_prompt)
+            frozen = frozen_old[index]
+            if frozen is None:
+                prepared, generation_gaps = self._prepare_old_log_probs(
+                    current_log_probs, generation_log_probs, sequence_lengths
+                )
+                frozen = prepared.detach()
+                frozen_old[index] = frozen
+                all_generation_gaps.extend(generation_gaps)
+            old_log_probs = frozen
+
+            # Detach immediately: the GSPO-token objective uses a
+            # stop-gradient sequence ratio for clipping; gradients flow only
+            # through the token log probs in the loss below.
+            importance_ratios = self.compute_sequence_importance_ratio(
+                current_log_probs, old_log_probs, sequence_lengths
+            ).detach()
+            all_importance_ratios.extend(importance_ratios.tolist())
+            clipped_ratios = torch.clamp(
+                importance_ratios,
+                1 - self.config.clip_range_left,
+                1 + self.config.clip_range_right,
+            )
+            total_clipped += int((importance_ratios != clipped_ratios).sum().item())
+            total_samples += len(responses)
+
+            return self.compute_gspo_token_loss(
+                token_log_probs_list,
+                sequence_lengths,
+                importance_ratios,
                 advantages,
+                current_log_probs,
                 ref_log_probs,
-            ) in enumerate(scored_groups):
-                (
-                    token_log_probs_list,
-                    current_log_probs,
-                    sequence_lengths,
-                ) = self._score_token_rows(query, responses, system_prompt)
-                frozen = frozen_old[index]
-                if frozen is None:
-                    prepared, generation_gaps = self._prepare_old_log_probs(
-                        current_log_probs, generation_log_probs, sequence_lengths
-                    )
-                    frozen = prepared.detach()
-                    frozen_old[index] = frozen
-                    all_generation_gaps.extend(generation_gaps)
-                old_log_probs = frozen
+            )
 
-                # Detach immediately: the GSPO-token objective uses a
-                # stop-gradient sequence ratio for clipping; gradients flow only
-                # through the token log probs in the loss below.
-                importance_ratios = self.compute_sequence_importance_ratio(
-                    current_log_probs, old_log_probs, sequence_lengths
-                ).detach()
-                all_importance_ratios.extend(importance_ratios.tolist())
-                clipped_ratios = torch.clamp(
-                    importance_ratios,
-                    1 - self.config.clip_range_left,
-                    1 + self.config.clip_range_right,
-                )
-                total_clipped += int((importance_ratios != clipped_ratios).sum().item())
-                total_samples += len(responses)
-
-                total_loss = total_loss + self.compute_gspo_token_loss(
-                    token_log_probs_list,
-                    sequence_lengths,
-                    importance_ratios,
-                    advantages,
-                    current_log_probs,
-                    ref_log_probs,
-                )
-
-            # Match GSPO: each processed prompt group has equal objective
-            # weight. Normalize the full loss, including KL, before backward.
-            total_loss = normalize_total_loss(total_loss, processed_groups)
-            self._apply_optimizer_step(total_loss)
-            iteration_losses.append(float(total_loss.detach().item()))
+        # Match GSPO: each processed prompt group has equal objective weight.
+        # Normalize the full loss, including KL, before backward.
+        passes = self._run_policy_iterations(
+            scored_groups,
+            group_loss,
+            processed_groups=processed_groups,
+            device=model_device,
+        )
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -380,8 +375,8 @@ class GSPOTokenTrainer(GSPOTrainer):
         )
 
         metrics = {
-            "policy_loss": float(np.mean(iteration_losses)),
-            "optimizer_updates": float(len(iteration_losses)),
+            "policy_loss": float(np.mean(passes.losses)),
+            "optimizer_updates": float(passes.committed),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,

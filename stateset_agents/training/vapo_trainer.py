@@ -29,7 +29,13 @@ from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
 from .runtime_state import TrainingRuntime, validate_training_config
-from .spine.update import OptimizerStep, nonfinite_grad_settings
+from .spine.update import (
+    OptimizerStep,
+    UpdateLoop,
+    batch_shares,
+    nonfinite_grad_settings,
+    share_size,
+)
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -376,12 +382,6 @@ class LengthAdaptiveGAE:
             policy_advantages[i] = adv[0]
 
         return critic_advantages, policy_advantages, returns
-
-
-def _shares(sizes: list[float]) -> list[float]:
-    """Each entry's fraction of the total (all zeros when the total is 0)."""
-    total = sum(sizes)
-    return [size / total if total > 0 else 0.0 for size in sizes]
 
 
 class VAPOTrainer(TrainingRuntime):
@@ -1032,108 +1032,101 @@ class VAPOTrainer(TrainingRuntime):
         # accumulated gradient the batch-level loss. Averaging prompts equally
         # instead would weight a token by 1/(its group's length), the length
         # bias token-level loss exists to remove. Matches DAPO.
-        policy_sizes, value_sizes, positive_sizes = [], [], []
-        for rollout in rollouts:
-            action_tokens = float(rollout["response_mask"][:, 1:].sum())
-            policy_sizes.append(
-                action_tokens
-                if self._objective.aggregate == "token_mean"
-                else float(rollout["response_mask"].shape[0])
+        aggregate = self._objective.aggregate
+        policy_weights = batch_shares(
+            [share_size(r["response_mask"], aggregate) for r in rollouts]
+        )
+        value_weights = batch_shares(
+            [share_size(r["response_mask"], "token_mean") for r in rollouts]
+        )
+        positive_weights = batch_shares(
+            [float(r["positive_mask"].sum()) for r in rollouts]
+        )
+        # Metrics report the last pass.
+        all_policy_losses: list[float] = []
+        all_value_losses: list[float] = []
+        all_positive_lm_losses: list[float] = []
+        all_explained_variances: list[float] = []
+
+        def start_pass(_pass: int) -> None:
+            for values in (
+                all_policy_losses,
+                all_value_losses,
+                all_positive_lm_losses,
+                all_explained_variances,
+            ):
+                values.clear()
+
+        def prompt_loss(_pass: int, index: int, rollout: dict[str, Any]) -> Any:
+            batch_input_ids = rollout["input_ids"]
+            batch_attention_mask = rollout["attention_mask"]
+            batch_response_mask = rollout["response_mask"]
+
+            # Compute current log probs and values
+            current_log_probs = self.compute_token_log_probs(
+                batch_input_ids, batch_attention_mask, batch_response_mask
             )
-            value_sizes.append(action_tokens)
-            positive_sizes.append(float(rollout["positive_mask"].sum()))
-        policy_weights = _shares(policy_sizes)
-        value_weights = _shares(value_sizes)
-        positive_weights = _shares(positive_sizes)
-        optimizer_step = self._build_optimizer_step()
-        optimizer_updates = 0
+            current_values = self.compute_values(batch_input_ids, batch_attention_mask)
 
-        for _ in range(num_updates):
-            prompt_count = len(rollouts)
-            all_policy_losses: list[float] = []
-            all_value_losses: list[float] = []
-            all_positive_lm_losses: list[float] = []
-            all_explained_variances: list[float] = []
+            # Shift masks for loss computation
+            shifted_response_mask = batch_response_mask[:, 1:]
+            shifted_values = current_values[:, :-1]
 
-            if prompt_count > 0:
-                self.actor_optimizer.zero_grad()
-                self.critic_optimizer.zero_grad()
+            # Compute VAPO losses
+            policy_loss, value_loss, positive_lm_loss = self.compute_vapo_losses(
+                current_log_probs,
+                rollout["old_log_probs"],
+                rollout["policy_advantages"],
+                rollout["critic_advantages"],
+                shifted_values,
+                rollout["old_values"][:, :-1],
+                shifted_response_mask,
+                rollout["positive_mask"],
+            )
 
-            for index, rollout in enumerate(rollouts):
-                batch_input_ids = rollout["input_ids"]
-                batch_attention_mask = rollout["attention_mask"]
-                batch_response_mask = rollout["response_mask"]
+            # Each prompt's weighted contribution is backpropagated
+            # immediately (chunked UpdateLoop), then one step follows the
+            # last prompt: gradient accumulation of the batch-level
+            # objective that releases each pair of large policy/value
+            # forward graphs before the next prompt instead of retaining the
+            # whole batch in VRAM.
+            weighted_loss = (
+                policy_weights[index] * policy_loss
+                + self.config.value_loss_coef * value_weights[index] * value_loss
+                + self.config.positive_lm_weight
+                * positive_weights[index]
+                * positive_lm_loss
+            )
 
-                # Compute current log probs and values
-                current_log_probs = self.compute_token_log_probs(
-                    batch_input_ids, batch_attention_mask, batch_response_mask
-                )
-                current_values = self.compute_values(
-                    batch_input_ids, batch_attention_mask
-                )
+            all_policy_losses.append(policy_loss.item())
+            all_value_losses.append(value_loss.item())
+            all_positive_lm_losses.append(positive_lm_loss.item())
 
-                # Shift masks for loss computation
-                shifted_response_mask = batch_response_mask[:, 1:]
-                shifted_policy_adv = rollout["policy_advantages"]
-                shifted_critic_adv = rollout["critic_advantages"]
-                shifted_old_values = rollout["old_values"][:, :-1]
-                shifted_values = current_values[:, :-1]
+            # Compute explained variance
+            with torch.no_grad():
+                returns_masked = rollout["returns"][shifted_response_mask > 0]
+                values_masked = shifted_values[shifted_response_mask > 0]
+                if len(returns_masked) > 1:
+                    var_returns = returns_masked.var()
+                    var_residual = (returns_masked - values_masked).var()
+                    if var_returns > 1e-8:
+                        explained_var = 1 - var_residual / var_returns
+                        all_explained_variances.append(explained_var.item())
 
-                # Compute VAPO losses
-                policy_loss, value_loss, positive_lm_loss = self.compute_vapo_losses(
-                    current_log_probs,
-                    rollout["old_log_probs"],
-                    shifted_policy_adv,
-                    shifted_critic_adv,
-                    shifted_values,
-                    shifted_old_values,
-                    shifted_response_mask,
-                    rollout["positive_mask"],
-                )
+            return weighted_loss if weighted_loss.requires_grad else None
 
-                # Backpropagate each prompt's weighted contribution
-                # immediately, then step once after the loop. This is gradient
-                # accumulation of the batch-level objective, but it releases
-                # each pair of large policy/value forward graphs before the
-                # next prompt instead of retaining the whole batch in VRAM.
-                weighted_loss = (
-                    policy_weights[index] * policy_loss
-                    + self.config.value_loss_coef * value_weights[index] * value_loss
-                    + self.config.positive_lm_weight
-                    * positive_weights[index]
-                    * positive_lm_loss
-                )
-
-                all_policy_losses.append(policy_loss.item())
-                all_value_losses.append(value_loss.item())
-                all_positive_lm_losses.append(positive_lm_loss.item())
-
-                # Compute explained variance
-                with torch.no_grad():
-                    returns_masked = rollout["returns"][shifted_response_mask > 0]
-                    values_masked = shifted_values[shifted_response_mask > 0]
-                    if len(returns_masked) > 1:
-                        var_returns = returns_masked.var()
-                        var_residual = (returns_masked - values_masked).var()
-                        if var_returns > 1e-8:
-                            explained_var = 1 - var_residual / var_returns
-                            all_explained_variances.append(explained_var.item())
-
-                if weighted_loss.requires_grad:
-                    weighted_loss.backward()
-
-            # A single optimizer update consumes the mean gradient accumulated
-            # across prompts without requiring their graphs to coexist.
-            # Cadence convention shared with DAPO/GEPO: the LR schedulers
-            # advance once per inner update (not for a pass skipped under
-            # nonfinite_grad_policy="skip"), global_step counts train_steps.
-            if prompt_count > 0:
-                optimizer_updates += int(optimizer_step())
-            else:
+        # Cadence convention shared with DAPO/GEPO: the LR schedulers advance
+        # once per committed inner update (not for a pass skipped under
+        # nonfinite_grad_policy="skip"), global_step counts train_steps.
+        passes = UpdateLoop(self._build_optimizer_step(), passes=num_updates).run(
+            rollouts, prompt_loss, on_pass_start=start_pass
+        )
+        if not rollouts:
+            # Nothing to update: the schedulers still advance once per inner
+            # update, as VAPO always has for an empty batch.
+            for _ in range(num_updates):
                 self.actor_scheduler.step()
                 self.critic_scheduler.step()
-
-        optimizer_step.end_train_step()
 
         # Compute metrics
         metrics = {
@@ -1150,7 +1143,7 @@ class VAPOTrainer(TrainingRuntime):
             "actor_lr": self.actor_scheduler.get_last_lr()[0],
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
-            "optimizer_updates": optimizer_updates,
+            "optimizer_updates": passes.committed,
         }
 
         # Store metrics

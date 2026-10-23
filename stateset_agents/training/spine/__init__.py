@@ -10,6 +10,10 @@ Currently provided:
 * :class:`OptimizerStep` -- validate, clip and commit one optimizer update
   (one or several optimizers, LR schedulers, an optional GradScaler), with an
   explicit step-counting rule and non-finite-gradient policy.
+* :class:`UpdateLoop` -- the K update passes over one rollout batch with
+  frozen old-policy log-probs (chunked or single-graph), each committed
+  through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
+  give the token- or row-share weights.
 
 Importing this package does not import ``torch``.
 """
@@ -19,17 +23,29 @@ from __future__ import annotations
 from .update import (
     NONFINITE_GRAD_POLICIES,
     STEP_COUNTERS,
+    UPDATE_MODES,
     NonfiniteGradPolicy,
     OptimizerStep,
     StepCounter,
+    UpdateLoop,
+    UpdateMode,
+    UpdatePasses,
+    batch_shares,
     nonfinite_grad_settings,
+    share_size,
 )
 
 __all__ = [
     "NONFINITE_GRAD_POLICIES",
     "STEP_COUNTERS",
+    "UPDATE_MODES",
     "NonfiniteGradPolicy",
     "OptimizerStep",
     "StepCounter",
+    "UpdateLoop",
+    "UpdateMode",
+    "UpdatePasses",
+    "batch_shares",
     "nonfinite_grad_settings",
+    "share_size",
 ]

@@ -21,6 +21,14 @@ Gradient clipping goes through ``torch.nn.utils.clip_grad_norm_`` looked up
 at call time with ``error_if_nonfinite=True``; its return value is never used
 (callers and tests may substitute a no-op clip).
 
+:class:`UpdateLoop` runs the K update passes (``num_gradient_updates`` /
+``num_iterations``) a trainer takes over one rollout batch whose old-policy
+log-probs are frozen, committing each pass through an :class:`OptimizerStep`:
+``"chunked"`` backpropagates each group's share-weighted loss before the next
+group's forward (bounded memory), ``"single_graph"`` sums the groups into one
+loss first. :func:`batch_shares` and :func:`share_size` give the token- or
+row-share weights that make chunked gradients equal the batch objective's.
+
 This module never imports ``torch`` itself; the caller passes the module.
 """
 
@@ -29,17 +37,23 @@ from __future__ import annotations
 import logging
 import math
 from collections.abc import Callable, Iterable, Sequence
-from typing import Any, Literal, get_args
+from dataclasses import dataclass, field
+from typing import Any, Literal, TypeVar, get_args
 
 logger = logging.getLogger(__name__)
 
 StepCounter = Literal["commits", "train_steps", "none"]
 NonfiniteGradPolicy = Literal["raise", "skip"]
+UpdateMode = Literal["chunked", "single_graph"]
 
 #: Accepted :data:`StepCounter` values.
 STEP_COUNTERS: tuple[str, ...] = get_args(StepCounter)
 #: Accepted :data:`NonfiniteGradPolicy` values.
 NONFINITE_GRAD_POLICIES: tuple[str, ...] = get_args(NonfiniteGradPolicy)
+#: Accepted :data:`UpdateMode` values.
+UPDATE_MODES: tuple[str, ...] = get_args(UpdateMode)
+
+_Item = TypeVar("_Item")
 
 
 def nonfinite_grad_settings(config: Any) -> dict[str, Any]:
@@ -285,6 +299,15 @@ class OptimizerStep:
                     logger.warning("Could not reset AMP state after failure: %s", error)
             raise
 
+    def zero_grad(self) -> None:
+        """Clear every optimizer's gradients (``set_to_none``)."""
+        for optimizer in self.optimizers:
+            optimizer.zero_grad(set_to_none=True)
+
+    def discard_gradients(self) -> None:
+        """Drop pending gradients the way a failed pass does (``discard``)."""
+        self._discard()
+
     def end_train_step(self) -> None:
         """Close one ``train_step`` call: ``counter="train_steps"`` counts it."""
         if self.counter == "train_steps":
@@ -357,11 +380,175 @@ class OptimizerStep:
         return False
 
 
+def batch_shares(sizes: Sequence[float]) -> list[float]:
+    """Each entry's fraction of the total (all zeros when the total is 0)."""
+    total = sum(sizes)
+    return [size / total if total > 0 else 0.0 for size in sizes]
+
+
+def share_size(response_mask: Any, aggregate: str) -> float:
+    """One group's size in a batch-level objective.
+
+    ``"token_mean"`` counts its action tokens (the response mask shifted by
+    one for next-token prediction); any other aggregation counts its rows.
+    Weighting each group's own mean by ``size / batch_total``
+    (:func:`batch_shares`) makes the accumulated gradient exactly the
+    batch-level objective's.
+    """
+    if aggregate == "token_mean":
+        return float(response_mask[:, 1:].sum())
+    return float(response_mask.shape[0])
+
+
+@dataclass
+class UpdatePasses:
+    """What :meth:`UpdateLoop.run` did: one loss per pass and the commits."""
+
+    #: Each pass's loss: the sum of the backpropagated (share-weighted) group
+    #: losses in chunked mode, the reduced loss in single-graph mode.
+    losses: list[float] = field(default_factory=list)
+    #: Passes whose update was committed by the optimizer step.
+    committed: int = 0
+
+
+class UpdateLoop:
+    """K update passes over one rollout batch with frozen old-policy log-probs.
+
+    Every pass zeroes the gradients, evaluates each item's loss through
+    ``loss_fn(pass_index, item_index, item)`` (the trainer freezes or reuses
+    its old-policy log-probs there; ``pass_index == 0`` is the first pass) and
+    commits exactly one update. After the last pass
+    :meth:`OptimizerStep.end_train_step` applies the step-counting rule.
+
+    ``mode="chunked"``: each item's loss, multiplied by its share when
+    ``shares`` are given (items whose share is not positive are skipped), is
+    backpropagated immediately, releasing that item's graph before the next
+    item's forward. The pass then commits through ``optimizer_step``. A
+    ``loss_fn`` may return ``None`` to contribute nothing.
+
+    ``mode="single_graph"``: the item losses are added to ``initial_loss()``
+    in one graph, ``reduce`` maps the sum to the pass loss (e.g. the mean over
+    groups) and ``commit(loss)`` backpropagates and steps (default: zero
+    gradients, ``loss.backward()``, ``optimizer_step()``). Use it when the
+    trainer validates or normalises the whole batch loss before backward.
+
+    An empty batch zeroes, backpropagates and commits nothing (stale
+    gradients are never stepped). Any exception discards pending gradients
+    and propagates.
+    """
+
+    def __init__(
+        self,
+        optimizer_step: OptimizerStep,
+        *,
+        passes: int,
+        mode: UpdateMode = "chunked",
+    ) -> None:
+        if type(passes) is not int or passes < 1:
+            raise ValueError(f"passes must be a positive integer, got {passes!r}")
+        if mode not in UPDATE_MODES:
+            raise ValueError(f"mode must be one of {UPDATE_MODES}, got {mode!r}")
+        self.optimizer_step = optimizer_step
+        self.passes = passes
+        self.mode: UpdateMode = mode
+
+    def run(
+        self,
+        items: Sequence[_Item],
+        loss_fn: Callable[[int, int, _Item], Any],
+        *,
+        shares: Sequence[float] | None = None,
+        on_pass_start: Callable[[int], None] | None = None,
+        initial_loss: Callable[[], Any] | None = None,
+        reduce: Callable[[Any], Any] | None = None,
+        commit: Callable[[Any], bool] | None = None,
+    ) -> UpdatePasses:
+        """Run every pass; return the per-pass losses and the commit count."""
+        if shares is not None and len(shares) != len(items):
+            raise ValueError("shares must give one weight per item")
+        if self.mode == "single_graph" and initial_loss is None:
+            raise ValueError("single_graph mode needs initial_loss")
+        result = UpdatePasses()
+        for pass_index in range(self.passes):
+            if on_pass_start is not None:
+                on_pass_start(pass_index)
+            if not items:
+                result.losses.append(0.0)
+                continue
+            try:
+                if self.mode == "chunked":
+                    loss_value, committed = self._chunked_pass(
+                        pass_index, items, loss_fn, shares
+                    )
+                else:
+                    assert initial_loss is not None
+                    loss_value, committed = self._single_graph_pass(
+                        pass_index, items, loss_fn, initial_loss, reduce, commit
+                    )
+            except BaseException:
+                self.optimizer_step.discard_gradients()
+                raise
+            result.losses.append(loss_value)
+            result.committed += int(committed)
+        self.optimizer_step.end_train_step()
+        return result
+
+    def _chunked_pass(
+        self,
+        pass_index: int,
+        items: Sequence[_Item],
+        loss_fn: Callable[[int, int, _Item], Any],
+        shares: Sequence[float] | None,
+    ) -> tuple[float, bool]:
+        self.optimizer_step.zero_grad()
+        pass_loss = 0.0
+        for item_index, item in enumerate(items):
+            share = None if shares is None else shares[item_index]
+            if share is not None and share <= 0:
+                continue
+            loss = loss_fn(pass_index, item_index, item)
+            if loss is None:
+                continue
+            weighted = loss if share is None else loss * share
+            weighted.backward()
+            pass_loss += weighted.item()
+        return pass_loss, self.optimizer_step()
+
+    def _single_graph_pass(
+        self,
+        pass_index: int,
+        items: Sequence[_Item],
+        loss_fn: Callable[[int, int, _Item], Any],
+        initial_loss: Callable[[], Any],
+        reduce: Callable[[Any], Any] | None,
+        commit: Callable[[Any], bool] | None,
+    ) -> tuple[float, bool]:
+        total = initial_loss()
+        for item_index, item in enumerate(items):
+            total = total + loss_fn(pass_index, item_index, item)
+        loss = total if reduce is None else reduce(total)
+        committed = (
+            self._backward_and_step(loss) if commit is None else bool(commit(loss))
+        )
+        return float(loss.detach().item()), committed
+
+    def _backward_and_step(self, loss: Any) -> bool:
+        self.optimizer_step.zero_grad()
+        loss.backward()
+        return self.optimizer_step()
+
+
 __all__ = [
     "NONFINITE_GRAD_POLICIES",
     "STEP_COUNTERS",
+    "UPDATE_MODES",
     "NonfiniteGradPolicy",
     "OptimizerStep",
     "StepCounter",
+    "UpdateLoop",
+    "UpdateMode",
+    "UpdatePasses",
+    "batch_shares",
     "nonfinite_grad_settings",
+    "share_size",
 ]

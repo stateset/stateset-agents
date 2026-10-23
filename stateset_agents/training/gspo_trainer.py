@@ -52,7 +52,7 @@ from .gspo_generation import (
     scoring_prompt_length,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
-from .spine.update import OptimizerStep
+from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -568,14 +568,35 @@ class GSPOTrainer(TrainingRuntime):
         )
         return old_log_probs, gaps
 
-    def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
-        """Update only after scalar loss, gradients and their norm are finite.
+    def _build_optimizer_step(self) -> OptimizerStep:
+        """The spine commit for one GSPO update (``num_iterations`` pass).
 
-        Failed backward, non-finite gradients or clipping clear partial
-        gradients. Optimizer and scheduler state are untouched until these
-        checks pass. The commit is the spine's :class:`OptimizerStep` with
-        ``counter="none"``: GSPO keeps no step counter, and gradients stay in
-        place after the step.
+        Gradients must be finite (``config.nonfinite_grad_policy`` raises or
+        skips the pass otherwise), the policy is clipped to ``max_grad_norm``,
+        then the optimizer and the LR scheduler step once. ``counter="none"``:
+        GSPO keeps no step counter, and gradients stay in place after the step.
+        """
+        return OptimizerStep(
+            self,
+            torch,
+            optimizers=[self.optimizer],
+            schedulers=[self.scheduler],
+            clip_groups=[list(self.model.parameters())],
+            max_grad_norm=self.config.max_grad_norm,
+            counter="none",
+            **nonfinite_grad_settings(self.config),
+            named_modules=[self.model],
+            label="GSPO",
+        )
+
+    def _apply_optimizer_step(self, loss: torch.Tensor) -> bool:
+        """Backpropagate ``loss`` and commit it; return whether it committed.
+
+        The loss must be a finite scalar and ``max_grad_norm`` valid before
+        backward. Failed backward, non-finite gradients or clipping clear
+        partial gradients, and optimizer and scheduler state are untouched
+        unless the update commits. A pass skipped under
+        ``nonfinite_grad_policy="skip"`` returns False.
         """
         self.optimizer.zero_grad(set_to_none=True)
         try:
@@ -588,17 +609,33 @@ class GSPOTrainer(TrainingRuntime):
         except Exception:
             self.optimizer.zero_grad(set_to_none=True)
             raise
-        OptimizerStep(
-            self,
-            torch,
-            optimizers=[self.optimizer],
-            schedulers=[self.scheduler],
-            clip_groups=[list(self.model.parameters())],
-            max_grad_norm=max_norm,
-            counter="none",
-            nonfinite_grad_policy="raise",
-            label="GSPO",
-        )()
+        return self._build_optimizer_step()()
+
+    def _run_policy_iterations(
+        self,
+        scored_groups: list[Any],
+        group_loss: Any,
+        *,
+        processed_groups: int,
+        device: Any,
+    ) -> Any:
+        """``num_iterations`` passes over the scored groups (spine UpdateLoop).
+
+        Each pass sums every group's loss in one graph, normalises it by the
+        processed group count and commits it through
+        :meth:`_apply_optimizer_step`.
+        """
+        return UpdateLoop(
+            self._build_optimizer_step(),
+            passes=_policy_iterations(self.config),
+            mode="single_graph",
+        ).run(
+            scored_groups,
+            group_loss,
+            initial_loss=lambda: torch.tensor(0.0, device=device),
+            reduce=lambda total: normalize_total_loss(total, processed_groups),
+            commit=lambda loss: self._apply_optimizer_step(loss),
+        )
 
     def compute_gspo_loss(
         self,
@@ -831,55 +868,52 @@ class GSPOTrainer(TrainingRuntime):
         # iteration the update is on-policy (ratio 1); later iterations are the
         # off-policy regime GSPO's sequence clip exists for.
         frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
-        iteration_losses: list[float] = []
-        for _iteration in range(_policy_iterations(self.config)):
-            total_loss = torch.tensor(0.0, device=model_device)
-            for index, (
-                prompt,
-                responses,
-                generation_log_probs,
+
+        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
+            nonlocal total_clipped, total_samples
+            prompt, responses, generation_log_probs, advantages, ref_log_probs = group
+            (
+                current_log_probs,
+                sequence_lengths,
+            ) = self._compute_group_sequence_log_probs(prompt, responses)
+            frozen = frozen_old[index]
+            if frozen is None:
+                prepared, generation_gaps = self._prepare_old_log_probs(
+                    current_log_probs, generation_log_probs, sequence_lengths
+                )
+                frozen = prepared.detach()
+                frozen_old[index] = frozen
+                all_generation_gaps.extend(generation_gaps)
+            old_log_probs = frozen
+
+            importance_ratios = self.compute_sequence_importance_ratio(
+                current_log_probs, old_log_probs, sequence_lengths
+            )
+            all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
+            clipped_ratios = torch.clamp(
+                importance_ratios,
+                1 - self.config.clip_range_left,
+                1 + self.config.clip_range_right,
+            )
+            total_clipped += int((importance_ratios != clipped_ratios).sum().item())
+            total_samples += len(responses)
+
+            return self.compute_gspo_loss(
+                importance_ratios,
                 advantages,
+                current_log_probs,
+                sequence_lengths,
                 ref_log_probs,
-            ) in enumerate(scored_groups):
-                (
-                    current_log_probs,
-                    sequence_lengths,
-                ) = self._compute_group_sequence_log_probs(prompt, responses)
-                frozen = frozen_old[index]
-                if frozen is None:
-                    prepared, generation_gaps = self._prepare_old_log_probs(
-                        current_log_probs, generation_log_probs, sequence_lengths
-                    )
-                    frozen = prepared.detach()
-                    frozen_old[index] = frozen
-                    all_generation_gaps.extend(generation_gaps)
-                old_log_probs = frozen
+            )
 
-                importance_ratios = self.compute_sequence_importance_ratio(
-                    current_log_probs, old_log_probs, sequence_lengths
-                )
-                all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
-                clipped_ratios = torch.clamp(
-                    importance_ratios,
-                    1 - self.config.clip_range_left,
-                    1 + self.config.clip_range_right,
-                )
-                total_clipped += int((importance_ratios != clipped_ratios).sum().item())
-                total_samples += len(responses)
-
-                total_loss = total_loss + self.compute_gspo_loss(
-                    importance_ratios,
-                    advantages,
-                    current_log_probs,
-                    sequence_lengths,
-                    ref_log_probs,
-                )
-
-            # Normalize by the number of processed query groups so gradient
-            # magnitude does not scale with batch composition.
-            total_loss = normalize_total_loss(total_loss, processed_groups)
-            self._apply_optimizer_step(total_loss)
-            iteration_losses.append(float(total_loss.detach().item()))
+        # Normalize by the number of processed query groups so gradient
+        # magnitude does not scale with batch composition.
+        passes = self._run_policy_iterations(
+            scored_groups,
+            group_loss,
+            processed_groups=processed_groups,
+            device=model_device,
+        )
 
         # Compute metrics
         clipping_fraction = total_clipped / max(total_samples, 1)
@@ -889,8 +923,8 @@ class GSPOTrainer(TrainingRuntime):
         )
 
         metrics = {
-            "policy_loss": float(np.mean(iteration_losses)),
-            "optimizer_updates": float(len(iteration_losses)),
+            "policy_loss": float(np.mean(passes.losses)),
+            "optimizer_updates": float(passes.committed),
             "clipping_fraction": clipping_fraction,
             "average_reward": avg_reward,
             "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,

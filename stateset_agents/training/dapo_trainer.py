@@ -24,7 +24,13 @@ import torch
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .runtime_state import TrainingRuntime, validate_training_config
-from .spine.update import OptimizerStep, nonfinite_grad_settings
+from .spine.update import (
+    OptimizerStep,
+    UpdateLoop,
+    batch_shares,
+    nonfinite_grad_settings,
+    share_size,
+)
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -842,11 +848,9 @@ class DAPOTrainer(TrainingRuntime):
             logger.warning("No valid samples after dynamic sampling")
             return {"policy_loss": 0.0, "filtered_ratio": 1.0}
 
-        total_loss = 0.0
         all_rewards: list[float] = []
         all_accuracies: list[float] = []
         all_seq_lengths: list[int] = []
-        num_updates = 0
 
         # Freeze each group's batch tensors and old log-probs once.
         prepared = []
@@ -888,50 +892,35 @@ class DAPOTrainer(TrainingRuntime):
         # aggregate over its own rows, so weighting it by its share of the
         # batch's tokens (or rows) makes the accumulated gradient exactly the
         # batch-level loss, with one optimizer step per inner update.
-        by_tokens = self._objective.aggregate == "token_mean"
-        sizes = [
-            float(p[2][:, 1:].sum()) if by_tokens else float(p[2].shape[0])
-            for p in prepared
-        ]
-        total_size = sum(sizes)
+        shares = batch_shares(
+            [share_size(group[2], self._objective.aggregate) for group in prepared]
+        )
 
-        # Multiple gradient updates per rollout batch (mu updates)
-        optimizer_step = self._build_optimizer_step()
-        optimizer_updates = 0
-        for _ in range(max(1, self.config.num_gradient_updates)):
-            self.optimizer.zero_grad()
-            batch_loss = 0.0
-            for (ids, attn, resp_mask, old_lp, advantages), size in zip(
-                prepared, sizes, strict=True
-            ):
-                if size <= 0:
-                    continue
-                current_token_log_probs, _ = self.compute_token_log_probs(
-                    ids, attn, resp_mask
-                )
-                # Clip-Higher surrogate + aggregation through the objective.
-                loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
-                    current_token_log_probs,
-                    old_lp,
-                    advantages,
-                    resp_mask[:, 1:],  # Shift for next-token prediction
-                )
-                weighted = loss * (size / total_size)
-                weighted.backward()
-                batch_loss += weighted.item()
+        def group_loss(_pass: int, _index: int, group: tuple[Any, ...]) -> Any:
+            ids, attn, resp_mask, old_lp, advantages = group
+            current_token_log_probs, _ = self.compute_token_log_probs(
+                ids, attn, resp_mask
+            )
+            # Clip-Higher surrogate + aggregation through the objective.
+            loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
+                current_token_log_probs,
+                old_lp,
+                advantages,
+                resp_mask[:, 1:],  # Shift for next-token prediction
+            )
+            return loss
 
-            # Finite-gradient check, clipping, then exactly one optimizer
-            # and scheduler step for the whole batch.
-            optimizer_updates += int(optimizer_step())
-
-            total_loss += batch_loss
-            num_updates += 1
-
-        optimizer_step.end_train_step()
+        # Multiple gradient updates per rollout batch (mu updates): each group
+        # is backpropagated in turn, then one validated optimizer and
+        # scheduler step per pass (see _build_optimizer_step).
+        passes = UpdateLoop(
+            self._build_optimizer_step(),
+            passes=max(1, self.config.num_gradient_updates),
+        ).run(prepared, group_loss, shares=shares)
 
         # Compute metrics
         metrics = {
-            "policy_loss": float(total_loss / max(num_updates, 1)),
+            "policy_loss": float(sum(passes.losses) / max(len(passes.losses), 1)),
             "average_reward": float(np.mean(all_rewards)) if all_rewards else 0.0,
             "accuracy": float(np.mean(all_accuracies)) if all_accuracies else 0.0,
             "filtered_ratio": filter_ratio,
@@ -940,7 +929,7 @@ class DAPOTrainer(TrainingRuntime):
             ),
             "learning_rate": float(self.config.learning_rate),
             "global_step": float(self.global_step),
-            "optimizer_updates": float(optimizer_updates),
+            "optimizer_updates": float(passes.committed),
         }
 
         # Store metrics

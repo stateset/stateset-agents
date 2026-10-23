@@ -31,7 +31,7 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
-from .spine.update import OptimizerStep, nonfinite_grad_settings
+from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -643,65 +643,58 @@ class GEPOTrainer(TrainingRuntime):
         # path (only dropout RNG ordering differs, since the sampler log probs
         # are now drawn before the learner ones).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
-        final_loss = torch.tensor(0.0, device=self.device)
-        optimizer_step = self._build_optimizer_step()
-        optimizer_updates = 0
 
-        for _ in range(num_updates):
-            all_gepo_coefs = []
-            accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-
-            for rollout in rollouts:
-                learner_token_log_probs, learner_seq_log_probs = (
-                    self.compute_sequence_log_probs(
-                        rollout["input_ids"],
-                        rollout["attention_mask"],
-                        rollout["response_start_idx"],
-                    )
+        def group_loss(_pass: int, _index: int, rollout: dict[str, Any]) -> Any:
+            learner_token_log_probs, learner_seq_log_probs = (
+                self.compute_sequence_log_probs(
+                    rollout["input_ids"],
+                    rollout["attention_mask"],
+                    rollout["response_start_idx"],
                 )
-
-                with torch.no_grad():
-                    all_gepo_coefs.extend(
-                        self.compute_gepo_coefficient(
-                            learner_seq_log_probs.detach(),
-                            rollout["sampler_seq_log_probs"],
-                        ).tolist()
-                    )
-                policy_loss = self.compute_gepo_loss(
-                    learner_seq_log_probs,
-                    rollout["sampler_seq_log_probs"],
-                    rollout["advantages"],
-                    token_log_probs=learner_token_log_probs,
-                    response_mask=self.build_response_mask(
-                        rollout["attention_mask"], rollout["response_start_idx"]
-                    ),
+            )
+            with torch.no_grad():
+                all_gepo_coefs.extend(
+                    self.compute_gepo_coefficient(
+                        learner_seq_log_probs.detach(),
+                        rollout["sampler_seq_log_probs"],
+                    ).tolist()
                 )
+            return self.compute_gepo_loss(
+                learner_seq_log_probs,
+                rollout["sampler_seq_log_probs"],
+                rollout["advantages"],
+                token_log_probs=learner_token_log_probs,
+                response_mask=self.build_response_mask(
+                    rollout["attention_mask"], rollout["response_start_idx"]
+                ),
+            )
 
-                accumulated_loss = accumulated_loss + policy_loss
-
-            final_loss = accumulated_loss / num_groups
-
-            self.optimizer.zero_grad()
-            final_loss.backward()
-
-            # Finite-gradient check, clipping, then one optimizer step.
-            # Cadence convention shared with DAPO/VAPO: the LR scheduler
-            # advances once per committed inner update, global_step counts
-            # train_steps.
-            optimizer_updates += int(optimizer_step())
-
-        optimizer_step.end_train_step()
+        # One graph per pass: the mean of the group losses is backpropagated,
+        # then one validated optimizer step. Cadence convention shared with
+        # DAPO/VAPO: the LR scheduler advances once per committed inner
+        # update, global_step counts train_steps.
+        passes = UpdateLoop(
+            self._build_optimizer_step(), passes=num_updates, mode="single_graph"
+        ).run(
+            rollouts,
+            group_loss,
+            on_pass_start=lambda _pass: all_gepo_coefs.clear(),
+            initial_loss=lambda: torch.tensor(
+                0.0, device=self.device, requires_grad=True
+            ),
+            reduce=lambda total: total / num_groups,
+        )
 
         # Compute metrics
         metrics = {
-            "policy_loss": final_loss.item(),
+            "policy_loss": passes.losses[-1],
             "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
             "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
             "gepo_coefficient_mean": np.mean(all_gepo_coefs) if all_gepo_coefs else 1.0,
             "gepo_coefficient_std": np.std(all_gepo_coefs) if all_gepo_coefs else 0.0,
             "learning_rate": self.scheduler.get_last_lr()[0],
             "global_step": self.global_step,
-            "optimizer_updates": optimizer_updates,
+            "optimizer_updates": passes.committed,
         }
 
         # Store metrics

@@ -1,4 +1,4 @@
-"""DAPO, GEPO and VAPO never step on non-finite gradients.
+"""DAPO, GEPO, VAPO and GSPO never step on non-finite gradients.
 
 Before the unified RL spine's ``OptimizerStep`` these trainers clipped and
 stepped whatever gradients a pass produced, so one NaN/Inf gradient silently
@@ -6,13 +6,16 @@ turned the weights (and AdamW state) into NaN. They now follow the shared
 ``nonfinite_grad_policy``: ``"raise"`` (the default) fails the step with every
 weight, optimizer and scheduler untouched; ``"skip"`` discards that pass's
 update, logs it and keeps training (``global_step`` still counts the
-``train_step`` call).
+``train_step`` call). GSPO and GSPO-token always rejected non-finite gradients;
+since the spine's ``UpdateLoop`` they also honour ``"skip"``, and their
+``optimizer_updates`` metric counts committed passes.
 """
 
 from __future__ import annotations
 
 import copy
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
@@ -284,3 +287,107 @@ async def test_finite_steps_report_their_updates(name: str) -> None:
     metrics = await trainer.train_step(["q"])
     assert metrics["optimizer_updates"] == 2
     assert trainer.global_step == 1
+
+
+def _gspo(cls: Any, **config: Any) -> Any:
+    from stateset_agents.training.gspo_config import GSPOConfig
+    from tests._tiny_tokenizer import tiny_tokenizer
+
+    class Reward:
+        async def compute_turn_reward(self, turn: Any, context: Any = None) -> Any:
+            return SimpleNamespace(total_reward=float(turn.content == "ok"))
+
+        async def compute_reward(self, turns: Any, context: Any = None) -> Any:
+            return await self.compute_turn_reward(list(turns)[-1], context)
+
+    trainer = cls(
+        config=GSPOConfig(
+            model_name="gpt2",
+            num_generations=2,
+            num_outer_iterations=10,
+            warmup_ratio=0.0,
+            max_prompt_length=16,
+            max_completion_length=16,
+            bf16=False,
+            report_to="none",
+            **config,
+        ),
+        model=_model(),
+        tokenizer=tiny_tokenizer(),
+        agent=None,
+        environment=None,
+        reward_model=Reward(),
+        ref_model=None,
+    )
+
+    async def generate(prompt: str, count: int) -> list[tuple[str, float]]:
+        return [("ok", -5.0), ("nope", -5.0)]
+
+    trainer.generator.generate_group_responses = generate
+    return trainer
+
+
+def _gspo_classes() -> list[Any]:
+    from stateset_agents.training.gspo_token_trainer import GSPOTokenTrainer
+    from stateset_agents.training.gspo_trainer import GSPOTrainer
+
+    return [GSPOTrainer, GSPOTokenTrainer]
+
+
+async def _gspo_step(trainer: Any) -> dict[str, Any]:
+    step = getattr(trainer, "train_step_token_level", trainer.train_step)
+    return dict(await step(["q"], num_groups=1))
+
+
+def _gspo_snapshot(trainer: Any) -> dict[str, Any]:
+    return {
+        "weights": copy.deepcopy(trainer.model.state_dict()),
+        "optimizer": len(trainer.optimizer.state_dict()["state"]),
+        "scheduler": trainer.scheduler.last_epoch,
+    }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("index", [0, 1], ids=["gspo", "gspo_token"])
+async def test_gspo_skip_policy_discards_every_nonfinite_pass(index: int) -> None:
+    trainer = _gspo(
+        _gspo_classes()[index], nonfinite_grad_policy="skip", num_iterations=2
+    )
+    before = _gspo_snapshot(trainer)
+    _poison(trainer.model)
+    metrics = await _gspo_step(trainer)
+    after = _gspo_snapshot(trainer)
+    for key, value in before["weights"].items():
+        assert torch.equal(value, after["weights"][key]), key
+    assert after["optimizer"] == before["optimizer"] == 0
+    assert after["scheduler"] == before["scheduler"]
+    assert metrics["optimizer_updates"] == 0.0
+    assert trainer._nonfinite_skips == 2
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("index", [0, 1], ids=["gspo", "gspo_token"])
+async def test_gspo_optimizer_updates_count_committed_passes(index: int) -> None:
+    trainer = _gspo(
+        _gspo_classes()[index], nonfinite_grad_policy="skip", num_iterations=3
+    )
+    before = _gspo_snapshot(trainer)
+    _poison(trainer.model, after_backwards=2)  # the third pass is non-finite
+    metrics = await _gspo_step(trainer)
+    assert metrics["optimizer_updates"] == 2.0
+    assert trainer._nonfinite_skips == 1
+    assert trainer.scheduler.last_epoch == before["scheduler"] + 2
+    assert all(bool(torch.isfinite(p).all()) for p in trainer.model.parameters())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("index", [0, 1], ids=["gspo", "gspo_token"])
+async def test_gspo_default_policy_still_raises(index: int) -> None:
+    trainer = _gspo(_gspo_classes()[index])
+    before = _gspo_snapshot(trainer)
+    _poison(trainer.model)
+    with pytest.raises(ValueError, match="GSPO gradients must be finite"):
+        await _gspo_step(trainer)
+    after = _gspo_snapshot(trainer)
+    assert after["scheduler"] == before["scheduler"]
+    assert all(p.grad is None for p in trainer.model.parameters())
