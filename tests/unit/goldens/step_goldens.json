@@ -1,4 +1,12 @@
 {
+  "_environment": {
+    "machine": "x86_64",
+    "numpy": "2.3.5",
+    "python": "3.12",
+    "system": "Linux",
+    "torch": "2.11.0+cu130",
+    "transformers": "5.14.1"
+  },
   "dapo_k1": {
     "clip_norms": [
       9.68957565934049
@@ -19,13 +27,14 @@
       "filtered_ratio": 0.0,
       "global_step": 1.0,
       "learning_rate": 0.005,
+      "optimizer_updates": 1.0,
       "policy_loss": 0.04902912676334381
     },
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.844877552589622,
-    "param_delta_probe": 0.039030632804699754,
+    "param_delta_norm": 0.6423881728574693,
+    "param_delta_probe": -0.14295283656713792,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -33,13 +42,13 @@
   "dapo_k2": {
     "clip_norms": [
       9.68957565934049,
-      1.6866345082854723
+      1.3970496873004872
     ],
     "global_step": 1,
     "grad_norms": {
       "policy": [
         0.9999998326628148,
-        0.9999995293327649
+        0.9999993234812583
       ]
     },
     "lr": {
@@ -52,13 +61,14 @@
       "filtered_ratio": 0.0,
       "global_step": 1.0,
       "learning_rate": 0.005,
-      "policy_loss": -0.035325245931744576
+      "optimizer_updates": 2.0,
+      "policy_loss": -0.03462405689060688
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.290473573522719,
-    "param_delta_probe": -0.16555931296163767,
+    "param_delta_norm": 1.040569217038017,
+    "param_delta_probe": -0.3370807111736288,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -83,13 +93,14 @@
       "gepo_coefficient_std": 0.4772806048195307,
       "global_step": 1,
       "learning_rate": 0.0048776412907378846,
+      "optimizer_updates": 1,
       "policy_loss": 0.2295975685119629
     },
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8490812149856755,
-    "param_delta_probe": 0.2422215162886509,
+    "param_delta_norm": 0.6216303778732917,
+    "param_delta_probe": 0.044679500923359684,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -97,13 +108,13 @@
   "gepo_k2": {
     "clip_norms": [
       7.778136181734554,
-      0.052351736823636884
+      0.04941363160436002
     ],
     "global_step": 1,
     "grad_norms": {
       "policy": [
         0.99999989194023,
-        0.052351736823636884
+        0.04941363160436002
       ]
     },
     "lr": {
@@ -112,17 +123,18 @@
     "metrics": {
       "advantage_std": 0.9999999637499661,
       "average_reward": 0.38888888888888884,
-      "gepo_coefficient_mean": 0.5243908231301854,
-      "gepo_coefficient_std": 0.7260692179154388,
+      "gepo_coefficient_mean": 0.507411657522122,
+      "gepo_coefficient_std": 0.7033174021314363,
       "global_step": 1,
       "learning_rate": 0.0045225424859373685,
-      "policy_loss": 0.20454470813274384
+      "optimizer_updates": 2,
+      "policy_loss": 0.2050326019525528
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.3601872060595341,
-    "param_delta_probe": 0.2373378313423613,
+    "param_delta_norm": 1.0172950519821493,
+    "param_delta_probe": 0.017730820455633334,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -156,8 +168,8 @@
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8487732301556735,
-    "param_delta_probe": 0.2397198389412127,
+    "param_delta_norm": 0.6357887925059477,
+    "param_delta_probe": 0.09372179108123203,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -165,13 +177,13 @@
   "gspo_k2": {
     "clip_norms": [
       3.398428089881981,
-      1.4436747653691324
+      1.2973884065036612
     ],
     "global_step": null,
     "grad_norms": {
       "policy": [
         0.9999998585725461,
-        0.9999993023898189
+        0.9999993700056118
       ]
     },
     "lr": {
@@ -185,16 +197,16 @@
       "learning_rate": 0.0048776412907378846,
       "nonzero_advantage_fraction": 1.0,
       "optimizer_updates": 2.0,
-      "policy_loss": 0.031241824229557125,
+      "policy_loss": 0.0339659390350171,
       "reward_std": 0.2832788618662658,
-      "sequence_importance_ratio": 0.9317355901002884,
+      "sequence_importance_ratio": 0.9219456861416498,
       "zero_advantage_group_fraction": 0.0
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.2638083413559833,
-    "param_delta_probe": 0.460407354119035,
+    "param_delta_norm": 1.0135080783948816,
+    "param_delta_probe": 0.26847180848877267,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -228,8 +240,8 @@
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8487732361203868,
-    "param_delta_probe": 0.2397214345461319,
+    "param_delta_norm": 0.6357887940639111,
+    "param_delta_probe": 0.09372168559657162,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -237,13 +249,13 @@
   "gspo_token_k2": {
     "clip_norms": [
       3.3984280545563017,
-      1.4436745969106761
+      1.297388018278463
     ],
     "global_step": null,
     "grad_norms": {
       "policy": [
         0.9999998499108284,
-        0.9999992707130819
+        0.999999301050482
       ]
     },
     "lr": {
@@ -257,16 +269,16 @@
       "learning_rate": 0.0048776412907378846,
       "nonzero_advantage_fraction": 1.0,
       "optimizer_updates": 2.0,
-      "policy_loss": 0.031241804361343384,
+      "policy_loss": 0.033965952694416046,
       "reward_std": 0.2832788618662658,
-      "sequence_importance_ratio": 0.9317354957262675,
+      "sequence_importance_ratio": 0.921945720911026,
       "zero_advantage_group_fraction": 0.0
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.263808348805145,
-    "param_delta_probe": 0.4603815800793452,
+    "param_delta_norm": 1.013508078660981,
+    "param_delta_probe": 0.2684718055308138,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -315,8 +327,8 @@
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8461520858448606,
-    "param_delta_probe": 0.15663168113422654,
+    "param_delta_norm": 0.6411322013789148,
+    "param_delta_probe": -0.09954208735354979,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -324,13 +336,13 @@
   "multi_turn_grpo_k2": {
     "clip_norms": [
       9.397854112355864,
-      0.9620373449892254
+      0.8612633260132678
     ],
     "global_step": 2,
     "grad_norms": {
       "policy": [
         0.9999999284762877,
-        0.9620373449892254
+        0.8612633260132678
       ]
     },
     "lr": {
@@ -341,7 +353,7 @@
       "advantage_std": 0.9999999637499661,
       "backward_done": true,
       "clip_fraction": 0.75,
-      "entropy": 4.800387620925903,
+      "entropy": 4.800341248512268,
       "entropy_measured": true,
       "global_step": 2,
       "grad_accum_step": 0,
@@ -360,17 +372,17 @@
       "optimizer_updates": 2,
       "path": "token",
       "policy_denominator": 6,
-      "policy_loss": -0.1847289502620697,
-      "policy_objective_loss": -0.1367250680923462,
-      "ratio_mean": 1.1245980709791183,
-      "ratio_mean_last": 1.1245980709791183,
-      "total_loss": -0.1847289502620697
+      "policy_loss": -0.18312138319015503,
+      "policy_objective_loss": -0.13511797785758972,
+      "ratio_mean": 1.0903279036283493,
+      "ratio_mean_last": 1.0903279036283493,
+      "total_loss": -0.18312138319015503
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.276625255154918,
-    "param_delta_probe": -6.940204500631517e-05,
+    "param_delta_norm": 1.0359956640279835,
+    "param_delta_probe": -0.25675489668418006,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -414,8 +426,8 @@
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8450624477689725,
-    "param_delta_probe": -0.13214280126391195,
+    "param_delta_norm": 0.6402628336932361,
+    "param_delta_probe": -0.19748141137008982,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -423,13 +435,13 @@
   "single_turn_grpo_k2": {
     "clip_norms": [
       10.186094603214672,
-      1.8571790405840871
+      1.6408385664966119
     ],
     "global_step": 2,
     "grad_norms": {
       "policy": [
         0.9999999182461861,
-        0.9999994977488638
+        0.9999994526457012
       ]
     },
     "lr": {
@@ -439,7 +451,7 @@
       "advantage_std": 0.9999999637499661,
       "backward_done": true,
       "clip_fraction": 0.625,
-      "entropy": 4.799026012420654,
+      "entropy": 4.799046158790588,
       "entropy_measured": true,
       "kl_penalty": 0.0,
       "mean_advantage": -9.934107462565105e-08,
@@ -452,17 +464,17 @@
       "old_logprobs_source": "snapshot",
       "path": "token",
       "policy_denominator": 3,
-      "policy_loss": -0.1630670428276062,
-      "policy_objective_loss": -0.11507678031921387,
-      "ratio_mean": 1.1094618141651154,
+      "policy_loss": -0.16254815459251404,
+      "policy_objective_loss": -0.11455769836902618,
+      "ratio_mean": 1.0822612345218658,
       "step": 1,
-      "total_loss": -0.1630670428276062
+      "total_loss": -0.16254815459251404
     },
     "optimizer_steps": {
       "policy": 2
     },
-    "param_delta_norm": 1.0403371262865033,
-    "param_delta_probe": -0.3393987574495779,
+    "param_delta_norm": 0.822616628203734,
+    "param_delta_probe": -0.246056380220617,
     "scheduler_last_epoch": {
       "policy": 2
     }
@@ -506,8 +518,8 @@
     "optimizer_steps": {
       "policy": 1
     },
-    "param_delta_norm": 0.8450625656481103,
-    "param_delta_probe": -0.1322224541153194,
+    "param_delta_norm": 0.6402628403601728,
+    "param_delta_probe": -0.1974815253343134,
     "scheduler_last_epoch": {
       "policy": 1
     }
@@ -515,7 +527,7 @@
   "vapo_k1": {
     "clip_norms": [
       28.036838789638978,
-      0.9333895996258993
+      0.9417784974809823
     ],
     "global_step": 1,
     "grad_norms": {
@@ -523,7 +535,7 @@
         0.9999999102307731
       ],
       "critic": [
-        0.9333895996258993
+        0.9417784974809823
       ]
     },
     "lr": {
@@ -535,18 +547,19 @@
       "actor_lr": 0.0048776412907378846,
       "average_reward": 0.38888888888888884,
       "critic_lr": 0.0048776412907378846,
-      "explained_variance": -0.00014188885688781738,
+      "explained_variance": 0.004153549671173096,
       "global_step": 1,
+      "optimizer_updates": 1,
       "policy_loss": 7.450580596923828e-09,
       "positive_lm_loss": 4.994580268859863,
-      "value_loss": 0.1777682676911354
+      "value_loss": 0.1801687851548195
     },
     "optimizer_steps": {
       "actor": 1,
       "critic": 1
     },
-    "param_delta_norm": 1.257791532888992,
-    "param_delta_probe": 0.005780649757760844,
+    "param_delta_norm": 0.9916064875676761,
+    "param_delta_probe": 0.05859523784045965,
     "scheduler_last_epoch": {
       "actor": 1,
       "critic": 1
@@ -555,19 +568,19 @@
   "vapo_k2": {
     "clip_norms": [
       28.036838789638978,
-      0.9333895996258993,
-      0.41867042220631434,
-      5.011266684221542
+      0.9417784974809823,
+      0.5412180046659485,
+      4.579973376821452
     ],
     "global_step": 1,
     "grad_norms": {
       "actor": [
         0.9999999102307731,
-        0.41867042220631434
+        0.5412180046659485
       ],
       "critic": [
-        0.9333895996258993,
-        0.9999997743577086
+        0.9417784974809823,
+        0.9999996878096614
       ]
     },
     "lr": {
@@ -579,18 +592,19 @@
       "actor_lr": 0.0045225424859373685,
       "average_reward": 0.38888888888888884,
       "critic_lr": 0.0045225424859373685,
-      "explained_variance": 0.027551352977752686,
+      "explained_variance": 0.051238834857940674,
       "global_step": 1,
-      "policy_loss": -0.16295434534549713,
-      "positive_lm_loss": 5.0839149951934814,
-      "value_loss": 0.8083975315093994
+      "optimizer_updates": 2,
+      "policy_loss": -0.15152880549430847,
+      "positive_lm_loss": 5.020076751708984,
+      "value_loss": 0.7161993682384491
     },
     "optimizer_steps": {
       "actor": 2,
       "critic": 2
     },
-    "param_delta_norm": 1.8034807053837791,
-    "param_delta_probe": -0.10540060421302247,
+    "param_delta_norm": 1.4319653537210777,
+    "param_delta_probe": -0.0004602846463967866,
     "scheduler_last_epoch": {
       "actor": 2,
       "critic": 2
