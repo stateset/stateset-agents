@@ -48,6 +48,7 @@ from .gspo_generation import (
     scoring_prompt_length,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.update import OptimizerStep
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -564,10 +565,13 @@ class GSPOTrainer(TrainingRuntime):
         return old_log_probs, gaps
 
     def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
-        """Update only after scalar loss and clipped gradient norm are finite.
+        """Update only after scalar loss, gradients and their norm are finite.
 
-        Failed backward or clipping clears partial gradients. Optimizer and
-        scheduler state are untouched until these checks pass.
+        Failed backward, non-finite gradients or clipping clear partial
+        gradients. Optimizer and scheduler state are untouched until these
+        checks pass. The commit is the spine's :class:`OptimizerStep` with
+        ``counter="none"``: GSPO keeps no step counter, and gradients stay in
+        place after the step.
         """
         self.optimizer.zero_grad(set_to_none=True)
         try:
@@ -577,14 +581,20 @@ class GSPOTrainer(TrainingRuntime):
             if not math.isfinite(max_norm) or max_norm < 0:
                 raise ValueError("max_grad_norm must be finite and nonnegative")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), max_norm, error_if_nonfinite=True
-            )
         except Exception:
             self.optimizer.zero_grad(set_to_none=True)
             raise
-        self.optimizer.step()
-        self.scheduler.step()
+        OptimizerStep(
+            self,
+            torch,
+            optimizers=[self.optimizer],
+            schedulers=[self.scheduler],
+            clip_groups=[list(self.model.parameters())],
+            max_grad_norm=max_norm,
+            counter="none",
+            nonfinite_grad_policy="raise",
+            label="GSPO",
+        )()
 
     def compute_gspo_loss(
         self,

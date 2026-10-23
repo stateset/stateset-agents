@@ -25,6 +25,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GRPO at one and two update passes): metrics, parameter delta, pre- and
   post-clip gradient norms, learning rates and step counters.
 
+### Changed
+
+- `GSPOTrainer` and `GSPOTokenTrainer` commit each update through the spine's
+  `OptimizerStep` (`counter="none"`; GSPO keeps no step counter). Finite
+  updates are numerically unchanged (step goldens). A NaN/Inf gradient is now
+  rejected before clipping with `ValueError("GSPO gradients must be finite")`
+  instead of the `RuntimeError` raised by `clip_grad_norm_`; a finite gradient
+  whose total norm overflows still raises that `RuntimeError`. Either way the
+  weights, optimizer and scheduler stay untouched, as before.
+
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
 ### Added
