@@ -2109,6 +2109,22 @@ def _allow_unmasked_labels(config: LossConfig, error: BaseException) -> None:
         _warned_unmasked_labels = True
 
 
+def _turns_after_first_reply(turns: Sequence[object]) -> bool:
+    """Whether a non-assistant turn follows the first assistant turn."""
+    replied = False
+    for turn in turns:
+        role = (
+            turn.get("role")
+            if isinstance(turn, Mapping)
+            else getattr(turn, "role", None)
+        )
+        if role == "assistant":
+            replied = True
+        elif replied:
+            return True
+    return False
+
+
 def _full_stream_inputs(
     tokenizer: TokenizerLike,
     trajectory: object,
@@ -2154,6 +2170,13 @@ def _prepare_inputs_and_labels(
     Order: the chat template's assistant mask; offset mappings for tokenizers
     without a template; nothing supervised for conversations with tool
     observations (never train on tool output); else the full token stream.
+
+    The full stream also trains on non-assistant tokens, so it needs
+    ``allow_unmasked_labels`` (else ``RolloutContractError``) when the
+    tokenizer's offsets failed, or when a non-assistant turn follows the
+    first reply (the policy would learn to write the user's next turn). A
+    prompt and one reply keep the fallback with a warning: the stub backend
+    (no chat template, no offsets) trains through it.
     """
     max_length = int(getattr(config, "max_prompt_length", 512)) + int(
         getattr(config, "max_completion_length", 512)
@@ -2178,6 +2201,14 @@ def _prepare_inputs_and_labels(
         return _unsupervised_inputs(tokenizer, trajectory, agent, max_length)
     if offsets_error is not None:
         _allow_unmasked_labels(config, offsets_error)
+    elif _turns_after_first_reply(getattr(trajectory, "turns", [])):
+        require_explicit_fallback(
+            config,
+            UNMASKED_LABELS_OPTION,
+            "Assistant token spans could not be located in a conversation "
+            "with user turns after the first reply, so the loss would also "
+            "train the policy on those user turns",
+        )
     return _full_stream_inputs(
         tokenizer, trajectory, agent, use_chat_template, max_length, device
     )
