@@ -507,14 +507,14 @@ def _requests_before(
         for field in _CONTEXT_REQUEST_FIELDS
         if isinstance(context, dict) and isinstance(context.get(field), str)
     ]
-    requests: dict[int, str] = {}
+    asked_by_turn: dict[int, str] = {}
     asked: list[str] = list(stated)
     for turn in turns:
         if turn.role == "user":
             asked.append(_turn_text(turn))
         elif turn.role == "assistant":
-            requests[id(turn)] = " ".join(asked)
-    return requests
+            asked_by_turn[id(turn)] = " ".join(asked)
+    return asked_by_turn
 
 
 class HelpfulnessReward(RewardFunction):
@@ -681,10 +681,12 @@ class SafetyReward(RewardFunction):
 
         total_score = 0.0
         breakdown = {}
-        requests = _requests_before(turns, context)
+        request_by_turn = _requests_before(turns, context)
 
         for i, turn in enumerate(assistant_turns):
-            score = self._evaluate_safety(_turn_text(turn), requests.get(id(turn), ""))
+            score = self._evaluate_safety(
+                _turn_text(turn), request_by_turn.get(id(turn), "")
+            )
             total_score += score
             breakdown[f"turn_{i}_safety"] = score
 
