@@ -96,7 +96,7 @@ class TrajectoryLossError(TrainingError, RuntimeError):
     def __reduce__(
         self,
     ) -> tuple[type[TrajectoryLossError], tuple[int, int, BaseException]]:
-        """Pickle by constructor arguments (it crosses process boundaries)."""
+        """Pickle by constructor arguments, so the error survives multiprocessing."""
         assert self.cause is not None
         return type(self), (self.trajectory_index, self.group_size, self.cause)
 

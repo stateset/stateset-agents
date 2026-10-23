@@ -38,7 +38,12 @@ importance correction without sampler probabilities raises unless
 `allow_missing_sampler_logprobs=True`; this opt-in is reported as
 `old_logprobs_source="recompute_fallback"`. Metadata is validated without
 coercing malformed IDs or probabilities. Sequence compatibility reports its
-effective objective and fallback explicitly.
+effective objective and fallback explicitly. On that path, a tokenizer without
+a chat template that cannot map assistant text to tokens (no offset mapping)
+would supervise every token, user and system included; that raises
+`RolloutContractError` unless `allow_unmasked_labels=True`. A trajectory whose
+sequence-path loss fails raises `TrajectoryLossError` rather than being dropped
+from its group's mean.
 
 Sequence objectives sum assistant-turn losses within each trajectory before
 averaging trajectories, so early termination cannot reweight other episodes.

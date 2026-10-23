@@ -178,6 +178,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **RL numerics typed and split (code-quality review).** The GRPO token-path
+  loss is a typed batch builder, a per-chunk forward/backward and an
+  aggregation step instead of one 271-line function; the enhanced sequence
+  loss and assistant-label preparation are split the same way. Numerics are
+  bit-identical (346 loss configurations compared on metrics, gradient hashes
+  and backward calls; peak autograd memory per chunk unchanged) and the
+  trainer step goldens are unchanged. `loss_computation`, `objectives` and
+  `rl_losses` take torch `Tensor`s and the Protocols in the new
+  `training/typing_protocols.py` (`PolicyModel`, `TokenizerLike`,
+  `AgentLike`, `LossConfig`, ...) instead of `Any` (signatures mentioning
+  `Any`: 58 of 61 before, 4 of 94 after), run under strict mypy, and
+  `tests/unit/test_numerics_typing_ratchet.py` caps the remaining `Any`.
+- The `flywheel` command's body is split into typed helpers over a
+  `FlywheelOptions` dataclass; its options and `--help` output are unchanged
+  and pinned by `tests/unit/test_cli_flywheel_surface.py`.
+- The fine-tuning studio's key handling is table-driven: `tui_keys.py` maps
+  each input mode and dialog to small typed handlers (the 458-line,
+  204-branch `Studio.handle` chain is gone), and `tui_screens.py` renders
+  dialog bodies from a table with the help text as a constant; `refresh()`
+  and run details are split into steps. Behaviour is unchanged (a
+  differential fuzz against the previous studio compared about 1.2M key,
+  render and refresh operations with no difference) and
+  `tests/unit/test_tui_keymap.py` pins every key each mode handled.
+  The complexity ratchet's ceiling drops from 74 to 65 oversized functions.
+
 - The evaluation panel's background work runs through the shared
   `BackgroundTask` (owned submissions on non-daemon threads) instead of its
   own thread and result queue.
@@ -514,6 +539,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   repo-root `core` package, which no longer exists.
 
 ### Fixed
+
+- The sequence-path GRPO loss dropped a trajectory whose loss raised and
+  averaged the rest, silently changing the group objective; it now raises
+  `TrajectoryLossError` (a `TrainingError` and `RuntimeError` naming the
+  trajectory, cause chained), as the token path never skipped rows.
+  Out-of-memory and rollout-contract errors still propagate unchanged, and
+  out-of-memory is recognised by `torch.OutOfMemoryError` /
+  `torch.cuda.OutOfMemoryError` (message matching only on torch without
+  them).
+- When a tokenizer without a chat template cannot produce offset mappings,
+  the sequence-path loss no longer falls back to supervising every token
+  (user and system included) silently: it raises `RolloutContractError`
+  unless `allow_unmasked_labels=True` is set on the config. Conversations
+  with tool observations still supervise nothing.
 
 - `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
   prompt, so a policy never saw tool results; they now render as
