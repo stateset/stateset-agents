@@ -1069,9 +1069,18 @@ trainer.register_callback("on_episode_end", log_metrics)
 
 ### 5. Circuit Breaker Pattern
 
+`stateset_agents.api.resilience` is the one circuit-breaker / retry
+implementation (the synchronous helpers in `core.error_handling` are
+deprecated):
+
 ```python
-# In utils/monitoring.py
-@circuit_breaker(failure_threshold=5, timeout=60)
+from stateset_agents.api.resilience import CircuitBreakerConfig, get_circuit_breaker
+
+breaker = get_circuit_breaker(
+    "external_api", CircuitBreakerConfig(failure_threshold=5, timeout_seconds=60)
+)
+
+@breaker
 async def call_external_api():
     ...
 ```
