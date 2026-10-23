@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
-from .error_handling import ErrorCode, ResourceException
+from .error_handling import ResourceException
 
 try:  # pragma: no cover - optional dependency
     import aiohttp as _aiohttp
@@ -298,7 +298,6 @@ class AsyncResourcePool(Generic[T]):
             if raise_on_fail:
                 raise ResourceException(
                     "Failed to create pooled resource",
-                    error_code=ErrorCode.RESOURCE_FAILED,
                     details={"pool": self.name},
                 ) from e
             return None

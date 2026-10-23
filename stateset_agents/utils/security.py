@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.core.error_handling import ErrorCode, ValidationException
+from stateset_agents.core.error_handling import ValidationException
 
 logger = logging.getLogger(__name__)
 
@@ -217,7 +217,6 @@ class SecureConfig:
                 logger.error(f"Failed to decrypt secret: {e}")
                 raise ValidationException(
                     "Failed to decrypt secret. Check CONFIG_ENCRYPTION_KEY.",
-                    error_code=ErrorCode.VALIDATION_FAILED,
                     details={"source": "fernet_decrypt"},
                 ) from e
         except ImportError as exc:

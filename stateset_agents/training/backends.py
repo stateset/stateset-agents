@@ -23,6 +23,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from ..core.errors import ErrorCode, TrainingError
+
 BACKEND_PROTOCOL = "stateset-training-backend-v1"
 BACKEND_PROTOCOL_VERSION = 1
 
@@ -37,8 +39,15 @@ _SENSITIVE_KEYS = frozenset(
 )
 
 
-class BackendError(RuntimeError):
-    """Base error raised by the backend contract and registry."""
+class BackendError(TrainingError, RuntimeError):
+    """Base error raised by the backend contract and registry.
+
+    A :class:`~stateset_agents.core.errors.TrainingError` that is still a
+    ``RuntimeError`` and prints its bare message.
+    """
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_BACKEND_FAILED
 
 
 class BackendExecutionError(BackendError):

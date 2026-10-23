@@ -7,6 +7,7 @@ Group Relative Policy Optimization (GRPO).
 
 from __future__ import annotations
 
+import warnings as _warnings
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
@@ -234,7 +235,10 @@ __all__ = list(_LAZY_EXPORTS)
 _DEPRECATED_STABLE_EXPORTS_REMOVAL = "v0.72.0"
 _DEPRECATED_STABLE_EXPORTS: dict[str, str] = {
     # error_handling: the framework raises GRPOException/ValidationException/
-    # ResourceException and uses ErrorCode; these are unused.
+    # ResourceException; these are unused. ``ErrorCode`` here is the legacy
+    # GRPO_E### enum (``exc.error_code``); every framework error's ``code`` is
+    # a ``core.errors.ErrorCode`` (deprecated in v0.70.0).
+    "ErrorCode": "stateset_agents.core.errors.ErrorCode",
     "TrainingException": "stateset_agents.core.errors.TrainingError",
     "ModelException": "stateset_agents.core.errors.ModelError",
     "DataException": "stateset_agents.core.errors.DataError",
@@ -340,7 +344,13 @@ def __getattr__(name: str) -> Any:
         raise ImportError(_build_import_error(name, module_name, install_hint)) from exc
 
     try:
-        value = getattr(module, attr_name)
+        if replacement is None:
+            value = getattr(module, attr_name)
+        else:
+            # Warned above; the provisional module may warn for the same name.
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("ignore", DeprecationWarning)
+                value = getattr(module, attr_name)
     except AttributeError as exc:
         raise AttributeError(
             f"module '{module_name}' has no attribute {attr_name!r}"

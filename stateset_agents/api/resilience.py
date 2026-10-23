@@ -3,6 +3,12 @@ Resilience Patterns Module
 
 Production-ready resilience patterns including circuit breaker, retry,
 timeout, and bulkhead implementations for fault-tolerant APIs.
+
+This is the framework's one circuit-breaker and retry implementation; the
+synchronous ``CircuitBreaker`` / ``retry_async`` helpers in
+:mod:`stateset_agents.core.error_handling` are deprecated in its favour.
+Its errors (:class:`CircuitOpenError`, :class:`OperationTimeoutError`,
+:class:`BulkheadFullError`) are ``StateSetError`` subclasses.
 """
 
 import asyncio
@@ -17,6 +23,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, TypeVar, cast
 
+from stateset_agents._deprecation import deprecated_alias_getattr
+from stateset_agents.core.errors import ErrorCode, StateSetError
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 from stateset_agents.utils.clock import utc_now
 
@@ -232,10 +240,11 @@ class CircuitBreaker:
         logger.info(f"Circuit {self.name} manually reset")
 
 
-class CircuitOpenError(Exception):
+class CircuitOpenError(StateSetError):
     """Raised when circuit breaker is open."""
 
-    pass
+    message_only_str = True
+    default_code = ErrorCode.NET_CIRCUIT_OPEN
 
 
 # ============================================================================
@@ -345,10 +354,15 @@ def retry(
 # ============================================================================
 
 
-class TimeoutError(Exception):
-    """Raised when operation times out."""
+class OperationTimeoutError(StateSetError):
+    """Raised when an operation wrapped by :func:`timeout` times out.
 
-    pass
+    Formerly ``TimeoutError``, which shadowed the builtin inside this module
+    and for anyone importing it by name.
+    """
+
+    message_only_str = True
+    default_code = ErrorCode.NET_TIMEOUT
 
 
 def timeout(seconds: float) -> Callable[[F], F]:
@@ -367,7 +381,7 @@ def timeout(seconds: float) -> Callable[[F], F]:
             try:
                 return await asyncio.wait_for(func(*args, **kwargs), timeout=seconds)
             except asyncio.TimeoutError as exc:
-                raise TimeoutError(
+                raise OperationTimeoutError(
                     f"Operation {func.__name__} timed out after {seconds}s"
                 ) from exc
 
@@ -390,10 +404,11 @@ class BulkheadConfig:
     timeout_seconds: float = 30.0
 
 
-class BulkheadFullError(Exception):
+class BulkheadFullError(StateSetError):
     """Raised when bulkhead is at capacity."""
 
-    pass
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 class Bulkhead:
@@ -619,3 +634,10 @@ def get_all_circuit_stats() -> dict[str, dict[str, Any]]:
     return {
         name: breaker.stats.to_dict() for name, breaker in _circuit_breakers.items()
     }
+
+
+#: ``TimeoutError`` shadowed the builtin; renamed in v0.70.0.
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {"TimeoutError": (__name__, "OperationTimeoutError", "0.71.0")},
+)

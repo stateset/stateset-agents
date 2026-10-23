@@ -201,7 +201,7 @@ AsyncRewardFactory = Callable[[float], Awaitable[BaseReward]]
 _DEPRECATED_ERROR_ALIASES: dict[str, str] = {
     "FrameworkError": "StateSetError",
     "AgentError": "StateSetError",
-    "EnvironmentError": "EnvironmentError",
+    "EnvironmentError": "EnvironmentOperationError",
     "TrainingError": "TrainingError",
     "ConfigurationError": "ConfigurationError",
 }
