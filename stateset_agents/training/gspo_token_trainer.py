@@ -25,7 +25,7 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
-from .gspo_trainer import GSPOConfig, GSPOTrainer
+from .gspo_trainer import GSPO_TOKEN_SPEC, GSPOConfig, GSPOTrainer
 from .runtime_state import _reject_unsupported_resume
 from .spine.loop import run_dedicated_loop, seed_dedicated_run
 
@@ -43,6 +43,7 @@ class GSPOTokenTrainer(GSPOTrainer):
     """
 
     _native_objective = "gspo_token"
+    algorithm = GSPO_TOKEN_SPEC
 
     def __init__(
         self,

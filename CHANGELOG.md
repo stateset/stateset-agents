@@ -196,6 +196,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpineLoopMixin.train()` runs each episode through a new
   `_train_episode` method (task boundary, rollouts, step, reporting);
   the phases it passes to `_training_phase` and their order are unchanged.
+- **`spine.AlgorithmSpec`: one prompt-group algorithm is one spec.** GSPO,
+  GSPO-token, DAPO and GEPO declare their scoring, `PolicyObjective` preset,
+  sampling, per-group loss, update mode/passes and metrics as an
+  `AlgorithmSpec` (`GSPO_SPEC`, `GSPO_TOKEN_SPEC`, `DAPO_SPEC`, `GEPO_SPEC`;
+  `spine.algorithm_spec(name)`), and their `train_step` is the shared
+  `spine.run_algorithm_step`. `spine.AlgorithmTrainer` gives every spec
+  trainer the same objective resolution, spine commit (counter and label
+  from the spec) and rollout-engine sync. Trainer classes, constructors,
+  attributes and public methods are unchanged and step goldens are
+  bit-identical; GEPO now records `last_rollout_sync` (always `None`: it has
+  no rollout engine).
 - `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
   the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
   `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): seed ->

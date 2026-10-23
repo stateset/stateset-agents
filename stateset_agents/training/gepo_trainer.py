@@ -15,8 +15,8 @@ Reference: https://arxiv.org/abs/2508.17850
 
 import logging
 import os
-from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
@@ -30,6 +30,12 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .spine.algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
+)
 from .spine.loop import (
     dedicated_run_config,
     run_dedicated_loop,
@@ -38,7 +44,7 @@ from .spine.loop import (
 )
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
-from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
+from .spine.update import UpdatePasses
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -207,7 +213,7 @@ class GEPOModelManager(SharedModelManager):
         return LoraConfig, TaskType, get_peft_model
 
 
-class GEPOTrainer(TrainingRuntime):
+class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
     """
     Group Expectation Policy Optimization (GEPO) Trainer
 
@@ -242,15 +248,9 @@ class GEPOTrainer(TrainingRuntime):
                 f"(got {config.beta}). Use the GRPO or GSPO trainer for a KL term."
             )
         self.config = config
-        # GEPO objective: group-expectation importance coefficient, PPO clip.
-        self._objective = objectives.resolve_objective(
-            config,
-            "gepo",
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("group_expectation", "sequence", "sequence_token"),
-            clip_low=float(config.clip_eps),
-            clip_high=float(config.clip_eps),
-        )
+        # GEPO objective: group-expectation importance coefficient, PPO clip
+        # (GEPO_SPEC).
+        self._objective = self._resolve_algorithm_objective()
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -292,27 +292,6 @@ class GEPOTrainer(TrainingRuntime):
 
         self.global_step = 0
         self.rollout_samples_total = 0
-
-    def _build_optimizer_step(self) -> OptimizerStep:
-        """The spine commit for one inner update (``num_gradient_updates`` pass).
-
-        Gradients must be finite (``config.nonfinite_grad_policy`` raises or
-        skips the pass otherwise), the policy is clipped to ``max_grad_norm``,
-        then the optimizer and the LR scheduler step once.
-        ``global_step`` counts ``train_step`` calls (``end_train_step``).
-        """
-        return OptimizerStep(
-            self,
-            torch,
-            optimizers=[self.optimizer],
-            schedulers=[self.scheduler],
-            clip_groups=[list(self.model.parameters())],
-            max_grad_norm=self.config.max_grad_norm,
-            counter="train_steps",
-            **nonfinite_grad_settings(self.config),
-            named_modules=[self.model],
-            label="GEPO",
-        )
 
     @staticmethod
     def build_response_mask(
@@ -470,7 +449,7 @@ class GEPOTrainer(TrainingRuntime):
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
-        return await CallableScorer(self.reward_fn).score(prompt, response)
+        return await self._score_reply(prompt, response)
 
     def compute_group_advantages(
         self,
@@ -537,7 +516,7 @@ class GEPOTrainer(TrainingRuntime):
         prompts: list[str],
     ) -> dict[str, float]:
         """
-        Execute one GEPO training step.
+        Execute one GEPO training step (:data:`GEPO_SPEC` on the spine step).
 
         For each prompt:
         1. Generate G responses (group)
@@ -552,127 +531,7 @@ class GEPOTrainer(TrainingRuntime):
         Returns:
             Training metrics
         """
-        self.model.train()
-
-        all_rewards: list[float] = []
-        all_advantages: list[float] = []
-        all_gepo_coefs: list[float] = []
-
-        # --- Rollout phase ------------------------------------------------
-        # Generate every group and freeze the sampler (old-policy) sequence
-        # log probs here, before any inner update can move the weights. When
-        # they were recomputed from the just-updated model the GEPO
-        # coefficient collapsed to ~1 and clipping never fired.
-        async def build(
-            prompt: str, group_responses: list[dict[str, Any]]
-        ) -> dict[str, Any]:
-            rewards = [
-                await self._compute_reward(prompt, resp["response"])
-                for resp in group_responses
-            ]
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=self.device
-            )
-            all_rewards.extend(rewards)
-
-            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
-            all_advantages.extend(advantages.tolist())
-
-            batch_input_ids, batch_attention_mask, _ = build_group_batch(
-                group_responses, self.device, include_response_mask=False
-            )
-            response_start_idx = group_responses[0]["response_start_idx"]
-
-            with torch.no_grad():
-                _, sampler_seq_log_probs = self.compute_sequence_log_probs(
-                    batch_input_ids, batch_attention_mask, response_start_idx
-                )
-
-            return {
-                "input_ids": batch_input_ids,
-                "attention_mask": batch_attention_mask,
-                "response_start_idx": response_start_idx,
-                "advantages": advantages,
-                "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
-            }
-
-        # One group per prompt (at least two responses for group advantages).
-        rollouts = await PromptGroupRollouts(
-            lambda prompt: self.generate_group_responses(
-                prompt, self.config.group_size
-            ),
-            min_group_size=2,
-            label="GEPO",
-        ).collect(prompts, build)
-
-        num_groups = len(rollouts)
-        if num_groups == 0:
-            logger.warning("No valid groups in batch")
-            return self._step_metrics(0.0, [], [], [], updates=0)
-
-        # --- Update phase --------------------------------------------------
-        # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
-        # against the frozen sampler log probs, exactly like DAPO. With the
-        # default of 1 the formula is identical to the previous single-update
-        # path (only dropout RNG ordering differs, since the sampler log probs
-        # are now drawn before the learner ones).
-        num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
-
-        def group_loss(_pass: int, _index: int, rollout: dict[str, Any]) -> Any:
-            learner_token_log_probs, learner_seq_log_probs = (
-                self.compute_sequence_log_probs(
-                    rollout["input_ids"],
-                    rollout["attention_mask"],
-                    rollout["response_start_idx"],
-                )
-            )
-            with torch.no_grad():
-                all_gepo_coefs.extend(
-                    self.compute_gepo_coefficient(
-                        learner_seq_log_probs.detach(),
-                        rollout["sampler_seq_log_probs"],
-                    ).tolist()
-                )
-            return self.compute_gepo_loss(
-                learner_seq_log_probs,
-                rollout["sampler_seq_log_probs"],
-                rollout["advantages"],
-                token_log_probs=learner_token_log_probs,
-                response_mask=self.build_response_mask(
-                    rollout["attention_mask"], rollout["response_start_idx"]
-                ),
-            )
-
-        # One graph per pass: the mean of the group losses is backpropagated,
-        # then one validated optimizer step. Cadence convention shared with
-        # DAPO/VAPO: the LR scheduler advances once per committed inner
-        # update, global_step counts train_steps.
-        passes = UpdateLoop(
-            self._build_optimizer_step(), passes=num_updates, mode="single_graph"
-        ).run(
-            rollouts,
-            group_loss,
-            on_pass_start=lambda _pass: all_gepo_coefs.clear(),
-            initial_loss=lambda: torch.tensor(
-                0.0, device=self.device, requires_grad=True
-            ),
-            reduce=lambda total: total / num_groups,
-        )
-
-        metrics = self._step_metrics(
-            passes.losses[-1],
-            all_rewards,
-            all_advantages,
-            all_gepo_coefs,
-            updates=passes.committed,
-        )
-
-        # Store metrics
-        for key in ["policy_loss", "average_reward"]:
-            if key in self.metrics_history:
-                self.metrics_history[key].append(metrics[key])
-
-        return metrics
+        return await run_algorithm_step(self, self.algorithm, prompts)
 
     def _step_metrics(
         self,
@@ -703,6 +562,166 @@ class GEPOTrainer(TrainingRuntime):
     def load_checkpoint(self, checkpoint_dir: str, *, trusted: bool = False) -> bool:
         """Restore policy weights and all training components."""
         return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
+
+
+@dataclass
+class _GEPOStep:
+    """One GEPO step's rollout and pass data (for the metrics)."""
+
+    rewards: list[float] = field(default_factory=list)
+    advantages: list[float] = field(default_factory=list)
+    coefficients: list[float] = field(default_factory=list)
+
+
+async def _gepo_score(
+    trainer: GEPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> float:
+    return await CallableScorer(trainer.reward_fn).score(prompt, response)
+
+
+async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollouts:
+    """One group per prompt (at least two responses for group advantages),
+    with the sampler (old-policy) sequence log probs frozen here, before any
+    inner update can move the weights. When they were recomputed from the
+    just-updated model the GEPO coefficient collapsed to ~1 and clipping
+    never fired."""
+    step = _GEPOStep()
+
+    async def build(
+        prompt: str, group_responses: list[dict[str, Any]]
+    ) -> dict[str, Any]:
+        rewards = [
+            await trainer._compute_reward(prompt, resp["response"])
+            for resp in group_responses
+        ]
+        rewards_tensor = torch.tensor(
+            rewards, dtype=torch.float32, device=trainer.device
+        )
+        step.rewards.extend(rewards)
+
+        advantages, _reward_stats = trainer.compute_group_advantages(rewards_tensor)
+        step.advantages.extend(advantages.tolist())
+
+        batch_input_ids, batch_attention_mask, _ = build_group_batch(
+            group_responses, trainer.device, include_response_mask=False
+        )
+        response_start_idx = group_responses[0]["response_start_idx"]
+
+        with torch.no_grad():
+            _, sampler_seq_log_probs = trainer.compute_sequence_log_probs(
+                batch_input_ids, batch_attention_mask, response_start_idx
+            )
+
+        return {
+            "input_ids": batch_input_ids,
+            "attention_mask": batch_attention_mask,
+            "response_start_idx": response_start_idx,
+            "advantages": advantages,
+            "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
+        }
+
+    items = await PromptGroupRollouts(
+        lambda prompt: trainer.generate_group_responses(
+            prompt, trainer.config.group_size
+        ),
+        min_group_size=2,
+        label="GEPO",
+    ).collect(prompts, build)
+    if not items:
+        logger.warning("No valid groups in batch")
+    return StepRollouts(items=items, info=step)
+
+
+def _gepo_group_loss(
+    trainer: GEPOTrainer,
+    rollouts: StepRollouts,
+    _pass: int,
+    _index: int,
+    rollout: dict[str, Any],
+) -> Any:
+    learner_token_log_probs, learner_seq_log_probs = trainer.compute_sequence_log_probs(
+        rollout["input_ids"],
+        rollout["attention_mask"],
+        rollout["response_start_idx"],
+    )
+    with torch.no_grad():
+        rollouts.info.coefficients.extend(
+            trainer.compute_gepo_coefficient(
+                learner_seq_log_probs.detach(),
+                rollout["sampler_seq_log_probs"],
+            ).tolist()
+        )
+    return trainer.compute_gepo_loss(
+        learner_seq_log_probs,
+        rollout["sampler_seq_log_probs"],
+        rollout["advantages"],
+        token_log_probs=learner_token_log_probs,
+        response_mask=trainer.build_response_mask(
+            rollout["attention_mask"], rollout["response_start_idx"]
+        ),
+    )
+
+
+def _gepo_update_options(
+    trainer: GEPOTrainer, rollouts: StepRollouts
+) -> dict[str, Any]:
+    """One graph per pass: the mean of the group losses is backpropagated,
+    then one validated optimizer step; each pass reports its own
+    coefficients."""
+    num_groups = len(rollouts.items)
+    return {
+        "on_pass_start": lambda _pass: rollouts.info.coefficients.clear(),
+        "initial_loss": lambda: torch.tensor(
+            0.0, device=trainer.device, requires_grad=True
+        ),
+        "reduce": lambda total: total / num_groups,
+    }
+
+
+def _gepo_metrics(
+    trainer: GEPOTrainer, rollouts: StepRollouts, passes: UpdatePasses | None
+) -> dict[str, Any]:
+    if passes is None:
+        return trainer._step_metrics(0.0, [], [], [], updates=0)
+    step: _GEPOStep = rollouts.info
+    metrics = trainer._step_metrics(
+        passes.losses[-1],
+        step.rewards,
+        step.advantages,
+        step.coefficients,
+        updates=passes.committed,
+    )
+
+    # Store metrics
+    for key in ["policy_loss", "average_reward"]:
+        if key in trainer.metrics_history:
+            trainer.metrics_history[key].append(metrics[key])
+    return metrics
+
+
+#: GEPO: the group-expectation importance coefficient with a PPO clip over
+#: prompt groups of at least two replies; one graph per pass, ``mu``
+#: (``num_gradient_updates``) passes against the frozen sampler log probs
+#: (cadence shared with DAPO/VAPO: the LR scheduler advances once per
+#: committed pass, ``global_step`` counts train steps).
+GEPO_SPEC = AlgorithmSpec(
+    name="gepo",
+    objective="gepo",
+    objective_options=lambda config: {
+        "supported_ratios": ("group_expectation", "sequence", "sequence_token"),
+        "clip_low": float(config.clip_eps),
+        "clip_high": float(config.clip_eps),
+    },
+    counter="train_steps",
+    update_mode="single_graph",
+    passes=lambda config: max(1, getattr(config, "num_gradient_updates", 1)),
+    score=_gepo_score,
+    rollouts=_gepo_rollouts,
+    group_loss=_gepo_group_loss,
+    metrics=_gepo_metrics,
+    update_options=_gepo_update_options,
+)
+GEPOTrainer.algorithm = GEPO_SPEC
 
 
 async def train_with_gepo(
@@ -825,6 +844,7 @@ async def train_with_gepo(
 # Export
 __all__ = [
     "GEPOConfig",
+    "GEPO_SPEC",
     "GEPOTrainer",
     "train_with_gepo",
 ]
