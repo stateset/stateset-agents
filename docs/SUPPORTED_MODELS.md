@@ -66,9 +66,10 @@ exposed as `*_starter.py` modules with profile presets.
 | **Inkling-Small** | `thinkingmachines/Inkling-Small` | First-class Tinker remote-autograd SFT via `train-remote --provider tinker`. The result is a hosted sampler/state pointer rather than local Hugging Face weights. Integration is unit-tested; live certification is still pending. See [MANAGED_TRAINING_PROVIDERS.md](MANAGED_TRAINING_PROVIDERS.md). |
 | **Qwen 3.5 27B** | `Qwen/Qwen3.5-27B` | `examples/finetune_qwen3_5_27b_gspo.py`, `deployment/kubernetes/qwen3-5-27b-training-job.yaml`, `docs/QWEN3_5_27B_MINIMAL_HOSTING_PLAN.md` |
 | **Qwen 3** (general) | Qwen 3 family | `examples/finetune_qwen3_gspo.py`, `docs/QWEN3_FINETUNING_GUIDE.md` |
+| **Qwen 2.5 7B** | `Qwen/Qwen2.5-7B` (`qwen2.5-7b` preset; formerly named `qwen3`, a deprecated alias until v0.71.0) | `python examples/finetune_gspo.py --model qwen2.5-7b --dry-run` |
 | **Qwen 2.5 3B Instruct** | `Qwen/Qwen2.5-3B-Instruct` | Offline GRPO example in `experimental/offline_rl/offline_grpo.py` |
 | **Kimi-K2.5** | `moonshotai/Kimi-K2.5` | `examples/finetune_kimi_k2_5_gspo.py`, `deployment/kubernetes/kimi-k25-*.yaml`, `docs/KIMI_K25_GKE_AUTOPILOT.md`, `docs/KIMI_K25_GKE_STANDARD.md` |
-| **Gemma 3 / Gemma 2 27B IT** | `google/gemma-2-27b-it` | `examples/finetune_gemma3_gspo.py`, `docs/GEMMA3_FINETUNING_GUIDE.md` |
+| **Gemma 2 9B / 27B IT** | `google/gemma-2-9b-it` (`gemma2-9b` preset), `google/gemma-2-27b-it` | `examples/finetune_gemma3_gspo.py`, `docs/GEMMA3_FINETUNING_GUIDE.md` (historical file names: both load Gemma 2 checkpoints; the old `gemma3` preset name is a deprecated alias until v0.71.0) |
 | **Llama 3** | Llama 3 family | `examples/finetune_llama3_gspo.py` |
 | **Llama 2 7B** | `meta-llama/Llama-2-7b-hf`, `meta-llama/Llama-2-7b-chat-hf` | vLLM backend default (`training/vllm_backend.py`), QUICKSTART examples |
 | **Mistral 7B** | `mistralai/Mistral-7B-v0.1`, `-Instruct-v0.1` | `examples/finetune_mistral_gspo.py`, default RLAIF reward model |

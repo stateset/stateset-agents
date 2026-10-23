@@ -56,6 +56,12 @@ from stateset_agents.training.lineage import (
     AdapterManifest,
     write_manifest,
 )
+from stateset_agents.training.quantization import (
+    QuantizationConfig,
+    prepare_quantized_model,
+    quantized_load_kwargs,
+    require_bitsandbytes,
+)
 
 logger = logging.getLogger("sft_from_curated")
 
@@ -78,6 +84,7 @@ __all__ = [
     "evaluate_checks",
     "generate_completions",
     "gpu_available",
+    "is_placed_at_load",
     "is_sharded_across_devices",
     "judge_completion",
     "load_base_model_for_sft",
@@ -88,6 +95,7 @@ __all__ = [
     "log_device_map_summary",
     "model_load_kwargs",
     "normalize_eval_prompts",
+    "prepare_for_lora",
     "print_training_plan",
     "resolve_resume_checkpoint",
     "run_sft",
@@ -198,6 +206,7 @@ def print_training_plan(
     learning_rate: float,
     max_length: int,
     seed: int = 42,
+    quantization: QuantizationConfig | None = None,
 ) -> None:
     """Dump a human-readable summary of what training *would* do."""
     print()
@@ -212,6 +221,9 @@ def print_training_plan(
     print(f"  Learning rate:    {learning_rate}")
     print(f"  Max sequence:     {max_length}")
     print(f"  Training seed:    {seed}")
+    if quantization is not None and quantization.enabled:
+        settings = ", ".join(f"{k}={v}" for k, v in quantization.to_dict().items())
+        print(f"  Quantization:     QLoRA ({settings}; needs CUDA + bitsandbytes)")
     print()
     sample = rows[0] if rows else None
     if sample:
@@ -519,6 +531,34 @@ def is_sharded_across_devices(model: Any) -> bool:
     return len(set(device_map.values())) > 1
 
 
+def is_placed_at_load(model: Any) -> bool:
+    """True when ``model`` must stay where loading put it.
+
+    Sharded models (see :func:`is_sharded_across_devices`) and bitsandbytes
+    k-bit models are placed by ``from_pretrained``; moving them with
+    ``.to("cuda")`` either collapses shards onto one card or is refused.
+    """
+    return is_sharded_across_devices(model) or any(
+        getattr(model, flag, False) is True
+        for flag in ("is_loaded_in_4bit", "is_loaded_in_8bit")
+    )
+
+
+def prepare_for_lora(model: Any, quantization: QuantizationConfig) -> Any:
+    """Apply QLoRA's k-bit preparation when the base was loaded quantized."""
+    if not quantization.enabled:
+        return model
+    logger.info(
+        "Preparing the %s base model for LoRA (k-bit training)", quantization.mode
+    )
+    return prepare_quantized_model(model, gradient_checkpointing=True)
+
+
+def quantization_hyperparameters(quantization: QuantizationConfig) -> dict[str, Any]:
+    """Manifest entries for a quantized run (none for full-precision runs)."""
+    return {"quantization": quantization.to_dict()} if quantization.enabled else {}
+
+
 def log_device_map_summary(model: Any) -> dict[str, int]:
     """Log how many modules landed on each device, and return the counts.
 
@@ -559,7 +599,12 @@ def log_cuda_memory_per_device() -> None:
         return
 
 
-def load_base_model_for_sft(base_model: str, *, revision: str | None = None):
+def load_base_model_for_sft(
+    base_model: str,
+    *,
+    revision: str | None = None,
+    quantization: QuantizationConfig | str | None = None,
+) -> Any:
     """Load ``base_model`` for text-only SFT, tolerating multimodal repos.
 
     Composite multimodal checkpoints (e.g. ``zai-org/GLM-5.3-Flash`` and
@@ -571,12 +616,19 @@ def load_base_model_for_sft(base_model: str, *, revision: str | None = None):
 
     On a multi-GPU host the checkpoint is sharded across every visible GPU
     via ``device_map="auto"`` (see :func:`model_load_kwargs`).
+
+    ``quantization`` (``"4bit"``/``"8bit"`` or a :class:`QuantizationConfig`)
+    loads the frozen base through bitsandbytes for QLoRA; it needs CUDA and
+    ``bitsandbytes`` and says so before any download starts.
     """
+    quant = QuantizationConfig.coerce(quantization)
+    if quant.enabled:
+        require_bitsandbytes()
     from transformers import AutoModelForCausalLM
 
     from stateset_agents.core.transformers_compat import load_generation_model
 
-    kwargs = model_load_kwargs()
+    kwargs = quantized_load_kwargs(quant, model_load_kwargs())
     kwargs["trust_remote_code"] = _trust_remote_code(base_model)
     if revision is not None:
         kwargs["revision"] = revision
@@ -1110,8 +1162,12 @@ def run_sft(
     resume_from_checkpoint: Path | None = None,
     seed: int = 42,
     dataset_identity: SFTDatasetIdentity | None = None,
+    quantization: QuantizationConfig | str | None = None,
 ) -> Path:
     """Run the actual SFT training on GPU.
+
+    ``quantization`` (``"4bit"``, ``"8bit"`` or a :class:`QuantizationConfig`)
+    trains the LoRA adapter on a bitsandbytes-quantized frozen base (QLoRA).
 
     ``resume=True`` continues from the newest ``checkpoint-<N>`` directory
     already in ``output_dir`` when one exists; with none, it logs the fact
@@ -1148,6 +1204,7 @@ def run_sft(
         except ValueError as exc:
             raise ValueError(f"row {index}: {exc}") from None
     seed = _training_seed(seed)
+    quant = QuantizationConfig.coerce(quantization)
     if dataset_identity is None:
         if dataset_path is not None:
             _, dataset_identity = load_sft_dataset(dataset_path)
@@ -1189,7 +1246,7 @@ def run_sft(
     tokenizer = load_tokenizer_for(base_model, revision=model_revision)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
-    model = load_base_model_for_sft(base_model, **revision_kwargs)
+    model = load_base_model_for_sft(base_model, quantization=quant, **revision_kwargs)
     log_device_map_summary(model)
     log_cuda_memory_per_device()
 
@@ -1208,12 +1265,13 @@ def run_sft(
         # grinding). Move it now when a GPU exists — unless accelerate
         # already sharded it across devices, in which case moving it would
         # collapse the shards onto cuda:0 and OOM.
-        if gpu_available() and not is_sharded_across_devices(model):
+        if gpu_available() and not is_placed_at_load(model):
             model = model.to("cuda")
         base_completions = generate_completions(
             model, tokenizer, eval_prompt_texts, max_new_tokens=eval_max_new_tokens
         )
 
+    model = prepare_for_lora(model, quant)
     target_modules = infer_lora_target_modules(model)
     logger.info(
         "Applying LoRA adapter (r=%d, alpha=%d, targets=%s)",
@@ -1321,6 +1379,7 @@ def run_sft(
                 else {}
             ),
             "model_revision": model_revision,
+            **quantization_hyperparameters(quant),
         },
         parent_adapter=parent_adapter,
         package_version=_package_version(),
@@ -1464,6 +1523,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
     try:
         with contextlib.redirect_stdout(buffer), contextlib.redirect_stderr(buffer):
             seed = _training_seed(42 if job.get("seed") is None else job["seed"])
+            quantization = QuantizationConfig.coerce(job.get("quantization"))
             rows, dataset_identity = load_sft_dataset(Path(job["dataset"]))
             if not rows:
                 logger.error("No usable rows in %s", job["dataset"])
@@ -1480,6 +1540,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         learning_rate=job["learning_rate"],
                         max_length=job["max_length"],
                         seed=seed,
+                        quantization=quantization,
                     )
                 else:
                     output_dir.mkdir(parents=True, exist_ok=True)
@@ -1501,6 +1562,7 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         dataset_identity=dataset_identity,
                         parent_adapter=job.get("parent_adapter"),
                         seed=seed,
+                        quantization=quantization,
                     )
                     from stateset_agents.training.sft_artifacts import (
                         verify_sft_adapter,
@@ -1594,6 +1656,31 @@ def build_parser() -> Any:
         help="Token budget per eval completion. Raise it for reasoning "
         "models whose answers follow a long preamble.",
     )
+    parser.add_argument(
+        "--quantization",
+        choices=("none", "4bit", "8bit"),
+        default="none",
+        help="Load the frozen base model quantized and train LoRA on top "
+        "(QLoRA). Needs a CUDA GPU and bitsandbytes "
+        "(pip install 'stateset-agents[qlora]').",
+    )
+    parser.add_argument(
+        "--quant-type",
+        choices=("nf4", "fp4"),
+        default="nf4",
+        help="4-bit storage type (with --quantization 4bit).",
+    )
+    parser.add_argument(
+        "--compute-dtype",
+        choices=("bfloat16", "float16", "float32"),
+        default="bfloat16",
+        help="Matmul dtype for 4-bit layers (float16 on GPUs without bf16).",
+    )
+    parser.add_argument(
+        "--no-double-quant",
+        action="store_true",
+        help="Disable QLoRA double quantization of the 4-bit constants.",
+    )
     return parser
 
 
@@ -1646,6 +1733,12 @@ def main(argv: list[str] | None = None) -> int:
             "eval_max_new_tokens": args.eval_max_new_tokens,
             "parent_adapter": args.parent_adapter,
             "seed": args.seed,
+            "quantization": {
+                "mode": args.quantization,
+                "quant_type": args.quant_type,
+                "double_quant": not args.no_double_quant,
+                "compute_dtype": args.compute_dtype,
+            },
         }
     )
 

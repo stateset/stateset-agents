@@ -52,6 +52,30 @@
     },
     {
       "docs": [
+        "docs/IMPROVEMENT_PIPELINE.md"
+      ],
+      "evidence": [
+        "tests/unit/test_capability_regression.py"
+      ],
+      "graduation_criteria": [
+        "Retain a real lm-evaluation-harness run of a base model and an SFT adapter on at least three tasks, with the gate report",
+        "Exercise one pinned lm-eval release in a CI job with the eval-harness extra installed"
+      ],
+      "id": "capability-regression-eval",
+      "limitations": [
+        "Tested only against a fake harness; no retained lm-evaluation-harness run yet",
+        "A pass bounds regression on the chosen tasks and settings only; small deltas need the reported stderr"
+      ],
+      "maturity": "experimental",
+      "name": "General-capability regression gate (lm-evaluation-harness)",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_capability_regression.py"
+      ]
+    },
+    {
+      "docs": [
         "docs/ARCHITECTURE.md"
       ],
       "evidence": [
@@ -71,6 +95,32 @@
       "tests": [
         "tests/unit/test_agent.py",
         "tests/unit/test_tool_agent.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/DECONTAMINATION.md",
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "benchmark_results/decontamination/20261023/audit.json"
+      ],
+      "graduation_criteria": [
+        "Run the repository audit on every release and fail on new contamination of a shipped eval set",
+        "Measure near-duplicate recall on a labeled paraphrase set and publish the threshold trade-off"
+      ],
+      "id": "data-decontamination",
+      "limitations": [
+        "Lexical matching only: translations, heavy rewrites and contamination inside pretrained base models are not detected",
+        "Near-duplicate detection is in memory; whitespace word splitting needs pre-segmentation for scripts without spaces"
+      ],
+      "maturity": "beta",
+      "name": "Training/eval decontamination (n-gram and MinHash)",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_decontamination.py",
+        "tests/unit/test_cli_data.py"
       ]
     },
     {
@@ -390,6 +440,30 @@
         "tests/unit/test_preference_trainer.py",
         "tests/unit/test_cli_preference.py",
         "tests/learning/test_preference_learns.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "tests/unit/test_sft_quantization.py"
+      ],
+      "graduation_criteria": [
+        "Retain CUDA 4-bit and 8-bit QLoRA SFT runs with adapter manifests, loss curves and eval results",
+        "Move the GSPO and TRL GRPO trainers onto the shared stateset_agents.training.quantization helper"
+      ],
+      "id": "qlora-sft",
+      "limitations": [
+        "Covered by CPU tests of configuration objects and failure paths only; no retained GPU QLoRA SFT run",
+        "train-remote does not forward the quantization flags yet"
+      ],
+      "maturity": "experimental",
+      "name": "QLoRA (4-bit/8-bit) supervised fine-tuning",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_sft_quantization.py"
       ]
     },
     {

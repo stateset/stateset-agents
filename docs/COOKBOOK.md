@@ -245,10 +245,17 @@ cat eval_report.md
 
 | # | Score | Query | Response (head) |
 |---|-------|-------|-----------------|
-| 0 | ✅ 0.92 | I want a refund for order #4521 | I'd be happy to help with your refund... |
-| 1 | ⚠️  0.43 | The app crashes every time...   | Let me look into that for you...      |
+| 0 | ✅ 0.92 | I returned the blender two weeks... | I'm sorry the refund hasn't arrived... |
+| 1 | ⚠️  0.43 | The jacket came in the wrong size... | Let me look into that for you...      |
 | ... |
 ```
+
+**Keep it held out:** the bundled set shares no query with the starter's
+`scenarios.jsonl` or the bundled support corpus (an earlier version repeated six
+of the queries Recipe 1 trains on). Check your own eval set against your
+training data before trusting the number:
+`stateset-agents data decontaminate --train scenarios.jsonl --eval my_eval.jsonl`
+([Decontamination](DECONTAMINATION.md)).
 
 **Use it in CI:** the markdown report makes the threshold check grep-able. For a PR gate that fails when mean score regresses, see [`docs/PLATFORM_TOUR.md` §FAQ](./PLATFORM_TOUR.md).
 

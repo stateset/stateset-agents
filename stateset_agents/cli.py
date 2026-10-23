@@ -813,10 +813,12 @@ from stateset_agents import (  # noqa: E402, F401 — grade -> curate -> retrain
     cli_meta,
     cli_train,
 )
+from stateset_agents.cli_data import data_app  # noqa: E402 — data decontaminate
 from stateset_agents.cli_industry import industry_app  # noqa: E402 — industry
 from stateset_agents.cli_reward import reward_audit  # noqa: E402 — reward audit
 
 # Sub-apps that do not import this module (no import cycle) register here.
+app.add_typer(data_app, name="data")
 app.add_typer(industry_app, name="industry")
 app.command("reward-audit")(reward_audit)
 

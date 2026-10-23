@@ -23,7 +23,9 @@ and `make release-governance` validates it on every pull request and release.
 |---|---|
 | `api-serving` | Stable |
 | `bayesian-reward-model` | Experimental |
+| `capability-regression-eval` | Experimental |
 | `core-agents` | Stable |
+| `data-decontamination` | Beta |
 | `deployment-assets` | Beta |
 | `distributed-rollouts` | Beta |
 | `environments-rewards` | Stable |
@@ -35,6 +37,7 @@ and `make release-governance` validates it on every pull request and release.
 | `ppo-rlaif-trainers` | Experimental |
 | `preference-optimization` | Beta |
 | `provider-control-plane` | Beta |
+| `qlora-sft` | Experimental |
 | `research-modules` | Experimental |
 | `reward-learning-rlaif` | Beta |
 | `rust-acceleration` | Beta |

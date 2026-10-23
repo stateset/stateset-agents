@@ -217,6 +217,37 @@ stateset-agents train-remote --dataset improved/curated.jsonl \
 
 The job itself is `stateset_agents.training.sft` — identical whichever provider
 runs it (`scripts/sft_from_curated.py` is a thin CLI over the same code).
+
+#### QLoRA: 4-bit and 8-bit SFT
+
+The SFT job can load the frozen base model through bitsandbytes and train the
+LoRA adapter on top (QLoRA), cutting base-weight memory roughly 4× (4-bit) or
+2× (8-bit):
+
+```bash
+pip install 'stateset-agents[qlora]'   # bitsandbytes; needs a CUDA GPU
+python -m stateset_agents.training.sft --dataset improved/curated.jsonl \
+    --base-model Qwen/Qwen3.5-9B --output-dir outputs/sft_qlora \
+    --quantization 4bit                  # NF4 + double quant, bf16 compute
+```
+
+- `--quantization [none|4bit|8bit]` (default `none`): 4-bit uses QLoRA's NF4
+  storage with double quantization; 8-bit uses LLM.int8.
+- `--quant-type [nf4|fp4]` (default `nf4`), `--compute-dtype
+  [bfloat16|float16|float32]` (default `bfloat16`; use `float16` on GPUs
+  without bf16), `--no-double-quant`.
+
+The base is placed at load time (`device_map="auto"`) and prepared with
+`peft.prepare_model_for_kbit_training` (gradient checkpointing on) before the
+adapter is attached. The adapter manifest records the quantization settings.
+On a CPU-only host, `--dry-run` and the training plan still work; an actual run
+stops before any download with "4-bit/8-bit (QLoRA) loading needs a CUDA GPU".
+A missing bitsandbytes names the `qlora` extra. `train-remote` does not
+forward these flags yet; run the job directly on the GPU host. The code lives
+in `stateset_agents.training.quantization` (`QuantizationConfig`,
+`build_bnb_config`) for reuse by other trainers. CPU tests cover the
+configuration objects and failure paths; QLoRA SFT on a GPU has no retained
+evidence in this repo yet.
 Remote runs install a pinned published `stateset-agents[training]` rather than
 syncing your working tree, so a remote run is reproducible; the tradeoff is
 that testing an unreleased change remotely needs a dev release.
@@ -1329,6 +1360,42 @@ stateset-agents ingest
 - `--format, -f TEXT`: Source log format: 'openai' (chat-completions messages JSONL) or 'langchain' (LangChain/LangGraph message-dump JSON).
 - `--input, -i TEXT`: Path to the source log file. For --format openai: JSONL, one conversation per line ({'messages': [...]} or a bare message list). For --format langchain: a single JSON file (see stateset_agents.data.trajectory_ingest docstring for supported shapes).
 - `--output, -o TEXT`: Output path. If it ends in .jsonl, all conversations are concatenated into one graded-history JSONL file (turns from different conversations are separated by a blank line — note the grader treats such a file as ONE transcript; use directory mode to grade conversations separately). Otherwise it is treated as a directory and one <output>/conversation_<N>.jsonl file is written per conversation — feed any of them to `python scripts/grade_transcript.py --history <file>`.
+
+### `stateset-agents data`
+
+Inspect and clean training data. `data decontaminate` finds eval-set text in
+training files by exact 13-gram overlap on normalized words (optionally plus
+MinHash near duplicates), writes the evidence, and can filter or flag the
+contaminated rows. See [Decontamination](DECONTAMINATION.md).
+
+```bash
+stateset-agents data decontaminate --train sft_train.jsonl \
+    --eval held_out.jsonl --eval builtin:gsm8k-test --report contamination.json
+stateset-agents data decontaminate --train sft_train.jsonl --eval held_out.jsonl \
+    --action filter --output sft_train.clean.jsonl
+```
+
+- `--train, -t TEXT` (repeatable): training JSONL or JSON (chat/SFT, preference,
+  RL prompt or scenario rows), `NAME=PATH`, or `builtin:NAME` (report only).
+- `--eval, -e TEXT` (repeatable): an eval file, `NAME=PATH`, or
+  `builtin:NAME` (`support-bench`, `tool-calling-bench`, `gsm8k-test`,
+  `gsm8k-train`).
+- `--report PATH`: write the full JSON report (new file): per eval set, every
+  contaminated row with its overlapping n-grams, overlap fraction, example
+  training rows and near-duplicate match.
+- `--action [report|filter|flag]` (default `report`) with `--output PATH`
+  (new `.jsonl` or `.json` file): drop the contaminated rows, or keep them with
+  `metadata.contamination`. `--target train` (default) changes the single
+  `--train` file; `--target eval` writes a clean subset of the single `--eval`
+  file.
+- Matching: `--ngram-size` (default `13`), `--min-tokens` (default `8`; shorter
+  eval segments are matched whole), `--min-overlap` (fraction of an eval row's
+  n-grams that must be found; default `0` = any), `--mask-digits`,
+  `--include-system`, `--field KEY` (repeatable).
+- Near duplicates: `--near-duplicates`, `--threshold` (exact Jaccard, default
+  `0.8`).
+- `--fail-on-contamination`: exit `1` when any eval row is contaminated, after
+  writing outputs. Invalid input or an existing output path exits `2`.
 
 ### `stateset-agents mcp`
 

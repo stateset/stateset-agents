@@ -1575,6 +1575,8 @@ dependency audit does not establish GPU compatibility or model quality.
 ```bash
 pip install "stateset-agents[auto-research]" # Autonomous experiment loop + Optuna
 pip install "stateset-agents[trl]"           # TRL GRPO integration + bitsandbytes
+pip install "stateset-agents[qlora]"         # 4-bit/8-bit QLoRA SFT (bitsandbytes, CUDA)
+pip install "stateset-agents[eval-harness]"  # lm-evaluation-harness capability regression gate
 pip install "stateset-agents[vllm]"          # vLLM generation backend
 pip install "stateset-agents[hpo]"           # Optuna/Ray Tune HPO
 pip install "stateset-agents[api]"           # FastAPI service
@@ -2102,6 +2104,20 @@ make grade-batch-summary GRADED_DIR=transcripts/graded
 The curated file is **idempotent across reruns** — duplicate (prompt, response) pairs are skipped, so you can re-grade as your reward function evolves without polluting the curated set.
 
 This closes the **human-in-the-loop curation cycle**: train → eval → chat → capture → grade → curate → train again.
+
+Before training on a curated set, check that it does not contain your eval
+sets (exact 13-gram overlap on normalized text, optional MinHash near
+duplicates), and drop the rows that do:
+
+```bash
+stateset-agents data decontaminate --train curated.jsonl \
+    --eval held_out.jsonl --eval builtin:support-bench --report contamination.json
+stateset-agents data decontaminate --train curated.jsonl --eval held_out.jsonl \
+    --action filter --output curated.clean.jsonl
+```
+
+See [docs/DECONTAMINATION.md](docs/DECONTAMINATION.md), including what the
+check found in the repo's own eval sets.
 
 ## Benchmark your fine‑tune
 

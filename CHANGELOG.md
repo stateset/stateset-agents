@@ -176,6 +176,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   fixes it finds 2,446 such adversary episodes across all 15 factories; it
   now finds none.
 
+- **Training/eval decontamination** (`data-decontamination` beta in the
+  component maturity contract; docs/DECONTAMINATION.md).
+  `stateset_agents.data.decontamination` compares SFT chat rows, preference
+  pairs, RL prompt files and scenario files with eval sets. It matches exact
+  13-grams on normalized text (NFKC, casefold, punctuation and whitespace;
+  `--mask-digits` optional). Eval segments of 8–12 words are matched whole and
+  3–7-word segments as exact duplicates; shorter ones are counted as
+  unchecked. Optional row-level MinHash/LSH near duplicates are verified by
+  exact Jaccard, with the band shape derived from the threshold for 99% recall.
+  The report lists contaminated rows per eval set with the overlapping
+  n-grams, the overlap fraction and example training rows. `filter` and `flag`
+  act on training rows or on an eval set; `--min-overlap` separates template
+  boilerplate from leaked rows. Output is deterministic (independent of
+  `PYTHONHASHSEED`); 10,000 training rows take seconds. New:
+  `stateset-agents data decontaminate` (with `builtin:support-bench`,
+  `builtin:tool-calling-bench` and `builtin:gsm8k-test`/`gsm8k-train`).
+  `curate_conversations(decontaminate_against=...)` and
+  `python -m stateset_agents.data.curation --decontaminate-against` drop
+  overlapping training rows and record the result in the manifest.
+  `scripts/audit_decontamination.py` checks the repo's own eval sets; the
+  results are retained in
+  `benchmark_results/decontamination/20261023/audit.json` and explained in
+  the guide.
+- **General-capability regression gate** (`capability-regression-eval`,
+  experimental). `stateset_agents.evaluation.capability_regression` runs a
+  named lm-evaluation-harness task list against a local checkpoint, with or
+  without a PEFT adapter and with fixed seeds. It records scores in the repo's
+  evaluation report shape and gates a candidate on a baseline with an
+  absolute, relative or per-task allowed regression. Lower-is-better metrics
+  are handled. Reports with mismatched settings are refused. The harness is
+  the optional `[eval-harness]` extra; without it the module imports and runs
+  raise `CapabilityEvalUnavailable` naming the extra. The CLI is
+  `python -m stateset_agents.evaluation.capability_regression run|compare`.
+  Tested against a fake harness only.
+- **QLoRA for SFT** (`qlora-sft`, experimental).
+  `python -m stateset_agents.training.sft --quantization 4bit|8bit` (with
+  `--quant-type`, `--compute-dtype` and `--no-double-quant`) loads the frozen
+  base through bitsandbytes (NF4 with double quantization and bf16 compute by
+  default), places it at load time and runs
+  `prepare_model_for_kbit_training` before LoRA. The adapter manifest records
+  the settings. The shared helper `stateset_agents.training.quantization`
+  (`QuantizationConfig`, `build_bnb_config`, `require_bitsandbytes`) gives a
+  CPU-only host an actionable error and names the new `[qlora]` extra when
+  bitsandbytes is missing; dry runs keep working. CPU tests cover the config
+  objects and failure paths; there is no GPU run yet.
+
 ### Changed
 
 - The evaluation panel's background work runs through the shared
@@ -393,6 +439,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
+- Model presets `qwen3` (which loaded `Qwen/Qwen2.5-7B`) and `gemma3` (which
+  loaded `google/gemma-2-9b-it`) are renamed `qwen2.5-7b` and `gemma2-9b`, the
+  families their checkpoints belong to. The repo records no Qwen3 7–14B
+  checkpoint, and its recorded Gemma 3 checkpoints (1B, 4B multimodal) do not
+  match the presets' 9B/7B hyperparameters, so the presets were renamed rather
+  than repointed. `get_preset`, `resolve_preset_name` and
+  `examples/finetune_gspo.py --model` accept the old names with a
+  DeprecationWarning until **v0.71.0** (preset names are not part of the v1
+  contract). `list_preset_names()` lists only the new names. A test now checks
+  every preset's name prefix against its checkpoint's family.
 - `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` (and
   `stateset_agents.rewards.CodeExecutionReward`) is renamed
   `CodeFormattingHeuristic` (component `code_formatting`): it never executed
@@ -515,6 +571,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- `examples/sample_eval_set.jsonl` (Cookbook Recipe 5) repeated six of the
+  eight starter `scenarios.jsonl` queries that Recipe 1 trains on (eight of
+  its ten queries were verbatim bundled support-corpus queries), so its pass
+  rate measured recall. It now holds ten held-out queries with the same schema
+  and intent mix, and a test keeps it clean against both corpora.
 - `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
   prompt, so a policy never saw tool results; they now render as
   `Tool: <content>` lines.

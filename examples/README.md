@@ -150,8 +150,9 @@ CUDA it prints a plan instead of training. Gemma 2 2B
 (`google/gemma-3-4b-it`) can also be selected through `--base-model`; obtain
 Hugging Face access for gated checkpoints first. Older Gemma chat templates
 may require putting instructions in the first user message instead of a
-separate system message. The legacy `gemma3` preset still points to Gemma 2
-9B for compatibility; it does not select a Gemma 3 checkpoint.
+separate system message. The Gemma 2 9B preset is `gemma2-9b`; its old name
+`gemma3` (which never selected a Gemma 3 checkpoint) is a deprecated alias
+until v0.71.0.
 
 Google's E2B/E4B labels mean **effective** parameters: their model cards list
 about 5.1B/8B parameters including embeddings. Budget memory for embeddings,
@@ -462,8 +463,10 @@ python examples/finetune_gspo.py --model glm5.1 --task customer_service --no-dry
 ```
 
 Use it for a quick preview of any supported preset (`muse-glimmer`, `nemotron-3-5`, `qwen3.8-27b`, `qwen3.8-flash-next`, `qwen3-coder`, `gpt-oss`, `deepseek-v4`, `kimi-k3`, `kimi-k2.5`,
-`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
-`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. `--dry-run`
+`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen2.5-7b`, `qwen3.5-0.8b`, `qwen3.5-27b`,
+`gemma2-9b`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. The former
+`qwen3` and `gemma3` names (which loaded Qwen2.5 7B and Gemma 2 9B) still resolve
+to `qwen2.5-7b` and `gemma2-9b` with a deprecation warning until v0.71.0. `--dry-run`
 defaults to `True`; pass `--no-dry-run` to actually invoke the training
 entry point (the packaged starter's `run_<name>_config` for starter-backed
 presets, or `stateset_agents.training.gspo_entrypoints.train_with_gspo`

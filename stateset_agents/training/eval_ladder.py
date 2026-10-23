@@ -20,7 +20,10 @@ depth, with two adversarial screws to turn:
 Sets are deterministic per seed. Eval and harvest are disjoint by
 construction: they draw from disjoint sets of issue combinations (so no eval
 prompt equals a harvest prompt once reference numbers are masked) and from
-non-overlapping reference ranges, and every build verifies it. Every prompt
+non-overlapping reference ranges, and every build verifies it. Disjointness
+is at the level of issue sets: from depth 3, or with refusals, eval prompts
+share clause spans (13-grams) with harvest prompts by design, which
+``stateset-agents data decontaminate`` reports (docs/DECONTAMINATION.md). Every prompt
 spec is the same ``{prompt, expect, forbid}`` shape the harvest, the eval
 gate, and the flywheel already speak.
 """
