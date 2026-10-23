@@ -48,6 +48,7 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
+from .quantization import QuantizationConfig, build_bnb_config
 from .runtime_state import TrainingRuntime, validate_training_config
 from .spine.algorithm import (
     AlgorithmSpec,
@@ -273,18 +274,14 @@ class GSPOModelManager(SharedModelManager):
         if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
             _require_peft()
 
-        # Add quantization if specified
+        # Add quantization if specified: the shared QLoRA config (Transformers
+        # 5 removed the legacy load_in_* model kwargs).
         if self.config.use_8bit or self.config.use_4bit:
             _require_bitsandbytes()
-            from transformers import BitsAndBytesConfig
-
-            # Transformers 5 removed the legacy load_in_* model kwargs.
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_8bit=self.config.use_8bit,
-                load_in_4bit=self.config.use_4bit and not self.config.use_8bit,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=model_kwargs.get("torch_dtype", torch.bfloat16),
+            model_kwargs["quantization_config"] = build_bnb_config(
+                QuantizationConfig.from_trainer_flags(
+                    self.config, model_kwargs.get("torch_dtype", torch.bfloat16)
+                )
             )
 
     def _prepare_base_model(self, base_model: Any) -> Any:

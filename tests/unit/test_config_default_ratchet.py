@@ -25,8 +25,10 @@ PACKAGE = Path(__file__).resolve().parents[2] / "stateset_agents" / "training"
 #: the training spine); config_value took the 134 that restated the
 #: dataclass default verbatim (127), then the trainers' drifting reads
 #: (learning rate, Adam beta2, group size, episode and accumulation budgets,
-#: seed, W&B tags) settled on the dataclass (108).
-CEILING = 108
+#: seed, W&B tags) settled on the dataclass (108); then the GRPO losses'
+#: entropy_coef / generation_batch_size / max_completion_length / prompt and
+#: clip reads and the TRL bridge's batch sizing did too (96).
+CEILING = 96
 
 
 def inline_default_reads() -> list[str]:

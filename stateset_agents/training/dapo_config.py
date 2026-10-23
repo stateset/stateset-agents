@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from ..core.errors import ConfigurationError
 from .config import (
     TrainingConfig,
+    reject_dead_fields,
     require_finite,
     require_positive_ints,
     validate_group_size,
@@ -41,6 +42,8 @@ class DAPOConfig(TrainingConfig):
     clip_eps_high: float = 0.28
 
     group_size: int = 16
+    # Deprecated (removed in v0.71.0): never read. Prompts per iteration are
+    # per_device_train_batch_size; a non-default value is rejected.
     prompt_batch_size: int = 512
     mini_batch_size: int = 512
     # Inner gradient updates per rollout (mu). Cadence (shared with GEPO and
@@ -78,6 +81,8 @@ class DAPOConfig(TrainingConfig):
     vllm_tensor_parallel_size: int = 1
     vllm_enable_prefix_caching: bool = True
 
+    # Deprecated (removed in v0.71.0): DAPO has no evaluation loop to repeat;
+    # a non-default value is rejected.
     eval_repeats: int = 32
 
     def validate_for_training(self) -> None:
@@ -85,6 +90,10 @@ class DAPOConfig(TrainingConfig):
         and DAPO's own numeric fields in range."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        reject_dead_fields(
+            self,
+            {"prompt_batch_size": "per_device_train_batch_size", "eval_repeats": None},
+        )
         require_positive_ints(
             self,
             "dynamic_sampling_buffer_size",

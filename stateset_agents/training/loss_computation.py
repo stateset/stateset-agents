@@ -21,6 +21,7 @@ from ..core.errors import TrainingError
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
+from .config import config_value
 from .ddp_population import run_token_local, token_policy
 from .distributed_advantages import prepare_reward_batch, validate_advantages
 from .grpo_accumulation import NormalizedLoss
@@ -147,12 +148,11 @@ def _resolve_model_device(agent: AgentLike, torch_mod: ModuleType) -> DeviceLike
 def _grpo_objective(config: LossConfig) -> PolicyObjective:
     """GRPO trainers score a trajectory as summed log-probs, so the ratio is
     sequence-level and clipped at ``seq_clip_ratio`` (GSPO scale)."""
-    seq_clip = float(getattr(config, "seq_clip_ratio", 3e-4))
+    seq_clip = float(config_value(config, "seq_clip_ratio"))
     return objectives.resolve_objective(
         config,
         "gspo",
-        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
-        or None,
+        max_completion_length=int(config_value(config, "max_completion_length")),
         supported_ratios=("sequence", "sequence_token"),
         name="grpo_sequence",
         clip_low=seq_clip,
@@ -239,8 +239,7 @@ def _token_objective(config: LossConfig) -> PolicyObjective:
     return objectives.resolve_objective(
         config,
         "grpo",
-        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
-        or None,
+        max_completion_length=int(config_value(config, "max_completion_length")),
         clip_low=clip,
         clip_high=clip,
         kl="none",
@@ -594,9 +593,7 @@ def compute_token_old_logprobs(
     if not groups or any(r is None for r in rows):
         return None
     device = _resolve_model_device(agent, torch)
-    chunk = int(getattr(config, "generation_batch_size", 0) or 0) or max(
-        len(r) for r in rows if r
-    )
+    chunk = _old_logprob_chunk(config, max(len(r) for r in rows if r))
     snapshots = []
     # Score the old policy without dropout: a stochastic snapshot makes the
     # first inner-update ratio noise rather than 1, so the clip bites on it.
@@ -741,13 +738,20 @@ class _TokenLossTotals:
     entropy_sum: float = 0.0
 
 
+def _old_logprob_chunk(config: LossConfig, largest_group: int) -> int:
+    """Rows per old-log-prob forward: ``generation_batch_size`` (the
+    dataclass's 4 for a config without it); an explicit 0 means one chunk
+    per group (``largest_group`` rows)."""
+    return int(config_value(config, "generation_batch_size") or 0) or int(largest_group)
+
+
 def _token_objective_settings(config: LossConfig) -> tuple[PolicyObjective, float]:
     """The validated token objective (entropy split out) and ``entropy_coef``.
 
     Validates before forwards, reward statistics or streamed backward; the
     entropy bonus is then applied separately with its own token denominator.
     """
-    entropy = float(getattr(config, "entropy_coef", 0.0))
+    entropy = float(config_value(config, "entropy_coef"))
     validated = _token_objective(config).with_(entropy_coef=entropy)
     return validated.with_(entropy_coef=0.0), entropy
 
@@ -820,8 +824,7 @@ def _build_token_batch(
         )
     size = max(
         1,
-        int(getattr(config, "generation_batch_size", 0) or 0)
-        or len(max(rows_per_group, key=len, default=[])),
+        _old_logprob_chunk(config, len(max(rows_per_group, key=len, default=[]))),
     )
     old_logprobs, source = run_token_local(
         agent.model,
@@ -1199,7 +1202,7 @@ def compute_grpo_loss(
     policy_losses = []
     all_advantages_for_logging: list[float] = []
     entropy_values_for_logging: list[float] = []
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    entropy_coef = float(config_value(config, "entropy_coef"))
 
     for group in trajectory_groups:
         if not group.trajectories:
@@ -1692,7 +1695,7 @@ def compute_enhanced_grpo_loss(
 
     device = _resolve_model_device(agent, torch)
     terms = _EnhancedTerms()
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    entropy_coef = float(config_value(config, "entropy_coef"))
     objective = _grpo_objective(config)
 
     for group in trajectory_groups:
@@ -2178,8 +2181,8 @@ def _prepare_inputs_and_labels(
     prompt and one reply keep the fallback with a warning: the stub backend
     (no chat template, no offsets) trains through it.
     """
-    max_length = int(getattr(config, "max_prompt_length", 512)) + int(
-        getattr(config, "max_completion_length", 512)
+    max_length = int(config_value(config, "max_prompt_length")) + int(
+        config_value(config, "max_completion_length")
     )
     tokenizer = _tokenizer(agent)
     device = _model_device(agent)

@@ -26,6 +26,7 @@ from . import objectives, rl_losses
 from .config import (
     TrainingConfig,
     config_value,
+    reject_dead_fields,
     require_finite,
     validate_group_size,
 )
@@ -99,8 +100,9 @@ class GEPOConfig(TrainingConfig):
     lora_alpha: int = 32
     lora_dropout: float = 0.05
 
-    # Advantage computation
-    use_group_baseline: bool = True  # Use within-group baseline normalization
+    # Advantage computation. Deprecated (removed in v0.71.0): GEPO always
+    # normalises within the group; a non-default value is rejected.
+    use_group_baseline: bool = True
 
     # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
     # strictly on-policy; values > 1 reuse each rollout, and the sampler
@@ -115,6 +117,7 @@ class GEPOConfig(TrainingConfig):
         and a PPO clip in [0, 1)."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        reject_dead_fields(self, {"use_group_baseline": None})
         require_finite(self, "clip_eps", minimum=0, maximum=1, exclusive_maximum=True)
 
     @classmethod

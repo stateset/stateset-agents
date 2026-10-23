@@ -148,8 +148,16 @@ def test_gspo_uses_modern_quantization_config(monkeypatch, bits):
     kwargs = {"torch_dtype": torch.bfloat16}
     manager._prepare_model_kwargs(kwargs)
     quant = kwargs["quantization_config"]
-    assert quant[f"load_in_{bits}bit"] is True
-    assert quant["bnb_4bit_compute_dtype"] == torch.bfloat16
+    # The shared training.quantization config: 8-bit takes no 4-bit settings.
+    if bits == 8:
+        assert quant == {"load_in_8bit": True}
+    else:
+        assert quant == {
+            "load_in_4bit": True,
+            "bnb_4bit_quant_type": "nf4",
+            "bnb_4bit_use_double_quant": True,
+            "bnb_4bit_compute_dtype": torch.bfloat16,
+        }
     assert "load_in_4bit" not in kwargs and "load_in_8bit" not in kwargs
 
 

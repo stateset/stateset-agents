@@ -107,6 +107,40 @@ def require_finite(
             )
 
 
+#: Release that removes the dead algorithm-config fields deprecated in 0.70.
+DEAD_FIELD_REMOVAL = "v0.71.0"
+
+
+def reject_dead_fields(config: Any, fields: dict[str, str | None]) -> None:
+    """Reject a non-default value for a field no trainer reads.
+
+    ``fields`` maps each dead field to the field to use instead (``None``:
+    nothing replaces it). The field keeps its default until its removal
+    (:data:`DEAD_FIELD_REMOVAL`), so existing configs that never set it
+    still load; setting it now fails with a dated deprecation instead of
+    being silently ignored.
+    """
+    from .._deprecation import deprecation_message
+
+    defaults = {
+        item.name: item.default
+        for item in dataclasses.fields(type(config))
+        if item.name in fields
+    }
+    for name, replacement in fields.items():
+        value = getattr(config, name)
+        if value != defaults[name]:
+            message = deprecation_message(
+                f"{type(config).__name__}.{name}",
+                removal="0.71.0",
+                replacement=replacement,
+            )
+            raise ConfigurationError(
+                f"{message} No trainer reads it, so {name}={value!r} would be "
+                f"silently ignored; leave it at its default ({defaults[name]!r})."
+            )
+
+
 def validate_group_size(group_size: object) -> None:
     """Group-relative algorithms (DAPO, GEPO, VAPO) need two responses per
     prompt: a lone response has no group baseline (GEPO and VAPO drop such a

@@ -453,7 +453,7 @@ class TestVAPOTrainer:
 
         return VAPOConfig(
             model_name="gpt2",
-            num_iterations=2,
+            num_gradient_updates=2,
             group_size=4,
         )
 
