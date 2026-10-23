@@ -214,6 +214,22 @@ trl = [
     "trl>=0.14.0,<2.0.0",
     "bitsandbytes>=0.41.0",
 ]
+qlora = [
+    # 4-bit/8-bit (QLoRA) base-model loading: `python -m
+    # stateset_agents.training.sft --quantization 4bit` and
+    # stateset_agents.training.quantization. bitsandbytes' k-bit kernels need
+    # a CUDA GPU; CPU hosts keep dry runs and get an actionable error.
+    "stateset-agents[training]",
+    "bitsandbytes>=0.49.0",
+]
+eval-harness = [
+    # General-capability regression checks against a local checkpoint or
+    # adapter (stateset_agents.evaluation.capability_regression). Not a core
+    # dependency: the module imports without it and names this extra when a
+    # run is requested.
+    "stateset-agents[training]",
+    "lm-eval>=0.4.5,<0.5",
+]
 vllm = [
     "vllm>=0.18.2",
 ]

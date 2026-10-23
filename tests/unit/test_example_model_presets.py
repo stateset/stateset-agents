@@ -15,10 +15,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from examples import finetune_gspo  # noqa: E402
 from examples.model_presets import (  # noqa: E402
+    DEPRECATED_PRESET_ALIASES,
     PRESETS,
     ModelPreset,
     get_preset,
     list_preset_names,
+    resolve_preset_name,
 )
 
 STARTER_BACKED_PRESETS = [
@@ -70,10 +72,10 @@ def test_presets_registry_has_expected_models():
         "glm5.1",
         "glm5.2",
         "glm5.3-flash",
-        "qwen3",
+        "qwen2.5-7b",
         "qwen3.5-0.8b",
         "qwen3.5-27b",
-        "gemma3",
+        "gemma2-9b",
         "gemma4-31b",
         "gemma4-e2b",
         "gemma4-e4b",
@@ -82,6 +84,74 @@ def test_presets_registry_has_expected_models():
     }
     assert set(PRESETS.keys()) == expected
     assert set(list_preset_names()) == expected
+
+
+@pytest.mark.parametrize(
+    "alias, canonical, model_id",
+    [
+        ("qwen3", "qwen2.5-7b", "Qwen/Qwen2.5-7B"),
+        ("gemma3", "gemma2-9b", "google/gemma-2-9b-it"),
+    ],
+)
+def test_misnamed_presets_resolve_through_deprecated_aliases(
+    alias, canonical, model_id
+):
+    """``qwen3`` loaded Qwen2.5 and ``gemma3`` loaded Gemma 2; the honest
+    names replace them and the old ones warn until v0.71.0."""
+    assert DEPRECATED_PRESET_ALIASES[alias] == canonical
+    assert alias not in PRESETS and alias not in list_preset_names()
+    assert get_preset(canonical).model_id == model_id
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0.*" + canonical):
+        assert get_preset(alias) is get_preset(canonical)
+    with pytest.warns(DeprecationWarning, match=alias):
+        assert resolve_preset_name(alias) == canonical
+
+
+def test_driver_accepts_deprecated_alias_and_runs_the_replacement(capsys):
+    with pytest.warns(DeprecationWarning, match="gemma2-9b"):
+        assert finetune_gspo.main(["--model", "gemma3", "--dry-run"]) == 0
+    assert "gemma2-9b" in capsys.readouterr().out
+
+
+#: Family claimed by a preset name prefix -> substring its checkpoint must carry.
+NAME_FAMILIES = {
+    "qwen2.5": "Qwen2.5-",
+    "qwen3.5": "Qwen3.5-",
+    "qwen3.8": "Qwen3.8-",
+    "qwen3-": "Qwen3-",
+    "gemma2": "gemma-2-",
+    "gemma4": "gemma-4-",
+    "llama3.2": "Llama-3.2-",
+    "llama3": "Llama-3",
+    "glm5.1": "GLM-5.1",
+    "glm5.2": "GLM-5.2",
+    "glm5.3": "GLM-5.3",
+    "kimi-k2.5": "Kimi-K2.5",
+    "kimi-k2.6": "Kimi-K2.6",
+    "kimi-k3": "Kimi-K3",
+    "deepseek-v4.1": "DeepSeek-V4.1-",
+    "deepseek-v4": "DeepSeek-V4-",
+    "deepseek-r1": "DeepSeek-R1-",
+    "ministral3": "Ministral-3-",
+    "granite4": "granite-4.0-",
+    "olmo3": "Olmo-3-",
+    "phi4": "Phi-4-",
+    "smollm3": "SmolLM3-",
+    "lfm2.5": "LFM2.5-",
+    "functiongemma": "functiongemma-",
+    "mimo-v2.6": "MiMo-V2.6-",
+}
+
+
+@pytest.mark.parametrize("name", list_preset_names())
+def test_preset_name_claims_the_family_its_checkpoint_belongs_to(name):
+    """A versioned family prefix in the preset name must match the checkpoint
+    (the class of bug that let ``qwen3`` load Qwen2.5 and ``gemma3`` Gemma 2)."""
+    prefixes = [prefix for prefix in NAME_FAMILIES if name.startswith(prefix)]
+    if not prefixes:
+        return
+    prefix = max(prefixes, key=len)
+    assert NAME_FAMILIES[prefix] in get_preset(name).model_id, (name, prefix)
 
 
 def test_preset_is_frozen_dataclass():
@@ -213,9 +283,9 @@ def test_starter_module_field_set_for_packaged_starters():
         "kimi-k2.5",
         "glm5.3-flash",
         "qwen3.8-flash-next",
-        "qwen3",
+        "qwen2.5-7b",
         "qwen3.5-27b",
-        "gemma3",
+        "gemma2-9b",
         "llama3",
         "mistral",
     ):

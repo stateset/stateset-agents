@@ -179,6 +179,9 @@ benchmark_results/*
 !benchmark_results/training_contracts/**/*.json
 !benchmark_results/industry_pilot/
 !benchmark_results/industry_pilot/**
+!benchmark_results/decontamination/
+!benchmark_results/decontamination/**/
+!benchmark_results/decontamination/**/*.json
 benchmark_results/industry_pilot/**/*.safetensors
 benchmark_results/industry_pilot/**/*.pt
 benchmark_results/industry_pilot/**/*.pth

@@ -234,6 +234,8 @@ config = TrainingConfig(
 
 ### Strategy 4: Quantization
 
+For supervised fine-tuning, `python -m stateset_agents.training.sft --quantization 4bit` (or `8bit`) loads the base through bitsandbytes and trains LoRA on top; see [CLI_REFERENCE.md](CLI_REFERENCE.md#qlora-4-bit-and-8-bit-sft).
+
 For extreme memory constraints:
 
 ```python
