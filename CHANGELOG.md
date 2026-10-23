@@ -249,11 +249,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stateset_agents.core.types`, imported by nothing in the framework, warns on
   import and is removed in **v0.71.0**; its `ConversationTurn` is the
   canonical class (same `(user_message, assistant_response, reward)` form).
+- `stateset_agents.core.enhanced.A2CTrainer`, `AdvancedRLOrchestrator` and
+  their factories warn and will be removed in v0.71.0, with the module's DPO
+  trainer; nothing maintained depends on them. The orchestrator now defaults
+  to A2C, since its PPO and GSPO entries are gone.
 - `stateset_agents.core.enhanced.DPOTrainer` warns and will be removed in
   v0.71.0; use `stateset_agents.training.preference.PreferenceTrainer`.
 
 ### Removed
 
+- `stateset_agents.core.enhanced.PPOTrainer`, `PPOConfig`,
+  `create_ppo_trainer`, `GSPOTrainerStub` and `create_gspo_trainer`,
+  deprecated in v0.69.0 for removal in v0.70.0. Use
+  `stateset_agents.experimental.ppo.PPOTrainer` and
+  `stateset_agents.training.gspo_trainer.GSPOTrainer`.
 - The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
   `ConversationSimulator` and `ConversationSimulatorConfig`, deprecated in
   v0.64.0 with removal promised for v0.66.0, are removed from

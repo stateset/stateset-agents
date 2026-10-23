@@ -2,16 +2,15 @@
 Comprehensive tests for core/enhanced/advanced_rl_algorithms.py
 
 Covers:
-- PPO (Proximal Policy Optimization) implementation and training
 - DPO (Direct Preference Optimization) implementation
 - A2C (Advantage Actor-Critic) implementation
 - Actor-Critic network architecture
 - Configuration classes for each algorithm
 """
 
+from types import SimpleNamespace
 from unittest.mock import Mock
 
-import numpy as np
 import pytest
 import torch
 import torch.nn as nn
@@ -22,51 +21,7 @@ from stateset_agents.core.enhanced.advanced_rl_algorithms import (
     ActorCriticNetwork,
     DPOConfig,
     DPOTrainer,
-    PPOConfig,
-    PPOTrainer,
 )
-
-
-class TestPPOConfig:
-    """Test PPO configuration"""
-
-    def test_ppo_config_defaults(self):
-        """Test PPO config with default values"""
-        config = PPOConfig()
-
-        assert config.learning_rate == 3e-4
-        assert config.clip_param == 0.2
-        assert config.value_loss_coef == 0.5
-        assert config.entropy_coef == 0.01
-        assert config.gamma == 0.99
-        assert config.gae_lambda == 0.95
-
-    def test_ppo_config_custom_values(self):
-        """Test PPO config with custom values"""
-        config = PPOConfig(
-            learning_rate=1e-4,
-            clip_param=0.3,
-            gamma=0.95,
-            ppo_epochs=10,
-        )
-
-        assert config.learning_rate == 1e-4
-        assert config.clip_param == 0.3
-        assert config.gamma == 0.95
-        assert config.ppo_epochs == 10
-
-    def test_ppo_config_validation(self):
-        """Test PPO config parameter validation"""
-        config = PPOConfig(
-            clip_param=0.2,
-            gamma=0.99,
-        )
-
-        # Clip param should be positive
-        assert 0 < config.clip_param < 1
-
-        # Gamma should be in valid range
-        assert 0 < config.gamma <= 1
 
 
 class TestDPOConfig:
@@ -205,73 +160,6 @@ class TestActorCriticNetwork:
         assert isinstance(network.shared_layers, nn.Sequential)
 
 
-class TestPPOTrainer:
-    """Test PPO trainer"""
-
-    def test_ppo_trainer_creation(self):
-        """Test creating PPO trainer"""
-        config = PPOConfig()
-
-        # Mock agent and environment
-        mock_agent = Mock()
-        mock_env = Mock()
-        mock_reward_fn = Mock()
-
-        try:
-            trainer = PPOTrainer(
-                config=config,
-                agent=mock_agent,
-                environment=mock_env,
-                reward_function=mock_reward_fn,
-            )
-
-            assert trainer is not None
-            assert trainer.config == config
-        except Exception:
-            # If initialization requires more setup, that's acceptable
-            pass
-
-    def test_ppo_config_parameters(self):
-        """Test PPO trainer uses config parameters"""
-        config = PPOConfig(
-            clip_param=0.3,
-            value_loss_coef=0.6,
-            entropy_coef=0.02,
-        )
-
-        assert config.clip_param == 0.3
-        assert config.value_loss_coef == 0.6
-        assert config.entropy_coef == 0.02
-
-    def test_ppo_advantage_computation(self):
-        """Test PPO advantage calculation"""
-        # Simple advantage computation test
-        rewards = np.array([1.0, 0.5, 0.8, 0.3])
-        values = np.array([0.5, 0.4, 0.6, 0.2])
-
-        # GAE formula: A_t = δ_t + (γλ)δ_{t+1} + (γλ)²δ_{t+2} + ...
-        # where δ_t = r_t + γV_{t+1} - V_t
-
-        assert len(rewards) == len(values)
-
-    def test_ppo_clip_ratio(self):
-        """Test PPO clipping mechanism"""
-        config = PPOConfig(clip_param=0.2)
-
-        # Test that clip_param is used correctly
-        clip_ratio = config.clip_param
-        assert clip_ratio == 0.2
-
-        # Simulate probability ratio
-        ratio = torch.tensor([0.5, 1.5, 2.0, 0.1])
-
-        # Clipped ratio should be in [1-clip, 1+clip]
-        clipped_ratio = torch.clamp(ratio, 1 - clip_ratio, 1 + clip_ratio)
-
-        assert torch.all(clipped_ratio >= 1 - clip_ratio)
-        assert torch.all(clipped_ratio <= 1 + clip_ratio)
-
-
 class TestDPOTrainer:
     """Test DPO trainer"""
 
@@ -333,26 +221,15 @@ class TestA2CTrainer:
     """Test A2C trainer"""
 
     def test_a2c_trainer_creation(self):
-        """Test creating A2C trainer"""
+        """A2C builds its actor-critic over the tokenizer's vocabulary."""
         config = A2CConfig()
+        agent = SimpleNamespace(tokenizer=list(range(10)))
 
-        mock_agent = Mock()
-        mock_env = Mock()
-        mock_reward_fn = Mock()
+        with pytest.warns(DeprecationWarning, match="removed in v0.71.0"):
+            trainer = A2CTrainer(agent=agent, config=config, device="cpu")
 
-        try:
-            trainer = A2CTrainer(
-                config=config,
-                agent=mock_agent,
-                environment=mock_env,
-                reward_function=mock_reward_fn,
-            )
-
-            assert trainer is not None
-            assert trainer.config == config
-        except Exception:
-            # If initialization needs more, acceptable
-            pass
+        assert trainer.config is config
+        assert trainer.actor_critic.actor.out_features == 10
 
     def test_a2c_n_step_returns(self):
         """Test A2C n-step return calculation"""
@@ -384,44 +261,13 @@ class TestA2CTrainer:
 class TestAlgorithmComparison:
     """Test differences between algorithms"""
 
-    def test_ppo_vs_a2c_configs(self):
-        """Test configuration differences between PPO and A2C"""
-        ppo_config = PPOConfig()
+    def test_a2c_vs_dpo_configs(self):
+        """A2C uses n-step returns; DPO learns from preferences."""
         a2c_config = A2CConfig()
+        dpo_config = DPOConfig()
 
-        # PPO has clipping, A2C doesn't
-        assert hasattr(ppo_config, "clip_param")
-        assert not hasattr(a2c_config, "clip_param")
-
-        # PPO has mini-batches for multiple epochs
-        assert hasattr(ppo_config, "mini_batch_size")
-        assert hasattr(ppo_config, "ppo_epochs")
-
-        # A2C has n-step returns
         assert hasattr(a2c_config, "n_steps")
-
-    def test_dpo_vs_ppo_objectives(self):
-        """Test difference in learning objectives"""
-        ppo_config = PPOConfig()
-        dpo_config = DPOConfig()
-
-        # PPO optimizes policy with clipping
-        assert hasattr(ppo_config, "clip_param")
-
-        # DPO learns from preferences
-        assert hasattr(dpo_config, "beta")  # Temperature for preferences
-
-    def test_on_policy_vs_off_policy(self):
-        """Test on-policy vs off-policy characteristics"""
-        # PPO and A2C are on-policy (use current policy data)
-        ppo_config = PPOConfig()
-        a2c_config = A2CConfig()
-
-        # DPO can use preference data (more flexible)
-        dpo_config = DPOConfig()
-
-        # All configs should have learning rates
-        assert ppo_config.learning_rate > 0
+        assert hasattr(dpo_config, "beta")
         assert a2c_config.learning_rate > 0
         assert dpo_config.learning_rate > 0
 
@@ -454,12 +300,8 @@ class TestEdgeCases:
     def test_config_with_extreme_values(self):
         """Test configs with extreme parameter values"""
         # Very small learning rate
-        tiny_lr_config = PPOConfig(learning_rate=1e-10)
+        tiny_lr_config = A2CConfig(learning_rate=1e-10)
         assert tiny_lr_config.learning_rate == 1e-10
-
-        # Very large clip parameter
-        large_clip_config = PPOConfig(clip_param=0.9)
-        assert large_clip_config.clip_param == 0.9
 
         # Gamma near 1 (far-sighted)
         high_gamma_config = A2CConfig(gamma=0.999)
@@ -489,18 +331,30 @@ if __name__ == "__main__":
     pytest.main([__file__, "-v"])
 
 
-def test_duplicate_trainers_are_deprecated_with_replacements():
-    """core.enhanced PPOTrainer / GSPOTrainerStub duplicate maintained trainers."""
+def test_ppo_duplicate_and_gspo_stub_were_removed_in_v0_70_0():
+    """The PPO duplicate and GSPO stub were removed on their stated date."""
+    import stateset_agents.core.enhanced as enhanced
     import stateset_agents.core.enhanced.advanced_rl_algorithms as legacy
 
-    with pytest.warns(DeprecationWarning, match="experimental.ppo.PPOTrainer"):
-        legacy._warn_deprecated(
-            "PPOTrainer", "stateset_agents.experimental.ppo.PPOTrainer"
-        )
-    for cls, replacement in (
-        (legacy.PPOTrainer, "experimental.ppo.PPOTrainer"),
-        (legacy.GSPOTrainerStub, "training.gspo_trainer.GSPOTrainer"),
+    for name in (
+        "PPOConfig",
+        "PPOTrainer",
+        "GSPOTrainerStub",
+        "create_ppo_trainer",
+        "create_gspo_trainer",
     ):
-        assert "deprecated" in (cls.__doc__ or "").lower()
-        source = __import__("inspect").getsource(cls.__init__)
-        assert "_warn_deprecated" in source and replacement in source
+        assert not hasattr(legacy, name), name
+        assert name not in enhanced.__all__, name
+
+
+def test_remaining_research_trainers_warn_with_removal_release():
+    """A2C, DPO and the orchestrator name v0.71.0 and their replacements."""
+    import stateset_agents.core.enhanced.advanced_rl_algorithms as legacy
+
+    agent = SimpleNamespace(tokenizer=list(range(4)))
+    with pytest.warns(DeprecationWarning, match="removed in v0.71.0"):
+        orchestrator = legacy.AdvancedRLOrchestrator(agent)
+    assert orchestrator.select_algorithm("general", {}) == "a2c"
+    assert orchestrator.select_algorithm("preference_learning", {}) == "dpo"
+    for cls in (legacy.A2CTrainer, legacy.DPOTrainer, legacy.AdvancedRLOrchestrator):
+        assert "Removed in v0.71.0" in (cls.__doc__ or ""), cls.__name__

@@ -1,20 +1,13 @@
 """
 Advanced RL Algorithms for StateSet Agents
 
-This module implements multiple RL algorithms including:
-- Proximal Policy Optimization (PPO)
-- Direct Preference Optimization (DPO)
-- Advantage Actor-Critic (A2C)
-- Trust Region Policy Optimization (TRPO)
-- Group Sequence Policy Optimization (GSPO)
-- Group Sequence Policy Optimization - Token variant (GSPO-token)
-
-Not the supported training path. ``PPOTrainer`` here is a second, older PPO
-implementation kept for the ``AdvancedRLOrchestrator`` experiments; the
-maintained one is ``stateset_agents.experimental.ppo``, which is built on the
-shared loss primitives in ``training/rl_losses.py``. Prefer the ``training/``
-trainers for anything you intend to run; treat the classes below as research
-scaffolding whose numerics are not kept in step with the ``training/`` spine.
+Research scaffolding: an Advantage Actor-Critic (A2C) trainer, a DPO trainer
+and an ``AdvancedRLOrchestrator`` that picks between them. Not the supported
+training path; everything here is deprecated and removed in v0.71.0. Use the
+``training/`` trainers (GRPO, GSPO, DAPO, GEPO, VAPO),
+``stateset_agents.experimental.ppo`` for PPO and
+``stateset_agents.training.preference`` for DPO and its relatives. The older
+PPO duplicate and the GSPO stub were removed in v0.70.0.
 """
 
 from __future__ import annotations
@@ -22,7 +15,7 @@ from __future__ import annotations
 import logging
 import warnings
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, TypeAlias
+from typing import Any, TypeAlias
 
 import numpy as np
 import torch
@@ -32,16 +25,12 @@ from numpy.typing import NDArray
 from torch.distributions import Categorical
 
 from ..environment import Environment
-from ..trajectory import ConversationTurn, MultiTurnTrajectory
+from ..trajectory import ConversationTurn
 from .enhanced_agent import EnhancedMultiTurnAgent
-
-if TYPE_CHECKING:
-    from ...training.gspo_config import GSPOConfig
 
 logger = logging.getLogger(__name__)
 
-# Duplicates of maintained trainers, deprecated in v0.69.0 and removed in v0.70.0.
-_REMOVAL_RELEASE = "v0.70.0"
+_REMOVAL_RELEASE = "v0.71.0"
 
 
 def _warn_deprecated(name: str, replacement: str) -> None:
@@ -96,24 +85,6 @@ def _extract_step_result(
 
 
 @dataclass
-class PPOConfig:
-    """Configuration for PPO training"""
-
-    learning_rate: float = 3e-4
-    n_epochs: int = 10
-    batch_size: int = 64
-    mini_batch_size: int = 16
-    clip_param: float = 0.2
-    value_loss_coef: float = 0.5
-    entropy_coef: float = 0.01
-    max_grad_norm: float = 0.5
-    ppo_epochs: int = 4
-    target_kl: float = 0.01
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-
-
-@dataclass
 class DPOConfig:
     """Configuration for DPO training"""
 
@@ -139,7 +110,7 @@ class A2CConfig:
 
 
 class ActorCriticNetwork(nn.Module):
-    """Actor-Critic network for PPO and A2C"""
+    """Actor-Critic network for A2C"""
 
     def __init__(self, input_size: int, hidden_size: int, output_size: int):
         super().__init__()
@@ -182,271 +153,6 @@ class ActorCriticNetwork(nn.Module):
                 action = dist.sample()
 
             return action.item(), value.item()
-
-
-class PPOTrainer:
-    """
-    Proximal Policy Optimization trainer.
-
-    .. deprecated:: 0.69.0
-        A second, older PPO kept for ``AdvancedRLOrchestrator`` experiments.
-        Use :class:`stateset_agents.experimental.ppo.PPOTrainer`, which is built
-        on the shared ``training/rl_losses`` primitives. Removed in v0.70.0.
-    """
-
-    def __init__(
-        self, agent: EnhancedMultiTurnAgent, config: PPOConfig, device: str = "auto"
-    ):
-        _warn_deprecated("PPOTrainer", "stateset_agents.experimental.ppo.PPOTrainer")
-        self.agent = agent
-        self.config = config
-        tokenizer = _require_tokenizer(agent)
-
-        self.device = torch.device(
-            device
-            if device != "auto"
-            else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
-
-        # Initialize networks
-        vocab_size = len(tokenizer)
-        self.actor_critic = ActorCriticNetwork(
-            input_size=768,  # BERT-like embedding size
-            hidden_size=256,
-            output_size=vocab_size,
-        ).to(self.device)
-
-        self.old_actor_critic = ActorCriticNetwork(
-            input_size=768, hidden_size=256, output_size=vocab_size
-        ).to(self.device)
-
-        # Copy parameters
-        self.old_actor_critic.load_state_dict(self.actor_critic.state_dict())
-
-        # Optimizer
-        self.optimizer = torch.optim.Adam(
-            self.actor_critic.parameters(), lr=config.learning_rate
-        )
-
-        # Storage for trajectories
-        self.states: list[FloatArray] = []
-        self.actions: list[int] = []
-        self.log_probs: list[float] = []
-        self.values: list[float] = []
-        self.rewards: list[float] = []
-        self.dones: list[bool] = []
-
-    async def collect_trajectory(
-        self, environment: Environment, max_steps: int = 100
-    ) -> MultiTurnTrajectory:
-        """Collect a trajectory using current policy"""
-
-        state = await environment.reset()
-        trajectory_turns: list[ConversationTurn] = []
-        trajectory_rewards: list[float] = []
-
-        for _step in range(max_steps):
-            # Get current conversation state
-            messages = [
-                {"role": str(turn.role), "content": str(turn.content or "")}
-                for turn in trajectory_turns[-10:]  # Last 10 turns
-            ]
-
-            if not messages:
-                messages = [
-                    {"role": "system", "content": "You are a helpful assistant."}
-                ]
-
-            # Generate embedding for state
-            state_embedding = await self._get_state_embedding(messages)
-
-            # Get action from policy
-            state_tensor = (
-                torch.tensor(state_embedding, dtype=torch.float32)
-                .unsqueeze(0)
-                .to(self.device)
-            )
-            with torch.no_grad():
-                logits, value_tensor = self.actor_critic(state_tensor)
-                dist = Categorical(logits=logits)
-                action_tensor = dist.sample()
-                action_token = int(action_tensor.item())
-                value = float(value_tensor.item())
-                log_prob = float(dist.log_prob(action_tensor).item())
-
-            # Convert token to text
-            tokenizer = _require_tokenizer(self.agent)
-            action_text = str(tokenizer.decode([action_token]))
-
-            # Create conversation turn
-            agent_turn = ConversationTurn(role="assistant", content=action_text)
-
-            # Step environment
-            step_result = await environment.step(state, agent_turn)
-            new_state, env_response, reward, done = _extract_step_result(step_result)
-
-            # Store transition
-            self.states.append(state_embedding)
-            self.actions.append(action_token)
-            self.log_probs.append(log_prob)
-            self.values.append(value)
-            self.rewards.append(reward)
-            self.dones.append(done)
-            trajectory_rewards.append(reward)
-
-            trajectory_turns.append(agent_turn)
-            if env_response:
-                trajectory_turns.append(env_response)
-
-            state = new_state
-
-            if done:
-                break
-
-        trajectory = MultiTurnTrajectory(
-            turns=trajectory_turns,
-            total_reward=sum(trajectory_rewards),
-            metadata={"algorithm": "PPO"},
-        )
-
-        return trajectory
-
-    async def _get_state_embedding(self, messages: list[dict[str, str]]) -> FloatArray:
-        """Get embedding representation of conversation state"""
-        # Simple approach: concatenate last few messages
-        conversation_text = " ".join([msg["content"] for msg in messages[-3:]])
-        tokenizer = _require_tokenizer(self.agent)
-        model = _require_model(self.agent)
-
-        # Use tokenizer to get embeddings (simplified)
-        inputs = tokenizer(
-            conversation_text, return_tensors="pt", truncation=True, max_length=512
-        ).to(self.device)
-
-        with torch.no_grad():
-            outputs = model(**inputs, output_hidden_states=True)
-            hidden_states = getattr(outputs, "hidden_states", None)
-            if hidden_states is None:
-                raise RuntimeError("Model did not return hidden states")
-            # Use last hidden state of [CLS] token or average pooling
-            embedding: FloatArray = np.asarray(
-                hidden_states[-1][:, 0, :].cpu().numpy().flatten(),
-                dtype=np.float32,
-            )
-
-        return embedding
-
-    def compute_advantages(
-        self, rewards: list[float], values: list[float], dones: list[bool]
-    ) -> list[float]:
-        """Compute Generalized Advantage Estimation (GAE)"""
-        advantages: list[float] = []
-        gae = 0.0
-
-        for i in reversed(range(len(rewards))):
-            if i == len(rewards) - 1:
-                next_value = 0.0  # Terminal state
-            else:
-                next_value = values[i + 1]
-
-            delta = (
-                rewards[i] + self.config.gamma * next_value * (1 - dones[i]) - values[i]
-            )
-            gae = (
-                delta
-                + self.config.gamma * self.config.gae_lambda * (1 - dones[i]) * gae
-            )
-            advantages.insert(0, gae)
-
-        return advantages
-
-    async def train_step(self):
-        """Execute one PPO training step"""
-
-        # Convert lists to tensors
-        states = torch.tensor(np.array(self.states), dtype=torch.float32).to(
-            self.device
-        )
-        actions = torch.tensor(self.actions, dtype=torch.long).to(self.device)
-        old_log_probs = torch.tensor(self.log_probs, dtype=torch.float32).to(
-            self.device
-        )
-        values = torch.tensor(self.values, dtype=torch.float32).to(self.device)
-        rewards = torch.tensor(self.rewards, dtype=torch.float32).to(self.device)
-        dones = torch.tensor(self.dones, dtype=torch.bool).to(self.device)
-
-        # Compute advantages and returns
-        advantage_values = self.compute_advantages(
-            rewards.tolist(), values.tolist(), dones.tolist()
-        )
-        advantages = torch.tensor(advantage_values, dtype=torch.float32).to(self.device)
-        returns = advantages + values
-
-        # Normalize advantages
-        from ...training.rl_losses import whiten  # core stays training-free
-
-        advantages = whiten(advantages)
-
-        # PPO training loop
-        for _ in range(self.config.ppo_epochs):
-            # Get current policy outputs
-            logits, current_values = self.actor_critic(states)
-            dist = Categorical(logits=logits)
-            current_log_probs = dist.log_prob(actions)
-
-            # Compute ratios
-            ratios = torch.exp(current_log_probs - old_log_probs)
-
-            # Compute surrogate losses
-            surr1 = ratios * advantages
-            surr2 = (
-                torch.clamp(
-                    ratios, 1 - self.config.clip_param, 1 + self.config.clip_param
-                )
-                * advantages
-            )
-
-            # Policy loss
-            policy_loss = -torch.min(surr1, surr2).mean()
-
-            # Value loss
-            value_loss = F.mse_loss(current_values.squeeze(), returns)
-
-            # Entropy bonus
-            entropy = dist.entropy().mean()
-
-            # Total loss
-            total_loss = (
-                policy_loss
-                + self.config.value_loss_coef * value_loss
-                - self.config.entropy_coef * entropy
-            )
-
-            # Update network
-            self.optimizer.zero_grad()
-            total_loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.actor_critic.parameters(), self.config.max_grad_norm
-            )
-            self.optimizer.step()
-
-        # Update old policy
-        self.old_actor_critic.load_state_dict(self.actor_critic.state_dict())
-
-        # Clear trajectory buffers
-        self.states.clear()
-        self.actions.clear()
-        self.log_probs.clear()
-        self.values.clear()
-        self.rewards.clear()
-        self.dones.clear()
-
-        return {
-            "policy_loss": policy_loss.item(),
-            "value_loss": value_loss.item(),
-            "entropy": entropy.item(),
-            "total_loss": total_loss.item(),
-        }
 
 
 class DPOTrainer:
@@ -589,12 +295,17 @@ class DPOTrainer:
 
 class A2CTrainer:
     """
-    Advantage Actor-Critic trainer
+    Advantage Actor-Critic trainer.
+
+    .. deprecated:: 0.70.0
+        Research scaffolding with no maintained counterpart. Use the
+        ``training/`` trainers. Removed in v0.71.0.
     """
 
     def __init__(
         self, agent: EnhancedMultiTurnAgent, config: A2CConfig, device: str = "auto"
     ):
+        _warn_deprecated("A2CTrainer", "the stateset_agents.training trainers")
         self.agent = agent
         self.config = config
         tokenizer = _require_tokenizer(agent)
@@ -770,18 +481,23 @@ class A2CTrainer:
 
 class AdvancedRLOrchestrator:
     """
-    Orchestrator for multiple RL algorithms with automatic algorithm selection
+    Orchestrator for multiple RL algorithms with automatic algorithm selection.
+
+    .. deprecated:: 0.70.0
+        Selects between this module's research trainers only. Use the
+        ``training/`` trainers directly. Removed in v0.71.0.
     """
 
     def __init__(self, agent: EnhancedMultiTurnAgent):
+        _warn_deprecated(
+            "AdvancedRLOrchestrator", "the stateset_agents.training trainers"
+        )
         self.agent = agent
         self.algorithms: dict[str, object] = {}
         self.current_algorithm: str | None = None
         self.performance_history: list[dict[str, Any]] = []
 
-    def add_algorithm(
-        self, name: str, trainer: PPOTrainer | DPOTrainer | A2CTrainer | GSPOTrainerStub
-    ) -> None:
+    def add_algorithm(self, name: str, trainer: DPOTrainer | A2CTrainer) -> None:
         """Add an RL algorithm"""
         self.algorithms[name] = trainer
 
@@ -797,7 +513,7 @@ class AdvancedRLOrchestrator:
         elif data_characteristics.get("online_learning"):
             return "a2c"
         else:
-            return "ppo"  # Default to PPO
+            return "a2c"
 
     async def train(
         self,
@@ -817,21 +533,17 @@ class AdvancedRLOrchestrator:
         self.current_algorithm = algorithm_name
 
         if not trainer:
-            logger.warning(f"Algorithm {algorithm_name} not available, using PPO")
-            trainer = self.algorithms.get("ppo")
-            algorithm_name = "ppo"
+            logger.warning(f"Algorithm {algorithm_name} not available, using A2C")
+            trainer = self.algorithms.get("a2c")
+            algorithm_name = "a2c"
 
         logger.info(f"Selected algorithm: {algorithm_name}")
 
         # Train with selected algorithm
-        if algorithm_name == "ppo" and isinstance(trainer, PPOTrainer):
-            return await self._train_ppo(trainer, environment, **kwargs)
-        elif algorithm_name == "dpo" and isinstance(trainer, DPOTrainer):
+        if algorithm_name == "dpo" and isinstance(trainer, DPOTrainer):
             return await self._train_dpo(trainer, training_data, **kwargs)
         elif algorithm_name == "a2c" and isinstance(trainer, A2CTrainer):
             return await self._train_a2c(trainer, environment, **kwargs)
-        elif algorithm_name == "gspo" and isinstance(trainer, GSPOTrainerStub):
-            return await trainer.train_step(environment, **kwargs)
         return None
 
     def _analyze_data(self, training_data: dict[str, Any]) -> dict[str, Any]:
@@ -847,19 +559,6 @@ class AdvancedRLOrchestrator:
         # Add more analysis logic here
 
         return characteristics
-
-    async def _train_ppo(
-        self, trainer: PPOTrainer, environment: Environment, num_episodes: int = 100
-    ):
-        """Train with PPO"""
-        for episode in range(num_episodes):
-            # Collect trajectory
-            await trainer.collect_trajectory(environment)
-
-            # Train step
-            metrics = await trainer.train_step()
-
-            logger.info(f"PPO Episode {episode}: Loss = {metrics['total_loss']:.4f}")
 
     async def _train_dpo(
         self, trainer: DPOTrainer, training_data: dict[str, Any], num_steps: int = 100
@@ -902,12 +601,6 @@ class AdvancedRLOrchestrator:
 # Factory functions
 
 
-def create_ppo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> PPOTrainer:
-    """Create PPO trainer"""
-    config = PPOConfig(**kwargs)
-    return PPOTrainer(agent, config)
-
-
 def create_dpo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> DPOTrainer:
     """Create DPO trainer"""
     config = DPOConfig(**kwargs)
@@ -920,61 +613,6 @@ def create_a2c_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> A2CTrainer:
     return A2CTrainer(agent, config)
 
 
-class GSPOTrainerStub:
-    """
-    Stub for GSPO trainer integration (deprecated in 0.69.0, removed in 0.70.0).
-
-    The real implementation is
-    :class:`stateset_agents.training.gspo_trainer.GSPOTrainer`; this stub only
-    provides a consistent interface for :class:`AdvancedRLOrchestrator` and is
-    configured with the canonical
-    :class:`stateset_agents.training.gspo_config.GSPOConfig`.
-    """
-
-    def __init__(
-        self,
-        agent: EnhancedMultiTurnAgent,
-        config: GSPOConfig,
-        device: str = "auto",
-    ):
-        _warn_deprecated(
-            "GSPOTrainerStub", "stateset_agents.training.gspo_trainer.GSPOTrainer"
-        )
-        self.agent = agent
-        self.config = config
-        self.device = torch.device(
-            device
-            if device != "auto"
-            else ("cuda" if torch.cuda.is_available() else "cpu")
-        )
-
-        logger.info("GSPO trainer stub initialized")
-        logger.info(
-            "For full GSPO training, use: from stateset_agents.training.gspo_trainer import train_with_gspo"
-        )
-
-    async def train_step(self, environment: Environment, **kwargs):
-        """Train step stub - directs to full implementation"""
-        logger.warning(
-            "GSPO stub called. Use training.gspo_trainer for full implementation."
-        )
-        return {"info": "Use training.gspo_trainer.train_with_gspo for full training"}
-
-
-def create_gspo_trainer(agent: EnhancedMultiTurnAgent, **kwargs) -> GSPOTrainerStub:
-    """
-    Create GSPO trainer stub.
-
-    For production GSPO training, use:
-        from stateset_agents.training.gspo_trainer import train_with_gspo
-        await train_with_gspo(config, agent, environment, reward_model)
-    """
-    from ...training.gspo_config import GSPOConfig
-
-    config = GSPOConfig(**kwargs)
-    return GSPOTrainerStub(agent, config)
-
-
 def create_advanced_rl_orchestrator(
     agent: EnhancedMultiTurnAgent,
 ) -> AdvancedRLOrchestrator:
@@ -982,10 +620,8 @@ def create_advanced_rl_orchestrator(
     orchestrator = AdvancedRLOrchestrator(agent)
 
     # Add all algorithms
-    orchestrator.add_algorithm("ppo", create_ppo_trainer(agent))
     orchestrator.add_algorithm("dpo", create_dpo_trainer(agent))
     orchestrator.add_algorithm("a2c", create_a2c_trainer(agent))
-    orchestrator.add_algorithm("gspo", create_gspo_trainer(agent))
 
     return orchestrator
 
