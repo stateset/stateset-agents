@@ -15,7 +15,10 @@ import math
 import signal
 import time
 from collections.abc import Sequence
+from numbers import Real
 from typing import Any
+
+from stateset_agents.exceptions import IMPORT_EXCEPTIONS
 
 from .checkpoint_manager import CheckpointManager
 from .config import AutoResearchConfig
@@ -23,6 +26,10 @@ from .experiment_tracker import ExperimentRecord, ExperimentTracker
 from .proposer import BayesianProposer, ExperimentProposer, create_proposer
 
 logger = logging.getLogger(__name__)
+
+
+def _is_number(value: object) -> bool:
+    return isinstance(value, Real) and not isinstance(value, bool)
 
 
 class AutoResearchLoop:
@@ -182,7 +189,9 @@ class AutoResearchLoop:
         except ImportError:
             logger.warning("wandb not installed; disabling W&B logging")
             self._wandb = None
-        except Exception as exc:
+        # Telemetry boundary: W&B raises its own Exception subclasses
+        # (wandb.errors.*); logging must never stop the research loop.
+        except Exception as exc:  # noqa: BLE001
             logger.warning("Failed to initialize wandb: %s", exc)
             self._wandb = None
 
@@ -208,8 +217,9 @@ class AutoResearchLoop:
                 }
             )
             self._wandb.log(log_data)
-        except Exception as exc:
-            logger.debug("wandb log failed: %s", exc)
+        # Telemetry boundary (wandb.errors.*): see _init_wandb.
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("wandb log failed: %s", exc)
 
     def _finish_wandb(self) -> None:
         """Finalize W&B run."""
@@ -229,8 +239,9 @@ class AutoResearchLoop:
                         summary[f"best_param/{k}"] = v
             self._wandb.summary.update(summary)
             self._wandb.finish()
-        except Exception as exc:
-            logger.debug("wandb finish failed: %s", exc)
+        # Telemetry boundary (wandb.errors.*): see _init_wandb.
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("wandb finish failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Resume support
@@ -346,16 +357,13 @@ class AutoResearchLoop:
 
         # Validate baseline params against search space
         if self.baseline_params:
-            try:
-                from .search_spaces import validate_params_against_space
+            from .search_spaces import validate_params_against_space
 
-                bound_warnings = validate_params_against_space(
-                    self.baseline_params, self.search_space
-                )
-                for w in bound_warnings:
-                    logger.warning("Baseline param out of search space: %s", w)
-            except Exception:
-                pass
+            bound_warnings = validate_params_against_space(
+                self.baseline_params, self.search_space
+            )
+            for w in bound_warnings:
+                logger.warning("Baseline param out of search space: %s", w)
 
         # Try to resume from previous run
         next_experiment_num = self._try_resume()
@@ -376,7 +384,9 @@ class AutoResearchLoop:
 
             try:
                 await self._run_experiment(experiment_id)
-            except Exception as exc:
+            # Research-loop boundary: a crashed experiment is recorded as a
+            # crash and the loop moves on to the next proposal.
+            except Exception as exc:  # noqa: BLE001
                 logger.error("Experiment %s crashed: %s", experiment_id, exc)
                 self._cleanup_gpu()
                 self._record_crash(experiment_id, {}, str(exc))
@@ -420,7 +430,8 @@ class AutoResearchLoop:
             self.tracker.record(record)
             self._log_wandb(record)
             return
-        except Exception as exc:
+        # Research-loop boundary: a failed baseline is recorded as a crash.
+        except Exception as exc:  # noqa: BLE001
             elapsed = time.time() - started
             logger.warning("Baseline evaluation failed: %s", exc)
             self._cleanup_gpu()
@@ -525,7 +536,9 @@ class AutoResearchLoop:
             self._report_to_proposer(0.0, crashed=True)
             self.checkpoint_mgr.restore_best(self.agent)
             return
-        except Exception as exc:
+        # Research-loop boundary: a failed train/eval is recorded as a crash
+        # and reported to the proposer.
+        except Exception as exc:  # noqa: BLE001
             training_time = time.time() - train_start
             logger.warning("Experiment %s failed: %s", experiment_id, exc)
             self._cleanup_gpu()
@@ -818,16 +831,14 @@ class AutoResearchLoop:
             config=eval_config,
         )
 
-        # Try to add percentile metrics for richer comparison
-        try:
-            reward = results.get("eval_reward", 0.0)
-            std = results.get("eval_reward_std", 0.0)
-            # Estimate percentiles from mean + std (normal approximation)
+        # Add percentile metrics for richer comparison when both are numbers
+        # (normal approximation from mean + std).
+        reward = results.get("eval_reward", 0.0)
+        std = results.get("eval_reward_std", 0.0)
+        if _is_number(reward) and _is_number(std):
             results["eval_reward_p25"] = reward - 0.675 * std
             results["eval_reward_p75"] = reward + 0.675 * std
             results["eval_reward_p90"] = reward + 1.282 * std
-        except Exception:
-            pass
 
         return results
 
@@ -920,7 +931,7 @@ class AutoResearchLoop:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 torch.cuda.synchronize()
-        except Exception:
+        except IMPORT_EXCEPTIONS:  # no torch, or a CUDA error while cleaning up
             pass
 
         # Also run Python garbage collection to release tensor references
@@ -946,8 +957,10 @@ class AutoResearchLoop:
             report_path = self.config.output_path / "analysis.txt"
             report_path.write_text(report, encoding="utf-8")
             logger.info("Analysis saved to %s", report_path)
-        except Exception as exc:
-            logger.debug("Analysis generation failed: %s", exc)
+        # Best-effort report written after the run's records are persisted:
+        # a report failure must not turn a finished run into a crash.
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Analysis generation failed: %s", exc, exc_info=True)
 
     def _request_stop(self) -> None:
         logger.info("Stop requested — finishing current experiment...")

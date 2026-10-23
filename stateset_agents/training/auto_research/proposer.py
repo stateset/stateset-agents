@@ -353,20 +353,22 @@ class BayesianProposer(ExperimentProposer):
         """Report the result of the most recent trial back to Optuna."""
         if self._current_trial is None:
             return
+        trial, self._current_trial = self._current_trial, None
+        self._trial_count += 1
         try:
             import optuna
-
-            if crashed:
-                self._study.tell(
-                    self._current_trial, state=optuna.trial.TrialState.FAIL
-                )
-            else:
-                self._study.tell(self._current_trial, objective_value)
-        except Exception as exc:
+        except ImportError as exc:
             logger.warning("Failed to report result to Optuna: %s", exc)
-        finally:
-            self._trial_count += 1
-            self._current_trial = None
+            return
+        try:
+            if crashed:
+                self._study.tell(trial, state=optuna.trial.TrialState.FAIL)
+            else:
+                self._study.tell(trial, objective_value)
+        # Optuna's own errors (storage, finished trials) and invalid values;
+        # anything else is a bug and propagates.
+        except (optuna.exceptions.OptunaError, RuntimeError, ValueError) as exc:
+            logger.warning("Failed to report result to Optuna: %s", exc)
 
 
 class AdaptivePerturbationProposer(PerturbationProposer):

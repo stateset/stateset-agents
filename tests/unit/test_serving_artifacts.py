@@ -224,3 +224,39 @@ def test_export_merged_model_missing_dependencies_returns_empty(tmp_path, monkey
         output_dir=str(tmp_path / "merged"),
     )
     assert output == ""
+
+
+def _break_processor(monkeypatch, error: Exception) -> None:
+    def from_pretrained(name, **kwargs):
+        raise error
+
+    monkeypatch.setattr(
+        sys.modules["transformers"].AutoProcessor, "from_pretrained", from_pretrained
+    )
+
+
+def test_export_merged_model_skips_an_unavailable_processor(tmp_path, monkeypatch):
+    saved = _install_fake_transformers(monkeypatch, architectures=["Qwen2ForCausalLM"])
+    _break_processor(monkeypatch, OSError("no preprocessor_config.json"))
+
+    export_merged_model_for_serving(
+        base_model_name="Qwen/Qwen3.5-0.8B-Base",
+        adapter_dir=str(tmp_path / "adapter"),
+        output_dir=str(tmp_path / "merged"),
+    )
+
+    assert "processor_saved_to" not in saved
+    assert saved["tokenizer_saved_to"] == str(tmp_path / "merged")
+
+
+def test_export_merged_model_propagates_processor_bugs(tmp_path, monkeypatch):
+    """An AttributeError is a bug, not a model without a processor."""
+    _install_fake_transformers(monkeypatch, architectures=["Qwen2ForCausalLM"])
+    _break_processor(monkeypatch, AttributeError("'NoneType' has no 'save'"))
+
+    with pytest.raises(AttributeError, match="no 'save'"):
+        export_merged_model_for_serving(
+            base_model_name="Qwen/Qwen3.5-0.8B-Base",
+            adapter_dir=str(tmp_path / "adapter"),
+            output_dir=str(tmp_path / "merged"),
+        )

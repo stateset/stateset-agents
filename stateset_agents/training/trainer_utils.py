@@ -169,7 +169,9 @@ def _discard_gradients(trainer: Any) -> None:
     if trainer.optimizer is not None:
         try:
             trainer.optimizer.zero_grad(set_to_none=True)
-        except Exception as error:
+        # Runs while the original training error propagates: a cleanup
+        # failure must not replace that error.
+        except Exception as error:  # noqa: BLE001
             logger.warning("Could not discard failed gradients: %s", error)
 
 

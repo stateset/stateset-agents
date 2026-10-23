@@ -52,6 +52,7 @@ from stateset_agents.data.finetuning import (
 )
 from stateset_agents.data.jsonl import jsonl_lines
 from stateset_agents.data.source import DatasetSourceIdentity, SFTDatasetIdentity
+from stateset_agents.exceptions import IMPORT_EXCEPTIONS
 from stateset_agents.training.lineage import (
     AdapterManifest,
     write_manifest,
@@ -66,7 +67,7 @@ def _package_version() -> str | None:
         from stateset_agents import __version__
 
         return str(__version__)
-    except Exception:  # pragma: no cover - defensive
+    except ImportError:  # pragma: no cover - defensive
         return None
 
 
@@ -555,7 +556,7 @@ def log_cuda_memory_per_device() -> None:
             for i in range(torch.cuda.device_count())
         ]
         logger.info("CUDA memory allocated: %s", ", ".join(parts))
-    except Exception:  # diagnostics only — never fail the job over them
+    except IMPORT_EXCEPTIONS:  # no torch, or a CUDA error: diagnostics only
         return
 
 
@@ -944,12 +945,14 @@ def judge_completion(judge: str, prompt: str, completion: str) -> float | None:
     """Score ``completion`` with a domain reward, if one is importable here.
 
     The judge is a nicety on top of the substring checks, and the reward
-    stack may simply not be installed on the pod — so every failure mode
-    degrades to a logged warning and ``None``, never an exception.
+    stack may simply not be installed on the pod — so a missing or broken
+    reward stack, or a scoring failure, degrades to a logged warning and
+    ``None``. A bug in building the judge (a ``TypeError`` from the factory)
+    propagates.
     """
     try:
         reward = _create_domain_reward(judge)
-    except Exception as exc:
+    except IMPORT_EXCEPTIONS as exc:  # the reward stack is absent or broken here
         logger.warning(
             "Judge %r unavailable on this worker (%s); skipping judge score.",
             judge,
@@ -968,7 +971,9 @@ def judge_completion(judge: str, prompt: str, completion: str) -> float | None:
             )
         )
         return float(result.score)
-    except Exception as exc:
+    # Fail-closed judge on an unattended worker: any scoring failure records
+    # no score, which rejects the sample (see sample_passes).
+    except Exception as exc:  # noqa: BLE001
         logger.warning("Judge %r failed to score (%s); skipping.", judge, exc)
         return None
 
@@ -1513,7 +1518,9 @@ def run_sft_job(payload: dict[str, Any]) -> dict[str, Any]:
                         dataset_identity=dataset_identity,
                     )
                     returncode = _apply_eval_gate(job.get("eval_prompts"), output_dir)
-    except Exception as exc:  # reported, never raised — see docstring
+    # Process boundary: the job runner reports failure as a return code
+    # (see the docstring), never as an exception.
+    except Exception as exc:  # noqa: BLE001
         logger.error("SFT job failed: %s", exc)
         returncode = 1
     finally:

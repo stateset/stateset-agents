@@ -141,7 +141,9 @@ def nsr_gate_passes(prompt_spec: dict[str, Any], sample: str) -> bool:
                 context={"nsr_request": prompt_spec["nsr"]},
             )
         )
-    except Exception as exc:
+    # Fail-closed gate on an unattended harvest worker: any verifier failure
+    # rejects the sample rather than letting it into the training set.
+    except Exception as exc:  # noqa: BLE001
         logger.warning("NSR gate failed (%s); rejecting sample (fail-closed).", exc)
         return False
     if result.metadata.get("mode") != "verified":
