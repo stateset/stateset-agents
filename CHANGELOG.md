@@ -15,6 +15,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified; the worker terminates its pod and records the run as `cancelled`.
   The API capability reports `remote_stop_supported` and
   `remote_stop_providers`. Other remote providers are still refused.
+- **Automated reward exploit search as a CI gate.**
+  `stateset_agents.evaluation.reward_exploits` generates, deterministically
+  from a seed, the reply families a policy finds first when it games a
+  lexical reward (canned templates, keyword stuffing, verbatim and shuffled
+  echo, random and out-of-vocabulary word salad at random positions and
+  their combinations, terse replies, blanket refusals, hedged multi-candidate
+  answers, negations, content-destroying mutations and padding of a reference
+  answer) and `search_reward_exploits` plays each against the reference in a
+  real `ConversationEnvironment` episode, with the reward attached to the
+  environment and held by a trainer. `tests/unit/test_reward_exploit_search.py`
+  runs it over every shipped reward factory (core, multi-objective, Kimi and
+  the `cli train` demo reward) and nine cases (support requests, a
+  sensitive-but-harmless fraud report, numeric and text QA with labels, a
+  two-turn conversation) for two seeds and fails if any adversary comes
+  within 0.01 of the reference. Before this round's fixes it found 1,748
+  such adversaries across all 15 factories; it now finds none.
 
 ### Changed
 
