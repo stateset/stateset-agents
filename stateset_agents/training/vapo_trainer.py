@@ -29,6 +29,7 @@ from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.rollouts import PromptGroupRollouts
 from .spine.update import (
     OptimizerStep,
     UpdateLoop,
@@ -925,15 +926,7 @@ class VAPOTrainer(TrainingRuntime):
         # here, before any inner update moves the weights. Recomputing them
         # from the current model made the importance ratio identically 1 and
         # the Clip-Higher trust region a no-op.
-        rollouts: list[dict[str, Any]] = []
-
-        for prompt in prompts[: self.config.per_device_train_batch_size]:
-            # Generate group responses
-            responses = await self.generate_group_responses(prompt)
-
-            if len(responses) < 2:
-                continue
-
+        async def build(prompt: str, responses: list[dict[str, Any]]) -> dict[str, Any]:
             # Compute rewards and identify correct samples
             rewards = []
             is_correct = []
@@ -1005,19 +998,22 @@ class VAPOTrainer(TrainingRuntime):
             # Normalize advantages over the actions that are actually trained
             policy_advantages = rl_losses.whiten(policy_advantages, action_mask)
 
-            rollouts.append(
-                {
-                    "input_ids": batch_input_ids,
-                    "attention_mask": batch_attention_mask,
-                    "response_mask": batch_response_mask,
-                    "positive_mask": positive_mask,
-                    "old_log_probs": old_log_probs.detach(),
-                    "old_values": old_values.detach(),
-                    "critic_advantages": critic_advantages,
-                    "policy_advantages": policy_advantages,
-                    "returns": returns,
-                }
-            )
+            return {
+                "input_ids": batch_input_ids,
+                "attention_mask": batch_attention_mask,
+                "response_mask": batch_response_mask,
+                "positive_mask": positive_mask,
+                "old_log_probs": old_log_probs.detach(),
+                "old_values": old_values.detach(),
+                "critic_advantages": critic_advantages,
+                "policy_advantages": policy_advantages,
+                "returns": returns,
+            }
+
+        # One group per prompt (at least two responses for group statistics).
+        rollouts = await PromptGroupRollouts(
+            self.generate_group_responses, min_group_size=2, label="VAPO"
+        ).collect(prompts[: self.config.per_device_train_batch_size], build)
 
         # --- Update phase ---------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts

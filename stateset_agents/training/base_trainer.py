@@ -25,6 +25,7 @@ import torch.nn.functional as F
 
 from .config import TrainingConfig
 from .runtime_state import TrainingRuntime
+from .spine.rollouts import VLLMEngineMixin
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -402,75 +403,28 @@ class BaseModelManager(SharedModelManager):
             param.requires_grad = False
 
 
-class BaseTrajectoryGenerator:
+class BaseTrajectoryGenerator(VLLMEngineMixin):
     """
     Base class for trajectory generation with vLLM acceleration.
 
     Provides common generation patterns used by GSPO, VAPO, DAPO, etc.
     """
 
+    _vllm_label = "BaseTrajectoryGenerator"
+    _vllm_init_exceptions = BASE_TRAINER_EXCEPTIONS
+
     def __init__(self, config: BaseTrainerConfig):
         self.config = config
-        self.vllm_generator: Any | None = None
-        self._vllm_initialized = False
-
+        self._reset_vllm_state()
         if config.use_vllm:
             self._setup_vllm()
 
     def _setup_vllm(self) -> None:
-        """Setup vLLM generator if available."""
+        """Create the vLLM engine if the backend is available."""
         if not _load_vllm_backend():
             logger.warning("vLLM not available, will use HuggingFace fallback")
             return
-
-        vllm_config_cls = _VLLMConfig
-        vllm_generator_cls = _VLLMGenerator
-        if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning(
-                "vLLM backend exports unavailable, using HuggingFace fallback"
-            )
-            return
-
-        vllm_config = vllm_config_cls(
-            model_name=self.config.model_name,
-            revision=self.config.model_revision,
-            gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
-            tensor_parallel_size=self.config.vllm_tensor_parallel_size,
-            enable_prefix_caching=self.config.vllm_enable_prefix_caching,
-            max_tokens=self.config.max_completion_length,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            dtype=(
-                "float16"
-                if self.config.fp16
-                else ("bfloat16" if self.config.bf16 else "auto")
-            ),
-        )
-
-        self.vllm_generator = vllm_generator_cls(vllm_config)
-
-    async def initialize_vllm(self) -> bool:
-        """Initialize vLLM engine."""
-        if self.vllm_generator is None:
-            return False
-
-        if self._vllm_initialized:
-            return True
-
-        try:
-            success = bool(await self.vllm_generator.initialize())
-            self._vllm_initialized = success
-            if success:
-                logger.info("vLLM initialized - 5-20x faster generation enabled!")
-            return success
-        except BASE_TRAINER_EXCEPTIONS as e:
-            logger.warning(f"Failed to initialize vLLM: {e}")
-            return False
-
-    @property
-    def using_vllm(self) -> bool:
-        """Check if vLLM is active."""
-        return self._vllm_initialized and self.vllm_generator is not None
+        self._install_vllm_generator(_VLLMConfig, _VLLMGenerator)
 
 
 class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):

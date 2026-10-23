@@ -22,7 +22,6 @@ from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from . import objectives, rl_losses
 from .config import TrainingConfig
@@ -31,10 +30,12 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .spine.rollouts import PromptGroupRollouts
 from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
+    hf_generate_group,
 )
 
 # Configure logging
@@ -342,26 +343,14 @@ class GEPOTrainer(TrainingRuntime):
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
             logits = outputs.logits
 
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = input_ids[:, 1:].contiguous()
-
-        # Compute log probs
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-
-        # Gather log probs for actual tokens
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask out prompt tokens and padding
+        # Shared shift-by-one gather in fp32 (no full-vocabulary log-softmax
+        # tensor); an all-ones mask keeps every position's log-prob.
+        token_log_probs, _ = rl_losses.gather_token_logprobs(
+            logits, input_ids, torch.ones_like(input_ids, dtype=torch.float32)
+        )
+        # Sum over response tokens only (prompt and padding masked out).
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
-
-        masked_log_probs = token_log_probs * response_mask
-
-        # Sum over sequence
-        sequence_log_probs = masked_log_probs.sum(dim=-1)
-
+        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
         return token_log_probs, sequence_log_probs
 
     @staticmethod
@@ -507,55 +496,23 @@ class GEPOTrainer(TrainingRuntime):
         """
         Generate a group of responses for a single prompt.
 
-        Returns list of dicts with:
-            - response: Generated text
-            - input_ids: Tokenized full sequence
-            - attention_mask: Attention mask
-            - response_start_idx: Index where response starts
+        Batched HuggingFace sampling (``trainer_runtime.hf_generate_group``,
+        ``generation_batch_size`` rows per ``generate`` call, trimmed after
+        EOS). Returns its response dicts (``response``, ``input_ids``,
+        ``attention_mask``, ``response_mask``, ``sequence_length``,
+        ``prompt_length``) plus ``response_start_idx``, the index where the
+        response starts.
         """
-        responses = []
-
-        # Tokenize prompt
-        prompt_tokens = self.tokenizer(
+        responses: list[dict[str, Any]] = await hf_generate_group(
+            self.model,
+            self.tokenizer,
+            self.config,
+            self.device,
             prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
+            group_size,
         )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
-
-        self.model.eval()
-        with torch.no_grad():
-            for _ in range(group_size):
-                # Generate response
-                input_ids = prompt_tokens["input_ids"].to(self.device)
-                attention_mask = prompt_tokens["attention_mask"].to(self.device)
-
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=self.config.max_completion_length,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-                # Decode response
-                response_text = self.tokenizer.decode(
-                    outputs[0][prompt_length:], skip_special_tokens=True
-                )
-
-                responses.append(
-                    {
-                        "response": response_text,
-                        "input_ids": outputs[0],
-                        "attention_mask": torch.ones_like(outputs[0]),
-                        "response_start_idx": prompt_length,
-                    }
-                )
-
-        self.model.train()
+        for response in responses:
+            response["response_start_idx"] = response["prompt_length"]
         self.rollout_samples_total += len(responses)
         return responses
 
@@ -590,16 +547,9 @@ class GEPOTrainer(TrainingRuntime):
         # log probs here, before any inner update can move the weights. When
         # they were recomputed from the just-updated model the GEPO
         # coefficient collapsed to ~1 and clipping never fired.
-        rollouts: list[dict[str, Any]] = []
-        for prompt in prompts:
-            group_responses = await self.generate_group_responses(
-                prompt, self.config.group_size
-            )
-
-            if len(group_responses) < 2:
-                logger.warning("Insufficient responses for prompt, skipping")
-                continue
-
+        async def build(
+            prompt: str, group_responses: list[dict[str, Any]]
+        ) -> dict[str, Any]:
             rewards = [
                 self.reward_fn(prompt, resp["response"]) for resp in group_responses
             ]
@@ -621,15 +571,22 @@ class GEPOTrainer(TrainingRuntime):
                     batch_input_ids, batch_attention_mask, response_start_idx
                 )
 
-            rollouts.append(
-                {
-                    "input_ids": batch_input_ids,
-                    "attention_mask": batch_attention_mask,
-                    "response_start_idx": response_start_idx,
-                    "advantages": advantages,
-                    "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
-                }
-            )
+            return {
+                "input_ids": batch_input_ids,
+                "attention_mask": batch_attention_mask,
+                "response_start_idx": response_start_idx,
+                "advantages": advantages,
+                "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
+            }
+
+        # One group per prompt (at least two responses for group advantages).
+        rollouts = await PromptGroupRollouts(
+            lambda prompt: self.generate_group_responses(
+                prompt, self.config.group_size
+            ),
+            min_group_size=2,
+            label="GEPO",
+        ).collect(prompts, build)
 
         num_groups = len(rollouts)
         if num_groups == 0:

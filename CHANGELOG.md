@@ -33,6 +33,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and GEPO, GSPO, GSPO-token (single graph) now run their update passes on it;
   their finite steps are numerically unchanged (step goldens). A pass that
   fails part-way discards its pending gradients.
+- `stateset_agents.training.spine.PromptGroupRollouts` is the rollout phase
+  of DAPO, GEPO and VAPO (one sampled group per prompt, built into update
+  items; groups too small for group statistics are skipped with a warning),
+  and `VLLMEngineMixin` / `vllm_engine_config` are the one vLLM rollout-engine
+  setup shared by DAPO and the GSPO and base trajectory generators.
+- The step goldens record their capture environment and compare strictly
+  (rtol 1e-5) only there; other environments (CI's torch versions, CPUs,
+  operating systems) use portable tolerances that still fail a 5% gradient
+  error, a dropped prompt group or a skipped update pass. The harness runs
+  AdamW with eps 1e-4 and without VAPO value-head dropout, which made the
+  numbers depend on rounding noise and on the RNG stream.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
@@ -99,6 +110,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raising), `_apply_optimizer_step` returns whether the update
   committed, and the `optimizer_updates` metric counts committed passes
   rather than attempted ones.
+- GSPO's current- and reference-policy scoring and GEPO's
+  `compute_sequence_log_probs` use the shared fp32 gather
+  (`rl_losses.gather_token_logprobs`) instead of a full-vocabulary
+  `log_softmax`: no full-vocabulary log-prob tensor, bf16 policies are
+  scored in fp32 (as GSPO's generation side already was), fp32 values agree
+  to 1e-6 per token. GSPO's single-response reference score no longer falls
+  back to the whole sequence when the prompt fills the window (it is 0, like
+  the current-policy score). GSPO and GSPO-token share one per-group update
+  (`_update_policy`), differing only in how a group is scored and its loss.
+- `GEPOTrainer.generate_group_responses` samples through
+  `trainer_runtime.hf_generate_group` like DAPO and VAPO:
+  `generation_batch_size` rows per `generate` call instead of one, responses
+  end at the tokenizer's EOS, and each response dict also carries
+  `response_mask`, `sequence_length` and `prompt_length`
+  (`response_start_idx` is kept).
+- DAPO's vLLM engine follows the shared setup: dtype float16/bfloat16 from
+  `fp16`/`bf16`, otherwise the checkpoint's own (`"auto"`; was float16), and
+  `vllm_max_model_len`, `vllm_quantization` and
+  `vllm_enable_chunked_prefill` are honoured.
 
 ### Fixed
 
