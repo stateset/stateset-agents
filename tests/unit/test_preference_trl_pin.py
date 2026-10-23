@@ -91,6 +91,7 @@ def _bare(**attributes: Any) -> SimpleNamespace:
         aux_loss_enabled=False,
         _metrics={"train": defaultdict(list), "eval": defaultdict(list)},
         _total_train_tokens=0,
+        _tp_size=1,
         **attributes,
     )
 
@@ -118,7 +119,34 @@ def _fixture(
 
 
 def _model(logits: torch.Tensor) -> Any:
-    return lambda **_: SimpleNamespace(logits=logits)
+    """Return ``logits``; with ``fused_lm_head=True`` (TRL >= 1.16) return the
+    fused head's per-token fields instead, zeroed where the label is ``-100``."""
+
+    def forward(
+        *, labels: Any = None, fused_lm_head: bool = False, **_: Any
+    ) -> SimpleNamespace:
+        if not fused_lm_head:
+            return SimpleNamespace(logits=logits)
+        shifted = labels[:, 1:]
+        mask = shifted != -100
+        head = logits[:, :-1]
+        logps = torch.log_softmax(head, dim=-1)
+        probs = logps.exp()
+        fields = {
+            "log_probs": logps.gather(-1, shifted.clamp(min=0).unsqueeze(-1)).squeeze(
+                -1
+            ),
+            "entropy": -(probs * logps).sum(-1),
+            "log_sum_sq_probs": probs.square().sum(-1).log(),
+            "mean_logits": head.mean(-1),
+            "is_top1": head.argmax(-1) == shifted,
+        }
+        return SimpleNamespace(
+            aux_loss=None,
+            **{name: value.masked_fill(~mask, 0) for name, value in fields.items()},
+        )
+
+    return forward
 
 
 def _trl_dpo(
