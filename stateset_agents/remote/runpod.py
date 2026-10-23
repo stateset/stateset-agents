@@ -196,6 +196,9 @@ _REAL_MONOTONIC = time.monotonic
 #: Wall-clock lead over monotonic time that counts as a suspend, not jitter.
 _SUSPEND_NOISE_S = 1.0
 _CLOCK_LOCK = threading.Lock()
+#: ``[clock, monotonic source, mono0, wall0, offset, last]``. The clock and its
+#: source are held, not their ``id()``s: a freed clock's address is reused by
+#: the next one, which would otherwise inherit this anchor's readings.
 _clock_anchor: list[Any] = []
 
 
@@ -218,17 +221,21 @@ def _billing_now() -> float:
     if boottime is not None and callable(gettime):
         return float(gettime(boottime))
     mono, wall = float(clock.monotonic()), float(clock.time())
-    source = clock.monotonic
-    key = (id(clock), id(getattr(source, "__func__", source)))
+    # A bound method is a new object on every access; its function is stable.
+    source = getattr(clock.monotonic, "__func__", clock.monotonic)
     with _CLOCK_LOCK:
-        if not _clock_anchor or _clock_anchor[0] != key:
-            _clock_anchor[:] = [key, mono, wall, 0.0, mono]
-        _, mono0, wall0, offset, last = _clock_anchor
+        if (
+            not _clock_anchor
+            or _clock_anchor[0] is not clock
+            or _clock_anchor[1] is not source
+        ):
+            _clock_anchor[:] = [clock, source, mono, wall, 0.0, mono]
+        _, _, mono0, wall0, offset, last = _clock_anchor
         missed = (wall - wall0) - (mono - mono0)
         if missed > _SUSPEND_NOISE_S:  # ignore scheduling jitter between reads
             offset = max(offset, missed)
         now = max(last, mono + offset)
-        _clock_anchor[3], _clock_anchor[4] = offset, now
+        _clock_anchor[4], _clock_anchor[5] = offset, now
         return float(now)
 
 

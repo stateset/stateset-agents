@@ -66,6 +66,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- RunPod's suspend-aware billing clock anchored its readings to the clock's
+  `id()`. A clock created where a discarded one had lived inherited that
+  clock's last reading, so its time stood still: run deadlines and readiness
+  budgets measured with it did not expire on time (in CI: a readiness reply
+  after its deadline counted as success, and the pod deadline was armed one
+  second late). The anchor now holds the clock object itself.
+
 - **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
   partition issue combinations between eval and harvest, so the same seed
   yields different prompts than before; reference bases shift upward only when
