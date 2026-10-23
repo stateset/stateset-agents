@@ -14,7 +14,16 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .errors import StateSetError
+from .errors import DataError
+from .errors import ErrorContext as _CoreErrorContext
+from .errors import (
+    ModelError,
+    NetworkError,
+    ResourceError,
+    StateSetError,
+    TrainingError,
+    ValidationError,
+)
 
 
 class ErrorSeverity(Enum):
@@ -82,8 +91,9 @@ class GRPOException(StateSetError):
     """Base exception for GRPO framework.
 
     Inherits from :class:`~stateset_agents.core.errors.StateSetError` so that
-    ``except StateSetError`` catches GRPO errors too, unifying the two error
-    hierarchies.
+    ``except StateSetError`` catches GRPO errors too, and each subclass also
+    derives from the matching category error in :mod:`stateset_agents.core.errors`
+    (``ValidationException`` is a ``ValidationError``, ...): one hierarchy.
     """
 
     def __init__(
@@ -107,7 +117,12 @@ class GRPOException(StateSetError):
         self.details = details or {}
         self.recovery_actions = recovery_actions or []
         self.timestamp = time.time()
-        # StateSetError compatibility attributes
+        # StateSetError attributes, so ``except StateSetError as e`` can read
+        # ``e.code`` / ``e.context`` / ``e.to_dict()`` for every framework error.
+        self.code = self.error_code
+        self.context = _CoreErrorContext(
+            operation="unknown", component=category.value, details=self.details
+        )
         self.cause: BaseException | None = None
 
     def __str__(self) -> str:
@@ -134,7 +149,7 @@ class GRPOException(StateSetError):
         )
 
 
-class TrainingException(GRPOException):
+class TrainingException(GRPOException, TrainingError):
     """Training-related errors"""
 
     def __init__(self, message: str, **kwargs):
@@ -142,7 +157,7 @@ class TrainingException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class ModelException(GRPOException):
+class ModelException(GRPOException, ModelError):
     """Model-related errors"""
 
     def __init__(self, message: str, **kwargs):
@@ -150,7 +165,7 @@ class ModelException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class DataException(GRPOException):
+class DataException(GRPOException, DataError):
     """Data processing errors"""
 
     def __init__(self, message: str, **kwargs):
@@ -158,7 +173,7 @@ class DataException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class NetworkException(GRPOException):
+class NetworkException(GRPOException, NetworkError):
     """Network and API errors"""
 
     def __init__(self, message: str, **kwargs):
@@ -166,7 +181,7 @@ class NetworkException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class ResourceException(GRPOException):
+class ResourceException(GRPOException, ResourceError):
     """Resource allocation errors (GPU, memory, etc.)"""
 
     def __init__(self, message: str, **kwargs):
@@ -174,7 +189,7 @@ class ResourceException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class ValidationException(GRPOException):
+class ValidationException(GRPOException, ValidationError):
     """Input validation errors"""
 
     def __init__(self, message: str, **kwargs):

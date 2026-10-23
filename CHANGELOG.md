@@ -15,6 +15,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified; the worker terminates its pod and records the run as `cancelled`.
   The API capability reports `remote_stop_supported` and
   `remote_stop_providers`. Other remote providers are still refused.
+- `stateset_agents.StateSetError` and `stateset_agents.ConfigurationError`
+  join the stable surface (reviewed additive contract change): the root of the
+  framework's one exception hierarchy and the typed error its public entry
+  points raise.
 
 ### Changed
 
@@ -70,6 +74,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of three private copies. Responses, status codes and error details
   are unchanged. `PaginatedResponse` and its `APIResponse` base now live in
   `stateset_agents.api.schemas`.
+- **One exception hierarchy rooted at `StateSetError`.**
+  `train()` argument checks, `TrainingConfig` validation (`__post_init__`,
+  `validate_for_training`) and `AgentConfig` validation (`ConfigValidationError`)
+  raise `ConfigurationError`, which is also a `ValueError` and prints the same
+  message, so existing `except ValueError` handlers and output are unchanged.
+  The `GRPOException` family now also derives from the matching category
+  errors in `core.errors` (`ValidationException` is a `ValidationError`,
+  `ResourceException` a new `ResourceError`, ...) and carries
+  `code`/`context`/`to_dict()`; the gateway's `APIError` family derives from
+  `StateSetError` too (its `str()` and wire format are unchanged).
 
 ### Deprecated
 
@@ -129,6 +143,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `stateset_agents.MultiTurnAgent` (`core.agent.MultiTurnAgent`);
   `core.multiturn_agent.MultiTurnAgent` is a deprecated alias. The API
   reference no longer lists these modules, `api.grpo` or `api.models`.
+- `stateset_agents.core.types.FrameworkError`, `AgentError`,
+  `EnvironmentError`, `TrainingError` and `ConfigurationError` (a second,
+  unused error root) are deprecated aliases of the `core.errors` classes and
+  are removed in **v0.71.0**.
 
 ### Removed
 

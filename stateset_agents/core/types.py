@@ -200,39 +200,32 @@ AsyncEnvironmentFactory = Callable[[], Awaitable[BaseEnvironment]]
 AsyncRewardFactory = Callable[[float], Awaitable[BaseReward]]
 
 
-# Error types
-class FrameworkError(Exception):
-    """Base exception for framework errors."""
-
-    pass
-
-
-class AgentError(FrameworkError):
-    """Error related to agent operations."""
-
-    pass
-
-
-class EnvironmentError(FrameworkError):
-    """Error related to environment operations."""
-
-    pass
-
-
-class TrainingError(FrameworkError):
-    """Error related to training operations."""
-
-    pass
-
-
-class ConfigurationError(FrameworkError):
-    """Error related to configuration."""
-
-    pass
+#: The FrameworkError family duplicated :mod:`stateset_agents.core.errors`;
+#: the old names are served from there and will be removed in v0.71.0.
+_DEPRECATED_ERROR_ALIASES: dict[str, str] = {
+    "FrameworkError": "StateSetError",
+    "AgentError": "StateSetError",
+    "EnvironmentError": "EnvironmentError",
+    "TrainingError": "TrainingError",
+    "ConfigurationError": "ConfigurationError",
+}
+_ERROR_ALIASES_REMOVAL = "0.71.0"
 
 
 def __getattr__(name: str) -> Any:
     """Deprecation shim for names that moved out of this module."""
+    canonical = _DEPRECATED_ERROR_ALIASES.get(name)
+    if canonical is not None:
+        from stateset_agents._deprecation import warn_deprecated
+
+        from . import errors
+
+        warn_deprecated(
+            f"stateset_agents.core.types.{name}",
+            removal=_ERROR_ALIASES_REMOVAL,
+            replacement=f"stateset_agents.core.errors.{canonical}",
+        )
+        return getattr(errors, canonical)
     if name == "TrainingConfig":
         import warnings
 

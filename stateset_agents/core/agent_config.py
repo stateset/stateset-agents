@@ -5,9 +5,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from .errors import ConfigurationError
 
-class ConfigValidationError(ValueError):
-    """Raised when agent configuration validation fails."""
+
+class ConfigValidationError(ConfigurationError):
+    """Raised when agent configuration validation fails.
+
+    A :class:`~stateset_agents.core.errors.ConfigurationError`, so still a
+    ``ValueError``; ``str(exc)`` is unchanged.
+    """
 
     def __init__(
         self,

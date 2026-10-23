@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, MultiTurnAgent
 from stateset_agents.core.environment import Environment
+from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.core.reward import RewardFunction
 from stateset_agents.core.reward_base import RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
@@ -92,7 +93,7 @@ async def train(
 
     valid_modes = {mode.value for mode in TrainingMode}
     if training_mode not in valid_modes:
-        raise ValueError(
+        raise ConfigurationError(
             f"training_mode must be one of {sorted(valid_modes)}, "
             f"got {training_mode!r}"
         )
@@ -120,7 +121,7 @@ async def train(
     )
     for name, value in agent_identity.items():
         if getattr(config, name) != value:
-            raise ValueError(
+            raise ConfigurationError(
                 f"Training {name} differs from the supplied agent configuration. "
                 "Set the model identity in AgentConfig before calling train()."
             )
@@ -149,7 +150,7 @@ async def train(
 
     # Set up reward function
     if training_mode == "offline" and config.objective is not None:
-        raise ValueError(
+        raise ConfigurationError(
             "Offline training uses IQL-weighted logged-action extraction; "
             "objective selects an online policy objective and cannot be applied here"
         )
@@ -438,7 +439,7 @@ def _offline_config(
 
     ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
     if ignored and strict:
-        raise ValueError(
+        raise ConfigurationError(
             "offline training does not use "
             + ", ".join(repr(name) for name in ignored)
             + "; it honours only "
@@ -493,7 +494,7 @@ async def _train_offline(
     from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
 
     if dataset is None:
-        raise ValueError(
+        raise ConfigurationError(
             "Offline training requires a dataset. "
             "Pass dataset= or dataset_path= to train()."
         )

@@ -2168,6 +2168,22 @@
           "parameters": []
         }
       },
+      "ConfigurationError": {
+        "module": "stateset_agents.core.errors",
+        "name": "ConfigurationError",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "kind": "VAR_KEYWORD",
+              "name": "kwargs"
+            }
+          ]
+        }
+      },
       "ConversationDataset": {
         "module": "stateset_agents.data",
         "name": "ConversationDataset",
@@ -3208,6 +3224,36 @@
               "default": null,
               "kind": "POSITIONAL_OR_KEYWORD",
               "name": "base_reward_fn"
+            }
+          ]
+        }
+      },
+      "StateSetError": {
+        "module": "stateset_agents.core.errors",
+        "name": "StateSetError",
+        "signature": {
+          "parameters": [
+            {
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "message"
+            },
+            {
+              "default": {
+                "enum": "stateset_agents.core.errors.ErrorCode",
+                "member": "UNKNOWN"
+              },
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "code"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "context"
+            },
+            {
+              "default": null,
+              "kind": "POSITIONAL_OR_KEYWORD",
+              "name": "cause"
             }
           ]
         }

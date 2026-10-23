@@ -79,6 +79,15 @@ _LAZY_EXPORTS.update(
         ],
     )
 )
+# The framework's exception root and the typed error its public entry points
+# (train(), TrainingConfig, AgentConfig) raise; ConfigurationError is also a
+# ValueError.
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.errors",
+        ["StateSetError", "ConfigurationError"],
+    )
+)
 _LAZY_EXPORTS.update(
     _export_group(
         "stateset_agents.core.error_handling",

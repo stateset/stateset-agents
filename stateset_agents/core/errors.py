@@ -1,8 +1,20 @@
 """
-Standardized error handling for StateSet Agents.
+Standardized error handling for StateSet Agents: the one exception hierarchy.
 
-Provides structured error codes, proper error chaining, and developer-friendly
-error messages with context.
+Every framework exception derives from :class:`StateSetError`:
+
+* the category errors below (``ConfigurationError``, ``ModelError``,
+  ``TrainingError``, ``DataError``, ``NetworkError``, ``ResourceError``,
+  ``ValidationError``, ...);
+* the ``GRPOException`` family in :mod:`stateset_agents.core.error_handling`,
+  whose members also derive from the matching category error here (for
+  example ``ValidationException`` is a :class:`ValidationError`);
+* the gateway's :class:`stateset_agents.api.errors.APIError` family.
+
+Errors raised where the framework used to raise a builtin keep that builtin
+as a base class and print just their message, so existing ``except
+ValueError`` handlers and error output are unchanged (``ConfigurationError``
+is a ``ValueError``).
 """
 
 from __future__ import annotations
@@ -10,7 +22,7 @@ from __future__ import annotations
 import enum
 import traceback
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, ClassVar
 
 
 class ErrorCode(enum.Enum):
@@ -92,6 +104,13 @@ class ErrorContext:
 class StateSetError(Exception):
     """Base exception for all StateSet Agents errors."""
 
+    #: Structured code; subclass families may use their own enum.
+    code: enum.Enum
+    #: When true, ``str(exc)`` is the bare message, as for the builtin the class
+    #: also derives from, so swapping ``raise ValueError(msg)`` for a typed error
+    #: changes the type but not what callers print.
+    message_only_str: ClassVar[bool] = False
+
     def __init__(
         self,
         message: str,
@@ -106,6 +125,8 @@ class StateSetError(Exception):
         self.cause = cause
 
     def __str__(self) -> str:
+        if self.message_only_str:
+            return self.message
         parts = [f"[{self.code.value}] {self.message}"]
         if self.context.details:
             parts.append(f"Context: {self.context.details}")
@@ -122,8 +143,14 @@ class StateSetError(Exception):
         }
 
 
-class ConfigurationError(StateSetError):
-    """Raised when configuration is invalid."""
+class ConfigurationError(StateSetError, ValueError):
+    """Raised when configuration or call arguments are invalid.
+
+    Also a ``ValueError`` (what these checks raised before), and ``str(exc)``
+    is the bare message.
+    """
+
+    message_only_str = True
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
@@ -224,6 +251,24 @@ class RewardError(StateSetError):
             code=ErrorCode.RWD_COMPUTE_FAILED,
             context=ErrorContext(
                 operation="reward_computation", component="reward", details=kwargs
+            ),
+        )
+
+
+class ResourceError(StateSetError):
+    """Raised when a resource (GPU, memory, disk, pool slot) is unavailable."""
+
+    def __init__(
+        self,
+        message: str,
+        code: ErrorCode = ErrorCode.RES_GPU_UNAVAILABLE,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(
+            message,
+            code=code,
+            context=ErrorContext(
+                operation="resource", component="resource", details=kwargs
             ),
         )
 
