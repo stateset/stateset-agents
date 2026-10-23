@@ -10,7 +10,6 @@ Reference: https://arxiv.org/abs/2507.18071v2 (Section 4.3)
 import logging
 from typing import Any
 
-import numpy as np
 import torch
 
 from stateset_agents.core.agent import Agent
@@ -204,6 +203,36 @@ class GSPOTokenTrainer(GSPOTrainer):
         )
         return token_log_probs_list, current_log_probs, sequence_lengths
 
+    def _score_policy_group(
+        self, prompt: str, responses: list[str]
+    ) -> tuple[list[torch.Tensor] | None, torch.Tensor, torch.Tensor]:
+        """Per-token rows (gradients flow through them), sums and lengths."""
+        agent_config = getattr(getattr(self, "agent", None), "config", None)
+        return self._score_token_rows(
+            prompt, responses, getattr(agent_config, "system_prompt", None)
+        )
+
+    def _policy_group_loss(
+        self,
+        importance_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        current_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+        ref_log_probs: torch.Tensor | None,
+        token_rows: list[torch.Tensor] | None,
+    ) -> torch.Tensor:
+        """GSPO-token objective: the sequence ratio is stop-gradient (it only
+        sets the clip); gradients flow through the per-token log-probs."""
+        assert token_rows is not None
+        return self.compute_gspo_token_loss(
+            token_rows,
+            sequence_lengths,
+            importance_ratios.detach(),
+            advantages,
+            current_log_probs,
+            ref_log_probs,
+        )
+
     async def train_step_token_level(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
     ) -> dict[str, float]:
@@ -225,11 +254,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_clipped = 0
-        total_samples = 0
         all_rewards = []
-        all_importance_ratios = []
-        all_generation_gaps: list[float] = []
         processed_groups = 0
         nonzero_advantages = 0
         advantage_count = 0
@@ -310,93 +335,20 @@ class GSPOTokenTrainer(GSPOTrainer):
                 (query, responses, old_log_probs, advantages, ref_log_probs)
             )
 
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        # Rollouts are scored once; each iteration recomputes token log-probs
-        # against old-policy scores frozen on the first pass (see GSPOTrainer).
-        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
-
-        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
-            nonlocal total_clipped, total_samples
-            query, responses, generation_log_probs, advantages, ref_log_probs = group
-            (
-                token_log_probs_list,
-                current_log_probs,
-                sequence_lengths,
-            ) = self._score_token_rows(query, responses, system_prompt)
-            frozen = frozen_old[index]
-            if frozen is None:
-                prepared, generation_gaps = self._prepare_old_log_probs(
-                    current_log_probs, generation_log_probs, sequence_lengths
-                )
-                frozen = prepared.detach()
-                frozen_old[index] = frozen
-                all_generation_gaps.extend(generation_gaps)
-            old_log_probs = frozen
-
-            # Detach immediately: the GSPO-token objective uses a
-            # stop-gradient sequence ratio for clipping; gradients flow only
-            # through the token log probs in the loss below.
-            importance_ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, sequence_lengths
-            ).detach()
-            all_importance_ratios.extend(importance_ratios.tolist())
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-            total_clipped += int((importance_ratios != clipped_ratios).sum().item())
-            total_samples += len(responses)
-
-            return self.compute_gspo_token_loss(
-                token_log_probs_list,
-                sequence_lengths,
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                ref_log_probs,
-            )
-
-        # Match GSPO: each processed prompt group has equal objective weight.
-        # Normalize the full loss, including KL, before backward.
-        passes = self._run_policy_iterations(
-            scored_groups,
-            group_loss,
-            processed_groups=processed_groups,
-            device=model_device,
+        # Match GSPO: each processed prompt group has equal objective weight;
+        # the full loss, including KL, is normalised before backward.
+        passes, stats = self._update_policy(
+            scored_groups, processed_groups=processed_groups, device=model_device
         )
-
-        # Compute metrics
-        clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = float(np.mean(all_rewards)) if all_rewards else 0.0
-        avg_importance_ratio = (
-            float(np.mean(all_importance_ratios)) if all_importance_ratios else 1.0
+        return self._record_step_metrics(
+            passes,
+            stats,
+            rewards=all_rewards,
+            groups=processed_groups,
+            nonzero_advantages=nonzero_advantages,
+            advantage_count=advantage_count,
+            zero_advantage_groups=zero_advantage_groups,
         )
-
-        metrics = {
-            "policy_loss": float(np.mean(passes.losses)),
-            "optimizer_updates": float(passes.committed),
-            "clipping_fraction": clipping_fraction,
-            "average_reward": avg_reward,
-            "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
-            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
-            "zero_advantage_group_fraction": zero_advantage_groups
-            / max(processed_groups, 1),
-            "advantage_group_count": float(processed_groups),
-            "sequence_importance_ratio": avg_importance_ratio,
-            "generation_log_prob_gap": (
-                float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
-            ),
-            "learning_rate": float(self.scheduler.get_last_lr()[0]),
-        }
-
-        # Store metrics
-        for key, value in metrics.items():
-            if key in self.training_metrics:
-                self.training_metrics[key].append(value)
-
-        return metrics
 
 
 async def train_with_gspo_token(

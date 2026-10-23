@@ -23,7 +23,7 @@ MAX_BRANCHES = 40
 #: cli._validate_config, AgentConfig.validate, the /api/v1/conversations
 #: handler, finetune_workspace.check_config_values and
 #: data.finetuning.validate_finetuning_row brought it to 77.
-CEILING = 77
+CEILING = 75
 
 _BRANCH_NODES = (
     ast.If,

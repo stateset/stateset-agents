@@ -24,6 +24,7 @@ import torch
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.rollouts import PromptGroupRollouts, VLLMEngineMixin
 from .spine.update import (
     OptimizerStep,
     UpdateLoop,
@@ -312,7 +313,7 @@ class DynamicSamplingBuffer:
         return len(self.buffer)
 
 
-class DAPOTrainer(TrainingRuntime):
+class DAPOTrainer(VLLMEngineMixin, TrainingRuntime):
     """
     Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) Trainer
 
@@ -372,11 +373,8 @@ class DAPOTrainer(TrainingRuntime):
         except StopIteration:
             self.device = torch.device("cpu")
 
-        # vLLM generator for fast generation
-        self.vllm_generator: Any | None = None
-        self._vllm_initialized = False
-
-        # Setup vLLM if configured
+        # vLLM generator for fast generation (spine VLLMEngineMixin)
+        self._reset_vllm_state()
         if config.use_vllm and VLLM_BACKEND_AVAILABLE:
             self._setup_vllm()
 
@@ -463,61 +461,15 @@ class DAPOTrainer(TrainingRuntime):
             reward_value = cast(float, reward)
         return float(reward_value)
 
-    def _setup_vllm(self) -> None:
-        """Setup vLLM generator"""
-        logger.info("Setting up vLLM for fast DAPO generation...")
+    _vllm_label = "DAPO"
+    _vllm_init_exceptions = DAPO_EXCEPTIONS
 
-        # Load vLLM backend lazily
+    def _setup_vllm(self) -> None:
+        """Create the vLLM engine (started by ``initialize_vllm``)."""
         if not _load_vllm_backend():
             logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
             return
-
-        vllm_config_cls = VLLMConfig
-        vllm_generator_cls = VLLMGenerator
-        if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning(
-                "vLLM backend exports unavailable, using HuggingFace fallback"
-            )
-            return
-
-        vllm_config = vllm_config_cls(
-            model_name=self.config.model_name,
-            revision=getattr(self.config, "model_revision", None),
-            gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
-            tensor_parallel_size=self.config.vllm_tensor_parallel_size,
-            enable_prefix_caching=self.config.vllm_enable_prefix_caching,
-            max_tokens=self.config.max_completion_length,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            dtype="bfloat16" if self.config.bf16 else "float16",
-        )
-
-        self.vllm_generator = vllm_generator_cls(vllm_config)
-
-    async def initialize_vllm(self) -> bool:
-        """Initialize vLLM engine"""
-        if self.vllm_generator is None:
-            return False
-
-        if self._vllm_initialized:
-            return True
-
-        try:
-            success = bool(await self.vllm_generator.initialize())
-            self._vllm_initialized = success
-            if success:
-                logger.info(
-                    "vLLM initialized for DAPO - generation will be 5-20x faster!"
-                )
-            return success
-        except DAPO_EXCEPTIONS as e:
-            logger.warning(f"Failed to initialize vLLM: {e}")
-            return False
-
-    @property
-    def using_vllm(self) -> bool:
-        """Check if vLLM is being used"""
-        return self._vllm_initialized and self.vllm_generator is not None
+        self._install_vllm_generator(VLLMConfig, VLLMGenerator)
 
     def compute_token_log_probs(
         self,
@@ -739,19 +691,10 @@ class DAPOTrainer(TrainingRuntime):
         Continues generating until we have enough non-trivial samples
         (accuracy not 0 or 1).
         """
-        collected_samples: list[dict[str, Any]] = []
-        prompts_processed = 0
-        prompts_filtered = 0
 
-        prompt_idx = 0
-        while len(collected_samples) < target_batch_size and prompt_idx < len(prompts):
-            prompt = prompts[prompt_idx % len(prompts)]
-            prompt_idx += 1
-            prompts_processed += 1
-
-            # Generate group
-            group_responses = await self.generate_group_responses(prompt)
-
+        async def build(
+            prompt: str, group_responses: list[dict[str, Any]]
+        ) -> dict[str, Any] | None:
             # Score the group first: without a verifier, accuracy and the
             # dynamic-sampling filter are both derived from these rewards.
             base_rewards = []
@@ -771,8 +714,7 @@ class DAPOTrainer(TrainingRuntime):
                 else:
                     informative = max(base_rewards) - min(base_rewards) > 1e-8
                 if not informative:
-                    prompts_filtered += 1
-                    continue
+                    return None
 
             # Apply overlong reward shaping
             rewards = []
@@ -803,8 +745,7 @@ class DAPOTrainer(TrainingRuntime):
                     batch_input_ids, batch_attention_mask, batch_response_mask
                 )
 
-            # Store sample
-            sample = {
+            return {
                 "prompt": prompt,
                 "responses": group_responses,
                 "rewards": rewards,
@@ -812,8 +753,13 @@ class DAPOTrainer(TrainingRuntime):
                 "accuracy": accuracy,
                 "old_token_log_probs": old_token_log_probs,
             }
-            collected_samples.append(sample)
 
+        rollouts = PromptGroupRollouts(self.generate_group_responses, label="DAPO")
+        collected_samples = await rollouts.collect(
+            prompts, build, limit=target_batch_size
+        )
+        prompts_processed = rollouts.prompts_processed
+        prompts_filtered = rollouts.groups_dropped
         filter_ratio = prompts_filtered / max(prompts_processed, 1)
         logger.debug(
             f"Dynamic sampling: {prompts_filtered}/{prompts_processed} filtered ({filter_ratio:.1%})"

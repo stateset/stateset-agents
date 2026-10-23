@@ -15,11 +15,11 @@ import functools
 import importlib.util
 import logging
 import math
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent
@@ -52,7 +52,12 @@ from .gspo_generation import (
     scoring_prompt_length,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
-from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
+from .spine.update import (
+    OptimizerStep,
+    UpdateLoop,
+    UpdatePasses,
+    nonfinite_grad_settings,
+)
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -360,6 +365,84 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
+def _scoring_system_prompt(trainer: Any) -> str | None:
+    """The agent's system prompt, part of the rendered scoring prompt."""
+    agent_config = getattr(getattr(trainer, "agent", None), "config", None)
+    return getattr(agent_config, "system_prompt", None)
+
+
+def score_response_group(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    responses: list[str],
+    *,
+    system_prompt: str | None,
+    max_completion_length: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Summed response-token log-probs and response lengths for one group.
+
+    ``prompt`` is rendered with ``render_prompt_for_scoring`` and each
+    response appended with ``build_scoring_text`` -- the convention the
+    generation side scores with -- so current, old and reference log-probs
+    share one tokenization. Rows are right-padded; log-probs come from the
+    shared fp32 shift-by-one gather (``rl_losses.gather_token_logprobs``, no
+    full-vocabulary log-softmax tensor) masked to response tokens: unshifted
+    position ``p`` counts when ``p >= prompt_length`` and is not padding.
+    Gradients follow the caller's grad mode.
+    """
+    rendered_prompt = render_prompt_for_scoring(tokenizer, prompt, system_prompt)
+    prompt_length = scoring_prompt_length(tokenizer, rendered_prompt)
+    full_texts = [
+        build_scoring_text(rendered_prompt, response) for response in responses
+    ]
+
+    # Use right-padding for stable response positions across the batch.
+    original_padding_side = getattr(tokenizer, "padding_side", "right")
+    if hasattr(tokenizer, "padding_side"):
+        tokenizer.padding_side = "right"
+    try:
+        inputs = tokenizer(
+            full_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_length + max_completion_length,
+            add_special_tokens=False,
+        )
+    finally:
+        if hasattr(tokenizer, "padding_side"):
+            tokenizer.padding_side = original_padding_side
+
+    model_device = _get_model_device(model)
+    if model_device is not None:
+        if hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
+        else:
+            inputs = {
+                k: v.to(model_device) if hasattr(v, "to") else v
+                for k, v in inputs.items()
+            }
+
+    logits = model(**inputs).logits
+    response_mask = inputs["attention_mask"].to(torch.float32)
+    response_mask[:, :prompt_length] = 0.0
+    token_log_probs, shifted_mask = rl_losses.gather_token_logprobs(
+        logits, inputs["input_ids"], response_mask
+    )
+    return token_log_probs.sum(dim=-1), shifted_mask.sum(dim=-1).clamp(min=1.0)
+
+
+@dataclass
+class _PolicyStats:
+    """What a GSPO step's update passes observed (for its metrics)."""
+
+    clipped: int = 0
+    samples: int = 0
+    importance_ratios: list[float] = field(default_factory=list)
+    generation_gaps: list[float] = field(default_factory=list)
+
+
 def _policy_iterations(config: Any) -> int:
     """Optimizer steps per rollout batch (GSPO ``num_iterations``, >= 1)."""
     iterations = getattr(config, "num_iterations", 1)
@@ -611,21 +694,87 @@ class GSPOTrainer(TrainingRuntime):
             raise
         return self._build_optimizer_step()()
 
-    def _run_policy_iterations(
+    def _score_policy_group(
+        self, prompt: str, responses: list[str]
+    ) -> tuple[list[torch.Tensor] | None, torch.Tensor, torch.Tensor]:
+        """Token rows (GSPO-token only), summed log-probs and lengths."""
+        current_log_probs, lengths = self._compute_group_sequence_log_probs(
+            prompt, responses
+        )
+        return None, current_log_probs, lengths
+
+    def _policy_group_loss(
+        self,
+        importance_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        current_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+        ref_log_probs: torch.Tensor | None,
+        token_rows: list[torch.Tensor] | None,
+    ) -> torch.Tensor:
+        """One prompt group's objective (GSPO: sequence-level)."""
+        return self.compute_gspo_loss(
+            importance_ratios,
+            advantages,
+            current_log_probs,
+            sequence_lengths,
+            ref_log_probs,
+        )
+
+    def _update_policy(
         self,
         scored_groups: list[Any],
-        group_loss: Any,
         *,
         processed_groups: int,
         device: Any,
-    ) -> Any:
-        """``num_iterations`` passes over the scored groups (spine UpdateLoop).
+    ) -> tuple[UpdatePasses, _PolicyStats]:
+        """``num_iterations`` update passes over the scored groups.
 
-        Each pass sums every group's loss in one graph, normalises it by the
-        processed group count and commits it through
-        :meth:`_apply_optimizer_step`.
+        Rollouts are scored once; each pass recomputes current log-probs
+        against old-policy scores frozen on the first pass. With one pass the
+        update is on-policy (ratio 1); later passes are the off-policy regime
+        GSPO's sequence clip exists for. Each pass sums every group's loss in
+        one graph (spine ``UpdateLoop``), normalises it by the processed group
+        count, so gradient magnitude does not scale with batch composition,
+        and commits it through :meth:`_apply_optimizer_step`.
         """
-        return UpdateLoop(
+        stats = _PolicyStats()
+        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
+
+        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
+            prompt, responses, generation_log_probs, advantages, ref_log_probs = group
+            token_rows, current_log_probs, lengths = self._score_policy_group(
+                prompt, responses
+            )
+            old_log_probs = frozen_old[index]
+            if old_log_probs is None:
+                prepared, generation_gaps = self._prepare_old_log_probs(
+                    current_log_probs, generation_log_probs, lengths
+                )
+                old_log_probs = frozen_old[index] = prepared.detach()
+                stats.generation_gaps.extend(generation_gaps)
+
+            ratios = self.compute_sequence_importance_ratio(
+                current_log_probs, old_log_probs, lengths
+            )
+            stats.importance_ratios.extend(ratios.detach().cpu().tolist())
+            clipped = torch.clamp(
+                ratios,
+                1 - self.config.clip_range_left,
+                1 + self.config.clip_range_right,
+            )
+            stats.clipped += int((ratios != clipped).sum().item())
+            stats.samples += len(responses)
+            return self._policy_group_loss(
+                ratios,
+                advantages,
+                current_log_probs,
+                lengths,
+                ref_log_probs,
+                token_rows,
+            )
+
+        passes = UpdateLoop(
             self._build_optimizer_step(),
             passes=_policy_iterations(self.config),
             mode="single_graph",
@@ -636,6 +785,7 @@ class GSPOTrainer(TrainingRuntime):
             reduce=lambda total: normalize_total_loss(total, processed_groups),
             commit=lambda loss: self._apply_optimizer_step(loss),
         )
+        return passes, stats
 
     def compute_gspo_loss(
         self,
@@ -690,68 +840,14 @@ class GSPOTrainer(TrainingRuntime):
         ratio numerator (current log prob) and denominator (old log prob)
         share one tokenization convention.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
+        return score_response_group(
+            self.model,
+            self.tokenizer,
+            prompt,
+            responses,
+            system_prompt=_scoring_system_prompt(self),
+            max_completion_length=self.config.max_completion_length,
         )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_texts = [
-            build_scoring_text(rendered_prompt, response) for response in responses
-        ]
-
-        # Use right-padding for stable response_start_idx across the batch.
-        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
-        if hasattr(self.tokenizer, "padding_side"):
-            self.tokenizer.padding_side = "right"
-
-        try:
-            inputs = self.tokenizer(
-                full_texts,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=prompt_length + self.config.max_completion_length,
-                add_special_tokens=False,
-            )
-        finally:
-            if hasattr(self.tokenizer, "padding_side"):
-                self.tokenizer.padding_side = original_padding_side
-
-        response_start_idx = max(prompt_length - 1, 0)
-
-        model_device = _get_model_device(self.model)
-        if model_device is not None:
-            if hasattr(inputs, "to"):
-                inputs = inputs.to(model_device)
-            else:
-                inputs = {
-                    k: v.to(model_device) if hasattr(v, "to") else v
-                    for k, v in inputs.items()
-                }
-
-        outputs = self.model(**inputs)
-        logits = outputs.logits
-
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][:, 1:].contiguous()
-        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        response_mask = torch.zeros_like(shift_mask)
-        if response_start_idx < response_mask.shape[1]:
-            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
-
-        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
-        response_lengths = (
-            response_mask.sum(dim=-1).to(dtype=torch.float32).clamp(min=1.0)
-        )
-
-        return sequence_log_probs, response_lengths
 
     async def _reward_for_response(
         self, prompt: str, query_context: dict[str, Any], response: str
@@ -785,12 +881,7 @@ class GSPOTrainer(TrainingRuntime):
         self.optimizer.zero_grad(set_to_none=True)
         model_device = _get_model_device(self.model)
 
-        total_clipped = 0
-        total_samples = 0
         all_rewards = []
-        all_importance_ratios = []
-        all_generation_gaps: list[float] = []
-
         processed_groups = 0
         nonzero_advantages = 0
         advantage_count = 0
@@ -863,207 +954,86 @@ class GSPOTrainer(TrainingRuntime):
                 (prompt, responses, old_log_probs, advantages, ref_log_probs)
             )
 
-        # Rollouts are scored once; each iteration recomputes current log-probs
-        # against old-policy scores frozen on the first pass. With one
-        # iteration the update is on-policy (ratio 1); later iterations are the
-        # off-policy regime GSPO's sequence clip exists for.
-        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
-
-        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
-            nonlocal total_clipped, total_samples
-            prompt, responses, generation_log_probs, advantages, ref_log_probs = group
-            (
-                current_log_probs,
-                sequence_lengths,
-            ) = self._compute_group_sequence_log_probs(prompt, responses)
-            frozen = frozen_old[index]
-            if frozen is None:
-                prepared, generation_gaps = self._prepare_old_log_probs(
-                    current_log_probs, generation_log_probs, sequence_lengths
-                )
-                frozen = prepared.detach()
-                frozen_old[index] = frozen
-                all_generation_gaps.extend(generation_gaps)
-            old_log_probs = frozen
-
-            importance_ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-            total_clipped += int((importance_ratios != clipped_ratios).sum().item())
-            total_samples += len(responses)
-
-            return self.compute_gspo_loss(
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                sequence_lengths,
-                ref_log_probs,
-            )
-
-        # Normalize by the number of processed query groups so gradient
-        # magnitude does not scale with batch composition.
-        passes = self._run_policy_iterations(
-            scored_groups,
-            group_loss,
-            processed_groups=processed_groups,
-            device=model_device,
+        passes, stats = self._update_policy(
+            scored_groups, processed_groups=processed_groups, device=model_device
         )
 
-        # Compute metrics
-        clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = float(np.mean(all_rewards)) if all_rewards else 0.0
-        avg_importance_ratio = (
-            float(np.mean(all_importance_ratios)) if all_importance_ratios else 1.0
+        return self._record_step_metrics(
+            passes,
+            stats,
+            rewards=all_rewards,
+            groups=processed_groups,
+            nonzero_advantages=nonzero_advantages,
+            advantage_count=advantage_count,
+            zero_advantage_groups=zero_advantage_groups,
         )
 
+    def _record_step_metrics(
+        self,
+        passes: UpdatePasses,
+        stats: _PolicyStats,
+        *,
+        rewards: list[float],
+        groups: int,
+        nonzero_advantages: int,
+        advantage_count: int,
+        zero_advantage_groups: int,
+    ) -> dict[str, float]:
+        """A step's metrics, also appended to ``training_metrics``."""
         metrics = {
             "policy_loss": float(np.mean(passes.losses)),
             "optimizer_updates": float(passes.committed),
-            "clipping_fraction": clipping_fraction,
-            "average_reward": avg_reward,
-            "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
+            "clipping_fraction": stats.clipped / max(stats.samples, 1),
+            "average_reward": float(np.mean(rewards)) if rewards else 0.0,
+            "reward_std": float(np.std(rewards)) if rewards else 0.0,
             "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
-            "zero_advantage_group_fraction": zero_advantage_groups
-            / max(processed_groups, 1),
-            "advantage_group_count": float(processed_groups),
+            "zero_advantage_group_fraction": zero_advantage_groups / max(groups, 1),
+            "advantage_group_count": float(groups),
             "generation_log_prob_gap": (
-                float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
+                float(np.mean(stats.generation_gaps)) if stats.generation_gaps else 0.0
             ),
-            "sequence_importance_ratio": avg_importance_ratio,
+            "sequence_importance_ratio": (
+                float(np.mean(stats.importance_ratios))
+                if stats.importance_ratios
+                else 1.0
+            ),
             "learning_rate": float(self.scheduler.get_last_lr()[0]),
         }
-
-        # Store metrics
         for key, value in metrics.items():
             if key in self.training_metrics:
                 self.training_metrics[key].append(value)
-
         return metrics
 
     async def _compute_ref_log_prob(self, prompt: str, response: str) -> float:
-        """Compute log probability under reference model.
+        """Summed response-token log-prob of one response under the reference.
 
-        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
-        convention as current-log-prob scoring, so KL(current || ref) is
-        computed over identically tokenized sequences.
+        Same scoring convention as current-log-prob scoring
+        (:func:`score_response_group`), so KL(current || ref) compares
+        identically tokenized sequences.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
-        )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_text = build_scoring_text(rendered_prompt, response)
-        inputs = self.tokenizer(
-            full_text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=prompt_length + self.config.max_completion_length,
-            add_special_tokens=False,
-        )
-
-        model_device = _get_model_device(self.ref_model)
-        if model_device and hasattr(inputs, "to"):
-            inputs = inputs.to(model_device)
-
-        ref_model = self.ref_model
-        if ref_model is None:
-            raise RuntimeError("Reference model must be initialized before use")
-        with torch.no_grad():
-            outputs = ref_model(**inputs)
-            logits = outputs.logits
-
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][..., 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        response_start = max(prompt_length - 1, 0)
-        if response_start >= token_log_probs.shape[-1]:
-            return float(token_log_probs.sum().item())
-
-        response_log_probs = token_log_probs[..., response_start:]
-        sequence_log_prob = float(response_log_probs.sum().item())
-
-        return sequence_log_prob
+        return float(self._compute_batch_ref_log_probs(prompt, [response])[0].item())
 
     def _compute_batch_ref_log_probs(
         self, prompt: str, responses: list[str]
     ) -> torch.Tensor:
-        """Compute log probabilities under reference model for a batch of responses.
+        """Summed response-token log-probs of a group under the reference model.
 
-        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
-        convention as `_compute_group_sequence_log_probs` so the KL penalty
-        is computed over identically tokenized current/reference sequences.
+        Same scoring convention as :meth:`_compute_group_sequence_log_probs`
+        (:func:`score_response_group`), so the KL penalty compares identically
+        tokenized current/reference sequences.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
-        )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_texts = [
-            build_scoring_text(rendered_prompt, response) for response in responses
-        ]
-
-        # Batch tokenize with padding
-        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
-        if hasattr(self.tokenizer, "padding_side"):
-            self.tokenizer.padding_side = "right"
-
-        try:
-            inputs = self.tokenizer(
-                full_texts,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=prompt_length + self.config.max_completion_length,
-                add_special_tokens=False,
-            )
-        finally:
-            if hasattr(self.tokenizer, "padding_side"):
-                self.tokenizer.padding_side = original_padding_side
-
-        response_start_idx = max(prompt_length - 1, 0)
-
-        model_device = _get_model_device(self.ref_model)
-        if model_device is not None:
-            inputs = {
-                k: v.to(model_device) if hasattr(v, "to") else v
-                for k, v in inputs.items()
-            }
-
         ref_model = self.ref_model
         if ref_model is None:
             raise RuntimeError("Reference model must be initialized before use")
         with torch.no_grad():
-            outputs = ref_model(**inputs)
-            logits = outputs.logits
-
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][:, 1:].contiguous()
-        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask for response tokens only (exclude prompt and padding)
-        response_mask = torch.zeros_like(shift_mask)
-        if response_start_idx < response_mask.shape[1]:
-            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
-
-        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
+            sequence_log_probs, _ = score_response_group(
+                ref_model,
+                self.tokenizer,
+                prompt,
+                responses,
+                system_prompt=_scoring_system_prompt(self),
+                max_completion_length=self.config.max_completion_length,
+            )
         return sequence_log_probs
 
     def save_checkpoint(self, output_dir: str) -> None:

@@ -281,3 +281,50 @@ def test_gepo_rejects_a_kl_penalty_it_cannot_apply():
 
     with pytest.raises(ValueError, match="beta must be 0"):
         GEPOTrainer(GEPOConfig(beta=0.1), torch.nn.Linear(1, 1), None, None)
+
+
+@pytest.mark.asyncio
+async def test_group_generation_batches_through_hf_generate_group():
+    """GEPO samples with the shared batched HF path (``generation_batch_size``
+    rows per ``generate``) and keeps its ``response_start_idx`` key."""
+    pytest.importorskip("transformers")
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    from stateset_agents.training.gepo_trainer import GEPOConfig
+    from tests._tiny_tokenizer import tiny_tokenizer
+
+    torch.manual_seed(0)
+    model = GPT2LMHeadModel(
+        GPT2Config(n_embd=16, n_layer=1, n_head=2, vocab_size=128, n_positions=64)
+    )
+    tokenizer = tiny_tokenizer(128)
+    trainer = GEPOTrainer(
+        config=GEPOConfig(
+            model_name="gpt2",
+            group_size=3,
+            generation_batch_size=2,
+            max_prompt_length=16,
+            max_completion_length=4,
+            report_to="none",
+        ),
+        model=model,
+        tokenizer=tokenizer,
+        reward_fn=lambda prompt, response: 0.0,
+    )
+    calls = []
+    original = model.generate
+
+    def counting_generate(*args, **kwargs):
+        calls.append(kwargs["num_return_sequences"])
+        return original(*args, **kwargs)
+
+    model.generate = counting_generate
+    model.train()
+    responses = await trainer.generate_group_responses("hello", 3)
+
+    prompt_length = len(tokenizer("hello")["input_ids"])
+    assert calls == [2, 1]
+    assert len(responses) == 3 and trainer.rollout_samples_total == 3
+    assert all(r["response_start_idx"] == prompt_length for r in responses)
+    assert all(r["prompt_length"] == prompt_length for r in responses)
+    assert model.training  # restored after sampling

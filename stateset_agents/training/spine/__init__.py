@@ -14,12 +14,22 @@ Currently provided:
   frozen old-policy log-probs (chunked or single-graph), each committed
   through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
   give the token- or row-share weights.
+* :class:`PromptGroupRollouts` -- the prompt/response trainers' rollout phase
+  (one sampled group per prompt, built into update items);
+  :class:`VLLMEngineMixin` / :func:`vllm_engine_config` -- the one vLLM
+  rollout-engine setup.
 
 Importing this package does not import ``torch``.
 """
 
 from __future__ import annotations
 
+from .rollouts import (
+    PromptGroupRollouts,
+    VLLMEngineMixin,
+    vllm_dtype,
+    vllm_engine_config,
+)
 from .update import (
     NONFINITE_GRAD_POLICIES,
     STEP_COUNTERS,
@@ -36,6 +46,10 @@ from .update import (
 )
 
 __all__ = [
+    "PromptGroupRollouts",
+    "VLLMEngineMixin",
+    "vllm_dtype",
+    "vllm_engine_config",
     "NONFINITE_GRAD_POLICIES",
     "STEP_COUNTERS",
     "UPDATE_MODES",
