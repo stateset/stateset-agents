@@ -10,6 +10,7 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
+from .runtime_state import _reject_unsupported_resume
 from .spine.loop import (
     dedicated_run_config,
     run_dedicated_loop,
@@ -59,6 +60,7 @@ async def train_with_vapo(
         default_output_dir="./outputs/vapo",
         entrypoint="train_with_vapo",
     )
+    _reject_unsupported_resume(config, "train_with_vapo")
 
     if use_wandb and wandb_project:
         _require_wandb()

@@ -6,8 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from ..core.errors import ConfigurationError
-from .config import TrainingConfig
+from .config import TrainingConfig, validate_group_size
 
 
 @dataclass
@@ -82,11 +81,9 @@ class VAPOConfig(TrainingConfig):
     entropy_coef: float = 0.0
 
     def validate_for_training(self) -> None:
-        """VAPO drops groups of fewer than two responses, so a smaller
-        ``group_size`` would train on nothing."""
+        """Also require two responses per group (:func:`validate_group_size`)."""
         super().validate_for_training()
-        if type(self.group_size) is not int or self.group_size < 2:
-            raise ConfigurationError("group_size must be an integer of at least 2")
+        validate_group_size(self.group_size)
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> VAPOConfig:

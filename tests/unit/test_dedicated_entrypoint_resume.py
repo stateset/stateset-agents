@@ -15,16 +15,20 @@ from stateset_agents.training import (
     gspo_entrypoints,
     gspo_token_trainer,
     gspo_trainer,
+    vapo_entrypoints,
+    vapo_trainer,
 )
 from stateset_agents.training.dapo_config import DAPOConfig
 from stateset_agents.training.gspo_config import GSPOConfig
 from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+from stateset_agents.training.vapo_config import VAPOConfig
 
 ENTRYPOINTS = (
     "gspo",
     "gspo_token",
     "gepo",
     "dapo",
+    "vapo",
     "gspo_customer_service",
     "dapo_reasoning",
 )
@@ -53,6 +57,7 @@ def setup_sentinels(tmp_path, monkeypatch):
         (gspo_token_trainer, ("GSPOTokenTrainer",)),
         (gepo_trainer, ("GEPOModelManager", "GEPOTrainer", "_require_wandb")),
         (dapo_trainer, ("DAPOModelManager", "DAPOTrainer", "_require_wandb")),
+        (vapo_trainer, ("VAPOModelManager", "VAPOTrainer", "_require_wandb")),
         (gspo_entrypoints, ("MultiTurnAgent",)),
     ):
         for name in names:
@@ -63,7 +68,7 @@ def setup_sentinels(tmp_path, monkeypatch):
     wandb_init = forbidden("wandb.init")
     guards.append(wandb_init)
     wandb = SimpleNamespace(init=wandb_init)
-    for module in (gspo_trainer, gepo_trainer, dapo_trainer):
+    for module in (gspo_trainer, gepo_trainer, dapo_trainer, vapo_trainer):
         monkeypatch.setattr(module, "wandb", wandb)
     monkeypatch.setitem(sys.modules, "wandb", wandb)
     mkdir = forbidden("os.makedirs")
@@ -111,6 +116,7 @@ async def _invoke(name, settings, resume, *, omit=False):
         "gspo_token": GSPOConfig,
         "gepo": gepo_trainer.GEPOConfig,
         "dapo": DAPOConfig,
+        "vapo": VAPOConfig,
     }[name]
     config = config_type(**values)
     if omit:
@@ -133,11 +139,11 @@ async def _invoke(name, settings, resume, *, omit=False):
             train_queries=["fixture question"],
         )
     else:
-        function = (
-            gepo_trainer.train_with_gepo
-            if name == "gepo"
-            else dapo_entrypoints.train_with_dapo
-        )
+        function = {
+            "gepo": gepo_trainer.train_with_gepo,
+            "dapo": dapo_entrypoints.train_with_dapo,
+            "vapo": vapo_entrypoints.train_with_vapo,
+        }[name]
         await function(
             model_name=values["model_name"],
             reward_fn=lambda *_args: 0.0,

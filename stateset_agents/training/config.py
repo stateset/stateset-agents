@@ -65,6 +65,15 @@ class TrainingProfile(Enum):
 _NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
 
 
+def validate_group_size(group_size: object) -> None:
+    """Group-relative algorithms (DAPO, GEPO, VAPO) need two responses per
+    prompt: a lone response has no group baseline (GEPO and VAPO drop such a
+    group, DAPO gives it a zero advantage), so a smaller ``group_size``
+    trains on nothing."""
+    if type(group_size) is not int or group_size < 2:
+        raise ConfigurationError("group_size must be an integer of at least 2")
+
+
 @dataclass
 class TrainingConfig:
     """

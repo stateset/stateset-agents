@@ -133,12 +133,15 @@ def _harness(
     return entry, run
 
 
-@pytest.mark.parametrize("config_cls", [GEPOConfig, VAPOConfig], ids=["gepo", "vapo"])
+@pytest.mark.parametrize(
+    "config_cls", [DAPOConfig, GEPOConfig, VAPOConfig], ids=["dapo", "gepo", "vapo"]
+)
 @pytest.mark.parametrize("group_size", [1, 0, True, 2.0])
 def test_group_configs_need_two_responses_per_group(
     config_cls: Any, group_size: Any
 ) -> None:
-    """GEPO and VAPO drop groups of fewer than two responses, so a smaller
+    """GEPO and VAPO drop groups of fewer than two responses and DAPO gives
+    a lone response a zero advantage (dynamic sampling drops it), so a smaller
     group_size trained nothing, silently."""
     with pytest.raises(ConfigurationError, match="group_size"):
         config_cls(group_size=group_size).validate_for_training()

@@ -886,6 +886,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **`train_with_vapo` rejects `resume_from_checkpoint`** before any setup,
+  like the other dedicated entry points; it silently ignored it. `DAPOConfig`
+  now also rejects a `group_size` below 2 (`ConfigurationError`), as GEPO
+  and VAPO do: a lone response has no group baseline, so it trained on
+  nothing. The three configs share `config.validate_group_size`.
 - `examples/sample_eval_set.jsonl` (Cookbook Recipe 5) repeated six of the
   eight starter `scenarios.jsonl` queries that Recipe 1 trains on (eight of
   its ten queries were verbatim bundled support-corpus queries), so its pass

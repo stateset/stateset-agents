@@ -23,9 +23,8 @@ from typing import Any
 import numpy as np
 import torch
 
-from ..core.errors import ConfigurationError
 from . import objectives, rl_losses
-from .config import TrainingConfig
+from .config import TrainingConfig, validate_group_size
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -170,11 +169,9 @@ class GEPOConfig(TrainingConfig):
     num_gradient_updates: int = 1
 
     def validate_for_training(self) -> None:
-        """GEPO drops groups of fewer than two responses, so a smaller
-        ``group_size`` would train on nothing."""
+        """Also require two responses per group (:func:`validate_group_size`)."""
         super().validate_for_training()
-        if type(self.group_size) is not int or self.group_size < 2:
-            raise ConfigurationError("group_size must be an integer of at least 2")
+        validate_group_size(self.group_size)
 
     @classmethod
     def from_training_config(
