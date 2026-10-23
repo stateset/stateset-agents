@@ -374,9 +374,11 @@ class DAPOTrainer(VLLMEngineMixin, TrainingRuntime):
         except StopIteration:
             self.device = torch.device("cpu")
 
-        # vLLM generator for fast generation (spine VLLMEngineMixin)
+        # vLLM generator for fast generation (spine VLLMEngineMixin).
+        # _setup_vllm loads the backend itself (VLLM_BACKEND_AVAILABLE is
+        # only known after loading), falling back to HuggingFace without it.
         self._reset_vllm_state()
-        if config.use_vllm and VLLM_BACKEND_AVAILABLE:
+        if config.use_vllm:
             self._setup_vllm()
 
         # Reward shaper for length penalty
@@ -450,8 +452,22 @@ class DAPOTrainer(VLLMEngineMixin, TrainingRuntime):
             counter="train_steps",
             **nonfinite_grad_settings(self.config),
             named_modules=[self.model],
+            on_commit=lambda: self._sync_rollout_backend(),
             label="DAPO",
         )
+
+    def _sync_rollout_backend(self) -> None:
+        """Keep the vLLM rollout engine on-policy after a committed update.
+
+        ``last_rollout_sync`` is True/False for the sync outcome and ``None``
+        when nothing was attempted (``config.rollout_sync`` off or no vLLM
+        engine in use); a failed sync leaves the engine stale and training
+        continues (``VLLMEngineMixin.sync_vllm_weights``).
+        """
+        self.last_rollout_sync: bool | None = None
+        if not bool(getattr(self.config, "rollout_sync", True)):
+            return
+        self.last_rollout_sync = self.sync_vllm_weights(self.model)
 
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Score one reply with ``reward_fn``, sync or async (spine scorer)."""

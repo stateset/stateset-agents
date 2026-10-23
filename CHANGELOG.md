@@ -472,6 +472,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **Dedicated GSPO and DAPO trainers keep their vLLM rollout engine
+  on-policy.** After every committed optimizer update (not after a skipped
+  one) the spine `OptimizerStep` pushes the policy weights into the engine
+  (`VLLMEngineMixin.sync_vllm_weights`, honouring `config.rollout_sync`);
+  before, vLLM kept sampling from the starting weights for the whole run.
+  A failed sync logs a warning, marks the engine stale
+  (`vllm_weights_stale`) and training continues. `DAPOTrainer` with
+  `use_vllm=True` now builds its engine: its gate read
+  `VLLM_BACKEND_AVAILABLE`, which only the setup it guarded sets, so DAPO
+  always generated with HuggingFace.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's

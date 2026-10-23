@@ -128,6 +128,8 @@ class VLLMEngineMixin:
     config: Any
     vllm_generator: Any | None
     _vllm_initialized: bool
+    #: True after a failed weight sync, until one succeeds.
+    vllm_weights_stale: bool = False
     _vllm_label: str = "vLLM rollouts"
     _vllm_init_exceptions: tuple[type[BaseException], ...] = (
         RuntimeError,
@@ -177,6 +179,35 @@ class VLLMEngineMixin:
     def using_vllm(self) -> bool:
         """Whether generation goes through an initialized vLLM engine."""
         return bool(self._vllm_initialized and self.vllm_generator is not None)
+
+    def sync_vllm_weights(self, model: Any) -> bool | None:
+        """Push ``model``'s weights into the engine after a committed update.
+
+        Returns ``None`` when no engine is in use, True after a successful
+        sync, and False when the engine has no ``sync_weights`` or the sync
+        failed: the engine is then stale (``vllm_weights_stale``) and keeps
+        serving the previous policy, and training continues.
+        """
+        generator = self.vllm_generator
+        if not self.using_vllm or generator is None:
+            return None
+        sync = getattr(generator, "sync_weights", None)
+        try:
+            if not callable(sync):
+                raise TypeError(f"{type(generator).__name__} has no sync_weights")
+            sync(model)
+        except (
+            Exception
+        ) as error:  # noqa: BLE001 - a stale engine must not stop training
+            self.vllm_weights_stale = True
+            logger.warning(
+                "%s: vLLM weight sync failed; rollouts lag the policy: %s",
+                self._vllm_label,
+                error,
+            )
+            return False
+        self.vllm_weights_stale = False
+        return True
 
 
 __all__ = [
