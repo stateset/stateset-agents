@@ -149,3 +149,22 @@ async def test_presets_log_the_heuristic_reward_notice(monkeypatch, caplog):
     with caplog.at_level(logging.WARNING):
         await train_tutoring_agent(model_name="stub://tutor", num_episodes=1)
     assert any("create_tutoring_reward" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        "4093 8812 7741 2210 5531",
+        "Issued, blocked, reversed, shipped, waived.",
+        f"{REQUEST} 4093 8812 7741",
+        "I understand, happy to help! Issued, credited, refunded. 4093 8812.",
+    ],
+    ids=["numbers", "verbs", "echo_numbers", "canned_lists"],
+)
+def test_bare_lists_of_numbers_or_verbs_state_nothing(reply):
+    assert grounding_score(reply, REQUEST)[1]["information"] == 0.0
+
+
+def test_a_thousands_separator_does_not_split_a_number():
+    score, details = grounding_score("The X200 costs $1,299.", "How much is the X200?")
+    assert details["information"] > 0 and score > 0

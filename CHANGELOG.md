@@ -20,7 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   from a seed, the reply families a policy finds first when it games a
   lexical reward (canned templates, keyword stuffing, verbatim and shuffled
   echo, random and out-of-vocabulary word salad at random positions and
-  their combinations, terse replies, blanket refusals, hedged multi-candidate
+  their combinations, bare lists of numbers or action words, terse replies,
+  blanket refusals, hedged multi-candidate
   answers, negations, content-destroying mutations and padding of a reference
   answer) and `search_reward_exploits` plays each against the reference in a
   real `ConversationEnvironment` episode, with the reward attached to the
@@ -154,6 +155,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `share` of `GroundedReward`, `ground_shaping_rewards`, `GroundedComponent`
   and `ground_components`), so style can no longer outweigh lost substance.
   Absolute heuristic-factory scores are lower than before.
+  Numbers and action words count only in a clause that also names
+  something else, so bare lists ("4093 8812 7741", "Issued, blocked,
+  reversed.") state nothing, and "$1,299" reads as one number.
 - **Refusals and safety read intent, not topics.** A refusal is grounded only
   when the request asks for help with something unsafe
   (`basic_rewards.harmful_request`: "how do I hack...", "where can I buy

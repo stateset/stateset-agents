@@ -9,9 +9,10 @@ gate their style terms on *grounding*, a request-specific score:
 * **information**: the specifics a reply adds that the request did not
   contain: numbers and amounts (two or more characters, so a "step 1" list
   marker is not one) and affirmed action words (``ACTION_TERMS``: "issued",
-  "blocked", "rejoin", "multiply"...; "not issued" does not count). It grows
-  with every distinct specific, ``n / (n + INFO_HALF)``, so removing any of
-  them lowers it. Words that
+  "blocked", "rejoin", "multiply"...; "not issued" does not count), each
+  only in a clause that also names something else, so a bare list of
+  numbers or verbs states nothing. Information grows with every distinct
+  specific, ``n / (n + INFO_HALF)``, so removing any of them lowers it. Words that
   are none of these (including salad, real or invented) are not
   information. With reference labels (``ground_truth``), a short label
   earns the answer credit ``CorrectnessReward`` gives it (hedged lists share
@@ -190,12 +191,19 @@ ACTION_TERMS = frozenset(
 )
 
 
+_THOUSANDS = re.compile(r"(?<=\d),(?=\d{3}\b)")
+
+
+def _plain(text: str) -> str:
+    """Normalized text with "$"/"#" dropped and "1,299" read as "1299"."""
+    text = _THOUSANDS.sub("", _normalize_text(text))
+    return text.replace("$", " ").replace("#", " ")
+
+
 def content_terms(text: str) -> set[str]:
     """Distinct content terms of ``text`` (stemmed; no function words)."""
     terms = set()
-    for token in _TOKEN.findall(
-        _normalize_text(text).replace("$", " ").replace("#", " ")
-    ):
+    for token in _TOKEN.findall(_plain(text)):
         if token in STOPWORDS:
             continue
         if len(token) < 2 and not token.isdigit():
@@ -272,22 +280,42 @@ _NEGATIONS = frozenset(
 )
 
 
-def _affirmed_actions(text: str) -> set[str]:
-    """Action terms ``text`` affirms: "I've blocked the card" affirms
-    "blocked"; "I have not blocked it" or "never issued" does not."""
-    tokens = [
-        _stem(token)
-        for token in _TOKEN.findall(
-            _normalize_text(text).replace("$", " ").replace("#", " ")
+#: Clause boundaries; a period inside a number ("42.10") is not one.
+_CLAUSE = re.compile(r"[,;:!?()\n]|\.(?!\d)")
+
+
+def _stated_specifics(text: str) -> set[str]:
+    """Numbers and action words ``text`` states in context.
+
+    A number of two or more characters, or an action word, counts only in a
+    clause that also has a word of another kind (an object or subject such as
+    "refund", "card", "battery"); a bare list of numbers or of verbs
+    ("4093 8812 7741", "issued, blocked, reversed") states nothing. An action
+    is also not stated when a negation precedes it ("not issued", "never
+    blocked").
+    """
+    stated: set[str] = set()
+    for clause in _CLAUSE.split(_plain(text)):
+        tokens = [_stem(token) for token in _TOKEN.findall(clause)]
+        anchored = any(
+            token not in STOPWORDS
+            and token not in ACTION_TERMS
+            and token not in _GENERIC
+            and token not in _NEGATIONS
+            and not any(ch.isdigit() for ch in token)
+            for token in tokens
         )
-    ]
-    affirmed = set()
-    for index, token in enumerate(tokens):
-        if token in ACTION_TERMS:
-            before = tokens[max(0, index - 2) : index]
-            if not any(w in _NEGATIONS or w.endswith("n't") for w in before):
-                affirmed.add(token)
-    return affirmed
+        if not anchored:
+            continue
+        for index, token in enumerate(tokens):
+            if any(ch.isdigit() for ch in token):
+                if len(token) > 1:
+                    stated.add(token)
+            elif token in ACTION_TERMS:
+                before = tokens[max(0, index - 2) : index]
+                if not any(w in _NEGATIONS or w.endswith("n't") for w in before):
+                    stated.add(token)
+    return stated
 
 
 def grounding_score(
@@ -317,7 +345,7 @@ def grounding_score(
         _as_number(answer.strip().lstrip("$")) is not None for answer in answers
     )
     specifics = set()
-    affirmed = _affirmed_actions(reply)
+    stated = _stated_specifics(reply)
     for term in reply_terms - request_terms:
         if term in fact_terms:
             specifics.add(term)
@@ -325,10 +353,10 @@ def grounding_score(
             continue  # an answer label: scored by answer credit below
         elif any(ch.isdigit() for ch in term):
             # Beside a numeric answer, other numbers are competing answers.
-            if len(term) > 1 and not numeric_answer:
+            if term in stated and not numeric_answer:
                 specifics.add(term)
-        elif term in affirmed:
-            specifics.add(term)  # an action done, not one denied
+        elif term in stated:
+            specifics.add(term)  # an action done (not denied), in context
     breadth = len(specifics) / (len(specifics) + INFO_HALF)
     if answers:
         credit = max(_answer_credit(reply, answer, request) for answer in answers)
