@@ -1201,6 +1201,19 @@ VAPO's value loss and positive-example LM loss, PPO's value loss, and
 enhanced GRPO's exact full-vocabulary KL remain in their trainers; the
 objective owns the policy term only.
 
+## Preference optimization (offline)
+
+The policy objectives above are on-policy: they score sampled rollouts.
+Offline preference optimization trains directly on chosen/rejected (or
+desirable/undesirable) responses with no sampling: DPO, conservative DPO,
+IPO, SimPO, KTO and ORPO in `stateset_agents.training.preference`
+(`PreferenceTrainer`, `train_preference`, `stateset-agents preference`). The
+same package trains Bradley-Terry reward models whose
+`PairwiseRewardFunction` can supply the reward for the trainers above. Those
+losses use response-token log-probs gathered by the same
+`rl_losses.gather_token_logprobs` and are pinned to TRL 1.12. See
+[PREFERENCE_TRAINING.md](PREFERENCE_TRAINING.md).
+
 ## PPO reference update limits
 
 Canonical `PPOTrainer` supports experimental token-exact online training through

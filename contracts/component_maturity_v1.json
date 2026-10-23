@@ -360,6 +360,40 @@
     },
     {
       "docs": [
+        "docs/PREFERENCE_TRAINING.md",
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "tests/learning/test_preference_learns.py",
+        "tests/unit/test_preference_trl_pin.py"
+      ],
+      "graduation_criteria": [
+        "Retain a three-seed DPO/SimPO/KTO run on a >=0.5B instruct model with held-out reward accuracy and a downstream evaluation",
+        "Retain a reward-model run whose held-out accuracy/AUC and RL usefulness are measured on human or judge preference labels",
+        "Promote the provisional stateset_agents.training.preference names into the reviewed v1 contract"
+      ],
+      "id": "preference-optimization",
+      "limitations": [
+        "Provisional API (stateset_agents.training.preference): not in the v1 stable manifest and may change in minor releases",
+        "Learning evidence is a CPU toy-model task; no retained large-model runs yet",
+        "Single-process training only: no DDP/FSDP, gradient checkpointing or fp16 GradScaler (bf16 autocast only)",
+        "Reward models train the full backbone (no LoRA) and score one reply per forward pass"
+      ],
+      "maturity": "beta",
+      "name": "Offline preference optimization (DPO, IPO, SimPO, KTO, ORPO) and Bradley-Terry reward models",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_preference_losses.py",
+        "tests/unit/test_preference_trl_pin.py",
+        "tests/unit/test_preference_data.py",
+        "tests/unit/test_preference_trainer.py",
+        "tests/unit/test_cli_preference.py",
+        "tests/learning/test_preference_learns.py"
+      ]
+    },
+    {
+      "docs": [
         "docs/WHITEPAPER.md"
       ],
       "evidence": [
