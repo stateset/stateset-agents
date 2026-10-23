@@ -30,8 +30,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the `cli train` demo reward) and nine cases (support requests, a
   sensitive-but-harmless fraud report, numeric and text QA with labels, a
   two-turn conversation) for two seeds and fails if any adversary comes
-  within 0.01 of the reference. Before this round's fixes it found 1,748
-  such adversaries across all 15 factories; it now finds none.
+  within 0.01 of the reference. Against the rewards before this round's
+  fixes it finds 2,446 such adversary episodes across all 15 factories; it
+  now finds none.
 
 ### Changed
 
