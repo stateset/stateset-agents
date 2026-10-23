@@ -416,7 +416,9 @@ omit = [
 # preserve that measured gain with a 72% floor. Hosted Python 3.11 CI measured
 # 75.07% on 2026-10-22 (run 39742294621) after the A+ review branch; floor 75.
 # Hosted Python 3.11 CI measured 76.09% after round 3 (2026-10-22); floor 76.
-fail_under = 76
+# Hosted Python 3.11 CI measured 77.22% after the quality consolidation and
+# spine S6 (2026-10-22, run 39900144421 head 5e381a33); floor 77.
+fail_under = 77
 precision = 2
 show_missing = true
 skip_covered = false
