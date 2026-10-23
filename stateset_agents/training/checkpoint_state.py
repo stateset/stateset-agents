@@ -42,6 +42,10 @@ _NATIVE_COUNTER_KEYS = {
     "_next_episode": "_next_episode",
 }
 _NATIVE_REQUIRED_COUNTERS = set(_NATIVE_COUNTER_KEYS) - {"_next_episode"}
+#: Resume-bound config fields added after native checkpoints were first
+#: published: a checkpoint (or config) without one compares as its default,
+#: the strict setting, so older checkpoints keep resuming.
+_ADDED_CONFIG_DEFAULTS: dict[str, Any] = {"allow_unmasked_labels": False}
 
 
 def unwrap_model(model: Any) -> Any:
@@ -609,11 +613,15 @@ def _load_training_checkpoint(
                 "old_logprobs_source",
                 "allow_sequence_fallback",
                 "allow_missing_sampler_logprobs",
+                "allow_unmasked_labels",
                 "disable_dropout",
                 "rollout_sync",
                 "num_generations",
             ):
-                if saved_config.get(name) != getattr(trainer.config, name, None):
+                default = _ADDED_CONFIG_DEFAULTS.get(name)
+                if saved_config.get(name, default) != getattr(
+                    trainer.config, name, default
+                ):
                     raise ValueError(f"Checkpoint configuration differs: {name}")
         components = _native_components(trainer)
         saved_components = {}

@@ -284,6 +284,10 @@ class TrainingConfig:
     # Off by default: only enable for a repo you trust whose architecture is
     # not native to transformers (curated presets opt in explicitly).
     trust_remote_code: bool = field(default=False, kw_only=True)
+    # When the token-offset path fails, the sequence path may only supervise
+    # every token (prompt included) if this is set; otherwise the loss raises
+    # ``RolloutContractError``. Keyword-only so positional field order holds.
+    allow_unmasked_labels: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
@@ -529,6 +533,17 @@ class TrainingConfig:
         )
         raise ConfigurationError(f"lr_scheduler_type must be {expected} (got {name!r})")
 
+    def _validate_fallback_switches(self) -> None:
+        """The compatibility paths change the estimator, so their opt-ins
+        must be real booleans (a truthy string must not enable one)."""
+        for name in (
+            "allow_sequence_fallback",
+            "allow_missing_sampler_logprobs",
+            "allow_unmasked_labels",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ConfigurationError(f"{name} must be a boolean")
+
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
@@ -556,6 +571,7 @@ class TrainingConfig:
             if type(value) is not int or value < 1:
                 raise ConfigurationError(f"{name} must be a positive integer")
         self._validate_lr_scheduler_type()
+        self._validate_fallback_switches()
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (

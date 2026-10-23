@@ -141,3 +141,11 @@ def test_trl_configs_keep_the_wider_trl_scheduler_set():
     TRLGRPOConfig(lr_scheduler_type="cosine_with_restarts").validate_for_training()
     with pytest.raises(ValueError, match="lr_scheduler_type"):
         TRLGRPOConfig(lr_scheduler_type="").validate_for_training()
+
+
+def test_allow_unmasked_labels_is_a_validated_strict_by_default_field():
+    assert TrainingConfig().allow_unmasked_labels is False
+    TrainingConfig(allow_unmasked_labels=True).validate_for_training()
+    for value in ("yes", 1, None):
+        with pytest.raises(ValueError, match="allow_unmasked_labels"):
+            TrainingConfig(allow_unmasked_labels=value).validate_for_training()

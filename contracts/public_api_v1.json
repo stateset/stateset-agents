@@ -3884,6 +3884,11 @@
               "default": false,
               "kind": "KEYWORD_ONLY",
               "name": "trust_remote_code"
+            },
+            {
+              "default": false,
+              "kind": "KEYWORD_ONLY",
+              "name": "allow_unmasked_labels"
             }
           ]
         }

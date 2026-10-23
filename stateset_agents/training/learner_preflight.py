@@ -122,6 +122,7 @@ def _loss(trainer: Any) -> dict[str, Any]:
         "allow_missing_sampler_logprobs": bool(
             getattr(config, "allow_missing_sampler_logprobs", False)
         ),
+        "allow_unmasked_labels": bool(getattr(config, "allow_unmasked_labels", False)),
     }
 
 

@@ -196,6 +196,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpineLoopMixin.train()` runs each episode through a new
   `_train_episode` method (task boundary, rollouts, step, reporting);
   the phases it passes to `_training_phase` and their order are unchanged.
+- `TrainingConfig.allow_unmasked_labels` (default `False`): the explicit
+  opt-in for the sequence path supervising every token when the token-offset
+  path fails. It is validated with the other compatibility switches
+  (`allow_sequence_fallback`, `allow_missing_sampler_logprobs` must now be
+  real booleans), bound on native and DDP resume and reported by the learner
+  preflight. A native checkpoint written before the field existed resumes as
+  `False`.
 - **`spine.AlgorithmSpec`: one prompt-group algorithm is one spec.** GSPO,
   GSPO-token, DAPO and GEPO declare their scoring, `PolicyObjective` preset,
   sampling, per-group loss, update mode/passes and metrics as an
