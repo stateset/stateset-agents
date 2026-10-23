@@ -128,7 +128,7 @@ async def test_model_based_judge_reply_without_a_score_is_a_failure():
             return "I think it is quite good."
 
     component = ModelBasedRewardComponent(api_client=Chatty(), provider="generate")
-    with pytest.raises(RuntimeError, match="no score"):
+    with pytest.raises(RewardUnavailableError, match="not strict JSON"):
         await component.compute_score(DICT_TURNS)
 
 
@@ -588,3 +588,163 @@ async def test_legacy_reward_coercion_never_reads_a_failure_as_zero(make, error)
     assert await coerce_reward_result(
         RewardResult(score=0.25, breakdown={"a": 0.25}), ()
     ) == (0.25, {"a": 0.25})
+
+
+# --- Judges accept only strict JSON with an in-range score -------------------
+
+NOT_STRICT = [
+    "0.8",
+    "On a scale of 0 to 1, I'd give it 0.8",
+    "85/100",
+    "7/10",
+    "-0.4",
+    "Score: 0.9",
+    'Score: {"score": 0.8}',
+    '```json\n{"score": 0.8}\n```',
+    '{"score": 1.5}',
+    '{"score": -0.1}',
+    '{"score": "0.8"}',
+    '{"score": true}',
+    '{"rating": 0.8}',
+    "[0.8]",
+    "",
+]
+
+
+class _Says:
+    def __init__(self, reply: str) -> None:
+        self.reply = reply
+
+    async def generate(self, prompt: str) -> str:
+        return self.reply
+
+
+@pytest.mark.parametrize("reply", NOT_STRICT)
+async def test_model_judge_component_rejects_anything_but_strict_json(reply):
+    from stateset_agents.rewards.multi_objective_components import (
+        ModelBasedRewardComponent,
+    )
+
+    component = ModelBasedRewardComponent(api_client=_Says(reply), provider="local")
+    with pytest.raises(RewardUnavailableError):
+        await component.compute_score(DICT_TURNS)
+
+
+@pytest.mark.parametrize(
+    ("reply", "score"), [('{"score": 0.8}', 0.8), (' {"score": 1} ', 1.0)]
+)
+async def test_model_judge_component_reads_a_strict_json_score(reply, score):
+    from stateset_agents.rewards.multi_objective_components import (
+        ModelBasedRewardComponent,
+    )
+
+    component = ModelBasedRewardComponent(api_client=_Says(reply), provider="local")
+    assert await component.compute_score(DICT_TURNS) == pytest.approx(score)
+    assert '{"score"' in component.judge_prompt_template.format(
+        user_query="q", assistant_response="r"
+    )
+
+
+def _llm_judge(reply: str, **config):
+    from stateset_agents.rewards.llm_judge import JudgeConfig, JudgeProvider, LLMJudge
+
+    judge = LLMJudge(JudgeConfig(provider=JudgeProvider.LOCAL, **config))
+    prompts: list = []
+
+    async def call(messages):
+        prompts.append(messages[-1]["content"])
+        return reply
+
+    judge.backend._call_api = call
+    return judge, prompts
+
+
+@pytest.mark.parametrize("reply", NOT_STRICT)
+async def test_llm_judge_rejects_anything_but_strict_json(reply):
+    from stateset_agents.rewards.llm_judge import JudgeUnavailableError
+
+    judge, _ = _llm_judge(reply)
+    with pytest.raises(JudgeUnavailableError):
+        await judge.evaluate("q", "r")
+
+
+async def test_llm_judge_reads_a_strict_json_score():
+    judge, _ = _llm_judge(
+        '{"score": 7, "reasoning": "ok"}', score_min=0.0, score_max=10.0
+    )
+    assert await judge.evaluate("q", "r") == pytest.approx(0.7)
+
+
+@pytest.mark.parametrize("winner", ["C", "maybe", None])
+async def test_llm_judge_pairwise_needs_a_known_winner(winner):
+    import json
+
+    from stateset_agents.rewards.llm_judge import JudgeUnavailableError
+
+    judge, _ = _llm_judge(json.dumps({"winner": winner}))
+    with pytest.raises(JudgeUnavailableError):
+        await judge.compare_pairwise("q", "a", "b")
+
+
+async def test_llm_judge_shows_the_reference_and_keys_the_cache_on_it():
+    judge, prompts = _llm_judge('{"score": 0.5}')
+    await judge.evaluate("q", "r", reference="GOLD-ANSWER-1")
+    assert "GOLD-ANSWER-1" in prompts[-1]
+    await judge.evaluate("q", "r", reference="GOLD-ANSWER-2")
+    assert len(prompts) == 2 and "GOLD-ANSWER-2" in prompts[-1]  # not a cache hit
+    await judge.evaluate("q", "r", reference="GOLD-ANSWER-1")
+    assert len(prompts) == 2  # same reference: cached
+    await judge.evaluate("q", "r")
+    assert len(prompts) == 3 and "Reference" not in prompts[-1]
+
+
+@pytest.mark.parametrize(
+    "reply",
+    [
+        {"status": "ok", "verdict": "approved"},
+        {"decision": None},
+        {"decision": "maybe"},
+        {},
+    ],
+)
+async def test_nsr_reply_without_a_decision_is_not_a_verified_zero(reply):
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    async def client(payload):
+        return reply
+
+    turns = [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Approved: your refund is issued."),
+    ]
+    with pytest.raises(RewardUnavailableError, match="no decision"):
+        await NSRVerifierReward(NSRVerifierConfig(), client=client).compute_reward(
+            turns
+        )
+    flagged = await NSRVerifierReward(
+        NSRVerifierConfig(error_score=0.0), client=client
+    ).compute_reward(turns)
+    assert flagged.metadata["mode"] == "nsr_error"
+    assert flagged.metadata["reward_fallback"] == "nsr_error"
+
+
+async def test_nsr_reply_with_a_decision_is_verified():
+    from stateset_agents.rewards.nsr_verifier import (
+        NSRVerifierConfig,
+        NSRVerifierReward,
+    )
+
+    async def client(payload):
+        return {"decision": "APPROVED", "decision_id": "d1"}
+
+    turns = [
+        ConversationTurn(role="user", content="Can I get a refund for #A1?"),
+        ConversationTurn(role="assistant", content="Approved: your refund is issued."),
+    ]
+    result = await NSRVerifierReward(NSRVerifierConfig(), client=client).compute_reward(
+        turns
+    )
+    assert (result.score, result.metadata["mode"]) == (1.0, "verified")

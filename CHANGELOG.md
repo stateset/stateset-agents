@@ -103,6 +103,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   candidate, and "no idea"/"not sure" halves the credit. The
   `train_reasoning_with_dapo` math verifier uses the same check instead of a
   substring test ("42" no longer matches "142").
+- **Judges accept only strict JSON.** `LLMJudge` and
+  `ModelBasedRewardComponent` read the score only from a reply that is
+  exactly one JSON object with a numeric `score` inside the configured range;
+  prose, bare numbers ("0.8", "7/10", "85/100", "on a scale of 0 to 1 ...
+  0.8"), fenced or embedded JSON, string or boolean scores and out-of-range
+  scores raise `JudgeUnavailableError` / `RewardUnavailableError` instead of
+  being salvaged, rescaled or clamped (the old first-number parse read
+  "-0.4" as 0.4 and "on a scale of 0 to 1" as 0.0). The model component's
+  default prompt asks for `{"score": x}`; custom `judge_prompt_template`s
+  must ask for the same. A pairwise verdict must name `A`, `B` or `tie`.
+  `NSRVerifierReward` treats a 2xx reply without an `approved`/`denied`/
+  `refused` decision as unavailable (or the opted-in `error_score`, flagged)
+  instead of a verified 0.0; its docstring now states the fail-closed
+  default.
+- `LLMJudge.evaluate(reference=...)` shows the reference to the judge (the
+  default template's new `{reference_section}` slot, or appended to a custom
+  template without a `{reference}` slot) and keys the cache on it.
+- `HelpfulnessReward`, `EngagementReward` and `TaskCompletionReward` goal
+  keywords match whole words ("there" is not "here", "refundable" is not
+  "refund").
 
 ### Fixed
 
