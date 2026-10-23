@@ -32,14 +32,26 @@ class LeaseApi:
 
 
 def dead_owner():
-    """The PID and start token of a process that has since exited."""
-    from stateset_agents.utils.process_probe import process_start_token
+    """The PID and start token of a process that has since exited.
 
-    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
-    token = process_start_token(child.pid)
-    child.kill()
-    child.wait()
-    return child.pid, token
+    Without a start token (Windows without psutil) only the PID identifies
+    the owner, and Windows hands exited PIDs out again quickly; a reused PID
+    is rightly reported ``alive``. Retry until the PID is verifiably free.
+    """
+    from stateset_agents.utils.process_probe import probe_process, process_start_token
+
+    for _ in range(20):
+        child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        token = process_start_token(child.pid)
+        child.kill()
+        child.wait()
+        if token is not None:
+            return child.pid, token
+        try:
+            probe_process(child.pid)
+        except ProcessLookupError:
+            return child.pid, token
+    pytest.fail("every exited child PID was reused immediately")
 
 
 def _leased(tmp_path, *pod_ids, owner=None):
