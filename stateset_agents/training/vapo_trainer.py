@@ -29,6 +29,7 @@ from ..core.rust_accelerator import compute_gae as _rust_compute_gae
 from ..core.rust_accelerator import is_rust_available as _rust_gae_available
 from . import objectives, rl_losses
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.update import OptimizerStep, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -517,6 +518,44 @@ class VAPOTrainer(TrainingRuntime):
         self.value_warmup_complete = False
         self.rollout_samples_total = 0
 
+    def _build_optimizer_step(self, *, critic_only: bool = False) -> OptimizerStep:
+        """The spine commit for one actor+critic update (or a critic warmup step).
+
+        Gradients of every stepped optimizer must be finite
+        (``config.nonfinite_grad_policy`` raises or skips the whole pass
+        otherwise, actor and critic together). The actor and the value head
+        are clipped to ``max_grad_norm`` independently, then each optimizer
+        and LR scheduler steps once. ``global_step`` counts ``train_step``
+        calls; value warmup steps the critic only and counts nothing.
+        """
+        nonfinite = nonfinite_grad_settings(self.config)
+        critic_params = list(self.value_head.parameters())
+        if critic_only:
+            return OptimizerStep(
+                self,
+                torch,
+                optimizers=[self.critic_optimizer],
+                clip_groups=[critic_params],
+                max_grad_norm=self.config.max_grad_norm,
+                counter="none",
+                **nonfinite,
+                named_modules=[self.value_head],
+                label="VAPO value warmup",
+            )
+        actor_params = list(self.model.parameters())
+        return OptimizerStep(
+            self,
+            torch,
+            optimizers=[self.actor_optimizer, self.critic_optimizer],
+            schedulers=[self.actor_scheduler, self.critic_scheduler],
+            clip_groups=[actor_params, critic_params],
+            max_grad_norm=self.config.max_grad_norm,
+            counter="train_steps",
+            **nonfinite,
+            named_modules=[self.model, self.value_head],
+            label="VAPO",
+        )
+
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Resolve sync or async reward callbacks to a float."""
         reward = self.reward_fn(prompt, response)
@@ -635,6 +674,7 @@ class VAPOTrainer(TrainingRuntime):
 
         total_value_loss = 0.0
         explained_variances = []
+        critic_step = self._build_optimizer_step(critic_only=True)
 
         for step in range(self.config.value_warmup_steps):
             # Sample prompt
@@ -681,13 +721,10 @@ class VAPOTrainer(TrainingRuntime):
                 values * action_mask, mc_returns, reduction="sum"
             ) / action_mask.sum().clamp(min=1)
 
-            # Update value network
+            # Update value network (finite gradients only, clipped)
             self.critic_optimizer.zero_grad()
             value_loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.value_head.parameters(), self.config.max_grad_norm
-            )
-            self.critic_optimizer.step()
+            critic_step()
 
             total_value_loss += value_loss.item()
 
@@ -1008,6 +1045,8 @@ class VAPOTrainer(TrainingRuntime):
         policy_weights = _shares(policy_sizes)
         value_weights = _shares(value_sizes)
         positive_weights = _shares(positive_sizes)
+        optimizer_step = self._build_optimizer_step()
+        optimizer_updates = 0
 
         for _ in range(num_updates):
             prompt_count = len(rollouts)
@@ -1085,23 +1124,16 @@ class VAPOTrainer(TrainingRuntime):
 
             # A single optimizer update consumes the mean gradient accumulated
             # across prompts without requiring their graphs to coexist.
-            if prompt_count > 0:
-                _params = list(self.model.parameters())
-                if _params:
-                    torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
-                torch.nn.utils.clip_grad_norm_(
-                    self.value_head.parameters(), self.config.max_grad_norm
-                )
-
-                self.actor_optimizer.step()
-                self.critic_optimizer.step()
-
             # Cadence convention shared with DAPO/GEPO: the LR schedulers
-            # advance once per inner update, global_step counts train_steps.
-            self.actor_scheduler.step()
-            self.critic_scheduler.step()
+            # advance once per inner update (not for a pass skipped under
+            # nonfinite_grad_policy="skip"), global_step counts train_steps.
+            if prompt_count > 0:
+                optimizer_updates += int(optimizer_step())
+            else:
+                self.actor_scheduler.step()
+                self.critic_scheduler.step()
 
-        self.global_step += 1
+        optimizer_step.end_train_step()
 
         # Compute metrics
         metrics = {
@@ -1118,6 +1150,7 @@ class VAPOTrainer(TrainingRuntime):
             "actor_lr": self.actor_scheduler.get_last_lr()[0],
             "critic_lr": self.critic_scheduler.get_last_lr()[0],
             "global_step": self.global_step,
+            "optimizer_updates": optimizer_updates,
         }
 
         # Store metrics

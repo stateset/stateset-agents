@@ -24,6 +24,7 @@ import torch
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.update import OptimizerStep, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -425,6 +426,28 @@ class DAPOTrainer(TrainingRuntime):
         # includes groups later rejected by dynamic sampling.
         self.rollout_samples_total = 0
 
+    def _build_optimizer_step(self) -> OptimizerStep:
+        """The spine commit for one inner update (``num_gradient_updates`` pass).
+
+        Gradients must be finite (``config.nonfinite_grad_policy`` raises or
+        skips the pass otherwise), the policy is clipped to ``max_grad_norm``,
+        then the optimizer and the LR scheduler step once.
+        ``global_step`` counts ``train_step`` calls (``end_train_step``).
+        """
+        params = list(self.model.parameters())
+        return OptimizerStep(
+            self,
+            torch,
+            optimizers=[self.optimizer],
+            schedulers=[self.scheduler],
+            clip_groups=[params] if params else [],
+            max_grad_norm=self.config.max_grad_norm,
+            counter="train_steps",
+            **nonfinite_grad_settings(self.config),
+            named_modules=[self.model],
+            label="DAPO",
+        )
+
     async def _compute_reward(self, prompt: str, response: str) -> float:
         """Support sync or async reward callables."""
         reward = self.reward_fn(prompt, response)
@@ -805,7 +828,8 @@ class DAPOTrainer(TrainingRuntime):
            b. Compute importance ratios against the rollout-time policy
            c. Apply Clip-Higher
            d. Accumulate the token-level loss over the whole batch
-           e. Take one optimizer step
+           e. Take one optimizer step (only on finite gradients; see
+              ``config.nonfinite_grad_policy``)
         """
         self.model.train()
 
@@ -872,6 +896,8 @@ class DAPOTrainer(TrainingRuntime):
         total_size = sum(sizes)
 
         # Multiple gradient updates per rollout batch (mu updates)
+        optimizer_step = self._build_optimizer_step()
+        optimizer_updates = 0
         for _ in range(max(1, self.config.num_gradient_updates)):
             self.optimizer.zero_grad()
             batch_loss = 0.0
@@ -894,19 +920,14 @@ class DAPOTrainer(TrainingRuntime):
                 weighted.backward()
                 batch_loss += weighted.item()
 
-            # Gradient clipping
-            _params = list(self.model.parameters())
-            if _params:
-                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
-
-            # Update
-            self.optimizer.step()
-            self.scheduler.step()
+            # Finite-gradient check, clipping, then exactly one optimizer
+            # and scheduler step for the whole batch.
+            optimizer_updates += int(optimizer_step())
 
             total_loss += batch_loss
             num_updates += 1
 
-        self.global_step += 1
+        optimizer_step.end_train_step()
 
         # Compute metrics
         metrics = {
@@ -919,6 +940,7 @@ class DAPOTrainer(TrainingRuntime):
             ),
             "learning_rate": float(self.config.learning_rate),
             "global_step": float(self.global_step),
+            "optimizer_updates": float(optimizer_updates),
         }
 
         # Store metrics

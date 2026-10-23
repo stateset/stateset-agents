@@ -31,6 +31,7 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .spine.update import OptimizerStep, nonfinite_grad_settings
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -155,7 +156,8 @@ class GEPOConfig(TrainingConfig):
     # strictly on-policy; values > 1 reuse each rollout, and the sampler
     # (old-policy) log probs are the snapshot taken at rollout time.
     # Cadence (shared with DAPO and VAPO): the LR scheduler advances once per
-    # inner update; global_step counts train_steps, not inner updates.
+    # committed inner update (a pass skipped under nonfinite_grad_policy="skip"
+    # does not advance it); global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
 
     @classmethod
@@ -277,6 +279,27 @@ class GEPOTrainer(TrainingRuntime):
 
         self.global_step = 0
         self.rollout_samples_total = 0
+
+    def _build_optimizer_step(self) -> OptimizerStep:
+        """The spine commit for one inner update (``num_gradient_updates`` pass).
+
+        Gradients must be finite (``config.nonfinite_grad_policy`` raises or
+        skips the pass otherwise), the policy is clipped to ``max_grad_norm``,
+        then the optimizer and the LR scheduler step once.
+        ``global_step`` counts ``train_step`` calls (``end_train_step``).
+        """
+        return OptimizerStep(
+            self,
+            torch,
+            optimizers=[self.optimizer],
+            schedulers=[self.scheduler],
+            clip_groups=[list(self.model.parameters())],
+            max_grad_norm=self.config.max_grad_norm,
+            counter="train_steps",
+            **nonfinite_grad_settings(self.config),
+            named_modules=[self.model],
+            label="GEPO",
+        )
 
     @staticmethod
     def build_response_mask(
@@ -621,6 +644,8 @@ class GEPOTrainer(TrainingRuntime):
         # are now drawn before the learner ones).
         num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
         final_loss = torch.tensor(0.0, device=self.device)
+        optimizer_step = self._build_optimizer_step()
+        optimizer_updates = 0
 
         for _ in range(num_updates):
             all_gepo_coefs = []
@@ -659,16 +684,13 @@ class GEPOTrainer(TrainingRuntime):
             self.optimizer.zero_grad()
             final_loss.backward()
 
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
-
-            self.optimizer.step()
+            # Finite-gradient check, clipping, then one optimizer step.
             # Cadence convention shared with DAPO/VAPO: the LR scheduler
-            # advances once per inner update, global_step counts train_steps.
-            self.scheduler.step()
+            # advances once per committed inner update, global_step counts
+            # train_steps.
+            optimizer_updates += int(optimizer_step())
 
-        self.global_step += 1
+        optimizer_step.end_train_step()
 
         # Compute metrics
         metrics = {
@@ -679,6 +701,7 @@ class GEPOTrainer(TrainingRuntime):
             "gepo_coefficient_std": np.std(all_gepo_coefs) if all_gepo_coefs else 0.0,
             "learning_rate": self.scheduler.get_last_lr()[0],
             "global_step": self.global_step,
+            "optimizer_updates": optimizer_updates,
         }
 
         # Store metrics

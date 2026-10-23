@@ -63,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts as the environment's own step reward, also when a reward function is
   attached. Environments record each step's scoring state in
   `trajectory.state_history`, and per-step rewards see the system prompt.
+- `GSPOTrainer` and `GSPOTokenTrainer` commit each update through the spine's
+  `OptimizerStep` (`counter="none"`; GSPO keeps no step counter). Finite
+  updates are numerically unchanged (step goldens). A NaN/Inf gradient is now
+  rejected before clipping with `ValueError("GSPO gradients must be finite")`
+  instead of the `RuntimeError` raised by `clip_grad_norm_`; a finite gradient
+  whose total norm overflows still raises that `RuntimeError`. Either way the
+  weights, optimizer and scheduler stay untouched, as before.
 
 ### Fixed
 
@@ -169,6 +176,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stateful per-step rewards replayed on the final state (15.83 vs 16.0).
 - Evaluation reported a 0% success rate for perfectly correct
   `CorrectnessReward` runs.
+- **Unified RL training spine, first slices** (provisional;
+  `docs/superpowers/plans/2026-10-22-unified-rl-spine.md`).
+  `stateset_agents.training.spine.OptimizerStep` validates, clips and commits
+  one update for any native trainer: one or several optimizers, LR schedulers
+  and an optional GradScaler passed explicitly, independently clipped
+  parameter groups, an explicit `global_step` rule (`counter="commits"` for
+  MultiTurn/SingleTurn GRPO, `"train_steps"` for DAPO/GEPO/VAPO, `"none"` for
+  GSPO) and `nonfinite_grad_policy` (`"raise"` or `"skip"`). An AMP overflow
+  skips every optimizer of the pass together. `trainer_utils.safe_optimizer_step`
+  is now the GRPO configuration of it, with unchanged behaviour.
+  `scripts/capture_step_goldens.py` and
+  `tests/unit/test_trainer_step_goldens.py` pin one training step of every
+  native trainer (GSPO, GSPO-token, DAPO, GEPO, VAPO, MultiTurn and SingleTurn
+  GRPO at one and two update passes): metrics, parameter delta, pre- and
+  post-clip gradient norms, learning rates and step counters.
+- **DAPO, GEPO and VAPO no longer step on non-finite gradients.** Each inner
+  update now commits through the spine's `OptimizerStep`
+  (`counter="train_steps"`): with the default `nonfinite_grad_policy="raise"`
+  a NaN/Inf gradient raises `ValueError("<trainer> gradients must be finite")`
+  with the weights, optimizer and LR-scheduler state untouched; with
+  `nonfinite_grad_policy="skip"` that pass is discarded and logged (naming the
+  non-finite parameters) and training continues, aborting after
+  `max_consecutive_nonfinite_skips` consecutive skips. Previously the bad
+  gradient was clipped and stepped, turning the weights and AdamW state into
+  NaN. A VAPO pass whose actor or critic gradient is non-finite skips both
+  optimizers, and VAPO's value warmup follows the same policy. `train_step`
+  metrics gain `optimizer_updates` (committed passes). A skipped pass, or a
+  DAPO pass with no response tokens, no longer advances the LR scheduler;
+  `global_step` still counts `train_step` calls. Finite updates are
+  numerically unchanged (step goldens).
 
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
