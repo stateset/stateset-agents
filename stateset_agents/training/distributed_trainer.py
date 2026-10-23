@@ -17,6 +17,8 @@ import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
 
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
 from .._deprecation import warn_deprecated
 
 try:
@@ -46,7 +48,7 @@ from .spine.scoring import EpisodeScorer
 
 logger = logging.getLogger(__name__)
 
-DISTRIBUTED_TRAIN_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+DISTRIBUTED_TRAIN_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 @dataclass

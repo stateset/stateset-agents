@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
 try:
     import torch
 
@@ -78,7 +80,7 @@ TRAINING_ORCH_EXCEPTIONS = (
 )
 #: What a capacity probe (os, psutil, torch.cuda, disk_usage) may raise when
 #: the measurement is unavailable; the probe's own checks raise ValueError.
-RESOURCE_PROBE_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+RESOURCE_PROBE_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 class ResourceManager:

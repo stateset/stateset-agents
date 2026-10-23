@@ -23,6 +23,7 @@ from stateset_agents.data.identity import (
     normalize_identity_text,
     prompt_identity,
 )
+from stateset_agents.exceptions import SERIALIZATION_EXCEPTIONS
 
 from .._deprecation import warn_deprecated
 
@@ -59,7 +60,7 @@ def _load_sentence_transformer_cls() -> Any:
 
 logger = logging.getLogger(__name__)
 
-HF_PARSE_EXCEPTIONS = (AttributeError, KeyError, TypeError, ValueError)
+HF_PARSE_EXCEPTIONS = SERIALIZATION_EXCEPTIONS
 
 #: ``TrajectoryData.metadata`` marker for a trajectory whose only reward is
 #: its ``total_reward``, placed on the final turn (no per-turn rewards given).
