@@ -2,7 +2,7 @@
 
 Every deprecation names the release that removes it, and
 ``tests/unit/test_deprecation_schedule.py`` fails CI once the package version
-reaches that release. Pass ``removal`` as a string literal (``removal="0.72.0"``)
+reaches that release. Pass ``removal`` as a string literal (``removal="X.Y.Z"``)
 so the guard can read it from the source.
 
 Policy (docs/API_COMPATIBILITY.md): a name in ``stateset_agents.__all__`` or

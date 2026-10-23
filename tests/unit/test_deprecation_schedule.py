@@ -277,3 +277,10 @@ def test_alias_tables_state_their_removal_versions() -> None:
     tree = ast.parse(source)
     assert _emits_deprecation_warning(tree)
     assert alias_table_removals(tree) == ["0.71.0"]
+
+
+def test_the_helper_states_no_schedule_of_its_own() -> None:
+    """The helper's docs must not read as a removal marker (it would trip
+    the guard when that version ships)."""
+    text = (REPO_ROOT / HELPER).read_text(encoding="utf-8")
+    assert scheduled_removals(_searchable_text(text, ast.parse(text))) == []
