@@ -201,7 +201,7 @@ async def _run_gspo(
     agent: Agent,
     environment: ConversationEnvironment,
     reward_model: MultiObjectiveReward,
-    train_queries: list[str] | None,
+    train_queries: list[str | dict[str, Any]] | None,
     callbacks: list[Any],
     reporter: WandbRun,
     *,
