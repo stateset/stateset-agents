@@ -361,6 +361,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   cosine and DAPO always a constant LR; all now follow
   `lr_scheduler_type` (cosine, linear or constant; the defaults keep their
   previous schedules).
+- **Objective goldens:** the `grpo_enhanced` capture now sets
+  `entropy_coef=0.0` explicitly (it pins the policy and KL terms); its
+  recorded numbers are unchanged.
 - **Rollout-sync failures stop training by default.** New
   `rollout_sync_failure` (`"raise"`, default, or `"warn"`) and
   `max_consecutive_rollout_sync_failures` (3): the third consecutive failed
