@@ -238,12 +238,10 @@ def metric_lines(row: dict[str, Any] | None, width: int) -> list[str]:
     return rows
 
 
-def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
-    if row is None:
-        return ["No retained run is selected."]
-    config = _run_config(row)
-    state = row["state"]
-    run = Path(row["path"])
+def _details_summary(
+    row: dict[str, Any], config: dict[str, Any], state: dict[str, Any]
+) -> list[str]:
+    """Identity, status and supervision notes at the top of run details."""
     result = [
         "RUN DETAILS / c reuses settings for a NEW run",
         "",
@@ -274,6 +272,11 @@ def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
                 )
             ),
         ]
+    return result
+
+
+def _append_elapsed_and_error(result: list[str], state: dict[str, Any]) -> None:
+    """Add the elapsed wall time (including queue wait) and any recorded error."""
     start = state.get("started_at", state.get("created_at"))
     end = state.get("finished_at", time.time())
     if (
@@ -287,77 +290,103 @@ def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
         )
     if state.get("error"):
         result += ["", "Error: " + str(state["error"])]
+
+
+def _append_failure(
+    result: list[str], run: Path, state: dict[str, Any], config: dict[str, Any]
+) -> None:
+    """Add the retained failure diagnosis and next steps, if any."""
     diagnosis = failure_info(run, state)
-    if diagnosis:
-        result += [
-            "",
-            "FAILURE AND NEXT STEPS",
-            diagnosis["title"],
-            f"Code: {diagnosis['code']} | Stage: {diagnosis['stage']}",
-            diagnosis["action"],
-        ]
-        if not diagnosis["recorded"]:
-            result.append(
-                "No valid structured diagnosis is retained; the cause has not been inferred from logs."
-            )
-        if config.get("provider") != "local":
-            result.append(
-                "Check the retained provider handle and your provider account for active resources or charges before a new paid launch."
-            )
+    if not diagnosis:
+        return
+    result += [
+        "",
+        "FAILURE AND NEXT STEPS",
+        diagnosis["title"],
+        f"Code: {diagnosis['code']} | Stage: {diagnosis['stage']}",
+        diagnosis["action"],
+    ]
+    if not diagnosis["recorded"]:
         result.append(
-            "c reuses settings for a NEW reviewed run; it does not resume a checkpoint or retry a provider job."
+            "No valid structured diagnosis is retained; the cause has not been inferred from logs."
         )
     if config.get("provider") != "local":
-        result += ["", "PROVIDER SUBMISSION / RETAINED OBSERVATIONS"]
-        try:
-            provider = redact_finetune_secrets(inspect_submission(run))
-            if not provider["available"]:
-                result.append(
-                    "No submission receipt retained; provider identity and cleanup are unknown."
-                )
-            else:
-                result += [
-                    _safe(
-                        f"Logical job: {provider.get('job_id') or 'not yet recorded'}"
-                    ),
-                    _safe(
-                        f"Submission: {provider['submission_state']} | Observed result: {provider.get('observed_status') or 'not reported'}"
-                    ),
-                ]
-                for resource in provider["resources"]:
-                    result.append(
-                        _safe(
-                            f"{resource['kind']}: {resource['id']} | {resource['state'].replace('_', ' ')}"
-                        )
-                    )
-                    if resource.get("name"):
-                        result.append(_safe("Owned name: " + resource["name"]))
-                for intent in provider["unresolved_intents"]:
-                    result.append(
-                        _safe(
-                            f"Unresolved allocation: {intent['resource_kind']} | {intent.get('resource_name') or 'identity not returned'}"
-                        )
-                    )
-                result.append(
-                    "Cleanup required or unconfirmed; reconcile provider records before retrying."
-                    if provider["cleanup_required_or_unconfirmed"]
-                    else "No unresolved cleanup in this receipt; live provider state is unchecked."
-                )
-            result += [
-                "Provider status is not checked live; this view makes no provider request.",
-                "Cleanup acknowledgement does not prove billing stopped. No automatic restart.",
-            ]
-        except (
-            OSError,
-            ValueError,
-            TypeError,
-            KeyError,
-            RecursionError,
-            OverflowError,
-        ):
-            result.append(
-                "Provider receipt unavailable; retained identity and cleanup could not be verified."
+        result.append(
+            "Check the retained provider handle and your provider account for active resources or charges before a new paid launch."
+        )
+    result.append(
+        "c reuses settings for a NEW reviewed run; it does not resume a checkpoint or retry a provider job."
+    )
+
+
+def _append_provider_receipt(result: list[str], provider: dict[str, Any]) -> None:
+    """Add a retained submission receipt: job, resources and open allocations.
+
+    Lines are appended one by one so a malformed receipt keeps what was shown.
+    """
+    result += [
+        _safe(f"Logical job: {provider.get('job_id') or 'not yet recorded'}"),
+        _safe(
+            f"Submission: {provider['submission_state']} | Observed result: {provider.get('observed_status') or 'not reported'}"
+        ),
+    ]
+    for resource in provider["resources"]:
+        result.append(
+            _safe(
+                f"{resource['kind']}: {resource['id']} | {resource['state'].replace('_', ' ')}"
             )
+        )
+        if resource.get("name"):
+            result.append(_safe("Owned name: " + resource["name"]))
+    for intent in provider["unresolved_intents"]:
+        result.append(
+            _safe(
+                f"Unresolved allocation: {intent['resource_kind']} | {intent.get('resource_name') or 'identity not returned'}"
+            )
+        )
+    result.append(
+        "Cleanup required or unconfirmed; reconcile provider records before retrying."
+        if provider["cleanup_required_or_unconfirmed"]
+        else "No unresolved cleanup in this receipt; live provider state is unchecked."
+    )
+
+
+def _append_provider_submission(result: list[str], run: Path) -> None:
+    """Add retained provider observations for a remote run; never calls a provider."""
+    result += ["", "PROVIDER SUBMISSION / RETAINED OBSERVATIONS"]
+    try:
+        provider = redact_finetune_secrets(inspect_submission(run))
+        if not provider["available"]:
+            result.append(
+                "No submission receipt retained; provider identity and cleanup are unknown."
+            )
+        else:
+            _append_provider_receipt(result, provider)
+        result += [
+            "Provider status is not checked live; this view makes no provider request.",
+            "Cleanup acknowledgement does not prove billing stopped. No automatic restart.",
+        ]
+    except (
+        OSError,
+        ValueError,
+        TypeError,
+        KeyError,
+        RecursionError,
+        OverflowError,
+    ):
+        result.append(
+            "Provider receipt unavailable; retained identity and cleanup could not be verified."
+        )
+
+
+def _append_inputs(
+    result: list[str],
+    row: dict[str, Any],
+    config: dict[str, Any],
+    state: dict[str, Any],
+    run: Path,
+) -> None:
+    """Add the reviewed input, settings and any recovery lineage."""
     result += [
         "",
         "INPUT AND SETTINGS",
@@ -382,25 +411,33 @@ def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
             "Checkpoint SHA256: " + str(resume.get("checkpoint_sha256", "unknown")),
             "Original total training budget retained.",
         ]
-    for filename, label, keys in (
+
+
+#: Retained records shown in run details: file, heading and the keys shown.
+DETAIL_RECORDS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    (
+        "completion.json",
+        "COMPLETION",
         (
-            "completion.json",
-            "COMPLETION",
-            (
-                "output_dir",
-                "committed_updates",
-                "quality_gain_verified",
-                "result_kind",
-                "checkpoint",
-            ),
+            "output_dir",
+            "committed_updates",
+            "quality_gain_verified",
+            "result_kind",
+            "checkpoint",
         ),
-        ("provider-job.json", "PROVIDER HANDLE", ("provider", "job_id")),
-        (
-            "provider-result.json",
-            "PROVIDER-REPORTED COST",
-            ("cost_usd", "duration_s"),
-        ),
-    ):
+    ),
+    ("provider-job.json", "PROVIDER HANDLE", ("provider", "job_id")),
+    (
+        "provider-result.json",
+        "PROVIDER-REPORTED COST",
+        ("cost_usd", "duration_s"),
+    ),
+)
+
+
+def _append_records(result: list[str], run: Path) -> None:
+    """Add completion, provider handle and cost records, then the latest metrics."""
+    for filename, label, keys in DETAIL_RECORDS:
         if not (run / filename).exists():
             continue
         result += ["", label]
@@ -420,7 +457,11 @@ def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
             result += [f"{key}: {value}" for key, value in metrics["metrics"].items()]
     except (OSError, ValueError, TypeError):
         pass
-    result += [
+
+
+def _details_footer(row: dict[str, Any], run: Path, workspace: Path) -> list[str]:
+    """Retained file locations, the agent status command and reuse caveats."""
+    return [
         "",
         "FILES",
         "Workspace: " + str(run),
@@ -446,6 +487,23 @@ def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
         "No job starts until you validate and confirm a new launch review.",
         "Completion alone does not establish a quality gain.",
     ]
+
+
+def run_details_lines(row: dict[str, Any] | None, workspace: Path) -> list[str]:
+    """Read-only details of one retained run, from its retained records only."""
+    if row is None:
+        return ["No retained run is selected."]
+    config = _run_config(row)
+    state = row["state"]
+    run = Path(row["path"])
+    result = _details_summary(row, config, state)
+    _append_elapsed_and_error(result, state)
+    _append_failure(result, run, state, config)
+    if config.get("provider") != "local":
+        _append_provider_submission(result, run)
+    _append_inputs(result, row, config, state, run)
+    _append_records(result, run)
+    result += _details_footer(row, run, workspace)
     return result
 
 
