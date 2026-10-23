@@ -89,15 +89,20 @@ def _numbers(text: str) -> set[float]:
 def _answer_credit(content: str, answer: str, question: str = "") -> float:
     """Fraction of answer credit ``content`` earns for the expected ``answer``.
 
-    Answers must be committed to. A text answer needs a whole-token match,
-    and a sentence that merely lists it among alternatives ("London, Paris,
-    Berlin") shares the credit among them. A numeric answer stated explicitly
-    must be the only stated answer; otherwise the credit is shared among the
-    distinct numbers the reply offers beyond those quoted from ``question``.
+    Answers must be committed to. A negated answer ("It is not Paris.",
+    "42 is not the answer") earns nothing. A text answer needs a whole-token
+    match and shares the credit with every other candidate the reply offers
+    anywhere: comma, slash, "or"/"and", newline and sentence lists and
+    "Maybe X. Maybe Y." all count (see :func:`_text_answer_credit`). A numeric
+    answer stated explicitly must be the only stated answer; otherwise the
+    credit is shared among the distinct numbers the reply offers beyond those
+    quoted from ``question``.
     """
+    if _answer_negated(content, answer):
+        return 0.0
     expected = _as_number(answer.strip())
     if expected is None:
-        return _text_answer_credit(content, answer)
+        return _text_answer_credit(content, answer, question)
     stated = {
         value
         for pattern in _STATED_ANSWER_PATTERNS
@@ -113,31 +118,122 @@ def _answer_credit(content: str, answer: str, question: str = "") -> float:
     return 1.0 / len(candidates)
 
 
-_SENTENCE_SPLIT = re.compile(r"(?<!\d)[.!?\n]+|[.!?]+(?=\s|$)")
-_LIST_SPLIT = re.compile(r"\s*(?:[,/;|]|\bor\b|\band\b)\s*", re.IGNORECASE)
+#: Negation words that deny the answer right after them ("not Paris").
+_NEGATION_CUES = frozenset(
+    "not no never neither nor isn't aren't wasn't weren't doesn't don't "
+    "didn't cannot can't hardly".split()
+)
+#: Words that only frame a candidate ("Maybe X", "It could be X", "I think X").
+_HEDGE_FILLERS = frozenset(
+    "maybe perhaps possibly probably likely either could might would guess "
+    "think believe suppose answer correct option options candidate candidates "
+    "choice choices".split()
+)
+#: A segment opening with one of these qualifies another (", in Europe").
+_MODIFIER_OPENERS = frozenset(
+    "in on at from near of with for by within since during via per".split()
+)
+#: Admissions that the reply does not know; they halve the credit.
+_UNCERTAINTY_PATTERN = re.compile(
+    r"\b(?:no idea|not sure|unsure|don't know|do not know|no clue|"
+    r"could be anything|just guessing|a guess|can't be sure|cannot be sure)\b"
+)
+#: Splits a reply into candidate segments: sentences, lines and list items.
+_SEGMENT_SPLIT = re.compile(
+    r"(?<!\d)[.!?;\n]+|[.!?;]+(?=\s|$)|\s*(?:,(?!\d)|(?<!\d),|[/|])\s*"
+    r"|\s+(?:or|and|maybe|perhaps)\s+",
+    re.IGNORECASE,
+)
+_WORD = re.compile(r"[a-z0-9]+(?:['.^-][a-z0-9]+)*")
 
 
-def _text_answer_credit(content: str, answer: str) -> float:
-    """Credit for a text answer: 1 if committed to, 1/k if listed among k items.
+def _words(text: str) -> list[str]:
+    return _WORD.findall(_normalize_text(text))
 
-    A sentence counts as a list of alternatives when it splits on commas,
-    slashes, "or" and "and" into two or more short items (no longer than the
-    answer plus two words). The reply earns the best credit over the
-    sentences that contain the answer.
+
+def _answer_negated(content: str, answer: str) -> bool:
+    """Whether every mention of ``answer`` in ``content`` is denied.
+
+    A mention is denied by a negation word among the two words before it
+    ("It is not Paris", "isn't really 42") or by a denial right after it
+    ("Paris is not the answer", "Paris is wrong", "42 isn't right").
+    """
+    words = _words(content)
+    target = _words(answer)
+    size = len(target)
+    if not size:
+        return False
+    mentions = [
+        i for i in range(len(words) - size + 1) if words[i : i + size] == target
+    ]
+    if not mentions:
+        return False
+    for start in mentions:
+        before = words[max(0, start - 2) : start]
+        after = words[start + size : start + size + 2]
+        denied_before = any(w in _NEGATION_CUES or w.endswith("n't") for w in before)
+        denied_after = bool(after) and (
+            after[0] in {"isn't", "wasn't"}
+            or (
+                after[0] in {"is", "was"}
+                and len(after) > 1
+                and after[1] in {"not", "wrong", "incorrect"}
+            )
+        )
+        if not (denied_before or denied_after):
+            return False
+    return True
+
+
+def _text_answer_credit(content: str, answer: str, question: str = "") -> float:
+    """Credit for a text answer: 1 if committed to, 1/k among k candidates.
+
+    The whole reply is split into segments (sentences, lines, and list items
+    separated by commas, slashes, "or" and "and"). After dropping function
+    words, framing words ("maybe", "could", "I think") and words quoted from
+    the ``question``, a segment of at most one word more than the answer is a
+    candidate. The answer is credited 1/k over the k distinct candidates the
+    reply offers, so "London, Paris, Berlin", a newline list and "Maybe
+    London. Maybe Paris." all share the credit, while a segment that only
+    qualifies another (", in Europe") or denies an alternative (", not
+    London") is not a candidate. An admission of
+    not knowing ("no idea", "not sure") halves the credit.
     """
     if not _contains_term(content, answer):
         return 0.0
-    longest_item = max(3, len(answer.split()) + 2)
-    best = 0.0
-    for sentence in _SENTENCE_SPLIT.split(content):
-        if not _contains_term(sentence, answer):
+    from .grounding import GENERIC_TERMS, STOPWORDS, _stem
+
+    quoted = set(_words(question))
+    generic = {_stem(term) for term in GENERIC_TERMS}
+
+    def kept(segment: str) -> list[str]:
+        return [
+            word
+            for word in _words(segment)
+            if word not in STOPWORDS
+            and word not in _HEDGE_FILLERS
+            and word not in quoted
+            and _stem(word) not in generic
+        ]
+
+    answer_key = " ".join(_words(answer))
+    longest = len(_words(answer)) + 1
+    candidates = {answer_key}
+    for segment in _SEGMENT_SPLIT.split(content):
+        if not segment or not segment.strip():
             continue
-        items = [item for item in _LIST_SPLIT.split(sentence.strip()) if item]
-        listed = len(items) >= 2 and all(
-            len(item.split()) <= longest_item for item in items
-        )
-        best = max(best, 1.0 / len(items) if listed else 1.0)
-    return best
+        if _contains_term(segment, answer):
+            continue
+        words = _words(segment)
+        if words and (words[0] in _MODIFIER_OPENERS or words[0] in _NEGATION_CUES):
+            continue  # qualifies another segment or denies an alternative
+        remaining = kept(segment)
+        if remaining and len(remaining) <= longest:
+            candidates.add(" ".join(remaining))
+    credit = 1.0 / len(candidates)
+    if _UNCERTAINTY_PATTERN.search(_normalize_text(content)):
+        credit *= 0.5
+    return credit
 
 
 def _ground_truth_mapping(ground_truth: Any) -> dict[str, Any]:

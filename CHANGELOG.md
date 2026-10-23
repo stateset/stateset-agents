@@ -93,6 +93,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ModelBasedRewardComponent` judges a reply whose `turns` lack a user turn
   against `context["user_query"]` instead of returning 0.0 without calling
   the judge.
+- **`CorrectnessReward` counts hedges across the whole reply and rejects
+  negated answers.** A text answer shares its credit with every other
+  candidate the reply offers, across sentences and lines as well as commas,
+  "or"/"and" and "Maybe X. Maybe Y." (before, only candidates in the same
+  sentence counted, so a newline or sentence list scored 1.0). "It is not
+  Paris." and "42 is not the answer" score 0 (text and numeric), a denied
+  alternative (", not London") or a qualifier (", in Europe") is not a
+  candidate, and "no idea"/"not sure" halves the credit. The
+  `train_reasoning_with_dapo` math verifier uses the same check instead of a
+  substring test ("42" no longer matches "142").
 
 ### Fixed
 
