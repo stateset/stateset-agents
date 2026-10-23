@@ -6,7 +6,7 @@
   <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
 
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Rewards &mdash; StateSet Agents 0.68.0 documentation</title>
+  <title>Rewards &mdash; StateSet Agents 0.69.0 documentation</title>
       <link rel="stylesheet" type="text/css" href="_static/pygments.css?v=03e43079" />
       <link rel="stylesheet" type="text/css" href="_static/css/theme.css?v=9edc463e" />
       <link rel="stylesheet" type="text/css" href="_static/custom.css?v=779363f2" />
@@ -14,7 +14,7 @@
   
       <script src="_static/jquery.js?v=5d32c60e"></script>
       <script src="_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
-      <script src="_static/documentation_options.js?v=c67ccf4f"></script>
+      <script src="_static/documentation_options.js?v=b7a98516"></script>
       <script src="_static/doctools.js?v=fd6eb6e6"></script>
       <script src="_static/sphinx_highlight.js?v=6ffebe34"></script>
     <script src="_static/js/theme.js"></script>
@@ -262,6 +262,11 @@
 <li><p>Optional LLM-as-judge helpers (<cite>stateset_agents.rewards.llm_judge</cite>)</p></li>
 <li><p>Kimi-K2.5 helpers (<cite>stateset_agents.rewards.kimi_k25_reward</cite>)</p></li>
 </ul>
+<p>Every reward follows the <a class="reference external" href="REWARD_CONTRACT.md">reward contract</a>: finite scores
+in <code class="docutils literal notranslate"><span class="pre">[0,</span> <span class="pre">1]</span></code> unless declared otherwise, one reward-context shape (scenario keys
+at the top level plus <code class="docutils literal notranslate"><span class="pre">&quot;scenario&quot;</span></code>), each episode scored exactly once, the
+difference between <code class="docutils literal notranslate"><span class="pre">IMMEDIATE</span></code> and <code class="docutils literal notranslate"><span class="pre">CUMULATIVE</span></code>/<code class="docutils literal notranslate"><span class="pre">SPARSE</span></code> rewards, and how
+failures are flagged instead of silently scored.</p>
 </section>
 
 
