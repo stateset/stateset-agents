@@ -135,7 +135,7 @@ def _sequence_rewards(
 ) -> torch.Tensor:
     ids, attention, _ = _loop.collate(sequences, encoder.pad_token_id, device)
     with _loop.autocast(ids.device, mixed_precision):
-        rewards = model(ids, attention)
+        rewards: torch.Tensor = model(ids, attention)
     return rewards.float()
 
 

@@ -235,7 +235,7 @@ class PreferenceTrainer(_loop.WindowedTrainer):
 
     @property
     def method(self) -> str:
-        return self.config.method
+        return str(self.config.method)
 
     def _training_items(self) -> Sequence[_PairItem | _UnpairedItem]:
         return self._train_unpaired if self.method == "kto" else self._train_pairs
