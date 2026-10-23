@@ -77,6 +77,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpineLoopMixin.train()` runs each episode through a new
   `_train_episode` method (task boundary, rollouts, step, reporting);
   the phases it passes to `_training_phase` and their order are unchanged.
+- `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
+  the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
+  `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): batch ->
+  `train_step` -> report -> periodic `checkpoint-<n>` save -> callbacks
+  (GSPO's may abort) -> one final save, also after an abort; a failing
+  step propagates without a final save. Each entry point keeps its own
+  batching, logging, wandb, save names and resume rejection.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
@@ -193,6 +200,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   returns NaN or an infinite score now raises `ValueError` (round 4's rule
   for every reward path) instead of carrying the value into the group
   advantages.
+- `train_with_gspo` honours `config.use_gspo_token`: it trains with
+  `GSPOTokenTrainer.train_step_token_level` instead of plain GSPO.
 - `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
   (it called the reward synchronously, so an async one failed), and DAPO
   awaits any awaitable a reward returns, not only coroutines.

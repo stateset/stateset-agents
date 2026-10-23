@@ -12,6 +12,7 @@ from typing import Any
 
 import numpy as np
 
+from .spine.loop import run_dedicated_loop
 from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
@@ -82,15 +83,14 @@ async def train_with_vapo(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
+    def batch(iteration: int) -> list[str] | None:
         batch_size = min(config.per_device_train_batch_size, len(train_prompts))
         if batch_size <= 0:
-            break
+            return None
         batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
+        return [train_prompts[i] for i in batch_indices]
 
-        metrics = await trainer.train_step(batch_prompts)
-
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             if "warmup_value_loss" in metrics:
                 logger.info("Value warmup | Loss: %.4f", metrics["warmup_value_loss"])
@@ -109,12 +109,17 @@ async def train_with_vapo(
             if use_wandb:
                 wandb.log(metrics, step=iteration)
 
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
-
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=batch,
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+    )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]

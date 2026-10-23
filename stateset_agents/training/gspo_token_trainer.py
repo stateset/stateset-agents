@@ -27,6 +27,7 @@ from .gspo_generation import (
 )
 from .gspo_trainer import GSPOConfig, GSPOTrainer
 from .runtime_state import _reject_unsupported_resume
+from .spine.loop import run_dedicated_loop
 
 logger = logging.getLogger(__name__)
 
@@ -329,34 +330,35 @@ async def train_with_gspo_token(
         ref_model=model_manager.ref_model,
     )
 
-    # Training loop
-    for iteration in range(config.num_outer_iterations):
+    def window(iteration: int) -> list[Any]:
         logger.info(f"=== Iteration {iteration + 1}/{config.num_outer_iterations} ===")
+        return query_window(queries, iteration, queries_per_iteration)
 
+    async def step(batch: list[Any]) -> dict[str, Any]:
         # Train step with token-level advantages
-        window = query_window(queries, iteration, queries_per_iteration)
-        metrics = await trainer.train_step_token_level(
-            queries=window, num_groups=len(window)
+        metrics: dict[str, Any] = await trainer.train_step_token_level(
+            queries=batch, num_groups=len(batch)
         )
+        return metrics
 
-        # Log metrics
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         logger.info(f"Metrics: {json.dumps(metrics, indent=2)}")
-
         if config.report_to == "wandb":
             import wandb
 
             wandb.log(metrics, step=iteration)
 
-        # Save checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(
-                config.output_dir, f"checkpoint-{iteration + 1}"
-            )
-            trainer.save_model(checkpoint_dir)
-
-    # Save final model
-    final_model_path = os.path.join(config.output_dir, "final_model")
-    trainer.save_model(final_model_path)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_outer_iterations,
+        batch=window,
+        step=step,
+        save=trainer.save_model,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final_model",
+        report=report,
+    )
 
     # Finish wandb run
     if config.report_to == "wandb":

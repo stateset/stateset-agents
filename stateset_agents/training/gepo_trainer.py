@@ -30,6 +30,7 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .spine.loop import run_dedicated_loop
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
 from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
@@ -739,16 +740,13 @@ async def train_with_gepo(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
+    def batch(iteration: int) -> list[str]:
         # Sample batch of prompts
         batch_size = min(config.per_device_train_batch_size, len(train_prompts))
         batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
+        return [train_prompts[i] for i in batch_indices]
 
-        # Train step
-        metrics = await trainer.train_step(batch_prompts)
-
-        # Log metrics
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
                 f"Iteration {iteration}/{config.num_episodes} | "
@@ -760,14 +758,18 @@ async def train_with_gepo(
             if use_wandb:
                 wandb.log(metrics, step=iteration)
 
-        # Save checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=batch,
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+    )
 
-    # Save final model
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]

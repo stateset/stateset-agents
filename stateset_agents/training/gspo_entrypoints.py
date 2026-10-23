@@ -21,6 +21,7 @@ from .callbacks import has_no_policy_signal
 from .config import get_config_for_task
 from .gspo_config import GSPOConfig
 from .runtime_state import _reject_unsupported_resume
+from .spine.loop import run_dedicated_loop
 
 logger = logging.getLogger(__name__)
 
@@ -137,7 +138,12 @@ async def train_with_gspo(
     train_queries: list[str | dict[str, Any]] | None = None,
     callbacks: list[Any] | None = None,
 ) -> Agent:
-    """Train fresh with dedicated GSPO; explicit resume is unsupported."""
+    """Train fresh with dedicated GSPO; explicit resume is unsupported.
+
+    ``config.use_gspo_token`` selects the GSPO-token variant
+    (``GSPOTokenTrainer.train_step_token_level``). The outer loop is the
+    spine's :func:`run_dedicated_loop`.
+    """
     _reject_unsupported_resume(config, "train_with_gspo")
     from .gspo_trainer import GSPOModelManager, GSPOTrainer, _require_wandb, wandb
 
@@ -220,7 +226,12 @@ async def train_with_gspo(
         min(queries_per_iteration, len(queries)),
     )
 
-    trainer = GSPOTrainer(
+    trainer_cls: Any = GSPOTrainer
+    if getattr(config, "use_gspo_token", False):
+        from .gspo_token_trainer import GSPOTokenTrainer
+
+        trainer_cls = GSPOTokenTrainer
+    trainer = trainer_cls(
         config=config,
         model=model,
         tokenizer=tokenizer,
@@ -228,6 +239,11 @@ async def train_with_gspo(
         environment=environment,
         reward_model=reward_model,
         ref_model=model_manager.ref_model if model_manager else None,
+    )
+    train_step = (
+        trainer.train_step_token_level
+        if getattr(config, "use_gspo_token", False)
+        else trainer.train_step
     )
 
     if config.use_vllm:
@@ -239,16 +255,20 @@ async def train_with_gspo(
             logger.warning("vLLM initialization failed - using HuggingFace generation")
 
     _callbacks = callbacks or []
-    aborted = False
     zero_signal_iterations = 0
 
-    for iteration in range(config.num_outer_iterations):
+    def window(iteration: int) -> list[Any]:
         logger.info(
             "=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations
         )
+        return query_window(queries, iteration, queries_per_iteration)
 
-        window = query_window(queries, iteration, queries_per_iteration)
-        metrics = await trainer.train_step(queries=window, num_groups=len(window))
+    async def step(batch: list[Any]) -> dict[str, Any]:
+        metrics: dict[str, Any] = await train_step(queries=batch, num_groups=len(batch))
+        return metrics
+
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
+        nonlocal zero_signal_iterations
         zero_signal_iterations = (
             zero_signal_iterations + 1 if has_no_policy_signal(metrics) else 0
         )
@@ -268,32 +288,32 @@ async def train_with_gspo(
         if use_wandb and wb is not None:
             wb.log(metrics, step=iteration)
 
-        # Periodic checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(
-                config.output_dir, f"checkpoint-{iteration + 1}"
-            )
-            trainer.save_model(checkpoint_dir)
+    async def notify(iteration: int, metrics: dict[str, Any]) -> bool:
+        # Notify callbacks via the dispatch layer; any may request an abort.
+        if not _callbacks:
+            return False
+        from .callbacks import notify_step_end
 
-        # Notify callbacks via the dispatch layer
-        if _callbacks:
-            from .callbacks import notify_step_end
+        await notify_step_end(_callbacks, step=iteration, metrics=metrics)
+        for cb in _callbacks:
+            if getattr(cb, "should_abort", False):
+                reason = getattr(cb, "abort_reason", "callback requested abort")
+                logger.warning("Training aborted by callback: %s", reason)
+                return True
+        return False
 
-            await notify_step_end(_callbacks, step=iteration, metrics=metrics)
-
-            # Check for early abort signals from any callback
-            for cb in _callbacks:
-                if getattr(cb, "should_abort", False):
-                    reason = getattr(cb, "abort_reason", "callback requested abort")
-                    logger.warning("Training aborted by callback: %s", reason)
-                    aborted = True
-                    break
-
-        if aborted:
-            break
-
-    final_model_path = os.path.join(config.output_dir, "final_model")
-    trainer.save_model(final_model_path)
+    run = await run_dedicated_loop(
+        iterations=config.num_outer_iterations,
+        batch=window,
+        step=step,
+        save=trainer.save_model,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final_model",
+        report=report,
+        after_save=notify,
+    )
+    aborted = run.aborted
 
     if use_wandb and wb is not None:
         wb.finish()

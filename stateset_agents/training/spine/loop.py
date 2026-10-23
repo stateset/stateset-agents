@@ -16,6 +16,12 @@ resume, task boundaries and success-only finalization -- moved here verbatim
 The host provides the algorithm (``training_step``,
 ``generate_trajectories``, ``evaluate``, scheduler, checkpoints, task and
 replay handling); see the declarations under ``TYPE_CHECKING``.
+
+:func:`run_dedicated_loop` is the outer loop of the dedicated prompt/response
+entry points (``train_with_gspo`` and GSPO-token, ``train_with_dapo``,
+``train_with_gepo``, ``train_with_vapo``; slice S9): a fixed number of
+iterations of batch -> ``train_step`` -> report -> periodic save -> optional
+callbacks, then one final save.
 """
 
 from __future__ import annotations
@@ -23,6 +29,9 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import os
+from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -473,4 +482,64 @@ class SpineLoopMixin(TrainingRuntime):
         return self.agent
 
 
-__all__ = ["SpineLoopMixin"]
+@dataclass
+class DedicatedRun:
+    """What :func:`run_dedicated_loop` did."""
+
+    #: Iterations that completed a ``train_step``.
+    iterations: int = 0
+    #: True when ``after_save`` asked to stop early.
+    aborted: bool = False
+    #: The last iteration's metrics (``None`` before the first).
+    metrics: dict[str, Any] | None = None
+
+
+async def _maybe_await(value: Any) -> Any:
+    return await value if inspect.isawaitable(value) else value
+
+
+async def run_dedicated_loop(
+    *,
+    iterations: int,
+    batch: Callable[[int], Any],
+    step: Callable[[Any], Awaitable[dict[str, Any]]],
+    save: Callable[[str], Any],
+    output_dir: str,
+    save_steps: int,
+    final_name: str,
+    report: Callable[[int, dict[str, Any]], Any] | None = None,
+    after_save: Callable[[int, dict[str, Any]], Any] | None = None,
+) -> DedicatedRun:
+    """The dedicated entry points' outer loop.
+
+    Each iteration ``i``: ``batch(i)`` gives the step's prompts (``None``
+    ends training early), ``step(prompts)`` runs one ``train_step``,
+    ``report(i, metrics)`` logs it, every ``save_steps`` iterations
+    ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, and
+    ``after_save(i, metrics)`` (callbacks) may return True to abort. After the
+    loop -- also after an abort -- ``save(output_dir/<final_name>)`` publishes
+    the final model. An exception propagates without a final save, like
+    :class:`SpineLoopMixin`'s success-only finalization. ``report`` and
+    ``after_save`` may be sync or async.
+    """
+    run = DedicatedRun()
+    for iteration in range(iterations):
+        prompts = batch(iteration)
+        if prompts is None:
+            break
+        metrics = await step(prompts)
+        run.iterations, run.metrics = iteration + 1, metrics
+        if report is not None:
+            await _maybe_await(report(iteration, metrics))
+        if (iteration + 1) % save_steps == 0:
+            save(os.path.join(output_dir, f"checkpoint-{iteration + 1}"))
+        if after_save is not None and await _maybe_await(
+            after_save(iteration, metrics)
+        ):
+            run.aborted = True
+            break
+    save(os.path.join(output_dir, final_name))
+    return run
+
+
+__all__ = ["DedicatedRun", "SpineLoopMixin", "run_dedicated_loop"]
