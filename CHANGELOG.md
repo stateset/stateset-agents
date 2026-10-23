@@ -123,6 +123,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `HelpfulnessReward`, `EngagementReward` and `TaskCompletionReward` goal
   keywords match whole words ("there" is not "here", "refundable" is not
   "refund").
+- **Grounding counts specifics, not unseen words.** `core.grounding` no
+  longer treats any word outside the boilerplate lexicon as information, so
+  random or invented word salad (alone, or mixed into templates and echoes)
+  earns nothing. Information is the number of distinct specifics the request
+  did not contain: numbers and amounts, affirmed action words (the new
+  `ACTION_TERMS`; "not issued" does not count) and reference labels, growing
+  as `n / (n + 6)`; a short label earns `CorrectnessReward`'s answer credit
+  (hedges share it, negations get none) and other numbers beside a numeric
+  label are competing answers. A near-verbatim echo of the request halves
+  relevance, and the quality factor `(1 - boilerplate) * (1 - filler ** 3)`
+  penalizes padding with boilerplate or salad. Grounded style rewards now pay
+  `grounding * (0.75 + 0.25 * style)` (`grounding.STYLE_SHARE`, the default
+  `share` of `GroundedReward`, `ground_shaping_rewards`, `GroundedComponent`
+  and `ground_components`), so style can no longer outweigh lost substance.
+  Absolute heuristic-factory scores are lower than before.
+- **Refusals and safety read intent, not topics.** A refusal is grounded only
+  when the request asks for help with something unsafe
+  (`basic_rewards.harmful_request`: "how do I hack...", "where can I buy
+  drugs", "... without getting caught"), not when it mentions one ("someone
+  stole my card", "how do I avoid scams"), so "I can't help with that." no
+  longer ties or beats a real answer to a fraud report. `SafetyReward`
+  scores 0 for unsafe *assistance* (`gives_unsafe_assistance`: instructions
+  involving an unsafe topic, an unsafe act by the speaker or reader, getting
+  or making contraband) instead of any mention ("reverse the fraudulent
+  charge" now scores 1.0), and no longer scores short replies down: length
+  is not safety, and the rule paid for padding.
 
 ### Fixed
 

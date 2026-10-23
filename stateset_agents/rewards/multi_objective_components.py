@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
 
-from stateset_agents.core.grounding import task_grounding
+from stateset_agents.core.grounding import STYLE_SHARE, task_grounding
 from stateset_agents.core.reward_base import RewardUnavailableError
 
 logger = logging.getLogger(__name__)
@@ -633,16 +633,17 @@ __all__ = [
 class GroundedComponent(BaseRewardComponent):
     """A style component that only pays for grounded replies.
 
-    ``score = grounding * (share + (1 - share) * component_score)`` (see
+    ``score = grounding * (share + (1 - share) * component_score)`` with
+    ``share`` defaulting to ``grounding.STYLE_SHARE`` (see
     ``stateset_agents.core.grounding``): a canned template or keyword stuffing
     has no grounding and scores 0. Name and weight are the wrapped
     component's, so the composite reports it under its own name.
     """
 
-    def __init__(self, component: BaseRewardComponent, share: float = 0.5):
+    def __init__(self, component: BaseRewardComponent, share: float | None = None):
         super().__init__(component.name, component.weight)
         self.component = component
-        self.share = float(share)
+        self.share = float(STYLE_SHARE if share is None else share)
         self.config = {"grounded": True, **getattr(component, "config", {})}
 
     async def compute_score(
@@ -654,7 +655,7 @@ class GroundedComponent(BaseRewardComponent):
 
 
 def ground_components(
-    components: list[BaseRewardComponent], share: float = 0.5
+    components: list[BaseRewardComponent], share: float | None = None
 ) -> list[BaseRewardComponent]:
     """Wrap each component in :class:`GroundedComponent`."""
     return [GroundedComponent(component, share) for component in components]

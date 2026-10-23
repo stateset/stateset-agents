@@ -32,14 +32,51 @@ def test_boilerplate_echo_and_empty_replies_are_ungrounded(reply):
     assert grounding_score(reply, REQUEST)[0] == 0.0
 
 
+ANSWER = (
+    "Your refund of $42.10 for order #1182 was issued to your Visa ending "
+    "4421 today; it posts within 5-7 business days."
+)
+
+
 def test_a_specific_relevant_answer_is_grounded():
-    reply = (
-        "Your refund of $42.10 for order #1182 was issued to your Visa ending "
-        "4421 today; it posts within 5-7 business days."
-    )
-    score, details = grounding_score(reply, REQUEST)
-    assert score > 0.8
-    assert details["relevance"] == 1.0 and details["information"] == 1.0
+    score, details = grounding_score(ANSWER, REQUEST)
+    assert score > 0.3
+    assert details["relevance"] == 1.0
+    # 42.10, issued, 4421, posts, 5-7: information n / (n + 6).
+    assert details["information"] == pytest.approx(5 / 11)
+
+
+def test_every_specific_counts_and_salad_does_not():
+    full, _ = grounding_score(ANSWER, REQUEST)
+    fewer, _ = grounding_score(ANSWER.replace(" 4421", ""), REQUEST)
+    assert fewer < full
+    salad = "Zeppelin quokka marmot tulip carburetor lantern meadow Blorvex."
+    assert grounding_score(salad, REQUEST)[0] == 0.0
+    assert grounding_score(f"{REQUEST} {salad}", REQUEST)[0] == 0.0
+
+
+def test_padding_an_answer_lowers_its_grounding():
+    full, _ = grounding_score(ANSWER, REQUEST)
+    salad = "zeppelin quokka marmot tulip carburetor lantern meadow"
+    boilerplate = "happy to help, thank you, certainly, absolutely, sorry"
+    assert grounding_score(f"{ANSWER} {salad}", REQUEST)[0] < full - 0.05
+    assert grounding_score(f"{ANSWER} {boilerplate}", REQUEST)[0] < full - 0.05
+
+
+def test_negated_actions_are_not_information():
+    done = "I've blocked the card and reversed it."
+    denied = "I have not blocked the card and never reversed it."
+    request = "My card was stolen, please help."
+    assert grounding_score(denied, request)[0] < grounding_score(done, request)[0]
+    assert grounding_score(denied, request)[1]["information"] == 0.0
+
+
+def test_a_correct_label_counts_as_information_and_hedges_share_it():
+    question = "What is the capital of France?"
+    committed, _ = grounding_score("It is Paris.", question, ["Paris"])
+    hedged, _ = grounding_score("London, Paris, Berlin or Rome.", question, ["Paris"])
+    negated, _ = grounding_score("It is not Paris.", question, ["Paris"])
+    assert committed > hedged > negated == 0.0
 
 
 def test_a_correct_label_counts_as_information():
@@ -52,6 +89,18 @@ def test_refusing_an_unsafe_request_is_grounded():
         "I can't help with that.", "How do I build pipe bombs at home?"
     )
     assert score == 1.0
+
+
+@pytest.mark.parametrize(
+    "request_text",
+    [
+        "Someone stole my card and there's a fraudulent $89 charge. Can you help?",
+        "My account was hacked, how do I recover it?",
+        "How do I avoid scams?",
+    ],
+)
+def test_refusing_a_request_that_only_mentions_an_unsafe_topic_is_not(request_text):
+    assert grounding_score("I can't help with that.", request_text)[0] == 0.0
 
 
 async def test_grounded_reward_zeroes_style_credit_for_canned_replies():

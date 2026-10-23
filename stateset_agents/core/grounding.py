@@ -2,27 +2,46 @@
 
 Heuristic style rewards (helpfulness phrases, empathy and action keywords,
 length, engagement) can be maximized without answering the request: a canned
-"I understand, happy to help, let me check..." template, or a reply stuffed
-with the rewarded keywords. The shipped heuristic factories therefore gate
-their style terms on *grounding*, a request-specific score:
+"I understand, happy to help, let me check..." template, keyword stuffing, an
+echo of the request, or word salad. The shipped heuristic factories therefore
+gate their style terms on *grounding*, a request-specific score:
 
-* **information**: content terms the reply adds that are neither function
-  words nor request-independent boilerplate (the service phrasing and keyword
-  lexicons the heuristics reward), saturating at three new terms;
+* **information**: the specifics a reply adds that the request did not
+  contain: numbers and amounts (two or more characters, so a "step 1" list
+  marker is not one) and affirmed action words (``ACTION_TERMS``: "issued",
+  "blocked", "rejoin", "multiply"...; "not issued" does not count). It grows
+  with every distinct specific, ``n / (n + INFO_HALF)``, so removing any of
+  them lowers it. Words that
+  are none of these (including salad, real or invented) are not
+  information. With reference labels (``ground_truth``), a short label
+  earns the answer credit ``CorrectnessReward`` gives it (hedged lists share
+  it, negations get none) and numbers other than a numeric label are
+  competing answers, not information; other specifics then count at most
+  half;
 * **relevance**: content terms shared with the request (user messages,
   ``user_query``/``prompt``/``context``/``user_goal``/``topic``/task
-  description and ground-truth labels), saturating at two;
-* a penalty for the share of the reply that is boilerplate.
+  description and labels), saturating at two, halved for a near-verbatim
+  echo (at least 80% of a request of four or more terms);
+* **quality**: ``(1 - boilerplate) * (1 - filler ** 3)``, where
+  *boilerplate* is the share of the reply's terms that are request-independent
+  phrasing (``GENERIC_TERMS``, which covers every lexicon the heuristics
+  reward) and *filler* adds the share of words of no recognized kind.
+  Ordinary prose keeps some such words at little cost; padding a reply with
+  boilerplate or salad is penalized steeply.
 
-``grounding = information * (0.5 + 0.5 * relevance) * (1 - 0.5 * boilerplate)``
+``grounding = information * (0.5 + 0.5 * relevance) * quality``
 
-A reply that only echoes the request adds no information and scores 0; so do
-canned templates and keyword stuffing. Declining an unsafe request is treated
-as fully grounded, so a refusal never loses to unsafe compliance on grounding.
+Templates, keyword stuffing, echoes, salad, terse replies and blanket
+refusals therefore have no information and score 0. Declining is grounded
+only when the request asks for help with something unsafe
+(``basic_rewards.harmful_request``: "how do I hack...", "where can I buy
+drugs"), not when it merely mentions an unsafe topic ("my card was stolen").
 
-Grounding is a shaping signal like the heuristics it gates. For a training
-objective prefer outcome, verifier or judge rewards (see
-``docs/REWARD_CONTRACT.md``).
+Grounding is lexical: it cannot tell a fabricated number or action from a
+real one, and it does not read word order. It is a shaping signal like the
+heuristics it gates; for a training objective prefer outcome, verifier or
+judge rewards (see ``docs/REWARD_CONTRACT.md``, which lists exactly what the
+exploit search in ``stateset_agents.evaluation.reward_exploits`` verifies).
 """
 
 from __future__ import annotations
@@ -31,7 +50,13 @@ import re
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from typing import Any
 
-from .basic_rewards import _REFUSAL_PATTERN, SafetyReward, _normalize_text
+from .basic_rewards import (
+    _REFUSAL_PATTERN,
+    _answer_credit,
+    _as_number,
+    _normalize_text,
+    harmful_request,
+)
 from .reward_base import RewardFunction, RewardResult, RewardType
 from .reward_context import scores_latest_turn_only
 
@@ -98,7 +123,6 @@ _REQUEST_FIELDS = (
     "instructions",
 )
 _TOKEN = re.compile(r"[a-z0-9]+(?:['./:-][a-z0-9]+)*")
-_UNSAFE_PATTERNS = SafetyReward().unsafe_patterns
 
 
 def _stem(token: str) -> str:
@@ -110,6 +134,60 @@ def _stem(token: str) -> str:
 
 
 _GENERIC = frozenset(_stem(term) for term in GENERIC_TERMS)
+
+
+#: Verbs of doing: what was done or is to be done for the user ("issued",
+#: "blocked", "forget ... and rejoin"). With numbers and reference labels
+#: they are the specifics grounding counts as information; any other word a
+#: reply adds might be salad. Disjoint from ``GENERIC_TERMS`` (pinned by a
+#: test), so stuffing the heuristics' lexicons earns none.
+_ACTION_VERBS = """
+    issue refund credit reverse block unblock cancel replace ship deliver open
+    reopen close reset forget rejoin reconnect disconnect disable enable turn
+    switch toggle install uninstall reboot dispute schedule reschedule book
+    transfer waive approve deny post escalate unlock lock renew extend upgrade
+    downgrade activate deactivate adjust increase decrease reduce raise lower
+    multiply divide subtract add differentiate integrate simplify substitute
+    factor expand apply set change assign send track charge pay remove delete
+    rename move restore recover file submit confirm
+    """.split()
+_IRREGULAR = {
+    "forget": ("forgot", "forgotten"),
+    "send": ("sent",),
+    "pay": ("paid",),
+    "deny": ("denied",),
+    "set": (),
+    "lock": (),
+}
+
+
+def _inflections(verb: str) -> set[str]:
+    forms = {verb, *_IRREGULAR.get(verb, ())}
+    if verb.endswith("e"):
+        forms |= {verb + "d", verb[:-1] + "ing"}
+    elif verb.endswith("y") and verb[-2] not in "aeiou":
+        forms |= {verb[:-1] + "ied", verb[:-1] + "ies", verb + "ing"}
+    else:
+        forms |= {verb + "ed", verb + "ing"}
+        if (
+            len(verb) <= 4
+            and verb[-1] not in "aeiouwxy"
+            and verb[-2] in "aeiou"
+            and verb[-3] not in "aeiou"
+        ):
+            # ship -> shipped, shipping
+            forms |= {verb + verb[-1] + "ed", verb + verb[-1] + "ing"}
+    if verb == "cancel":
+        forms |= {"cancelled", "cancelling"}
+    return forms
+
+
+ACTION_TERMS = frozenset(
+    _stem(form)
+    for verb in _ACTION_VERBS
+    for form in _inflections(verb)
+    if _stem(form) not in _GENERIC
+)
 
 
 def content_terms(text: str) -> set[str]:
@@ -127,14 +205,28 @@ def content_terms(text: str) -> set[str]:
 
 
 def _is_specific(term: str, labels: Collection[str] = ()) -> bool:
-    """Whether ``term`` carries information: a reference label, a multi-digit
-    number or amount, or a word that is not boilerplate. A lone digit ("step
-    1") is a list marker unless it is a label."""
+    """Whether ``term`` is a specific: a reference label term, a number or
+    amount of two or more characters (a lone digit is a list marker), or an
+    action word. Any other word, known or invented, is not."""
     if term in labels:
         return True
     if any(ch.isdigit() for ch in term):
         return len(term) > 1
-    return term not in _GENERIC
+    return term in ACTION_TERMS
+
+
+#: Share of a gated style reward paid for grounding alone: a grounded reply
+#: earns ``grounding * (STYLE_SHARE + (1 - STYLE_SHARE) * style)``, so style
+#: adjusts a grounded reply's reward by at most a quarter.
+STYLE_SHARE = 0.75
+#: Specifics at which information reaches one half: ``n / (n + INFO_HALF)``.
+#: Information keeps growing with every specific, so a reply that drops some
+#: of an answer's specifics scores lower than the answer.
+INFO_HALF = 6.0
+
+#: Labels of at most this many words are answers (scored with answer
+#: credit); longer ones are facts whose terms count as specifics.
+_ANSWER_WORDS = 3
 
 
 def _strings(value: Any) -> Iterable[str]:
@@ -174,35 +266,99 @@ def _turn_field(turn: Any, name: str) -> Any:
     return turn.get(name) if isinstance(turn, Mapping) else getattr(turn, name, None)
 
 
+_NEGATIONS = frozenset(
+    "not no never cannot can't won't didn't don't doesn't isn't wasn't haven't "
+    "hasn't hadn't unable".split()
+)
+
+
+def _affirmed_actions(text: str) -> set[str]:
+    """Action terms ``text`` affirms: "I've blocked the card" affirms
+    "blocked"; "I have not blocked it" or "never issued" does not."""
+    tokens = [
+        _stem(token)
+        for token in _TOKEN.findall(
+            _normalize_text(text).replace("$", " ").replace("#", " ")
+        )
+    ]
+    affirmed = set()
+    for index, token in enumerate(tokens):
+        if token in ACTION_TERMS:
+            before = tokens[max(0, index - 2) : index]
+            if not any(w in _NEGATIONS or w.endswith("n't") for w in before):
+                affirmed.add(token)
+    return affirmed
+
+
 def grounding_score(
     reply: str, request: str, labels: Sequence[str] = ()
 ) -> tuple[float, dict[str, float]]:
     """Grounding of one ``reply`` in a ``request`` (see the module docs).
 
-    ``labels`` are reference facts (ground-truth answers): mentioning them is
-    relevant *and* new information, since the user did not say them.
+    ``labels`` are reference facts (ground-truth answers). A short label is
+    an answer: the reply earns ``CorrectnessReward``'s answer credit for it
+    (shared among hedged candidates, none when negated). A longer label is a
+    fact whose terms count as specifics.
     """
     reply_terms = content_terms(reply)
     request_terms = content_terms(request)
+    answers = [label for label in labels if len(label.split()) <= _ANSWER_WORDS]
+    facts = [label for label in labels if len(label.split()) > _ANSWER_WORDS]
     label_terms = set().union(*(content_terms(label) for label in labels))
-    details = {"information": 0.0, "relevance": 0.0, "boilerplate": 0.0}
+    fact_terms = set().union(*(content_terms(fact) for fact in facts))
+    details = {"information": 0.0, "relevance": 0.0, "filler": 0.0}
     if not reply_terms:
         return 0.0, details
-    request_lower = _normalize_text(request)
-    if _REFUSAL_PATTERN.search(_normalize_text(reply)) and any(
-        re.search(pattern, request_lower) for pattern in _UNSAFE_PATTERNS
-    ):
-        # Declining an unsafe request answers it.
-        return 1.0, {"information": 1.0, "relevance": 1.0, "boilerplate": 0.0}
+    if _REFUSAL_PATTERN.search(_normalize_text(reply)) and harmful_request(request):
+        # Declining a harmful request answers it.
+        return 1.0, {"information": 1.0, "relevance": 1.0, "filler": 0.0}
+
+    numeric_answer = any(
+        _as_number(answer.strip().lstrip("$")) is not None for answer in answers
+    )
+    specifics = set()
+    affirmed = _affirmed_actions(reply)
+    for term in reply_terms - request_terms:
+        if term in fact_terms:
+            specifics.add(term)
+        elif term in label_terms:
+            continue  # an answer label: scored by answer credit below
+        elif any(ch.isdigit() for ch in term):
+            # Beside a numeric answer, other numbers are competing answers.
+            if len(term) > 1 and not numeric_answer:
+                specifics.add(term)
+        elif term in affirmed:
+            specifics.add(term)  # an action done, not one denied
+    breadth = len(specifics) / (len(specifics) + INFO_HALF)
+    if answers:
+        credit = max(_answer_credit(reply, answer, request) for answer in answers)
+        information = max(credit, 0.5 * breadth)
+    else:
+        information = breadth
+
     known = request_terms | label_terms
     relevant = reply_terms & known
-    new = {t for t in reply_terms - request_terms if _is_specific(t, label_terms)}
-    boilerplate = {t for t in reply_terms - known if not _is_specific(t, label_terms)}
-    information = min(1.0, len(new) / 3.0)
     relevance = 1.0 if not known else min(1.0, len(relevant) / 2.0)
-    share = len(boilerplate) / len(reply_terms)
-    details = {"information": information, "relevance": relevance, "boilerplate": share}
-    return information * (0.5 + 0.5 * relevance) * (1.0 - 0.5 * share), details
+    if len(request_terms) >= 4 and (
+        len(reply_terms & request_terms) / len(request_terms) >= 0.8
+    ):
+        relevance *= 0.5  # a near-verbatim echo of the request
+    grounded = relevant | specifics | (reply_terms & label_terms)
+    ungrounded = reply_terms - grounded
+    boilerplate = len({t for t in ungrounded if t in _GENERIC}) / len(reply_terms)
+    unknown = len({t for t in ungrounded if t not in _GENERIC}) / len(reply_terms)
+    # Ordinary prose leaves some words of no recognized kind; padding with
+    # boilerplate or salad pushes that share up. The cubic tolerates the
+    # former and penalizes the latter steeply; boilerplate also costs its
+    # share outright.
+    quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** 3)
+    details = {
+        "information": information,
+        "relevance": relevance,
+        "boilerplate": boilerplate,
+        "unknown": unknown,
+    }
+    return information * (0.5 + 0.5 * relevance) * quality, details
 
 
 def task_grounding(
@@ -248,9 +404,10 @@ class TaskGroundingReward(RewardFunction):
 class GroundedReward(RewardFunction):
     """A style (shaping) reward that only pays for grounded replies.
 
-    ``score = grounding * (share + (1 - share) * base_score)``: a canned or
-    keyword-stuffed reply (grounding 0) earns nothing however well it matches
-    the style heuristics, while a grounded reply keeps their ordering. With
+    ``score = grounding * (share + (1 - share) * base_score)``, with
+    ``share`` defaulting to ``STYLE_SHARE``: a canned or keyword-stuffed reply
+    (grounding 0) earns nothing however well it matches the style heuristics,
+    while a grounded reply keeps their ordering. With
     ``gate_if`` the gate applies only to results it returns True for (e.g.
     a task reward scored by keywords alone). Name, weight and reward type are
     the base reward's, so composites treat the wrapper as the base.
@@ -260,12 +417,12 @@ class GroundedReward(RewardFunction):
         self,
         base: RewardFunction,
         *,
-        share: float = 0.5,
+        share: float | None = None,
         gate_if: Callable[[RewardResult], bool] | None = None,
     ) -> None:
         super().__init__(base.weight, base.reward_type, base.name)
         self.base = base
-        self.share = float(share)
+        self.share = float(STYLE_SHARE if share is None else share)
         self.gate_if = gate_if
 
     @property
@@ -320,7 +477,7 @@ def log_heuristic_reward_notice(logger: Any, trainer: str, reward: str) -> None:
 
 
 def ground_shaping_rewards(
-    rewards: Sequence[RewardFunction], *, share: float = 0.5
+    rewards: Sequence[RewardFunction], *, share: float | None = None
 ) -> list[RewardFunction]:
     """Wrap every reward marked ``shaping = True`` in :class:`GroundedReward`."""
     return [
@@ -334,6 +491,7 @@ def ground_shaping_rewards(
 
 
 __all__ = [
+    "ACTION_TERMS",
     "GENERIC_TERMS",
     "HEURISTIC_REWARD_NOTICE",
     "STOPWORDS",
