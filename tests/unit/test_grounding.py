@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 
 import pytest
 
@@ -42,8 +43,9 @@ def test_a_specific_relevant_answer_is_grounded():
     score, details = grounding_score(ANSWER, REQUEST)
     assert score > 0.3
     assert details["relevance"] == 1.0
-    # 42.10, issued, 4421, posts, 5-7: information n / (n + 6).
-    assert details["information"] == pytest.approx(5 / 11)
+    # 42.10, issued, 4421, posts, 5-7: five units, 1 - exp(-units / 8).
+    assert details["specifics"] == 5
+    assert details["information"] == pytest.approx(1 - math.exp(-5 / 8))
 
 
 def test_every_specific_counts_and_salad_does_not():
@@ -71,12 +73,16 @@ def test_negated_actions_are_not_information():
     assert grounding_score(denied, request)[1]["information"] == 0.0
 
 
-def test_a_correct_label_counts_as_information_and_hedges_share_it():
+def test_a_correct_label_counts_as_information_and_hedges_earn_no_credit():
     question = "What is the capital of France?"
     committed, _ = grounding_score("It is Paris.", question, ["Paris"])
-    hedged, _ = grounding_score("London, Paris, Berlin or Rome.", question, ["Paris"])
+    hedged, details = grounding_score(
+        "London, Paris, Berlin or Rome.", question, ["Paris"]
+    )
     negated, _ = grounding_score("It is not Paris.", question, ["Paris"])
-    assert committed > hedged > negated == 0.0
+    wrong, _ = grounding_score("It is Lyon.", question, ["Paris"])
+    assert committed > 0.5
+    assert hedged < 0.05 and negated == 0.0 and wrong == 0.0
 
 
 def test_a_correct_label_counts_as_information():

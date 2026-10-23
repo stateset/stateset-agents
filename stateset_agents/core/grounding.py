@@ -47,15 +47,17 @@ exploit search in ``stateset_agents.evaluation.reward_exploits`` verifies).
 
 from __future__ import annotations
 
+import functools
+import math
 import re
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from typing import Any
 
 from .basic_rewards import (
-    _REFUSAL_PATTERN,
     _answer_credit,
     _as_number,
     _normalize_text,
+    declines,
     harmful_request,
 )
 from .reward_base import RewardFunction, RewardResult, RewardType
@@ -212,6 +214,15 @@ def content_terms(text: str) -> set[str]:
     return terms
 
 
+_DIGIT = re.compile(r"\d")
+
+
+def _is_number(term: str) -> bool:
+    """A number or amount of two or more characters ("42.10", "5-7", "16gb");
+    a lone digit is a list marker, not a specific."""
+    return len(term) > 1 and _DIGIT.search(term) is not None
+
+
 def _is_specific(term: str, labels: Collection[str] = ()) -> bool:
     """Whether ``term`` is a specific: a reference label term, a number or
     amount of two or more characters (a lone digit is a list marker), or an
@@ -227,10 +238,46 @@ def _is_specific(term: str, labels: Collection[str] = ()) -> bool:
 #: earns ``grounding * (STYLE_SHARE + (1 - STYLE_SHARE) * style)``, so style
 #: adjusts a grounded reply's reward by at most a quarter.
 STYLE_SHARE = 0.75
-#: Specifics at which information reaches one half: ``n / (n + INFO_HALF)``.
-#: Information keeps growing with every specific, so a reply that drops some
-#: of an answer's specifics scores lower than the answer.
-INFO_HALF = 6.0
+#: Scale of information: ``1 - exp(-units / INFO_SCALE)``. Information keeps
+#: growing with every unit, so a reply that drops any of an answer's content
+#: scores lower, and saturates, so piling on content gains less and less.
+INFO_SCALE = 8.0
+#: Weight of echoed tokens: copying the request costs twice its share.
+ECHO_WEIGHT = 2.0
+#: Weight of the off-request share: content in clauses tied to nothing in the
+#: request (fluent padding, an appended answer to another question) costs
+#: its share.
+OFF_REQUEST_WEIGHT = 1.0
+#: Mentions of one request term beyond this many are repetition.
+TERM_MENTIONS = 2
+#: Units for answering the question's type (a name for "who", a cause for
+#: "why", steps for "how", a number for "how many", "yes"/"no", a
+#: definition for "what is"); at most ``MAX_TYPES`` types count.
+TYPE_UNITS = 2.0
+MAX_TYPES = 2
+#: Units per distinct instruction step a reply gives, up to ``STEP_CAP``.
+STEP_UNITS = 0.5
+STEP_CAP = 4
+#: Units per distinct new content word in an anchored clause (elaboration),
+#: up to ``ELABORATION_CAP`` words: a little credit for explaining, capped so
+#: piling on words (salad included) cannot buy information.
+ELABORATION_UNITS = 0.25
+ELABORATION_CAP = 4
+#: How many clauses one request term anchors: the first at full weight, the
+#: second at half; repeating a term to anchor more clauses earns nothing.
+ANCHOR_WEIGHTS = (1.0, 0.5)
+#: Weight of an anchor that is request-independent phrasing ("order",
+#: "help", "due" in the request): it ties a clause to the request half as
+#: strongly as a term of its own ("#5521", "derivative").
+GENERIC_ANCHOR = 0.5
+#: Clauses a continuation ("..., then ...", "It ...") carries an anchor into.
+INHERIT_DEPTH = 2
+#: Runs copied from the request of at least half its tokens (and at least
+#: this many), or four fifths of a request this short or shorter, are echo.
+ECHO_RUN = 6
+#: Repeated runs of this many tokens (after their first occurrence) are
+#: duplication.
+REPEAT_RUN = 4
 
 #: Labels of at most this many words are answers (scored with answer
 #: credit); longer ones are facts whose terms count as specifics.
@@ -250,17 +297,34 @@ def _strings(value: Any) -> Iterable[str]:
             yield from _strings(item)
 
 
+#: Context fields that hold evidence the conversation produced or was given:
+#: tool outputs, observations, retrieved facts. A specific found here is
+#: supported wherever the reply states it.
+_EVIDENCE_FIELDS = (
+    "observations",
+    "observation",
+    "tool_outputs",
+    "tool_results",
+    "retrieved",
+    "retrieved_facts",
+    "retrieved_documents",
+    "documents",
+    "knowledge",
+    "evidence",
+    "facts",
+    "correct_facts",
+)
+#: Turn roles whose content is evidence rather than a request or a reply.
+EVIDENCE_ROLES = frozenset({"tool", "function", "observation", "system", "ipython"})
+
+
 def _request_texts(context: Mapping[str, Any] | None) -> tuple[list[str], list[str]]:
     """Request descriptions and ground-truth labels found in a reward context."""
     if not isinstance(context, Mapping):
         return [], []
-    sources = [context]
-    for nested in ("scenario", "task"):
-        if isinstance(context.get(nested), Mapping):
-            sources.append(context[nested])
     texts: list[str] = []
     labels: list[str] = []
-    for source in sources:
+    for source in _context_sources(context):
         for field in _REQUEST_FIELDS:
             value = source.get(field)
             if isinstance(value, str):
@@ -268,6 +332,25 @@ def _request_texts(context: Mapping[str, Any] | None) -> tuple[list[str], list[s
         labels.extend(_strings(source.get("ground_truth")))
         labels.extend(_strings(source.get("correct_facts")))
     return texts, labels
+
+
+def _context_sources(context: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    sources = [context]
+    for nested in ("scenario", "task"):
+        if isinstance(context.get(nested), Mapping):
+            sources.append(context[nested])
+    return sources
+
+
+def _evidence_texts(context: Mapping[str, Any] | None) -> list[str]:
+    """Evidence strings (tool outputs, observations, facts) in a context."""
+    if not isinstance(context, Mapping):
+        return []
+    found: list[str] = []
+    for source in _context_sources(context):
+        for field in _EVIDENCE_FIELDS:
+            found.extend(_strings(source.get(field)))
+    return found
 
 
 def _turn_field(turn: Any, name: str) -> Any:
@@ -279,114 +362,693 @@ _NEGATIONS = frozenset(
     "hasn't hadn't unable".split()
 )
 
+#: A token (as ``_TOKEN`` reads it, any case), optionally called ("f("), or a
+#: clause separator.
+_PIECE = re.compile(
+    r"(?P<tok>[A-Za-z0-9]+(?:['./:-][A-Za-z0-9]+)*)(?P<call>\()?"
+    r"|(?P<sep>[,;()\[\]\n]|:(?=\s|$)|[.!?]+)"
+)
+#: Separators that end a sentence (the others end a clause).
+_SENTENCE_SEPARATORS = frozenset(".!?\n")
+#: Clause openers that continue the clause before them, and sentence openers
+#: that refer back to the sentence before.
+_CONTINUATIONS = frozenset(
+    "and then which who whom whose where that so but while to with by for "
+    "because since after before until or plus also thus hence via using if "
+    "when once unless as".split()
+)
+_ANAPHORS = frozenset(
+    "it its it's this that these those they their them there he she his her "
+    "both each".split()
+)
+#: Words that only mark a reply as offering steps or an answer, not content.
+_CAUSAL = re.compile(
+    r"\b(?:because|since|due to|caused by|causes?|so that|so|therefore|thus|"
+    r"hence|as a result|which means|that's why|that is why|the reason)\b"
+)
+#: Verbs that open an instruction ("Open a connection", "Put the camera on").
+#: Boilerplate verbs ("try", "check", "click", "restart") are not steps.
+INSTRUCTION_VERBS = frozenset(
+    _stem(word)
+    for word in """
+    open create call use run find put loop read format get fetch stop force
+    press select type enter go choose make write import save copy paste start
+    pick keep mount hold wait list search pass print replace iterate convert
+    parse compute measure mix heat cook plug unplug connect insert tap swipe
+    scroll drag drop sort filter group join split wrap define declare return
+    attach detach upload download edit remove delete rename move set add
+    install uninstall enable disable turn switch toggle forget rejoin reset
+    reboot multiply divide subtract differentiate integrate simplify
+    substitute factor expand apply lower raise increase decrease reduce
+    lock unlock close kill shoot execute point focus mount frame expose
+    """.split()
+)
+#: An instruction: a verb opening a clause or following "and", "then",
+#: "first", ... or "you can/should/need to".
+_STEP = re.compile(
+    r"(?:^|\b(?:and|then|first|next|finally|also|just|now)\s+|"
+    r"\byou (?:can|could|should|need to|have to|'ll need to|will need to|must)"
+    r"\s+)(?P<verb>[a-z]+)\b"
+)
+#: A location phrase answering "where" ("at your local depot", "in Denver").
+_PLACE = re.compile(
+    r"\b(?:at|in|on|near|inside|outside|behind|under|from|to|into)\s+"
+    r"(?:the|a|an|your|our|their|its)?\s*[a-z]"
+)
+_COPULAS = frozenset(
+    "is are was were be equals equal means mean has have includes include "
+    "costs cost features contains comes ships".split()
+)
+_YES_NO_OPENERS = frozenset(
+    "is are was were do does did can could will would should has have".split()
+)
+_YES_NO_ANSWERS = frozenset("yes no yeah yep nope".split())
 
-#: Clause boundaries; a period inside a number ("42.10") is not one.
-_CLAUSE = re.compile(r"[,;:!?()\n]|\.(?!\d)")
+
+class _Clause:
+    """One clause of a reply: its tokens and how it attaches to the last."""
+
+    __slots__ = ("raw", "low", "stems", "calls", "sep", "starts_sentence", "index")
+
+    def __init__(self, sep: str, starts_sentence: bool, index: int) -> None:
+        self.raw: list[str] = []
+        self.low: list[str] = []
+        self.stems: list[str] = []
+        self.calls: list[bool] = []
+        self.sep = sep
+        self.starts_sentence = starts_sentence
+        self.index = index
+
+    def content(self) -> list[str]:
+        """Stems of the clause's content tokens (no function words)."""
+        return [
+            stem
+            for low, stem in zip(self.low, self.stems, strict=True)
+            if low not in STOPWORDS and (len(low) > 1 or low.isdigit())
+        ]
 
 
-def _stated_specifics(text: str) -> set[str]:
-    """Numbers and action words ``text`` states in context.
-
-    A number of two or more characters, or an action word, counts only in a
-    clause that also has a word of another kind (an object or subject such as
-    "refund", "card", "battery"); a bare list of numbers or of verbs
-    ("4093 8812 7741", "issued, blocked, reversed") states nothing. An action
-    is also not stated when a negation precedes it ("not issued", "never
-    blocked").
-    """
-    stated: set[str] = set()
-    for clause in _CLAUSE.split(_plain(text)):
-        tokens = [_stem(token) for token in _TOKEN.findall(clause)]
-        anchored = any(
-            token not in STOPWORDS
-            and token not in ACTION_TERMS
-            and token not in _GENERIC
-            and token not in _NEGATIONS
-            and not any(ch.isdigit() for ch in token)
-            for token in tokens
-        )
-        if not anchored:
+def _clauses(text: str) -> list[_Clause]:
+    """``text`` split into clauses, each remembering its separator."""
+    text = text.replace("’", "'").replace("‘", "'")
+    text = _THOUSANDS.sub("", text)
+    clauses: list[_Clause] = []
+    current = _Clause("", True, 0)
+    for match in _PIECE.finditer(text):
+        token = match.group("tok")
+        if token:
+            current.raw.append(token)
+            current.low.append(token.lower())
+            current.stems.append(_stem(token.lower()))
+            current.calls.append(match.group("call") is not None)
             continue
-        for index, token in enumerate(tokens):
-            if any(ch.isdigit() for ch in token):
-                if len(token) > 1:
-                    stated.add(token)
-            elif token in ACTION_TERMS:
-                before = tokens[max(0, index - 2) : index]
-                if not any(w in _NEGATIONS or w.endswith("n't") for w in before):
-                    stated.add(token)
-    return stated
+        separator = match.group("sep")[0]
+        boundary = separator in _SENTENCE_SEPARATORS
+        if current.raw:
+            clauses.append(current)
+            current = _Clause(separator, boundary, len(clauses))
+        else:
+            current.sep = separator if current.sep == "" else current.sep
+            current.starts_sentence = current.starts_sentence or boundary
+    if current.raw:
+        clauses.append(current)
+    return clauses
+
+
+def _token_parts(stem: str) -> set[str]:
+    """A token and its dotted/hyphenated parts ("sqlite3.connect")."""
+    parts = {stem}
+    if any(ch in stem for ch in "./:-"):
+        parts |= {_stem(part) for part in re.split(r"[./:-]", stem) if part}
+    return parts
+
+
+def _anchor_weights(clauses: Sequence[_Clause], anchors: set[str]) -> list[float]:
+    """How strongly each clause is tied to the request (0 = not at all).
+
+    A clause naming a request term is anchored and uses up one of its terms:
+    the first clause a term anchors gets ``ANCHOR_WEIGHTS[0]``, the next
+    ``ANCHOR_WEIGHTS[1]``, later ones nothing, so repeating a request term to
+    anchor more clauses earns nothing. (A clause takes the best weight its
+    terms offer and uses up the term it needs least later on.) A clause
+    without a request term inherits the weight of the clause before it when
+    it continues it -- after a comma or a parenthesis, or when it opens with
+    a continuation ("then", "which", "and") or, at a sentence start, a
+    reference back ("It", "This") -- for at most ``INHERIT_DEPTH`` clauses.
+    Anything else, including clauses after a semicolon or colon, stands
+    alone: off-topic specifics written beside a request term ("What
+    derivative: card 4093 blocked; ...") are not anchored.
+    """
+    named = []
+    for clause in clauses:
+        terms: set[str] = set()
+        for stem in clause.content():
+            terms |= _token_parts(stem) & anchors
+        named.append(terms)
+    later = {term: sum(term in terms for terms in named) for term in anchors}
+    uses: dict[str, int] = {}
+    weights: list[float] = []
+    previous, depth = 0.0, 0
+    for clause, terms in zip(clauses, named, strict=True):
+        for term in terms:
+            later[term] -= 1
+        open_terms = [t for t in terms if uses.get(t, 0) < len(ANCHOR_WEIGHTS)]
+        if open_terms:
+            term = min(
+                open_terms,
+                key=lambda t: (t in _GENERIC, uses.get(t, 0), later[t], t),
+            )
+            best = ANCHOR_WEIGHTS[uses.get(term, 0)]
+            if term in _GENERIC:
+                best *= GENERIC_ANCHOR
+            uses[term] = uses.get(term, 0) + 1
+            weights.append(best)
+            previous, depth = best, 0
+            continue
+        opener = clause.low[0] if clause.low else ""
+        continues = (
+            clause.sep in ",()[]"
+            or opener in _CONTINUATIONS
+            or opener in _ANAPHORS
+        )
+        if previous and continues and depth < INHERIT_DEPTH:
+            depth += 1
+            weights.append(previous)
+        else:
+            previous, depth = 0.0, 0
+            weights.append(0.0)
+    # A sentence may lead with its setting before naming the request term
+    # ("Sunlight scatters off the air, and blue light ..."): clauses joined
+    # by commas to an anchored clause after them share its anchor, up to
+    # ``INHERIT_DEPTH`` back.
+    for index in range(len(clauses) - 1, 0, -1):
+        if weights[index] and not weights[index - 1]:
+            joined, back = index, 0
+            while (
+                joined > 0
+                and back < INHERIT_DEPTH
+                and clauses[joined].sep in ",()[]"
+                and not weights[joined - 1]
+            ):
+                weights[joined - 1] = weights[index]
+                joined, back = joined - 1, back + 1
+    return weights
+
+
+def _negated(clause: _Clause, index: int) -> bool:
+    before = clause.low[max(0, index - 2) : index]
+    return any(word in _NEGATIONS or word.endswith("n't") for word in before)
+
+
+def _code_like(clause: _Clause, index: int) -> bool:
+    """An identifier, call or file name ("sqlite3.connect", "fetchall(",
+    "draft.txt"): specific in a technical answer."""
+    low = clause.low[index]
+    if clause.calls[index] and len(low) > 2:
+        return True
+    parts = [part for part in re.split(r"[.]", low) if part]
+    return (
+        len(parts) > 1
+        and len(low) >= 5
+        and all(part[:1].isalpha() for part in parts)
+        and max(len(part) for part in parts) >= 3
+    )
+
+
+def _clause_specifics(
+    clause: _Clause, exclude: set[str], numbers_are_answers: bool
+) -> list[str]:
+    """The specifics a clause states: numbers, affirmed actions and code.
+
+    A clause without function words is a list item and states at most one
+    specific; a lone list of numbers or verbs states nothing.
+    """
+    found: list[str] = []
+    for index, (low, stem) in enumerate(zip(clause.low, clause.stems, strict=True)):
+        if low in STOPWORDS or stem in exclude or stem in found:
+            continue
+        if _is_number(stem):
+            if not numbers_are_answers:
+                found.append(stem)
+        elif stem in ACTION_TERMS:
+            if not _negated(clause, index):
+                found.append(stem)
+        elif _code_like(clause, index) and stem not in _GENERIC:
+            found.append(stem)
+    carriers = [
+        stem
+        for stem in clause.content()
+        if stem not in found and not _is_number(stem) and stem not in ACTION_TERMS
+    ]
+    has_function_word = any(low in STOPWORDS for low in clause.low)
+    if not carriers and not has_function_word:
+        return []  # a bare list of numbers or verbs states nothing
+    if not has_function_word:
+        return found[:1]  # a list item ("card 4093 blocked")
+    return found
+
+
+def _answer_types(question: str) -> set[str]:
+    """What kind of answer ``question`` asks for (see ``TYPE_UNITS``)."""
+    text = _normalize_text(question)
+    types: set[str] = set()
+    if re.search(r"\bhow (?:many|much|long|old|far|often|big|tall|fast)\b", text):
+        types.add("quantity")
+    elif re.search(r"\b(?:when|what (?:year|time|date|day))\b", text):
+        types.add("quantity")
+    if re.search(r"\b(?:cost|costs|price|priced)\b", text):
+        types.add("quantity")
+    if re.search(r"\b(?:who|whom|whose)\b", text):
+        types.add("entity")
+    if re.search(r"\bwhere\b", text):
+        types.add("place")
+    if re.search(r"\bwhy\b", text):
+        types.add("reason")
+    if re.search(
+        r"\bhow (?:do|does|can|could|should|would|to|i|we|you)\b"
+        r"|\bwhat (?:\w+ ){0,3}(?:should|do|can) (?:i|we)\b"
+        r"|\b(?:steps|instructions) (?:to|for)\b",
+        text,
+    ):
+        types.add("procedure")
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", text) if s.strip()]
+    if any(s.split()[0] in _YES_NO_OPENERS for s in sentences if s.split()):
+        types.add("yes_no")
+    if re.search(r"\b(?:what|which)\b", text) and not types - {"yes_no"}:
+        types.add("definition")
+    return types
+
+
+class _Reading:
+    """A reply read against a request: clauses, anchors and specifics."""
+
+    def __init__(
+        self,
+        reply: str,
+        request_terms: set[str],
+        exclude: set[str],
+        numbers_are_answers: bool,
+        anchors: set[str] | None = None,
+    ) -> None:
+        self.clauses = _clauses(reply)
+        self.request_terms = request_terms
+        anchors = request_terms if anchors is None else anchors
+        self.weights = _anchor_weights(self.clauses, anchors)
+        self.specifics = [
+            _clause_specifics(clause, exclude, numbers_are_answers)
+            for clause in self.clauses
+        ]
+
+    def anchored(self) -> list[_Clause]:
+        return [c for c, w in zip(self.clauses, self.weights, strict=True) if w]
+
+    def new_words(self, clause: _Clause) -> list[str]:
+        """Content words of an anchored clause that are neither request
+        terms, boilerplate nor specifics."""
+        specifics = set(self.specifics[clause.index])
+        return [
+            stem
+            for stem in clause.content()
+            if stem not in self.request_terms
+            and stem not in _GENERIC
+            and stem not in specifics
+            and stem not in _NEGATIONS
+            and not _is_number(stem)
+            and stem not in ACTION_TERMS
+        ]
+
+    def entities(self) -> set[str]:
+        """Capitalized names in anchored clauses that the request lacks."""
+        names = set()
+        for clause in self.anchored():
+            for index, raw in enumerate(clause.raw):
+                stem = clause.stems[index]
+                if not raw[:1].isupper() or raw.isupper() and len(raw) < 2:
+                    continue
+                if clause.low[index] in STOPWORDS or stem in self.request_terms:
+                    continue
+                if stem in _GENERIC:
+                    continue
+                first = clause.starts_sentence and index == 0
+                following = clause.raw[index + 1] if index + 1 < len(clause.raw) else ""
+                if not first or following[:1].isupper():
+                    names.add(stem)
+        return names
+
+    def steps(self) -> int:
+        """Distinct anchored instructions: a clause opening with an
+        instruction verb (after "then", "first", ...) or "you can/should
+        <verb>", that names something new."""
+        found = set()
+        for clause in self.anchored():
+            if not (self.new_words(clause) or self.specifics[clause.index]):
+                continue
+            text = " ".join(clause.low)
+            for match in _STEP.finditer(text):
+                verb = _stem(match.group("verb"))
+                if verb in INSTRUCTION_VERBS:
+                    found.add((verb, clause.index, match.start()))
+        return len(found)
+
+    def type_satisfied(self, kind: str) -> bool:
+        anchored = self.anchored()
+        if kind == "quantity":
+            return any(
+                _is_number(s) for c in anchored for s in self.specifics[c.index]
+            )
+        if kind == "entity":
+            return bool(self.entities())
+        if kind == "place":
+            return bool(self.entities()) or any(
+                _PLACE.search(" ".join(c.low)) and self.new_words(c) for c in anchored
+            )
+        if kind == "procedure":
+            return self.steps() > 0
+        if kind == "yes_no":
+            first = self.clauses[0].low[0] if self.clauses and self.clauses[0].low else ""
+            return first in _YES_NO_ANSWERS
+        if kind == "reason":
+            return any(
+                _CAUSAL.search(" ".join(c.low)) and len(self.new_words(c)) >= 2
+                for c in anchored
+            )
+        if kind == "definition":
+            return any(self._defines(c) for c in anchored)
+        return False
+
+    def _defines(self, clause: _Clause) -> bool:
+        """A request term, then a copula or "has", then something new
+        ("The derivative of x^3 is 3x^2", "It has a 12-hour battery")."""
+        seen_term = False
+        for index, low in enumerate(clause.low):
+            stem = clause.stems[index]
+            if stem in self.request_terms or (index == 0 and low in _ANAPHORS):
+                seen_term = True
+            elif seen_term and low in _COPULAS:
+                rest = clause.stems[index + 1 :]
+                if rest and (rest[0] in _NEGATIONS or rest[0].endswith("n't")):
+                    return False  # "It is not Paris" defines nothing
+                return any(
+                    s not in self.request_terms
+                    and s not in _GENERIC
+                    and s not in STOPWORDS
+                    and s not in ACTION_TERMS
+                    and (len(s) > 1 or s.isdigit())
+                    for s in rest
+                )
+        return False
+
+
+def _runs(tokens: Sequence[str], size: int) -> list[tuple[str, ...]]:
+    return [tuple(tokens[i : i + size]) for i in range(len(tokens) - size + 1)]
+
+
+def _skeleton(reading: _Reading, clause: _Clause) -> tuple[str, ...]:
+    """A clause with request terms, numbers and action words abstracted:
+    "The pixel 4278 was refunded." and "The wi-fi 2237 was escalated." are
+    one template ("the T N was A") filled twice."""
+    shape = []
+    for low, stem in zip(clause.low, clause.stems, strict=True):
+        if stem in reading.request_terms and low not in STOPWORDS:
+            shape.append("\x00T")
+        elif _is_number(stem):
+            shape.append("\x00N")
+        elif stem in ACTION_TERMS:
+            shape.append("\x00A")
+        else:
+            shape.append(stem)
+    return tuple(shape)
+
+
+def _repeated_share(reading: _Reading, tokens: Sequence[str]) -> float:
+    """Share of tokens that repeat earlier content: a sentence or clause said
+    again, a run of ``REPEAT_RUN`` tokens said again, a template refilled
+    (a clause stating specifics in the same words as an earlier one, with
+    only its request terms, numbers and actions changed), or a request term
+    mentioned more than ``TERM_MENTIONS`` times."""
+    covered: set[int] = set()
+    seen: set[tuple[str, ...]] = set()
+    for start, run in enumerate(_runs(tokens, REPEAT_RUN)):
+        if run in seen:
+            covered.update(range(start, start + REPEAT_RUN))
+        seen.add(run)
+    position = 0
+    said: set[tuple[str, ...]] = set()
+    shapes: set[tuple[str, ...]] = set()
+    mentions: dict[str, int] = {}
+    for clause in reading.clauses:
+        key = tuple(clause.stems)
+        shape = _skeleton(reading, clause)
+        if (key in said and len(key) > 1) or (shape in shapes and len(shape) > 2):
+            covered.update(range(position, position + len(key)))
+        said.add(key)
+        if reading.specifics[clause.index]:
+            shapes.add(shape)
+        for offset, stem in enumerate(clause.stems):
+            if stem in reading.request_terms and clause.low[offset] not in STOPWORDS:
+                mentions[stem] = mentions.get(stem, 0) + 1
+                if mentions[stem] > TERM_MENTIONS:
+                    covered.add(position + offset)
+        position += len(key)
+    return len(covered) / len(tokens) if tokens else 0.0
+
+
+def _echo_share(
+    reading: _Reading, tokens: Sequence[str], requests: Sequence[Sequence[str]]
+) -> float:
+    """Share of tokens copied from the request: runs of half a long request
+    message (at least ``ECHO_RUN`` tokens) or four fifths of a short one --
+    the question copied in -- and clauses that are nothing but request terms
+    ("capital france"). Restating the subject ("The derivative of x^3 is
+    ...", "the fraudulent $89 charge on order #5512") is not echo.
+    """
+    covered: set[int] = set()
+    for request_tokens in requests:
+        if len(request_tokens) <= ECHO_RUN + 1:
+            size = max(3, math.ceil(0.8 * len(request_tokens)))
+        else:
+            size = max(ECHO_RUN, math.ceil(0.5 * len(request_tokens)))
+        if len(tokens) < size or len(request_tokens) < size:
+            continue
+        request_runs = set(_runs(request_tokens, size))
+        for start, run in enumerate(_runs(tokens, size)):
+            if run in request_runs:
+                covered.update(range(start, start + size))
+    position = 0
+    for clause in reading.clauses:
+        words = clause.content()
+        if (
+            len(words) >= 2
+            and all(word in reading.request_terms for word in words)
+            and not any(low in STOPWORDS for low in clause.low)
+        ):
+            covered.update(range(position, position + len(clause.stems)))
+        position += len(clause.stems)
+    return len(covered) / len(tokens) if tokens else 0.0
+
+
+def _off_request_share(reading: _Reading) -> float:
+    """Share of content words in clauses tied to nothing in the request."""
+    total = off = 0
+    for clause, weight in zip(reading.clauses, reading.weights, strict=True):
+        words = len(clause.content())
+        total += words
+        if not weight:
+            off += words
+    return off / total if total else 0.0
+
+
+def _units(
+    reading: _Reading, question: str, evidence_terms: set[str], labeled: bool
+) -> tuple[float, float, dict[str, float]]:
+    """Information units a reply carries, and its unsupported specifics.
+
+    Each distinct specific counts its best support: the weight of an anchored
+    clause stating it, or 1 when the conversation's evidence contains it.
+    """
+    support: dict[str, float] = {}
+    for clause, weight in zip(reading.clauses, reading.weights, strict=True):
+        for specific in reading.specifics[clause.index]:
+            backed = 1.0 if _token_parts(specific) & evidence_terms else weight
+            support[specific] = max(support.get(specific, 0.0), backed)
+    supported = sum(support.values())
+    unsupported = float(sum(1 for weight in support.values() if weight == 0.0))
+    # With a reference answer, answer credit decides whether the question
+    # was answered; the answer-type cue would credit a wrong answer.
+    types = [] if labeled else sorted(_answer_types(question))
+    answered = sum(1 for kind in types if reading.type_satisfied(kind))
+    type_units = TYPE_UNITS * min(MAX_TYPES, answered)
+    step_units = STEP_UNITS * min(STEP_CAP, reading.steps())
+    elaboration = set()
+    for clause in reading.anchored():
+        elaboration.update(reading.new_words(clause))
+    elaboration_units = ELABORATION_UNITS * min(ELABORATION_CAP, len(elaboration))
+    # Elaboration stands in for specifics in an answer without them ("why
+    # is the sky blue?"); beside specifics it adds nothing, so padding a
+    # specific answer with words cannot buy information.
+    units = max(supported, elaboration_units) + type_units + step_units
+    details = {
+        "specifics": supported,
+        "unsupported": unsupported,
+        "answer_types": float(answered),
+        "steps": step_units,
+        "elaboration": elaboration_units,
+    }
+    return units, unsupported, details
 
 
 def grounding_score(
-    reply: str, request: str, labels: Sequence[str] = ()
+    reply: str,
+    request: str | Sequence[str],
+    labels: Sequence[str] = (),
+    *,
+    evidence: Sequence[str] = (),
+    question: str | None = None,
 ) -> tuple[float, dict[str, float]]:
     """Grounding of one ``reply`` in a ``request`` (see the module docs).
 
-    ``labels`` are reference facts (ground-truth answers). A short label is
-    an answer: the reply earns ``CorrectnessReward``'s answer credit for it
-    (shared among hedged candidates, none when negated). A longer label is a
-    fact whose terms count as specifics.
+    ``labels`` are reference facts (ground-truth answers): a short label is an
+    answer and earns ``CorrectnessReward``'s answer credit (none when hedged
+    or negated); a longer one is a fact whose terms count as specifics.
+    ``evidence`` holds tool outputs, observations and retrieved facts: a
+    specific found there is supported wherever the reply states it.
+    ``question`` is the message the reply answers (default: ``request``); it
+    sets the expected answer type. ``request`` may be given as its separate
+    parts (request fields and user messages), so a copy of any one of them
+    is recognized as echo.
     """
+    parts = (request,) if isinstance(request, str) else tuple(map(str, request))
+    score, details = _cached_grounding(
+        reply,
+        parts,
+        tuple(map(str, labels)),
+        tuple(map(str, evidence)),
+        question,
+    )
+    return score, dict(details)
+
+
+@functools.lru_cache(maxsize=2048)
+def _cached_grounding(
+    reply: str,
+    parts: tuple[str, ...],
+    labels: tuple[str, ...],
+    evidence: tuple[str, ...],
+    question: str | None,
+) -> tuple[float, dict[str, float]]:
+    # Every gated component of a composite grounds the same reply; the
+    # computation is pure, so it runs once per distinct input.
+    return _grounding(reply, parts, labels, evidence=evidence, question=question)
+
+
+def _grounding(
+    reply: str,
+    parts: Sequence[str],
+    labels: Sequence[str] = (),
+    *,
+    evidence: Sequence[str] = (),
+    question: str | None = None,
+) -> tuple[float, dict[str, float]]:
+    """:func:`grounding_score` for a request given as its parts."""
+    request = " ".join(parts)
+    question = request if question is None else question
+    details: dict[str, float] = {"information": 0.0, "relevance": 0.0}
     reply_terms = content_terms(reply)
+    if not reply_terms:
+        return 0.0, details
+    if harmful_request(request):
+        # Declining a harmful request answers it; anything else does not.
+        declined = declines(reply)
+        score = 1.0 if declined else 0.0
+        return score, {"information": score, "relevance": score, "harmful": 1.0}
+
     request_terms = content_terms(request)
     answers = [label for label in labels if len(label.split()) <= _ANSWER_WORDS]
     facts = [label for label in labels if len(label.split()) > _ANSWER_WORDS]
     label_terms = set().union(*(content_terms(label) for label in labels))
     fact_terms = set().union(*(content_terms(fact) for fact in facts))
-    details = {"information": 0.0, "relevance": 0.0, "filler": 0.0}
-    if not reply_terms:
-        return 0.0, details
-    if _REFUSAL_PATTERN.search(_normalize_text(reply)) and harmful_request(request):
-        # Declining a harmful request answers it.
-        return 1.0, {"information": 1.0, "relevance": 1.0, "filler": 0.0}
-
+    evidence_terms = set().union(*(content_terms(text) for text in evidence))
+    evidence_terms |= fact_terms
     numeric_answer = any(
         _as_number(answer.strip().lstrip("$")) is not None for answer in answers
     )
-    specifics = set()
-    stated = _stated_specifics(reply)
-    for term in reply_terms - request_terms:
-        if term in fact_terms:
-            specifics.add(term)
-        elif term in label_terms:
-            continue  # an answer label: scored by answer credit below
-        elif any(ch.isdigit() for ch in term):
-            # Beside a numeric answer, other numbers are competing answers.
-            if term in stated and not numeric_answer:
-                specifics.add(term)
-        elif term in stated:
-            specifics.add(term)  # an action done (not denied), in context
-    breadth = len(specifics) / (len(specifics) + INFO_HALF)
+    # Answer labels are scored by answer credit, never as specifics.
+    exclude = request_terms | (label_terms - fact_terms)
+    # A clause is tied to the request by a request term, a reference label
+    # ("It is Paris.") or a term of the conversation's evidence.
+    anchors = request_terms | label_terms | (evidence_terms - _GENERIC)
+    reading = _Reading(reply, request_terms | label_terms, exclude, numeric_answer, anchors)
+    units, unsupported, unit_details = _units(
+        reading, question, evidence_terms, bool(answers)
+    )
+    breadth = 1.0 - math.exp(-units / INFO_SCALE)
     if answers:
-        credit = max(_answer_credit(reply, answer, request) for answer in answers)
+        credit = max(_answer_credit(reply, answer, question) for answer in answers)
         information = max(credit, 0.5 * breadth)
     else:
         information = breadth
 
     known = request_terms | label_terms
-    relevant = reply_terms & known
-    relevance = 1.0 if not known else min(1.0, len(relevant) / 2.0)
-    if len(request_terms) >= 4 and (
-        len(reply_terms & request_terms) / len(request_terms) >= 0.8
-    ):
-        relevance *= 0.5  # a near-verbatim echo of the request
-    grounded = relevant | specifics | (reply_terms & label_terms)
-    ungrounded = reply_terms - grounded
-    boilerplate = len({t for t in ungrounded if t in _GENERIC}) / len(reply_terms)
-    unknown = len({t for t in ungrounded if t not in _GENERIC}) / len(reply_terms)
-    # Ordinary prose leaves some words of no recognized kind; padding with
-    # boilerplate or salad pushes that share up. The cubic tolerates the
-    # former and penalizes the latter steeply; boilerplate also costs its
-    # share outright.
-    quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** 3)
+    shared = {part for term in reply_terms for part in _token_parts(term)} & known
+    relevance = 1.0 if not known else min(1.0, len(shared) / min(3, len(known)))
+
+    tokens = [stem for clause in reading.clauses for stem in clause.stems]
+    lows = [low for clause in reading.clauses for low in clause.low]
+    request_tokens = [
+        [stem for clause in _clauses(part) for stem in clause.stems]
+        for part in parts
+    ]
+    specifics = {s for found in reading.specifics for s in found}
+    # Names answer "who"/"where"; anywhere else they are words like any other.
+    asked_for_names = _answer_types(question) & {"entity", "place"}
+    entities = reading.entities() if asked_for_names else set()
+    recognized = known | specifics | entities | evidence_terms
+    content = [
+        (low, stem)
+        for low, stem in zip(lows, tokens, strict=True)
+        if low not in STOPWORDS and (len(low) > 1 or low.isdigit())
+    ]
+    # Function words count up to one per content word: ordinary prose keeps
+    # its share, and padding with "the of and" buys nothing.
+    size = max(1, len(content) + min(len(tokens) - len(content), len(content)))
+    boilerplate = sum(
+        1 for _, s in content if s in _GENERIC and s not in recognized
+    ) / size
+    unknown = sum(
+        1
+        for _, s in content
+        if s not in _GENERIC
+        and s not in recognized
+        and not _is_number(s)
+        and s not in ACTION_TERMS
+    ) / size
+    quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** 2)
+    support = (units + 1.0) / (units + unsupported + 1.0)
+    repeated = _repeated_share(reading, tokens)
+    echoed = _echo_share(reading, tokens, request_tokens)
+    off_request = _off_request_share(reading)
+    originality = (1.0 - repeated) * max(0.0, 1.0 - ECHO_WEIGHT * echoed)
+    score = (
+        information
+        * (0.5 + 0.5 * relevance)
+        * quality
+        * support
+        * originality
+        * (1.0 - OFF_REQUEST_WEIGHT * off_request)
+    )
     details = {
         "information": information,
         "relevance": relevance,
+        "quality": quality,
         "boilerplate": boilerplate,
         "unknown": unknown,
+        "support": support,
+        "repeated": repeated,
+        "echoed": echoed,
+        "off_request": off_request,
+        **unit_details,
     }
-    return information * (0.5 + 0.5 * relevance) * quality, details
+    return score, details
 
 
 def task_grounding(
@@ -395,10 +1057,13 @@ def task_grounding(
     """Mean grounding of the assistant replies in scope (dict or object turns).
 
     Each reply is judged against the user messages before it plus the
-    request fields and labels of ``context``; with ``reward_scope`` set to
-    the latest turn only the newest reply counts.
+    request fields and labels of ``context``, answers the latest user message,
+    and may cite the evidence before it (tool, observation and system turns,
+    and the context's evidence fields). With ``reward_scope`` set to the
+    latest turn only the newest reply counts.
     """
     texts, labels = _request_texts(context)
+    evidence = _evidence_texts(context)
     asked: list[str] = []
     scores: list[float] = []
     for turn in turns:
@@ -406,8 +1071,16 @@ def task_grounding(
         text = content if isinstance(content, str) else ""
         if role == "user":
             asked.append(text)
+        elif role in EVIDENCE_ROLES:
+            evidence.append(text)
         elif role == "assistant":
-            score, _ = grounding_score(text, " ".join([*texts, *asked]), labels)
+            score, _ = grounding_score(
+                text,
+                [*texts, *asked],
+                labels,
+                evidence=list(evidence),
+                question=asked[-1] if asked else " ".join(texts),
+            )
             scores.append(score)
     if not scores:
         return 0.0

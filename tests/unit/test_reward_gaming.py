@@ -554,18 +554,28 @@ CAPITAL = "What is the capital of France?"
         ("It's Paris, in Europe.", 1.0),
         ("No, it is Paris.", 1.0),
         ("Paris, not London.", 1.0),
-        ("London, Paris, Berlin, Madrid, Rome", 0.2),
-        ("London. Paris. Berlin. Madrid. Rome.", 0.2),
-        ("London\nParis\nBerlin\nMadrid\nRome", 0.2),
-        ("Maybe London. Maybe Paris. Maybe Berlin. Maybe Rome.", 0.25),
-        ("Maybe London maybe Paris", 0.5),
-        ("It could be London or it could be Paris.", 0.5),
+        # A hedge earns nothing: it would score the same whichever
+        # candidate were right.
+        ("London, Paris, Berlin, Madrid, Rome", 0.0),
+        ("London. Paris. Berlin. Madrid. Rome.", 0.0),
+        ("London\nParis\nBerlin\nMadrid\nRome", 0.0),
+        ("Maybe London. Maybe Paris. Maybe Berlin. Maybe Rome.", 0.0),
+        ("Maybe London maybe Paris", 0.0),
+        ("It could be London or it could be Paris.", 0.0),
+        ("The capital is Lyon (or Paris).", 0.0),
+        ("The capital is Paris (possibly Lyon).", 0.0),
+        ("Paris/Lyon", 0.0),
+        ("Lyon,Paris", 0.0),
+        ("Paris|Lyon", 0.0),
+        ("The capital is Paris. Or possibly Lyon.", 0.0),
+        ("The capital is Paris, which is on the Seine.", 1.0),
+        ("Paris (pop. 2,100,000).", 1.0),
         ("It is not Paris.", 0.0),
         ("Paris is not the answer.", 0.0),
         ("Paris? No idea, could be anything.", 0.5),
     ],
 )
-async def test_text_answers_share_credit_across_the_whole_reply(reply, expected):
+async def test_text_answers_must_be_committed_to(reply, expected):
     reward = CorrectnessReward(ground_truth={"answer": "Paris"})
     result = await reward.compute_reward(_conversation(reply, CAPITAL))
     assert result.score == pytest.approx(expected), reply
@@ -575,7 +585,12 @@ async def test_text_answers_share_credit_across_the_whole_reply(reply, expected)
     ("reply", "expected"),
     [
         ("12 + 30 = 42.", 1.0),
-        ("Maybe 40. Maybe 42.", 0.5),
+        ("Maybe 40. Maybe 42.", 0.0),
+        ("12 + 30 = 43 (or 42).", 0.0),
+        ("The answer is 42 (or 43).", 0.0),
+        ("12 + 30 = 42/43.", 0.0),
+        ("12 + 30 = 43,42.", 0.0),
+        ("The answer is 42. Adding 12 and 30 gives 42.", 1.0),
         ("It is not 42.", 0.0),
         ("42 is not the answer.", 0.0),
     ],
