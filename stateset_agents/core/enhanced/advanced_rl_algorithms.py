@@ -25,6 +25,7 @@ from numpy.typing import NDArray
 from torch.distributions import Categorical
 
 from ..environment import Environment
+from ..numerics import whiten
 from ..trajectory import ConversationTurn
 from .enhanced_agent import EnhancedMultiTurnAgent
 
@@ -436,8 +437,6 @@ class A2CTrainer:
         advantages = returns - values
 
         # Normalize advantages
-        from ...training.rl_losses import whiten  # core stays training-free
-
         advantages = whiten(advantages)
 
         # Get current policy outputs

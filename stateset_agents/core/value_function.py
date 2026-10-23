@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .checkpoint_io import load_checkpoint_file
+from .numerics import whiten
 
 logger = logging.getLogger(__name__)
 
@@ -313,8 +314,6 @@ class ValueFunction:
 
         # Normalize advantages if requested
         if self.normalize_advantages:
-            from ..training.rl_losses import whiten
-
             advantages = whiten(advantages)
 
         # Compute returns using unnormalized advantages: R_t = A_t + V(s_t)
@@ -357,8 +356,6 @@ class ValueFunction:
 
         # Normalize
         if self.normalize_advantages:
-            from ..training.rl_losses import whiten
-
             advantages = whiten(advantages)
 
         return advantages

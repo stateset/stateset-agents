@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from stateset_agents.core.generation_mode import inference_mode
 
+from .._deprecation import warn_deprecated
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import LEGACY_STOP_SEQUENCES, AgentConfig, ConfigValidationError
 from .muse_protocol import is_muse_spark, muse_spark_final_response
@@ -181,10 +182,10 @@ TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     TypeError,
     ValueError,
 )
+#: Building the experimental planner from ``AgentConfig.planning_config``:
+#: bad keys surface as ``ConfigurationError`` (a ``ValueError``).
 PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    TypeError,
     ValueError,
-    KeyError,
     RuntimeError,
 )
 CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
@@ -642,6 +643,39 @@ def _validated_backend_result(result: Any, prompt: str) -> dict[str, Any]:
     }
 
 
+#: ``AgentConfig(enable_planning=True)`` without an injected manager makes
+#: core build the experimental planner itself; that implicit path is the one
+#: core -> experimental edge left (tests/unit/test_layering.py allowlist).
+_IMPLICIT_PLANNING_REMOVAL = "0.72.0"
+
+
+def _implicit_planning_manager(config: Any) -> Any:
+    """Deprecated bridge: build the experimental planner from ``config``.
+
+    Pass ``planning_manager=`` instead (see
+    ``stateset_agents.experimental.long_term_planning.planning_manager_from_config``);
+    this bridge will be removed in v0.72.0. A bad ``planning_config`` logs a
+    warning and leaves planning off, as before.
+    """
+    warn_deprecated(
+        "AgentConfig(enable_planning=True) without planning_manager=",
+        removal=_IMPLICIT_PLANNING_REMOVAL,
+        replacement=(
+            "MultiTurnAgent(config, planning_manager=stateset_agents.experimental."
+            "long_term_planning.planning_manager_from_config(config.planning_config))"
+        ),
+        stacklevel=3,
+    )
+    # Layering allowlist entry (dated): see the warning above.
+    from ..experimental.long_term_planning import planning_manager_from_config
+
+    try:
+        return planning_manager_from_config(getattr(config, "planning_config", None))
+    except PLANNING_EXCEPTIONS as exc:
+        logger.warning("Failed to init PlanningManager: %s", exc)
+        return None
+
+
 class MultiTurnAgent(Agent):
     """
     Agent designed for multi-turn conversations
@@ -676,20 +710,7 @@ class MultiTurnAgent(Agent):
         self._rollout_sync_warned: bool = False
         self.turn_count = 0
         if planning_manager is None and getattr(config, "enable_planning", False):
-            planning_kwargs = getattr(config, "planning_config", None) or {}
-            try:
-                from ..experimental.long_term_planning import (
-                    PlanningConfig,
-                    PlanningManager,
-                )
-
-                if isinstance(planning_kwargs, dict):
-                    planning_kwargs = dict(planning_kwargs)
-                    planning_kwargs.pop("enabled", None)
-                planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
-                planning_manager = PlanningManager(planning_cfg)
-            except PLANNING_EXCEPTIONS as exc:
-                logger.warning("Failed to init PlanningManager: %s", exc)
+            planning_manager = _implicit_planning_manager(config)
         self.planning_manager = planning_manager
 
         # Arbitrary caller-attached metadata (e.g. the API layer records the

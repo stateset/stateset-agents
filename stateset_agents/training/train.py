@@ -17,22 +17,26 @@ from stateset_agents.core.reward import RewardFunction
 from stateset_agents.core.reward_base import RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 
+from .._deprecation import warn_deprecated
 from .configuration import resolve_training_config as _build_training_config
 from .diagnostics import DiagnosticsMonitor
+from .offline_backend import load_offline_trainer
 from .trainer import MultiTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
 
+#: Failures a baseline evaluation episode may legitimately hit (a model,
+#: environment or reward outage, bad data, a timeout). A TypeError or
+#: AttributeError there is a bug and propagates instead of skewing the
+#: profile choice.
 TRAIN_EXCEPTIONS = (
     RuntimeError,
     ValueError,
-    TypeError,
-    AttributeError,
     OSError,
     asyncio.TimeoutError,
 )
-UNCERTAINTY_WRAP_EXCEPTIONS = (ImportError,) + TRAIN_EXCEPTIONS
-DATASET_LOAD_EXCEPTIONS = (ImportError, FileNotFoundError) + TRAIN_EXCEPTIONS
+#: Logged, then re-raised.
+DATASET_LOAD_EXCEPTIONS = (ImportError,) + TRAIN_EXCEPTIONS
 
 
 class TrainingMode(Enum):
@@ -259,24 +263,17 @@ async def _run_training(
 
 
 def _wrap_with_uncertainty(reward_fn: RewardFunction) -> RewardFunction:
-    """Wrap a reward function with Bayesian uncertainty weighting.
+    """Wrap a reward function with uncertainty weighting.
 
-    When the Bayesian reward model is available, this wraps the base reward
-    function to discount rewards that have high uncertainty.  Falls back to
-    the original reward when Bayesian models aren't available.
+    :class:`UncertaintyWeightedReward` discounts a score by the
+    ``total_uncertainty`` / ``epistemic_uncertainty`` the base reward reports
+    (for example the experimental Bayesian reward model) and leaves scores
+    without an estimate unchanged. It needs nothing from the experimental
+    layer, so it no longer probes for it (that probe was a hidden
+    stable -> experimental import).
     """
-    try:
-        import importlib
-
-        importlib.import_module("stateset_agents.experimental.bayesian_reward_model")
-
-        logger.info("Wrapping reward function with Bayesian uncertainty weighting")
-        return UncertaintyWeightedReward(reward_fn)
-    except UNCERTAINTY_WRAP_EXCEPTIONS as exc:
-        logger.warning(
-            "Bayesian uncertainty weighting unavailable: %s — using base reward", exc
-        )
-        return reward_fn
+    logger.info("Wrapping reward function with uncertainty weighting")
+    return UncertaintyWeightedReward(reward_fn)
 
 
 def _finite_nonnegative_uncertainty(value: Any, name: str) -> float:
@@ -426,6 +423,38 @@ _OFFLINE_HONOURED_FIELDS = frozenset(_OFFLINE_MAPPED_FIELDS) | {
 }
 
 
+#: The implicit import below is the one stable-training -> experimental edge
+#: (tests/unit/test_layering.py allowlist); it goes in this release.
+_IMPLICIT_OFFLINE_REMOVAL = "0.72.0"
+
+
+def _offline_trainer() -> tuple[type[Any], type[Any]]:
+    """``(config_class, trainer_class)`` of the registered offline trainer.
+
+    ``import stateset_agents.experimental.offline_rl`` registers it (see
+    :mod:`stateset_agents.training.offline_backend`). Without that import the
+    experimental component is loaded implicitly, which is deprecated and will
+    be removed in v0.72.0.
+    """
+    loaded = load_offline_trainer()
+    if loaded is None:
+        warn_deprecated(
+            "train(training_mode='offline'|'hybrid') loading the experimental "
+            "offline-RL trainer implicitly",
+            removal=_IMPLICIT_OFFLINE_REMOVAL,
+            replacement="`import stateset_agents.experimental.offline_rl` first",
+            stacklevel=3,
+        )
+        # Layering allowlist entry (dated): see the warning above. Importing
+        # the package registers its trainer with training.offline_backend.
+        import stateset_agents.experimental.offline_rl  # noqa: F401
+
+        loaded = load_offline_trainer()
+    if loaded is None:  # pragma: no cover - offline_rl always registers
+        raise ConfigurationError("no offline trainer is registered")
+    return loaded
+
+
 def _offline_config(
     config: Any, explicit_fields: set[str] | frozenset[str], *, strict: bool
 ) -> Any:
@@ -435,7 +464,7 @@ def _offline_config(
     trainer would ignore raises instead of being silently dropped; in hybrid
     mode such fields still apply to the online phase.
     """
-    from ..experimental.offline_rl.offline_grpo import OfflineGRPOConfig
+    offline_config_cls, _ = _offline_trainer()
 
     ignored = sorted(set(explicit_fields) - _OFFLINE_HONOURED_FIELDS)
     if ignored and strict:
@@ -450,7 +479,7 @@ def _offline_config(
             "Offline pre-training phase ignores %s (applied to the online phase)",
             ", ".join(ignored),
         )
-    return OfflineGRPOConfig(
+    return offline_config_cls(
         **{name: getattr(config, name) for name in _OFFLINE_MAPPED_FIELDS},
         batch_size=config.batch_size or config.per_device_train_batch_size,
         offline_algorithm="iql",
@@ -491,8 +520,6 @@ async def _train_offline(
         EmbeddingCache,
     )
 
-    from ..experimental.offline_rl.offline_grpo import OfflineGRPOTrainer
-
     if dataset is None:
         raise ConfigurationError(
             "Offline training requires a dataset. "
@@ -512,7 +539,8 @@ async def _train_offline(
         offline_config.state_dim = dimensions
         offline_config.action_dim = dimensions
 
-    trainer = OfflineGRPOTrainer(
+    _, offline_trainer_cls = _offline_trainer()
+    trainer = offline_trainer_cls(
         config=offline_config,
         model=agent.model,
         tokenizer=getattr(agent, "tokenizer", None),
