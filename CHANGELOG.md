@@ -147,6 +147,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `EnvironmentError`, `TrainingError` and `ConfigurationError` (a second,
   unused error root) are deprecated aliases of the `core.errors` classes and
   are removed in **v0.71.0**.
+- **Stable surface pruning: 34 root names the framework never uses are
+  deprecated and removed in v0.72.0** (the policy's one further minor
+  release). Each access warns with its replacement; they stay in `__all__`
+  and the v1 contract until removal. `core.type_system`: `TypeValidator`,
+  `ConfigValidator`, `TypeSafeSerializer`, `create_typed_config`,
+  `ensure_type_safety`, `ensure_async_type_safety`, `ModelConfig`,
+  `TypedTrainingConfig`, `TypedConversationTurn`, `TrajectoryData`,
+  `RewardMetrics`, `DeviceType`, `ModelSize`, `TrainingStage`;
+  `core.performance_optimizer`: `PerformanceOptimizer`, `MemoryMonitor`,
+  `ModelOptimizer`, `BatchOptimizer`, `OptimizationLevel`, `MemoryConfig`,
+  `ComputeConfig`, `DataConfig`, `PerformanceMetrics`; `core.error_handling`:
+  `TrainingException`, `ModelException`, `DataException`, `NetworkException`
+  (use the `core.errors` categories, or catch `StateSetError`), `ErrorHandler`,
+  `RetryConfig`, `CircuitBreakerConfig`, `retry_async`, `circuit_breaker`,
+  `handle_error`, `get_error_summary`. `GRPOException`, `ValidationException`,
+  `ResourceException` and `ErrorCode` stay: the framework raises or uses them.
+  The provisional modules keep serving every name.
+- One `ConversationTurn`: `core.trajectory.ConversationTurn` is canonical.
+  The `core.type_system` TypedDict is renamed `ConversationTurnDict`
+  (`TypedConversationTurn` now records that name in the contract; same object)
+  and `core.type_system.ConversationTurn` is a deprecated alias (v0.71.0).
+  `stateset_agents.core.types`, imported by nothing in the framework, warns on
+  import and is removed in **v0.71.0**; its `ConversationTurn` is the
+  canonical class (same `(user_message, assistant_response, reward)` form).
 
 ### Removed
 

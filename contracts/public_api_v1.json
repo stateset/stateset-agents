@@ -3986,7 +3986,7 @@
       },
       "TypedConversationTurn": {
         "module": "stateset_agents.core.type_system",
-        "name": "ConversationTurn"
+        "name": "ConversationTurnDict"
       },
       "TypedTrainingConfig": {
         "module": "stateset_agents.core.type_system",

@@ -12,6 +12,8 @@ from importlib.util import find_spec
 from types import ModuleType
 from typing import Any
 
+from ._deprecation import warn_deprecated
+
 __version__ = "0.69.0"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
@@ -149,7 +151,7 @@ _LAZY_EXPORTS.update(
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",
-    "ConversationTurn",
+    "ConversationTurnDict",
     None,
 )
 _LAZY_EXPORTS.update(
@@ -225,6 +227,65 @@ _LAZY_EXPORTS.update(
 )
 __all__ = list(_LAZY_EXPORTS)
 
+# Stable names the framework itself never uses. Deprecated in v0.70.0; per
+# docs/API_COMPATIBILITY.md they stay for one further minor release and will be
+# removed in v0.72.0. Each access warns (the value is not cached) and names the
+# replacement; the provisional modules keep serving them until then.
+_DEPRECATED_STABLE_EXPORTS_REMOVAL = "v0.72.0"
+_DEPRECATED_STABLE_EXPORTS: dict[str, str] = {
+    # error_handling: the framework raises GRPOException/ValidationException/
+    # ResourceException and uses ErrorCode; these are unused.
+    "TrainingException": "stateset_agents.core.errors.TrainingError",
+    "ModelException": "stateset_agents.core.errors.ModelError",
+    "DataException": "stateset_agents.core.errors.DataError",
+    "NetworkException": "stateset_agents.core.errors.NetworkError",
+    "ErrorHandler": "stateset_agents.core.error_handling.ErrorHandler",
+    "RetryConfig": "stateset_agents.core.error_handling.RetryConfig",
+    "CircuitBreakerConfig": "stateset_agents.core.error_handling.CircuitBreakerConfig",
+    "retry_async": "stateset_agents.core.error_handling.retry_async",
+    "circuit_breaker": "stateset_agents.core.error_handling.circuit_breaker",
+    "handle_error": "stateset_agents.core.error_handling.handle_error",
+    "get_error_summary": "stateset_agents.core.error_handling.get_error_summary",
+    # performance_optimizer: used only by experimental modules.
+    **{
+        name: f"stateset_agents.core.performance_optimizer.{name}"
+        for name in (
+            "PerformanceOptimizer",
+            "MemoryMonitor",
+            "ModelOptimizer",
+            "BatchOptimizer",
+            "OptimizationLevel",
+            "MemoryConfig",
+            "ComputeConfig",
+            "DataConfig",
+            "PerformanceMetrics",
+        )
+    },
+    # type_system: TypedDicts and validators nothing in the framework calls.
+    **{
+        name: f"stateset_agents.core.type_system.{name}"
+        for name in (
+            "TypeValidator",
+            "ConfigValidator",
+            "TypeSafeSerializer",
+            "create_typed_config",
+            "ensure_type_safety",
+            "ensure_async_type_safety",
+            "ModelConfig",
+            "TypedTrainingConfig",
+            "TrajectoryData",
+            "RewardMetrics",
+            "DeviceType",
+            "ModelSize",
+            "TrainingStage",
+        )
+    },
+    "TypedConversationTurn": (
+        "stateset_agents.ConversationTurn (or "
+        "stateset_agents.core.type_system.ConversationTurnDict)"
+    ),
+}
+
 
 def _build_import_error(
     name: str,
@@ -265,6 +326,13 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(f"module 'stateset_agents' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export
+    replacement = _DEPRECATED_STABLE_EXPORTS.get(name)
+    if replacement is not None:
+        warn_deprecated(
+            f"stateset_agents.{name}",
+            removal=_DEPRECATED_STABLE_EXPORTS_REMOVAL,
+            replacement=replacement,
+        )
 
     try:
         module = import_module(module_name)
@@ -278,7 +346,8 @@ def __getattr__(name: str) -> Any:
             f"module '{module_name}' has no attribute {attr_name!r}"
         ) from exc
 
-    globals()[name] = value
+    if replacement is None:
+        globals()[name] = value
     return value
 
 

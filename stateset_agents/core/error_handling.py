@@ -14,9 +14,9 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .errors import DataError
-from .errors import ErrorContext as _CoreErrorContext
+from . import errors as _core_errors
 from .errors import (
+    DataError,
     ModelError,
     NetworkError,
     ResourceError,
@@ -120,7 +120,7 @@ class GRPOException(StateSetError):
         # StateSetError attributes, so ``except StateSetError as e`` can read
         # ``e.code`` / ``e.context`` / ``e.to_dict()`` for every framework error.
         self.code = self.error_code
-        self.context = _CoreErrorContext(
+        self.context = _core_errors.ErrorContext(
             operation="unknown", component=category.value, details=self.details
         )
         self.cause: BaseException | None = None

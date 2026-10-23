@@ -194,7 +194,7 @@ _LAZY_EXPORTS["TrainingConfig"] = (
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",
-    "ConversationTurn",
+    "ConversationTurnDict",
     None,
 )
 _LAZY_EXPORTS.update(

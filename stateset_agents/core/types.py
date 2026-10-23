@@ -1,16 +1,28 @@
-"""
-Type definitions and protocols for the StateSet Agents framework.
+"""Deprecated type definitions and protocols (removed in v0.71.0).
 
-This module provides comprehensive type hints and protocols to improve
-type safety across the framework.
+Nothing in the framework imports this module, and several of its classes
+duplicated canonical ones: ``ConversationTurn`` is now
+:class:`stateset_agents.core.trajectory.ConversationTurn` (which accepts the
+same ``(user_message, assistant_response, reward)`` form) and the
+``FrameworkError`` family are aliases of :mod:`stateset_agents.core.errors`.
+Importing the module warns.
 """
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, TypeVar
 
+from .._deprecation import warn_deprecated
+from .trajectory import ConversationTurn
+
 if TYPE_CHECKING:  # pragma: no cover - annotations only
     import torch
+
+warn_deprecated(
+    "stateset_agents.core.types",
+    removal="0.71.0",
+    replacement="stateset_agents.core.trajectory / core.errors / core.type_system",
+)
 
 # Generic type variables
 T = TypeVar("T")
@@ -51,22 +63,6 @@ class ModelConfig:
 
 
 @dataclass
-class ConversationTurn:
-    """A single turn in a conversation."""
-
-    user_message: str
-    assistant_response: str
-    reward: float
-    metadata: MetadataDict = field(default_factory=dict)
-
-    def __post_init__(self):
-        # Untyped callers may pass ``metadata=None`` explicitly; normalize it.
-        metadata: MetadataDict | None = self.metadata
-        if metadata is None:
-            self.metadata = {}
-
-
-@dataclass
 class Trajectory:
     """A sequence of conversation turns."""
 
@@ -79,7 +75,7 @@ class Trajectory:
 
     def _update_total_reward(self):
         """Update total reward based on turns."""
-        self.total_reward = sum(turn.reward for turn in self.turns)
+        self.total_reward = sum(turn.reward or 0.0 for turn in self.turns)
 
     def add_turn(self, turn: ConversationTurn):
         """Add a turn to the trajectory."""

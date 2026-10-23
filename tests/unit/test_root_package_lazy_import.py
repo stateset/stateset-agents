@@ -1,6 +1,8 @@
 import importlib
 import sys
 
+import pytest
+
 
 def test_root_package_import_is_lazy() -> None:
     for module_name in (
@@ -27,4 +29,5 @@ def test_root_package_exposes_distinct_runtime_and_typed_conversation_turns() ->
 
     sa = importlib.import_module("stateset_agents")
 
-    assert sa.ConversationTurn is not sa.TypedConversationTurn
+    with pytest.warns(DeprecationWarning, match="TypedConversationTurn"):
+        assert sa.ConversationTurn is not sa.TypedConversationTurn

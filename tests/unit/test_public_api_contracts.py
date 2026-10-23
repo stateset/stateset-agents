@@ -56,8 +56,12 @@ ALWAYS_PRESENT = {
 
 
 def test_public_api_exports_exist() -> None:
-    for name in sa.__all__:
-        assert hasattr(sa, name), f"Missing public export: {name}"
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        for name in sa.__all__:
+            assert hasattr(sa, name), f"Missing public export: {name}"
 
 
 REMOVED_SIM_TO_REAL_EXPORTS = (
@@ -81,9 +85,14 @@ def test_public_api_exports_are_unique() -> None:
 
 
 def test_public_api_required_symbols_not_none() -> None:
-    for name in ALWAYS_PRESENT:
-        value = getattr(sa, name, None)
-        assert value is not None, f"{name} should be available"
+    import warnings
+
+    with warnings.catch_warnings():
+        # Several of these are deprecated until v0.72.0 but must still resolve.
+        warnings.simplefilter("ignore", DeprecationWarning)
+        for name in ALWAYS_PRESENT:
+            value = getattr(sa, name, None)
+            assert value is not None, f"{name} should be available"
 
 
 def test_package_metadata_is_present() -> None:
@@ -92,7 +101,8 @@ def test_package_metadata_is_present() -> None:
 
 
 def test_typed_training_config_alias_is_distinct_from_runtime_training_config() -> None:
-    assert sa.TypedTrainingConfig is not sa.TrainingConfig
+    with pytest.warns(DeprecationWarning, match="TypedTrainingConfig"):
+        assert sa.TypedTrainingConfig is not sa.TrainingConfig
 
 
 def test_api_version_matches_package_version() -> None:
