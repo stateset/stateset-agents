@@ -100,6 +100,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   it is removed in **v0.71.0**. `APIResponse`/`PaginatedResponse` are
   re-exported from `schemas` until then.
 
+- **One monitoring path.** Metrics, alerts and health checks go through
+  `stateset_agents.utils.monitoring` (`MonitoringService`, `MetricsCollector`,
+  `AlertManager`); tracing for the gateway is `stateset_agents.api.observability`.
+  `utils.alerts` (a third `AlertManager`), `utils.observability` (a second
+  `Span`), `utils.logging` and `utils.profiler` had no in-package users or
+  tests; importing them warns and they are removed in **v0.71.0**, as are the
+  `stateset_agents.utils.AlertManager`, `ObservabilityManager`, `get_logger`
+  and `PerformanceReport` names (dropped from `utils.__all__`, still served
+  with a warning).
+- `core.advanced_monitoring.AlertManager` and `.MetricsCollector` are renamed
+  `ThresholdAlertManager` and `TimeSeriesMetricsCollector` (the windowed
+  components behind `AdvancedMonitoringService`) so they no longer share the
+  canonical names; the old names warn and are removed in **v0.71.0**.
+
 ### Removed
 
 - The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,

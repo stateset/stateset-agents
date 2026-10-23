@@ -106,13 +106,41 @@ def _is_deprecation_category(node: ast.expr) -> bool:
     )
 
 
+def _call_name(node: ast.Call) -> str:
+    func = node.func
+    return func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+
+
+def alias_table_removals(tree: ast.AST) -> list[str]:
+    """Removal versions in ``deprecated_alias_getattr(name, {old: (mod, new,
+    "X.Y.Z")})`` tables, which state the version as a bare tuple item."""
+    versions: list[str] = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and _call_name(node) == "deprecated_alias_getattr"
+        ):
+            continue
+        for arg in node.args[1:2]:
+            if not isinstance(arg, ast.Dict):
+                continue
+            for value in arg.values:
+                if (
+                    isinstance(value, ast.Tuple)
+                    and len(value.elts) == 3
+                    and isinstance(value.elts[2], ast.Constant)
+                    and isinstance(value.elts[2].value, str)
+                ):
+                    versions.append(value.elts[2].value.lstrip("v"))
+    return versions
+
+
 def _emits_deprecation_warning(tree: ast.AST) -> bool:
     for node in ast.walk(tree):
         if not isinstance(node, ast.Call):
             continue
-        func = node.func
-        name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-        if name == "warn_deprecated":
+        name = _call_name(node)
+        if name in {"warn_deprecated", "deprecated_alias_getattr"}:
             return True
         if name != "warn":
             continue
@@ -142,7 +170,9 @@ def test_no_scheduled_removal_is_past_due() -> None:
     overdue: list[str] = []
     for path in _package_sources():
         text = path.read_text(encoding="utf-8")
-        for version in set(scheduled_removals(_searchable_text(text, ast.parse(text)))):
+        tree = ast.parse(text)
+        stated = scheduled_removals(_searchable_text(text, tree))
+        for version in set(stated + alias_table_removals(tree)):
             if _version_tuple(version) <= current:
                 overdue.append(f"{_rel(path)}: removal v{version}")
     for rel, version in EXTERNAL_SCHEDULE.items():
@@ -181,8 +211,9 @@ def test_every_deprecation_warning_states_a_removal_version() -> None:
         if "DeprecationWarning" not in text and "warn_deprecated" not in text:
             continue
         tree = ast.parse(text)
-        if _emits_deprecation_warning(tree) and not scheduled_removals(
-            _searchable_text(text, tree)
+        if _emits_deprecation_warning(tree) and not (
+            scheduled_removals(_searchable_text(text, tree))
+            or alias_table_removals(tree)
         ):
             undated.append(rel)
     assert not undated, (
@@ -235,3 +266,14 @@ def test_implicitly_concatenated_literals_are_read_as_one_sentence() -> None:
     source = 'MESSAGE = ("the alias will be removed "\n    "in v0.71.0")\n'
     assert scheduled_removals(source) == []
     assert scheduled_removals(_searchable_text(source, ast.parse(source))) == ["0.71.0"]
+
+
+def test_alias_tables_state_their_removal_versions() -> None:
+    source = (
+        "__getattr__ = deprecated_alias_getattr(\n"
+        "    __name__, {'Old': ('pkg.mod', 'New', '0.71.0')}\n"
+        ")\n"
+    )
+    tree = ast.parse(source)
+    assert _emits_deprecation_warning(tree)
+    assert alias_table_removals(tree) == ["0.71.0"]

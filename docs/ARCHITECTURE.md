@@ -969,8 +969,14 @@ a no-op, so the inference service never has to guard its call sites.
 
 * **W&B** for run-level metrics (loss, reward, KL, gradient norms) — opt-in
   via `wandb_project=` on the training config.
-* **Structured logs** for trainer events; `utils/logging.py` centralizes
-  JSON formatting and correlation IDs.
+* **Structured logs** for trainer events go through the standard library's
+  `logging`; the gateway's JSON formatting and trace correlation live in
+  `api/logging_config.py` and `api/observability.py`.
+* **Metrics, alerts and health checks** have one path:
+  `stateset_agents.utils.monitoring` (`MonitoringService`, `MetricsCollector`,
+  `AlertManager`). `utils/alerts.py`, `utils/observability.py`,
+  `utils/logging.py` and `utils/profiler.py` are deprecated (removed in
+  v0.71.0).
 * **Nightly benchmark workflow** posts a regression PR comment when a known
   benchmark exceeds 150% of its baseline (see `.github/workflows/
   benchmark-nightly.yml`).
