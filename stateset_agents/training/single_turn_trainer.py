@@ -597,7 +597,7 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         if not trajectories:
             raise RewardUnavailableError(
                 f"Every one of {num_generations} generations failed to get a "
-                f"usable reward ({flagged} with a reward fallback, the rest "
+                f"reward ({flagged} with a reward fallback, the rest "
                 "unavailable)"
             )
         group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(trajectories)

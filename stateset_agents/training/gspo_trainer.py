@@ -786,9 +786,11 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
                     ]
                 )
             )
-            group_responses, rewards = scored.fallbacks.keep(group_responses, replies)
-            if not group_responses:
-                continue
+            kept, rewards = scored.fallbacks.keep(group_responses, replies)
+            if group_responses and not kept:
+                continue  # every reply was a fallback; the group is dropped
+            # (An empty group from the generator still fails validation below.)
+            group_responses = kept
 
             # Extract responses and old log probs
             responses = [resp for resp, _ in group_responses]

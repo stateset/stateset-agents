@@ -759,9 +759,9 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             # episode lost its reward to an outage or a reward fallback.
             flagged = self.reward_fallback_episodes
             raise RewardUnavailableError(
-                f"No episode can be trained on: all {attempted} attempted "
-                f"episodes were dropped ({attempted - flagged} with an "
-                f"unavailable reward, {flagged} with a reward fallback)"
+                f"No episode got a reward: all {attempted} attempted episodes "
+                f"were dropped ({attempted - flagged} with an unavailable "
+                f"reward, {flagged} with a reward fallback)"
             )
         return trajectory_groups
 
