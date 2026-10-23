@@ -8,7 +8,11 @@ from typing import Any
 
 import pytest
 
-from stateset_agents.training.spine.loop import run_dedicated_loop
+from stateset_agents.training.spine.loop import (
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 
 
 def _recorder() -> tuple[list[str], dict[str, Any]]:
@@ -31,7 +35,7 @@ async def test_iteration_order_save_cadence_and_final_save() -> None:
     events, hooks = _recorder()
     run = await run_dedicated_loop(
         iterations=4,
-        batch=lambda i: f"b{i}",
+        batch=lambda i, rng: f"b{i}",
         output_dir="/out",
         save_steps=2,
         final_name="final",
@@ -62,7 +66,7 @@ async def test_callbacks_run_after_the_save_and_may_abort() -> None:
 
     run = await run_dedicated_loop(
         iterations=5,
-        batch=lambda i: i,
+        batch=lambda i, rng: i,
         output_dir="/out",
         save_steps=2,
         final_name="final_model",
@@ -82,7 +86,7 @@ async def test_a_missing_batch_ends_training_with_a_final_save() -> None:
     events, hooks = _recorder()
     run = await run_dedicated_loop(
         iterations=3,
-        batch=lambda i: None,
+        batch=lambda i, rng: None,
         output_dir="/out",
         save_steps=1,
         final_name="final",
@@ -100,7 +104,7 @@ async def test_a_failed_step_propagates_without_a_final_save() -> None:
     with pytest.raises(RuntimeError, match="boom"):
         await run_dedicated_loop(
             iterations=2,
-            batch=lambda i: i,
+            batch=lambda i, rng: i,
             step=step,
             save=saved.append,
             output_dir="/out",
@@ -161,3 +165,37 @@ async def test_train_with_gspo_honours_use_gspo_token(monkeypatch, tmp_path) -> 
         "train_step_token_level",
         "save final_model",
     ]
+
+
+async def _draws(seed: int | None) -> list[Any]:
+    torch = pytest.importorskip("torch")
+    seen: list[Any] = []
+
+    async def step(batch: Any) -> dict[str, Any]:
+        seen.append((batch, round(float(torch.rand(())), 6)))
+        return {}
+
+    await run_dedicated_loop(
+        iterations=3,
+        batch=sample_prompts(list("abcdefghij"), 2),
+        step=step,
+        save=lambda path: None,
+        output_dir="/out",
+        save_steps=10,
+        final_name="final",
+        seed=seed,
+    )
+    return seen
+
+
+async def test_the_seed_fixes_batches_and_torch_sampling() -> None:
+    first = await _draws(7)
+    assert await _draws(7) == first
+    assert await _draws(8) != first
+    assert all(len(batch) == 2 and batch[0] != batch[1] for batch, _ in first)
+
+
+def test_sample_prompts_takes_all_prompts_when_fewer_and_ends_on_none() -> None:
+    rng = seed_dedicated_run(0)
+    assert sorted(sample_prompts(["x", "y"], 5)(0, rng)) == ["x", "y"]
+    assert sample_prompts([], 5)(0, rng) is None

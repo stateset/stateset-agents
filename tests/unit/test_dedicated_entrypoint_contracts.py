@@ -11,6 +11,7 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+import numpy as np
 import pytest
 
 torch = pytest.importorskip("torch")
@@ -35,6 +36,9 @@ from tests.unit.test_dedicated_trainer_nonfinite_grads import (  # noqa: E402
     _token_rollouts,
 )
 
+# Real (tiny) trainers run end to end: allow for a loaded machine.
+pytestmark = pytest.mark.timeout(240)
+
 ALGORITHMS = ("dapo", "gepo", "vapo")
 PROMPTS = [f"prompt {i}" for i in range(12)]
 
@@ -44,7 +48,8 @@ def _config(name: str, **overrides: Any) -> Any:
         "model_name": "gpt2",
         "group_size": 3,
         "per_device_train_batch_size": 2,
-        "num_episodes": 3,
+        "num_episodes": 2,
+        "num_gradient_updates": 1,
         "save_steps": 100,
         "warmup_ratio": 0.0,
         "bf16": False,
@@ -171,4 +176,60 @@ async def test_train_with_gepo_survives_a_step_without_valid_groups(
         output_dir=str(tmp_path),
     )
     assert [os.path.basename(path) for path in run.saves] == ["final"]
-    assert len(run.prompts) == 3 * 2
+    assert len(run.prompts) == 2 * 2
+
+
+async def _seeded_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, name: str, seed: int
+) -> tuple[list[str], dict[str, list[float]]]:
+    entry, run = _harness(monkeypatch, name)
+    # Leftover global state must not leak into a seeded run.
+    torch.manual_seed(1000 + seed)
+    np.random.seed(1000 + seed)
+    _model_, _tokenizer, history = await entry(
+        model_name="gpt2",
+        reward_fn=_reward,
+        train_prompts=PROMPTS,
+        config=_config(name, seed=seed),
+        output_dir=str(tmp_path / f"{name}-{seed}"),
+    )
+    return run.prompts, history
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ALGORITHMS)
+async def test_config_seed_fixes_batch_order_and_step_metrics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any, name: str
+) -> None:
+    """``config.seed`` was ignored: batches came from the global NumPy
+    generator and torch was never seeded."""
+    first = await _seeded_run(monkeypatch, tmp_path, name, seed=3)
+    again = await _seeded_run(monkeypatch, tmp_path, name, seed=3)
+    other = await _seeded_run(monkeypatch, tmp_path, name, seed=4)
+    assert first == again
+    assert first[0] != other[0]
+    assert first[1] != other[1]
+
+
+@pytest.mark.asyncio
+async def test_vapo_value_warmup_draws_prompts_from_the_config_seed() -> None:
+    from tests.unit.test_dedicated_trainer_nonfinite_grads import _vapo
+
+    async def warmup_prompts(global_seed: int, seed: int) -> list[str]:
+        trainer = _vapo(seed=seed, value_warmup_steps=6)
+        trainer.value_warmup_complete = False
+        drawn: list[str] = []
+
+        async def generate(prompt: str) -> list[dict[str, Any]]:
+            drawn.append(prompt)
+            return _token_rollouts(prompt)
+
+        trainer.generate_group_responses = generate
+        np.random.seed(global_seed)
+        await trainer.train_step(PROMPTS)
+        return drawn
+
+    first = await warmup_prompts(global_seed=0, seed=5)
+    assert len(first) == 6
+    assert await warmup_prompts(global_seed=1, seed=5) == first
+    assert await warmup_prompts(global_seed=0, seed=6) != first

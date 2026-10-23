@@ -499,6 +499,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `GEPOConfig` and `VAPOConfig` reject a `group_size` below 2 with a
   `ConfigurationError` (both drop groups smaller than two, so such a run
   trained on nothing).
+- **`config.seed` seeds the dedicated entry points.** `train_with_gspo`,
+  `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` ignored it: DAPO/GEPO/VAPO drew batches from the global
+  NumPy generator and nothing seeded torch, so two runs with the same config
+  differed. Each now seeds Python, NumPy and torch from `config.seed` before
+  loading the model and again when `run_dedicated_loop` starts
+  (`spine.seed_dedicated_run`), and draws batches from a NumPy `Generator`
+  seeded with it (`spine.sample_prompts`), so a run repeats batch for batch.
+  Like `MultiTurnGRPOTrainer`, this reseeds the process-global generators.
+  VAPO's value warmup draws its prompts from a `Generator` seeded with
+  `config.seed`. `train_with_gepo` with no prompts now ends with the final
+  save, as DAPO and VAPO do, instead of stepping on empty batches.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's

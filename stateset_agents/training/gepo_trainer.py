@@ -31,7 +31,7 @@ from .runtime_state import (
     _reject_unsupported_resume,
     validate_training_config,
 )
-from .spine.loop import run_dedicated_loop
+from .spine.loop import run_dedicated_loop, sample_prompts, seed_dedicated_run
 from .spine.rollouts import PromptGroupRollouts
 from .spine.scoring import CallableScorer
 from .spine.update import OptimizerStep, UpdateLoop, nonfinite_grad_settings
@@ -605,18 +605,8 @@ class GEPOTrainer(TrainingRuntime):
 
         num_groups = len(rollouts)
         if num_groups == 0:
-            # Same keys as an update step, so callers can report either.
             logger.warning("No valid groups in batch")
-            return {
-                "policy_loss": 0.0,
-                "average_reward": 0.0,
-                "advantage_std": 0.0,
-                "gepo_coefficient_mean": 1.0,
-                "gepo_coefficient_std": 0.0,
-                "learning_rate": self.scheduler.get_last_lr()[0],
-                "global_step": self.global_step,
-                "optimizer_updates": 0,
-            }
+            return self._step_metrics(0.0, [], [], [], updates=0)
 
         # --- Update phase --------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
@@ -667,17 +657,13 @@ class GEPOTrainer(TrainingRuntime):
             reduce=lambda total: total / num_groups,
         )
 
-        # Compute metrics
-        metrics = {
-            "policy_loss": passes.losses[-1],
-            "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
-            "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
-            "gepo_coefficient_mean": np.mean(all_gepo_coefs) if all_gepo_coefs else 1.0,
-            "gepo_coefficient_std": np.std(all_gepo_coefs) if all_gepo_coefs else 0.0,
-            "learning_rate": self.scheduler.get_last_lr()[0],
-            "global_step": self.global_step,
-            "optimizer_updates": passes.committed,
-        }
+        metrics = self._step_metrics(
+            passes.losses[-1],
+            all_rewards,
+            all_advantages,
+            all_gepo_coefs,
+            updates=passes.committed,
+        )
 
         # Store metrics
         for key in ["policy_loss", "average_reward"]:
@@ -685,6 +671,28 @@ class GEPOTrainer(TrainingRuntime):
                 self.metrics_history[key].append(metrics[key])
 
         return metrics
+
+    def _step_metrics(
+        self,
+        policy_loss: Any,
+        rewards: list[float],
+        advantages: list[float],
+        coefficients: list[float],
+        *,
+        updates: int,
+    ) -> dict[str, Any]:
+        """One ``train_step``'s metrics; a step without a valid group reports
+        the same keys (no updates, coefficient 1)."""
+        return {
+            "policy_loss": policy_loss,
+            "average_reward": np.mean(rewards) if rewards else 0.0,
+            "advantage_std": np.std(advantages) if advantages else 0.0,
+            "gepo_coefficient_mean": np.mean(coefficients) if coefficients else 1.0,
+            "gepo_coefficient_std": np.std(coefficients) if coefficients else 0.0,
+            "learning_rate": self.scheduler.get_last_lr()[0],
+            "global_step": self.global_step,
+            "optimizer_updates": updates,
+        }
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Publish a complete resumable checkpoint."""
@@ -738,6 +746,7 @@ async def train_with_gepo(
         )
 
     # Load model and tokenizer
+    seed_dedicated_run(config.seed)
     logger.info(f"Loading model: {model_name}")
     model_manager = GEPOModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
@@ -758,12 +767,6 @@ async def train_with_gepo(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    def batch(iteration: int) -> list[str]:
-        # Sample batch of prompts
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        return [train_prompts[i] for i in batch_indices]
-
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
@@ -779,13 +782,14 @@ async def train_with_gepo(
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
         iterations=config.num_episodes,
-        batch=batch,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
         step=trainer.train_step,
         save=trainer.save_checkpoint,
         output_dir=output_dir,
         save_steps=config.save_steps,
         final_name="final",
         report=report,
+        seed=config.seed,
     )
 
     trainer.metrics_history["rollout_samples_total"] = [

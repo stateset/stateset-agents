@@ -416,6 +416,9 @@ class VAPOTrainer(TrainingRuntime):
 
         validate_training_config(config)
         self.config = config
+        # Value warmup draws its prompts from ``config.seed``, not the global
+        # NumPy generator.
+        self._warmup_rng = np.random.default_rng(getattr(config, "seed", None))
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
             getattr(config, "logprob_dtype", None)
@@ -677,7 +680,7 @@ class VAPOTrainer(TrainingRuntime):
 
         for step in range(self.config.value_warmup_steps):
             # Sample prompt
-            prompt = np.random.choice(prompts)
+            prompt = prompts[int(self._warmup_rng.integers(len(prompts)))]
 
             # Generate responses
             responses = await self.generate_group_responses(prompt)

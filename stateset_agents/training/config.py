@@ -504,6 +504,22 @@ class TrainingConfig:
         """
         return _NATIVE_LR_SCHEDULERS
 
+    def _validate_lr_scheduler_type(self) -> None:
+        schedulers = self._supported_lr_schedulers()
+        name = self.lr_scheduler_type
+        if (
+            isinstance(name, str)
+            and name
+            and (schedulers is None or name in schedulers)
+        ):
+            return
+        expected = (
+            "one of " + ", ".join(sorted(schedulers))
+            if schedulers is not None
+            else "a non-empty scheduler name"
+        )
+        raise ConfigurationError(f"lr_scheduler_type must be {expected} (got {name!r})")
+
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
@@ -530,21 +546,7 @@ class TrainingConfig:
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ConfigurationError(f"{name} must be a positive integer")
-        schedulers = self._supported_lr_schedulers()
-        if (
-            not isinstance(self.lr_scheduler_type, str)
-            or not self.lr_scheduler_type
-            or (schedulers is not None and self.lr_scheduler_type not in schedulers)
-        ):
-            expected = (
-                "one of " + ", ".join(sorted(schedulers))
-                if schedulers is not None
-                else "a non-empty scheduler name"
-            )
-            raise ConfigurationError(
-                f"lr_scheduler_type must be {expected} "
-                f"(got {self.lr_scheduler_type!r})"
-            )
+        self._validate_lr_scheduler_type()
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (

@@ -21,7 +21,9 @@ replay handling); see the declarations under ``TYPE_CHECKING``.
 entry points (``train_with_gspo`` and GSPO-token, ``train_with_dapo``,
 ``train_with_gepo``, ``train_with_vapo``; slice S9): a fixed number of
 iterations of batch -> ``train_step`` -> report -> periodic save -> optional
-callbacks, then one final save.
+callbacks, then one final save. ``config.seed`` seeds Python, NumPy and torch
+(:func:`seed_dedicated_run`) and the NumPy ``Generator`` the batches are drawn
+from (:func:`sample_prompts`).
 """
 
 from __future__ import annotations
@@ -30,9 +32,10 @@ import asyncio
 import inspect
 import logging
 import os
-from collections.abc import Awaitable, Callable
+import random
+from collections.abc import Awaitable, Callable, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, TypeVar
 
 import numpy as np
 
@@ -498,10 +501,50 @@ async def _maybe_await(value: Any) -> Any:
     return await value if inspect.isawaitable(value) else value
 
 
+_T = TypeVar("_T")
+
+
+def seed_dedicated_run(seed: int | None) -> np.random.Generator:
+    """Seed Python, NumPy and torch from ``seed``; return a batch generator.
+
+    The dedicated entry points call this before loading the model (so LoRA
+    and value-head initialisation repeat) and :func:`run_dedicated_loop` calls
+    it again when the loop starts, so the batches and sampling do not depend
+    on how much randomness model loading consumed. ``None`` seeds nothing and
+    returns an unseeded generator.
+    """
+    if seed is not None:
+        random.seed(seed)
+        np.random.seed(seed % 2**32)
+        try:
+            import torch
+        except ImportError:  # pragma: no cover - torch-free install
+            pass
+        else:
+            torch.manual_seed(seed)  # also seeds every CUDA device
+    return np.random.default_rng(seed)
+
+
+def sample_prompts(
+    prompts: Sequence[_T], batch_size: int
+) -> Callable[[int, np.random.Generator], list[_T] | None]:
+    """A :func:`run_dedicated_loop` batch hook: ``batch_size`` distinct
+    prompts per iteration (all of them when there are fewer), drawn from the
+    loop's generator. No prompts ends training."""
+
+    def batch(iteration: int, rng: np.random.Generator) -> list[_T] | None:
+        size = min(batch_size, len(prompts))
+        if size <= 0:
+            return None
+        return [prompts[int(i)] for i in rng.choice(len(prompts), size, replace=False)]
+
+    return batch
+
+
 async def run_dedicated_loop(
     *,
     iterations: int,
-    batch: Callable[[int], Any],
+    batch: Callable[[int, np.random.Generator], Any],
     step: Callable[[Any], Awaitable[dict[str, Any]]],
     save: Callable[[str], Any],
     output_dir: str,
@@ -509,11 +552,14 @@ async def run_dedicated_loop(
     final_name: str,
     report: Callable[[int, dict[str, Any]], Any] | None = None,
     after_save: Callable[[int, dict[str, Any]], Any] | None = None,
+    seed: int | None = None,
 ) -> DedicatedRun:
     """The dedicated entry points' outer loop.
 
-    Each iteration ``i``: ``batch(i)`` gives the step's prompts (``None``
-    ends training early), ``step(prompts)`` runs one ``train_step``,
+    The loop first seeds the run (:func:`seed_dedicated_run`) with ``seed``.
+    Each iteration ``i``: ``batch(i, rng)`` gives the step's prompts, drawing
+    any randomness from the seeded generator ``rng`` (``None`` ends training
+    early), ``step(prompts)`` runs one ``train_step``,
     ``report(i, metrics)`` logs it, every ``save_steps`` iterations
     ``save(output_dir/checkpoint-<i+1>)`` publishes a checkpoint, and
     ``after_save(i, metrics)`` (callbacks) may return True to abort. After the
@@ -523,8 +569,9 @@ async def run_dedicated_loop(
     ``after_save`` may be sync or async.
     """
     run = DedicatedRun()
+    rng = seed_dedicated_run(seed)
     for iteration in range(iterations):
-        prompts = batch(iteration)
+        prompts = batch(iteration, rng)
         if prompts is None:
             break
         metrics = await step(prompts)
@@ -542,4 +589,10 @@ async def run_dedicated_loop(
     return run
 
 
-__all__ = ["DedicatedRun", "SpineLoopMixin", "run_dedicated_loop"]
+__all__ = [
+    "DedicatedRun",
+    "SpineLoopMixin",
+    "run_dedicated_loop",
+    "sample_prompts",
+    "seed_dedicated_run",
+]

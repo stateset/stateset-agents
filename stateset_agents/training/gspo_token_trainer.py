@@ -27,7 +27,7 @@ from .gspo_generation import (
 )
 from .gspo_trainer import GSPOConfig, GSPOTrainer
 from .runtime_state import _reject_unsupported_resume
-from .spine.loop import run_dedicated_loop
+from .spine.loop import run_dedicated_loop, seed_dedicated_run
 
 logger = logging.getLogger(__name__)
 
@@ -298,6 +298,7 @@ async def train_with_gspo_token(
         )
 
     # Initialize model manager
+    seed_dedicated_run(config.seed)
     model_manager = GSPOModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
 
@@ -330,7 +331,7 @@ async def train_with_gspo_token(
         ref_model=model_manager.ref_model,
     )
 
-    def window(iteration: int) -> list[Any]:
+    def window(iteration: int, _rng: Any) -> list[Any]:
         logger.info(f"=== Iteration {iteration + 1}/{config.num_outer_iterations} ===")
         return query_window(queries, iteration, queries_per_iteration)
 
@@ -358,6 +359,7 @@ async def train_with_gspo_token(
         save_steps=config.save_steps,
         final_name="final_model",
         report=report,
+        seed=config.seed,
     )
 
     # Finish wandb run

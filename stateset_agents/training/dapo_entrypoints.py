@@ -10,11 +10,9 @@ from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import Any
 
-import numpy as np
-
 from .dapo_config import DAPOConfig
 from .runtime_state import _reject_unsupported_resume
-from .spine.loop import run_dedicated_loop
+from .spine.loop import run_dedicated_loop, sample_prompts, seed_dedicated_run
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +60,7 @@ async def train_with_dapo(
             tags=["dapo", "rl-training", "reasoning"],
         )
 
+    seed_dedicated_run(config.seed)
     logger.info("Loading model: %s", model_name)
     _is_stub = model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
@@ -102,13 +101,6 @@ async def train_with_dapo(
 
     os.makedirs(output_dir, exist_ok=True)
 
-    def batch(iteration: int) -> list[str] | None:
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        if batch_size <= 0:
-            return None
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        return [train_prompts[i] for i in batch_indices]
-
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
@@ -127,13 +119,14 @@ async def train_with_dapo(
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
         iterations=config.num_episodes,
-        batch=batch,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
         step=trainer.train_step,
         save=trainer.save_checkpoint,
         output_dir=output_dir,
         save_steps=config.save_steps,
         final_name="final",
         report=report,
+        seed=config.seed,
     )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)

@@ -15,7 +15,9 @@ Currently provided:
   through an :class:`OptimizerStep`; :func:`batch_shares` / :func:`share_size`
   give the token- or row-share weights.
 * :func:`run_dedicated_loop` -- the dedicated GSPO/DAPO/GEPO/VAPO entry
-  points' outer loop (batch, step, report, saves, callbacks).
+  points' outer loop (seeding, batch, step, report, saves, callbacks);
+  :func:`seed_dedicated_run` seeds a run from ``config.seed`` and
+  :func:`sample_prompts` draws its batches.
 * :class:`GRPOUpdateMixin` -- the GRPO update half (inner passes or an
   accumulated backward, EWC, the optimizer commit) shared by
   ``MultiTurnGRPOTrainer.training_step`` and ``SingleTurnGRPOTrainer``.
@@ -36,7 +38,13 @@ Importing this package does not import ``torch``.
 from __future__ import annotations
 
 from .grpo_update import GRPOUpdateMixin
-from .loop import DedicatedRun, SpineLoopMixin, run_dedicated_loop
+from .loop import (
+    DedicatedRun,
+    SpineLoopMixin,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 from .rollouts import (
     PromptGroupRollouts,
     VLLMEngineMixin,
@@ -67,6 +75,8 @@ __all__ = [
     "SpineLoopMixin",
     "DedicatedRun",
     "run_dedicated_loop",
+    "sample_prompts",
+    "seed_dedicated_run",
     "PromptGroupRollouts",
     "VLLMEngineMixin",
     "vllm_dtype",

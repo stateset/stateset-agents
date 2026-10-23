@@ -21,7 +21,7 @@ from .callbacks import has_no_policy_signal
 from .config import get_config_for_task
 from .gspo_config import GSPOConfig
 from .runtime_state import _reject_unsupported_resume
-from .spine.loop import run_dedicated_loop
+from .spine.loop import run_dedicated_loop, seed_dedicated_run
 
 logger = logging.getLogger(__name__)
 
@@ -196,6 +196,7 @@ async def train_with_gspo(
             )
             use_wandb = False
 
+    seed_dedicated_run(config.seed)
     _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
     )
@@ -257,7 +258,7 @@ async def train_with_gspo(
     _callbacks = callbacks or []
     zero_signal_iterations = 0
 
-    def window(iteration: int) -> list[Any]:
+    def window(iteration: int, _rng: Any) -> list[Any]:
         logger.info(
             "=== Iteration %s/%s ===", iteration + 1, config.num_outer_iterations
         )
@@ -312,6 +313,7 @@ async def train_with_gspo(
         final_name="final_model",
         report=report,
         after_save=notify,
+        seed=config.seed,
     )
     aborted = run.aborted
 
