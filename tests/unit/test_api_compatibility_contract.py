@@ -32,7 +32,8 @@ def test_contract_is_deterministic_and_json_serializable() -> None:
 
 def test_contract_covers_declared_python_and_http_surfaces() -> None:
     contract = build_contract()
-    assert len(contract["python"]["stateset_agents"]) >= 90
+    # 92 names until the past-due sim-to-real exports were removed (v0.70.0).
+    assert len(contract["python"]["stateset_agents"]) >= 85
     assert set(contract["python"]["stateset_agents.api"]) == {
         "APIConfig",
         "ConversationRequest",

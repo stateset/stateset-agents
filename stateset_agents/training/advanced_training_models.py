@@ -265,7 +265,8 @@ def __getattr__(name: str) -> Any:
     if name == "TrainingConfig":
         warnings.warn(
             "use TrainingJobSpec (TrainingConfig now refers only to "
-            "stateset_agents.training.config.TrainingConfig)",
+            "stateset_agents.training.config.TrainingConfig); the old name "
+            "will be removed in v0.71.0",
             DeprecationWarning,
             stacklevel=2,
         )

@@ -58,7 +58,12 @@ EXPECTED_COMMANDS = {
 
 
 def _registered_names() -> set[str]:
-    return {info.name for info in app.registered_commands if info.name is not None}
+    """Commands registered under the ``stateset-agents model`` group."""
+    return {
+        info.name
+        for info in cli_train.model_app.registered_commands
+        if info.name is not None
+    }
 
 
 def test_expected_commands_have_presets() -> None:
@@ -97,7 +102,9 @@ def test_every_generated_command_maps_to_one_preset() -> None:
 
 @pytest.mark.parametrize("command", sorted(EXPECTED_COMMANDS))
 def test_command_help_mentions_model_id(command: str) -> None:
-    result = CliRunner().invoke(app, [command, "--help"], env={"COLUMNS": "200"})
+    result = CliRunner().invoke(
+        app, ["model", command, "--help"], env={"COLUMNS": "200"}
+    )
     assert result.exit_code == 0, result.output
     text = re.sub(r"\s+", " ", result.output)
     assert CLI_PRESETS[command].model_id in text
@@ -157,9 +164,9 @@ def test_preset_model_id_is_supported_by_starter(command: str) -> None:
     assert preset.model_id in variants
 
 
-def test_presets_live_under_model_group_with_hidden_legacy_aliases() -> None:
-    """`stateset-agents model <preset>` is canonical; top-level names are
-    hidden deprecated aliases until LEGACY_MODEL_COMMAND_REMOVAL."""
+def test_presets_live_only_under_model_group() -> None:
+    """`stateset-agents model <preset>` is the only spelling: the hidden
+    top-level aliases deprecated in v0.68.0 were removed after v0.69.0."""
     import typer
 
     from stateset_agents.cli import app
@@ -169,22 +176,18 @@ def test_presets_live_under_model_group_with_hidden_legacy_aliases() -> None:
     group = typer.main.get_command(model_app).commands
     for name in cli_train.GENERATED_MODEL_COMMANDS:
         assert name in group and not group[name].hidden
-        assert top[name].hidden
+        assert name not in top
+    assert not hasattr(cli_train, "LEGACY_MODEL_COMMAND_REMOVAL")
 
 
-def test_legacy_alias_warns_on_stderr_but_keeps_json_clean() -> None:
+def test_removed_top_level_alias_is_rejected() -> None:
     from typer.testing import CliRunner
 
     from stateset_agents.cli import app
 
     name = cli_train.GENERATED_MODEL_COMMANDS[0]
     runner = CliRunner()
-    human = runner.invoke(app, [name, "--list-profiles"])
-    assert human.exit_code == 0, human.output
-    assert f"stateset-agents model {name}" in human.stderr
-
-    machine = runner.invoke(app, [name, "--list-profiles", "--json"])
-    assert machine.exit_code == 0, machine.output
-    assert machine.stderr == ""
+    removed = runner.invoke(app, [name, "--list-profiles"])
+    assert removed.exit_code != 0
     canonical = runner.invoke(app, ["model", name, "--list-profiles", "--json"])
-    assert machine.stdout == canonical.stdout
+    assert canonical.exit_code == 0, canonical.output

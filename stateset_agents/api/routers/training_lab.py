@@ -1763,7 +1763,7 @@ def _websocket_credential(websocket: WebSocket, allow_query: bool) -> str | None
                 "query string (leaks into access logs). Send it via the "
                 "X-API-Key / Authorization header or the 'bearer.<token>' "
                 "Sec-WebSocket-Protocol entry instead; API_LAB_WS_QUERY_TOKEN "
-                "support will be removed in a future release."
+                "support will be removed in v0.71.0."
             )
             return str(query_credential)
     return None

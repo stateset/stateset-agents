@@ -237,7 +237,8 @@ def __getattr__(name: str) -> Any:
         import warnings
 
         warnings.warn(
-            "import TrainingConfig from stateset_agents.training.config",
+            "import TrainingConfig from stateset_agents.training.config; this "
+            "alias will be removed in v0.71.0",
             DeprecationWarning,
             stacklevel=2,
         )

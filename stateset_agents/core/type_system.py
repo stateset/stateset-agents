@@ -739,7 +739,8 @@ def __getattr__(name: str) -> Any:
     """Serve the renamed ``TrainingConfig`` TypedDict under its old name."""
     if name == "TrainingConfig":
         warnings.warn(
-            "use TrainingConfigDict",
+            "use TrainingConfigDict; the TrainingConfig alias "
+            "will be removed in v0.71.0",
             DeprecationWarning,
             stacklevel=2,
         )

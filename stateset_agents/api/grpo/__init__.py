@@ -60,7 +60,8 @@ _DEPRECATED_APP_SUBMODULES = {
 
 _DEPRECATION_MESSAGE = (
     "stateset_agents.api.grpo.{name} is part of a secondary GRPO API app "
-    "and is deprecated; use stateset_agents.api.main instead."
+    "and is deprecated (since v0.16.0); it will be removed in v0.71.0. Use "
+    "stateset_agents.api.main instead."
 )
 
 

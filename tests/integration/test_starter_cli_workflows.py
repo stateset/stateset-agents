@@ -124,6 +124,7 @@ def test_model_specific_starter_configs_round_trip_via_cli(
             sys.executable,
             "-m",
             "stateset_agents.cli",
+            "model",
             command_name,
             "--config",
             str(config_path),

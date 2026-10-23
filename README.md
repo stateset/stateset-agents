@@ -2224,7 +2224,7 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 > (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
 > v0.64.0; the old paths were removed in v0.65.0, and the deprecated root
 > `stateset_agents.SimToRealMetrics`/`SimToRealEvaluator`/`ConversationSimulator`/
-> `ConversationSimulatorConfig` exports are removed in v0.66.0). Public benchmark
+> `ConversationSimulatorConfig` exports were removed after their v0.66.0 deadline). Public benchmark
 > evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
 
 Train in simulation, deploy to real users. The framework provides:

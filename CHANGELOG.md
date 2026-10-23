@@ -64,6 +64,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   attached. Environments record each step's scoring state in
   `trajectory.state_history`, and per-step rewards see the system prompt.
 
+### Deprecated
+
+- **Every deprecation now names its removal release, enforced by CI.**
+  `tests/unit/test_deprecation_schedule.py` reads every "will be removed in
+  vX.Y.Z" / `removal="X.Y.Z"` marker in the package and fails once
+  `__version__` reaches it, rejects undated "future release" promises, and
+  requires every module that emits a `DeprecationWarning` to state its
+  removal version. New helper: `stateset_agents._deprecation.warn_deprecated`.
+- Dated the remaining open-ended deprecations (all provisional, removed in
+  **v0.71.0**): the nine `stateset_agents.core.<module>` shims for modules
+  moved to `stateset_agents.experimental` in v0.22.0
+  (`adaptive_learning_controller`, `few_shot_adaptation`,
+  `intelligent_orchestrator`, `intelligent_orchestrator_logic`,
+  `intelligent_orchestrator_models`, `long_term_planning`,
+  `multi_agent_coordination`, `multimodal_processing`,
+  `neural_architecture_search`); the core-type re-exports from
+  `stateset_agents.training.trainer`; `TrainingConfig` aliases in
+  `core.types`, `core.type_system` and `training.advanced_training_models`;
+  `ConversationDatasetConfig.max_turns` (deprecated in v0.69.0); the
+  `stateset_agents.api.grpo` app modules (deprecated since v0.16.0); the
+  training-lab `API_LAB_WS_QUERY_TOKEN` query-string credential;
+  `RulerRewardFunction(config=RulerConfig(...))`; and
+  `DistributedGRPOTrainer`.
+
+### Removed
+
+- The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator` and `ConversationSimulatorConfig`, deprecated in
+  v0.64.0 with removal promised for v0.66.0, are removed from
+  `stateset_agents.__all__` and the v1 contract (`contracts/public_api_v1.json`;
+  the `sim-to-real` component no longer lists them). Import them from
+  `stateset_agents.experimental.sim_to_real.metrics` /
+  `.conversation_simulator`.
+- The `Planning*`/`Plan*`/`Planner` names served (with a warning) from
+  `stateset_agents` and `stateset_agents.core`, deprecated in v0.38.0 "for one
+  release". Import them from `stateset_agents.experimental.long_term_planning`.
+- The hidden top-level per-model CLI aliases (for example
+  `stateset-agents qwen3-5-0-8b`), deprecated in v0.68.0 with removal in
+  v0.69.0. Use `stateset-agents model <preset>`.
+- The opt-in `STATESET_AGENTS_ENABLE_CORE_DEPRECATION` warning about the
+  repo-root `core` package, which no longer exists.
+
 ### Fixed
 
 - **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
