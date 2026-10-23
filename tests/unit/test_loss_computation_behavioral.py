@@ -322,6 +322,13 @@ def test_one_failing_trajectory_raises_instead_of_biasing_the_group_mean():
     assert error.trajectory_index == 1 and error.group_size == 2
     assert error.__cause__ is cause
     assert "trajectory 1 of 2" in str(error) and "shape mismatch" in str(error)
+    assert error.cause is cause
+
+    import pickle
+
+    restored = pickle.loads(pickle.dumps(error))
+    assert type(restored) is lc.TrajectoryLossError and str(restored) == str(error)
+    assert (restored.trajectory_index, restored.group_size) == (1, 2)
 
 
 def test_torch_out_of_memory_propagates_unwrapped():

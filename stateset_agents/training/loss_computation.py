@@ -91,6 +91,14 @@ class TrajectoryLossError(TrainingError, RuntimeError):
         )
         self.trajectory_index = trajectory_index
         self.group_size = group_size
+        self.cause = cause
+
+    def __reduce__(
+        self,
+    ) -> tuple[type[TrajectoryLossError], tuple[int, int, BaseException]]:
+        """Pickle by constructor arguments (it crosses process boundaries)."""
+        assert self.cause is not None
+        return type(self), (self.trajectory_index, self.group_size, self.cause)
 
 
 class _DeviceCarrier(Protocol):
