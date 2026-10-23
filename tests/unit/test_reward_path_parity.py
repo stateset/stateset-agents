@@ -289,6 +289,8 @@ CONSUMERS = [
     *sorted((ROOT / "training").rglob("*.py")),
     ROOT / "core" / "computational_engine.py",
     ROOT / "core" / "environment_base.py",
+    # Tool-use episodes are scored by the shared environment/trainer path.
+    ROOT / "core" / "environments" / "tool_use.py",
 ]
 
 

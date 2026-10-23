@@ -39,6 +39,7 @@ and `make release-governance` validates it on every pull request and release.
 | `reward-learning-rlaif` | Beta |
 | `rust-acceleration` | Beta |
 | `sim-to-real` | Experimental |
+| `tool-use-rl` | Beta |
 | `vapo` | Experimental |
 
 Since v0.64.0 the code for the `offline-rl`, `ppo-rlaif-trainers`,

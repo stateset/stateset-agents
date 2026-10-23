@@ -127,6 +127,42 @@ defend against:
 
 Use outcome, verifier or judge rewards for anything these limits matter to.
 
+## Verifiable rewards
+
+`MathAnswerVerifier` and `SandboxedCodeVerifier` (`stateset_agents.rewards`,
+provisional; [TOOL_USE_RL.md](TOOL_USE_RL.md)) keep this contract with
+verifier semantics:
+
+- They are **SPARSE**: applied once to the finished conversation, they score
+  the newest assistant turn (`turns[-1]` for a single reply), so a tool-use
+  episode's intermediate tool calls are never read as answers, and an
+  episode that ended without an answer scores 0.
+- Reference data is required: the math verifier reads `ground_truth` (bare or
+  `{"answer": ...}`, as `CorrectnessReward` does) or `answer=`; the code
+  verifier reads `tests` and `entry_point` (from the scenario or the
+  constructor). Missing or malformed reference data raises
+  `ConfigurationError`, never a neutral score.
+- A wrong, hedged, crashing or timed-out candidate is a **score** (0, or the
+  code pass rate), not an outage. Only a platform that cannot run the sandbox
+  (not POSIX) raises `RewardUnavailableError`.
+- Model output is never evaluated as Python in the trainer: the math verifier
+  parses answers with its own grammar, and candidate code runs only in the
+  sandboxed subprocess (resource isolation, not a security boundary).
+
+The exploit search covers both (cases of kind `"math"` and `"code"`,
+`stateset_agents.evaluation.verifier_exploits`): the generic families that do
+not preserve the answer plus math families (two answers, alternatives, "Maybe
+L.", uncertainty, negation, number dumps, near misses, unevaluated question
+arithmetic, answers only inside tool calls, `\text{}` hedges, Python
+injection, the reference with its answer removed or swapped) and code families
+(hard-coded or printed visible outputs, early `sys.exit`/`os._exit`,
+`__eq__` tricks, patching `json.dumps`, forged result records, reading a tests
+file, infinite loops, fork storms, threads, memory and recursion bombs, and
+plausible wrong programs). **Verified guarantee:** on `MATH_CASES` and
+`CODE_CASES`, for seeds 0 and 1 and both paths, every adversary scores at least
+0.01 below the reference. Padding and other mutations that keep a correct
+answer intact are not adversaries for a verifier.
+
 ## Scores
 
 - A score is a finite float. NaN and infinity are never valid results.
@@ -325,3 +361,8 @@ flagged episode is never trained on.
 6. A new `create_*_reward` factory in `core.reward` or `stateset_agents.rewards`
    is picked up by the exploit search gate automatically; it must keep every
    family at least 0.01 below the reference on `DEFAULT_CASES`.
+7. A verifier (a reward with reference answers or tests rather than lexical
+   scoring) is searched on its own `ExploitCase`s with `kind="math"` or
+   `kind="code"` (or a new kind with its own families in
+   `stateset_agents.evaluation.verifier_exploits`); register it in
+   `VERIFIERS` in `tests/unit/test_reward_exploit_search.py`.

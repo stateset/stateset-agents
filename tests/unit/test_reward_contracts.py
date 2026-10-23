@@ -124,6 +124,13 @@ CONSTRUCTORS: dict[str, Callable[[Any], Any]] = {
     "stateset_agents.rewards.nsr_verifier.NSRVerifierReward": lambda cls: cls(
         client=_fake_nsr
     ),
+    # Verifiers need reference data: tests (code) and an answer (math).
+    "stateset_agents.rewards.code_verifier.SandboxedCodeVerifier": lambda cls: cls(
+        tests=[{"args": [2, 3], "expected": 5}], entry_point="add"
+    ),
+    "stateset_agents.rewards.math_verifier.MathAnswerVerifier": lambda cls: cls(
+        answer="42"
+    ),
     "stateset_agents.core.grounding.GroundedReward": lambda cls: cls(
         HelpfulnessReward()
     ),

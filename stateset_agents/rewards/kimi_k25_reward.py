@@ -8,6 +8,8 @@ including multimodal reasoning rewards and thinking-mode specific rewards.
 import logging
 from typing import Any
 
+from stateset_agents._deprecation import warn_deprecated
+
 from .multi_objective_reward import BaseRewardComponent
 from .multi_objective_reward import MultiObjectiveRewardFunction as MultiObjectiveReward
 from .multi_objective_reward import ground_components
@@ -242,15 +244,15 @@ class MultimodalConsistencyReward(BaseRewardComponent):
             return 0.3
 
 
-class CodeExecutionReward(BaseRewardComponent):
+class CodeFormattingHeuristic(BaseRewardComponent):
     """
-    Reward component for evaluating code execution quality.
+    Shaping heuristic for how a coding reply is *formatted*. It never runs code.
 
-    Kimi-K2.5 excels at coding tasks with visual specifications.
-    This component evaluates:
-    - Code completeness and correctness
-    - Code-following of visual specifications
-    - Code explanation quality
+    It scores the last assistant turn for a fenced code block, coding keywords
+    ("def ", "return ", "class"...) and an explanation phrase. It cannot tell
+    working code from broken code; to reward code that passes tests use
+    :class:`stateset_agents.rewards.code_verifier.SandboxedCodeVerifier`.
+    Formerly ``CodeExecutionReward`` (a deprecated alias until v0.71.0).
     """
 
     def __init__(
@@ -260,7 +262,7 @@ class CodeExecutionReward(BaseRewardComponent):
         require_explanation: bool = True,
     ):
         """
-        Initialize CodeExecutionReward.
+        Initialize CodeFormattingHeuristic.
 
         Args:
             weight: Weight of this component in total reward
@@ -268,8 +270,8 @@ class CodeExecutionReward(BaseRewardComponent):
             require_explanation: Require code explanations
         """
         super().__init__(
-            name="code_execution",
-            description="Evaluates code execution quality",
+            name="code_formatting",
+            description="Scores code-block formatting cues (does not execute code)",
             weight=weight,
         )
         self.require_code_blocks = require_code_blocks
@@ -281,7 +283,7 @@ class CodeExecutionReward(BaseRewardComponent):
         context: dict[str, Any] | None = None,
     ) -> float:
         """
-        Compute code execution reward.
+        Compute the code formatting score.
 
         Args:
             turns: Normalized conversation turns
@@ -461,7 +463,7 @@ def create_kimi_k25_customer_service_reward(
     Args:
         include_thinking: Include thinking mode evaluation
         include_multimodal: Include multimodal consistency
-        include_code: Include code execution evaluation
+        include_code: Include the code formatting heuristic (no execution)
         include_long_context: Include long context handling
 
     Returns:
@@ -489,7 +491,7 @@ def create_kimi_k25_customer_service_reward(
 
     if include_code:
         components.append(
-            CodeExecutionReward(
+            CodeFormattingHeuristic(
                 weight=0.20,
                 require_code_blocks=True,
                 require_explanation=True,
@@ -523,7 +525,7 @@ def create_kimi_k25_conversational_reward(
     Args:
         include_thinking: Include thinking mode evaluation
         include_multimodal: Include multimodal consistency
-        include_code: Include code execution evaluation
+        include_code: Include the code formatting heuristic (no execution)
         include_long_context: Include long context handling
 
     Returns:
@@ -551,7 +553,7 @@ def create_kimi_k25_conversational_reward(
 
     if include_code:
         components.append(
-            CodeExecutionReward(
+            CodeFormattingHeuristic(
                 weight=0.20,
                 require_code_blocks=False,
                 require_explanation=True,
@@ -571,3 +573,22 @@ def create_kimi_k25_conversational_reward(
     reward_function = MultiObjectiveReward(components=ground_components(components))
 
     return reward_function
+
+
+_CODE_EXECUTION_REPLACEMENT = (
+    "stateset_agents.rewards.kimi_k25_reward.CodeFormattingHeuristic (it never "
+    "executed code; to reward code that passes tests use "
+    "stateset_agents.rewards.code_verifier.SandboxedCodeVerifier)"
+)
+
+
+def __getattr__(name: str) -> Any:
+    """Serve ``CodeExecutionReward``, the deprecated name of the heuristic."""
+    if name == "CodeExecutionReward":
+        warn_deprecated(
+            f"{__name__}.CodeExecutionReward",
+            removal="0.71.0",
+            replacement=_CODE_EXECUTION_REPLACEMENT,
+        )
+        return CodeFormattingHeuristic
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
