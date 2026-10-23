@@ -39,7 +39,7 @@ except ImportError:  # pragma: no cover
     PSUTIL_AVAILABLE = False
 
 from stateset_agents.core.advanced_monitoring import (
-    MetricsCollector,
+    TimeSeriesMetricsCollector,
     get_monitoring_service,
     monitor_async_function,
 )
@@ -1084,7 +1084,7 @@ class AdvancedTrainingOrchestrator:
         if persistence_errors:
             raise persistence_errors[0]
 
-    def _record_monitoring_metrics(self, collector: MetricsCollector) -> None:
+    def _record_monitoring_metrics(self, collector: TimeSeriesMetricsCollector) -> None:
         """Record resource-utilization and queue gauges on ``collector``."""
         resource_util = self.resource_manager.get_resource_utilization()
         for resource_type, utilization in resource_util.items():
