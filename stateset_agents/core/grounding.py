@@ -125,6 +125,12 @@ _REQUEST_FIELDS = (
     "description",
     "instructions",
 )
+#: Request fields that describe the scenario rather than state the user's
+#: words: their terms tie a clause to the request half as strongly
+#: (``WEAK_ANCHOR``), like request-independent phrasing.
+_BACKGROUND_FIELDS = frozenset(
+    {"context", "user_goal", "goal", "topic", "description", "instructions"}
+)
 _TOKEN = re.compile(r"[a-z0-9]+(?:['./:-][a-z0-9]+)*")
 
 
@@ -241,7 +247,15 @@ STYLE_SHARE = 0.75
 #: Scale of information: ``1 - exp(-units / INFO_SCALE)``. Information keeps
 #: growing with every unit, so a reply that drops any of an answer's content
 #: scores lower, and saturates, so piling on content gains less and less.
-INFO_SCALE = 8.0
+INFO_SCALE = 6.0
+#: Specifics count one unit each, at most ``SPECIFIC_FLOOR`` plus
+#: ``SPECIFICS_PER_WORD`` per new word stating them.
+SPECIFIC_FLOOR = 2.0
+SPECIFICS_PER_WORD = 2.0
+#: Quality is ``(1 - boilerplate) * (1 - (boilerplate + unknown) **
+#: QUALITY_POWER)``: ordinary prose keeps most of its score, padding with
+#: words of no recognized kind costs steeply.
+QUALITY_POWER = 2.0
 #: Weight of echoed tokens: copying the request costs twice its share.
 ECHO_WEIGHT = 2.0
 #: Weight of the off-request share: content in clauses tied to nothing in the
@@ -253,7 +267,7 @@ TERM_MENTIONS = 2
 #: Units for answering the question's type (a name for "who", a cause for
 #: "why", steps for "how", a number for "how many", "yes"/"no", a
 #: definition for "what is"); at most ``MAX_TYPES`` types count.
-TYPE_UNITS = 2.0
+TYPE_UNITS = 3.0
 MAX_TYPES = 2
 #: Units per distinct instruction step a reply gives, up to ``STEP_CAP``.
 STEP_UNITS = 0.5
@@ -266,12 +280,18 @@ ELABORATION_CAP = 4
 #: How many clauses one request term anchors: the first at full weight, the
 #: second at half; repeating a term to anchor more clauses earns nothing.
 ANCHOR_WEIGHTS = (1.0, 0.5)
-#: Weight of an anchor that is request-independent phrasing ("order",
-#: "help", "due" in the request): it ties a clause to the request half as
-#: strongly as a term of its own ("#5521", "derivative").
-GENERIC_ANCHOR = 0.5
+#: Weight of a weak anchor -- request-independent phrasing ("order", "help",
+#: "due" in the request) or a term found only in the scenario's description
+#: (``context``, ``user_goal``, ``topic``): it ties a clause to the request
+#: half as strongly as the user's own words ("#5521", "derivative").
+WEAK_ANCHOR = 0.5
+#: A specific counts in an anchored clause only within this many content
+#: words of a request term.
+PROXIMITY = 8
+#: Specifics a chain of continuing clauses may add per anchored clause.
+INHERIT_SPECIFICS = 4
 #: Clauses a continuation ("..., then ...", "It ...") carries an anchor into.
-INHERIT_DEPTH = 2
+INHERIT_DEPTH = 3
 #: Runs copied from the request of at least half its tokens (and at least
 #: this many), or four fifths of a request this short or shorter, are echo.
 ECHO_RUN = 6
@@ -318,20 +338,26 @@ _EVIDENCE_FIELDS = (
 EVIDENCE_ROLES = frozenset({"tool", "function", "observation", "system", "ipython"})
 
 
-def _request_texts(context: Mapping[str, Any] | None) -> tuple[list[str], list[str]]:
-    """Request descriptions and ground-truth labels found in a reward context."""
+def _request_texts(
+    context: Mapping[str, Any] | None,
+) -> tuple[list[str], list[str], list[str]]:
+    """Request texts, the background ones among them (scenario
+    descriptions) and ground-truth labels found in a reward context."""
     if not isinstance(context, Mapping):
-        return [], []
+        return [], [], []
     texts: list[str] = []
+    background: list[str] = []
     labels: list[str] = []
     for source in _context_sources(context):
         for field in _REQUEST_FIELDS:
             value = source.get(field)
             if isinstance(value, str):
                 texts.append(value)
+                if field in _BACKGROUND_FIELDS:
+                    background.append(value)
         labels.extend(_strings(source.get("ground_truth")))
         labels.extend(_strings(source.get("correct_facts")))
-    return texts, labels
+    return texts, background, labels
 
 
 def _context_sources(context: Mapping[str, Any]) -> list[Mapping[str, Any]]:
@@ -368,6 +394,10 @@ _PIECE = re.compile(
     r"(?P<tok>[A-Za-z0-9]+(?:['./:-][A-Za-z0-9]+)*)(?P<call>\()?"
     r"|(?P<sep>[,;()\[\]\n]|:(?=\s|$)|[.!?]+)"
 )
+#: Conjunctions that open a clause of their own ("..., card 4093 blocked and
+#: fee 8812 waived and ..."): each part must be tied to the request itself or
+#: continue a part that is.
+_CONJUNCTIONS = frozenset("and or but plus then while".split())
 #: Separators that end a sentence (the others end a clause).
 _SENTENCE_SEPARATORS = frozenset(".!?\n")
 #: Clause openers that continue the clause before them, and sentence openers
@@ -456,6 +486,10 @@ def _clauses(text: str) -> list[_Clause]:
     current = _Clause("", True, 0)
     for match in _PIECE.finditer(text):
         token = match.group("tok")
+        if token and token.lower() in _CONJUNCTIONS and current.raw:
+            # "X and Y": Y is a clause of its own that continues X.
+            clauses.append(current)
+            current = _Clause("&", False, len(clauses))
         if token:
             current.raw.append(token)
             current.low.append(token.lower())
@@ -483,21 +517,43 @@ def _token_parts(stem: str) -> set[str]:
     return parts
 
 
-def _anchor_weights(clauses: Sequence[_Clause], anchors: set[str]) -> list[float]:
-    """How strongly each clause is tied to the request (0 = not at all).
+class _Anchoring:
+    """How each clause of a reply is tied to the request.
+
+    ``weights[i]`` is the clause's anchor weight (0: not tied), ``owners[i]``
+    the clause whose anchor it carries (itself for a clause naming a request
+    term, ``-1`` when untied) and ``explicit[i]`` whether it names one.
+    """
+
+    __slots__ = ("weights", "owners", "explicit")
+
+    def __init__(self, size: int) -> None:
+        self.weights = [0.0] * size
+        self.owners = [-1] * size
+        self.explicit = [False] * size
+
+
+def _anchor_weights(
+    clauses: Sequence[_Clause], anchors: set[str], weak: Collection[str] = _GENERIC
+) -> _Anchoring:
+    """How strongly each clause is tied to the request (see ``_Anchoring``).
 
     A clause naming a request term is anchored and uses up one of its terms:
     the first clause a term anchors gets ``ANCHOR_WEIGHTS[0]``, the next
     ``ANCHOR_WEIGHTS[1]``, later ones nothing, so repeating a request term to
-    anchor more clauses earns nothing. (A clause takes the best weight its
-    terms offer and uses up the term it needs least later on.) A clause
-    without a request term inherits the weight of the clause before it when
-    it continues it -- after a comma or a parenthesis, or when it opens with
-    a continuation ("then", "which", "and") or, at a sentence start, a
-    reference back ("It", "This") -- for at most ``INHERIT_DEPTH`` clauses.
-    Anything else, including clauses after a semicolon or colon, stands
-    alone: off-topic specifics written beside a request term ("What
-    derivative: card 4093 blocked; ...") are not anchored.
+    anchor more clauses earns nothing (a clause takes the best weight its
+    terms offer and uses up the term it needs least later on; a
+    weak term -- "order", or one only the scenario description names -- anchors
+    at ``WEAK_ANCHOR``).
+    A clause without a request term continues the anchored clause before it
+    when it follows a comma, a parenthesis or a conjunction, or opens with a
+    continuation ("then", "which") or a reference back ("it", "this"), for at
+    most ``INHERIT_DEPTH`` clauses; a reference back may restart that chain
+    once per anchored clause. Clauses joined by commas to an anchored clause
+    after them share its anchor too. Anything else, including clauses after
+    a semicolon or colon, stands alone: off-topic specifics written beside a
+    request term ("What derivative: card 4093 blocked; ...") are not
+    anchored.
     """
     named = []
     for clause in clauses:
@@ -507,52 +563,65 @@ def _anchor_weights(clauses: Sequence[_Clause], anchors: set[str]) -> list[float
         named.append(terms)
     later = {term: sum(term in terms for terms in named) for term in anchors}
     uses: dict[str, int] = {}
-    weights: list[float] = []
-    previous, depth = 0.0, 0
-    for clause, terms in zip(clauses, named, strict=True):
+    result = _Anchoring(len(clauses))
+    owner, depth, topic = -1, 0, -1
+    for index, (clause, terms) in enumerate(zip(clauses, named, strict=True)):
         for term in terms:
             later[term] -= 1
         open_terms = [t for t in terms if uses.get(t, 0) < len(ANCHOR_WEIGHTS)]
         if open_terms:
             term = min(
                 open_terms,
-                key=lambda t: (t in _GENERIC, uses.get(t, 0), later[t], t),
+                key=lambda t: (t in weak, uses.get(t, 0), later[t], t),
             )
-            best = ANCHOR_WEIGHTS[uses.get(term, 0)]
-            if term in _GENERIC:
-                best *= GENERIC_ANCHOR
+            weight = ANCHOR_WEIGHTS[uses.get(term, 0)]
             uses[term] = uses.get(term, 0) + 1
-            weights.append(best)
-            previous, depth = best, 0
+            result.weights[index] = weight * (WEAK_ANCHOR if term in weak else 1)
+            result.owners[index] = index
+            result.explicit[index] = True
+            owner, depth, topic = index, 0, index
             continue
         opener = clause.low[0] if clause.low else ""
+        if opener in _ANAPHORS and topic >= 0:
+            # "...; it costs $899": a reference back to the last anchored
+            # clause restarts the chain (and its budget), once per anchor.
+            result.weights[index] = result.weights[topic]
+            result.owners[index] = index
+            owner, depth, topic = index, 0, -1
+            continue
         continues = (
-            clause.sep in ",()[]"
+            clause.sep in ",()[]&"
             or opener in _CONTINUATIONS
             or opener in _ANAPHORS
         )
-        if previous and continues and depth < INHERIT_DEPTH:
+        if owner >= 0 and continues and depth < INHERIT_DEPTH:
             depth += 1
-            weights.append(previous)
+            result.weights[index] = result.weights[owner]
+            result.owners[index] = owner
         else:
-            previous, depth = 0.0, 0
-            weights.append(0.0)
-    # A sentence may lead with its setting before naming the request term
-    # ("Sunlight scatters off the air, and blue light ..."): clauses joined
-    # by commas to an anchored clause after them share its anchor, up to
-    # ``INHERIT_DEPTH`` back.
+            owner, depth = -1, 0
+    _anchor_backward(clauses, result)
+    return result
+
+
+def _anchor_backward(clauses: Sequence[_Clause], result: _Anchoring) -> None:
+    """A sentence may lead with its setting before naming the request term
+    ("Sunlight scatters off the air, and blue light ..."): clauses joined by
+    commas or conjunctions to an anchored clause after them share its anchor,
+    up to ``INHERIT_DEPTH`` back."""
     for index in range(len(clauses) - 1, 0, -1):
-        if weights[index] and not weights[index - 1]:
-            joined, back = index, 0
-            while (
-                joined > 0
-                and back < INHERIT_DEPTH
-                and clauses[joined].sep in ",()[]"
-                and not weights[joined - 1]
-            ):
-                weights[joined - 1] = weights[index]
-                joined, back = joined - 1, back + 1
-    return weights
+        if not result.explicit[index] or result.weights[index - 1]:
+            continue
+        joined, back = index, 0
+        while (
+            joined > 0
+            and back < INHERIT_DEPTH
+            and clauses[joined].sep in ",()[]&"
+            and not result.weights[joined - 1]
+        ):
+            result.weights[joined - 1] = result.weights[index]
+            result.owners[joined - 1] = index
+            joined, back = joined - 1, back + 1
 
 
 def _negated(clause: _Clause, index: int) -> bool:
@@ -575,32 +644,57 @@ def _code_like(clause: _Clause, index: int) -> bool:
     )
 
 
+def _near_anchor(clause: _Clause, index: int, anchors: set[str]) -> bool:
+    """Whether token ``index`` is within ``PROXIMITY`` content words of a
+    request term in its clause ("the derivative card 4093 blocked the fee
+    8812 waived the dispute ..." anchors only its first few specifics)."""
+    rank, ranks, anchor_ranks = 0, [], []
+    for low, stem in zip(clause.low, clause.stems, strict=True):
+        ranks.append(rank)
+        if low not in STOPWORDS:
+            if _token_parts(stem) & anchors:
+                anchor_ranks.append(rank)
+            rank += 1
+    return any(abs(ranks[index] - other) <= PROXIMITY for other in anchor_ranks)
+
+
+def _is_statement(clause: _Clause) -> bool:
+    """Whether a clause reads as a statement or an instruction ("set ISO
+    100") rather than a list item ("card 4093 blocked"): it has a function
+    word or opens with an instruction verb."""
+    if any(low in STOPWORDS for low in clause.low):
+        return True
+    return bool(clause.stems) and clause.stems[0] in INSTRUCTION_VERBS
+
+
 def _clause_specifics(
     clause: _Clause, exclude: set[str], numbers_are_answers: bool
-) -> list[str]:
+) -> list[tuple[str, int]]:
     """The specifics a clause states: numbers, affirmed actions and code.
 
     A clause without function words is a list item and states at most one
     specific; a lone list of numbers or verbs states nothing.
     """
-    found: list[str] = []
+    found: list[tuple[str, int]] = []
+    seen: set[str] = set()
     for index, (low, stem) in enumerate(zip(clause.low, clause.stems, strict=True)):
-        if low in STOPWORDS or stem in exclude or stem in found:
+        if low in STOPWORDS or stem in exclude or stem in seen:
             continue
         if _is_number(stem):
-            if not numbers_are_answers:
-                found.append(stem)
+            specific = not numbers_are_answers
         elif stem in ACTION_TERMS:
-            if not _negated(clause, index):
-                found.append(stem)
-        elif _code_like(clause, index) and stem not in _GENERIC:
-            found.append(stem)
+            specific = not _negated(clause, index)
+        else:
+            specific = _code_like(clause, index) and stem not in _GENERIC
+        if specific:
+            found.append((stem, index))
+            seen.add(stem)
     carriers = [
         stem
         for stem in clause.content()
-        if stem not in found and not _is_number(stem) and stem not in ACTION_TERMS
+        if stem not in seen and not _is_number(stem) and stem not in ACTION_TERMS
     ]
-    has_function_word = any(low in STOPWORDS for low in clause.low)
+    has_function_word = _is_statement(clause)
     if not carriers and not has_function_word:
         return []  # a bare list of numbers or verbs states nothing
     if not has_function_word:
@@ -649,15 +743,43 @@ class _Reading:
         exclude: set[str],
         numbers_are_answers: bool,
         anchors: set[str] | None = None,
+        asked: set[str] | None = None,
+        weak: Collection[str] = _GENERIC,
     ) -> None:
         self.clauses = _clauses(reply)
         self.request_terms = request_terms
         anchors = request_terms if anchors is None else anchors
-        self.weights = _anchor_weights(self.clauses, anchors)
-        self.specifics = [
+        self.asked = asked if asked is not None else request_terms
+        anchoring = _anchor_weights(self.clauses, anchors, weak)
+        self.weights = anchoring.weights
+        self.explicit = anchoring.explicit
+        found = [
             _clause_specifics(clause, exclude, numbers_are_answers)
             for clause in self.clauses
         ]
+        # A clause naming a request term supports the specifics near it; a
+        # clause carrying another's anchor supports at most
+        # ``INHERIT_SPECIFICS`` more per anchor, so a chain of off-topic
+        # clauses ("... and card 4093 was blocked and fee 8812 was waived")
+        # cannot ride on one request term.
+        budget: dict[int, int] = {}
+        self.anchored_specifics: list[list[str]] = []
+        for clause, pairs in zip(self.clauses, found, strict=True):
+            owner = anchoring.owners[clause.index]
+            if anchoring.explicit[clause.index]:
+                near = [s for s, i in pairs if _near_anchor(clause, i, anchors)]
+            elif owner >= 0 and not _is_statement(clause):
+                # A bare list item continuing a clause ("..., card 4093
+                # blocked, fee 8812 waived") states nothing.
+                found[clause.index] = near = []
+            elif owner >= 0:
+                left = budget.get(owner, INHERIT_SPECIFICS)
+                near = [s for s, _ in pairs][:left]
+                budget[owner] = left - len(near)
+            else:
+                near = []
+            self.anchored_specifics.append(near)
+        self.specifics = [[stem for stem, _ in pairs] for pairs in found]
 
     def anchored(self) -> list[_Clause]:
         return [c for c, w in zip(self.clauses, self.weights, strict=True) if w]
@@ -701,8 +823,8 @@ class _Reading:
         <verb>", that names something new."""
         found = set()
         for clause in self.anchored():
-            if not (self.new_words(clause) or self.specifics[clause.index]):
-                continue
+            if not self.new_words(clause):
+                continue  # "Rename pathlib 4093" says nothing new
             text = " ".join(clause.low)
             for match in _STEP.finditer(text):
                 verb = _stem(match.group("verb"))
@@ -719,7 +841,7 @@ class _Reading:
         if kind == "entity":
             return bool(self.entities())
         if kind == "place":
-            return bool(self.entities()) or any(
+            return any(
                 _PLACE.search(" ".join(c.low)) and self.new_words(c) for c in anchored
             )
         if kind == "procedure":
@@ -805,7 +927,7 @@ def _repeated_share(reading: _Reading, tokens: Sequence[str]) -> float:
         if reading.specifics[clause.index]:
             shapes.add(shape)
         for offset, stem in enumerate(clause.stems):
-            if stem in reading.request_terms and clause.low[offset] not in STOPWORDS:
+            if stem in reading.asked and clause.low[offset] not in STOPWORDS:
                 mentions[stem] = mentions.get(stem, 0) + 1
                 if mentions[stem] > TERM_MENTIONS:
                     covered.add(position + offset)
@@ -839,7 +961,7 @@ def _echo_share(
         words = clause.content()
         if (
             len(words) >= 2
-            and all(word in reading.request_terms for word in words)
+            and all(word in reading.asked for word in words)
             and not any(low in STOPWORDS for low in clause.low)
         ):
             covered.update(range(position, position + len(clause.stems)))
@@ -868,10 +990,24 @@ def _units(
     """
     support: dict[str, float] = {}
     for clause, weight in zip(reading.clauses, reading.weights, strict=True):
+        near = set(reading.anchored_specifics[clause.index])
         for specific in reading.specifics[clause.index]:
-            backed = 1.0 if _token_parts(specific) & evidence_terms else weight
+            if _token_parts(specific) & evidence_terms:
+                backed = 1.0
+            else:
+                backed = weight if specific in near else 0.0
             support[specific] = max(support.get(specific, 0.0), backed)
-    supported = sum(support.values())
+    # Specifics need context: at most ``SPECIFIC_FLOOR`` plus
+    # ``SPECIFICS_PER_WORD`` per new word the anchored clauses state them with ("Visa ending 4421", "ISO
+    # 100"), so request terms, numbers and verbs alone ("The pixel 4278 was
+    # refunded. Your wi-fi 2237 got escalated.") state a couple of facts.
+    context_words: set[str] = set()
+    for clause in reading.anchored():
+        context_words.update(reading.new_words(clause))
+    supported = min(
+        sum(support.values()),
+        SPECIFIC_FLOOR + SPECIFICS_PER_WORD * len(context_words),
+    )
     unsupported = float(sum(1 for weight in support.values() if weight == 0.0))
     # With a reference answer, answer credit decides whether the question
     # was answered; the answer-type cue would credit a wrong answer.
@@ -886,9 +1022,11 @@ def _units(
     # Elaboration stands in for specifics in an answer without them ("why
     # is the sky blue?"); beside specifics it adds nothing, so padding a
     # specific answer with words cannot buy information.
-    units = max(supported, elaboration_units) + type_units + step_units
+    specific_units = supported
+    units = max(specific_units, elaboration_units) + type_units + step_units
     details = {
         "specifics": supported,
+        "specific_units": specific_units,
         "unsupported": unsupported,
         "answer_types": float(answered),
         "steps": step_units,
@@ -904,6 +1042,7 @@ def grounding_score(
     *,
     evidence: Sequence[str] = (),
     question: str | None = None,
+    background: Sequence[str] = (),
 ) -> tuple[float, dict[str, float]]:
     """Grounding of one ``reply`` in a ``request`` (see the module docs).
 
@@ -915,7 +1054,9 @@ def grounding_score(
     ``question`` is the message the reply answers (default: ``request``); it
     sets the expected answer type. ``request`` may be given as its separate
     parts (request fields and user messages), so a copy of any one of them
-    is recognized as echo.
+    is recognized as echo. ``background`` names the parts that describe the
+    scenario rather than quote the user (``context``, ``user_goal``,
+    ``topic``...): terms found only there anchor at ``WEAK_ANCHOR``.
     """
     parts = (request,) if isinstance(request, str) else tuple(map(str, request))
     score, details = _cached_grounding(
@@ -924,6 +1065,7 @@ def grounding_score(
         tuple(map(str, labels)),
         tuple(map(str, evidence)),
         question,
+        tuple(map(str, background)),
     )
     return score, dict(details)
 
@@ -935,10 +1077,18 @@ def _cached_grounding(
     labels: tuple[str, ...],
     evidence: tuple[str, ...],
     question: str | None,
+    background: tuple[str, ...] = (),
 ) -> tuple[float, dict[str, float]]:
     # Every gated component of a composite grounds the same reply; the
     # computation is pure, so it runs once per distinct input.
-    return _grounding(reply, parts, labels, evidence=evidence, question=question)
+    return _grounding(
+        reply,
+        parts,
+        labels,
+        evidence=evidence,
+        question=question,
+        background=background,
+    )
 
 
 def _grounding(
@@ -948,6 +1098,7 @@ def _grounding(
     *,
     evidence: Sequence[str] = (),
     question: str | None = None,
+    background: Sequence[str] = (),
 ) -> tuple[float, dict[str, float]]:
     """:func:`grounding_score` for a request given as its parts."""
     request = " ".join(parts)
@@ -977,7 +1128,22 @@ def _grounding(
     # A clause is tied to the request by a request term, a reference label
     # ("It is Paris.") or a term of the conversation's evidence.
     anchors = request_terms | label_terms | (evidence_terms - _GENERIC)
-    reading = _Reading(reply, request_terms | label_terms, exclude, numeric_answer, anchors)
+    stated = set().union(
+        set(), *(content_terms(part) for part in parts if part not in background)
+    )
+    # Request terms that are boilerplate or action words ("help", "get it
+    # reversed") or that only the scenario description names are weak
+    # anchors: topic words tie a clause to the request, verbs barely do.
+    weak = (_GENERIC | ACTION_TERMS | (request_terms - stated)) - label_terms
+    reading = _Reading(
+        reply,
+        request_terms | label_terms,
+        exclude,
+        numeric_answer,
+        anchors,
+        asked=request_terms,
+        weak=weak,
+    )
     units, unsupported, unit_details = _units(
         reading, question, evidence_terms, bool(answers)
     )
@@ -999,10 +1165,7 @@ def _grounding(
         for part in parts
     ]
     specifics = {s for found in reading.specifics for s in found}
-    # Names answer "who"/"where"; anywhere else they are words like any other.
-    asked_for_names = _answer_types(question) & {"entity", "place"}
-    entities = reading.entities() if asked_for_names else set()
-    recognized = known | specifics | entities | evidence_terms
+    recognized = known | specifics | evidence_terms
     content = [
         (low, stem)
         for low, stem in zip(lows, tokens, strict=True)
@@ -1010,7 +1173,8 @@ def _grounding(
     ]
     # Function words count up to one per content word: ordinary prose keeps
     # its share, and padding with "the of and" buys nothing.
-    size = max(1, len(content) + min(len(tokens) - len(content), len(content)))
+    function_words = sum(1 for low in lows if low in STOPWORDS and low not in _NEGATIONS)
+    size = max(1, len(content) + min(function_words, len(content)))
     boilerplate = sum(
         1 for _, s in content if s in _GENERIC and s not in recognized
     ) / size
@@ -1022,10 +1186,13 @@ def _grounding(
         and not _is_number(s)
         and s not in ACTION_TERMS
     ) / size
-    quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** 2)
+    quality = (1.0 - boilerplate) * (1.0 - (boilerplate + unknown) ** QUALITY_POWER)
     support = (units + 1.0) / (units + unsupported + 1.0)
-    repeated = _repeated_share(reading, tokens)
-    echoed = _echo_share(reading, tokens, request_tokens)
+    # Repetition and echo are measured against the reply's anchored text, so
+    # appending unrelated text cannot dilute them.
+    anchored_size = sum(len(c.stems) for c in reading.anchored()) or len(tokens)
+    repeated = min(1.0, _repeated_share(reading, tokens) * len(tokens) / anchored_size)
+    echoed = min(1.0, _echo_share(reading, tokens, request_tokens) * len(tokens) / anchored_size)
     off_request = _off_request_share(reading)
     originality = (1.0 - repeated) * max(0.0, 1.0 - ECHO_WEIGHT * echoed)
     score = (
@@ -1062,7 +1229,7 @@ def task_grounding(
     and the context's evidence fields). With ``reward_scope`` set to the
     latest turn only the newest reply counts.
     """
-    texts, labels = _request_texts(context)
+    texts, background, labels = _request_texts(context)
     evidence = _evidence_texts(context)
     asked: list[str] = []
     scores: list[float] = []
@@ -1080,6 +1247,7 @@ def task_grounding(
                 labels,
                 evidence=list(evidence),
                 question=asked[-1] if asked else " ".join(texts),
+                background=background,
             )
             scores.append(score)
     if not scores:

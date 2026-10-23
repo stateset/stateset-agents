@@ -43,9 +43,9 @@ def test_a_specific_relevant_answer_is_grounded():
     score, details = grounding_score(ANSWER, REQUEST)
     assert score > 0.3
     assert details["relevance"] == 1.0
-    # 42.10, issued, 4421, posts, 5-7: five units, 1 - exp(-units / 8).
+    # 42.10, issued, 4421, posts, 5-7: five units, 1 - exp(-units / 6).
     assert details["specifics"] == 5
-    assert details["information"] == pytest.approx(1 - math.exp(-5 / 8))
+    assert details["information"] == pytest.approx(1 - math.exp(-5 / 6))
 
 
 def test_every_specific_counts_and_salad_does_not():
