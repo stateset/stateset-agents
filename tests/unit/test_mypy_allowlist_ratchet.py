@@ -14,7 +14,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
 # Floor = the full packaged source, including native studies, durable workers
 # and the tool-use environment and verifiers.
-ALLOWLIST_FLOOR = 500
+ALLOWLIST_FLOOR = 502
 
 
 def _allowlisted_files() -> list[str]:

@@ -1029,7 +1029,7 @@ class AdvancedTrainingOrchestrator:
             # state writes; the first error is re-raised below.
             try:
                 await self._reap_completed_tasks()
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001 - collect-and-reraise
                 errors.append(exc)
             for job in list(self._pending_state_jobs.values()):
                 try:
