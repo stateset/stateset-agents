@@ -619,7 +619,8 @@ class ContinualLearningManager:
                             trajectory, agent, self.training_config or {}
                         )
                         if (
-                            not torch.is_tensor(labels)
+                            labels is None
+                            or not torch.is_tensor(labels)
                             or labels.ndim < 1
                             or not bool(labels[..., 1:].ne(-100).any())
                         ):
