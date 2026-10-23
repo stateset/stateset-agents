@@ -236,7 +236,7 @@ def _load_adapter(model: Any, adapter_dir: str) -> Any:
 
 
 def _plan(payload: dict[str, Any]) -> None:
-    print("Harvest Plan (dry run — no GPU detected)")
+    lines = ["Harvest Plan (dry run — no GPU detected)"]
     for key in (
         "base_model",
         "adapter_dir",
@@ -245,9 +245,10 @@ def _plan(payload: dict[str, Any]) -> None:
         "top_p",
         "max_new_tokens",
     ):
-        print(f"  {key}: {payload.get(key)}")
-    print(f"  harvest prompts: {len(payload['harvest_prompts'])}")
-    print(f"  eval prompts: {len(payload.get('eval_prompts') or [])}")
+        lines.append(f"  {key}: {payload.get(key)}")
+    lines.append(f"  harvest prompts: {len(payload['harvest_prompts'])}")
+    lines.append(f"  eval prompts: {len(payload.get('eval_prompts') or [])}")
+    logger.info("%s", "\n".join(lines))
 
 
 def run_harvest_job(payload: dict[str, Any]) -> dict[str, Any]:

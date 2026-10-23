@@ -417,7 +417,7 @@ def main() -> None:
         "results": [str(Path(f"seed-{seed}") / "result.json") for seed in args.seeds],
     }
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(json.dumps(summary))
+    print(json.dumps(summary))  # noqa: T201 - CLI result line
     raise SystemExit(0 if summary["passed"] else 1)
 
 

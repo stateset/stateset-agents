@@ -327,7 +327,7 @@ def main() -> None:
         else describe_muse_spark(config, check_data=True)
     )
     if int(os.environ.get("RANK", "0")) == 0:
-        print(json.dumps(report, indent=2))
+        print(json.dumps(report, indent=2))  # noqa: T201 - CLI report
 
 
 if __name__ == "__main__":

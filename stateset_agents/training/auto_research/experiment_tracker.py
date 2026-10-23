@@ -384,32 +384,33 @@ class ExperimentTracker:
     # Analysis and summary
     # ------------------------------------------------------------------
 
-    def print_summary(self) -> None:
-        """Print a comprehensive summary of the experiment run."""
-        print("\n" + "=" * 60)
-        print("AUTO-RESEARCH SUMMARY")
-        print("=" * 60)
-        print(f"Total experiments:  {self.num_experiments}")
-        print(f"Kept:               {self.num_kept}")
-        print(f"Discarded:          {self.num_discarded}")
-        print(f"Crashed:            {self.num_crashed}")
+    def format_summary(self) -> str:
+        """A comprehensive text summary of the experiment run."""
+        lines: list[str] = []
+        lines.append("\n" + "=" * 60)
+        lines.append("AUTO-RESEARCH SUMMARY")
+        lines.append("=" * 60)
+        lines.append(f"Total experiments:  {self.num_experiments}")
+        lines.append(f"Kept:               {self.num_kept}")
+        lines.append(f"Discarded:          {self.num_discarded}")
+        lines.append(f"Crashed:            {self.num_crashed}")
 
         if not self.records:
-            print("=" * 60 + "\n")
-            return
+            lines.append("=" * 60 + "\n")
+            return "\n".join(lines)
 
         # Best result
         if self._best_record is not None:
-            print(f"\nBest {self.objective_metric}: {self._best_value:.6f}")
-            print(f"Best experiment:    {self._best_record.experiment_id}")
-            print("Best params:")
+            lines.append(f"\nBest {self.objective_metric}: {self._best_value:.6f}")
+            lines.append(f"Best experiment:    {self._best_record.experiment_id}")
+            lines.append("Best params:")
             for k, v in sorted(self._best_record.params.items()):
-                print(f"  {k}: {v}")
+                lines.append(f"  {k}: {v}")
 
         # Convergence trace — accepted best value over time
         successful = [r for r in self.records if r.status != "crash"]
         if len(successful) >= 2:
-            print("\nConvergence trace:")
+            lines.append("\nConvergence trace:")
             running_best: float | None = None
             for r in successful:
                 marker = ""
@@ -426,7 +427,7 @@ class ExperimentTracker:
                 ):
                     running_best = r.objective_value
                     marker = " *"
-                print(
+                lines.append(
                     f"  {r.experiment_id:>12s}  "
                     f"{r.objective_value:+.6f}  "
                     f"best={running_best:.6f}{marker}"
@@ -439,32 +440,44 @@ class ExperimentTracker:
             else:
                 top = sorted(successful, key=lambda r: r.objective_value)
 
-            print("\nTop 3 experiments:")
+            lines.append("\nTop 3 experiments:")
             for r in top[:3]:
-                print(f"  {r.experiment_id}: {r.objective_value:.6f} — {r.description}")
+                lines.append(
+                    f"  {r.experiment_id}: {r.objective_value:.6f} — {r.description}"
+                )
 
-            print("\nBottom 3 experiments:")
+            lines.append("\nBottom 3 experiments:")
             for r in top[-3:]:
-                print(f"  {r.experiment_id}: {r.objective_value:.6f} — {r.description}")
+                lines.append(
+                    f"  {r.experiment_id}: {r.objective_value:.6f} — {r.description}"
+                )
 
         # Timing stats
         times = [r.training_time for r in self.records if r.training_time > 0]
         if times:
             avg_time = sum(times) / len(times)
             total_time = sum(times)
-            print("\nTiming:")
-            print(f"  Avg training time:   {avg_time:.1f}s")
-            print(f"  Total training time: {total_time:.1f}s ({total_time / 60:.1f}m)")
+            lines.append("\nTiming:")
+            lines.append(f"  Avg training time:   {avg_time:.1f}s")
+            lines.append(
+                f"  Total training time: {total_time:.1f}s ({total_time / 60:.1f}m)"
+            )
 
         # Improvement rate
         if self.num_experiments > 1:
             rate = self.num_kept / self.num_experiments * 100
-            print(
+            lines.append(
                 f"\nImprovement rate: {rate:.0f}% ({self.num_kept}/{self.num_experiments})"
             )
 
-        print(f"\nResults saved to:   {self._tsv_path}")
-        print("=" * 60 + "\n")
+        lines.append(f"\nResults saved to:   {self._tsv_path}")
+        lines.append("=" * 60 + "\n")
+        return "\n".join(lines)
+
+    def print_summary(self) -> None:
+        """Print :meth:`format_summary` to the console (an explicit,
+        interactive request; the experiment loop logs it instead)."""
+        print(self.format_summary())  # noqa: T201 - explicit console helper
 
     def get_analysis(self) -> dict[str, Any]:
         """Return a structured analysis dict for dashboards and Jupyter.

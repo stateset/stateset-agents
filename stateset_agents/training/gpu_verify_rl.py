@@ -178,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         summary = run_verification(num_steps=args.steps)
     except Exception as exc:  # noqa: BLE001 — the summary line is the contract
-        print(
+        print(  # noqa: T201 - the summary line is the CLI contract
             f"{SUMMARY_PREFIX} "
             + json.dumps(
                 {"job": "gspo_gpu_verify", "converged": False, "error": str(exc)}
@@ -186,7 +186,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    print(f"{SUMMARY_PREFIX} {json.dumps(summary)}")
+    print(f"{SUMMARY_PREFIX} {json.dumps(summary)}")  # noqa: T201 - CLI contract
     return 0 if summary["converged"] else 1
 
 
