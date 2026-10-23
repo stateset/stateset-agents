@@ -74,6 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   differ only in hooks (AMP scaler gating, how the reward baseline and
   backward closure reach the loss, their optimizer-step and flush
   signatures). Both trainers' step goldens are unchanged.
+- `SpineLoopMixin.train()` runs each episode through a new
+  `_train_episode` method (task boundary, rollouts, step, reporting);
+  the phases it passes to `_training_phase` and their order are unchanged.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
