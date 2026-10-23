@@ -32,6 +32,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import math
+import sys
 from collections.abc import Mapping, Sequence
 from typing import Any, NamedTuple
 
@@ -44,6 +45,19 @@ from stateset_agents.core.reward_context import (
     score_episode,
     score_response,
 )
+
+
+def reward_outage_exceptions() -> tuple[type[BaseException], ...]:
+    """Failures of a reward-model prediction that are outages, not bugs: I/O
+    (``OSError``, which includes connection errors), memory exhaustion (CPU,
+    or CUDA when ``torch`` is loaded) and timeouts. A learned reward turns
+    them into ``RewardUnavailableError``; any other exception propagates."""
+    outages: list[type[BaseException]] = [OSError, MemoryError, asyncio.TimeoutError]
+    cuda = getattr(sys.modules.get("torch"), "cuda", None)
+    oom = getattr(cuda, "OutOfMemoryError", None)
+    if isinstance(oom, type) and issubclass(oom, BaseException):
+        outages.append(oom)
+    return tuple(outages)
 
 
 class ScoredReply(NamedTuple):
@@ -206,5 +220,6 @@ __all__ = [
     "ResponseScorer",
     "ScoredReply",
     "result_reward_fallback",
+    "reward_outage_exceptions",
     "trajectory_reward_fallback",
 ]

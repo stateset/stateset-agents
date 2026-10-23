@@ -60,12 +60,7 @@ PRINT_BASELINE: dict[str, int] = {
 #: Files whose prints are being converted to logging by in-flight training
 #: work. They are exempted in pyproject but kept out of the baseline; drop a
 #: file from here and from per-file-ignores once it has no prints.
-PENDING_CONVERSION: frozenset[str] = frozenset(
-    {
-        "stateset_agents/training/neural_reward_trainer.py",
-        "stateset_agents/training/transformer_reward_model.py",
-    }
-)
+PENDING_CONVERSION: frozenset[str] = frozenset()
 
 #: Unsuppressed print calls across the baseline files. Only shrinks.
 CEILING = 49

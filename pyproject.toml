@@ -541,9 +541,5 @@ ignore = [
 "stateset_agents/remote/fireworks.py" = ["T20"]
 "stateset_agents/remote/river.py" = ["T20"]
 "stateset_agents/remote/worker.py" = ["T20"]
-# Parent converts (training spine work in flight): drop these once their
-# prints become logging.
-"stateset_agents/training/neural_reward_trainer.py" = ["T20"]
-"stateset_agents/training/transformer_reward_model.py" = ["T20"]
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
 "tests/unit/test_rl_losses.py" = ["E402"]
