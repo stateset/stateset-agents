@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from .config import config_value
+
 logger = logging.getLogger(__name__)
 
 # Lazy imports - resolved on demand for optional dependency handling
@@ -265,6 +267,6 @@ def disable_dropout_in_model(model: Any) -> int:
 
 def apply_dropout_setting(config: Any, model: Any) -> None:
     """Disable dropout in ``model`` when ``config.disable_dropout`` is set."""
-    if bool(getattr(config, "disable_dropout", False)) and model is not None:
+    if bool(config_value(config, "disable_dropout")) and model is not None:
         count = disable_dropout_in_model(model)
         logger.info("disable_dropout: zeroed %d dropout modules", count)

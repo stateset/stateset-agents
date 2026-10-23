@@ -521,7 +521,6 @@ ignore = [
 "stateset_agents/remote/serve_session.py" = ["BLE001"]
 "stateset_agents/rewards/nsr_verifier.py" = ["BLE001"]
 "stateset_agents/rewards/symbolic_physics_reward.py" = ["BLE001"]
-"stateset_agents/training/single_turn_trainer.py" = ["BLE001"]
 "stateset_agents/training/spine/loop.py" = ["BLE001"]
 "stateset_agents/training/spine/update.py" = ["BLE001"]
 "stateset_agents/tui.py" = ["BLE001"]

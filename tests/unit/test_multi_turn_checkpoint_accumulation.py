@@ -475,3 +475,41 @@ async def test_publication_validation_precedes_live_state_mutation(
         restored.agent.model.parameters(), grads, strict=True
     ):
         assert_equal(parameter.grad, gradient)
+
+
+@pytest.mark.asyncio
+async def test_unmasked_label_switch_cannot_change_on_native_resume(
+    tmp_path, trainer_factory
+):
+    """``allow_unmasked_labels`` changes what the loss supervises, so a
+    resume must not flip it (like ``allow_sequence_fallback``)."""
+    source = trainer_factory(tmp_path / "source")
+    source.config.allow_unmasked_labels = False
+    accumulate(source, [1, 2])
+    await source.save_checkpoint(checkpoint_name="saved")
+    checkpoint = tmp_path / "source" / "saved"
+    target = trainer_factory(tmp_path / "target")
+    target.config.allow_unmasked_labels = True
+    with pytest.raises(
+        ValueError, match="configuration differs: allow_unmasked_labels"
+    ):
+        target.load_checkpoint(checkpoint)
+    target.config.allow_unmasked_labels = False
+    assert target.load_checkpoint(checkpoint)
+
+
+@pytest.mark.asyncio
+async def test_a_checkpoint_from_before_the_switch_resumes_strict(
+    tmp_path, trainer_factory
+):
+    """A checkpoint written before ``allow_unmasked_labels`` existed resumes
+    with its default (False, the strict setting), not as a mismatch."""
+    source = trainer_factory(tmp_path / "source")
+    accumulate(source, [1, 2])
+    await source.save_checkpoint(checkpoint_name="saved")
+    checkpoint = tmp_path / "source" / "saved"
+    state = torch.load(checkpoint / "training_state.pt", weights_only=True)
+    assert "allow_unmasked_labels" not in state["config"]
+    target = trainer_factory(tmp_path / "target")
+    target.config.allow_unmasked_labels = False
+    assert target.load_checkpoint(checkpoint)

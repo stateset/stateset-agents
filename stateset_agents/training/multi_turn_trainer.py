@@ -20,7 +20,7 @@ from stateset_agents.core import trajectory as core_trajectory
 from stateset_agents.core.reward_context import RewardUnavailableError
 
 from .callbacks import _maybe_await, notify_checkpoint_saved
-from .config import estimate_grpo_optimizer_steps
+from .config import config_value, estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
 from .ddp_population import run_token_local
 from .evaluation import EvaluationConfig, evaluate_agent
@@ -277,7 +277,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
         # Loss scaling guards fp16's narrow exponent range only; bf16 shares
         # fp32's range, and a GradScaler there just adds skipped steps.
-        if torch.cuda.is_available() and getattr(self.config, "fp16", False) is True:
+        if torch.cuda.is_available() and config_value(self.config, "fp16") is True:
             if amp is not None:
                 self.scaler = amp.GradScaler("cuda")
             else:  # pragma: no cover - AMP not available
@@ -314,7 +314,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 "params": [
                     p for n, p in model_params if not any(nd in n for nd in no_decay)
                 ],
-                "weight_decay": getattr(self.config, "weight_decay", 0.01),
+                "weight_decay": config_value(self.config, "weight_decay"),
             },
             {
                 "params": [
@@ -327,16 +327,16 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         # Initialize optimizer
         self.optimizer = torch.optim.AdamW(
             optimizer_grouped_parameters,
-            lr=getattr(self.config, "learning_rate", 5e-6),
+            lr=config_value(self.config, "learning_rate"),
             betas=(
-                getattr(self.config, "adam_beta1", 0.9),
-                getattr(self.config, "adam_beta2", 0.99),
+                config_value(self.config, "adam_beta1"),
+                config_value(self.config, "adam_beta2"),
             ),
             eps=1e-8,
         )
 
         logger.info(
-            f"Optimizer initialized: AdamW with lr={getattr(self.config, 'learning_rate', 5e-6)}"
+            f"Optimizer initialized: AdamW with lr={config_value(self.config, 'learning_rate')}"
         )
 
     def _initialize_reference_model(self) -> None:
@@ -346,8 +346,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         partial reference or silently remove an explicitly requested KL policy.
         """
         if (
-            float(getattr(self.config, "beta", 0.0) or 0.0) > 0.0
-            and not getattr(self.config, "use_reference_model", False)
+            float(config_value(self.config, "beta") or 0.0) > 0.0
+            and not config_value(self.config, "use_reference_model")
             and self.reference_model is None
         ):
             logger.warning(
@@ -356,7 +356,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 self.config.beta,
             )
         if (
-            getattr(self.config, "use_reference_model", False)
+            config_value(self.config, "use_reference_model")
             and self.reference_model is None
         ):
             from copy import deepcopy
@@ -370,11 +370,11 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     def _planned_optimizer_steps(self) -> int:
         """Optimizer-step budget implied by ``num_episodes`` (one rollout
         batch per episode), accumulation and inner updates."""
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        num_episodes = int(config_value(self.config, "num_episodes"))
         return estimate_grpo_optimizer_steps(
             num_episodes,
             gradient_accumulation_steps=self._get_grad_accum_steps(),
-            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            num_gradient_updates=config_value(self.config, "num_gradient_updates"),
         )
 
     def _setup_default_scheduler(self) -> None:
@@ -403,7 +403,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         otherwise checkpointed blocks would see no grad-requiring input and
         the adapters would receive no gradient.
         """
-        if getattr(self.config, "gradient_checkpointing", False) is not True:
+        if config_value(self.config, "gradient_checkpointing") is not True:
             return False
         model = getattr(self.agent, "model", None)
         enable = getattr(model, "gradient_checkpointing_enable", None)
@@ -501,10 +501,10 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             raise ImportError("transformers scheduler helpers are unavailable")
 
         num_warmup_steps = int(
-            num_training_steps * getattr(self.config, "warmup_ratio", 0.1)
+            num_training_steps * config_value(self.config, "warmup_ratio")
         )
 
-        lr_scheduler_type = getattr(self.config, "lr_scheduler_type", "cosine")
+        lr_scheduler_type = config_value(self.config, "lr_scheduler_type")
 
         if lr_scheduler_type == "cosine":
             self.lr_scheduler = cosine_schedule(
@@ -528,7 +528,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             )
 
     def _get_grad_accum_steps(self) -> int:
-        steps = int(getattr(self.config, "gradient_accumulation_steps", 1) or 1)
+        steps = int(config_value(self.config, "gradient_accumulation_steps"))
         return max(1, steps)
 
     def _sync_rollout_backend(self) -> None:
@@ -539,14 +539,14 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         agent has no ``sync_rollout_backend``).
         """
         self.last_rollout_sync = None
-        if not bool(getattr(self.config, "rollout_sync", True)):
+        if not bool(config_value(self.config, "rollout_sync")):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
             self.last_rollout_sync = bool(sync())
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
-        skip_policy = getattr(self.config, "nonfinite_grad_policy", "raise") == "skip"
+        skip_policy = config_value(self.config, "nonfinite_grad_policy") == "skip"
         # safe_optimizer_step discards gradients before raising, so record which
         # parameters were non-finite first (only when we will report and skip).
         self._nonfinite_params = (
@@ -556,7 +556,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             applied = safe_optimizer_step(
                 self,
                 torch,
-                max_grad_norm=getattr(self.config, "max_grad_norm", 1.0),
+                max_grad_norm=config_value(self.config, "max_grad_norm"),
                 scaler=self.scaler,
                 gradient_scale=gradient_scale,
             )
@@ -602,7 +602,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         )
         if self.optimizer is not None:
             self.optimizer.zero_grad(set_to_none=True)
-        limit = int(getattr(self.config, "max_consecutive_nonfinite_skips", 3))
+        limit = int(config_value(self.config, "max_consecutive_nonfinite_skips"))
         if self._consecutive_nonfinite > limit:
             raise ValueError(
                 f"{self._consecutive_nonfinite} consecutive non-finite updates "
@@ -640,8 +640,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
             wandb_logger.init_run(
                 config=config_dict,
-                name=getattr(self.config, "run_name", None),
-                tags=getattr(self.config, "wandb_tags", ["grpo", "multi-turn"]),
+                name=config_value(self.config, "run_name"),
+                tags=config_value(self.config, "wandb_tags"),
                 notes=f"Training {type(self.agent).__name__} with GRPO",
             )
 
@@ -669,8 +669,12 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     ) -> list[TrajectoryGroup]:
         """Generate trajectory groups for training"""
         num_generations = int(
-            num_generations or getattr(self.config, "num_generations", 16) or 16
+            config_value(self.config, "num_generations")
+            if num_generations is None
+            else num_generations
         )
+        if num_generations < 1:
+            raise ValueError("num_generations must be a positive integer")
         trajectory_groups: list[TrajectoryGroup] = []
         # Prefer generate_turn: it returns the assistant turn with the generated
         # token ids and log-probs, which unlocks the batched per-token GRPO
@@ -812,7 +816,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         batch_turns = getattr(self.agent, "generate_turns_batch", None)
         run_batched = getattr(self.environment, "run_episodes_batched", None)
         if (
-            not getattr(self.config, "batched_rollouts", True)
+            not config_value(self.config, "batched_rollouts")
             or not inspect.iscoroutinefunction(batch_turns)
             or not inspect.iscoroutinefunction(run_batched)
             or getattr(self.environment, "supports_concurrent_episodes", False)
@@ -990,7 +994,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         """Extract a task id from scenario metadata when available."""
         if not isinstance(scenario, dict) or self.config is None:
             return None
-        task_key = getattr(self.config, "task_id_key", "task_id")
+        task_key = config_value(self.config, "task_id_key")
         if task_key and task_key in scenario:
             value = scenario.get(task_key)
             return str(value) if value is not None else None
@@ -1256,9 +1260,9 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
 
         if type(num_eval_episodes) is not int or num_eval_episodes < 0:
             raise ValueError("num_eval_episodes must be a nonnegative integer")
-        concurrency = int(getattr(self.config, "rollout_concurrency", 1) or 1)
-        num_generations = int(getattr(self.config, "eval_num_generations", 4) or 4)
-        seed = getattr(self.config, "seed", 42)
+        concurrency = int(config_value(self.config, "rollout_concurrency") or 1)
+        num_generations = int(config_value(self.config, "eval_num_generations") or 4)
+        seed = config_value(self.config, "seed")
         if seed is None:
             seed = 42
         with isolated_evaluation(seed=seed, model=self.agent.model):
@@ -1270,7 +1274,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
                 config=EvaluationConfig(
                     num_episodes=min(num_eval_episodes, len(eval_scenarios)),
                     num_generations=num_generations,
-                    max_turns=getattr(self.config, "max_steps_per_episode", None),
+                    max_turns=config_value(self.config, "max_steps_per_episode"),
                     seed=seed,
                     concurrency=concurrency,
                 ),
@@ -1344,7 +1348,7 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
         """
         import random
 
-        seed_value = getattr(self.config, "seed", None)
+        seed_value = config_value(self.config, "seed")
         if seed_value is None:
             return False
         rank, world = self._data_parallel_rank_world()

@@ -52,7 +52,7 @@ from ..callbacks import (
     notify_training_end,
     notify_training_start,
 )
-from ..config import estimate_grpo_optimizer_steps
+from ..config import config_value, estimate_grpo_optimizer_steps
 from ..runtime_state import TrainingRuntime
 
 logger = logging.getLogger(__name__)
@@ -132,12 +132,12 @@ class SpineLoopMixin(TrainingRuntime):
 
     def _prepare_training_loop(self) -> tuple[int, list[dict[str, Any]], int]:
         """Capture local scenarios once and budget the resolved task windows."""
-        num_episodes = int(getattr(self.config, "num_episodes", 100) or 100)
+        num_episodes = int(config_value(self.config, "num_episodes"))
         scenarios = self._get_training_scenarios()
         total_steps = estimate_grpo_optimizer_steps(
             num_episodes,
             gradient_accumulation_steps=self._get_grad_accum_steps(),
-            num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
+            num_gradient_updates=config_value(self.config, "num_gradient_updates"),
             task_ids=(
                 [
                     self._resolve_task_id(scenario)
@@ -231,11 +231,11 @@ class SpineLoopMixin(TrainingRuntime):
             step=self.global_step,
             metrics=callback_metrics,
         )
-        if self._step_event_due(getattr(self.config, "logging_steps", 10), receipt):
+        if self._step_event_due(config_value(self.config, "logging_steps"), receipt):
             await self._training_phase(
                 "training-log", self._log_training_metrics, receipt, groups
             )
-        if self._step_event_due(getattr(self.config, "eval_steps", 50), receipt):
+        if self._step_event_due(config_value(self.config, "eval_steps"), receipt):
             eval_metrics = await self.evaluate(eval_scenarios)
             await self._training_phase(
                 "evaluation-log", self._log_eval_metrics, eval_metrics
@@ -252,7 +252,7 @@ class SpineLoopMixin(TrainingRuntime):
                 receipt["update_source"],
                 eval_metrics["eval_reward"],
             )
-        if self._step_event_due(getattr(self.config, "save_steps", 100), receipt):
+        if self._step_event_due(config_value(self.config, "save_steps"), receipt):
             await self.save_checkpoint()
             return True
         return False
@@ -293,8 +293,8 @@ class SpineLoopMixin(TrainingRuntime):
 
     def _should_stop_training(self) -> bool:
         return bool(
-            getattr(self.config, "early_stopping", False)
-            and self.steps_without_improvement >= getattr(self.config, "patience", 50)
+            config_value(self.config, "early_stopping")
+            and self.steps_without_improvement >= config_value(self.config, "patience")
         )
 
     async def _finish_tracking(self, summary: dict[str, Any]) -> None:
@@ -374,78 +374,101 @@ class SpineLoopMixin(TrainingRuntime):
             return "stop"
         return None
 
+    #: Logged when :meth:`train` starts and after a successful exit.
+    _training_start_message = "Starting GRPO training"
+    _training_done_message = "Training completed"
+
+    def _scenario_for_episode(
+        self, episode: int, scenarios: list[dict[str, Any]]
+    ) -> Any:
+        """The scenario episode ``episode`` trains on (``scenarios[episode]``;
+        a subclass that resolves scenarios lazily may return ``None``)."""
+        return scenarios[episode]
+
+    def _restore_requested_checkpoint(self) -> bool:
+        """Resume from ``config.resume_from_checkpoint`` when one is set; a
+        requested checkpoint that cannot be restored is an error, never a
+        silent fresh start."""
+        resume_from = config_value(self.config, "resume_from_checkpoint")
+        if resume_from is None:
+            return False
+        if isinstance(resume_from, str) and not resume_from.strip():
+            raise ValueError("resume_from_checkpoint cannot be empty")
+        if self.load_checkpoint(resume_from) is not True:
+            raise ValueError(
+                "Requested training checkpoint could not be restored; "
+                "refusing to start a fresh run instead of resuming"
+            )
+        return True
+
+    async def _run_training_loop(self) -> None:
+        """Budget, resume, start, run the episodes, then finalize."""
+        num_episodes, training_scenarios, total_steps = self._prepare_training_loop()
+        await self._training_phase("scheduler", self._setup_scheduler, total_steps)
+        resumed = self._restore_requested_checkpoint()
+
+        # Training scenarios (this would come from your dataset)
+        eval_scenarios = await self._training_phase(
+            "evaluation-scenarios", self._get_eval_scenarios
+        )
+
+        await self._training_phase(
+            "training-start",
+            notify_training_start,
+            self.callbacks,
+            trainer=self,
+            config=self.config,
+        )
+
+        start_episode = self._resume_start(resumed, num_episodes)
+        boundary_stopped = False
+        for episode in range(start_episode, num_episodes):
+            outcome = await self._train_episode(
+                episode,
+                self._scenario_for_episode(episode, training_scenarios),
+                eval_scenarios,
+            )
+            if outcome == "boundary_stop":
+                boundary_stopped = True
+            if outcome is not None:
+                break
+        await self._finalize_training(eval_scenarios, boundary_stopped)
+
+    async def _finalize_training(
+        self, eval_scenarios: list[dict[str, Any]], boundary_stopped: bool
+    ) -> None:
+        """Close the current task and its accumulation window, save, report."""
+        # Finalization closes the accumulation window. Saved state must not
+        # make a resumed, already-complete run flush an empty window again.
+        previous_step = self.global_step
+        if not boundary_stopped:
+            self._finish_current_task()
+        final_receipt = self._optimizer_update_receipt(
+            previous_step, "final_flush", task_id=self._current_task_id
+        )
+        saved = await self._report_optimizer_update(final_receipt, [], eval_scenarios)
+
+        # A cadence save after final consolidation already captures this
+        # exact learner state. Other successful exits still need a final save.
+        if not saved:
+            await self.save_checkpoint()
+        await self._training_phase(
+            "training-end",
+            notify_training_end,
+            self.callbacks,
+            metrics={
+                "final_step": self.global_step,
+                "best_eval_metric": self.best_eval_metric,
+            },
+        )
+
     async def train(self) -> Any:
         """Train, finalizing checkpoints only after a successful loop exit."""
-        logger.info("Starting GRPO training")
+        logger.info(self._training_start_message)
         errored = False
         cancelled = False
         try:
-            num_episodes, training_scenarios, total_steps = (
-                self._prepare_training_loop()
-            )
-            await self._training_phase("scheduler", self._setup_scheduler, total_steps)
-
-            resume_from = getattr(self.config, "resume_from_checkpoint", None)
-            resumed = False
-            if resume_from is not None:
-                if isinstance(resume_from, str) and not resume_from.strip():
-                    raise ValueError("resume_from_checkpoint cannot be empty")
-                resumed = self.load_checkpoint(resume_from)
-                if resumed is not True:
-                    raise ValueError(
-                        "Requested training checkpoint could not be restored; "
-                        "refusing to start a fresh run instead of resuming"
-                    )
-
-            # Training scenarios (this would come from your dataset)
-            eval_scenarios = await self._training_phase(
-                "evaluation-scenarios", self._get_eval_scenarios
-            )
-
-            await self._training_phase(
-                "training-start",
-                notify_training_start,
-                self.callbacks,
-                trainer=self,
-                config=self.config,
-            )
-
-            start_episode = self._resume_start(resumed, num_episodes)
-            boundary_stopped = False
-            for episode in range(start_episode, num_episodes):
-                outcome = await self._train_episode(
-                    episode, training_scenarios[episode], eval_scenarios
-                )
-                if outcome == "boundary_stop":
-                    boundary_stopped = True
-                if outcome is not None:
-                    break
-
-            # Finalization closes the accumulation window. Saved state must not
-            # make a resumed, already-complete run flush an empty window again.
-            previous_step = self.global_step
-            if not boundary_stopped:
-                self._finish_current_task()
-            final_receipt = self._optimizer_update_receipt(
-                previous_step, "final_flush", task_id=self._current_task_id
-            )
-            saved = await self._report_optimizer_update(
-                final_receipt, [], eval_scenarios
-            )
-
-            # A cadence save after final consolidation already captures this
-            # exact learner state. Other successful exits still need a final save.
-            if not saved:
-                await self.save_checkpoint()
-            await self._training_phase(
-                "training-end",
-                notify_training_end,
-                self.callbacks,
-                metrics={
-                    "final_step": self.global_step,
-                    "best_eval_metric": self.best_eval_metric,
-                },
-            )
+            await self._run_training_loop()
         except BaseException as error:
             # Cancellation and interrupts must not flush pending gradients or
             # enter success finalization. Already committed updates stay intact.
@@ -484,7 +507,7 @@ class SpineLoopMixin(TrainingRuntime):
                     "Tracking cleanup failed after training stopped: %s", cleanup_error
                 )
 
-        logger.info("Training completed")
+        logger.info(self._training_done_message)
         return self.agent
 
 

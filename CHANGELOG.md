@@ -196,6 +196,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `SpineLoopMixin.train()` runs each episode through a new
   `_train_episode` method (task boundary, rollouts, step, reporting);
   the phases it passes to `_training_phase` and their order are unchanged.
+- `TrainingConfig.allow_unmasked_labels` (default `False`): the explicit
+  opt-in for the sequence path supervising every token when the token-offset
+  path fails. It is validated with the other compatibility switches
+  (`allow_sequence_fallback`, `allow_missing_sampler_logprobs` must now be
+  real booleans), bound on native and DDP resume and reported by the learner
+  preflight. A native checkpoint written before the field existed resumes as
+  `False`.
+- **`SingleTurnGRPOTrainer` trains on the spine episode loop.** It
+  subclasses `spine.SpineLoopMixin`: `train()` (resume, training start/end
+  callbacks, discarding pending gradients and closing tracking on every exit)
+  is MultiTurn's, and the single-turn parts are hooks (`_train_episode` runs
+  up to `max_steps_per_episode` turns via `_train_turn`; `_finalize_training`
+  flushes the pending window). Each committed update -- a turn's or the
+  final flush's -- now reaches callbacks through `on_optimizer_step` with the
+  spine's receipt, as in MultiTurn. Kept as before: per-episode W&B metrics,
+  no evaluation and no periodic or final checkpoint; resume continues after
+  the saved episode. `SpineLoopMixin.train` gained the hooks
+  `_run_training_loop`, `_finalize_training`, `_scenario_for_episode` and
+  `_restore_requested_checkpoint`, with MultiTurn's phases and their order
+  unchanged.
+- **`spine.AlgorithmSpec`: one prompt-group algorithm is one spec.** GSPO,
+  GSPO-token, DAPO and GEPO declare their scoring, `PolicyObjective` preset,
+  sampling, per-group loss, update mode/passes and metrics as an
+  `AlgorithmSpec` (`GSPO_SPEC`, `GSPO_TOKEN_SPEC`, `DAPO_SPEC`, `GEPO_SPEC`;
+  `spine.algorithm_spec(name)`), and their `train_step` is the shared
+  `spine.run_algorithm_step`. `spine.AlgorithmTrainer` gives every spec
+  trainer the same objective resolution, spine commit (counter and label
+  from the spec) and rollout-engine sync. Trainer classes, constructors,
+  attributes and public methods are unchanged and step goldens are
+  bit-identical; GEPO now records `last_rollout_sync` (always `None`: it has
+  no rollout engine).
 - `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
   the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
   `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): seed ->
@@ -886,6 +917,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **A duck-typed config that omits a field trains with `TrainingConfig`'s
+  default.** Trainers restated defaults inline (`getattr(config, name,
+  default)`) and the copies drifted; they now read through
+  `training.config.config_value`, so the dataclass is the one source.
+  **Behaviour changes** (only for legacy configs without the field; a real
+  `TrainingConfig` already had these values):
+  - `SingleTurnGRPOTrainer`: learning rate 5e-6 (was 5e-5), Adam beta2 0.99
+    (was 0.999), 16 replies per prompt (was 8), 1000 episodes (was 10);
+  - `MultiTurnGRPOTrainer` and the spine loop: 1000 episodes (was 100), and
+    an explicit `num_episodes=0` is zero episodes (an `or` turned it into
+    100); `generate_trajectories(num_generations=0)` raises instead of
+    falling through to the config;
+  - both: 4 gradient-accumulation steps (was 1), also in native checkpoint
+    accounting and the learner preflight, and seed 42 (a missing seed used
+    to skip seeding); multi-turn W&B runs get the config's `wandb_tags`
+    (default none) instead of `["grpo", "multi-turn"]`.
+  Deliberately unchanged: a missing `bf16` still means fp32 on the GRPO
+  path (matching the loss computation), and agent-sampling checks keep
+  their neutral defaults. `tests/unit/test_config_default_ratchet.py` caps
+  the remaining `getattr(config, name, default)` reads in `training/` (108,
+  from 261) and may only go down.
+- **`train_with_vapo` rejects `resume_from_checkpoint`** before any setup,
+  like the other dedicated entry points; it silently ignored it. `DAPOConfig`
+  now also rejects a `group_size` below 2 (`ConfigurationError`), as GEPO
+  and VAPO do: a lone response has no group baseline, so it trained on
+  nothing. The three configs share `config.validate_group_size`.
 - `examples/sample_eval_set.jsonl` (Cookbook Recipe 5) repeated six of the
   eight starter `scenarios.jsonl` queries that Recipe 1 trains on (eight of
   its ten queries were verbatim bundled support-corpus queries), so its pass

@@ -40,6 +40,8 @@ from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Literal, TypeVar, get_args
 
+from ..config import config_value
+
 logger = logging.getLogger(__name__)
 
 StepCounter = Literal["commits", "train_steps", "none"]
@@ -62,7 +64,7 @@ def nonfinite_grad_settings(config: Any) -> dict[str, Any]:
     Reads ``nonfinite_grad_policy`` and ``max_consecutive_nonfinite_skips``
     (``TrainingConfig`` fields; their defaults when a config lacks them).
     """
-    policy = getattr(config, "nonfinite_grad_policy", "raise")
+    policy = config_value(config, "nonfinite_grad_policy")
     if policy not in NONFINITE_GRAD_POLICIES:
         raise ValueError(
             "nonfinite_grad_policy must be one of "
@@ -71,7 +73,7 @@ def nonfinite_grad_settings(config: Any) -> dict[str, Any]:
     return {
         "nonfinite_grad_policy": policy,
         "max_consecutive_nonfinite_skips": int(
-            getattr(config, "max_consecutive_nonfinite_skips", 3)
+            config_value(config, "max_consecutive_nonfinite_skips")
         ),
     }
 

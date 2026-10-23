@@ -37,6 +37,7 @@ import contextlib
 from collections.abc import Callable
 from typing import Any
 
+from ..config import config_value
 from ..grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from ..metric_reduction import carry_loss_metrics
 
@@ -119,10 +120,10 @@ class GRPOUpdateMixin:
         torch, amp = self._update_modules()
 
         use_amp = bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+            getattr(self.config, "bf16", False) or config_value(self.config, "fp16")
         )
         device_type = "cuda" if torch.cuda.is_available() else "cpu"
-        base_beta = float(getattr(self.config, "beta", 0.0))
+        base_beta = float(config_value(self.config, "beta"))
         if self.continual_manager is not None:
             reference_model = getattr(self.continual_manager, "reference_model", None)
             if reference_model is not None:
@@ -131,7 +132,7 @@ class GRPOUpdateMixin:
 
         use_enhanced = bool(
             base_beta > 0.0
-            or getattr(self.config, "use_reference_model", False)
+            or config_value(self.config, "use_reference_model")
             or self.reference_model is not None
         )
 
@@ -142,7 +143,7 @@ class GRPOUpdateMixin:
                 else contextlib.nullcontext()
             )
 
-        inner = max(1, int(getattr(self.config, "num_gradient_updates", 1) or 1))
+        inner = max(1, int(config_value(self.config, "num_gradient_updates") or 1))
         old_logprobs = None
         if inner > 1:
             # Same precision as the inner-update losses, so the first ratio is 1.
@@ -222,7 +223,7 @@ class GRPOUpdateMixin:
         loss_dict: dict[str, Any] = {}
         baseline = self._update_baseline()
         use_amp = bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
+            getattr(self.config, "bf16", False) or config_value(self.config, "fp16")
         )
         scaler = self._update_scaler(use_amp)
         for step_index in range(inner):

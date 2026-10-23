@@ -11,10 +11,12 @@ Reference: https://arxiv.org/abs/2507.18071v2
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import functools
 import importlib.util
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -37,6 +39,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from . import objectives, rl_losses
+from .config import config_value
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -47,13 +50,14 @@ from .gspo_generation import (
     scoring_prompt_length,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
-from .spine.scoring import ResponseScorer
-from .spine.update import (
-    OptimizerStep,
-    UpdateLoop,
-    UpdatePasses,
-    nonfinite_grad_settings,
+from .spine.algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
 )
+from .spine.scoring import ResponseScorer
+from .spine.update import UpdatePasses
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -339,7 +343,7 @@ class GSPOModelManager(SharedModelManager):
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
                 trust_remote_code=self.config.trust_remote_code,
-                revision=getattr(self.config, "model_revision", None),
+                revision=config_value(self.config, "model_revision"),
             )
             if self.ref_model is not None:
                 self.ref_model.eval()
@@ -469,9 +473,9 @@ def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> flo
     return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
 
-class GSPOTrainer(TrainingRuntime):
-    #: Preset evaluated when ``config.objective`` is unset; the token variant
-    #: overrides this instead of reassigning ``_objective`` after ``__init__``.
+class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
+    #: Preset evaluated when ``config.objective`` is unset (the spec's
+    #: ``objective``); the token variant overrides both.
     _native_objective = "gspo"
 
     """
@@ -499,16 +503,9 @@ class GSPOTrainer(TrainingRuntime):
         self.reward_model = reward_model
         self.ref_model = ref_model
         # The GSPO objective (length-normalised sequence ratio, asymmetric
-        # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective.
-        self._objective = objectives.resolve_objective(
-            config,
-            self._native_objective,
-            kl_coef=float(config.beta),
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("sequence", "sequence_token"),
-            clip_low=float(config.clip_range_left),
-            clip_high=float(config.clip_range_right),
-        )
+        # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective
+        # (GSPO_SPEC / GSPO_TOKEN_SPEC).
+        self._objective = self._resolve_algorithm_objective()
 
         # Optimizer
         params = list(self.model.parameters())
@@ -661,40 +658,9 @@ class GSPOTrainer(TrainingRuntime):
         )
         return old_log_probs, gaps
 
-    def _build_optimizer_step(self) -> OptimizerStep:
-        """The spine commit for one GSPO update (``num_iterations`` pass).
-
-        Gradients must be finite (``config.nonfinite_grad_policy`` raises or
-        skips the pass otherwise), the policy is clipped to ``max_grad_norm``,
-        then the optimizer and the LR scheduler step once. ``counter="none"``:
-        GSPO keeps no step counter, and gradients stay in place after the step.
-        """
-        return OptimizerStep(
-            self,
-            torch,
-            optimizers=[self.optimizer],
-            schedulers=[self.scheduler],
-            clip_groups=[list(self.model.parameters())],
-            max_grad_norm=self.config.max_grad_norm,
-            counter="none",
-            **nonfinite_grad_settings(self.config),
-            named_modules=[self.model],
-            on_commit=lambda: self._sync_rollout_backend(),
-            label="GSPO",
-        )
-
-    def _sync_rollout_backend(self) -> None:
-        """Keep the vLLM rollout engine on-policy after a committed update.
-
-        ``last_rollout_sync`` is True/False for the sync outcome and ``None``
-        when nothing was attempted (``config.rollout_sync`` off or no vLLM
-        engine in use); a failed sync leaves the engine stale and training
-        continues (``VLLMEngineMixin.sync_vllm_weights``).
-        """
-        self.last_rollout_sync: bool | None = None
-        if not bool(getattr(self.config, "rollout_sync", True)):
-            return
-        self.last_rollout_sync = self.generator.sync_vllm_weights(self.model)
+    def _rollout_engine(self) -> Any:
+        """The trajectory generator's vLLM engine (``VLLMEngineMixin``)."""
+        return self.generator
 
     def _apply_optimizer_step(self, loss: torch.Tensor) -> bool:
         """Backpropagate ``loss`` and commit it; return whether it committed.
@@ -744,72 +710,6 @@ class GSPOTrainer(TrainingRuntime):
             sequence_lengths,
             ref_log_probs,
         )
-
-    def _update_policy(
-        self,
-        scored_groups: list[Any],
-        *,
-        processed_groups: int,
-        device: Any,
-    ) -> tuple[UpdatePasses, _PolicyStats]:
-        """``num_iterations`` update passes over the scored groups.
-
-        Rollouts are scored once; each pass recomputes current log-probs
-        against old-policy scores frozen on the first pass. With one pass the
-        update is on-policy (ratio 1); later passes are the off-policy regime
-        GSPO's sequence clip exists for. Each pass sums every group's loss in
-        one graph (spine ``UpdateLoop``), normalises it by the processed group
-        count, so gradient magnitude does not scale with batch composition,
-        and commits it through :meth:`_apply_optimizer_step`.
-        """
-        stats = _PolicyStats()
-        frozen_old: list[torch.Tensor | None] = [None] * len(scored_groups)
-
-        def group_loss(_pass: int, index: int, group: tuple[Any, ...]) -> Any:
-            prompt, responses, generation_log_probs, advantages, ref_log_probs = group
-            token_rows, current_log_probs, lengths = self._score_policy_group(
-                prompt, responses
-            )
-            old_log_probs = frozen_old[index]
-            if old_log_probs is None:
-                prepared, generation_gaps = self._prepare_old_log_probs(
-                    current_log_probs, generation_log_probs, lengths
-                )
-                old_log_probs = frozen_old[index] = prepared.detach()
-                stats.generation_gaps.extend(generation_gaps)
-
-            ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, lengths
-            )
-            stats.importance_ratios.extend(ratios.detach().cpu().tolist())
-            clipped = torch.clamp(
-                ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-            stats.clipped += int((ratios != clipped).sum().item())
-            stats.samples += len(responses)
-            return self._policy_group_loss(
-                ratios,
-                advantages,
-                current_log_probs,
-                lengths,
-                ref_log_probs,
-                token_rows,
-            )
-
-        passes = UpdateLoop(
-            self._build_optimizer_step(),
-            passes=_policy_iterations(self.config),
-            mode="single_graph",
-        ).run(
-            scored_groups,
-            group_loss,
-            initial_loss=lambda: torch.tensor(0.0, device=device),
-            reduce=lambda total: normalize_total_loss(total, processed_groups),
-            commit=lambda loss: self._apply_optimizer_step(loss),
-        )
-        return passes, stats
 
     def compute_gspo_loss(
         self,
@@ -878,9 +778,7 @@ class GSPOTrainer(TrainingRuntime):
     ) -> float:
         """Score one sampled response on the shared single-response path
         (spine ``ResponseScorer``, i.e. ``reward_context.score_response``)."""
-        return await ResponseScorer(self.reward_model).score(
-            prompt, response, query_context
-        )
+        return await self._score_reply(prompt, response, query_context)
 
     async def _sample_and_score_groups(
         self, queries: list[str | dict[str, Any]], *, device: Any
@@ -945,23 +843,15 @@ class GSPOTrainer(TrainingRuntime):
     async def _gspo_step(
         self, queries: list[str | dict[str, Any]], num_groups: int
     ) -> dict[str, float]:
-        """One GSPO step: sample and score the groups, then update the policy.
+        """One GSPO step: sample and score the groups, then update the policy
+        (:attr:`algorithm` on the spine step, ``spine.run_algorithm_step``).
 
         ``GSPOTokenTrainer`` runs the same step with its own group scoring
         and loss (``_score_policy_group`` / ``_policy_group_loss``).
         """
-        self.model.train()
-        self.optimizer.zero_grad(set_to_none=True)
-        model_device = _get_model_device(self.model)
-        scored = await self._sample_and_score_groups(
-            list(queries[:num_groups]), device=model_device
+        return await run_algorithm_step(
+            self, self.algorithm, list(queries[:num_groups])
         )
-        # Each processed prompt group has equal objective weight; the full
-        # loss, including KL, is normalised before backward.
-        passes, stats = self._update_policy(
-            scored.groups, processed_groups=len(scored.groups), device=model_device
-        )
-        return self._record_step_metrics(passes, stats, scored)
 
     async def train_step(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
@@ -1055,6 +945,140 @@ class GSPOTrainer(TrainingRuntime):
         self.save_runtime_checkpoint(output_dir)
 
 
+@dataclass
+class _GSPOStep:
+    """One GSPO step's scored groups and what its update passes observe."""
+
+    scored: _ScoredGroups
+    device: Any
+    stats: _PolicyStats = field(default_factory=_PolicyStats)
+    #: Old-policy sequence scores, frozen on the first pass.
+    frozen_old: list[torch.Tensor | None] = field(default_factory=list)
+
+
+async def _gspo_score(
+    trainer: GSPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> float:
+    return await ResponseScorer(trainer.reward_model).score(
+        prompt, response, dict(context)
+    )
+
+
+async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollouts:
+    """Every query's group sampled in one batched generate, then scored
+    (:meth:`GSPOTrainer._sample_and_score_groups`)."""
+    trainer.optimizer.zero_grad(set_to_none=True)
+    device = _get_model_device(trainer.model)
+    scored = await trainer._sample_and_score_groups(queries, device=device)
+    return StepRollouts(
+        items=scored.groups,
+        info=_GSPOStep(scored, device, frozen_old=[None] * len(scored.groups)),
+    )
+
+
+def _gspo_group_loss(
+    trainer: GSPOTrainer,
+    rollouts: StepRollouts,
+    _pass: int,
+    index: int,
+    group: tuple[Any, ...],
+) -> Any:
+    """One prompt group's loss in one pass.
+
+    Rollouts are scored once; each pass recomputes current log-probs against
+    old-policy scores frozen on the first pass. With one pass the update is
+    on-policy (ratio 1); later passes are the off-policy regime GSPO's
+    sequence clip exists for.
+    """
+    step: _GSPOStep = rollouts.info
+    stats = step.stats
+    prompt, responses, generation_log_probs, advantages, ref_log_probs = group
+    token_rows, current_log_probs, lengths = trainer._score_policy_group(
+        prompt, responses
+    )
+    old_log_probs = step.frozen_old[index]
+    if old_log_probs is None:
+        prepared, generation_gaps = trainer._prepare_old_log_probs(
+            current_log_probs, generation_log_probs, lengths
+        )
+        old_log_probs = step.frozen_old[index] = prepared.detach()
+        stats.generation_gaps.extend(generation_gaps)
+
+    ratios = trainer.compute_sequence_importance_ratio(
+        current_log_probs, old_log_probs, lengths
+    )
+    stats.importance_ratios.extend(ratios.detach().cpu().tolist())
+    clipped = torch.clamp(
+        ratios,
+        1 - trainer.config.clip_range_left,
+        1 + trainer.config.clip_range_right,
+    )
+    stats.clipped += int((ratios != clipped).sum().item())
+    stats.samples += len(responses)
+    return trainer._policy_group_loss(
+        ratios,
+        advantages,
+        current_log_probs,
+        lengths,
+        ref_log_probs,
+        token_rows,
+    )
+
+
+def _gspo_update_options(
+    trainer: GSPOTrainer, rollouts: StepRollouts
+) -> dict[str, Any]:
+    """Each pass sums every group's loss in one graph, normalised by the
+    processed group count (so gradient magnitude does not scale with batch
+    composition), and commits it through ``_apply_optimizer_step``."""
+    processed_groups = len(rollouts.items)
+    device = rollouts.info.device
+    return {
+        "initial_loss": lambda: torch.tensor(0.0, device=device),
+        "reduce": lambda total: normalize_total_loss(total, processed_groups),
+        "commit": lambda loss: trainer._apply_optimizer_step(loss),
+    }
+
+
+def _gspo_metrics(
+    trainer: GSPOTrainer, rollouts: StepRollouts, passes: UpdatePasses | None
+) -> dict[str, Any]:
+    step: _GSPOStep = rollouts.info
+    assert passes is not None  # GSPO always runs its passes (update_empty)
+    return trainer._record_step_metrics(passes, step.stats, step.scored)
+
+
+#: GSPO: the length-normalised sequence ratio with an asymmetric clip and a
+#: k3 KL on sequence log-probs; every group's loss in one graph per pass,
+#: ``num_iterations`` passes, no step counter.
+GSPO_SPEC = AlgorithmSpec(
+    name="gspo",
+    objective="gspo",
+    objective_options=lambda config: {
+        "kl_coef": float(config.beta),
+        "supported_ratios": ("sequence", "sequence_token"),
+        "clip_low": float(config.clip_range_left),
+        "clip_high": float(config.clip_range_right),
+    },
+    counter="none",
+    update_mode="single_graph",
+    passes=_policy_iterations,
+    score=_gspo_score,
+    rollouts=_gspo_rollouts,
+    group_loss=_gspo_group_loss,
+    metrics=_gspo_metrics,
+    update_options=_gspo_update_options,
+    update_empty=True,
+    label="GSPO",
+)
+#: GSPO-token: GSPO's step with per-token rows and the ``gspo_token``
+#: objective (``GSPOTokenTrainer`` scores and weighs the rows).
+GSPO_TOKEN_SPEC = dataclasses.replace(
+    GSPO_SPEC, name="gspo_token", objective="gspo_token"
+)
+GSPOTrainer.algorithm = GSPO_SPEC
+
+
 from .gspo_entrypoints import train_customer_service_with_gspo, train_with_gspo
 
 # Backwards-compatible alias (some users expect snake_case-like class names).
@@ -1064,6 +1088,8 @@ GSPO_Trainer = GSPOTrainer
 # Export main components
 __all__ = [
     "GSPOConfig",
+    "GSPO_SPEC",
+    "GSPO_TOKEN_SPEC",
     "GSPOModelManager",
     "GSPOTrajectoryGenerator",
     "GSPOTrainer",

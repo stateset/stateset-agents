@@ -571,6 +571,30 @@ Default entry points:
 * `stateset-agents train --stub --config config.yaml` — CLI front-door,
   scaffolded by `stateset-agents starter <template>`.
 
+### The training spine (`training/spine/`)
+
+The native trainers share one spine instead of each owning its loop:
+
+* `OptimizerStep` / `UpdateLoop` (`spine/update.py`) — the validated commit
+  (finite gradients, clipping, one optimizer and scheduler step, the step
+  counter) and the K update passes over frozen old-policy log-probs.
+* `AlgorithmSpec` / `run_algorithm_step` (`spine/algorithm.py`) — one
+  prompt-group algorithm declared as data plus hooks: scoring, the
+  `PolicyObjective` preset, sampling (`rollouts`), the per-group loss, the
+  update mode and pass count, and metrics. GSPO, GSPO-token, DAPO and GEPO
+  are specs (`spine.algorithm_spec(name)`); their `train_step` is the shared
+  step. A new prompt-group algorithm is a spec, a small `AlgorithmTrainer`
+  class (model, optimizer, scheduler) and a thin entry point.
+* `run_dedicated_loop` (`spine/loop.py`) — the dedicated entry points' outer
+  loop (seeding, batches, saves, callbacks); `SpineLoopMixin` is the episode
+  loop of MultiTurn GRPO (and through it the distributed trainers).
+* `PromptGroupRollouts`, `VLLMEngineMixin` (`spine/rollouts.py`) and the
+  scorers (`spine/scoring.py`) — sampling, the vLLM engine and reward
+  scoring.
+
+VAPO (a critic with value warmup and two optimizers) stays a specialised loop
+built from these parts.
+
 ---
 
 ## GRPO / GSPO Algorithm Implementation

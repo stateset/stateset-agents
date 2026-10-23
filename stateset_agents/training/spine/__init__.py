@@ -18,6 +18,11 @@ Currently provided:
   points' outer loop (seeding, batch, step, report, saves, callbacks);
   :func:`seed_dedicated_run` seeds a run from ``config.seed`` and
   :func:`sample_prompts` draws its batches.
+* :class:`AlgorithmSpec` -- one prompt-group algorithm (scoring,
+  objective, sampling, update and metrics hooks) run by
+  :func:`run_algorithm_step` on an :class:`AlgorithmTrainer`;
+  :func:`algorithm_spec` resolves the shipped ones (GSPO, GSPO-token, DAPO,
+  GEPO) by name.
 * :class:`GRPOUpdateMixin` -- the GRPO update half (inner passes or an
   accumulated backward, EWC, the optimizer commit) shared by
   ``MultiTurnGRPOTrainer.training_step`` and ``SingleTurnGRPOTrainer``.
@@ -37,6 +42,12 @@ Importing this package does not import ``torch``.
 
 from __future__ import annotations
 
+from .algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
+)
 from .grpo_update import GRPOUpdateMixin
 from .loop import (
     DedicatedRun,
@@ -45,6 +56,7 @@ from .loop import (
     sample_prompts,
     seed_dedicated_run,
 )
+from .presets import ALGORITHM_NAMES, algorithm_spec
 from .rollouts import (
     PromptGroupRollouts,
     VLLMEngineMixin,
@@ -68,6 +80,12 @@ from .update import (
 )
 
 __all__ = [
+    "ALGORITHM_NAMES",
+    "AlgorithmSpec",
+    "AlgorithmTrainer",
+    "StepRollouts",
+    "algorithm_spec",
+    "run_algorithm_step",
     "GRPOUpdateMixin",
     "CallableScorer",
     "EpisodeScorer",

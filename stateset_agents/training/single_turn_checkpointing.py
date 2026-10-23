@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from .checkpoint_state import load_training_checkpoint, save_training_checkpoint
+from .config import config_value
 from .trainer_utils import require_torch
 
 
@@ -21,7 +22,7 @@ def resolve_checkpoint_path(
         if is_best:
             checkpoint_name = "best-checkpoint"
 
-    output_dir = getattr(config, "output_dir", "./outputs")
+    output_dir = config_value(config, "output_dir")
     checkpoint_path = Path(output_dir) / checkpoint_name
     return checkpoint_path
 

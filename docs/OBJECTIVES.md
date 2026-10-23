@@ -33,7 +33,9 @@ Uncertainty weighting preserves the original evidence and explanation, validates
 finite nonnegative estimates and coefficients, and rejects nonfinite base scores.
 
 Exact prompt and sampled token IDs are required by default. Legacy text-only
-trajectories require `allow_sequence_fallback=True`. Requesting sampler
+trajectories require `allow_sequence_fallback=True`; if the sequence path
+would then have to supervise every token (prompt included), it also needs
+`allow_unmasked_labels=True`. Requesting sampler
 importance correction without sampler probabilities raises unless
 `allow_missing_sampler_logprobs=True`; this opt-in is reported as
 `old_logprobs_source="recompute_fallback"`. Metadata is validated without

@@ -25,7 +25,7 @@ import torch
 import torch.nn.functional as F
 
 from .._deprecation import warn_deprecated
-from .config import TrainingConfig
+from .config import TrainingConfig, config_value
 from .runtime_state import TrainingRuntime
 from .spine.rollouts import VLLMEngineMixin
 from .trainer_runtime import SharedModelManager
@@ -323,7 +323,7 @@ class BaseModelManager(SharedModelManager):
         kwargs = {
             "torch_dtype": self._get_dtype(),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": bool(getattr(self.config, "trust_remote_code", False)),
+            "trust_remote_code": bool(config_value(self.config, "trust_remote_code")),
             "revision": self.config.model_revision,
         }
 
@@ -398,7 +398,7 @@ class BaseModelManager(SharedModelManager):
             revision=self.config.model_revision,
             torch_dtype=model_kwargs["torch_dtype"],
             device_map="auto" if torch.cuda.device_count() > 1 else None,
-            trust_remote_code=bool(getattr(self.config, "trust_remote_code", False)),
+            trust_remote_code=bool(config_value(self.config, "trust_remote_code")),
         )
         self.ref_model.eval()
         for param in self.ref_model.parameters():

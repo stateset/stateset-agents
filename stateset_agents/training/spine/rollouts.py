@@ -21,6 +21,8 @@ from typing import Any, TypeVar
 
 from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
 
+from ..config import config_value
+
 logger = logging.getLogger(__name__)
 
 _Item = TypeVar("_Item")
@@ -98,7 +100,7 @@ class PromptGroupRollouts:
 
 def vllm_dtype(config: Any) -> str:
     """vLLM engine dtype for a training config: fp16, bf16, else checkpoint."""
-    if getattr(config, "fp16", False):
+    if config_value(config, "fp16"):
         return "float16"
     if getattr(config, "bf16", False):
         return "bfloat16"
@@ -113,13 +115,13 @@ def vllm_engine_config(config: Any, config_cls: Any) -> Any:
     """
     return config_cls(
         model_name=config.model_name,
-        revision=getattr(config, "model_revision", None),
-        gpu_memory_utilization=getattr(config, "vllm_gpu_memory_utilization", 0.85),
-        tensor_parallel_size=getattr(config, "vllm_tensor_parallel_size", 1),
-        enable_prefix_caching=getattr(config, "vllm_enable_prefix_caching", True),
-        max_model_len=getattr(config, "vllm_max_model_len", None),
-        quantization=getattr(config, "vllm_quantization", None),
-        enable_chunked_prefill=getattr(config, "vllm_enable_chunked_prefill", True),
+        revision=config_value(config, "model_revision"),
+        gpu_memory_utilization=config_value(config, "vllm_gpu_memory_utilization"),
+        tensor_parallel_size=config_value(config, "vllm_tensor_parallel_size"),
+        enable_prefix_caching=config_value(config, "vllm_enable_prefix_caching"),
+        max_model_len=config_value(config, "vllm_max_model_len"),
+        quantization=config_value(config, "vllm_quantization"),
+        enable_chunked_prefill=config_value(config, "vllm_enable_chunked_prefill"),
         max_tokens=config.max_completion_length,
         temperature=config.temperature,
         top_p=config.top_p,

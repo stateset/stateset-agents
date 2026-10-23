@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from .config import TrainingConfig
+from .config import TrainingConfig, validate_group_size
 
 
 @dataclass
@@ -73,6 +73,11 @@ class DAPOConfig(TrainingConfig):
     vllm_enable_prefix_caching: bool = True
 
     eval_repeats: int = 32
+
+    def validate_for_training(self) -> None:
+        """Also require two responses per group (:func:`validate_group_size`)."""
+        super().validate_for_training()
+        validate_group_size(self.group_size)
 
     @classmethod
     def from_training_config(cls, config: TrainingConfig, **kwargs) -> DAPOConfig:

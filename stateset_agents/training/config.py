@@ -5,6 +5,8 @@ This module provides training configurations that implement best practices
 and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
+import dataclasses
+import functools
 import json
 import math
 from collections.abc import Sequence
@@ -63,6 +65,15 @@ class TrainingProfile(Enum):
 
 
 _NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
+
+
+def validate_group_size(group_size: object) -> None:
+    """Group-relative algorithms (DAPO, GEPO, VAPO) need two responses per
+    prompt: a lone response has no group baseline (GEPO and VAPO drop such a
+    group, DAPO gives it a zero advantage), so a smaller ``group_size``
+    trains on nothing."""
+    if type(group_size) is not int or group_size < 2:
+        raise ConfigurationError("group_size must be an integer of at least 2")
 
 
 @dataclass
@@ -275,6 +286,10 @@ class TrainingConfig:
     # Off by default: only enable for a repo you trust whose architecture is
     # not native to transformers (curated presets opt in explicitly).
     trust_remote_code: bool = field(default=False, kw_only=True)
+    # When the token-offset path fails, the sequence path may only supervise
+    # every token (prompt included) if this is set; otherwise the loss raises
+    # ``RolloutContractError``. Keyword-only so positional field order holds.
+    allow_unmasked_labels: bool = field(default=False, kw_only=True)
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
@@ -520,6 +535,17 @@ class TrainingConfig:
         )
         raise ConfigurationError(f"lr_scheduler_type must be {expected} (got {name!r})")
 
+    def _validate_fallback_switches(self) -> None:
+        """The compatibility paths change the estimator, so their opt-ins
+        must be real booleans (a truthy string must not enable one)."""
+        for name in (
+            "allow_sequence_fallback",
+            "allow_missing_sampler_logprobs",
+            "allow_unmasked_labels",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ConfigurationError(f"{name} must be a boolean")
+
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
@@ -547,6 +573,7 @@ class TrainingConfig:
             if type(value) is not int or value < 1:
                 raise ConfigurationError(f"{name} must be a positive integer")
         self._validate_lr_scheduler_type()
+        self._validate_fallback_switches()
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (
@@ -864,3 +891,36 @@ def cuda_is_available() -> bool:
     except ImportError:  # pragma: no cover - torch is installed in CI
         return False
     return bool(torch.cuda.is_available())
+
+
+_MISSING = object()
+
+
+@functools.cache
+def _training_field_defaults() -> dict[str, tuple[bool, Any]]:
+    """Each ``TrainingConfig`` field's ``(is_factory, default)``."""
+    defaults: dict[str, tuple[bool, Any]] = {}
+    for item in dataclasses.fields(TrainingConfig):
+        if item.default is not dataclasses.MISSING:
+            defaults[item.name] = (False, item.default)
+        elif item.default_factory is not dataclasses.MISSING:
+            defaults[item.name] = (True, item.default_factory)
+    return defaults
+
+
+def config_value(config: Any, name: str) -> Any:
+    """``config.<name>``, or ``TrainingConfig``'s default for that field.
+
+    Trainers accept legacy duck-typed configs that may lack a field. Reading
+    through this helper keeps the dataclass as the one source of defaults,
+    instead of a ``getattr(config, name, default)`` that restates (and can
+    drift from) it. ``name`` must be a ``TrainingConfig`` field.
+    """
+    value = getattr(config, name, _MISSING)
+    if value is not _MISSING:
+        return value
+    try:
+        is_factory, default = _training_field_defaults()[name]
+    except KeyError:
+        raise AttributeError(f"{name!r} is not a TrainingConfig field") from None
+    return default() if is_factory else default
