@@ -186,6 +186,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   instead of raising), `_apply_optimizer_step` returns whether the update
   committed, and the `optimizer_updates` metric counts committed passes
   rather than attempted ones.
+- A plain `reward_fn(prompt, response)` callable (DAPO, GEPO, VAPO) that
+  returns NaN or an infinite score now raises `ValueError` (round 4's rule
+  for every reward path) instead of carrying the value into the group
+  advantages.
 - `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
   (it called the reward synchronously, so an async one failed), and DAPO
   awaits any awaitable a reward returns, not only coroutines.

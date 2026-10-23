@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import asyncio
 import inspect
+import math
 from collections.abc import Mapping, Sequence
 from typing import Any
 
@@ -88,7 +89,9 @@ class CallableScorer:
     """Score replies with a ``reward_fn(prompt, response)`` callable.
 
     The callable may return a number or an awaitable of one (async reward
-    functions); the result is converted with ``float``.
+    functions); the result is converted with ``float``. A NaN or infinite
+    score raises ``ValueError``, as ``reward_context.reward_score`` does for
+    ``RewardFunction`` results: nothing stands in for it.
     """
 
     def __init__(self, reward_fn: Any) -> None:
@@ -98,7 +101,10 @@ class CallableScorer:
         reward = self.reward_fn(prompt, response)
         if inspect.isawaitable(reward):
             reward = await reward
-        return float(reward)
+        score = float(reward)
+        if not math.isfinite(score):
+            raise ValueError(f"reward score must be finite, got {score}")
+        return score
 
 
 __all__ = ["CallableScorer", "EpisodeScorer", "ResponseScorer"]
