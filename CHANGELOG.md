@@ -44,6 +44,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   error, a dropped prompt group or a skipped update pass. The harness runs
   AdamW with eps 1e-4 and without VAPO value-head dropout, which made the
   numbers depend on rounding noise and on the RNG stream.
+- `stateset_agents.training.spine.SpineLoopMixin` holds the GRPO outer loop
+  -- `train()` with its update receipts, callback/logging/evaluation/save
+  cadence, resume, task boundaries and success-only finalization -- moved
+  verbatim out of `MultiTurnGRPOTrainer`, which (with `DistributedTrainer`)
+  now inherits it. Behaviour, the hook methods `DistributedTrainer`
+  overrides, and the cross-rank phase names and their order are unchanged
+  (now pinned by a test). The loop's log records come from the
+  `stateset_agents.training.spine.loop` logger, and code that patched
+  `multi_turn_trainer.notify_training_start`/`notify_training_end` should
+  patch `spine.loop` instead.
 - Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
   (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
   saved and the run's worker is signalled only after its process identity is
