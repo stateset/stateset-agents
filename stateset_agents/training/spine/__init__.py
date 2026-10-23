@@ -17,6 +17,9 @@ Currently provided:
 * :class:`SpineLoopMixin` -- the GRPO trainers' outer loop (``train()``,
   update receipts, reporting cadence, resume, finalization), inherited by
   ``MultiTurnGRPOTrainer`` and ``DistributedTrainer``.
+* :class:`EpisodeScorer`, :class:`ResponseScorer`, :class:`CallableScorer` --
+  the reward adapters every trainer's rollouts score through, built on
+  ``core.reward_context`` (``score_episode`` / ``score_response``).
 * :class:`PromptGroupRollouts` -- the prompt/response trainers' rollout phase
   (one sampled group per prompt, built into update items);
   :class:`VLLMEngineMixin` / :func:`vllm_engine_config` -- the one vLLM
@@ -34,6 +37,7 @@ from .rollouts import (
     vllm_dtype,
     vllm_engine_config,
 )
+from .scoring import CallableScorer, EpisodeScorer, ResponseScorer
 from .update import (
     NONFINITE_GRAD_POLICIES,
     STEP_COUNTERS,
@@ -50,6 +54,9 @@ from .update import (
 )
 
 __all__ = [
+    "CallableScorer",
+    "EpisodeScorer",
+    "ResponseScorer",
     "SpineLoopMixin",
     "PromptGroupRollouts",
     "VLLMEngineMixin",

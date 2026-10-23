@@ -327,24 +327,33 @@ def test_consumers_score_through_the_shared_helpers():
 
 
 def test_each_scoring_consumer_uses_a_shared_helper():
+    # The trainers score through the spine's scorers, which are built only on
+    # the reward_context helpers (no parallel scoring path).
     helpers = {"score_response", "score_trajectory", "score_episode"}
+    scorers = {"ResponseScorer": "score_response", "EpisodeScorer": "score_episode"}
+    spine = (ROOT / "training/spine/scoring.py").read_text(encoding="utf-8")
+    for helper in scorers.values():
+        assert f"{helper}(" in spine, helper
     consumers = {
-        "training/single_turn_trainer.py": "score_response",
-        "training/gspo_trainer.py": "score_response",
-        "training/trl_grpo_trainer.py": "score_response",
+        "training/single_turn_trainer.py": "ResponseScorer",
+        "training/gspo_trainer.py": "ResponseScorer",
+        "training/trl_grpo_trainer.py": "ResponseScorer",
         "training/auto_research/experiment_loop.py": "score_response",
         "core/computational_engine.py": "score_response",
         "core/environment_base.py": "score_trajectory",
-        "training/multi_turn_trainer.py": "score_episode",
+        "training/multi_turn_trainer.py": "EpisodeScorer",
         "training/multi_turn_evaluation.py": "score_episode",
-        "training/distributed_trainer.py": "score_episode",
+        "training/distributed_trainer.py": "EpisodeScorer",
     }
     for relative, helper in consumers.items():
-        assert helper in helpers
+        assert helper in helpers or helper in scorers
         source = (ROOT / relative).read_text(encoding="utf-8")
         assert f"{helper}(" in source, (relative, helper)
+    # GSPO-token samples and scores with GSPOTrainer's shared step (its
+    # _reward_for_response) instead of a scoring loop of its own.
     token = (ROOT / "training/gspo_token_trainer.py").read_text(encoding="utf-8")
-    assert "self._reward_for_response(" in token
+    assert "self._gspo_step(" in token
+    assert "_reward_for_response" not in token
 
 
 async def test_judge_component_never_stands_in_zero_for_a_missing_user_turn():

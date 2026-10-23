@@ -24,7 +24,6 @@ import torch
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_context import score_response
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
 )
@@ -48,6 +47,7 @@ from .gspo_generation import (
     scoring_prompt_length,
 )
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.scoring import ResponseScorer
 from .spine.update import (
     OptimizerStep,
     UpdateLoop,
@@ -437,6 +437,20 @@ class _PolicyStats:
     samples: int = 0
     importance_ratios: list[float] = field(default_factory=list)
     generation_gaps: list[float] = field(default_factory=list)
+
+
+@dataclass
+class _ScoredGroups:
+    """One step's prompt groups after sampling and scoring."""
+
+    #: ``(prompt, responses, generation_log_probs, advantages, ref_log_probs)``
+    groups: list[
+        tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
+    ] = field(default_factory=list)
+    rewards: list[float] = field(default_factory=list)
+    nonzero_advantages: int = 0
+    advantage_count: int = 0
+    zero_advantage_groups: int = 0
 
 
 def _policy_iterations(config: Any) -> int:
@@ -848,8 +862,92 @@ class GSPOTrainer(TrainingRuntime):
     async def _reward_for_response(
         self, prompt: str, query_context: dict[str, Any], response: str
     ) -> float:
-        """Score one sampled response on the shared single-response path."""
-        return await score_response(self.reward_model, prompt, response, query_context)
+        """Score one sampled response on the shared single-response path
+        (spine ``ResponseScorer``, i.e. ``reward_context.score_response``)."""
+        return await ResponseScorer(self.reward_model).score(
+            prompt, response, query_context
+        )
+
+    async def _sample_and_score_groups(
+        self, queries: list[str | dict[str, Any]], *, device: Any
+    ) -> _ScoredGroups:
+        """Sample every query's group, then score it and its advantages.
+
+        A query is a prompt string or ``{"prompt": ..., "context": {...}}``;
+        the context (gold answers, expected tools, ...) reaches the reward.
+        Every group of the step is sampled in one batched generate before any
+        scoring; weights only change in the update passes afterwards. Each
+        reply is scored by :meth:`_reward_for_response` (a group's replies
+        concurrently); with ``beta > 0`` and a reference model the group's
+        reference log-probs are scored in one batch.
+        """
+        scored = _ScoredGroups()
+        step_groups = await self.generator.generate_groups_batch(
+            [_query_prompt(query) for query in queries],
+            self.config.num_generations,
+        )
+        for query, group_responses in zip(queries, step_groups, strict=True):
+            prompt = _query_prompt(query)
+            context = query.get("context") if isinstance(query, dict) else None
+            query_context = dict(context) if isinstance(context, dict) else {}
+
+            # Extract responses and old log probs
+            responses = [resp for resp, _ in group_responses]
+            old_log_probs = torch.tensor(
+                [log_prob for _, log_prob in group_responses],
+                dtype=torch.float32,
+                device=device,
+            )
+            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
+
+            rewards = list(
+                await asyncio.gather(
+                    *[
+                        self._reward_for_response(prompt, query_context, response)
+                        for response in responses
+                    ]
+                )
+            )
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
+            scored.rewards.extend(rewards)
+
+            # Compute group advantages
+            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
+            active = int(torch.count_nonzero(advantages).item())
+            scored.nonzero_advantages += active
+            scored.advantage_count += advantages.numel()
+            scored.zero_advantage_groups += int(active == 0)
+
+            ref_log_probs = None
+            if self.config.beta > 0 and self.ref_model is not None:
+                ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
+                if device is not None:
+                    ref_log_probs = ref_log_probs.to(device)
+            scored.groups.append(
+                (prompt, responses, old_log_probs, advantages, ref_log_probs)
+            )
+        return scored
+
+    async def _gspo_step(
+        self, queries: list[str | dict[str, Any]], num_groups: int
+    ) -> dict[str, float]:
+        """One GSPO step: sample and score the groups, then update the policy.
+
+        ``GSPOTokenTrainer`` runs the same step with its own group scoring
+        and loss (``_score_policy_group`` / ``_policy_group_loss``).
+        """
+        self.model.train()
+        self.optimizer.zero_grad(set_to_none=True)
+        model_device = _get_model_device(self.model)
+        scored = await self._sample_and_score_groups(
+            list(queries[:num_groups]), device=model_device
+        )
+        # Each processed prompt group has equal objective weight; the full
+        # loss, including KL, is normalised before backward.
+        passes, stats = self._update_policy(
+            scored.groups, processed_groups=len(scored.groups), device=model_device
+        )
+        return self._record_step_metrics(passes, stats, scored)
 
     async def train_step(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
@@ -864,117 +962,24 @@ class GSPOTrainer(TrainingRuntime):
         Returns:
             Training metrics
         """
-        self.model.train()
-        self.optimizer.zero_grad(set_to_none=True)
-        model_device = _get_model_device(self.model)
-
-        all_rewards = []
-        processed_groups = 0
-        nonzero_advantages = 0
-        advantage_count = 0
-        zero_advantage_groups = 0
-        scored_groups: list[
-            tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
-        ] = []
-        step_queries = list(queries[:num_groups])
-        # Every group of the step is sampled in one batched generate before any
-        # scoring; weights only change in the update iterations after the loop.
-        step_groups = await self.generator.generate_groups_batch(
-            [_query_prompt(query) for query in step_queries],
-            self.config.num_generations,
-        )
-        for query, group_responses in zip(step_queries, step_groups, strict=True):
-            processed_groups += 1
-            if isinstance(query, dict):
-                prompt = str(query.get("prompt", ""))
-                query_context = query.get("context")
-                if not isinstance(query_context, dict):
-                    query_context = {}
-            else:
-                prompt = str(query)
-                query_context = {}
-            prompt_value = prompt
-            query_context_value = dict(query_context)
-
-            # Extract responses and old log probs
-            responses = [resp for resp, _ in group_responses]
-            old_log_probs = torch.tensor(
-                [log_prob for _, log_prob in group_responses],
-                dtype=torch.float32,
-                device=model_device,
-            )
-            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
-
-            # Compute rewards for each response in parallel
-            async def _compute_reward_for_response(
-                resp: str,
-                *,
-                _prompt: str = prompt_value,
-                _query_context: dict[str, Any] = query_context_value,
-            ) -> float:
-                return await self._reward_for_response(_prompt, _query_context, resp)
-
-            rewards = list(
-                await asyncio.gather(
-                    *[_compute_reward_for_response(r) for r in responses]
-                )
-            )
-
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=model_device
-            )
-            all_rewards.extend(rewards)
-
-            # Compute group advantages
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
-            active = int(torch.count_nonzero(advantages).item())
-            nonzero_advantages += active
-            advantage_count += advantages.numel()
-            zero_advantage_groups += int(active == 0)
-
-            ref_log_probs = None
-            if self.config.beta > 0 and self.ref_model is not None:
-                ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
-                if model_device is not None:
-                    ref_log_probs = ref_log_probs.to(model_device)
-            scored_groups.append(
-                (prompt, responses, old_log_probs, advantages, ref_log_probs)
-            )
-
-        passes, stats = self._update_policy(
-            scored_groups, processed_groups=processed_groups, device=model_device
-        )
-
-        return self._record_step_metrics(
-            passes,
-            stats,
-            rewards=all_rewards,
-            groups=processed_groups,
-            nonzero_advantages=nonzero_advantages,
-            advantage_count=advantage_count,
-            zero_advantage_groups=zero_advantage_groups,
-        )
+        return await self._gspo_step(queries, num_groups)
 
     def _record_step_metrics(
-        self,
-        passes: UpdatePasses,
-        stats: _PolicyStats,
-        *,
-        rewards: list[float],
-        groups: int,
-        nonzero_advantages: int,
-        advantage_count: int,
-        zero_advantage_groups: int,
+        self, passes: UpdatePasses, stats: _PolicyStats, scored: _ScoredGroups
     ) -> dict[str, float]:
         """A step's metrics, also appended to ``training_metrics``."""
+        rewards = scored.rewards
+        groups = len(scored.groups)
         metrics = {
             "policy_loss": float(np.mean(passes.losses)),
             "optimizer_updates": float(passes.committed),
             "clipping_fraction": stats.clipped / max(stats.samples, 1),
             "average_reward": float(np.mean(rewards)) if rewards else 0.0,
             "reward_std": float(np.std(rewards)) if rewards else 0.0,
-            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
-            "zero_advantage_group_fraction": zero_advantage_groups / max(groups, 1),
+            "nonzero_advantage_fraction": scored.nonzero_advantages
+            / max(scored.advantage_count, 1),
+            "zero_advantage_group_fraction": scored.zero_advantage_groups
+            / max(groups, 1),
             "advantage_group_count": float(groups),
             "generation_log_prob_gap": (
                 float(np.mean(stats.generation_gaps)) if stats.generation_gaps else 0.0

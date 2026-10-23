@@ -379,3 +379,30 @@ async def test_step_rewards_see_the_same_history_and_turns_either_way():
     # History at scoring time has 2, 4 and 6 messages; one system turn.
     assert attached == pytest.approx(0.1 * (2 + 4 + 6) / 3 + 0.01)
     assert held == pytest.approx(attached)
+
+
+# --- Prompt/response trainers with plain reward callables --------------------
+
+
+def _digit_share(prompt, response):
+    return sum(ch.isdigit() for ch in response) / max(len(response), 1)
+
+
+async def _async_digit_share(prompt, response):
+    return _digit_share(prompt, response)
+
+
+@pytest.mark.parametrize("trainer_path", ["dapo", "gepo", "vapo"])
+@pytest.mark.parametrize("reward_fn", [_digit_share, _async_digit_share])
+async def test_callable_reward_trainers_score_replies_alike(trainer_path, reward_fn):
+    """DAPO, GEPO and VAPO score a reply through the same spine scorer, with a
+    sync or an async reward callable (GEPO used to call it synchronously)."""
+    import importlib
+
+    module = importlib.import_module(f"stateset_agents.training.{trainer_path}_trainer")
+    cls = getattr(module, f"{trainer_path.upper()}Trainer")
+    trainer = object.__new__(cls)
+    trainer.reward_fn = reward_fn
+    scores = [await trainer._compute_reward("q", reply) for reply in ("12a", "abc")]
+    assert scores == [pytest.approx(2 / 3), 0.0]
+    assert all(type(score) is float for score in scores)

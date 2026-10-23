@@ -25,11 +25,7 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
-from .gspo_trainer import (
-    GSPOConfig,
-    GSPOTrainer,
-    _require_finite_vector,
-)
+from .gspo_trainer import GSPOConfig, GSPOTrainer
 from .runtime_state import _reject_unsupported_resume
 
 logger = logging.getLogger(__name__)
@@ -248,96 +244,7 @@ class GSPOTokenTrainer(GSPOTrainer):
         Returns:
             Training metrics
         """
-        self.model.train()
-        self.optimizer.zero_grad(set_to_none=True)
-        model_device = _get_model_device(self.model)
-
-        all_rewards = []
-        processed_groups = 0
-        nonzero_advantages = 0
-        advantage_count = 0
-        zero_advantage_groups = 0
-
-        scored_groups: list[
-            tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
-        ] = []
-        step_queries = list(queries[:num_groups])
-        # One batched generate samples every group before any scoring.
-        step_groups = await self.generator.generate_groups_batch(
-            [
-                str(q.get("prompt", "")) if isinstance(q, dict) else str(q)
-                for q in step_queries
-            ],
-            self.config.num_generations,
-        )
-        for raw_query, group_responses in zip(step_queries, step_groups, strict=True):
-            processed_groups += 1
-            # A query is a prompt string or {"prompt": ..., "context": {...}};
-            # the context (gold answers, expected tools, ...) reaches the reward.
-            query_context: dict[str, Any] = {}
-            if isinstance(raw_query, dict):
-                query = str(raw_query.get("prompt", ""))
-                raw_context = raw_query.get("context")
-                if isinstance(raw_context, dict):
-                    query_context = dict(raw_context)
-            else:
-                query = str(raw_query)
-            # Extract responses and old log probs
-            responses = [resp for resp, _ in group_responses]
-            old_log_probs = torch.tensor(
-                [log_prob for _, log_prob in group_responses],
-                dtype=torch.float32,
-                device=model_device,
-            )
-            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
-
-            # Sequence-level rewards on the shared single-response path.
-            rewards = [
-                await self._reward_for_response(query, query_context, response)
-                for response in responses
-            ]
-
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=model_device
-            )
-            all_rewards.extend(rewards)
-
-            # Compute group advantages (same as standard GSPO for this demo)
-            # In practice, you could assign different advantages to different tokens
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
-            active = int(torch.count_nonzero(advantages).item())
-            nonzero_advantages += active
-            advantage_count += advantages.numel()
-            zero_advantage_groups += int(active == 0)
-
-            ref_log_probs = None
-            if self.config.beta > 0 and self.ref_model is not None:
-                ref_log_prob_values: list[float] = []
-                for response in responses:
-                    ref_log_prob_values.append(
-                        await self._compute_ref_log_prob(query, response)
-                    )
-                ref_log_probs = torch.tensor(
-                    ref_log_prob_values, dtype=torch.float32, device=model_device
-                )
-            scored_groups.append(
-                (query, responses, old_log_probs, advantages, ref_log_probs)
-            )
-
-        # Match GSPO: each processed prompt group has equal objective weight;
-        # the full loss, including KL, is normalised before backward.
-        passes, stats = self._update_policy(
-            scored_groups, processed_groups=processed_groups, device=model_device
-        )
-        return self._record_step_metrics(
-            passes,
-            stats,
-            rewards=all_rewards,
-            groups=processed_groups,
-            nonzero_advantages=nonzero_advantages,
-            advantage_count=advantage_count,
-            zero_advantage_groups=zero_advantage_groups,
-        )
+        return await self._gspo_step(queries, num_groups)
 
 
 async def train_with_gspo_token(
