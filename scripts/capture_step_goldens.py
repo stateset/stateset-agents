@@ -18,9 +18,18 @@ changed nothing numerically:
   step counters. CPU, fp32, one thread.
 
 Run BEFORE a refactor and commit the JSON; ``tests/unit/test_trainer_step_
-goldens.py`` replays every case and compares (rtol 1e-5).
+goldens.py`` replays every case and compares.
 
     python scripts/capture_step_goldens.py [--only gspo,dapo_k2,...]
+
+The JSON also records the capture environment (``_environment``: python
+major.minor, torch, transformers and numpy versions, platform system and
+machine). The test compares strictly (rtol 1e-5) only in that environment --
+the refactor-equivalence guard each spine slice runs locally. Elsewhere (CI's
+other torch versions, CPUs, BLAS builds and operating systems) it uses
+portable tolerances that survive cross-environment float drift but still
+catch real breakage; see the test's docstring. ``--only`` refuses to mix
+environments: recapture everything when the environment changed.
 
 Regenerate deliberately and explain why in CHANGELOG.md; never regenerate to
 turn a red golden green without understanding why a number moved.
@@ -33,6 +42,7 @@ import asyncio
 import contextlib
 import json
 import math
+import platform
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -45,6 +55,8 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 OUT = ROOT / "tests" / "unit" / "goldens" / "step_goldens.json"
+#: Key of the capture-environment fingerprint inside the goldens JSON.
+ENVIRONMENT_KEY = "_environment"
 
 VOCAB = 128
 PROMPTS = ["hello", "count"]
@@ -58,11 +70,28 @@ COMPLETIONS = [
 ]
 PROMPT_IDS = {"hello": [72, 69, 76, 76, 79], "count": [67, 79, 85, 78, 84]}
 LEARNING_RATE = 5e-3
+#: AdamW epsilon for every observed optimizer (see ``StepObserver``).
+ADAM_EPS = 1e-4
 
 
 # --------------------------------------------------------------------------
 # deterministic fixtures
 # --------------------------------------------------------------------------
+
+
+def environment_fingerprint() -> dict[str, str]:
+    """What the golden numbers depend on beyond the repository's code."""
+    import numpy
+    import transformers
+
+    return {
+        "python": f"{sys.version_info.major}.{sys.version_info.minor}",
+        "torch": str(torch.__version__),
+        "transformers": str(transformers.__version__),
+        "numpy": str(numpy.__version__),
+        "system": platform.system(),
+        "machine": platform.machine(),
+    }
 
 
 def tiny_model() -> Any:
@@ -228,6 +257,15 @@ class StepObserver:
     ``torch.nn.utils.clip_grad_norm_`` (every trainer clips through that
     attribute), so a uniformly mis-scaled gradient is caught even though
     clipping and AdamW's scale invariance would hide it from the update.
+
+    Every observed optimizer runs with ``eps=ADAM_EPS``. With the default
+    1e-8, AdamW's first update ``lr * g / (|g| + eps)`` turns gradients that
+    are zero in exact arithmetic (e.g. attention key biases, which softmax
+    ignores) and so are pure rounding noise (~1e-10) into updates of a sizable
+    fraction of ``lr`` whose size and sign depend on the noise. Any ulp-level
+    change (a different CPU, an equivalent log-prob formula) then moved the
+    parameter delta far beyond the tolerance. ``ADAM_EPS`` keeps the update a
+    smooth function of the gradient while real gradients still dominate it.
     """
 
     def __init__(
@@ -239,6 +277,9 @@ class StepObserver:
         self.modules = modules
         self.optimizers = optimizers
         self.schedulers = schedulers
+        for optimizer in optimizers.values():
+            for group in optimizer.param_groups:
+                group["eps"] = ADAM_EPS
         self.grad_norms: dict[str, list[float]] = {name: [] for name in optimizers}
         self.clip_norms: list[float] = []
         self.before = self._parameters()
@@ -486,6 +527,12 @@ def golden_vapo(k: int) -> dict[str, Any]:
         reward_fn=lambda prompt, response: digit_fraction(response),
     )
     deterministic_weights(trainer.value_head, seed=7)
+    # The value head's dropout would make the golden depend on the global RNG
+    # stream (and so on how many draws model construction made in a given
+    # torch/transformers version); the policy is already dropout-free.
+    for module in trainer.value_head.modules():
+        if isinstance(module, torch.nn.Dropout):
+            module.p = 0.0
     trainer.value_warmup_complete = True  # post-warmup joint update
 
     async def generate(prompt: str) -> list[dict[str, Any]]:
@@ -705,6 +752,14 @@ def main() -> int:
         if not wanted or case in wanted or trainer in wanted
     ]
     existing = json.loads(OUT.read_text()) if OUT.exists() else {}
+    environment = environment_fingerprint()
+    recorded = existing.get(ENVIRONMENT_KEY)
+    if wanted and recorded not in (None, environment):
+        parser.error(
+            f"goldens were captured in {recorded}, this is {environment}: "
+            "recapture every case (no --only) so the file has one environment"
+        )
+    existing[ENVIRONMENT_KEY] = environment
     for case in names:
         existing[case] = capture(case)
         print(f"captured {case}")
