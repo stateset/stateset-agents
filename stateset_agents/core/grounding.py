@@ -534,7 +534,10 @@ class _Anchoring:
 
 
 def _anchor_weights(
-    clauses: Sequence[_Clause], anchors: set[str], weak: Collection[str] = _GENERIC
+    clauses: Sequence[_Clause],
+    anchors: set[str],
+    weak: Collection[str] = _GENERIC,
+    skip: int = 0,
 ) -> _Anchoring:
     """How strongly each clause is tied to the request (see ``_Anchoring``).
 
@@ -556,11 +559,16 @@ def _anchor_weights(
     anchored.
     """
     named = []
+    offset = 0
     for clause in clauses:
         terms: set[str] = set()
-        for stem in clause.content():
-            terms |= _token_parts(stem) & anchors
+        for position, (low, stem) in enumerate(
+            zip(clause.low, clause.stems, strict=True), start=offset
+        ):
+            if position >= skip and low not in STOPWORDS:
+                terms |= _token_parts(stem) & anchors
         named.append(terms)
+        offset += len(clause.stems)
     later = {term: sum(term in terms for terms in named) for term in anchors}
     uses: dict[str, int] = {}
     result = _Anchoring(len(clauses))
@@ -745,12 +753,13 @@ class _Reading:
         anchors: set[str] | None = None,
         asked: set[str] | None = None,
         weak: Collection[str] = _GENERIC,
+        skip: int = 0,
     ) -> None:
         self.clauses = _clauses(reply)
         self.request_terms = request_terms
         anchors = request_terms if anchors is None else anchors
         self.asked = asked if asked is not None else request_terms
-        anchoring = _anchor_weights(self.clauses, anchors, weak)
+        anchoring = _anchor_weights(self.clauses, anchors, weak, skip)
         self.weights = anchoring.weights
         self.explicit = anchoring.explicit
         found = [
@@ -969,6 +978,21 @@ def _echo_share(
     return len(covered) / len(tokens) if tokens else 0.0
 
 
+def _echoed_prefix(reply: str, parts: Sequence[str]) -> int:
+    """How many opening tokens of ``reply`` copy the opening of a request
+    message (at least three): the "first three request words" prefix, which
+    must not anchor an unrelated answer."""
+    words = [low for clause in _clauses(reply) for low in clause.low]
+    longest = 0
+    for part in parts:
+        opening = [low for clause in _clauses(part) for low in clause.low]
+        size = 0
+        while size < min(len(words), len(opening)) and words[size] == opening[size]:
+            size += 1
+        longest = max(longest, size)
+    return longest if longest >= 3 else 0
+
+
 def _off_request_share(reading: _Reading) -> float:
     """Share of content words in clauses tied to nothing in the request."""
     total = off = 0
@@ -1143,6 +1167,7 @@ def _grounding(
         anchors,
         asked=request_terms,
         weak=weak,
+        skip=_echoed_prefix(reply, parts),
     )
     units, unsupported, unit_details = _units(
         reading, question, evidence_terms, bool(answers)

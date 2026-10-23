@@ -47,8 +47,6 @@ _UNDATED = re.compile(
 #: not (yet) carry the date. The removal release is recorded here and in the
 #: CHANGELOG; drop an entry once the module's own warning states the version.
 EXTERNAL_SCHEDULE: dict[str, str] = {
-    # ``RulerRewardFunction(config=RulerConfig(...))`` (deprecated since v0.6.0).
-    "stateset_agents/rewards/ruler_reward.py": "0.71.0",
     # ``DistributedGRPOTrainer`` (deprecated in v0.38.0, non-functional).
     "stateset_agents/training/distributed_trainer.py": "0.71.0",
 }
