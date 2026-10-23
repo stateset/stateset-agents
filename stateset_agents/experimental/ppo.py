@@ -35,10 +35,6 @@ from ..training.config import TrainingConfig
 from ..training.runtime_state import TrainingRuntime, validate_training_config
 from ..training.trainer_utils import apply_dropout_setting
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 

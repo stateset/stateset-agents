@@ -199,12 +199,10 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics tracking
+        # One entry per updating train_step for each key (_GEPO_HISTORY). GEPO has no
+        # KL term (beta must be 0), so there is no kl_divergence history.
         self.metrics_history: dict[str, list[float]] = {
-            "policy_loss": [],
-            "average_reward": [],
-            "kl_divergence": [],
-            "gepo_coefficient": [],
-            "advantage_std": [],
+            key: [] for key in _GEPO_HISTORY
         }
 
         self.global_step = 0
@@ -481,6 +479,15 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
 
+#: ``metrics_history`` key -> the step metric it records.
+_GEPO_HISTORY: dict[str, str] = {
+    "policy_loss": "policy_loss",
+    "average_reward": "average_reward",
+    "gepo_coefficient": "gepo_coefficient_mean",
+    "advantage_std": "advantage_std",
+}
+
+
 @dataclass
 class _GEPOStep:
     """One GEPO step's rollout and pass data (for the metrics)."""
@@ -623,9 +630,8 @@ def _gepo_metrics(
     )
 
     # Store metrics
-    for key in ["policy_loss", "average_reward"]:
-        if key in trainer.metrics_history:
-            trainer.metrics_history[key].append(metrics[key])
+    for key, source in _GEPO_HISTORY.items():
+        trainer.metrics_history.setdefault(key, []).append(float(metrics[source]))
     return metrics
 
 
