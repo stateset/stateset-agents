@@ -249,7 +249,7 @@ async def test_native_architecture_gspo_update_and_adapter_reload(
 
     class Reward:
         async def compute_reward(self, turns, context):
-            return SimpleNamespace(total_reward=float(turns[0].content == "ok"))
+            return SimpleNamespace(total_reward=float(turns[-1].content == "ok"))
 
     trainer = GSPOTrainer(
         config=training,

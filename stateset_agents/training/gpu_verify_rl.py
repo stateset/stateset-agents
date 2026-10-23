@@ -56,7 +56,7 @@ class _ContainsTokenRewardModel:
     async def compute_reward(self, turns: Any, context: Any) -> Any:
         from stateset_agents.core.reward_base import RewardResult
 
-        score = 1.0 if "A" in turns[0].content else 0.0
+        score = 1.0 if "A" in turns[-1].content else 0.0
         return RewardResult(score=score, breakdown={}, components={})
 
 
