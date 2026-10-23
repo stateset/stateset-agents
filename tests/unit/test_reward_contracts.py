@@ -345,7 +345,9 @@ async def test_multi_objective_raises_for_a_nan_component():
 
 
 @pytest.mark.parametrize("reward_type", [RewardType.IMMEDIATE, RewardType.SPARSE])
-async def test_environment_flags_a_nan_reward(reward_type):
+async def test_environment_raises_on_a_nan_reward(reward_type):
+    # A NaN is bad data, not an outage: it propagates instead of being
+    # recorded and skipped.
     reward = _Scripted(math.nan)
     reward.reward_type = reward_type
     scenario = {"id": "s", "user_turns": ["hi", "and?"]}
@@ -354,13 +356,11 @@ async def test_environment_flags_a_nan_reward(reward_type):
     async def respond(history, context):
         return "Happy to help."
 
-    trajectory = await environment.run_episode(respond, scenario)
-    assert math.isfinite(trajectory.total_reward)
-    assert all(math.isfinite(r) for r in trajectory.turn_rewards)
-    assert "finite" in trajectory.metadata["reward_error"]
+    with pytest.raises(ValueError, match="finite"):
+        await environment.run_episode(respond, scenario)
 
 
-async def test_trainer_drops_an_episode_with_a_nan_reward():
+async def test_trainer_raises_on_a_nan_reward():
     from stateset_agents.training.config import TrainingConfig
     from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
 
@@ -374,7 +374,8 @@ async def test_trainer_drops_an_episode_with_a_nan_reward():
         reward_fn=_Scripted(math.nan),
         config=TrainingConfig(num_generations=2),
     )
-    assert await trainer.generate_trajectories([scenario], num_generations=2) == []
+    with pytest.raises(ValueError, match="finite"):
+        await trainer.generate_trajectories([scenario], num_generations=2)
 
 
 async def test_nsr_contract_inputs_exercise_both_verdicts():

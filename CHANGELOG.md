@@ -63,6 +63,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts as the environment's own step reward, also when a reward function is
   attached. Environments record each step's scoring state in
   `trajectory.state_history`, and per-step rewards see the system prompt.
+- **Only reward outages are absorbed.** Environments, `MultiTurnGRPOTrainer`
+  (sequential and batched rollouts, post-training evaluation),
+  `SingleTurnGRPOTrainer` and `ComputationalGRPOEngine` drop an episode only
+  when its reward raises `RewardUnavailableError` (or a subclass). A
+  `TypeError`, `AttributeError`, `KeyError` or `ValueError` from a reward, a
+  `None` result and a NaN score now propagate instead of silently shrinking
+  the batch, and a rollout step whose every attempted episode lost its reward
+  raises `RewardUnavailableError` instead of training on nothing.
+  `score_episode` raises `RewardUnavailableError` for an outage the
+  environment recorded; `coerce_reward_result` parses with `reward_score`
+  instead of reading failures as 0.0. `RewardUnavailableError` now lives in
+  `core.reward_context` (still importable from `core.reward_base`).
 
 ### Fixed
 

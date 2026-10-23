@@ -176,7 +176,8 @@ async def test_an_all_failed_composite_is_flagged_and_never_trained_on():
         reward_fn=reward,
         config=TrainingConfig(num_generations=2),
     )
-    assert await trainer.generate_trajectories([scenario], num_generations=2) == []
+    with pytest.raises(RewardUnavailableError, match="No episode got a reward"):
+        await trainer.generate_trajectories([scenario], num_generations=2)
 
 
 # --- Environment.get_reward --------------------------------------------------
@@ -224,7 +225,7 @@ async def test_engine_drops_trajectories_whose_reward_failed(caplog):
         async def compute_reward(self, turns, context=None):
             Half.calls += 1
             if Half.calls % 2:
-                raise RuntimeError("judge down")
+                raise RewardUnavailableError("judge down")
             return RewardResult(score=0.75)
 
     engine = _engine(ConversationEnvironment([]), Half())
@@ -250,7 +251,7 @@ async def test_single_turn_trainer_drops_generations_without_a_reward():
         async def compute_reward(self, turns, context=None):
             Flaky.calls += 1
             if Flaky.calls == 1:
-                raise RuntimeError("judge 503")
+                raise RewardUnavailableError("judge 503")
             return RewardResult(score=0.25)
 
     async def answer(prompt):
@@ -263,8 +264,12 @@ async def test_single_turn_trainer_drops_generations_without_a_reward():
     group, _ = await trainer._generate_trajectory_group("q", num_generations=3)
     assert [t.total_reward for t in group.trajectories] == [0.25, 0.25]
 
-    trainer.reward_fn = None  # and the environment has no reward either
-    with pytest.raises(RuntimeError, match="failed to get a reward"):
+    trainer.reward_fn = Boom()  # every generation's reward is unavailable
+    with pytest.raises(RewardUnavailableError, match="failed to get a reward"):
+        await trainer._generate_trajectory_group("q", num_generations=2)
+
+    trainer.reward_fn = None  # and the environment has no reward: a setup bug
+    with pytest.raises(ValueError, match="no reward_fn"):
         await trainer._generate_trajectory_group("q", num_generations=2)
 
 
@@ -450,3 +455,136 @@ async def test_ruler_failure_is_unavailable_unless_fallback_is_enabled(monkeypat
     assert result.metadata["reward_fallback"] == "ruler_error"
     composite = await CompositeReward([lenient, Half()]).compute_reward(TURNS)
     assert "ruler_error" in composite.metadata["reward_fallback"]
+
+
+# --- Trainers absorb only outages (RewardUnavailableError) -------------------
+
+
+class _Returns(RewardFunction):
+    """A reward that returns a fixed (possibly invalid) value."""
+
+    def __init__(self, value: object) -> None:
+        super().__init__(reward_type=RewardType.CUMULATIVE, name="returns")
+        self.value = value
+
+    async def compute_reward(self, turns, context=None):
+        return self.value
+
+
+_BUGS = [
+    pytest.param(lambda: Buggy(TypeError("bad arg")), TypeError, id="TypeError"),
+    pytest.param(
+        lambda: Buggy(AttributeError("no attr")), AttributeError, id="AttributeError"
+    ),
+    pytest.param(lambda: Buggy(KeyError("k")), KeyError, id="KeyError"),
+    pytest.param(lambda: Buggy(ValueError("bad data")), ValueError, id="ValueError"),
+    pytest.param(lambda: _Returns(None), TypeError, id="None"),
+    pytest.param(lambda: _Returns(math.nan), ValueError, id="NaN"),
+]
+
+
+class _BatchAgent:
+    model = SimpleNamespace(eval=lambda: None)
+
+    async def generate_turns_batch(self, histories, contexts):
+        return ["ok"] * len(histories)
+
+    async def generate_response(self, history, context):
+        return "ok"
+
+
+@pytest.mark.parametrize("batched", [False, True], ids=["sequential", "batched"])
+@pytest.mark.parametrize("attached", [False, True], ids=["trainer", "environment"])
+@pytest.mark.parametrize(("make", "error"), _BUGS)
+async def test_multi_turn_trainer_propagates_reward_bugs(
+    make, error, attached, batched
+):
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    scenario = {"id": "s", "user_turns": ["hi"]}
+    reward = make()
+    environment = ConversationEnvironment(
+        [scenario], max_turns=1, reward_fn=reward if attached else None
+    )
+    trainer = MultiTurnGRPOTrainer(
+        agent=_BatchAgent(),
+        environment=environment,
+        reward_fn=None if attached else reward,
+        config=TrainingConfig(num_generations=2, batched_rollouts=batched),
+    )
+    with pytest.raises(error):
+        await trainer.generate_trajectories([scenario], num_generations=2)
+
+
+async def test_multi_turn_trainer_drops_only_the_episode_whose_reward_is_down():
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    class DownOnce(RewardFunction):
+        calls = 0
+
+        async def compute_reward(self, turns, context=None):
+            DownOnce.calls += 1
+            if DownOnce.calls == 1:
+                raise RewardUnavailableError("judge 503")
+            return RewardResult(score=0.5)
+
+    scenario = {"id": "s", "user_turns": ["hi"]}
+    trainer = MultiTurnGRPOTrainer(
+        agent=_BatchAgent(),
+        environment=ConversationEnvironment([scenario], max_turns=1),
+        reward_fn=DownOnce(),
+        config=TrainingConfig(num_generations=3, batched_rollouts=False),
+    )
+    [group] = await trainer.generate_trajectories([scenario], num_generations=3)
+    assert len(group.trajectories) == 2
+
+
+@pytest.mark.parametrize(("make", "error"), _BUGS)
+async def test_single_turn_trainer_propagates_reward_bugs(make, error):
+    from stateset_agents.training.single_turn_trainer import SingleTurnGRPOTrainer
+
+    async def answer(prompt):
+        return "answer"
+
+    trainer = SingleTurnGRPOTrainer.__new__(SingleTurnGRPOTrainer)
+    trainer.agent = SimpleNamespace(generate_response=answer)
+    trainer.reward_fn = make()
+    trainer.environment = ConversationEnvironment([])
+    with pytest.raises(error):
+        await trainer._generate_trajectory_group("q", num_generations=2)
+
+
+@pytest.mark.parametrize(("make", "error"), _BUGS)
+async def test_engine_propagates_reward_bugs(make, error):
+    engine = _engine(ConversationEnvironment([]), make())
+    with pytest.raises(error):
+        await engine.generate_trajectory_batch(["a", "b"])
+
+
+@pytest.mark.parametrize(("make", "error"), _BUGS)
+async def test_post_training_evaluation_propagates_reward_bugs(make, error):
+    from stateset_agents.training.config import TrainingConfig
+    from stateset_agents.training.multi_turn_trainer import MultiTurnGRPOTrainer
+
+    scenario = {"id": "s", "user_turns": ["hi"]}
+    trainer = MultiTurnGRPOTrainer(
+        agent=_BatchAgent(),
+        environment=ConversationEnvironment([scenario], max_turns=1),
+        reward_fn=make(),
+        config=TrainingConfig(num_generations=2),
+    )
+    with pytest.raises(error):
+        await trainer.run_post_training_evaluation([scenario], num_samples=1)
+
+
+@pytest.mark.parametrize(("make", "error"), _BUGS)
+async def test_legacy_reward_coercion_never_reads_a_failure_as_zero(make, error):
+    from stateset_agents.training.multi_turn_evaluation import coerce_reward_result
+
+    with pytest.raises(error):
+        await coerce_reward_result(make().compute_reward(TURNS), (Exception,))
+    assert await coerce_reward_result(
+        RewardResult(score=0.25, breakdown={"a": 0.25}), ()
+    ) == (0.25, {"a": 0.25})

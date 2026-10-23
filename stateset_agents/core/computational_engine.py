@@ -28,6 +28,7 @@ from numpy.typing import NDArray
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction
+from .reward_context import RewardUnavailableError, reward_score
 from .trajectory import ConversationTurn, Trajectory
 
 logger = logging.getLogger(__name__)
@@ -116,15 +117,18 @@ class ComputationalGRPOEngine:
             task = asyncio.create_task(self._generate_single_trajectory(prompt))
             tasks.append(task)
 
-        # Collect results; a trajectory whose reward failed is dropped and
-        # counted, never kept with a stand-in reward.
+        # Collect results; a trajectory whose reward is unavailable (an
+        # outage) is dropped and counted, never kept with a stand-in reward.
+        # Any other error (a bug, bad data, a non-finite reward) propagates.
         results = await asyncio.gather(*tasks, return_exceptions=True)
         trajectories: list[ComputationalTrajectory] = []
         failed = 0
         for result in results:
-            if isinstance(result, ENGINE_EXCEPTIONS):
+            if isinstance(result, RewardUnavailableError):
                 failed += 1
-                logger.warning("Dropping trajectory whose reward failed: %s", result)
+                logger.warning(
+                    "Dropping trajectory: its reward is unavailable: %s", result
+                )
             elif isinstance(result, BaseException):
                 raise result
             else:
@@ -157,7 +161,7 @@ class ComputationalGRPOEngine:
                         ConversationTurn(role="assistant", content=response),
                     ]
                 )
-                learned_reward = float(reward_result.score)
+                learned_reward = reward_score(reward_result)
             elif raw_reward is None:
                 raise ValueError(
                     "use_learned_rewards=False needs an environment reward_fn"

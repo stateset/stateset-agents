@@ -18,7 +18,7 @@ from typing import Any, TypeAlias
 import numpy as np
 
 from stateset_agents.core import trajectory as core_trajectory
-from stateset_agents.core.reward_context import score_episode
+from stateset_agents.core.reward_context import RewardUnavailableError, score_episode
 from stateset_agents.utils.async_calls import run_sync_owned
 
 from .callbacks import (
@@ -696,6 +696,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
             return await self.agent.generate_response(history, context)
 
         batched = await self._generate_batched_trajectories(scenarios, num_generations)
+        attempted = 0
 
         for index, scenario in enumerate(scenarios):
             # Generate multiple trajectories for the same scenario
@@ -703,6 +704,7 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
 
             if batched is not None:
                 trajectories = batched[index]
+                attempted += num_generations
             for _ in range(num_generations if batched is None else 0):
                 trajectory = None
                 accepted = False
@@ -719,14 +721,19 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                     trajectories.append(trajectory)
                     accepted = True
 
-                except MULTI_TRAINER_EXCEPTIONS as e:
+                except RewardUnavailableError as e:
+                    # Only a reward outage drops the episode; any other error
+                    # (a bug, bad data, a None or NaN reward) propagates.
                     if getattr(self.reward_fn, "fail_on_error", False) or getattr(
                         self, "_stateset_native_rollout", False
                     ):
                         raise
-                    logger.warning(f"Failed to generate trajectory: {e}")
+                    logger.warning(
+                        "Dropping an episode: its reward is unavailable: %s", e
+                    )
                     continue
                 finally:
+                    attempted += 1
                     self._record_rollout(trajectory, accepted=accepted)
 
             if trajectories:
@@ -742,6 +749,13 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
                 )
                 trajectory_groups.append(group)
 
+        if attempted and not trajectory_groups:
+            # Training on nothing would silently stall: every attempted
+            # episode lost its reward to an outage.
+            raise RewardUnavailableError(
+                f"No episode got a reward: all {attempted} attempted episodes "
+                "were dropped because their reward was unavailable"
+            )
         return trajectory_groups
 
     def _record_rollout(
@@ -843,12 +857,16 @@ class MultiTurnGRPOTrainer(TrainingRuntime):
         ):
             try:
                 await self._score_trajectory(trajectory, scenario)
-            except MULTI_TRAINER_EXCEPTIONS as e:
-                if strict:
+            except BaseException as e:
+                # Only a reward outage drops the episode; any other error (a
+                # bug, bad data, a None or NaN reward) rejects the batch.
+                if strict or not isinstance(e, RewardUnavailableError):
                     for observed in episodes:
                         self._record_rollout(observed, accepted=False)
                     raise
-                logger.warning("Dropping episode %d: its reward failed: %s", index, e)
+                logger.warning(
+                    "Dropping episode %d: its reward is unavailable: %s", index, e
+                )
                 scored.append(False)
             else:
                 scored.append(True)

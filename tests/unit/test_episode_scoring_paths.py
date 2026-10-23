@@ -16,7 +16,7 @@ import pytest
 from stateset_agents.core.basic_rewards import HelpfulnessReward, TaskCompletionReward
 from stateset_agents.core.conversation_environment import ConversationEnvironment
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
-from stateset_agents.core.reward_context import score_episode
+from stateset_agents.core.reward_context import RewardUnavailableError, score_episode
 from stateset_agents.core.task_environment import TaskEnvironment
 from stateset_agents.training.config import TrainingConfig
 from stateset_agents.training.evaluation import EvaluationConfig, evaluate_agent
@@ -167,7 +167,7 @@ class Flaky(RewardFunction):
     async def compute_reward(self, turns, context=None):
         self.calls += 1
         if self.calls == 1:
-            raise RuntimeError("judge 503")
+            raise RewardUnavailableError("judge 503")
         return RewardResult(score=0.7)
 
 

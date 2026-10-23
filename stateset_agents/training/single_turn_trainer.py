@@ -19,6 +19,7 @@ from typing import Any
 import numpy as np
 
 from stateset_agents.core.reward_context import (
+    RewardUnavailableError,
     build_reward_context,
     normalize_turns,
     reward_score,
@@ -397,8 +398,9 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         """Score one generation with ``reward_fn`` or, without one, the environment.
 
         There is no stand-in score: a reward that fails, is not finite, or is
-        unavailable (no ``reward_fn`` and no environment reward) raises, and
-        the generation is dropped from its group.
+        unavailable (no ``reward_fn`` and no environment reward) raises. Only
+        an outage (``RewardUnavailableError``) drops the generation from its
+        group; every other error propagates.
         """
         if self.reward_fn is not None:
             # The standard reward context (scenario keys lifted, environment
@@ -454,11 +456,15 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
             ]
             try:
                 reward = await self._compute_reward_for_turns(turns, context)
-            except SINGLE_TRAINER_EXCEPTIONS as error:
+            except RewardUnavailableError as error:
+                # Only a reward outage drops the generation; any other error
+                # (a bug, bad data, a None or NaN reward) propagates.
                 if getattr(self.reward_fn, "fail_on_error", False):
                     raise
                 logger.warning(
-                    "Dropping generation %d: its reward failed: %s", gen_idx, error
+                    "Dropping generation %d: its reward is unavailable: %s",
+                    gen_idx,
+                    error,
                 )
                 continue
 
@@ -477,7 +483,7 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
                 best_response = str(response)
 
         if not trajectories:
-            raise RuntimeError(
+            raise RewardUnavailableError(
                 f"Every one of {num_generations} generations failed to get a reward"
             )
         group_trajectories: list[Trajectory | MultiTurnTrajectory] = list(trajectories)

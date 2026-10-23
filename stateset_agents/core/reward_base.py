@@ -14,7 +14,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from .reward_context import REWARD_FALLBACK_KEY, build_reward_context, reward_fallback
+from .reward_context import (
+    REWARD_FALLBACK_KEY,
+    RewardUnavailableError,
+    build_reward_context,
+    reward_fallback,
+)
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
@@ -25,17 +30,6 @@ REWARD_EXCEPTIONS = (
     TypeError,
     AttributeError,
 )
-
-
-class RewardUnavailableError(RuntimeError):
-    """A reward could not be computed for an external reason (judge or network
-    outage, a verifier that cannot be reached).
-
-    This is the only failure reward composers absorb: ``CompositeReward`` and
-    ``MultiObjectiveRewardFunction`` leave the component out and spread its
-    weight over the rest. Every other exception is a bug or bad data and
-    propagates, so it is never mistaken for an outage.
-    """
 
 
 class RewardType(Enum):

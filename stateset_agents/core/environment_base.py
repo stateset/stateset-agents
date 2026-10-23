@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Any
 
 from .reward import RewardFunction
-from .reward_base import RewardType
+from .reward_base import RewardType, RewardUnavailableError
 from .reward_context import (
     REWARD_FALLBACK_KEY,
     build_reward_context,
@@ -261,7 +261,9 @@ class Environment(ABC):
         try:
             result = await reward_fn.compute_reward(turns, context)
             score = reward_score(result)
-        except ENVIRONMENT_EXCEPTIONS as error:
+        except RewardUnavailableError as error:
+            # Only an outage is recorded and skipped; any other exception is a
+            # bug or bad data and propagates.
             if getattr(reward_fn, "fail_on_error", False):
                 raise
             _record_reward_failure(state.metadata, reward_fn, error, "step")
@@ -486,7 +488,7 @@ class Environment(ABC):
             try:
                 final_reward = await reward_fn.compute_reward(turns, context)
                 final_value = reward_score(final_reward)
-            except ENVIRONMENT_EXCEPTIONS as error:
+            except RewardUnavailableError as error:
                 if getattr(reward_fn, "fail_on_error", False):
                     raise
                 _record_reward_failure(reward_metadata, reward_fn, error, "episode")

@@ -35,6 +35,18 @@ from typing import Any
 
 from .trajectory import ConversationTurn
 
+
+class RewardUnavailableError(RuntimeError):
+    """A reward could not be computed for an external reason (judge or network
+    outage, a verifier that cannot be reached).
+
+    This is the only failure reward composers absorb: ``CompositeReward`` and
+    ``MultiObjectiveRewardFunction`` leave the component out and spread its
+    weight over the rest. Every other exception is a bug or bad data and
+    propagates, so it is never mistaken for an outage.
+    """
+
+
 #: ``RewardResult.metadata`` key a reward sets (to a short reason) when its
 #: score is an opted-in fallback rather than a real verdict, e.g.
 #: ``NSRVerifierConfig(error_score=0.0)`` or ``RulerRewardFunction(
@@ -329,7 +341,8 @@ async def score_episode(
     ):
         error = metadata.get("reward_error")
         if error:
-            raise RuntimeError(f"Episode reward failed: {error}")
+            # The environment recorded an outage; the episode has no reward.
+            raise RewardUnavailableError(f"Episode reward failed: {error}")
         total = float(getattr(trajectory, "total_reward", 0.0))
         if not math.isfinite(total):
             raise ValueError(f"Episode reward must be finite, got {total}")
@@ -409,6 +422,7 @@ async def score_episode(
 
 __all__ = [
     "LATEST_TURN_SCOPE",
+    "RewardUnavailableError",
     "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
     "assistant_turns_in_scope",
