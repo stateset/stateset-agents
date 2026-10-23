@@ -7,6 +7,110 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
+  (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
+  saved and the run's worker is signalled only after its process identity is
+  verified; the worker terminates its pod and records the run as `cancelled`.
+  The API capability reports `remote_stop_supported` and
+  `remote_stop_providers`. Other remote providers are still refused.
+
+### Changed
+
+- The evaluation panel's background work runs through the shared
+  `BackgroundTask` (owned submissions on non-daemon threads) instead of its
+  own thread and result queue.
+- The studio's run details, metrics, run comparison, launch review and
+  resource summaries are pure renderers in `stateset_agents.tui_views`
+  (testable without a `Studio`); rendered frames are unchanged.
+
+### Fixed
+
+- **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
+  partition issue combinations between eval and harvest, so the same seed
+  yields different prompts than before; reference bases shift upward only when
+  a set would run into the next. `FlywheelConfig` rejects eval prompts that
+  match a harvest prompt with digits masked. `build_ladder` requires
+  `depth >= 2` (depth-1 eval prompts were training rows with another
+  reference) and checks eval against the training rows too;
+  `build_episode_ladder` takes `train_count` so episode references clear the
+  training rows. A domain with exactly `depth` (or `turns`) issues now raises
+  instead of giving eval and harvest reorderings of one issue set, and
+  `check_disjoint_prompts` treats prompts with the same words in another order
+  (and, in the ladder, the same set of issues) as the same request.
+- **`expect` checks honour negation.** An expected phrase counts only where it
+  is not negated ("I can't open a baggage trace" does not deliver one), with
+  the same governing rule as `forbid`, and phrases ending in a digit match
+  whole numbers only ("7701" no longer matches "77015"). Harvests keep fewer,
+  correct samples.
+- `ConversationDataset` raises on NaN or infinite rewards instead of turning
+  every normalized reward into NaN.
+- The harvest job seeds its sampling (`--seed`, default 42, recorded in
+  `harvest_summary.json`) and shares SFT's prompt encoding, generation
+  settings and tokenizer loading (`sft.encode_chat_prompt`,
+  `generate_from_prompt`, `load_tokenizer_for`).
+- GSM8K answer extraction graded the first "answer is" instead of the final
+  answer; `####` and `\boxed{}` now win and the last match is used. Markdown
+  emphasis no longer hides the answer ("The answer is **18**, which is 2 more
+  than 16" graded 16), and text after a new few-shot "Question:" is ignored.
+- JSONL readers split records on U+2028, U+2029 and U+0085, which the repo's
+  writers leave unescaped, so valid rows were dropped or rejected and source
+  row counts were wrong; every reader now uses `stateset_agents.data.jsonl`,
+  which splits on newlines only.
+- A flywheel rerun into the same `output_root` scored a generation whose
+  training died before evaluating with the previous run's
+  `eval_results.json`, and advanced that stale adapter.
+- `last_assistant_token_mask` (offline RL transitions, offline GRPO) failed
+  for whole datasets when a template strips earlier `<think>` blocks; it falls
+  back to the final-turn mask.
+- The harvest encoded prompts with an extra BOS on Llama/Gemma-style
+  tokenizers, and the SFT training plan crashed on a tool-call first example.
+- `stateset-agents runpod-orphans --terminate` (and
+  `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
+  at the first failure. A pod that is already gone (HTTP 404) counts as
+  cleaned up, pod deletion retries 429/5xx with backoff, and failures are
+  reported together at the end with their leases kept; the command exits 1
+  if any pod could not be confirmed terminated.
+- On macOS (and on Windows when `psutil` is installed) studio owner checks
+  compare process creation-time tokens, as Linux does with `/proc` start
+  ticks, so a reused PID no longer keeps a dead supervisor or worker looking
+  alive. Records written without a token keep presence-only checks.
+- `stateset-agents runpod-orphans --terminate` no longer terminates the pods
+  of jobs that are still running (which made them rent a replacement and
+  doubled billing). Cleanup leases now record the submitting process (PID,
+  start-time token, host); `--terminate` ends only pods whose process has
+  provably exited, the listing shows each owner's state, and `--force`
+  reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
+  live owners and `cleanup_orphans()` gains `force=`.
+- RunPod run deadlines and spend accounting keep counting while the host is
+  suspended. They used `CLOCK_MONOTONIC`, which pauses during a laptop sleep,
+  so a pod could bill past the cap, a replacement could be rented on wake,
+  and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
+  monotonic time is extended by wall-clock time it missed, never decreasing
+  when the wall clock steps back.
+- A RunPod pod no longer bills indefinitely when its submitting host crashes
+  while the pod is still provisioning. Each RunPod submission, and the studio
+  at start-up when `RUNPOD_API_KEY` is set, first terminates leased pods whose
+  submitting process on this host has provably exited. An opt-in boot-time
+  watchdog (`STATESET_RUNPOD_BOOT_WATCHDOG=1` or
+  `RunPodExecutor(boot_watchdog=True)`, off by default and awaiting live-pod
+  verification) also arms the run deadline in the start command of RunPod's
+  `runpod/pytorch` images, using the pod-scoped key RunPod injects; no user key
+  is copied. The SSH-armed watchdog remains the default pod-side backstop.
+- CLI hints name real commands: the worker's orphan hint pointed to a
+  nonexistent `stateset-agents remote runpod-orphans` (the command is the
+  top-level `runpod-orphans`), and a `--curated` help text named the
+  `make grade-batch` target as a CLI command. A test now resolves every
+  backtick-quoted `stateset-agents ...` hint in the package against the CLI.
+- On Windows, studio supervisors and workers are now really detached:
+  `start_new_session` is ignored there, so closing the launching console
+  killed the supervisor and worker (orphaning a RunPod pod). Launches use one
+  helper, `detached_process_options()`, which gives Windows children their
+  own process group and hidden console. A supervisor interrupted by Ctrl+C or
+  `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
+  failure instead of leaving no outcome.
+
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
 ### Added
@@ -21,12 +125,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `tests/unit/test_episode_scoring_paths.py` checks that training, periodic and
   post-training evaluation and the distributed trainer give an episode the same
   reward, wherever the reward is attached.
-- Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
-  (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
-  saved and the run's worker is signalled only after its process identity is
-  verified; the worker terminates its pod and records the run as `cancelled`.
-  The API capability reports `remote_stop_supported` and
-  `remote_stop_providers`. Other remote providers are still refused.
 
 ### Deprecated
 
@@ -119,12 +217,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BackgroundTask`; preparing and launching a recovery run still run on
   non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
   longer starts raw threads or uses result queues.
-- The evaluation panel's background work runs through the shared
-  `BackgroundTask` (owned submissions on non-daemon threads) instead of its
-  own thread and result queue.
-- The studio's run details, metrics, run comparison, launch review and
-  resource summaries are pure renderers in `stateset_agents.tui_views`
-  (testable without a `Studio`); rendered frames are unchanged.
 
 ### Fixed
 
@@ -166,21 +258,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `depth >= 2` (depth-1 eval prompts were training rows with another
   reference) and checks eval against the training rows too;
   `build_episode_ladder` takes `train_count` so episode references clear the
-  training rows. A domain with exactly `depth` (or `turns`) issues now raises
-  instead of giving eval and harvest reorderings of one issue set, and
-  `check_disjoint_prompts` treats prompts with the same words in another order
-  (and, in the ladder, the same set of issues) as the same request.
-- **`expect` checks honour negation.** An expected phrase counts only where it
-  is not negated ("I can't open a baggage trace" does not deliver one), with
-  the same governing rule as `forbid`, and phrases ending in a digit match
-  whole numbers only ("7701" no longer matches "77015"). Harvests keep fewer,
-  correct samples.
-- `ConversationDataset` raises on NaN or infinite rewards instead of turning
-  every normalized reward into NaN.
-- The harvest job seeds its sampling (`--seed`, default 42, recorded in
-  `harvest_summary.json`) and shares SFT's prompt encoding, generation
-  settings and tokenizer loading (`sft.encode_chat_prompt`,
-  `generate_from_prompt`, `load_tokenizer_for`).
+  training rows.
 - **SFT rows may become several sequences.** When a chat template renders an
   assistant turn differently once it is history (Qwen3 drops the newest
   turn's empty `<think>` block, Qwen3.5 omits its generation-prompt stub, both
@@ -271,21 +349,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Transcript grading misaligned contexts after a dropped line and reported
   the wrong `user_query`; curated SFT pairs lost the graded multi-turn context.
 - GSM8K answer extraction graded the first "answer is" instead of the final
-  answer; `####` and `\boxed{}` now win and the last match is used. Markdown
-  emphasis no longer hides the answer ("The answer is **18**, which is 2 more
-  than 16" graded 16), and text after a new few-shot "Question:" is ignored.
-- JSONL readers split records on U+2028, U+2029 and U+0085, which the repo's
-  writers leave unescaped, so valid rows were dropped or rejected and source
-  row counts were wrong; every reader now uses `stateset_agents.data.jsonl`,
-  which splits on newlines only.
-- A flywheel rerun into the same `output_root` scored a generation whose
-  training died before evaluating with the previous run's
-  `eval_results.json`, and advanced that stale adapter.
-- `last_assistant_token_mask` (offline RL transitions, offline GRPO) failed
-  for whole datasets when a template strips earlier `<think>` blocks; it falls
-  back to the final-turn mask.
-- The harvest encoded prompts with an extra BOS on Llama/Gemma-style
-  tokenizers, and the SFT training plan crashed on a tool-call first example.
+  answer; `####` and `\boxed{}` now win and the last match is used.
 - Judge parse failures were counted as self-disagreement, and a skipped
   `min_judge_score` gate left no trace; eval rows now carry
   `judge_unavailable` and the manifest records `eval_judge_gates_skipped`.
@@ -353,7 +417,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review and saving a stop request now run in the background (single-flight,
   with progress shown in the status line). Exiting the studio waits for an
   authorized launch or stop submission to finish.
-- `stateset-agents runpod-orphans --terminate` (and
+- `stateset-agents remote runpod-orphans --terminate` (and
   `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
   at the first failure. A pod that is already gone (HTTP 404) counts as
   cleaned up, pod deletion retries 429/5xx with backoff, and failures are
@@ -403,44 +467,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training runs, a success whose `result.json` still binds the reviewed plan
   is final, and the late error is kept as `teardown_error` /
   `teardown_exit_code` in the evaluation status.
-- On macOS (and on Windows when `psutil` is installed) studio owner checks
-  compare process creation-time tokens, as Linux does with `/proc` start
-  ticks, so a reused PID no longer keeps a dead supervisor or worker looking
-  alive. Records written without a token keep presence-only checks.
-- `stateset-agents runpod-orphans --terminate` no longer terminates the pods
-  of jobs that are still running (which made them rent a replacement and
-  doubled billing). Cleanup leases now record the submitting process (PID,
-  start-time token, host); `--terminate` ends only pods whose process has
-  provably exited, the listing shows each owner's state, and `--force`
-  reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
-  live owners and `cleanup_orphans()` gains `force=`.
-- RunPod run deadlines and spend accounting keep counting while the host is
-  suspended. They used `CLOCK_MONOTONIC`, which pauses during a laptop sleep,
-  so a pod could bill past the cap, a replacement could be rented on wake,
-  and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
-  monotonic time is extended by wall-clock time it missed, never decreasing
-  when the wall clock steps back.
-- A RunPod pod no longer bills indefinitely when its submitting host crashes
-  while the pod is still provisioning. Each RunPod submission, and the studio
-  at start-up when `RUNPOD_API_KEY` is set, first terminates leased pods whose
-  submitting process on this host has provably exited. An opt-in boot-time
-  watchdog (`STATESET_RUNPOD_BOOT_WATCHDOG=1` or
-  `RunPodExecutor(boot_watchdog=True)`, off by default and awaiting live-pod
-  verification) also arms the run deadline in the start command of RunPod's
-  `runpod/pytorch` images, using the pod-scoped key RunPod injects; no user key
-  is copied. The SSH-armed watchdog remains the default pod-side backstop.
-- CLI hints name real commands: the worker's orphan hint pointed to a
-  nonexistent `stateset-agents remote runpod-orphans` (the command is the
-  top-level `runpod-orphans`), and a `--curated` help text named the
-  `make grade-batch` target as a CLI command. A test now resolves every
-  backtick-quoted `stateset-agents ...` hint in the package against the CLI.
-- On Windows, studio supervisors and workers are now really detached:
-  `start_new_session` is ignored there, so closing the launching console
-  killed the supervisor and worker (orphaning a RunPod pod). Launches use one
-  helper, `detached_process_options()`, which gives Windows children their
-  own process group and hidden console. A supervisor interrupted by Ctrl+C or
-  `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
-  failure instead of leaving no outcome.
 
 ### Security
 
