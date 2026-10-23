@@ -1,23 +1,18 @@
-"""
-GRPO Service Module
+"""Deprecated secondary GRPO service app (removed in v0.71.0).
 
-Modular components for the GRPO Service API.
-
-This package provides a refactored, modular implementation of the
-GRPO (Group Relative Policy Optimization) service with:
-
-- Configuration management (config.py)
-- Request/response models (models.py)
-- State management with TTL (state.py)
-- Metrics collection (metrics.py)
-- Unified rate limiting (rate_limiter.py)
-- Request handlers (handlers.py)
-- FastAPI application (service.py)
+This package is a second FastAPI app (``service.create_app``) with its own
+config, handlers, metrics, models, state and auth. Nothing outside the package
+uses it: the supported gateway is :mod:`stateset_agents.api.main`, which has
+its own rate limiter (:mod:`stateset_agents.api.rate_limiter`). The app
+surface (``service``, ``service_routes``, ``router_v1``, ``auth``) has been
+deprecated since v0.16.0; since v0.70.0 importing any part of the package
+warns, and the whole package will be removed in v0.71.0.
 """
 
 import importlib
-import warnings
+from typing import Any
 
+from ..._deprecation import warn_deprecated
 from .config import GRPOConfig, get_grpo_config, reset_config
 from .handlers import ConversationHandler, TrainingHandler, WebSocketHandler
 from .metrics import GRPOMetrics, get_grpo_metrics, reset_metrics
@@ -47,31 +42,18 @@ from .state import (
     reset_state_manager,
 )
 
-#: Symbols that belong to the deprecated *app surface* of this package (the
-#: standalone GRPO service app). Config/handlers/metrics/models/state/
-#: rate_limiter are shared infrastructure re-exported here for convenience
-#: and are NOT deprecated, so importing this package alone must not warn.
-_DEPRECATED_APP_SUBMODULES = {
-    "service",
-    "service_routes",
-    "router_v1",
-    "auth",
-}
-
-_DEPRECATION_MESSAGE = (
-    "stateset_agents.api.grpo.{name} is part of a secondary GRPO API app "
-    "and is deprecated (since v0.16.0); it will be removed in v0.71.0. Use "
-    "stateset_agents.api.main instead."
+warn_deprecated(
+    "stateset_agents.api.grpo (the secondary GRPO service app)",
+    removal="0.71.0",
+    replacement="stateset_agents.api.main",
 )
 
+#: App modules loaded on attribute access (the package import already warned).
+_APP_SUBMODULES = {"service", "service_routes", "router_v1", "auth"}
 
-def __getattr__(name: str):
-    if name in _DEPRECATED_APP_SUBMODULES:
-        warnings.warn(
-            _DEPRECATION_MESSAGE.format(name=name),
-            DeprecationWarning,
-            stacklevel=2,
-        )
+
+def __getattr__(name: str) -> Any:
+    if name in _APP_SUBMODULES:
         module = importlib.import_module(f".{name}", __name__)
         globals()[name] = module
         return module

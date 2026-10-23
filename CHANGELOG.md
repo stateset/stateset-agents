@@ -114,6 +114,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   components behind `AdvancedMonitoringService`) so they no longer share the
   canonical names; the old names warn and are removed in **v0.71.0**.
 
+- **The secondary GRPO service app is deprecated as a whole.**
+  `stateset_agents.api.grpo` (a second `create_app` plus its own config,
+  handlers, metrics, models, state and auth; 3,766 lines) is used by nothing
+  outside the package. Its app modules were deprecated in v0.16.0 without a
+  date and only warned on package-attribute access; now importing any part of
+  the package warns, and it is removed in **v0.71.0**. Use
+  `stateset_agents.api.main` (rate limiting lives in
+  `stateset_agents.api.rate_limiter`).
+- `stateset_agents.core.multiturn_agent` (with `multiturn_context` and
+  `multiturn_analysis`), the dialogue backend used only by that app, warns on
+  import and is removed in **v0.71.0**. Its class is renamed
+  `DialogueSessionAgent` so it no longer collides with the stable
+  `stateset_agents.MultiTurnAgent` (`core.agent.MultiTurnAgent`);
+  `core.multiturn_agent.MultiTurnAgent` is a deprecated alias. The API
+  reference no longer lists these modules, `api.grpo` or `api.models`.
+
 ### Removed
 
 - The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,

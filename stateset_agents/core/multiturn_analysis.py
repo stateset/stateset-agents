@@ -1,11 +1,22 @@
-"""Analysis and transcript helpers for multi-turn agents."""
+"""Analysis and transcript helpers for multi-turn agents.
+
+Deprecated with :mod:`stateset_agents.core.multiturn_agent`; it will be
+removed in v0.71.0.
+"""
 
 from __future__ import annotations
 
 import re
 from typing import Any
 
+from .._deprecation import warn_deprecated
 from .multiturn_context import ConversationContext
+
+warn_deprecated(
+    "stateset_agents.core.multiturn_analysis",
+    removal="0.71.0",
+    replacement="stateset_agents.core.agent.MultiTurnAgent",
+)
 
 
 def analyze_user_input(context: ConversationContext, user_message: str) -> None:

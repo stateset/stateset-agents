@@ -231,7 +231,7 @@ The framework defines a three-tier agent hierarchy in `stateset_agents/core/`:
 | Class | File | Role |
 |------|------|------|
 | `Agent` | `core/agent.py` | Base class. Owns a `ModelBackend`, handles lazy initialization, exposes `generate_response`. |
-| `MultiTurnAgent` | `core/multiturn_agent.py` | Adds `ConversationContext`, optional `DialogueDatabase`, planning manager, and async `reset()`. |
+| `MultiTurnAgent` | `core/agent.py` | Multi-turn chat generation over the conversation history, with async `reset()`. |
 | `ToolAgent` | `core/tool_agent.py` | Adds OpenAI-compatible function calling, `tool_registry`, JSON schema validation, parallel tool execution. |
 
 All response generation follows a single async signature:
@@ -855,7 +855,7 @@ A production training and serving stack must be observable. The framework expose
 
 These are the standard latency/throughput/error triplet — the basis of any RED-method ([Rate, Errors, Duration](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/)) dashboard.
 
-**Domain-specific metrics** (`stateset_agents/api/grpo/metrics.py`): a `GRPOMetrics` class tracks:
+**Domain-specific metrics** (`stateset_agents/api/grpo/metrics.py`, part of the secondary GRPO app that is deprecated and removed in v0.71.0): a `GRPOMetrics` class tracks:
 
 - Request counts and status counts (per endpoint)
 - Latencies (a rolling `deque`, with `get_latency_percentiles()` computing avg/p50/p95/p99)
@@ -1376,7 +1376,7 @@ The five design principles that anchor the framework are stated in **§1.0 (Desi
 | Auto-research | `stateset_agents/training/auto_research/` |
 | Rust acceleration | `rust_core/` (crate `stateset-rl-core`) |
 | FastAPI app | `stateset_agents/api/main.py` |
-| GRPO metrics | `stateset_agents/api/grpo/metrics.py` |
+| GRPO metrics (deprecated app, removed in v0.71.0) | `stateset_agents/api/grpo/metrics.py` |
 | API middleware | `stateset_agents/api/middleware.py` |
 | Dashboard | `dashboard/` (React 19 + Vite) |
 | Exception taxonomy | `stateset_agents/exceptions.py` |

@@ -290,11 +290,11 @@ async def lifespan(app: FastAPI):
     try:
         from stateset_agents.core.multiturn_agent import (
             DialogueDatabase,
-            MultiTurnAgent,
+            DialogueSessionAgent,
         )
 
         model_config = {"model_type": "gpt-oss", "model_name": "openai/gpt-oss-120b"}
-        _services["multiturn_agent"] = MultiTurnAgent(
+        _services["multiturn_agent"] = DialogueSessionAgent(
             model_config,
             dialogue_database=DialogueDatabase([]),
         )
