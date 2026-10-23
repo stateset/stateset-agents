@@ -22,7 +22,7 @@ import torch
 # Import framework components
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_context import response_reward_context, reward_score
+from stateset_agents.core.reward_context import normalize_turns, score_response
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
@@ -774,30 +774,37 @@ class TRLGRPORewardFunction:
         self.environment = environment
 
     async def compute_rewards(
-        self, completions: list[Any], prompts: list[str], **kwargs: Any
+        self, completions: list[Any], prompts: list[Any], **kwargs: Any
     ) -> list[float]:
-        """Compute rewards for generated completions"""
+        """Compute rewards for generated completions.
+
+        ``prompts`` are formatted strings ("User: ...\\nAssistant:") or, in
+        TRL's conversational format, lists of chat messages.
+        """
 
         rewards = []
         scenario_indices = kwargs.get("scenario_index")
         for position, (prompt, completion) in enumerate(
             zip(prompts, completions, strict=False)
         ):
-            # Parse the prompt to extract the user query
-            user_query = self._extract_user_query(prompt)
+            # A plain prompt is "User: ...\nAssistant:"; a conversational one
+            # is the chat messages so far.
+            if isinstance(prompt, str):
+                conversation: Any = self._extract_user_query(prompt)
+                user_query = conversation
+            else:
+                conversation = normalize_turns(prompt)
+                users = [t for t in conversation if t.role == "user"]
+                user_query = str(users[-1].content) if users else ""
 
-            # Create a conversation turn
             if isinstance(completion, list) and completion:
                 last = completion[-1]
                 completion = last.get("content", "") if isinstance(last, dict) else last
-            turn = ConversationTurn(
-                role="assistant", content=str(completion), metadata={"generated": True}
-            )
 
-            # Compute reward using the framework's reward model: the canonical
-            # RewardFunction.compute_reward(turns, context) API with the
-            # standard reward context (response_reward_context), so any
-            # RewardFunction subclass works and scenario labels reach it.
+            # The shared single-response path (reward_context.score_response):
+            # [user, assistant] turns and the standard context, so any
+            # RewardFunction scores the completion as it would a one-turn
+            # episode and scenario labels reach it.
             scenario: dict[str, Any] | None = None
             if isinstance(scenario_indices, list) and position < len(scenario_indices):
                 scenario_index = int(scenario_indices[position])
@@ -812,13 +819,11 @@ class TRLGRPORewardFunction:
                     ),
                     None,
                 )
-            reward_info = await self.reward_model.compute_reward(
-                turns=[turn],
-                context=response_reward_context(
-                    user_query, scenario, reward_fn=self.reward_model
-                ),
+            rewards.append(
+                await score_response(
+                    self.reward_model, conversation, str(completion), scenario
+                )
             )
-            rewards.append(reward_score(reward_info))
 
         return rewards
 

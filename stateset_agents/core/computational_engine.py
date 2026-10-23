@@ -28,8 +28,8 @@ from numpy.typing import NDArray
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction
-from .reward_context import RewardUnavailableError, reward_score
-from .trajectory import ConversationTurn, Trajectory
+from .reward_context import RewardUnavailableError, score_response
+from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
@@ -155,13 +155,10 @@ class ComputationalGRPOEngine:
             # The learned reward is the training signal. A failure propagates
             # (the batch drops this trajectory); no other value stands in.
             if self.use_learned_rewards:
-                reward_result = await self.reward_function.compute_reward(
-                    [
-                        ConversationTurn(role="user", content=prompt),
-                        ConversationTurn(role="assistant", content=response),
-                    ]
+                # The shared single-response path (score_response).
+                learned_reward = await score_response(
+                    self.reward_function, prompt, response
                 )
-                learned_reward = reward_score(reward_result)
             elif raw_reward is None:
                 raise ValueError(
                     "use_learned_rewards=False needs an environment reward_fn"

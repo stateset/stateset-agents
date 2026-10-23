@@ -15,8 +15,6 @@ import torch
 
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_context import response_reward_context, reward_score
-from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.multi_objective_reward import (
     MultiObjectiveRewardFunction as MultiObjectiveReward,
 )
@@ -270,20 +268,11 @@ class GSPOTokenTrainer(GSPOTrainer):
             )
             _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
-            # Compute rewards for each response (sequence-level)
-            # In a real multi-turn scenario, you could compute rewards per token
-            rewards = []
-            for response in responses:
-                turn = ConversationTurn(
-                    role="assistant", content=response, metadata={"generated": True}
-                )
-                reward_info = await self.reward_model.compute_turn_reward(
-                    turn=turn,
-                    context=response_reward_context(
-                        query, query_context, reward_fn=self.reward_model
-                    ),
-                )
-                rewards.append(reward_score(reward_info))
+            # Sequence-level rewards on the shared single-response path.
+            rewards = [
+                await self._reward_for_response(query, query_context, response)
+                for response in responses
+            ]
 
             rewards_tensor = torch.tensor(
                 rewards, dtype=torch.float32, device=model_device

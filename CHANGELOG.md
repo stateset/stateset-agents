@@ -75,6 +75,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   environment recorded; `coerce_reward_result` parses with `reward_score`
   instead of reading failures as 0.0. `RewardUnavailableError` now lives in
   `core.reward_context` (still importable from `core.reward_base`).
+- **One single-response scoring path.** `SingleTurnGRPOTrainer`,
+  `GSPOTrainer`, `GSPOTokenTrainer`, the TRL reward bridge (plain and
+  conversational prompts), `ComputationalGRPOEngine` and the auto-research
+  DAPO/VAPO adapters score through the new `reward_context.score_response`:
+  `[user, assistant]` turns (`response_turns`), the standard context, and the
+  latest-turn scope an environment step gives IMMEDIATE/DENSE rewards, so the
+  same reply scores identically to a one-turn `MultiTurnGRPOTrainer` episode
+  (a parity test covers every shipped factory, the core rewards and a model
+  judge; a meta-test pins that these consumers do not call `compute_reward`
+  themselves). Before, the GSPO/TRL paths dropped the user turn, so e.g.
+  `CorrectnessReward` scored "12 + 30 = 42." 0.33 instead of 1.0.
+  `Environment.get_reward` scores through `reward_context.score_trajectory`
+  (the trajectory's recorded state and scenario), also for evidence rewards
+  such as `TaskOutcomeReward`, which it used to reject. Reward stubs now
+  receive the user turn first: read the reply as `turns[-1]`.
+- `ModelBasedRewardComponent` judges a reply whose `turns` lack a user turn
+  against `context["user_query"]` instead of returning 0.0 without calling
+  the judge.
 
 ### Fixed
 

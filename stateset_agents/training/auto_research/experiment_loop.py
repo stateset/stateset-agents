@@ -742,17 +742,13 @@ class AutoResearchLoop:
         reward_model = self.reward_fn
 
         async def _reward_fn(prompt: str, response: str) -> float:
-            from stateset_agents.core.trajectory import ConversationTurn
+            from stateset_agents.core.reward_context import score_response
 
-            turn = ConversationTurn(role="assistant", content=response)
-            result = reward_model.compute_reward(
-                [turn], {"user_query": prompt, **contexts.get(prompt, {})}
+            # The shared single-response path: [user, assistant] turns, the
+            # standard context with the prompt's scenario labels.
+            return await score_response(
+                reward_model, prompt, response, contexts.get(prompt, {})
             )
-            if asyncio.iscoroutine(result):
-                result = await result
-            if hasattr(result, "score"):
-                return float(result.score)
-            return float(result)
 
         await asyncio.wait_for(
             train_with_dapo(
@@ -773,17 +769,13 @@ class AutoResearchLoop:
         reward_model = self.reward_fn
 
         async def _reward_fn(prompt: str, response: str) -> float:
-            from stateset_agents.core.trajectory import ConversationTurn
+            from stateset_agents.core.reward_context import score_response
 
-            turn = ConversationTurn(role="assistant", content=response)
-            result = reward_model.compute_reward(
-                [turn], {"user_query": prompt, **contexts.get(prompt, {})}
+            # The shared single-response path: [user, assistant] turns, the
+            # standard context with the prompt's scenario labels.
+            return await score_response(
+                reward_model, prompt, response, contexts.get(prompt, {})
             )
-            if asyncio.iscoroutine(result):
-                result = await result
-            if hasattr(result, "score"):
-                return float(result.score)
-            return float(result)
 
         await asyncio.wait_for(
             train_with_vapo(

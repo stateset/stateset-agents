@@ -440,16 +440,20 @@ class ModelBasedRewardComponent(BaseRewardComponent):
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
-        if not turns:
-            return 0.0
-
         assistant_responses = [t for t in turns if t.get("role") == "assistant"]
+        if not assistant_responses:
+            return 0.0  # no reply, nothing to credit
+        # The judge always sees the reply; the request comes from the last
+        # user turn, else the context's user_query. A reply is never scored
+        # 0.0 in place of a verdict because the request was not in ``turns``.
         user_turns = [t for t in turns if t.get("role") == "user"]
-        if not assistant_responses or not user_turns:
-            return 0.0
+        if user_turns:
+            user_query = str(user_turns[-1].get("content", "") or "")
+        else:
+            query = (context or {}).get("user_query")
+            user_query = query if isinstance(query, str) else ""
 
         assistant_response = assistant_responses[-1].get("content", "")
-        user_query = user_turns[-1].get("content", "")
         prompt = self.judge_prompt_template.format(
             user_query=user_query,
             assistant_response=assistant_response,

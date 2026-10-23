@@ -20,9 +20,8 @@ import numpy as np
 
 from stateset_agents.core.reward_context import (
     RewardUnavailableError,
-    build_reward_context,
     normalize_turns,
-    reward_score,
+    score_response,
 )
 from stateset_agents.core.trajectory import (
     ConversationTurn,
@@ -403,14 +402,11 @@ class SingleTurnGRPOTrainer(TrainingRuntime):
         group; every other error propagates.
         """
         if self.reward_fn is not None:
-            # The standard reward context (scenario keys lifted, environment
-            # state over them), so scenario labels such as ground_truth reach
-            # the reward exactly as in a multi-turn episode.
-            result = await self.reward_fn.compute_reward(
-                normalize_turns(turns),
-                build_reward_context(context, reward_fn=self.reward_fn),
-            )
-            score = reward_score(result)
+            # The shared single-response path (reward_context.score_response):
+            # [user, assistant] turns and the standard context, so the reply
+            # scores exactly as it would in a one-turn episode.
+            *prompt_turns, reply = normalize_turns(turns)
+            score = await score_response(self.reward_fn, prompt_turns, reply, context)
         else:
             get_reward = getattr(self.environment, "get_reward", None)
             if not callable(get_reward):

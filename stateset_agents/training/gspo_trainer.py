@@ -24,11 +24,7 @@ import torch.nn.functional as F
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.reward_context import (
-    response_reward_context,
-    reward_score,
-)
-from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.core.reward_context import score_response
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
 )
@@ -709,17 +705,8 @@ class GSPOTrainer(TrainingRuntime):
     async def _reward_for_response(
         self, prompt: str, query_context: dict[str, Any], response: str
     ) -> float:
-        """Score one sampled response with the standard reward context."""
-        turn = ConversationTurn(
-            role="assistant", content=response, metadata={"generated": True}
-        )
-        result = await self.reward_model.compute_reward(
-            turns=[turn],
-            context=response_reward_context(
-                prompt, query_context, reward_fn=self.reward_model
-            ),
-        )
-        return reward_score(result)
+        """Score one sampled response on the shared single-response path."""
+        return await score_response(self.reward_model, prompt, response, query_context)
 
     async def train_step(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1

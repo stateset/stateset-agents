@@ -156,7 +156,8 @@ class EnvironmentBatchIsolation(unittest.IsolatedAsyncioTestCase):
         context = {"private": "evaluator-state"}
         trajectory = SimpleNamespace(turns=[], final_state=context)
         self.assertEqual(await env.get_reward(trajectory), 0.75)
-        self.assertIs(reward.observed, context)
+        # The recorded state, built like score_episode's context.
+        self.assertEqual(reward.observed, context)
         reward.fail = True
         with self.assertRaisesRegex(ValueError, "reward unavailable"):
             await env.get_reward(trajectory)
