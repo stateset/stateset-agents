@@ -277,6 +277,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **One exception hierarchy, raised by the real code paths.** The errors the
+  framework actually raises now derive from `StateSetError` through the
+  `core.errors` categories while keeping their builtin base and printing just
+  their message, so `except RuntimeError` / `except ValueError` handlers and
+  error output are unchanged: `RewardUnavailableError` (and
+  `JudgeUnavailableError`) are `RewardError`s; `RolloutContractError`,
+  `TrainingSignalError`, `AsyncRolloutError` (with its closed/timeout,
+  policy-artifact and worker-lease subclasses) and `BackendError` are
+  `TrainingError`s; `api.resilience.CircuitOpenError`, `BulkheadFullError`
+  and the renamed `OperationTimeoutError` are `StateSetError`s. Each class
+  declares `default_code`, a `core.errors.ErrorCode` (new members
+  `RWD_UNAVAILABLE`, `TRN_ROLLOUT_CONTRACT`, `TRN_NO_SIGNAL`,
+  `TRN_ASYNC_ROLLOUT`, `TRN_BACKEND_FAILED`, `NET_CIRCUIT_OPEN`,
+  `RES_EXHAUSTED`). `api.config.ConfigurationError` is now the canonical
+  `core.errors.ConfigurationError` (so also a `ValueError`) instead of a
+  second, unrelated class. The hierarchy is drawn in the `core.errors` module
+  docstring.
+- `GRPOException.code` (and so `ValidationException` / `ResourceException`)
+  is now the canonical `core.errors.ErrorCode` of its category, like every
+  other `StateSetError`; the legacy `GRPO_E###` code stays on `error_code`
+  (enum renamed `GRPOErrorCode`) and still heads `str(exc)`. `to_dict()` now
+  reports the canonical code as `error_code` and adds `grpo_error_code`,
+  `category` and `severity`.
+- ruff's `BLE` (blind except) and the `TRY002`/`TRY201`/`TRY203`/`TRY401`
+  rules are enabled. The package files that predate the rule (82 findings
+  in 36 files, down from 120 in 51) are listed, with their count, in
+  `tests/unit/test_blind_except_ratchet.py` and exempted in `pyproject.toml`;
+  the baseline can only shrink, `core/` and the training modules of this pass
+  (`auto_research`, `advanced_training_orchestrator`, `ddp_control`,
+  `experiment_tracking`, `harvest`, `serving_artifacts`, `sft`,
+  `trainer_utils`, `train`, `base_trainer`) are at zero, and every
+  `# noqa: BLE001` must state its reason (14 older unreasoned markers are
+  baselined). Tests, examples, benchmarks, scripts and deployment helpers are
+  exempt.
+- `tests/unit/test_layering.py` checks every executable import -- inside
+  functions and methods too, and literal `importlib.import_module` calls --
+  against the layer contracts `core` -/-> `training`/`api`/`experimental` and
+  `training` -/-> `experimental`. The only allowlisted edges are dated
+  deprecation bridges. `core.value_function` and `core.enhanced` use the new
+  `core.numerics.whiten` (numerically identical to
+  `training.rl_losses.whiten`, pinned by a test) instead of importing the
+  training layer.
+- `train(training_mode="offline"|"hybrid")` gets its offline trainer from
+  `stateset_agents.training.offline_backend`, which
+  `import stateset_agents.experimental.offline_rl` fills (the package stays
+  torch-free). `train(..., uncertainty_weighted=True)` always applies
+  `UncertaintyWeightedReward` (it never used the experimental Bayesian model
+  it probed for, and silently skipped the wrapper when that import failed).
+- The gateway builds the experimental planner itself and injects it into
+  `MultiTurnAgent` (`planning_manager=`) when a request sets
+  `enable_planning`.
+
 - The evaluation panel's background work runs through the shared
   `BackgroundTask` (owned submissions on non-daemon threads) instead of its
   own thread and result queue.
@@ -502,6 +554,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   DeprecationWarning until **v0.71.0** (preset names are not part of the v1
   contract). `list_preset_names()` lists only the new names. A test now checks
   every preset's name prefix against its checkpoint's family.
+- **Duplicate error names** (one object each; access warns):
+  `core.error_handling.ErrorCode` (now `GRPOErrorCode`; use
+  `core.errors.ErrorCode`) and the root `stateset_agents.ErrorCode` export,
+  and the never-raised `core.error_handling.TrainingException`,
+  `ModelException`, `DataException` and `NetworkException` (use the
+  `core.errors` categories) are removed in **v0.72.0** with their stable root
+  names; `core.error_handling.ErrorContext` (now `ErrorRecord`),
+  `core.errors.EnvironmentError` (shadowed the builtin; now
+  `EnvironmentOperationError`), `api.errors.ValidationError` (now
+  `UnprocessableEntityError`), `api.errors.TrainingError` (now
+  `TrainingFailedError`) and `api.resilience.TimeoutError` (shadowed the
+  builtin; now `OperationTimeoutError`) are removed in **v0.71.0**.
+- **One circuit breaker and retry implementation:** `api.resilience` is
+  canonical. `core.error_handling.RetryConfig`, `retry_async`,
+  `CircuitBreakerConfig`, `CircuitBreaker` and `circuit_breaker` warn when
+  used and are removed in **v0.72.0** (the root names were already
+  deprecated for that release).
+- `stateset_agents.core.computational_engine.ComputationalGRPOEngine` (and
+  `create_computational_engine`) warns and is removed in **v0.71.0**: it never
+  trained. `_update_policy` computes `advantage * NLL` with `.item()` and runs
+  no backward pass or optimizer step (without torch it reported
+  `-mean(advantages)` as the loss). Its docstrings, `docs/ARCHITECTURE.md` and
+  `docs/GRPO_IMPLEMENTATION.md` now say so. Use `stateset_agents.train()` or
+  the trainers in `stateset_agents.training`.
+- Subclassing `stateset_agents.training.base_trainer.BaseTrainer` warns and it
+  is removed in **v0.71.0**; no maintained trainer subclasses it.
+  `BaseTrainerConfig` and `BaseModelManager` stay.
+- `AgentConfig(enable_planning=True)` without `planning_manager=` (core
+  building the experimental planner itself) warns and is removed in
+  **v0.72.0**; pass
+  `planning_manager=stateset_agents.experimental.long_term_planning.planning_manager_from_config(...)`.
+- `train(training_mode="offline"|"hybrid")` without first importing
+  `stateset_agents.experimental.offline_rl` still loads the experimental
+  trainer, warns, and stops doing so in **v0.72.0**.
+- Every deprecation goes through `stateset_agents._deprecation`: the nine
+  `core.<module>` shims for experimental modules, `core.enhanced`,
+  `core.type_system`, `core.types`, `data.conversation_dataset`,
+  `training.advanced_training_models`, `training.distributed_trainer` and
+  `training.trainer` now use `warn_deprecated` (same dates, canonical message
+  form; the `core.enhanced` `GSPOConfig` alias gains its v0.71.0 date).
 - `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` (and
   `stateset_agents.rewards.CodeExecutionReward`) is renamed
   `CodeFormattingHeuristic` (component `code_formatting`): it never executed
@@ -629,6 +721,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   its ten queries were verbatim bundled support-corpus queries), so its pass
   rate measured recall. It now holds ten held-out queries with the same schema
   and intent mix, and a test keeps it clean against both corpora.
+- Programmer errors are no longer swallowed by handlers meant for expected
+  failures: structured output no longer retries (and wraps) a `TypeError` /
+  `AttributeError` from the agent; `core.evaluation` no longer scores a buggy
+  metric or agent as `0.0`; `AsyncResourcePool` no longer counts a factory
+  `TypeError` as a failed connection (and a failed initialisation cleans up
+  whatever stopped it); `AutoTrainer`'s baseline no longer treats a
+  `TypeError`/`AttributeError` as a failed episode;
+  `ComputationalGRPOEngine` no longer skips a trajectory on one. A non-finite
+  tokenizer token id no longer raises `OverflowError` while building the
+  generation config.
+- The same in the training modules: the advanced training orchestrator's
+  loops stop on a `TypeError`/`AttributeError`/`KeyError` instead of logging
+  it every 30-60 seconds, and its resource probe catches only measurement
+  failures; auto-research checkpoint save/restore, GPU cleanup, tracker
+  analysis, the Optuna report and the LLM proposer's reply parsing catch the
+  failures they expect (`MODEL_IO_EXCEPTIONS`, `IMPORT_EXCEPTIONS`, ...); an
+  invalid baseline no longer passes search-space validation silently; W&B
+  logging failures and a failed analysis report now log a warning (the
+  latter with its traceback) instead of a debug line; the SFT judge factory
+  and the serving processor/tokenizer export no longer swallow bugs.
 - `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
   prompt, so a policy never saw tool results; they now render as
   `Tool: <content>` lines.

@@ -27,6 +27,27 @@ AGENT_SERVICE_EXCEPTIONS = (
 TOKENIZE_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 
+def _planning_manager(config: AgentConfigRequest) -> Any | None:
+    """Build the (experimental) planner the request asks for, if any.
+
+    The gateway wires it in explicitly so ``core`` never imports the
+    experimental layer. As before, an unusable ``planning_config`` is logged
+    and leaves planning off.
+    """
+    if not config.enable_planning:
+        return None
+    from stateset_agents.core.errors import ConfigurationError
+    from stateset_agents.experimental.long_term_planning import (
+        planning_manager_from_config,
+    )
+
+    try:
+        return planning_manager_from_config(config.planning_config)
+    except ConfigurationError as exc:
+        logger.warning("Failed to init PlanningManager: %s", exc)
+        return None
+
+
 class AgentService:
     """Service for managing agents."""
 
@@ -162,15 +183,20 @@ class AgentService:
             top_k=config.top_k,
             system_prompt=config.system_prompt,
             use_chat_template=config.use_chat_template,
+            # The planner is injected below; the flag only records the request.
             enable_planning=config.enable_planning,
             planning_config=config.planning_config,
             use_stub_model=use_stub,
         )
 
-        agent = MultiTurnAgent(agent_config)
+        planning_manager = _planning_manager(config)
+        if planning_manager is None:
+            # Nothing to inject: keep the agent from building one implicitly.
+            agent_config = replace(agent_config, enable_planning=False)
+        agent = MultiTurnAgent(agent_config, planning_manager=planning_manager)
         try:
             await agent.initialize()
-        except AGENT_SERVICE_EXCEPTIONS as exc:
+        except AGENT_SERVICE_EXCEPTIONS:
             environment = os.getenv("API_ENVIRONMENT", "production").lower()
             if environment != "production" and not agent_config.use_stub_model:
                 logger.warning(
@@ -179,10 +205,10 @@ class AgentService:
                     exc_info=True,
                 )
                 agent_config = replace(agent_config, use_stub_model=True)
-                agent = MultiTurnAgent(agent_config)
+                agent = MultiTurnAgent(agent_config, planning_manager=planning_manager)
                 await agent.initialize()
             else:
-                raise exc
+                raise
 
         self.agents[agent_id] = agent
         self.agent_owners[agent_id] = owner

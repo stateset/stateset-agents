@@ -10,13 +10,11 @@ import os
 from dataclasses import dataclass, field
 from enum import Enum
 
+# The one ConfigurationError (a StateSetError and a ValueError); this module
+# defined a second, unrelated ``ConfigurationError(Exception)`` before v0.70.0.
+from ..core.errors import ConfigurationError
+
 logger = logging.getLogger(__name__)
-
-
-class ConfigurationError(Exception):
-    """Raised when configuration is invalid or missing required values."""
-
-    pass
 
 
 class Environment(Enum):

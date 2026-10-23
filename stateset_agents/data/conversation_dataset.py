@@ -12,7 +12,6 @@ import json
 import logging
 import math
 import random
-import warnings
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Optional
@@ -24,6 +23,9 @@ from stateset_agents.data.identity import (
     normalize_identity_text,
     prompt_identity,
 )
+from stateset_agents.exceptions import SERIALIZATION_EXCEPTIONS
+
+from .._deprecation import warn_deprecated
 
 try:
     import torch as _torch
@@ -58,7 +60,7 @@ def _load_sentence_transformer_cls() -> Any:
 
 logger = logging.getLogger(__name__)
 
-HF_PARSE_EXCEPTIONS = (AttributeError, KeyError, TypeError, ValueError)
+HF_PARSE_EXCEPTIONS = SERIALIZATION_EXCEPTIONS
 
 #: ``TrajectoryData.metadata`` marker for a trajectory whose only reward is
 #: its ``total_reward``, placed on the final turn (no per-turn rewards given).
@@ -101,11 +103,11 @@ class ConversationDatasetConfig:
 
     def __post_init__(self) -> None:
         if self.max_turns != 20:
-            warnings.warn(
-                "ConversationDatasetConfig.max_turns is deprecated and ignored; "
-                "use max_trajectory_length to drop longer trajectories. The "
-                "field will be removed in v0.71.0.",
-                DeprecationWarning,
+            # Ignored since v0.69.0.
+            warn_deprecated(
+                "ConversationDatasetConfig.max_turns (ignored)",
+                removal="0.71.0",
+                replacement="max_trajectory_length to drop longer trajectories",
                 stacklevel=3,
             )
 

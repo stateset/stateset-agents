@@ -33,10 +33,11 @@ import numbers
 from collections.abc import Mapping, Sequence
 from typing import Any
 
+from .errors import ErrorCode, RewardError
 from .trajectory import ConversationTurn
 
 
-class RewardUnavailableError(RuntimeError):
+class RewardUnavailableError(RewardError, RuntimeError):
     """A reward could not be computed for an external reason (judge or network
     outage, a verifier that cannot be reached).
 
@@ -44,7 +45,14 @@ class RewardUnavailableError(RuntimeError):
     ``MultiObjectiveRewardFunction`` leave the component out and spread its
     weight over the rest. Every other exception is a bug or bad data and
     propagates, so it is never mistaken for an outage.
+
+    A :class:`~stateset_agents.core.errors.RewardError` (so a
+    ``StateSetError``) that is still a ``RuntimeError`` and prints its bare
+    message, so existing ``except RuntimeError`` handlers are unchanged.
     """
+
+    message_only_str = True
+    default_code = ErrorCode.RWD_UNAVAILABLE
 
 
 #: ``RewardResult.metadata`` key a reward sets (to a short reason) when its

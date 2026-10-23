@@ -458,6 +458,12 @@ select = [
     "B",  # flake8-bugbear
     "C4", # flake8-comprehensions
     "UP", # pyupgrade
+    "BLE", # flake8-blind-except; package baseline below, ratchet in
+           # tests/unit/test_blind_except_ratchet.py
+    "TRY002", # raise a bare Exception
+    "TRY201", # `raise exc` instead of a bare `raise`
+    "TRY203", # try/except that only re-raises
+    "TRY401", # exception object repeated in logger.exception
 ]
 ignore = [
     "E501",  # line too long, handled by black
@@ -474,7 +480,50 @@ ignore = [
 "stateset_agents/training/train.py" = ["E402"]
 "stateset_agents/training/trl_grpo_trainer.py" = ["E402"]
 "stateset_agents/training/vapo_trainer.py" = ["E402"]
-"stateset_agents/utils/wandb_integration.py" = ["E402"]
-"tests/**/*" = ["B011"]  # assert false
+"stateset_agents/utils/wandb_integration.py" = ["E402", "BLE001"]  # BLE001: baseline
+"tests/**/*" = ["B011", "BLE001"]  # assert false; blind excepts allowed in tests
+# Blind-except is a library rule: demos, benchmarks, scripts and deployment
+# helpers are exempt.
+"examples/**/*" = ["BLE001"]
+"benchmarks/**/*" = ["BLE001"]
+"scripts/**/*" = ["BLE001"]
+"deployment/**/*" = ["BLE001"]
+# Package files that predate BLE001. Only shrinks: lower the count in
+# tests/unit/test_blind_except_ratchet.py and drop the file here at zero.
+"stateset_agents/api/distributed_cache.py" = ["BLE001"]
+"stateset_agents/api/main.py" = ["BLE001"]
+"stateset_agents/api/middleware.py" = ["BLE001"]
+"stateset_agents/api/persistence.py" = ["BLE001"]
+"stateset_agents/api/routers/metrics.py" = ["BLE001"]
+"stateset_agents/api/routers/training_lab.py" = ["BLE001"]
+"stateset_agents/api/services/training_service.py" = ["BLE001"]
+"stateset_agents/api/training_worker.py" = ["BLE001"]
+"stateset_agents/cli.py" = ["BLE001"]
+"stateset_agents/cli_advanced.py" = ["BLE001"]
+"stateset_agents/cli_chat.py" = ["BLE001"]
+"stateset_agents/cli_finetune.py" = ["BLE001"]
+"stateset_agents/cli_research.py" = ["BLE001"]
+"stateset_agents/evaluation/industry.py" = ["BLE001"]
+"stateset_agents/evaluation/reward_audit.py" = ["BLE001"]
+"stateset_agents/experimental/ppo_online.py" = ["BLE001"]
+"stateset_agents/finetune_evaluation_tui.py" = ["BLE001"]
+"stateset_agents/finetune_evaluation_worker.py" = ["BLE001"]
+"stateset_agents/finetune_validation.py" = ["BLE001"]
+"stateset_agents/finetune_worker.py" = ["BLE001"]
+"stateset_agents/remote/chat_session.py" = ["BLE001"]
+"stateset_agents/remote/modal.py" = ["BLE001"]
+"stateset_agents/remote/river_rl_runner.py" = ["BLE001"]
+"stateset_agents/remote/river_runtime.py" = ["BLE001"]
+"stateset_agents/remote/runpod.py" = ["BLE001"]
+"stateset_agents/remote/serve_session.py" = ["BLE001"]
+"stateset_agents/rewards/llm_judge_adapter.py" = ["BLE001"]
+"stateset_agents/rewards/nsr_verifier.py" = ["BLE001"]
+"stateset_agents/rewards/symbolic_physics_reward.py" = ["BLE001"]
+"stateset_agents/training/single_turn_trainer.py" = ["BLE001"]
+"stateset_agents/training/spine/loop.py" = ["BLE001"]
+"stateset_agents/training/spine/update.py" = ["BLE001"]
+"stateset_agents/tui.py" = ["BLE001"]
+"stateset_agents/tui_tasks.py" = ["BLE001"]
+"stateset_agents/utils/async_calls.py" = ["BLE001"]
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
 "tests/unit/test_rl_losses.py" = ["E402"]

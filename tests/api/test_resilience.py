@@ -20,9 +20,9 @@ from stateset_agents.api.resilience import (
     CircuitState,
     HealthChecker,
     HealthStatus,
+    OperationTimeoutError,
     RetryConfig,
     RetryStrategy,
-    TimeoutError,
     get_all_circuit_stats,
     get_circuit_breaker,
     retry,
@@ -387,14 +387,14 @@ class TestTimeout:
 
     @pytest.mark.asyncio
     async def test_raises_on_timeout(self):
-        """Slow operations should raise TimeoutError."""
+        """Slow operations should raise OperationTimeoutError."""
 
         @timeout(0.1)
         async def slow_operation():
             await asyncio.sleep(1.0)
             return "done"
 
-        with pytest.raises(TimeoutError) as exc_info:
+        with pytest.raises(OperationTimeoutError) as exc_info:
             await slow_operation()
 
         assert "timed out" in str(exc_info.value).lower()

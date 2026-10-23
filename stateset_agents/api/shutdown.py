@@ -207,8 +207,8 @@ class GracefulShutdownManager:
 
             logger.info("Graceful shutdown completed successfully")
 
-        except SHUTDOWN_EXCEPTIONS as e:
-            logger.exception("Error during shutdown: %s", e)
+        except SHUTDOWN_EXCEPTIONS:
+            logger.exception("Error during shutdown")
             raise
 
         finally:
@@ -266,8 +266,8 @@ class GracefulShutdownManager:
                         f"Critical shutdown task {task.name} timed out"
                     ) from exc
 
-            except SHUTDOWN_EXCEPTIONS as e:
-                logger.exception("Shutdown task %s failed: %s", task.name, e)
+            except SHUTDOWN_EXCEPTIONS:
+                logger.exception("Shutdown task %s failed", task.name)
                 self.state.failed_tasks.append(task.name)
 
                 if task.critical:

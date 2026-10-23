@@ -523,8 +523,10 @@ class ExperimentTracker:
             dr = compute_diminishing_returns(self.records, self.direction)
             if dr is not None:
                 analysis["diminishing_returns_ratio"] = dr
-        except Exception:
-            pass
+        # Degenerate histories (one record, constant objectives) can fail the
+        # statistics; a TypeError/AttributeError is a bug and propagates.
+        except (ArithmeticError, ValueError) as exc:
+            logger.debug("Skipping convergence analysis: %s", exc)
 
         # Per-experiment records (for Jupyter DataFrames)
         analysis["experiments"] = [

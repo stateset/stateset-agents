@@ -46,7 +46,9 @@ class DDPControlGroup:
         if error is None and agree:
             try:
                 digest = bytes.fromhex(state_fingerprint(value))
-            except BaseException as exc:
+            # Cross-rank protocol: every rank must reach the all_gather below
+            # or its peers deadlock; the local error is re-raised after it.
+            except BaseException as exc:  # noqa: BLE001
                 error = exc
         phase_digest = hashlib.sha256(f"{self.operation}:{phase}".encode()).digest()
         header = self.torch.tensor(
@@ -81,7 +83,8 @@ class DDPControlGroup:
         value, error = None, None
         try:
             value = function()
-        except BaseException as exc:
+        # Cross-rank protocol: notify peers before re-raising (see _finish).
+        except BaseException as exc:  # noqa: BLE001
             error = exc
         return self._finish(phase, value, error, agree=agree)
 
@@ -90,6 +93,7 @@ class DDPControlGroup:
         value, error = None, None
         try:
             value = await function()
-        except BaseException as exc:
+        # Cross-rank protocol: notify peers before re-raising (see _finish).
+        except BaseException as exc:  # noqa: BLE001
             error = exc
         return self._finish(phase, value, error, agree=agree)

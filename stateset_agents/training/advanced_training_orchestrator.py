@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
 try:
     import torch
 
@@ -64,17 +66,21 @@ from .resource_capacity import read_cgroup_capacity
 
 logger = logging.getLogger(__name__)
 
+#: Failures the orchestration and monitoring loops survive (a state-service
+#: or filesystem outage, bad job data, a timeout) by logging and retrying.
+#: TypeError/AttributeError/KeyError are bugs: they stop the loop instead of
+#: being logged every 30 seconds forever.
 TRAINING_ORCH_EXCEPTIONS = (
     RuntimeError,
     ValueError,
-    TypeError,
-    AttributeError,
-    KeyError,
     OSError,
     asyncio.TimeoutError,
     pickle.PickleError,
     shutil.Error,
 )
+#: What a capacity probe (os, psutil, torch.cuda, disk_usage) may raise when
+#: the measurement is unavailable; the probe's own checks raise ValueError.
+RESOURCE_PROBE_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 class ResourceManager:
@@ -133,7 +139,7 @@ class ResourceManager:
                 if not math.isfinite(measured) or measured < 0:
                     raise ValueError("Invalid capacity")
                 return measured
-            except Exception as exc:
+            except RESOURCE_PROBE_EXCEPTIONS as exc:
                 self.detection_issues.append(
                     f"{label} unavailable ({type(exc).__name__})"
                 )
@@ -1021,14 +1027,17 @@ class AdvancedTrainingOrchestrator:
         """Clean up completed worker tasks"""
         async with self._cleanup_lock:
             errors: list[Exception] = []
+            # Collect-and-reraise: one failure must not skip the remaining
+            # state writes; the first error is re-raised below.
             try:
                 await self._reap_completed_tasks()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - collect-and-reraise
                 errors.append(exc)
             for job in list(self._pending_state_jobs.values()):
                 try:
                     await self._persist_job(job)
-                except Exception as exc:
+                # Collect-and-reraise (see above).
+                except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
             if errors:
                 raise errors[0]
@@ -1068,9 +1077,10 @@ class AdvancedTrainingOrchestrator:
                     # Update job in state
                     try:
                         await self._persist_job(job)
-                    except Exception as exc:
-                        # One failed write must not strand other finished jobs'
-                        # reservations. Keep this task for a later write retry.
+                    # Collect-and-reraise: one failed write must not strand
+                    # other finished jobs' reservations. Keep this task for a
+                    # later write retry; the first error is re-raised below.
+                    except Exception as exc:  # noqa: BLE001
                         persistence_errors.append(exc)
                         continue
                 completed_workers.append(worker_id)

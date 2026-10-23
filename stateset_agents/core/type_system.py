@@ -8,7 +8,6 @@ type-safe interfaces for all framework components.
 import inspect
 import json
 import logging
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import Enum
@@ -25,6 +24,8 @@ from typing import (
 )
 
 from typing_extensions import NotRequired, Required, TypedDict
+
+from .._deprecation import warn_deprecated
 
 logger = logging.getLogger(__name__)
 
@@ -742,20 +743,20 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     """Serve renamed TypedDicts under their old names (with a warning)."""
     if name == "ConversationTurn":
-        warnings.warn(
-            "stateset_agents.core.type_system.ConversationTurn is deprecated "
-            "and will be removed in v0.71.0; use ConversationTurnDict (or the "
-            "canonical stateset_agents.core.trajectory.ConversationTurn).",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"{__name__}.ConversationTurn",
+            removal="0.71.0",
+            replacement=(
+                "ConversationTurnDict (or the canonical "
+                "stateset_agents.core.trajectory.ConversationTurn)"
+            ),
         )
         return ConversationTurnDict
     if name == "TrainingConfig":
-        warnings.warn(
-            "use TrainingConfigDict; the TrainingConfig alias "
-            "will be removed in v0.71.0",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"{__name__}.TrainingConfig",
+            removal="0.71.0",
+            replacement=f"{__name__}.TrainingConfigDict",
         )
         return TrainingConfigDict
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

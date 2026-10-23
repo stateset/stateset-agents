@@ -19,6 +19,7 @@ from starlette.types import ExceptionHandler
 
 from stateset_agents.utils.clock import utc_isoformat
 
+from .._deprecation import deprecated_alias_getattr
 from ..core.errors import ErrorContext as _CoreErrorContext
 from ..core.errors import StateSetError
 
@@ -203,8 +204,12 @@ class ConflictError(APIError):
         super().__init__(ErrorCode.CONFLICT, message, 409)
 
 
-class ValidationError(APIError):
-    """422 Validation Error."""
+class UnprocessableEntityError(APIError):
+    """422 Unprocessable Entity (request validation failed).
+
+    Formerly ``ValidationError``, a name it shared with
+    :class:`stateset_agents.core.errors.ValidationError`.
+    """
 
     def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.VALIDATION_ERROR, message, 422, details)
@@ -242,8 +247,12 @@ class ServiceUnavailableError(APIError):
         super().__init__(ErrorCode.SERVICE_UNAVAILABLE, message, 503)
 
 
-class TrainingError(APIError):
-    """Training-specific error."""
+class TrainingFailedError(APIError):
+    """500 for a failed training operation.
+
+    Formerly ``TrainingError``, a name it shared with
+    :class:`stateset_agents.core.errors.TrainingError`.
+    """
 
     def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.TRAINING_FAILED, message, 500, details)
@@ -726,3 +735,13 @@ def setup_exception_handlers(app: FastAPI) -> None:
     _add_exception_handler(app, Exception, unhandled_exception_handler)
 
     logger.info("Exception handlers configured successfully")
+
+
+# Names that collided with the core.errors categories (renamed in v0.70.0).
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {
+        "ValidationError": (__name__, "UnprocessableEntityError", "0.71.0"),
+        "TrainingError": (__name__, "TrainingFailedError", "0.71.0"),
+    },
+)

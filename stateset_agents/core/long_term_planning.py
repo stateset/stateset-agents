@@ -6,16 +6,14 @@ v0.71.0.
 """
 
 import sys
-import warnings
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.experimental import long_term_planning as _new
 
-warnings.warn(
-    "stateset_agents.core.long_term_planning has moved to "
-    "stateset_agents.experimental.long_term_planning; the old import path is "
-    "deprecated and will be removed in v0.71.0.",
-    DeprecationWarning,
-    stacklevel=2,
+warn_deprecated(
+    "stateset_agents.core.long_term_planning",
+    removal="0.71.0",
+    replacement="stateset_agents.experimental.long_term_planning",
 )
 
 # Alias the module so attribute access, monkeypatching, and `from ... import`

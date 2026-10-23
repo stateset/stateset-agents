@@ -49,8 +49,6 @@ _UNDATED = re.compile(
 EXTERNAL_SCHEDULE: dict[str, str] = {
     # ``RulerRewardFunction(config=RulerConfig(...))`` (deprecated since v0.6.0).
     "stateset_agents/rewards/ruler_reward.py": "0.71.0",
-    # ``DistributedGRPOTrainer`` (deprecated in v0.38.0, non-functional).
-    "stateset_agents/training/distributed_trainer.py": "0.71.0",
 }
 
 

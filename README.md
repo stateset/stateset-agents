@@ -1949,16 +1949,17 @@ More end‑to‑end scripts live in `examples/complete_grpo_training.py` and `ex
 
 ## Continual learning + long‑term planning (optional)
 
-Enable planning context and replay/LwF in the trainer with config overrides:
+Add the (experimental) planner to the agent and enable replay/LwF in the
+trainer with config overrides:
 
 ```python
+from stateset_agents.experimental.long_term_planning import (
+    planning_manager_from_config,
+)
+
 agent = MultiTurnAgent(
-    AgentConfig(
-        model_name="stub://quickstart",
-        use_stub_model=True,
-        enable_planning=True,
-        planning_config={"max_steps": 4},
-    )
+    AgentConfig(model_name="stub://quickstart", use_stub_model=True),
+    planning_manager=planning_manager_from_config({"max_steps": 4}),
 )
 
 trained_agent = await train(

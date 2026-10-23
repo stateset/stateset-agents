@@ -7,6 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from ..core.errors import ErrorCode, TrainingError
+
 
 @dataclass(frozen=True)
 class SampledTurn:
@@ -47,12 +49,17 @@ class SampledTurn:
         )
 
 
-class RolloutContractError(ValueError):
+class RolloutContractError(TrainingError, ValueError):
     """A rollout cannot be scored without silently changing the estimator.
 
     Loss loops must propagate this instead of skipping the trajectory: a
     per-row skip would hide a configuration error behind a smaller batch.
+    A :class:`~stateset_agents.core.errors.TrainingError` that is still a
+    ``ValueError`` and prints its bare message.
     """
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_ROLLOUT_CONTRACT
 
 
 def require_explicit_fallback(config: Any, option: str, reason: str) -> None:

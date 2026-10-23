@@ -7,7 +7,8 @@ eliminating code duplication and ensuring consistent behavior across algorithms.
 Key abstractions:
 - BaseConfig: Common configuration fields
 - BaseModelManager: Unified model/tokenizer loading with LoRA/quantization
-- BaseTrainer: Shared training loop infrastructure
+- BaseTrainer: abstract trainer base, deprecated (no maintained trainer
+  subclasses it; subclassing warns and it will be removed in v0.71.0)
 - BaseTrajectoryGenerator: Common generation patterns
 """
 
@@ -23,6 +24,7 @@ from typing import Any, Generic, TypeVar, cast
 import torch
 import torch.nn.functional as F
 
+from .._deprecation import warn_deprecated
 from .config import TrainingConfig
 from .runtime_state import TrainingRuntime
 from .spine.rollouts import VLLMEngineMixin
@@ -429,7 +431,13 @@ class BaseTrajectoryGenerator(VLLMEngineMixin):
 
 class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
     """
-    Abstract base class for all RL trainers.
+    Abstract base class for RL trainers (deprecated).
+
+    No maintained trainer subclasses it: GSPO, DAPO, GEPO, VAPO and the GRPO
+    trainers build on :mod:`stateset_agents.training.spine`
+    (``OptimizerStep``, ``UpdateLoop``) and ``TrainingRuntime`` instead.
+    Defining a subclass warns; it will be removed in v0.71.0.
+    ``BaseTrainerConfig`` and ``BaseModelManager`` stay.
 
     Provides common functionality:
     - Optimizer and scheduler setup
@@ -438,6 +446,17 @@ class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
     - W&B integration
     - Training loop infrastructure
     """
+
+    def __init_subclass__(cls, **kwargs: Any) -> None:
+        super().__init_subclass__(**kwargs)
+        warn_deprecated(
+            "subclassing stateset_agents.training.base_trainer.BaseTrainer",
+            removal="0.71.0",
+            replacement=(
+                "stateset_agents.training.spine.OptimizerStep / UpdateLoop with "
+                "TrainingRuntime, or an existing trainer"
+            ),
+        )
 
     def __init__(
         self,

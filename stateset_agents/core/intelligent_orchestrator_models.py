@@ -6,16 +6,14 @@ v0.71.0.
 """
 
 import sys
-import warnings
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.experimental import intelligent_orchestrator_models as _new
 
-warnings.warn(
-    "stateset_agents.core.intelligent_orchestrator_models has moved to "
-    "stateset_agents.experimental.intelligent_orchestrator_models; the old import path is "
-    "deprecated and will be removed in v0.71.0.",
-    DeprecationWarning,
-    stacklevel=2,
+warn_deprecated(
+    "stateset_agents.core.intelligent_orchestrator_models",
+    removal="0.71.0",
+    replacement="stateset_agents.experimental.intelligent_orchestrator_models",
 )
 
 # Alias the module so attribute access, monkeypatching, and `from ... import`

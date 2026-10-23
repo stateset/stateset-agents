@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Generic, TypeVar
 
-from .error_handling import ErrorCode, ResourceException
+from .error_handling import ResourceException
 
 try:  # pragma: no cover - optional dependency
     import aiohttp as _aiohttp
@@ -30,14 +30,18 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+#: Expected resource failures (connection, timeout, bad value). A TypeError
+#: from a factory or from the caller's block is a bug: it propagates and does
+#: not count against (or retire) a resource.
 POOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ResourceException,
     RuntimeError,
     ValueError,
-    TypeError,
     OSError,
     asyncio.TimeoutError,
 )
+#: Closing third-party resources is best effort and never masks the error
+#: that triggered the cleanup.
 RESOURCE_CLEANUP_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     RuntimeError,
@@ -262,8 +266,9 @@ class AsyncResourcePool(Generic[T]):
                 self._state = PoolState.READY
                 self._stats.total_connections = len(self._pool)
                 self._stats.idle_connections = len(self._pool)
-        except POOL_EXCEPTIONS:
-            # Ensure partially created pools don't leak resources.
+        except BaseException:
+            # Ensure partially created pools don't leak resources, whatever
+            # stopped the initialisation (the error is re-raised).
             for resource in created:
                 try:
                     await self.factory.cleanup_resource(resource.resource)
@@ -298,7 +303,6 @@ class AsyncResourcePool(Generic[T]):
             if raise_on_fail:
                 raise ResourceException(
                     "Failed to create pooled resource",
-                    error_code=ErrorCode.RESOURCE_FAILED,
                     details={"pool": self.name},
                 ) from e
             return None

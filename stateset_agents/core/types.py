@@ -201,7 +201,7 @@ AsyncRewardFactory = Callable[[float], Awaitable[BaseReward]]
 _DEPRECATED_ERROR_ALIASES: dict[str, str] = {
     "FrameworkError": "StateSetError",
     "AgentError": "StateSetError",
-    "EnvironmentError": "EnvironmentError",
+    "EnvironmentError": "EnvironmentOperationError",
     "TrainingError": "TrainingError",
     "ConfigurationError": "ConfigurationError",
 }
@@ -212,8 +212,6 @@ def __getattr__(name: str) -> Any:
     """Deprecation shim for names that moved out of this module."""
     canonical = _DEPRECATED_ERROR_ALIASES.get(name)
     if canonical is not None:
-        from stateset_agents._deprecation import warn_deprecated
-
         from . import errors
 
         warn_deprecated(
@@ -223,13 +221,10 @@ def __getattr__(name: str) -> Any:
         )
         return getattr(errors, canonical)
     if name == "TrainingConfig":
-        import warnings
-
-        warnings.warn(
-            "import TrainingConfig from stateset_agents.training.config; this "
-            "alias will be removed in v0.71.0",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"{__name__}.TrainingConfig",
+            removal=_ERROR_ALIASES_REMOVAL,
+            replacement="stateset_agents.training.config.TrainingConfig",
         )
         from stateset_agents.training.config import TrainingConfig
 

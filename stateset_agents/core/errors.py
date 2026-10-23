@@ -1,20 +1,43 @@
 """
 Standardized error handling for StateSet Agents: the one exception hierarchy.
 
-Every framework exception derives from :class:`StateSetError`:
+Every framework exception derives from :class:`StateSetError`::
 
-* the category errors below (``ConfigurationError``, ``ModelError``,
-  ``TrainingError``, ``DataError``, ``NetworkError``, ``ResourceError``,
-  ``ValidationError``, ...);
-* the ``GRPOException`` family in :mod:`stateset_agents.core.error_handling`,
-  whose members also derive from the matching category error here (for
-  example ``ValidationException`` is a :class:`ValidationError`);
-* the gateway's :class:`stateset_agents.api.errors.APIError` family.
+    StateSetError
+    +-- ConfigurationError (ValueError)          bad configuration / arguments
+    +-- ModelError                               model load, init, inference
+    +-- TrainingError                            a training run failed
+    |   +-- OutOfMemoryError
+    |   +-- training.rollout_contract.RolloutContractError (ValueError)
+    |   +-- training.diagnostics.TrainingSignalError (RuntimeError)
+    |   +-- training.async_rollouts.AsyncRolloutError (RuntimeError)
+    |   |   +-- AsyncRolloutClosed, AsyncRolloutTimeout, PolicyArtifactError,
+    |   |       WorkerLeaseError, AsyncRolloutWorkerError, ...
+    |   +-- training.backends.BackendError (RuntimeError)
+    |       +-- BackendExecutionError
+    +-- EnvironmentOperationError                an environment step failed
+    +-- DataError                                data loading / processing
+    +-- RewardError                              reward computation failed
+    |   +-- core.reward_context.RewardUnavailableError (RuntimeError)
+    |       +-- rewards.llm_judge.JudgeUnavailableError
+    +-- ResourceError                            GPU, memory, pool slots
+    +-- NetworkError                             remote calls
+    +-- ValidationError                          invalid input
+    +-- core.error_handling.GRPOException        (legacy family; members also
+    |                                             derive from the category above)
+    +-- api.errors.APIError                      HTTP errors (wire ErrorCode)
+    +-- api.resilience.CircuitOpenError, OperationTimeoutError, BulkheadFullError
+    +-- remote.executor.RemoteExecutionError
 
 Errors raised where the framework used to raise a builtin keep that builtin
-as a base class and print just their message, so existing ``except
-ValueError`` handlers and error output are unchanged (``ConfigurationError``
-is a ``ValueError``).
+as a base class and print just their message (``message_only_str``), so
+existing ``except ValueError`` / ``except RuntimeError`` handlers and error
+output are unchanged (``ConfigurationError`` is a ``ValueError``,
+``RewardUnavailableError`` a ``RuntimeError``).
+
+Each class names its :class:`ErrorCode` in ``default_code``; ``code`` is
+always an :class:`ErrorCode` member for the framework's own errors (the
+gateway's ``APIError`` carries its wire code instead).
 """
 
 from __future__ import annotations
@@ -23,6 +46,8 @@ import enum
 import traceback
 from dataclasses import dataclass, field
 from typing import Any, ClassVar
+
+from .._deprecation import deprecated_alias_getattr
 
 
 class ErrorCode(enum.Enum):
@@ -48,6 +73,10 @@ class ErrorCode(enum.Enum):
     TRN_OOM = "TRN_004"
     TRN_DIVERGED = "TRN_005"
     TRN_GRADIENT_EXPLODED = "TRN_006"
+    TRN_ROLLOUT_CONTRACT = "TRN_007"
+    TRN_NO_SIGNAL = "TRN_008"
+    TRN_ASYNC_ROLLOUT = "TRN_009"
+    TRN_BACKEND_FAILED = "TRN_010"
 
     # Environment errors (ENV_xxx)
     ENV_INIT_FAILED = "ENV_001"
@@ -63,16 +92,19 @@ class ErrorCode(enum.Enum):
     # Reward errors (RWD_xxx)
     RWD_COMPUTE_FAILED = "RWD_001"
     RWD_INVALID_VALUE = "RWD_002"
+    RWD_UNAVAILABLE = "RWD_003"
 
     # Network errors (NET_xxx)
     NET_TIMEOUT = "NET_001"
     NET_CONNECTION_FAILED = "NET_002"
     NET_API_ERROR = "NET_003"
+    NET_CIRCUIT_OPEN = "NET_004"
 
     # Resource errors (RES_xxx)
     RES_OOM = "RES_001"
     RES_DISK_FULL = "RES_002"
     RES_GPU_UNAVAILABLE = "RES_003"
+    RES_EXHAUSTED = "RES_004"
 
     # Validation errors (VAL_xxx)
     VAL_INVALID_INPUT = "VAL_001"
@@ -110,6 +142,8 @@ class StateSetError(Exception):
     #: also derives from, so swapping ``raise ValueError(msg)`` for a typed error
     #: changes the type but not what callers print.
     message_only_str: ClassVar[bool] = False
+    #: The code an instance gets when the caller does not pass one.
+    default_code: ClassVar[ErrorCode] = ErrorCode.UNKNOWN
 
     def __init__(
         self,
@@ -120,7 +154,9 @@ class StateSetError(Exception):
     ):
         super().__init__(message)
         self.message = message
-        self.code = code
+        # ``UNKNOWN`` is the "not given" default, so a typed subclass raised as
+        # ``SomeError(msg)`` reports its own code.
+        self.code = self.default_code if code is ErrorCode.UNKNOWN else code
         self.context = context or ErrorContext(operation="unknown", component="unknown")
         self.cause = cause
 
@@ -151,11 +187,12 @@ class ConfigurationError(StateSetError, ValueError):
     """
 
     message_only_str = True
+    default_code = ErrorCode.CFG_INVALID
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
-            code=ErrorCode.CFG_INVALID,
+            code=self.default_code,
             context=ErrorContext(
                 operation="configuration", component="config", details=kwargs
             ),
@@ -165,17 +202,19 @@ class ConfigurationError(StateSetError, ValueError):
 class ModelError(StateSetError):
     """Raised when model operations fail."""
 
+    default_code = ErrorCode.MDL_LOAD_FAILED
+
     def __init__(
         self,
         message: str,
-        code: ErrorCode = ErrorCode.MDL_LOAD_FAILED,
+        code: ErrorCode | None = None,
         model_name: str | None = None,
         **kwargs: Any,
     ) -> None:
         details = {"model_name": model_name, **kwargs}
         super().__init__(
             message,
-            code=code,
+            code=code or self.default_code,
             context=ErrorContext(
                 operation="model_operation", component="model", details=details
             ),
@@ -185,17 +224,19 @@ class ModelError(StateSetError):
 class TrainingError(StateSetError):
     """Raised when training fails."""
 
+    default_code = ErrorCode.TRN_STEP_FAILED
+
     def __init__(
         self,
         message: str,
-        code: ErrorCode = ErrorCode.TRN_STEP_FAILED,
+        code: ErrorCode | None = None,
         step: int | None = None,
         **kwargs: Any,
     ) -> None:
         details = {"step": step, **kwargs}
         super().__init__(
             message,
-            code=code,
+            code=code or self.default_code,
             context=ErrorContext(
                 operation="training", component="trainer", details=details
             ),
@@ -216,13 +257,19 @@ class OutOfMemoryError(TrainingError):
         super().__init__(message, code=ErrorCode.TRN_OOM, **details)
 
 
-class EnvironmentError(StateSetError):
-    """Raised when environment operations fail."""
+class EnvironmentOperationError(StateSetError):
+    """Raised when environment operations (init, reset, step) fail.
+
+    Named so it does not shadow the builtin ``EnvironmentError`` (an alias of
+    ``OSError``); ``core.errors.EnvironmentError`` is a deprecated alias.
+    """
+
+    default_code = ErrorCode.ENV_STEP_FAILED
 
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
-            code=ErrorCode.ENV_STEP_FAILED,
+            code=self.default_code,
             context=ErrorContext(
                 operation="environment", component="environment", details=kwargs
             ),
@@ -232,10 +279,12 @@ class EnvironmentError(StateSetError):
 class DataError(StateSetError):
     """Raised when data loading or processing fails."""
 
+    default_code = ErrorCode.DAT_LOAD_FAILED
+
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
-            code=ErrorCode.DAT_LOAD_FAILED,
+            code=self.default_code,
             context=ErrorContext(
                 operation="data_loading", component="data", details=kwargs
             ),
@@ -245,10 +294,12 @@ class DataError(StateSetError):
 class RewardError(StateSetError):
     """Raised when reward computation fails."""
 
+    default_code = ErrorCode.RWD_COMPUTE_FAILED
+
     def __init__(self, message: str, **kwargs: Any) -> None:
         super().__init__(
             message,
-            code=ErrorCode.RWD_COMPUTE_FAILED,
+            code=self.default_code,
             context=ErrorContext(
                 operation="reward_computation", component="reward", details=kwargs
             ),
@@ -258,15 +309,17 @@ class RewardError(StateSetError):
 class ResourceError(StateSetError):
     """Raised when a resource (GPU, memory, disk, pool slot) is unavailable."""
 
+    default_code = ErrorCode.RES_GPU_UNAVAILABLE
+
     def __init__(
         self,
         message: str,
-        code: ErrorCode = ErrorCode.RES_GPU_UNAVAILABLE,
+        code: ErrorCode | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init__(
             message,
-            code=code,
+            code=code or self.default_code,
             context=ErrorContext(
                 operation="resource", component="resource", details=kwargs
             ),
@@ -276,17 +329,19 @@ class ResourceError(StateSetError):
 class NetworkError(StateSetError):
     """Raised when network operations fail."""
 
+    default_code = ErrorCode.NET_CONNECTION_FAILED
+
     def __init__(
         self,
         message: str,
-        code: ErrorCode = ErrorCode.NET_CONNECTION_FAILED,
+        code: ErrorCode | None = None,
         url: str | None = None,
         **kwargs: Any,
     ) -> None:
         details = {"url": url, **kwargs}
         super().__init__(
             message,
-            code=code,
+            code=code or self.default_code,
             context=ErrorContext(
                 operation="network", component="network", details=details
             ),
@@ -296,11 +351,13 @@ class NetworkError(StateSetError):
 class ValidationError(StateSetError):
     """Raised when input validation fails."""
 
+    default_code = ErrorCode.VAL_INVALID_INPUT
+
     def __init__(self, message: str, field: str | None = None, **kwargs: Any) -> None:
         details = {"field": field, **kwargs}
         super().__init__(
             message,
-            code=ErrorCode.VAL_INVALID_INPUT,
+            code=self.default_code,
             context=ErrorContext(
                 operation="validation", component="validator", details=details
             ),
@@ -350,3 +407,12 @@ def raise_from(new_exc: StateSetError, cause: BaseException) -> None:
     new_exc.cause = cause
     new_exc.context.traceback_str = traceback.format_exc()
     raise new_exc from cause
+
+
+#: ``EnvironmentError`` shadowed the builtin (an alias of ``OSError``), so a
+#: ``from stateset_agents.core.errors import *`` or a star-free import of it
+#: changed what ``except EnvironmentError`` caught. Renamed in v0.70.0.
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {"EnvironmentError": (__name__, "EnvironmentOperationError", "0.71.0")},
+)
