@@ -116,7 +116,7 @@ stateset-agents/
 │   │   ├── domain_rewards.py      # Customer-service / sales / support
 │   │   ├── reward_factories.py    # Composite-reward factories
 │   │   ├── value_function.py      # GAE and value estimation
-│   │   ├── computational_engine.py # Parallel trajectory generation
+│   │   ├── computational_engine.py # Deprecated rollout/scoring loop (no training)
 │   │   ├── agent_backends.py      # StubModel/StubTokenizer for CI
 │   │   ├── checkpoint_io.py       # Checkpoint loading (weights_only by default)
 │   │   └── rust_accelerator.py    # Optional Rust GAE (falls back to NumPy)
@@ -515,47 +515,31 @@ A_t = δ_t + γλ * A_{t+1}                [GAE]
 
 ---
 
-### 6. Computational Engine (`core/computational_engine.py`)
+### 6. Computational Engine (`core/computational_engine.py`) -- deprecated
 
-**Purpose**: Parallel trajectory generation and policy updates.
+**Purpose**: Parallel trajectory generation and reward scoring for demos. It
+does **not** train and is deprecated (removed in v0.71.0); it is not the GRPO
+engine. The GRPO update lives in `stateset_agents.training`
+(`MultiTurnGRPOTrainer` and the other native trainers, driven by
+`stateset_agents.train()`).
 
-#### Key Features
+What `ComputationalGRPOEngine` does:
 
-- **Parallel Processing**: Multi-worker trajectory generation
-- **Trajectory Buffering**: Efficient batch processing
-- **Metrics Tracking**: Real-time training statistics
-- **Reward Integration**: Supports raw and learned rewards
-
-#### Architecture
+- generates one response per prompt in parallel (bounded by `num_workers`);
+- scores each response through `core.reward_context.score_response`, dropping
+  a trajectory only when its reward is unavailable;
+- computes group-relative advantages with NumPy;
+- reports `policy_loss`, the mean advantage-weighted NLL of one forward pass
+  per trajectory. No `backward()` or optimizer step runs, so the weights never
+  change (without torch, a model or a tokenizer the value is
+  `-mean(advantages)`). An agent's own `update_policy` /
+  `update_from_feedback` hooks are the only way it changes anything.
 
 ```python
-class ComputationalGRPOEngine:
-    """Core GRPO engine with parallel processing"""
+# Train instead with:
+from stateset_agents import train
 
-    def __init__(
-        self,
-        agent: Agent,
-        environment: Environment,
-        reward_fn: Optional[RewardFunction] = None,
-        num_workers: int = None,  # Defaults to CPU count
-        buffer_size: int = 100
-    ):
-        self.agent = agent
-        self.environment = environment
-        self.reward_fn = reward_fn
-        self.executor = ThreadPoolExecutor(max_workers=num_workers)
-
-    async def generate_trajectory_batch(
-        self,
-        batch_size: int
-    ) -> List[MultiTurnTrajectory]:
-        """Generate trajectories in parallel"""
-
-    async def compute_policy_update(
-        self,
-        trajectories: List[MultiTurnTrajectory]
-    ) -> Dict[str, float]:
-        """Compute policy gradient update"""
+trained = await train(agent=agent, environment=env, reward_fn=reward, num_episodes=100)
 ```
 
 ---
