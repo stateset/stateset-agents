@@ -1292,6 +1292,21 @@ OPTIONAL_EXPORTS: dict[str, tuple[str, str]] = {
     "EMACallback": (f"{_PKG}.ema", "EMACallback"),
     "MultiEMA": (f"{_PKG}.ema", "MultiEMA"),
     "create_ema_model": (f"{_PKG}.ema", "create_ema_model"),
+    # Preference optimization and pairwise reward models (provisional).
+    "PreferencePair": (f"{_PKG}.preference.data", "PreferencePair"),
+    "PreferenceDataset": (f"{_PKG}.preference.data", "PreferenceDataset"),
+    "load_preference_jsonl": (f"{_PKG}.preference.data", "load_preference_jsonl"),
+    "split_preference_dataset": (f"{_PKG}.preference.data", "split_preference_dataset"),
+    "PreferenceConfig": (f"{_PKG}.preference.config", "PreferenceConfig"),
+    "PreferenceTrainer": (f"{_PKG}.preference.trainer", "PreferenceTrainer"),
+    "train_preference": (f"{_PKG}.preference.trainer", "train_preference"),
+    "RewardModelConfig": (f"{_PKG}.preference.config", "RewardModelConfig"),
+    "RewardModelTrainer": (f"{_PKG}.preference.reward_model", "RewardModelTrainer"),
+    "PairwiseRewardFunction": (
+        f"{_PKG}.preference.reward_model",
+        "PairwiseRewardFunction",
+    ),
+    "train_reward_model": (f"{_PKG}.preference.reward_model", "train_reward_model"),
 }
 
 #: The full public surface of :mod:`stateset_agents.training`, in the order it
@@ -1675,4 +1690,15 @@ PUBLIC_NAMES: tuple[str, ...] = (
     "summarize_glm5_2_config",
     "validate_glm5_2_config",
     "write_glm5_2_config_file",
+    "PreferencePair",
+    "PreferenceDataset",
+    "load_preference_jsonl",
+    "split_preference_dataset",
+    "PreferenceConfig",
+    "PreferenceTrainer",
+    "train_preference",
+    "RewardModelConfig",
+    "RewardModelTrainer",
+    "PairwiseRewardFunction",
+    "train_reward_model",
 )
