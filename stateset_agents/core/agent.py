@@ -76,24 +76,22 @@ def _adopt_shim_mocks() -> bool:
     """Adopt test-injected mocks from the ``stateset_agents.core.agent`` shim.
 
     Returns True when both ``AutoModelForCausalLM`` and ``AutoTokenizer`` were
-    replaced with shim values. Any exception typical of missing attributes is
-    swallowed since this path is a best-effort hook for test injection.
+    replaced with shim values; a best-effort hook for test injection.
     """
     global AutoModelForCausalLM, AutoTokenizer
-    try:
-        import sys as _sys
+    import sys as _sys
 
-        shim = _sys.modules.get("stateset_agents.core.agent")
-        if shim is None:
-            return False
-        shim_model = getattr(shim, "AutoModelForCausalLM", None)
-        shim_tokenizer = getattr(shim, "AutoTokenizer", None)
-        if shim_model is not None and shim_tokenizer is not None:
-            AutoModelForCausalLM = shim_model
-            AutoTokenizer = shim_tokenizer
-            return True
-    except AGENT_SHIM_EXCEPTIONS:
-        pass
+    # ``sys.modules.get`` and ``getattr`` with a default cannot raise, so no
+    # handler is needed (the old one could only hide a bug).
+    shim = _sys.modules.get("stateset_agents.core.agent")
+    if shim is None:
+        return False
+    shim_model = getattr(shim, "AutoModelForCausalLM", None)
+    shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+    if shim_model is not None and shim_tokenizer is not None:
+        AutoModelForCausalLM = shim_model
+        AutoTokenizer = shim_tokenizer
+        return True
     return False
 
 
@@ -172,11 +170,6 @@ def _load_peft() -> bool:
 
 logger = logging.getLogger(__name__)
 
-AGENT_SHIM_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    AttributeError,
-    KeyError,
-    TypeError,
-)
 TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
@@ -550,11 +543,9 @@ class Agent:
         Stores history as a list of dict messages `{role, content}` for
         compatibility with tests and simple consumers.
         """
-        msg: Any
-        try:
+        msg: Any = turn
+        if hasattr(turn, "role") and hasattr(turn, "content"):
             msg = {"role": turn.role, "content": turn.content}
-        except (AttributeError, TypeError):
-            msg = turn
         self.conversation_history.append(msg)
 
     def get_history(self) -> list[ConversationTurn]:
@@ -580,7 +571,8 @@ class Agent:
             if isinstance(value, (int, float, str)):
                 try:
                     return int(value)
-                except (TypeError, ValueError):
+                # int("x") / int(nan) raise ValueError, int(inf) OverflowError.
+                except (ValueError, OverflowError):
                     return None
             return None
 

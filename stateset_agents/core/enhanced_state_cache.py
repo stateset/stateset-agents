@@ -216,7 +216,9 @@ class InMemoryCacheBackend(CacheBackend):
         """Calculate approximate size of value."""
         try:
             return len(pickle.dumps(value))
-        except Exception:
+        # Boundary: an arbitrary cached value's __reduce__ may raise anything;
+        # the size is only an eviction estimate, so fall back to its repr size.
+        except Exception:  # noqa: BLE001
             return len(str(value).encode("utf-8"))
 
     def _update_access_tracking(self, key: str):

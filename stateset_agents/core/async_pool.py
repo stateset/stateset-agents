@@ -30,14 +30,18 @@ logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
+#: Expected resource failures (connection, timeout, bad value). A TypeError
+#: from a factory or from the caller's block is a bug: it propagates and does
+#: not count against (or retire) a resource.
 POOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
     ResourceException,
     RuntimeError,
     ValueError,
-    TypeError,
     OSError,
     asyncio.TimeoutError,
 )
+#: Closing third-party resources is best effort and never masks the error
+#: that triggered the cleanup.
 RESOURCE_CLEANUP_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     RuntimeError,
@@ -262,8 +266,9 @@ class AsyncResourcePool(Generic[T]):
                 self._state = PoolState.READY
                 self._stats.total_connections = len(self._pool)
                 self._stats.idle_connections = len(self._pool)
-        except POOL_EXCEPTIONS:
-            # Ensure partially created pools don't leak resources.
+        except BaseException:
+            # Ensure partially created pools don't leak resources, whatever
+            # stopped the initialisation (the error is re-raised).
             for resource in created:
                 try:
                     await self.factory.cleanup_resource(resource.resource)

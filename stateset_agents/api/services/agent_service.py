@@ -196,7 +196,7 @@ class AgentService:
         agent = MultiTurnAgent(agent_config, planning_manager=planning_manager)
         try:
             await agent.initialize()
-        except AGENT_SERVICE_EXCEPTIONS as exc:
+        except AGENT_SERVICE_EXCEPTIONS:
             environment = os.getenv("API_ENVIRONMENT", "production").lower()
             if environment != "production" and not agent_config.use_stub_model:
                 logger.warning(
@@ -205,10 +205,10 @@ class AgentService:
                     exc_info=True,
                 )
                 agent_config = replace(agent_config, use_stub_model=True)
-                agent = MultiTurnAgent(agent_config)
+                agent = MultiTurnAgent(agent_config, planning_manager=planning_manager)
                 await agent.initialize()
             else:
-                raise exc
+                raise
 
         self.agents[agent_id] = agent
         self.agent_owners[agent_id] = owner

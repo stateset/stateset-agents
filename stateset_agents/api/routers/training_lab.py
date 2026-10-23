@@ -888,7 +888,7 @@ async def start_experiment(
                     f"avg_reward={simulator._metrics['avg_reward']:.3f}",
                 )
         except Exception as e:
-            logger.exception("Training loop failed: %s", e)
+            logger.exception("Training loop failed")
             exp["status"] = ExperimentStatus.FAILED.value
             _add_log(experiment_id, "error", f"Training failed: {e}")
 

@@ -391,7 +391,10 @@ class StructuredOutputMixin:
                     }
                 )
 
-            except (ValueError, TypeError, RuntimeError, AttributeError) as e:
+            # Retry what a model can fix (bad values, a generation failure). A
+            # TypeError/AttributeError is a bug in the agent or caller and
+            # retrying cannot fix it, so it propagates.
+            except (ValueError, RuntimeError) as e:
                 last_error = e
                 logger.warning(
                     f"Structured output attempt {attempt + 1}/{config.max_retries} "
