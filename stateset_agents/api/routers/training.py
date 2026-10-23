@@ -17,8 +17,12 @@ from ..dependencies import (
     require_role,
 )
 from ..errors import InternalError, TrainingConfigError, TrainingJobNotFoundError
-from ..models import PaginatedResponse
-from ..schemas import ErrorResponse, TrainingRequest, TrainingResponse
+from ..schemas import (
+    ErrorResponse,
+    PaginatedResponse,
+    TrainingRequest,
+    TrainingResponse,
+)
 from ..services.training_service import TrainingService
 
 router = APIRouter(prefix="/training", tags=["training"])

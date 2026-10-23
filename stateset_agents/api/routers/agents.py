@@ -28,12 +28,12 @@ from ..errors import (
     InvalidAgentConfigError,
     PromptInjectionError,
 )
-from ..models import PaginatedResponse
 from ..schemas import (
     AgentConfigRequest,
     ConversationRequest,
     ConversationResponse,
     ErrorResponse,
+    PaginatedResponse,
 )
 from ..security import InputValidator, get_api_security_monitor
 from ..services.agent_service import AgentService

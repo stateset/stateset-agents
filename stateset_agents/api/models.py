@@ -1,7 +1,10 @@
-"""
-API Request/Response Models
+"""Deprecated duplicate of :mod:`stateset_agents.api.schemas`.
 
-Unified Pydantic models for all API services with comprehensive validation.
+No gateway route uses these models: the served request/response schemas live
+in ``stateset_agents.api.schemas`` (and ``messages_models`` /
+``openai_models``). ``APIResponse`` and ``PaginatedResponse`` are re-exported
+from ``schemas``; the remaining classes are unreferenced duplicates. Importing
+this module is deprecated and will be removed in v0.71.0.
 """
 
 import re
@@ -13,12 +16,19 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
     model_validator,
 )
 
+from .._deprecation import warn_deprecated
 from .config import get_config
+from .schemas import APIResponse, PaginatedResponse  # noqa: F401 - re-exported
+
+warn_deprecated(
+    "stateset_agents.api.models",
+    removal="0.71.0",
+    replacement="stateset_agents.api.schemas",
+)
 
 # ============================================================================
 # Enums
@@ -51,39 +61,6 @@ class MessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
-
-
-# ============================================================================
-# Base Models
-# ============================================================================
-
-
-class APIResponse(BaseModel):
-    """Base response model with common fields."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: str | None = Field(default=None, description="Request tracking ID")
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
-    )
-
-    @field_serializer("timestamp")
-    def _serialize_timestamp(self, timestamp: datetime) -> str:
-        # Consistent 'Z' suffix for naive UTC datetimes.
-        return timestamp.isoformat() + "Z"
-
-
-class PaginatedResponse(APIResponse):
-    """Base model for paginated responses."""
-
-    total: int = Field(..., description="Total number of items")
-    page: int = Field(default=1, description="Current page number")
-    page_size: int = Field(default=20, description="Items per page")
-    has_next: bool = Field(default=False, description="Whether there are more pages")
-    has_prev: bool = Field(
-        default=False, description="Whether there are previous pages"
-    )
 
 
 # ============================================================================

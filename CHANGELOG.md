@@ -63,6 +63,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   counts as the environment's own step reward, also when a reward function is
   attached. Environments record each step's scoring state in
   `trajectory.state_history`, and per-step rewards see the system prompt.
+- The gateway's chat routes (`/v1/messages`, `/v1/chat/completions`,
+  `/api/v1/conversations`) share one message-limit check
+  (`api.messages_utils.validate_message_limits`, raising `MessageLimitError`,
+  a `ValueError`) and one backend error formatter (`inference_error_text`)
+  instead of three private copies. Responses, status codes and error details
+  are unchanged. `PaginatedResponse` and its `APIResponse` base now live in
+  `stateset_agents.api.schemas`.
 
 ### Deprecated
 
@@ -87,6 +94,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   training-lab `API_LAB_WS_QUERY_TOKEN` query-string credential;
   `RulerRewardFunction(config=RulerConfig(...))`; and
   `DistributedGRPOTrainer`.
+
+- `stateset_agents.api.models` (17 request/response models, none served by
+  any route) duplicated `stateset_agents.api.schemas`; importing it warns and
+  it is removed in **v0.71.0**. `APIResponse`/`PaginatedResponse` are
+  re-exported from `schemas` until then.
 
 ### Removed
 

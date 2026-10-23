@@ -4,7 +4,6 @@ Messages API router (Anthropic-style with OpenAI compatibility).
 
 from __future__ import annotations
 
-import json
 import logging
 import time
 from typing import Any, Union
@@ -20,73 +19,19 @@ from ..dependencies import (
     require_auth_if_enabled,
 )
 from ..generation_params import validate_generation_request
-from ..messages_models import MessageInput, MessagesRequest, MessagesResponse
-from ..messages_utils import validate_tool_choice, validate_tools
+from ..messages_models import MessagesRequest, MessagesResponse
+from ..messages_utils import (
+    inference_error_text,
+    validate_message_limits,
+    validate_tool_choice,
+    validate_tools,
+)
 from ..openai_models import OpenAIChatCompletionResponse
 from ..services.inference_service import InferenceService
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/v1", tags=["messages"])
-
-
-def _estimate_message_content_length(content: Any) -> int:
-    """Estimate length of message content for validation checks."""
-    if content is None:
-        return 0
-    if isinstance(content, str):
-        return len(content)
-    if isinstance(content, list):
-        try:
-            return len(json.dumps(content))
-        except (TypeError, ValueError):
-            return len(str(content))
-    if isinstance(content, dict):
-        try:
-            return len(json.dumps(content))
-        except (TypeError, ValueError):
-            return len(str(content))
-    return len(str(content))
-
-
-def _validate_message_limits(
-    messages: list[MessageInput], max_messages: int, max_len: int
-) -> None:
-    if len(messages) > max_messages:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Too many messages (max {max_messages})",
-        )
-
-    for index, msg in enumerate(messages):
-        if _estimate_message_content_length(msg.content) > max_len:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Message content too long at index {index}",
-            )
-
-
-def _extract_inference_error_text(exc: Exception) -> str:
-    """Build a compact inference error message from backend responses."""
-    response = getattr(exc, "response", None)
-    if isinstance(response, httpx.Response):
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = response.text.strip()
-
-        if isinstance(payload, dict):
-            error = payload.get("error", payload)
-            if isinstance(error, dict):
-                message = error.get("message")
-                if isinstance(message, str) and message:
-                    return message
-            if isinstance(error, str) and error:
-                return error
-        elif isinstance(payload, str) and payload:
-            return payload
-
-    return "Inference backend request failed"
 
 
 @router.post(
@@ -112,10 +57,10 @@ async def create_message(
     try:
         validate_tools(request.tools)
         validate_tool_choice(request.tool_choice)
-        _validate_message_limits(
+        validate_message_limits(
             request.messages,
-            config.validation.max_conversation_messages,
-            config.validation.max_message_length,
+            max_messages=config.validation.max_conversation_messages,
+            max_length=config.validation.max_message_length,
         )
         validate_generation_request(request, config.validation)
     except ValueError as exc:
@@ -173,7 +118,7 @@ async def create_message(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
         status_code = getattr(exc.response, "status_code", None)
-        detail = _extract_inference_error_text(exc)
+        detail = inference_error_text(exc)
         if isinstance(status_code, int) and 500 <= status_code < 600:
             logger.error(
                 "Messages upstream service error",

@@ -21,6 +21,11 @@ from ..config import get_config
 from ..dependencies import get_inference_service
 from ..generation_params import validate_max_tokens
 from ..messages_models import MessageInput, MessagesRequest
+from ..messages_utils import (
+    MessageLimitError,
+    inference_error_text,
+    validate_message_limits,
+)
 from ..services.inference_service import InferenceService
 
 router = APIRouter(prefix="/api/v1", tags=["v1"])
@@ -263,29 +268,6 @@ def _trim_messages(
     if len(messages) <= max_messages:
         return messages
     return messages[-max_messages:]
-
-
-def _extract_inference_error_text(exc: Exception) -> str:
-    """Build a safe, compact error message from inference backend exceptions."""
-    response = getattr(exc, "response", None)
-    if isinstance(response, httpx.Response):
-        try:
-            payload = response.json()
-        except ValueError:
-            payload = response.text.strip()
-
-        if isinstance(payload, dict):
-            error = payload.get("error", payload)
-            if isinstance(error, dict):
-                message = error.get("message")
-                if isinstance(message, str) and message:
-                    return message
-            if isinstance(error, str) and error:
-                return error
-        elif isinstance(payload, str) and payload:
-            return payload
-
-    return "Inference backend request failed"
 
 
 @router.get("/health", summary="Health Check (v1)")
@@ -581,17 +563,19 @@ async def chat_v1(
             {"role": msg.role, "content": msg.content}
             for msg in (payload.messages or [])
         ]
-        if len(incoming_messages) > max_messages:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Too many messages in request (max {max_messages})",
+        try:
+            validate_message_limits(
+                incoming_messages,
+                max_messages=max_messages,
+                max_length=config.validation.max_message_length,
             )
-        for msg in incoming_messages:
-            if len(msg["content"]) > config.validation.max_message_length:
-                raise HTTPException(
-                    status_code=422,
-                    detail="Message too long",
-                )
+        except MessageLimitError as exc:
+            detail = (
+                f"Too many messages in request (max {max_messages})"
+                if exc.kind == "count"
+                else "Message too long"
+            )
+            raise HTTPException(status_code=422, detail=detail) from exc
         user_text = ""
         for msg in reversed(incoming_messages):
             if msg["role"] == "user":
@@ -652,7 +636,7 @@ async def chat_v1(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
         status_code = getattr(exc.response, "status_code", None)
-        detail = _extract_inference_error_text(exc)
+        detail = inference_error_text(exc)
         if isinstance(status_code, int) and status_code >= 500:
             logger.error(
                 "v1.conversations upstream service error",
