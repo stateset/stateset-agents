@@ -7,13 +7,15 @@ Group Relative Policy Optimization (GRPO).
 
 from __future__ import annotations
 
-import warnings
+import warnings as _warnings
 from importlib import import_module
 from importlib.util import find_spec
 from types import ModuleType
 from typing import Any
 
-__version__ = "0.67.0"
+from ._deprecation import warn_deprecated
+
+__version__ = "0.69.0"
 __author__ = "StateSet Team"
 __email__ = "team@stateset.ai"
 
@@ -80,6 +82,15 @@ _LAZY_EXPORTS.update(
         ],
     )
 )
+# The framework's exception root and the typed error its public entry points
+# (train(), TrainingConfig, AgentConfig) raise; ConfigurationError is also a
+# ValueError.
+_LAZY_EXPORTS.update(
+    _export_group(
+        "stateset_agents.core.errors",
+        ["StateSetError", "ConfigurationError"],
+    )
+)
 _LAZY_EXPORTS.update(
     _export_group(
         "stateset_agents.core.error_handling",
@@ -141,7 +152,7 @@ _LAZY_EXPORTS.update(
 )
 _LAZY_EXPORTS["TypedConversationTurn"] = (
     "stateset_agents.core.type_system",
-    "ConversationTurn",
+    "ConversationTurnDict",
     None,
 )
 _LAZY_EXPORTS.update(
@@ -215,48 +226,69 @@ _LAZY_EXPORTS.update(
         ],
     )
 )
-_LAZY_EXPORTS.update(
-    _export_group(
-        "stateset_agents.evaluation",
-        ["SimToRealMetrics", "SimToRealEvaluator"],
-    )
-)
-_LAZY_EXPORTS.update(
-    _export_group(
-        "stateset_agents.environments",
-        ["ConversationSimulator", "ConversationSimulatorConfig"],
-    )
-)
+__all__ = list(_LAZY_EXPORTS)
 
-# Planning symbols moved to ``stateset_agents.experimental.long_term_planning``.
-# Re-exported here for one release with a DeprecationWarning.
-_DEPRECATED_PLANNING_EXPORTS = (
-    "PlanningConfig",
-    "PlanningManager",
-    "Plan",
-    "PlanStep",
-    "PlanStatus",
-)
-
-# Sim-to-real symbols moved to ``stateset_agents.experimental.sim_to_real`` in
-# v0.64.0. They are stable v1-contract exports, so docs/API_COMPATIBILITY.md
-# requires them to stay available (with a DeprecationWarning) for at least one
-# minor release after the deprecating one: they remain in ``__all__`` through
-# v0.65.x and are removed in v0.66.0. The ``stateset_agents.evaluation`` /
-# ``.environments`` re-exports they were contracted against are already gone,
-# so ``__getattr__`` serves them straight from the experimental modules.
-_DEPRECATED_EXPERIMENTAL_EXPORTS = {
-    "SimToRealMetrics": "stateset_agents.experimental.sim_to_real.metrics",
-    "SimToRealEvaluator": "stateset_agents.experimental.sim_to_real.metrics",
-    "ConversationSimulator": (
-        "stateset_agents.experimental.sim_to_real.conversation_simulator"
-    ),
-    "ConversationSimulatorConfig": (
-        "stateset_agents.experimental.sim_to_real.conversation_simulator"
+# Stable names the framework itself never uses. Deprecated in v0.70.0; per
+# docs/API_COMPATIBILITY.md they stay for one further minor release and will be
+# removed in v0.72.0. Each access warns (the value is not cached) and names the
+# replacement; the provisional modules keep serving them until then.
+_DEPRECATED_STABLE_EXPORTS_REMOVAL = "v0.72.0"
+_DEPRECATED_STABLE_EXPORTS: dict[str, str] = {
+    # error_handling: the framework raises GRPOException/ValidationException/
+    # ResourceException; these are unused. ``ErrorCode`` here is the legacy
+    # GRPO_E### enum (``exc.error_code``); every framework error's ``code`` is
+    # a ``core.errors.ErrorCode`` (deprecated in v0.70.0).
+    "ErrorCode": "stateset_agents.core.errors.ErrorCode",
+    "TrainingException": "stateset_agents.core.errors.TrainingError",
+    "ModelException": "stateset_agents.core.errors.ModelError",
+    "DataException": "stateset_agents.core.errors.DataError",
+    "NetworkException": "stateset_agents.core.errors.NetworkError",
+    "ErrorHandler": "stateset_agents.core.error_handling.ErrorHandler",
+    "RetryConfig": "stateset_agents.core.error_handling.RetryConfig",
+    "CircuitBreakerConfig": "stateset_agents.core.error_handling.CircuitBreakerConfig",
+    "retry_async": "stateset_agents.core.error_handling.retry_async",
+    "circuit_breaker": "stateset_agents.core.error_handling.circuit_breaker",
+    "handle_error": "stateset_agents.core.error_handling.handle_error",
+    "get_error_summary": "stateset_agents.core.error_handling.get_error_summary",
+    # performance_optimizer: used only by experimental modules.
+    **{
+        name: f"stateset_agents.core.performance_optimizer.{name}"
+        for name in (
+            "PerformanceOptimizer",
+            "MemoryMonitor",
+            "ModelOptimizer",
+            "BatchOptimizer",
+            "OptimizationLevel",
+            "MemoryConfig",
+            "ComputeConfig",
+            "DataConfig",
+            "PerformanceMetrics",
+        )
+    },
+    # type_system: TypedDicts and validators nothing in the framework calls.
+    **{
+        name: f"stateset_agents.core.type_system.{name}"
+        for name in (
+            "TypeValidator",
+            "ConfigValidator",
+            "TypeSafeSerializer",
+            "create_typed_config",
+            "ensure_type_safety",
+            "ensure_async_type_safety",
+            "ModelConfig",
+            "TypedTrainingConfig",
+            "TrajectoryData",
+            "RewardMetrics",
+            "DeviceType",
+            "ModelSize",
+            "TrainingStage",
+        )
+    },
+    "TypedConversationTurn": (
+        "stateset_agents.ConversationTurn (or "
+        "stateset_agents.core.type_system.ConversationTurnDict)"
     ),
 }
-
-__all__ = list(_LAZY_EXPORTS)
 
 
 def _build_import_error(
@@ -290,27 +322,6 @@ def _maybe_import_submodule(name: str) -> ModuleType | None:
 
 
 def __getattr__(name: str) -> Any:
-    if name in _DEPRECATED_PLANNING_EXPORTS:
-        warnings.warn(
-            f"{name} is deprecated here; "
-            "import from stateset_agents.experimental.long_term_planning",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        module = import_module("stateset_agents.experimental.long_term_planning")
-        return getattr(module, name)
-
-    experimental_module = _DEPRECATED_EXPERIMENTAL_EXPORTS.get(name)
-    if experimental_module is not None:
-        warnings.warn(
-            f"stateset_agents.{name} is deprecated and moved to "
-            f"{experimental_module}.{name}; the old import path will be "
-            "removed in v0.66.0.",
-            DeprecationWarning,
-            stacklevel=2,
-        )
-        return getattr(import_module(experimental_module), name)
-
     export = _LAZY_EXPORTS.get(name)
     if export is None:
         submodule = _maybe_import_submodule(name)
@@ -319,6 +330,13 @@ def __getattr__(name: str) -> Any:
         raise AttributeError(f"module 'stateset_agents' has no attribute {name!r}")
 
     module_name, attr_name, install_hint = export
+    replacement = _DEPRECATED_STABLE_EXPORTS.get(name)
+    if replacement is not None:
+        warn_deprecated(
+            f"stateset_agents.{name}",
+            removal=_DEPRECATED_STABLE_EXPORTS_REMOVAL,
+            replacement=replacement,
+        )
 
     try:
         module = import_module(module_name)
@@ -326,13 +344,20 @@ def __getattr__(name: str) -> Any:
         raise ImportError(_build_import_error(name, module_name, install_hint)) from exc
 
     try:
-        value = getattr(module, attr_name)
+        if replacement is None:
+            value = getattr(module, attr_name)
+        else:
+            # Warned above; the provisional module may warn for the same name.
+            with _warnings.catch_warnings():
+                _warnings.simplefilter("ignore", DeprecationWarning)
+                value = getattr(module, attr_name)
     except AttributeError as exc:
         raise AttributeError(
             f"module '{module_name}' has no attribute {attr_name!r}"
         ) from exc
 
-    globals()[name] = value
+    if replacement is None:
+        globals()[name] = value
     return value
 
 

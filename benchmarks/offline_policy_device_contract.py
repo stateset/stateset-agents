@@ -22,12 +22,12 @@ from stateset_agents.data.conversation_dataset import (
     ConversationDatasetConfig,
 )
 from stateset_agents.evaluation.implementation import package_implementation
-from stateset_agents.training.checkpoint_publication import (
-    validate_checkpoint_publication,
-)
-from stateset_agents.training.offline_grpo_trainer import (
+from stateset_agents.experimental.offline_rl.offline_grpo import (
     OfflineGRPOConfig,
     OfflineGRPOTrainer,
+)
+from stateset_agents.training.checkpoint_publication import (
+    validate_checkpoint_publication,
 )
 from stateset_agents.training.promotion import artifact_digest
 from stateset_agents.training.sampled_workflow import workflow_tokenizer

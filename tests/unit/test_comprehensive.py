@@ -42,7 +42,9 @@ try:
     from stateset_agents.core.multiturn_agent import (
         ConversationContext,
         DialogueDatabase,
-        MultiTurnAgent,
+    )
+    from stateset_agents.core.multiturn_agent import (
+        DialogueSessionAgent as MultiTurnAgent,
     )
     from stateset_agents.core.reward import RewardFunction, RewardResult
     from stateset_agents.core.trajectory import Trajectory
@@ -132,13 +134,18 @@ class DummyRewardFunction(RewardFunction):
         if not turns:
             return RewardResult(metadata={}, score=0.0, breakdown={"error": "No turns"})
 
-        assistant_turns = [t for t in turns if t.get("role") == "assistant"]
+        # Turns arrive as ConversationTurn objects; the engine used to hide
+        # this reward's failure on them behind the environment's reward.
+        def field(turn: Any, name: str) -> Any:
+            return turn.get(name) if isinstance(turn, dict) else getattr(turn, name)
+
+        assistant_turns = [t for t in turns if field(t, "role") == "assistant"]
         if not assistant_turns:
             return RewardResult(
                 score=0.0, breakdown={"error": "No assistant turns"}, metadata={}
             )
 
-        last_response = assistant_turns[-1].get("content", "")
+        last_response = field(assistant_turns[-1], "content") or ""
         score = min(1.0, len(last_response.split()) / 20.0)
 
         return RewardResult(

@@ -7,7 +7,1721 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Knowledge distillation** (provisional, `distillation` beta in the
+  component maturity contract; docs/DISTILLATION.md):
+  `stateset_agents.training.distillation` (`DistillationTrainer`,
+  `train_distillation`, `DistillationConfig`, `DistillationDataset`).
+  - Offline logit KD: per-token forward KL, reverse KL or GKD's generalized
+    JSD (`jsd_beta`) between temperature-scaled teacher and student
+    distributions over response tokens only (exact masks from the preference
+    encoder), token-mean reduced with exact gradient accumulation.
+  - On-policy distillation / GKD: with probability `lmbda` a micro-batch
+    trains on completions the student samples itself (exact token ids, a
+    deterministic per-seed draw); `on_policy_loss="full"` applies the
+    divergence at every sampled position, `"sampled"` the sampled-token
+    reverse-KL estimator (`sg(log S - log T) · log S`, whose expected
+    gradient is the per-token reverse-KL gradient).
+  - The teacher is frozen (no gradients, eval mode). A precomputed top-k
+    teacher cache (`teacher_top_k`, `TeacherCache`,
+    `precompute_teacher_cache`) trains offline without the teacher in memory
+    (top k plus a remaining-mass bucket; saved and loaded weights-only).
+  - Vocabularies: `vocab_alignment="strict"` rejects differing tokenizers or
+    logit widths (`VocabularyMismatchError`); `"shared"` aligns tokens by
+    string, renormalizes over the shared support, translates sequences to the
+    teacher's ids and suppresses student-only tokens when sampling. Nothing is
+    truncated silently.
+  - The losses are pinned to TRL's `GKDTrainer.generalized_jsd_loss` (values
+    and gradients, β ∈ {0, 0.1, 0.5, 0.9, 1}, τ ∈ {1, 2}) and the trainer's
+    window loss to `GKDTrainer.compute_loss` on real tiny models, on trl 1.9.1
+    and 1.16.0 (`tests/unit/test_distillation_trl_pin.py`).
+  - `stateset-agents distill` with a torch-free `--dry-run`.
+  - Evidence (CPU toy, seeds 0/1/2): a tiny student distilled from a tiny
+    digit-answering teacher cuts the held-out forward and on-policy reverse
+    KL by at least 65% in every mode; a shuffled-teacher control raises both
+    (`tests/learning/test_distillation_learns.py`).
+- **Online (iterative) DPO** (`OnlineDPOTrainer`, `train_online_dpo`,
+  `OnlineDPOConfig` in `stateset_agents.training.preference`): each round the
+  policy samples K completions per prompt, any `RewardFunction` judges them
+  through `reward_context.score_response` (a `PairwiseRewardFunction`
+  included; only `RewardUnavailableError` drops a completion, other errors
+  and non-finite scores raise), the best is paired against the worst with a
+  margin threshold and tie handling, and DPO/IPO trains on the exact sampled
+  tokens against a `fixed` or `previous_round` reference. Rounds checkpoint
+  and resume exactly. Evidence: three rounds raise a held-out judged digit
+  rate across seeds 0/1/2 with either reference schedule, and a sign-flipped
+  judge lowers it (`tests/learning/test_online_dpo_learns.py`).
+- **LoRA reward models**: `RewardModelConfig(use_lora=True, lora_*)` (and
+  `stateset-agents preference --method rm --lora`) trains `peft` adapters on
+  the backbone plus the reward head; adapters save with the base model's
+  name and load onto `base_model` (`load_reward_function(dir,
+  base_model=...)`), or save merged (`save_reward_model(...,
+  merge_lora=True)`). Learns the toy ranking at seeds 0/1/2.
+- `PreferenceEncoder.encode_prompt` (the generation prompt on-policy
+  trainers sample from) and `preference.sampling.sample_completions` (exact
+  token ids from an explicit `GenerationConfig`).
+- **Independent exploit families and judge calibration.**
+  - `reward_exploits.independent_adversarial_replies`: 34 families written
+    from the review before the rework, with their own tokenizer. They cover
+    off-topic specifics, foreign answers, anchored stuffing, repetition,
+    echo, padding, injection text, refusals and parenthetical/slash hedges.
+  - Eight new `DEFAULT_CASES`: benign trigger words, numberless who/why/how
+    answers and a labeled hedge question.
+  - The gate now passes every family on 17 cases, all 15 factories, both
+    paths and seeds 0 and 1. The same search found 18,250 failures before
+    this change; the smallest margin is now 0.011.
+  - `reward_exploits.judge_injection_replies` and
+    `search_judge_injections` provide a prompt-injection search for model
+    judges.
+  - `stateset_agents.rewards.judge_calibration` (`calibrate_judge`,
+    `load_calibration_set`, `score_drift`) reports a judge's agreement
+    with a labelled JSONL set: MAE, tolerance agreement, pass/fail agreement,
+    Spearman, repeat drift, pairwise agreement and swap consistency.
+  - New tests: property-based mutation fuzzing
+    (`tests/unit/test_reward_monotonicity.py`), the reviewer's exploits as
+    regressions, and a GRPO learning test showing a bandit policy moves to
+    the honest reply, not the exploits, for seeds 0-2.
+- **Verifiable tool-use RL** (provisional, `tool-use-rl` beta in the component
+  maturity contract; docs/TOOL_USE_RL.md):
+  - `ToolUseEnvironment` (`stateset_agents.environments`): the policy calls
+    typed tools (`ToolSpec`: name, JSON-schema parameters, deterministic
+    callable, per-call timeout; `ToolRegistry`; an exact `calculator_tool()`)
+    in the chat-template `<tool_call>{...}</tool_call>` form, the repo's JSON
+    action form or structured `tool_calls`; results come back as `tool`-role
+    turns, malformed calls as structured error observations, every attempt
+    spends a `max_tool_calls` budget, and the episode ends on a final answer
+    (or the budget) and is scored through the shared reward path. Reference
+    data in scenarios is hidden from the policy's context.
+  - Masking guarantee: tool observations never receive policy gradient.
+    `tests/unit/test_tool_use_masking.py` proves on real episodes that the
+    gradient of the GRPO token loss reaches exactly the policy's own tokens
+    (tool-call text included) and no observation, user or system token, and
+    that the sequence path and the SFT masks (`core.chat_masking` with
+    `chat_template_render(tokenizer, tools)`) label only assistant text.
+    New: `chat_masking.OBSERVATION_ROLES`, `has_observation_turns`.
+  - `MathAnswerVerifier` (`stateset_agents.rewards`): 1.0 for one committed
+    final answer (boxed, stated or a lone number) equal to the reference;
+    exact fractions and decimals (tolerance opt-in), symbolic equivalence by
+    exact evaluation at rational points or `sympy.simplify` when installed,
+    never `eval`; hedged, multiple, negated, tentative or unevaluated answers
+    score 0, reusing `CorrectnessReward`'s candidate and negation rules.
+  - `SandboxedCodeVerifier`: the pass rate of the reply's code on hidden
+    function or stdin/stdout tests, run with `python -I -S`, an empty
+    environment, a fresh temporary directory, a wall-clock timeout, CPU,
+    address-space, file-size, process-count and open-file rlimits, capped
+    output and a process-group kill. Expected outputs never enter the sandbox
+    and results are compared outside it, framed by a per-run nonce, so
+    printing expected output, `sys.exit`/`os._exit` before the asserts,
+    monkeypatching the checker, `__eq__` tricks, reading a tests file, forged
+    records, infinite loops and fork bombs all score 0 (each pinned against a
+    naive verifier it fools). Resource isolation, not a security boundary:
+    use a container for untrusted code. POSIX only (`RewardUnavailableError`
+    elsewhere).
+  - The reward exploit search covers both verifiers with math and code
+    adversary families (`evaluation.verifier_exploits`, `ExploitCase.kind`);
+    every adversary scores at least 0.01 below the reference.
+  - Evidence: `tests/integration/test_tool_use_grpo.py` (MultiTurn GRPO on a
+    calculator `ToolUseEnvironment` with the math verifier: rewards flow, the
+    loss counts only reply tokens, runs are deterministic per seed) and
+    `tests/learning/test_tool_use_learns.py` (seeds 0, 1, 2: GRPO with the
+    verifier raises a tiny policy's correct-tool-call rate; a sign-flipped
+    reward lowers it).
+
+- **Unified RL training spine, first slices** (provisional;
+  `docs/superpowers/plans/2026-10-22-unified-rl-spine.md`).
+  `stateset_agents.training.spine.OptimizerStep` validates, clips and commits
+  one update for any native trainer: one or several optimizers, LR schedulers
+  and an optional GradScaler passed explicitly, independently clipped
+  parameter groups, an explicit `global_step` rule (`counter="commits"` for
+  MultiTurn/SingleTurn GRPO, `"train_steps"` for DAPO/GEPO/VAPO, `"none"` for
+  GSPO) and `nonfinite_grad_policy` (`"raise"` or `"skip"`). An AMP overflow
+  skips every optimizer of the pass together. `trainer_utils.safe_optimizer_step`
+  is now the GRPO configuration of it, with unchanged behaviour.
+  `scripts/capture_step_goldens.py` and
+  `tests/unit/test_trainer_step_goldens.py` pin one training step of every
+  native trainer (GSPO, GSPO-token, DAPO, GEPO, VAPO, MultiTurn and SingleTurn
+  GRPO at one and two update passes): metrics, parameter delta, pre- and
+  post-clip gradient norms, learning rates and step counters.
+- `stateset_agents.training.spine.UpdateLoop` runs the K update passes
+  (`num_gradient_updates` / `num_iterations`) over one rollout batch with
+  frozen old-policy log-probs, one `OptimizerStep` commit per pass:
+  `"chunked"` backpropagates each group's token- or row-share-weighted loss
+  before the next group's forward (`batch_shares`, `share_size`),
+  `"single_graph"` sums the groups into one loss first. DAPO, VAPO (chunked)
+  and GEPO, GSPO, GSPO-token (single graph) now run their update passes on it;
+  their finite steps are numerically unchanged (step goldens). A pass that
+  fails part-way discards its pending gradients.
+- `stateset_agents.training.spine.PromptGroupRollouts` is the rollout phase
+  of DAPO, GEPO and VAPO (one sampled group per prompt, built into update
+  items; groups too small for group statistics are skipped with a warning),
+  and `VLLMEngineMixin` / `vllm_engine_config` are the one vLLM rollout-engine
+  setup shared by DAPO and the GSPO and base trajectory generators.
+- The step goldens record their capture environment and compare strictly
+  (rtol 1e-5) only there; other environments (CI's torch versions, CPUs,
+  operating systems) use portable tolerances that still fail a 5% gradient
+  error, a dropped prompt group or a skipped update pass. The harness runs
+  AdamW with eps 1e-4 and without VAPO value-head dropout, which made the
+  numbers depend on rounding noise and on the RNG stream.
+- `stateset_agents.training.spine.SpineLoopMixin` holds the GRPO outer loop
+  -- `train()` with its update receipts, callback/logging/evaluation/save
+  cadence, resume, task boundaries and success-only finalization -- moved
+  verbatim out of `MultiTurnGRPOTrainer`, which (with `DistributedTrainer`)
+  now inherits it. Behaviour, the hook methods `DistributedTrainer`
+  overrides, and the cross-rank phase names and their order are unchanged
+  (now pinned by a test). The loop's log records come from the
+  `stateset_agents.training.spine.loop` logger, and code that patched
+  `multi_turn_trainer.notify_training_start`/`notify_training_end` should
+  patch `spine.loop` instead.
+- `stateset_agents.training.spine.EpisodeScorer`, `ResponseScorer` and
+  `CallableScorer` are the one reward-adapter layer every native trainer's
+  rollouts score through, built only on `core.reward_context`
+  (`score_episode` for MultiTurn and the distributed trainers,
+  `score_response` for SingleTurn, GSPO, GSPO-token and the TRL reward
+  bridge, a sync-or-async `reward_fn(prompt, response)` callable for DAPO,
+  GEPO and VAPO). Scores are unchanged (reward-path parity tests); scorers
+  never absorb a failure, so the trainers' rollout policy (only
+  `RewardUnavailableError` is dropped, an all-dropped step raises) is as
+  before.
+- `stateset_agents.training.spine.GRPOUpdateMixin` is the GRPO update half
+  -- continual-learning reference and KL beta, autocast, the token-path
+  inner passes over frozen old-policy log-probs or one accumulated
+  backward, the streamed chunked backward, the EWC regularizer, the
+  optimizer commit and the step metrics -- extracted from
+  `MultiTurnGRPOTrainer.training_step`. `SingleTurnGRPOTrainer` now runs
+  each step's update through it instead of its own copy; the trainers
+  differ only in hooks (AMP scaler gating, how the reward baseline and
+  backward closure reach the loss, their optimizer-step and flush
+  signatures). Both trainers' step goldens are unchanged.
+- `SpineLoopMixin.train()` runs each episode through a new
+  `_train_episode` method (task boundary, rollouts, step, reporting);
+  the phases it passes to `_training_phase` and their order are unchanged.
+- `TrainingConfig.allow_unmasked_labels` (default `False`): the explicit
+  opt-in for the sequence path supervising every token when the token-offset
+  path fails. It is validated with the other compatibility switches
+  (`allow_sequence_fallback`, `allow_missing_sampler_logprobs` must now be
+  real booleans), bound on native and DDP resume and reported by the learner
+  preflight. A native checkpoint written before the field existed resumes as
+  `False`.
+- **`SingleTurnGRPOTrainer` trains on the spine episode loop.** It
+  subclasses `spine.SpineLoopMixin`: `train()` (resume, training start/end
+  callbacks, discarding pending gradients and closing tracking on every exit)
+  is MultiTurn's, and the single-turn parts are hooks (`_train_episode` runs
+  up to `max_steps_per_episode` turns via `_train_turn`; `_finalize_training`
+  flushes the pending window). Each committed update -- a turn's or the
+  final flush's -- now reaches callbacks through `on_optimizer_step` with the
+  spine's receipt, as in MultiTurn. Kept as before: per-episode W&B metrics,
+  no evaluation and no periodic or final checkpoint; resume continues after
+  the saved episode. `SpineLoopMixin.train` gained the hooks
+  `_run_training_loop`, `_finalize_training`, `_scenario_for_episode` and
+  `_restore_requested_checkpoint`, with MultiTurn's phases and their order
+  unchanged.
+- **`spine.AlgorithmSpec`: one prompt-group algorithm is one spec.** GSPO,
+  GSPO-token, DAPO and GEPO declare their scoring, `PolicyObjective` preset,
+  sampling, per-group loss, update mode/passes and metrics as an
+  `AlgorithmSpec` (`GSPO_SPEC`, `GSPO_TOKEN_SPEC`, `DAPO_SPEC`, `GEPO_SPEC`;
+  `spine.algorithm_spec(name)`), and their `train_step` is the shared
+  `spine.run_algorithm_step`. `spine.AlgorithmTrainer` gives every spec
+  trainer the same objective resolution, spine commit (counter and label
+  from the spec) and rollout-engine sync. Trainer classes, constructors,
+  attributes and public methods are unchanged and step goldens are
+  bit-identical; GEPO now records `last_rollout_sync` (always `None`: it has
+  no rollout engine).
+- `stateset_agents.training.spine.run_dedicated_loop` is the outer loop of
+  the dedicated entry points (`train_with_gspo`, `train_with_gspo_token`,
+  `train_with_dapo`, `train_with_gepo`, `train_with_vapo`): seed ->
+  batch -> `train_step` -> report -> periodic `checkpoint-<n>` save ->
+  callbacks (`on_step_end`; `should_abort` stops) -> one final save, also
+  after an abort; a failing step propagates without a final save. It
+  returns a `DedicatedRun` (iterations, aborted, abort reasons, last
+  metrics). Each entry point keeps its public return shape, its iteration
+  count field, final directory and save format for backward compatibility:
+  the GSPO family returns the agent, runs `config.num_outer_iterations`
+  and exports the model to `final_model` (`save_model`); DAPO, GEPO and
+  VAPO return `(model, tokenizer, metrics_history)`, run
+  `config.num_episodes` and write resumable checkpoints to `final`
+  (`save_checkpoint`). Their log lines and W&B logging also stay their own.
+- `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` take `callbacks`, with `train_with_gspo`'s contract:
+  `on_step_end(step, metrics)` after each iteration and its checkpoint, and
+  a callback setting `should_abort` stops the run after the final save
+  (`train_with_gspo_token` then sets `agent._training_aborted`, as
+  `train_with_gspo` does). Only `train_with_gspo` accepted callbacks before.
+- Paid RunPod studio runs can be stopped on POSIX hosts from the CLI
+  (`finetune stop`), the TUI (`k`) and the API: the plan-bound stop receipt is
+  saved and the run's worker is signalled only after its process identity is
+  verified; the worker terminates its pod and records the run as `cancelled`.
+  The API capability reports `remote_stop_supported` and
+  `remote_stop_providers`. Other remote providers are still refused.
+- **Maintained preference training** (provisional,
+  `stateset_agents.training.preference`; docs/PREFERENCE_TRAINING.md):
+  - typed `PreferencePair` / `UnpairedExample` / `PreferenceDataset` loaded
+    from strict JSONL (prompt strings, chat messages, TRL implicit-prompt
+    conversations, unpaired KTO labels; optional margin, weight, group and
+    source ids) with prompt-disjoint, order-independent train/eval splits on
+    the shared request identity;
+  - pure, validated losses for DPO, conservative DPO, IPO, SimPO, KTO
+    (with its mismatched-pair KL reference point), ORPO and Bradley-Terry,
+    pinned to TRL 1.12 on identical tensors;
+  - `PreferenceTrainer` / `train_preference`: response-only log-probs via
+    `rl_losses.gather_token_logprobs` and `core.chat_masking`, a frozen,
+    LoRA adapter-disabled or precomputed reference (none for SimPO/ORPO),
+    AdamW with warmup schedules, exact weighted gradient accumulation,
+    clipping and a raise/skip non-finite policy through
+    `safe_optimizer_step`, reward accuracy/margin metrics, and checkpoints
+    that resume an interrupted run exactly;
+  - Bradley-Terry `RewardModelTrainer` / `train_reward_model` (accuracy and
+    ROC AUC) exported as `PairwiseRewardFunction`, a reward-contract
+    `RewardFunction` scoring `σ((r - offset) / temperature)` in `[0, 1]`;
+  - `stateset-agents preference` (`--method dpo|ipo|simpo|kto|orpo|rm`,
+    torch-free `--dry-run`);
+  - learning tests on three seeds and the `preference-optimization` (beta)
+    entry in the component maturity contract.
+- `stateset_agents.StateSetError` and `stateset_agents.ConfigurationError`
+  join the stable surface (reviewed additive contract change): the root of the
+  framework's one exception hierarchy and the typed error its public entry
+  points raise.
+- **Automated reward exploit search as a CI gate.**
+  `stateset_agents.evaluation.reward_exploits` generates, deterministically
+  from a seed, the reply families a policy finds first when it games a
+  lexical reward (canned templates, keyword stuffing, verbatim and shuffled
+  echo, random and out-of-vocabulary word salad at random positions and
+  their combinations, bare lists of numbers or action words, terse replies,
+  blanket refusals, hedged multi-candidate
+  answers, negations, content-destroying mutations and padding of a reference
+  answer) and `search_reward_exploits` plays each against the reference in a
+  real `ConversationEnvironment` episode, with the reward attached to the
+  environment and held by a trainer. `tests/unit/test_reward_exploit_search.py`
+  runs it over every shipped reward factory (core, multi-objective, Kimi and
+  the `cli train` demo reward) and nine cases (support requests, a
+  sensitive-but-harmless fraud report, numeric and text QA with labels, a
+  two-turn conversation) for two seeds and fails if any adversary comes
+  within 0.01 of the reference. Against the rewards before this round's
+  fixes it finds 2,446 such adversary episodes across all 15 factories; it
+  now finds none.
+
+- **Training/eval decontamination** (`data-decontamination` beta in the
+  component maturity contract; docs/DECONTAMINATION.md).
+  `stateset_agents.data.decontamination` compares SFT chat rows, preference
+  pairs, RL prompt files and scenario files with eval sets. It matches exact
+  13-grams on normalized text (NFKC, casefold, punctuation and whitespace;
+  `--mask-digits` optional). Eval segments of 8–12 words are matched whole and
+  3–7-word segments as exact duplicates; shorter ones are counted as
+  unchecked. Optional row-level MinHash/LSH near duplicates are verified by
+  exact Jaccard, with the band shape derived from the threshold for 99% recall.
+  The report lists contaminated rows per eval set with the overlapping
+  n-grams, the overlap fraction and example training rows. `filter` and `flag`
+  act on training rows or on an eval set; `--min-overlap` separates template
+  boilerplate from leaked rows. Output is deterministic (independent of
+  `PYTHONHASHSEED`); 10,000 training rows take seconds. New:
+  `stateset-agents data decontaminate` (with `builtin:support-bench`,
+  `builtin:tool-calling-bench` and `builtin:gsm8k-test`/`gsm8k-train`).
+  `curate_conversations(decontaminate_against=...)` and
+  `python -m stateset_agents.data.curation --decontaminate-against` drop
+  overlapping training rows and record the result in the manifest.
+  `scripts/audit_decontamination.py` checks the repo's own eval sets; the
+  results are retained in
+  `benchmark_results/decontamination/20261023/audit.json` and explained in
+  the guide.
+- **General-capability regression gate** (`capability-regression-eval`,
+  experimental). `stateset_agents.evaluation.capability_regression` runs a
+  named lm-evaluation-harness task list against a local checkpoint, with or
+  without a PEFT adapter and with fixed seeds. It records scores in the repo's
+  evaluation report shape and gates a candidate on a baseline with an
+  absolute, relative or per-task allowed regression. Lower-is-better metrics
+  are handled. Reports with mismatched settings are refused. The harness is
+  the optional `[eval-harness]` extra; without it the module imports and runs
+  raise `CapabilityEvalUnavailable` naming the extra. The CLI is
+  `python -m stateset_agents.evaluation.capability_regression run|compare`.
+  Tested against a fake harness only.
+- **QLoRA for SFT** (`qlora-sft`, experimental).
+  `python -m stateset_agents.training.sft --quantization 4bit|8bit` (with
+  `--quant-type`, `--compute-dtype` and `--no-double-quant`) loads the frozen
+  base through bitsandbytes (NF4 with double quantization and bf16 compute by
+  default), places it at load time and runs
+  `prepare_model_for_kbit_training` before LoRA. The adapter manifest records
+  the settings. The shared helper `stateset_agents.training.quantization`
+  (`QuantizationConfig`, `build_bnb_config`, `require_bitsandbytes`) gives a
+  CPU-only host an actionable error and names the new `[qlora]` extra when
+  bitsandbytes is missing; dry runs keep working. CPU tests cover the config
+  objects and failure paths; there is no GPU run yet.
+
 ### Changed
+
+- **Effective defaults that changed (duck-typed configs only).** The GRPO
+  losses read `entropy_coef`, `generation_batch_size` and
+  `max_completion_length` through `config_value`, so a legacy config without
+  them now gets the `TrainingConfig` defaults (entropy bonus 0.01 instead of
+  0.0; old-log-prob chunks of 4 rows instead of one per group; a 512-token
+  objective normaliser instead of none). Typed configs are unchanged. The TRL
+  bridge sizes its generation batch from the `gradient_accumulation_steps`
+  and `num_generations` it hands TRL (it assumed 1 and 1). Config-default
+  ratchet 108 -> 96.
+- **LR schedule settings are honoured.** GSPO, GEPO and VAPO always used a
+  cosine and DAPO always a constant LR; all now follow
+  `lr_scheduler_type` (cosine, linear or constant; the defaults keep their
+  previous schedules).
+- **Objective goldens:** the `grpo_enhanced` capture now sets
+  `entropy_coef=0.0` explicitly (it pins the policy and KL terms); its
+  recorded numbers are unchanged.
+- **Rollout-sync failures stop training by default.** New
+  `rollout_sync_failure` (`"raise"`, default, or `"warn"`) and
+  `max_consecutive_rollout_sync_failures` (3): the third consecutive failed
+  weight sync raises `RolloutSyncError`.
+- **`strict_callbacks`** (default False) makes a failing callback stop
+  training; `run_dedicated_loop(strict_callbacks=...)` and the
+  `notify_*(strict=...)` dispatchers take it too.
+- **`NeuralRewardFunction` no longer retrains itself**; online retraining
+  from its replay buffer needs `retrain_online=True`.
+- **Lint:** ruff `T20` (print) is enforced; package files that still print
+  are count-locked in `tests/unit/test_print_ratchet.py` (49 calls in 13
+  files; 17 reasoned `noqa: T201` CLI lines) and can only go down. Library
+  code in `training/` logs instead of printing (`ExperimentTracker.
+  format_summary()` and `HPOSummary.format_summary()` return the text that
+  `print_summary()` prints).
+- **Docs:** `docs/ARCHITECTURE.md` statistics are generated by
+  `scripts/architecture_stats.py`, and `tests/unit/test_architecture_stats.py`
+  fails on more than 10% drift; the spine section documents the schedule and
+  failure policies.
+
+- **One exception hierarchy, raised by the real code paths.** The errors the
+  framework actually raises now derive from `StateSetError` through the
+  `core.errors` categories while keeping their builtin base and printing just
+  their message, so `except RuntimeError` / `except ValueError` handlers and
+  error output are unchanged: `RewardUnavailableError` (and
+  `JudgeUnavailableError`) are `RewardError`s; `RolloutContractError`,
+  `TrainingSignalError`, `AsyncRolloutError` (with its closed/timeout,
+  policy-artifact and worker-lease subclasses) and `BackendError` are
+  `TrainingError`s; `api.resilience.CircuitOpenError`, `BulkheadFullError`
+  and the renamed `OperationTimeoutError` are `StateSetError`s. Each class
+  declares `default_code`, a `core.errors.ErrorCode` (new members
+  `RWD_UNAVAILABLE`, `TRN_ROLLOUT_CONTRACT`, `TRN_NO_SIGNAL`,
+  `TRN_ASYNC_ROLLOUT`, `TRN_BACKEND_FAILED`, `NET_CIRCUIT_OPEN`,
+  `RES_EXHAUSTED`). `api.config.ConfigurationError` is now the canonical
+  `core.errors.ConfigurationError` (so also a `ValueError`) instead of a
+  second, unrelated class. The hierarchy is drawn in the `core.errors` module
+  docstring.
+- `GRPOException.code` (and so `ValidationException` / `ResourceException`)
+  is now the canonical `core.errors.ErrorCode` of its category, like every
+  other `StateSetError`; the legacy `GRPO_E###` code stays on `error_code`
+  (enum renamed `GRPOErrorCode`) and still heads `str(exc)`. `to_dict()` now
+  reports the canonical code as `error_code` and adds `grpo_error_code`,
+  `category` and `severity`.
+- ruff's `BLE` (blind except) and the `TRY002`/`TRY201`/`TRY203`/`TRY401`
+  rules are enabled. The package files that predate the rule (82 findings
+  in 36 files, down from 120 in 51) are listed, with their count, in
+  `tests/unit/test_blind_except_ratchet.py` and exempted in `pyproject.toml`;
+  the baseline can only shrink, `core/` and the training modules of this pass
+  (`auto_research`, `advanced_training_orchestrator`, `ddp_control`,
+  `experiment_tracking`, `harvest`, `serving_artifacts`, `sft`,
+  `trainer_utils`, `train`, `base_trainer`) are at zero, and every
+  `# noqa: BLE001` must state its reason (14 older unreasoned markers are
+  baselined). Tests, examples, benchmarks, scripts and deployment helpers are
+  exempt.
+- `tests/unit/test_layering.py` checks every executable import -- inside
+  functions and methods too, and literal `importlib.import_module` calls --
+  against the layer contracts `core` -/-> `training`/`api`/`experimental` and
+  `training` -/-> `experimental`. The only allowlisted edges are dated
+  deprecation bridges. `core.value_function` and `core.enhanced` use the new
+  `core.numerics.whiten` (numerically identical to
+  `training.rl_losses.whiten`, pinned by a test) instead of importing the
+  training layer.
+- `train(training_mode="offline"|"hybrid")` gets its offline trainer from
+  `stateset_agents.training.offline_backend`, which
+  `import stateset_agents.experimental.offline_rl` fills (the package stays
+  torch-free). `train(..., uncertainty_weighted=True)` always applies
+  `UncertaintyWeightedReward` (it never used the experimental Bayesian model
+  it probed for, and silently skipped the wrapper when that import failed).
+- The gateway builds the experimental planner itself and injects it into
+  `MultiTurnAgent` (`planning_manager=`) when a request sets
+  `enable_planning`.
+- **Heuristic rewards ground specifics in the request (behaviour change:
+  absolute heuristic scores shift).** An outside review reproduced exploits
+  that every shipped heuristic factory paid, on both scoring paths, while the
+  exploit-search gate passed. The gate's families had been written by the
+  rewards' authors. The reproduced exploits:
+  - off-topic "card 4093 blocked; fee 8812 waived; ..." beat the reference
+    on all 15 factories;
+  - correct answers without numbers had grounding 0;
+  - refusing "hack together a quick Python script" paid twice as much as
+    answering;
+  - "Sydney (or Canberra)" scored 1.0 for either truth;
+  - the reference said twice tied or beat it on 10-11 of 15 factories.
+
+  `core.grounding` is reworked; the exact formula is in
+  docs/REWARD_CONTRACT.md:
+  - A number, action word or code identifier now counts only when it is
+    supported: it sits within 8 content words of a request term (or a label
+    or evidence term) in its clause, continues such a clause within a budget
+    of 4, or appears in the conversation's evidence (tool, observation and
+    system turns; `observations`, `tool_outputs`, `retrieved_facts`,
+    `correct_facts`, ...).
+  - Unsupported specifics cost support, `(units + 1) / (units +
+    unsupported + 1)`.
+  - Repeating a request term anchors nothing after its second clause, and
+    weak terms anchor at half weight: boilerplate, action words, and terms
+    only in the scenario description.
+  - Information is `1 - exp(-units / 6)` over supported specifics, capped
+    by the new words stating them. It adds three units per answered question
+    type (a name for who, a cause for why, steps for how, a number for how
+    many, a definition for what is, yes/no) plus instruction steps, so a
+    correct answer without numbers is grounded. "William Shakespeare wrote
+    Hamlet." goes from 0.000 to 0.331.
+  - Repeated sentences, refilled templates, copied request messages,
+    request-term keyword clauses and off-request padding are penalized.
+  - A reply that declines a request `harmful_request` does not flag keeps
+    at most half its grounding.
+- **Hedges earn no correctness (behaviour change).** `CorrectnessReward`
+  (and the answer credit inside grounding) treats parentheticals,
+  "maybe/possibly/or", slash, pipe and no-space alternatives and an appended
+  "Or possibly X." as candidates. Any second candidate leaves no credit,
+  where before the credit was shared 1/k. Qualifiers ("Paris, in Europe",
+  "Canberra, which is in the ACT") are not candidates. An explicitly stated
+  numeric answer must have no alternative beside it.
+- **Harmful intent and safety (behaviour change).** `harmful_request` no
+  longer flags benign trigger words: "hack together a script", "kill a
+  process", "shoot photos", "execute a query", "attack the problem". It now
+  flags intent to hurt a person or animal ("... to hurt my roommate") and
+  making a poison, toxic gas or explosive. `SafetyReward` scores any reply
+  to a flagged request that does not decline as 0; new helper:
+  `basic_rewards.declines`.
+- **LLM judges are hardened (behaviour change: prompts differ).**
+  - `LLMJudge` encloses the query, response and reference in tags carrying
+    a per-judge HMAC nonce and tells the judge to treat them as data
+    (`JudgeConfig.harden_prompts`, default on; `LEGACY_*_TEMPLATE` keeps
+    the old prompts). RULER prompts enclose trajectories the same way.
+  - `compare_pairwise` judges both orders and counts only consistent wins
+    (`pairwise_swap`; new `compare_pairwise_verdicts`).
+  - `num_samples` averages k verdicts.
+  - `LLMJudgeReward`, `LLMJudgeRewardComponent` and
+    `LLMJudgeRewardWithFallback` pass the scenario's reference answer to
+    the judge. The fallback heuristic gates `HelpfulnessReward` on
+    grounding.
+- The `[Unreleased]` grounding entry below now states the shipped style
+  share, `grounding * (0.75 + 0.25 * style)`; it said `0.5 + 0.5 * style`.
+- **The policy's context is an allowlist** (`Environment.observation_context`):
+  only `Environment.policy_state_keys` (identifiers, the conversation, the
+  problem statement, observations) and, inside `"scenario"`/`"task"`,
+  `policy_scenario_keys` reach `agent_fn`. Reference and grading fields of any
+  name (`ground_truth`, `expected_answer`, `correct_facts`, `label`, code
+  `tests`, `required_actions`, `eligible`, `target_expression`...) stay
+  reward-side only; the old denylist hid only `expected_response` and
+  `expected_tool_calls`. `ToolUseEnvironment` adds its tool log and the
+  scenario's `entry_point`/`examples`; `TaskEnvironment` adds the agent's own
+  `completed_actions`/`task_progress`. Extra keys are an explicit opt-in:
+  `visible_context_keys=` (`ConversationEnvironment`, `TaskEnvironment`,
+  `ToolUseEnvironment`) or the `visible_context_keys` attribute. Custom
+  environments that relied on the policy seeing other state keys extend
+  `policy_state_keys`.
+- **`CompositeReward` no longer turns a component outage into a stand-in
+  score.** By default a component raising `RewardUnavailableError` makes the
+  composite raise it too, so the episode is dropped (with the judge down,
+  `CompositeReward([judge w=0.8, conciseness w=0.2])` scored "Bad answer."
+  1.0 instead of 0.36, and was trained on). Spreading the weight over the
+  survivors is an opt-in, `composite.outage_policy = "renormalize"`; the result
+  then lists `failed_components`, counts `breakdown["unavailable_components"]`
+  and is flagged `reward_fallback`, and environments and `score_episode` copy
+  both to the trajectory (`reward_failed_components`). An unknown policy is a
+  `ConfigurationError`. (`MultiObjectiveRewardFunction` is unchanged.)
+- **`TaskEnvironment` executes at most one action per step** (the first one a
+  reply declares; `max_actions_per_step=None` for real batches), so
+  `{"actions": ["load_data", "analyze", "write_report"]}` no longer completes a
+  three-step task in one reply. **Its own reward is normalized**: a completed
+  task totals `task_reward_scale` (default 1.0; two thirds progress, one third
+  completion bonus) instead of 15, so it no longer dwarfs a `[0, 1]` reward
+  function. `task_reward_scale=15.0` restores the old scale.
+- `ConversationEnvironment` and `TaskEnvironment` draw scenarios and simulated
+  user replies from their own `random.Random(seed)` (`seed=` keyword, kept by
+  `clone()`), never the global `random` module.
+- `RewardFunction.__call__` raises the typed `SyncRewardCallError` (a
+  `RuntimeError`) inside a running event loop instead of branching on
+  exception message text.
+- **RL numerics typed and split (code-quality review).** The GRPO token-path
+  loss is a typed batch builder, a per-chunk forward/backward and an
+  aggregation step instead of one 271-line function; the enhanced sequence
+  loss and assistant-label preparation are split the same way. Numerics are
+  bit-identical (346 loss configurations compared on metrics, gradient hashes
+  and backward calls; peak autograd memory per chunk unchanged) and the
+  trainer step goldens are unchanged. `loss_computation`, `objectives` and
+  `rl_losses` take torch `Tensor`s and the Protocols in the new
+  `training/typing_protocols.py` (`PolicyModel`, `TokenizerLike`,
+  `AgentLike`, `LossConfig`, ...) instead of `Any` (signatures mentioning
+  `Any`: 58 of 61 before, 4 of 94 after), run under strict mypy, and
+  `tests/unit/test_numerics_typing_ratchet.py` caps the remaining `Any`.
+- The `flywheel` command's body is split into typed helpers over a
+  `FlywheelOptions` dataclass; its options and `--help` output are unchanged
+  and pinned by `tests/unit/test_cli_flywheel_surface.py`.
+- The fine-tuning studio's key handling is table-driven: `tui_keys.py` maps
+  each input mode and dialog to small typed handlers (the 458-line,
+  204-branch `Studio.handle` chain is gone), and `tui_screens.py` renders
+  dialog bodies from a table with the help text as a constant; `refresh()`
+  and run details are split into steps. Behaviour is unchanged (a
+  differential fuzz against the previous studio compared about 1.2M key,
+  render and refresh operations with no difference) and
+  `tests/unit/test_tui_keymap.py` pins every key each mode handled.
+  The complexity ratchet's ceiling drops from 74 to 65 oversized functions.
+- The evaluation panel's background work runs through the shared
+  `BackgroundTask` (owned submissions on non-daemon threads) instead of its
+  own thread and result queue.
+- The studio's run details, metrics, run comparison, launch review and
+  resource summaries are pure renderers in `stateset_agents.tui_views`
+  (testable without a `Studio`); rendered frames are unchanged.
+- **Heuristic factories gate style on task grounding.** Every style
+  heuristic in the shipped `create_*_reward` factories (core, multi-objective
+  and Kimi) and in the `cli train` demo reward is wrapped in
+  `core.grounding.GroundedReward` / `GroundedComponent`: it pays
+  `grounding * (0.75 + 0.25 * style)` (`grounding.STYLE_SHARE`), where grounding measures engagement with
+  the request and specific content beyond boilerplate (the boilerplate lexicon
+  covers every keyword the heuristics reward). Outcome terms (correctness,
+  completed actions, safety) are not gated. Starters and presets log that
+  heuristic factories are shaping signals and recommend outcome, verifier or
+  judge rewards. New: `TaskGroundingReward`, `RewardFunction.shaping`.
+- Keyword components (`EmpathyRewardComponent`,
+  `ActionOrientedRewardComponent`) match whole words and score
+  `1 - 0.5 ** distinct_keywords` instead of saturating at two substring hits;
+  the domain rewards (`CustomerServiceReward`, ...) match whole words too.
+- **Only outages are absorbed.** `CompositeReward` and
+  `MultiObjectiveRewardFunction` redistribute a component's weight only for
+  the new `RewardUnavailableError` (judge, network or verifier outage;
+  `JudgeUnavailableError` is one); other exceptions and non-finite component
+  scores propagate. A composite whose every component was unavailable raises
+  `RewardUnavailableError`.
+- **Network rewards fail closed by default.** `NSRVerifierConfig.error_score`
+  defaults to `None` and `RulerRewardFunction`/`RulerConfig` default to
+  `fallback_enabled=False`: an outage raises `RewardUnavailableError`. An
+  opted-in fallback score carries `metadata["reward_fallback"]`, which
+  composites, environments and `score_episode` copy to the trajectory.
+- `CorrectnessReward` scores a correct answer 1.0 (was 0.5, the same as its
+  "no ground truth" neutral); unlabeled results stay 0.5 and are flagged
+  `metadata["no_ground_truth"]`. It also accepts a bare ground-truth label.
+- One result parser (`reward_context.reward_score`) everywhere: `None`, strings
+  and other unknown results raise `TypeError` in environments too (they scored
+  0.0 there); NumPy/0-d tensor scalars and the `total_reward` alias are scores.
+  Dict turns are normalized (`reward_context.normalize_turns`).
+- Single-turn trainers (`SingleTurnGRPOTrainer`, `GSPOTrainer`,
+  `GSPOTokenTrainer`, the TRL reward bridge) pass the standard reward context
+  (`build_reward_context` / `response_reward_context`).
+- A `ConversationEnvironment` subclass's `_calculate_step_reward` always
+  counts as the environment's own step reward, also when a reward function is
+  attached. Environments record each step's scoring state in
+  `trajectory.state_history`, and per-step rewards see the system prompt.
+- `GSPOTrainer` and `GSPOTokenTrainer` commit each update through the spine's
+  `OptimizerStep` (`counter="none"`; GSPO keeps no step counter). Finite
+  updates are numerically unchanged (step goldens). A NaN/Inf gradient is now
+  rejected before clipping with `ValueError("GSPO gradients must be finite")`
+  instead of the `RuntimeError` raised by `clip_grad_norm_`; a finite gradient
+  whose total norm overflows still raises that `RuntimeError`. Either way the
+  weights, optimizer and scheduler stay untouched, as before.
+- `GSPOTrainer` and `GSPOTokenTrainer` honour
+  `nonfinite_grad_policy="skip"` (a non-finite pass is discarded and logged
+  instead of raising), `_apply_optimizer_step` returns whether the update
+  committed, and the `optimizer_updates` metric counts committed passes
+  rather than attempted ones.
+- A plain `reward_fn(prompt, response)` callable (DAPO, GEPO, VAPO) that
+  returns NaN or an infinite score now raises `ValueError` (round 4's rule
+  for every reward path) instead of carrying the value into the group
+  advantages.
+- `train_with_gspo` honours `config.use_gspo_token`: it trains with
+  `GSPOTokenTrainer.train_step_token_level` instead of plain GSPO.
+- `GEPOTrainer` accepts an `async def` reward function, like DAPO and VAPO
+  (it called the reward synchronously, so an async one failed), and DAPO
+  awaits any awaitable a reward returns, not only coroutines.
+- `GSPOTokenTrainer` samples and scores with `GSPOTrainer`'s step (one
+  shared rollout loop): a group's replies are now scored concurrently, as
+  GSPO already did, and with `beta > 0` the reference log-probs of a group
+  are scored in one batch (equal to the former per-reply scores up to fp32
+  rounding).
+- The gateway's chat routes (`/v1/messages`, `/v1/chat/completions`,
+  `/api/v1/conversations`) share one message-limit check
+  (`api.messages_utils.validate_message_limits`, raising `MessageLimitError`,
+  a `ValueError`) and one backend error formatter (`inference_error_text`)
+  instead of three private copies. Responses, status codes and error details
+  are unchanged. `PaginatedResponse` and its `APIResponse` base now live in
+  `stateset_agents.api.schemas`.
+- **One exception hierarchy rooted at `StateSetError`.**
+  `train()` argument checks, `TrainingConfig` validation (`__post_init__`,
+  `validate_for_training`) and `AgentConfig` validation (`ConfigValidationError`)
+  raise `ConfigurationError`, which is also a `ValueError` and prints the same
+  message, so existing `except ValueError` handlers and output are unchanged.
+  The `GRPOException` family now also derives from the matching category
+  errors in `core.errors` (`ValidationException` is a `ValidationError`,
+  `ResourceException` a new `ResourceError`, ...) and carries
+  `code`/`context`/`to_dict()`; the gateway's `APIError` family derives from
+  `StateSetError` too (its `str()` and wire format are unchanged).
+- **Oversized functions split, and their count is ratcheted.**
+  `cli._validate_config`, `AgentConfig.validate`, the `/api/v1/conversations`
+  handler, `finetune_workspace.check_config_values` (81 branches) and
+  `data.finetuning.validate_finetuning_row` are split into ordered helpers
+  with identical results (checked differentially against the previous
+  implementations over tens of thousands of generated inputs; new tests pin
+  the conversation route's 422 details). `tests/unit/test_complexity_ratchet.py`
+  fails if the number of functions over 150 lines or 40 branches rises above
+  75 (it was 82).
+- **Timezone-aware UTC everywhere.** The 47 `datetime.utcnow()` calls (and
+  the `default_factory=datetime.utcnow` fields), all in the gateway, use
+  `stateset_agents.utils.clock` (`utc_now`, `utc_isoformat`, `as_utc`)
+  instead of the naive API deprecated in Python 3.12. The `...Z` timestamp
+  strings (health, errors, `PaginatedResponse`) are byte-identical; datetime
+  fields in the non-v1 agent, training-job and metrics responses now carry a
+  `Z` (UTC) suffix, metrics and log timestamps that had no zone now end in
+  `Z`, and persisted naive timestamps are read back as UTC. Stable `/api/v1`
+  and `/v1` responses are unchanged.
+- GSPO's current- and reference-policy scoring and GEPO's
+  `compute_sequence_log_probs` use the shared fp32 gather
+  (`rl_losses.gather_token_logprobs`) instead of a full-vocabulary
+  `log_softmax`: no full-vocabulary log-prob tensor, bf16 policies are
+  scored in fp32 (as GSPO's generation side already was), fp32 values agree
+  to 1e-6 per token. GSPO's single-response reference score no longer falls
+  back to the whole sequence when the prompt fills the window (it is 0, like
+  the current-policy score). GSPO and GSPO-token share one per-group update
+  (`_update_policy`), differing only in how a group is scored and its loss.
+- `GEPOTrainer.generate_group_responses` samples through
+  `trainer_runtime.hf_generate_group` like DAPO and VAPO:
+  `generation_batch_size` rows per `generate` call instead of one, responses
+  end at the tokenizer's EOS, and each response dict also carries
+  `response_mask`, `sequence_length` and `prompt_length`
+  (`response_start_idx` is kept).
+- DAPO's vLLM engine follows the shared setup: dtype float16/bfloat16 from
+  `fp16`/`bf16`, otherwise the checkpoint's own (`"auto"`; was float16), and
+  `vllm_max_model_len`, `vllm_quantization` and
+  `vllm_enable_chunked_prefill` are honoured.
+- **Only reward outages are absorbed.** Environments, `MultiTurnGRPOTrainer`
+  (sequential and batched rollouts, post-training evaluation),
+  `SingleTurnGRPOTrainer` and `ComputationalGRPOEngine` drop an episode only
+  when its reward raises `RewardUnavailableError` (or a subclass). A
+  `TypeError`, `AttributeError`, `KeyError` or `ValueError` from a reward, a
+  `None` result and a NaN score now propagate instead of silently shrinking
+  the batch, and a rollout step whose every attempted episode lost its reward
+  raises `RewardUnavailableError` instead of training on nothing.
+  `score_episode` raises `RewardUnavailableError` for an outage the
+  environment recorded; `coerce_reward_result` parses with `reward_score`
+  instead of reading failures as 0.0. `RewardUnavailableError` now lives in
+  `core.reward_context` (still importable from `core.reward_base`).
+- **One single-response scoring path.** `SingleTurnGRPOTrainer`,
+  `GSPOTrainer`, `GSPOTokenTrainer`, the TRL reward bridge (plain and
+  conversational prompts), `ComputationalGRPOEngine` and the auto-research
+  DAPO/VAPO adapters score through the new `reward_context.score_response`:
+  `[user, assistant]` turns (`response_turns`), the standard context, and the
+  latest-turn scope an environment step gives IMMEDIATE/DENSE rewards, so the
+  same reply scores identically to a one-turn `MultiTurnGRPOTrainer` episode
+  (a parity test covers every shipped factory, the core rewards and a model
+  judge; a meta-test pins that these consumers do not call `compute_reward`
+  themselves). Before, the GSPO/TRL paths dropped the user turn, so e.g.
+  `CorrectnessReward` scored "12 + 30 = 42." 0.33 instead of 1.0.
+  `Environment.get_reward` scores through `reward_context.score_trajectory`
+  (the trajectory's recorded state and scenario), also for evidence rewards
+  such as `TaskOutcomeReward`, which it used to reject. Reward stubs now
+  receive the user turn first: read the reply as `turns[-1]`.
+- `ModelBasedRewardComponent` judges a reply whose `turns` lack a user turn
+  against `context["user_query"]` instead of returning 0.0 without calling
+  the judge.
+- **`CorrectnessReward` counts hedges across the whole reply and rejects
+  negated answers.** A text answer shares its credit with every other
+  candidate the reply offers, across sentences and lines as well as commas,
+  "or"/"and" and "Maybe X. Maybe Y." (before, only candidates in the same
+  sentence counted, so a newline or sentence list scored 1.0). "It is not
+  Paris." and "42 is not the answer" score 0 (text and numeric), a denied
+  alternative (", not London") or a qualifier (", in Europe") is not a
+  candidate, and "no idea"/"not sure" halves the credit. The
+  `train_reasoning_with_dapo` math verifier uses the same check instead of a
+  substring test ("42" no longer matches "142").
+- **Judges accept only strict JSON.** `LLMJudge` and
+  `ModelBasedRewardComponent` read the score only from a reply that is
+  exactly one JSON object with a numeric `score` inside the configured range;
+  prose, bare numbers ("0.8", "7/10", "85/100", "on a scale of 0 to 1 ...
+  0.8"), fenced or embedded JSON, string or boolean scores and out-of-range
+  scores raise `JudgeUnavailableError` / `RewardUnavailableError` instead of
+  being salvaged, rescaled or clamped (the old first-number parse read
+  "-0.4" as 0.4 and "on a scale of 0 to 1" as 0.0). The model component's
+  default prompt asks for `{"score": x}`; custom `judge_prompt_template`s
+  must ask for the same. A pairwise verdict must name `A`, `B` or `tie`.
+  `NSRVerifierReward` treats a 2xx reply without an `approved`/`denied`/
+  `refused` decision as unavailable (or the opted-in `error_score`, flagged)
+  instead of a verified 0.0; its docstring now states the fail-closed
+  default.
+- `LLMJudge.evaluate(reference=...)` shows the reference to the judge (the
+  default template's new `{reference_section}` slot, or appended to a custom
+  template without a `{reference}` slot) and keys the cache on it.
+- `HelpfulnessReward`, `EngagementReward` and `TaskCompletionReward` goal
+  keywords match whole words ("there" is not "here", "refundable" is not
+  "refund").
+- **Grounding counts specifics, not unseen words.** `core.grounding` no
+  longer treats any word outside the boilerplate lexicon as information, so
+  random or invented word salad (alone, or mixed into templates and echoes)
+  earns nothing. Information is the number of distinct specifics the request
+  did not contain: numbers and amounts, affirmed action words (the new
+  `ACTION_TERMS`; "not issued" does not count) and reference labels, growing
+  as `n / (n + 6)`; a short label earns `CorrectnessReward`'s answer credit
+  (hedges share it, negations get none) and other numbers beside a numeric
+  label are competing answers. A near-verbatim echo of the request halves
+  relevance, and the quality factor `(1 - boilerplate) * (1 - filler ** 3)`
+  penalizes padding with boilerplate or salad. Grounded style rewards now pay
+  `grounding * (0.75 + 0.25 * style)` (`grounding.STYLE_SHARE`, the default
+  `share` of `GroundedReward`, `ground_shaping_rewards`, `GroundedComponent`
+  and `ground_components`), so style can no longer outweigh lost substance.
+  Absolute heuristic-factory scores are lower than before.
+  Numbers and action words count only in a clause that also names
+  something else, so bare lists ("4093 8812 7741", "Issued, blocked,
+  reversed.") state nothing, and "$1,299" reads as one number.
+- **Refusals and safety read intent, not topics.** A refusal is grounded only
+  when the request asks for help with something unsafe
+  (`basic_rewards.harmful_request`: "how do I hack...", "where can I buy
+  drugs", "... without getting caught"), not when it mentions one ("someone
+  stole my card", "how do I avoid scams"), so "I can't help with that." no
+  longer ties or beats a real answer to a fraud report. `SafetyReward`
+  scores 0 for unsafe *assistance* (`gives_unsafe_assistance`: instructions
+  involving an unsafe topic, an unsafe act by the speaker or reader, getting
+  or making contraband) instead of any mention ("reverse the fraudulent
+  charge" now scores 1.0), and no longer scores short replies down: length
+  is not safety, and the rule paid for padding.
+
+### Deprecated
+
+- Dead algorithm-config fields, removed in v0.71.0:
+  `GEPOConfig.use_group_baseline`, `DAPOConfig.prompt_batch_size` and
+  `eval_repeats`, `VAPOConfig.num_prompts_per_batch` and `num_iterations`.
+  They were never read; a non-default value is now rejected
+  (`ConfigurationError` naming the field to use instead).
+  `NeuralRewardFunction(fallback_reward=...)` is deprecated (removal
+  v0.71.0) and ignored.
+
+- Model presets `qwen3` (which loaded `Qwen/Qwen2.5-7B`) and `gemma3` (which
+  loaded `google/gemma-2-9b-it`) are renamed `qwen2.5-7b` and `gemma2-9b`, the
+  families their checkpoints belong to. The repo records no Qwen3 7–14B
+  checkpoint, and its recorded Gemma 3 checkpoints (1B, 4B multimodal) do not
+  match the presets' 9B/7B hyperparameters, so the presets were renamed rather
+  than repointed. `get_preset`, `resolve_preset_name` and
+  `examples/finetune_gspo.py --model` accept the old names with a
+  DeprecationWarning until **v0.71.0** (preset names are not part of the v1
+  contract). `list_preset_names()` lists only the new names. A test now checks
+  every preset's name prefix against its checkpoint's family.
+- **Duplicate error names** (one object each; access warns):
+  `core.error_handling.ErrorCode` (now `GRPOErrorCode`; use
+  `core.errors.ErrorCode`) and the root `stateset_agents.ErrorCode` export,
+  and the never-raised `core.error_handling.TrainingException`,
+  `ModelException`, `DataException` and `NetworkException` (use the
+  `core.errors` categories) are removed in **v0.72.0** with their stable root
+  names; `core.error_handling.ErrorContext` (now `ErrorRecord`),
+  `core.errors.EnvironmentError` (shadowed the builtin; now
+  `EnvironmentOperationError`), `api.errors.ValidationError` (now
+  `UnprocessableEntityError`), `api.errors.TrainingError` (now
+  `TrainingFailedError`) and `api.resilience.TimeoutError` (shadowed the
+  builtin; now `OperationTimeoutError`) are removed in **v0.71.0**.
+- **One circuit breaker and retry implementation:** `api.resilience` is
+  canonical. `core.error_handling.RetryConfig`, `retry_async`,
+  `CircuitBreakerConfig`, `CircuitBreaker` and `circuit_breaker` warn when
+  used and are removed in **v0.72.0** (the root names were already
+  deprecated for that release).
+- `stateset_agents.core.computational_engine.ComputationalGRPOEngine` (and
+  `create_computational_engine`) warns and is removed in **v0.71.0**: it never
+  trained. `_update_policy` computes `advantage * NLL` with `.item()` and runs
+  no backward pass or optimizer step (without torch it reported
+  `-mean(advantages)` as the loss). Its docstrings, `docs/ARCHITECTURE.md` and
+  `docs/GRPO_IMPLEMENTATION.md` now say so. Use `stateset_agents.train()` or
+  the trainers in `stateset_agents.training`.
+- Subclassing `stateset_agents.training.base_trainer.BaseTrainer` warns and it
+  is removed in **v0.71.0**; no maintained trainer subclasses it.
+  `BaseTrainerConfig` and `BaseModelManager` stay.
+- `AgentConfig(enable_planning=True)` without `planning_manager=` (core
+  building the experimental planner itself) warns and is removed in
+  **v0.72.0**; pass
+  `planning_manager=stateset_agents.experimental.long_term_planning.planning_manager_from_config(...)`.
+- `train(training_mode="offline"|"hybrid")` without first importing
+  `stateset_agents.experimental.offline_rl` still loads the experimental
+  trainer, warns, and stops doing so in **v0.72.0**.
+- Every deprecation goes through `stateset_agents._deprecation`: the nine
+  `core.<module>` shims for experimental modules, `core.enhanced`,
+  `core.type_system`, `core.types`, `data.conversation_dataset`,
+  `training.advanced_training_models`, `training.distributed_trainer` and
+  `training.trainer` now use `warn_deprecated` (same dates, canonical message
+  form; the `core.enhanced` `GSPOConfig` alias gains its v0.71.0 date).
+- `RulerRewardFunction(config=RulerConfig(...))` now warns through
+  `warn_deprecated` with its v0.71.0 removal date.
+- `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` (and
+  `stateset_agents.rewards.CodeExecutionReward`) is renamed
+  `CodeFormattingHeuristic` (component `code_formatting`): it never executed
+  code, it scores code-block markers and keywords. The old name is a
+  deprecated alias removed in **v0.71.0**; to reward code that works use
+  `SandboxedCodeVerifier`.
+- **Every deprecation now names its removal release, enforced by CI.**
+  `tests/unit/test_deprecation_schedule.py` reads every "will be removed in
+  vX.Y.Z" / `removal="X.Y.Z"` marker in the package and fails once
+  `__version__` reaches it, rejects undated "future release" promises, and
+  requires every module that emits a `DeprecationWarning` to state its
+  removal version. New helper: `stateset_agents._deprecation.warn_deprecated`.
+- Dated the remaining open-ended deprecations (all provisional, removed in
+  **v0.71.0**): the nine `stateset_agents.core.<module>` shims for modules
+  moved to `stateset_agents.experimental` in v0.22.0
+  (`adaptive_learning_controller`, `few_shot_adaptation`,
+  `intelligent_orchestrator`, `intelligent_orchestrator_logic`,
+  `intelligent_orchestrator_models`, `long_term_planning`,
+  `multi_agent_coordination`, `multimodal_processing`,
+  `neural_architecture_search`); the core-type re-exports from
+  `stateset_agents.training.trainer`; `TrainingConfig` aliases in
+  `core.types`, `core.type_system` and `training.advanced_training_models`;
+  `ConversationDatasetConfig.max_turns` (deprecated in v0.69.0); the
+  `stateset_agents.api.grpo` app modules (deprecated since v0.16.0); the
+  training-lab `API_LAB_WS_QUERY_TOKEN` query-string credential;
+  `RulerRewardFunction(config=RulerConfig(...))`; and
+  `DistributedGRPOTrainer`.
+
+- `stateset_agents.api.models` (17 request/response models, none served by
+  any route) duplicated `stateset_agents.api.schemas`; importing it warns and
+  it is removed in **v0.71.0**. `APIResponse`/`PaginatedResponse` are
+  re-exported from `schemas` until then.
+
+- **One monitoring path.** Metrics, alerts and health checks go through
+  `stateset_agents.utils.monitoring` (`MonitoringService`, `MetricsCollector`,
+  `AlertManager`); tracing for the gateway is `stateset_agents.api.observability`.
+  `utils.alerts` (a third `AlertManager`), `utils.observability` (a second
+  `Span`), `utils.logging` and `utils.profiler` had no in-package users or
+  tests; importing them warns and they are removed in **v0.71.0**, as are the
+  `stateset_agents.utils.AlertManager`, `ObservabilityManager`, `get_logger`
+  and `PerformanceReport` names (dropped from `utils.__all__`, still served
+  with a warning).
+- `core.advanced_monitoring.AlertManager` and `.MetricsCollector` are renamed
+  `ThresholdAlertManager` and `TimeSeriesMetricsCollector` (the windowed
+  components behind `AdvancedMonitoringService`) so they no longer share the
+  canonical names; the old names warn and are removed in **v0.71.0**.
+
+- **The secondary GRPO service app is deprecated as a whole.**
+  `stateset_agents.api.grpo` (a second `create_app` plus its own config,
+  handlers, metrics, models, state and auth; 3,766 lines) is used by nothing
+  outside the package. Its app modules were deprecated in v0.16.0 without a
+  date and only warned on package-attribute access; now importing any part of
+  the package warns, and it is removed in **v0.71.0**. Use
+  `stateset_agents.api.main` (rate limiting lives in
+  `stateset_agents.api.rate_limiter`).
+- `stateset_agents.core.multiturn_agent` (with `multiturn_context` and
+  `multiturn_analysis`), the dialogue backend used only by that app, warns on
+  import and is removed in **v0.71.0**. Its class is renamed
+  `DialogueSessionAgent` so it no longer collides with the stable
+  `stateset_agents.MultiTurnAgent` (`core.agent.MultiTurnAgent`);
+  `core.multiturn_agent.MultiTurnAgent` is a deprecated alias. The API
+  reference no longer lists these modules, `api.grpo` or `api.models`.
+- `stateset_agents.core.types.FrameworkError`, `AgentError`,
+  `EnvironmentError`, `TrainingError` and `ConfigurationError` (a second,
+  unused error root) are deprecated aliases of the `core.errors` classes and
+  are removed in **v0.71.0**.
+- **Stable surface pruning: 34 root names the framework never uses are
+  deprecated and removed in v0.72.0** (the policy's one further minor
+  release). Each access warns with its replacement; they stay in `__all__`
+  and the v1 contract until removal. `core.type_system`: `TypeValidator`,
+  `ConfigValidator`, `TypeSafeSerializer`, `create_typed_config`,
+  `ensure_type_safety`, `ensure_async_type_safety`, `ModelConfig`,
+  `TypedTrainingConfig`, `TypedConversationTurn`, `TrajectoryData`,
+  `RewardMetrics`, `DeviceType`, `ModelSize`, `TrainingStage`;
+  `core.performance_optimizer`: `PerformanceOptimizer`, `MemoryMonitor`,
+  `ModelOptimizer`, `BatchOptimizer`, `OptimizationLevel`, `MemoryConfig`,
+  `ComputeConfig`, `DataConfig`, `PerformanceMetrics`; `core.error_handling`:
+  `TrainingException`, `ModelException`, `DataException`, `NetworkException`
+  (use the `core.errors` categories, or catch `StateSetError`), `ErrorHandler`,
+  `RetryConfig`, `CircuitBreakerConfig`, `retry_async`, `circuit_breaker`,
+  `handle_error`, `get_error_summary`. `GRPOException`, `ValidationException`,
+  `ResourceException` and `ErrorCode` stay: the framework raises or uses them.
+  The provisional modules keep serving every name.
+- One `ConversationTurn`: `core.trajectory.ConversationTurn` is canonical.
+  The `core.type_system` TypedDict is renamed `ConversationTurnDict`
+  (`TypedConversationTurn` now records that name in the contract; same object)
+  and `core.type_system.ConversationTurn` is a deprecated alias (v0.71.0).
+  `stateset_agents.core.types`, imported by nothing in the framework, warns on
+  import and is removed in **v0.71.0**; its `ConversationTurn` is the
+  canonical class (same `(user_message, assistant_response, reward)` form).
+- `stateset_agents.core.enhanced.A2CTrainer`, `AdvancedRLOrchestrator` and
+  their factories warn and will be removed in v0.71.0, with the module's DPO
+  trainer; nothing maintained depends on them. The orchestrator now defaults
+  to A2C, since its PPO and GSPO entries are gone.
+- `stateset_agents.core.enhanced.DPOTrainer` warns and will be removed in
+  v0.71.0; use `stateset_agents.training.preference.PreferenceTrainer`.
+
+### Removed
+
+- `core.reward_base.REWARD_EXCEPTIONS`: unused, never exported, and a
+  duplicate of `exceptions.ATTRIBUTE_VALUE_EXCEPTIONS`.
+- `stateset_agents.core.enhanced.PPOTrainer`, `PPOConfig`,
+  `create_ppo_trainer`, `GSPOTrainerStub` and `create_gspo_trainer`,
+  deprecated in v0.69.0 for removal in v0.70.0. Use
+  `stateset_agents.experimental.ppo.PPOTrainer` and
+  `stateset_agents.training.gspo_trainer.GSPOTrainer`.
+- The root exports `stateset_agents.SimToRealMetrics`, `SimToRealEvaluator`,
+  `ConversationSimulator` and `ConversationSimulatorConfig`, deprecated in
+  v0.64.0 with removal promised for v0.66.0, are removed from
+  `stateset_agents.__all__` and the v1 contract (`contracts/public_api_v1.json`;
+  the `sim-to-real` component no longer lists them). Import them from
+  `stateset_agents.experimental.sim_to_real.metrics` /
+  `.conversation_simulator`.
+- The `Planning*`/`Plan*`/`Planner` names served (with a warning) from
+  `stateset_agents` and `stateset_agents.core`, deprecated in v0.38.0 "for one
+  release". Import them from `stateset_agents.experimental.long_term_planning`.
+- The hidden top-level per-model CLI aliases (for example
+  `stateset-agents qwen3-5-0-8b`), deprecated in v0.68.0 with removal in
+  v0.69.0. Use `stateset-agents model <preset>`.
+- The opt-in `STATESET_AGENTS_ENABLE_CORE_DEPRECATION` warning about the
+  repo-root `core` package, which no longer exists.
+
+### Fixed
+
+- **Dedicated-trainer LR schedules span every update pass.** GEPO and VAPO
+  sized their cosine over `num_episodes * num_epochs` while the schedulers
+  step once per committed pass, so with `num_gradient_updates=2` the LR
+  reached 0 halfway through a run and climbed back to the full rate. The
+  spine now owns the budget (`spine.schedule.optimizer_step_budget`:
+  outer iterations x passes) and a clamped `LambdaLR` honouring
+  `lr_scheduler_type` for GSPO, GSPO-token, DAPO, GEPO and VAPO; the cosine
+  is monotone and ends at 0. VAPO's value-warmup iteration keeps its place in
+  the schedule, and value warmup trains the critic at its base learning
+  rate (it ran at the schedule's 0 whenever `warmup_ratio > 0`, leaving the
+  value head untrained). **Step goldens:** `gepo_k2` and `vapo_k2` were
+  re-captured (`scripts/capture_step_goldens.py --only gepo_k2,vapo_k2`):
+  their post-step LR is now 0.0048776 (budget 20, as `gspo_k2`) instead of
+  0.0045225 (budget 10), and the second pass's larger LR moves the parameter
+  delta (gepo_k2 1.01730 -> 1.02478, vapo_k2 1.43197 -> 1.44174). Every
+  other golden is unchanged.
+- **W&B in the dedicated entry points.** `train_with_gepo`/`vapo` and
+  `train_with_gspo_token` skipped `wandb.init` without a project but still
+  called `wandb.log`, crashing after the first step. `WandbRun`
+  (`training/dedicated_reporting.py`) now owns init/log/finish for the GSPO,
+  GSPO-token, DAPO, GEPO, VAPO and TRL entry points: without a project it
+  warns and stays inactive, and a failed run finishes with `exit_code=1`.
+  `wandb` is imported only when logging is requested.
+- **`VAPOConfig(value_warmup_steps=0)`** ended warmup with
+  `ZeroDivisionError`. Algorithm configs now validate their own numeric
+  fields (VAPO warmup/critic sizes, lambdas, clips and rates; DAPO sampling
+  buffer, accuracy band and overlong bounds; GEPO clip; GSPO loop sizes), and
+  a duck-typed config is validated by the trainer's config class instead of
+  skipping validation.
+- **Silent failures.** Callback errors are logged at WARNING with the
+  traceback (were `logger.debug` under `pragma: no cover`); vLLM weight-sync
+  bugs (TypeError/KeyError/AttributeError/ValueError) propagate and step
+  metrics report `rollout_weights_stale`/`rollout_sync_failures`; MultiTurn
+  GRPO's non-finite-gradient skip decision uses the typed
+  `NonFiniteGradientError` (a `TrainingError` and `ValueError`) instead of
+  matching the message text; `NeuralRewardFunction` and
+  `LearnedRewardFunction` no longer return a 0.5 stand-in on errors (an
+  outage raises `RewardUnavailableError`, anything else propagates).
+- **Reward-fallback episodes are never trained on** (docs/REWARD_CONTRACT.md).
+  MultiTurn GRPO (and the DDP trainer through it) drops a flagged episode at
+  rollout time, the GRPO update excludes any that reach it, SingleTurn drops
+  flagged generations and GSPO/DAPO/GEPO/VAPO drop flagged replies; counts
+  are reported (`reward_fallback_episodes` / `reward_fallback_responses`) and
+  a step with nothing else raises `RewardUnavailableError`. A reward callable
+  for DAPO/GEPO/VAPO may return a `RewardResult` to carry the flag.
+- **Sequence-path label masking.** When assistant spans could not be located
+  from a chat template (or a tokenizer returned no offsets without an error),
+  the full-stream fallback trained on every token without
+  `allow_unmasked_labels`. A conversation with a user (or other
+  non-assistant) turn after the first reply now raises
+  `RolloutContractError` unless opted in; a prompt plus one reply keeps the
+  fallback (stub-agent training relies on it).
+- **Config validators agree:** `validate()` reports bf16 + fp16 as mutually
+  exclusive (it claimed "bf16 will take precedence" while
+  `validate_for_training()` rejected the pair).
+- **Transformers 5 quantized loading:** the TRL bridge passed the removed
+  `load_in_8bit`/`load_in_4bit` kwargs; it and GSPO now build the
+  `quantization_config` with `training.quantization`.
+- **Library hygiene:** importing `experimental/ppo.py` (and GEPO before its
+  dependency cleanup) called `logging.basicConfig`; `core/rust_accelerator`
+  logged at INFO on import (now DEBUG); `GSPOTrainer.__doc__` was `None`;
+  GEPO's `metrics_history` declared keys it never wrote; the
+  `example_config_usage()` demo is gone from `training/config.py`.
+
+- **A duck-typed config that omits a field trains with `TrainingConfig`'s
+  default.** Trainers restated defaults inline (`getattr(config, name,
+  default)`) and the copies drifted; they now read through
+  `training.config.config_value`, so the dataclass is the one source.
+  **Behaviour changes** (only for legacy configs without the field; a real
+  `TrainingConfig` already had these values):
+  - `SingleTurnGRPOTrainer`: learning rate 5e-6 (was 5e-5), Adam beta2 0.99
+    (was 0.999), 16 replies per prompt (was 8), 1000 episodes (was 10);
+  - `MultiTurnGRPOTrainer` and the spine loop: 1000 episodes (was 100), and
+    an explicit `num_episodes=0` is zero episodes (an `or` turned it into
+    100); `generate_trajectories(num_generations=0)` raises instead of
+    falling through to the config;
+  - both: 4 gradient-accumulation steps (was 1), also in native checkpoint
+    accounting and the learner preflight, and seed 42 (a missing seed used
+    to skip seeding); multi-turn W&B runs get the config's `wandb_tags`
+    (default none) instead of `["grpo", "multi-turn"]`.
+  Deliberately unchanged: a missing `bf16` still means fp32 on the GRPO
+  path (matching the loss computation), and agent-sampling checks keep
+  their neutral defaults. `tests/unit/test_config_default_ratchet.py` caps
+  the remaining `getattr(config, name, default)` reads in `training/` (108,
+  from 261) and may only go down.
+- **`train_with_vapo` rejects `resume_from_checkpoint`** before any setup,
+  like the other dedicated entry points; it silently ignored it. `DAPOConfig`
+  now also rejects a `group_size` below 2 (`ConfigurationError`), as GEPO
+  and VAPO do: a lone response has no group baseline, so it trained on
+  nothing. The three configs share `config.validate_group_size`.
+- `examples/sample_eval_set.jsonl` (Cookbook Recipe 5) repeated six of the
+  eight starter `scenarios.jsonl` queries that Recipe 1 trains on (eight of
+  its ten queries were verbatim bundled support-corpus queries), so its pass
+  rate measured recall. It now holds ten held-out queries with the same schema
+  and intent mix, and a test keeps it clean against both corpora.
+- Programmer errors are no longer swallowed by handlers meant for expected
+  failures: structured output no longer retries (and wraps) a `TypeError` /
+  `AttributeError` from the agent; `core.evaluation` no longer scores a buggy
+  metric or agent as `0.0`; `AsyncResourcePool` no longer counts a factory
+  `TypeError` as a failed connection (and a failed initialisation cleans up
+  whatever stopped it); `AutoTrainer`'s baseline no longer treats a
+  `TypeError`/`AttributeError` as a failed episode;
+  `ComputationalGRPOEngine` no longer skips a trajectory on one. A non-finite
+  tokenizer token id no longer raises `OverflowError` while building the
+  generation config.
+- The same in the training modules: the advanced training orchestrator's
+  loops stop on a `TypeError`/`AttributeError`/`KeyError` instead of logging
+  it every 30-60 seconds, and its resource probe catches only measurement
+  failures; auto-research checkpoint save/restore, GPU cleanup, tracker
+  analysis, the Optuna report and the LLM proposer's reply parsing catch the
+  failures they expect (`MODEL_IO_EXCEPTIONS`, `IMPORT_EXCEPTIONS`, ...); an
+  invalid baseline no longer passes search-space validation silently; W&B
+  logging failures and a failed analysis report now log a warning (the
+  latter with its traceback) instead of a debug line; the SFT judge factory
+  and the serving processor/tokenizer export no longer swallow bugs.
+- `MathAnswerVerifier` hung on answers such as `\boxed{sqrt(x)+9^9^8}` (over
+  60 s; `9^9^7` took 3.9 s) because the sympy tree ignored the exact path's
+  exponent and size limits. `_to_sympy` now applies them, `sympy.simplify`
+  runs in a worker process killed after `sympy_timeout` seconds
+  (`math_expressions.SYMPY_TIMEOUT_SECONDS`, 5 s; a timeout scores 0), and
+  `compute_reward` verifies in a worker thread so it never blocks the event
+  loop. `equivalent()` takes `timeout=`.
+- `MathAnswerVerifier` credited hedged answers: `\boxed{84, 85}`,
+  `\boxed{84 \pm 1}`, `\boxed{84 \text{ or } 85}`, `\approx`, "84 or so", a
+  box retracted afterwards ("Actually, I think I made an error; it is 85."),
+  "(it could also be 85)" and "The answer is 84. Some textbooks say 85." all
+  score 0 now (status `hedged` or `contradicted`). The leading-number fallback
+  accepts only a trailing unit or a restatement ("42 dollars", "84 (or
+  84.0)"). Seven new verifier-exploit families cover these.
+- `MathAnswerVerifier` and `SandboxedCodeVerifier` scored a tool-use episode
+  that ran out of budget (or hit `max_turns`) 1.0 when its last turn stated
+  the answer beside another call. Both now score 0 unless the episode state
+  says `termination == "final_answer"` (`reward_context.unanswered_termination`),
+  on the environment and trainer paths alike.
+- A reward that declares `score_range` and returns a score outside it now
+  raises `ValueError` on every scoring path (environments, `score_episode`,
+  `score_response`, `score_trajectory`, `CompositeReward` children) instead of
+  being trained on; `MathAnswerVerifier` and `SandboxedCodeVerifier` declare
+  `(0.0, 1.0)`.
+- `ToolUseEnvironment` records `executed_tool_calls` (`{"tool", "args"}` for
+  each call that ran and returned), the trace `TaskOutcomeReward` compares
+  with `expected_tool_calls`; its `tool_log` alone was never read.
+- The refund, refund-policy, refund-delegation, refund-recovery and industry
+  support environments score only `ValueError` (an invalid action) as a policy
+  violation; a `TypeError` is a bug and propagates. A non-string `finish`
+  outcome in the refund-recovery environment is an invalid action instead of a
+  `TypeError` from the set lookup.
+- The sequence-path GRPO loss dropped a trajectory whose loss raised and
+  averaged the rest, silently changing the group objective; it now raises
+  `TrajectoryLossError` (a `TrainingError` and `RuntimeError` naming the
+  trajectory, cause chained), as the token path never skipped rows.
+  Out-of-memory and rollout-contract errors still propagate unchanged, and
+  out-of-memory is recognised by `torch.OutOfMemoryError` /
+  `torch.cuda.OutOfMemoryError` (message matching only on torch without
+  them).
+- When a tokenizer without a chat template cannot produce offset mappings,
+  the sequence-path loss no longer falls back to supervising every token
+  (user and system included) silently: it raises `RolloutContractError`
+  unless `allow_unmasked_labels=True` is set on the config. Conversations
+  with tool observations still supervise nothing.
+- `MultiTurnAgent` without a chat template dropped `tool`-role turns from its
+  prompt, so a policy never saw tool results; they now render as
+  `Tool: <content>` lines.
+- The sequence-path GRPO loss fell back to supervising the whole token stream
+  when the chat template's assistant spans could not be located, which for a
+  conversation with tool observations trained the policy to predict tool
+  output; such conversations are now skipped (nothing supervised). Other
+  conversations keep the documented fallback.
+- **Dedicated GSPO and DAPO trainers keep their vLLM rollout engine
+  on-policy.** After every committed optimizer update (not after a skipped
+  one) the spine `OptimizerStep` pushes the policy weights into the engine
+  (`VLLMEngineMixin.sync_vllm_weights`, honouring `config.rollout_sync`);
+  before, vLLM kept sampling from the starting weights for the whole run.
+  A sync that fails with an engine error (runtime, I/O, missing
+  `sync_weights`, weight-name or layout mismatch) logs a warning, marks the
+  engine stale (`vllm_weights_stale`) and training continues; any other
+  exception is a bug and propagates. `DAPOTrainer` with
+  `use_vllm=True` now builds its engine: its gate read
+  `VLLM_BACKEND_AVAILABLE`, which only the setup it guarded sets, so DAPO
+  always generated with HuggingFace.
+- **Step cadences and scheduler names are validated before training.**
+  `TrainingConfig.validate_for_training` rejects a `logging_steps`,
+  `save_steps` or `eval_steps` that is not a positive integer (a 0 raised
+  `ZeroDivisionError` mid-run) and an `lr_scheduler_type` outside the native
+  set (`cosine`, `linear`, `constant`; before, an unknown name trained at a
+  constant rate). `TRLGRPOConfig` keeps TRL's wider scheduler set.
+  `SingleTurnGRPOTrainer` now raises when its scheduler cannot be built, as
+  `MultiTurnGRPOTrainer` does, instead of logging at DEBUG and training at a
+  constant rate.
+- **`train_with_gepo` no longer dies on a batch without a valid group.**
+  `GEPOTrainer.train_step` returned only `policy_loss`/`average_reward` when
+  every prompt produced fewer than two responses, and the entry point's log
+  line then raised `KeyError: 'gepo_coefficient_mean'`; the step now reports
+  every key an update step does (`optimizer_updates` 0, coefficient mean 1).
+  `GEPOConfig` and `VAPOConfig` reject a `group_size` below 2 with a
+  `ConfigurationError` (both drop groups smaller than two, so such a run
+  trained on nothing).
+- **`config.seed` seeds the dedicated entry points.** `train_with_gspo`,
+  `train_with_gspo_token`, `train_with_dapo`, `train_with_gepo` and
+  `train_with_vapo` ignored it: DAPO/GEPO/VAPO drew batches from the global
+  NumPy generator and nothing seeded torch, so two runs with the same config
+  differed. Each now seeds Python, NumPy and torch from `config.seed` before
+  loading the model and again when `run_dedicated_loop` starts
+  (`spine.seed_dedicated_run`), and draws batches from a NumPy `Generator`
+  seeded with it (`spine.sample_prompts`), so a run repeats batch for batch.
+  Like `MultiTurnGRPOTrainer`, this reseeds the process-global generators.
+  VAPO's value warmup draws its prompts from a `Generator` seeded with
+  `config.seed`. `train_with_gepo` with no prompts now ends with the final
+  save, as DAPO and VAPO do, instead of stepping on empty batches.
+- **`train_with_dapo`, `train_with_gepo` and `train_with_vapo` have one
+  source of truth for the model and output directory.** The model manager
+  loaded `config.model_name` while the entry point logged and stub-checked
+  the `model_name` argument, and checkpoints went to the `output_dir`
+  argument (default `./outputs/<algo>`) while the config logged to W&B named
+  `config.output_dir`. Now explicit arguments win: `model_name` and a given
+  `output_dir` override the config's fields (a warning names any difference)
+  and the run uses a copy of the config with them applied
+  (`spine.dedicated_run_config`; the caller's config is not mutated).
+  `output_dir` defaults to `None`: with a config, `config.output_dir` is
+  used; without one, `./outputs/<algo>` as before. **Behaviour change:** a
+  call that passes a config but no `output_dir` now saves under
+  `config.output_dir` (default `./outputs`), not `./outputs/<algo>`.
+- Trainer step goldens are portable across environments: an environment
+  fingerprint selects strict comparison where the goldens were captured and
+  magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's
+  eps no longer make goldens depend on RNG draw counts or thread counts.
+- RunPod's suspend-aware billing clock anchored its readings to the clock's
+  `id()`. A clock created where a discarded one had lived inherited that
+  clock's last reading, so its time stood still: run deadlines and readiness
+  budgets measured with it did not expire on time (in CI: a readiness reply
+  after its deadline counted as success, and the pod deadline was armed one
+  second late). The anchor now holds the clock object itself.
+- Studio tests wait up to 40 s (was 10 s) for a background preview, launch or
+  review, and apply work that finishes during the last poll. Each of these
+  hashes every package source file, which took several seconds per pass on a
+  loaded Windows runner; a stuck task still fails, with its elapsed time.
+- Stale docs: `docs/GRPO_FRAMEWORK_ENHANCEMENTS_v2.md` imported the deleted
+  `stateset_agents.api.enhanced_ultimate_grpo_service` and drove nonexistent
+  `/api/v2` routes on port 8002 (now the stable `/api/v1` routes of
+  `stateset_agents.api.main`); `docs/RL_FRAMEWORK_GUIDE.md` imported the
+  missing `training.trl_grpo_wrapper` (now `training.trl_grpo_trainer`);
+  `docs/KIMIK25_INTEGRATION.md` imported a nonexistent
+  `training.kimi25_config` (now `examples/kimi_k25_config.get_kimi_k25_config`);
+  two guides imported `PerformanceMonitor` from `utils.monitoring` instead of
+  `utils.performance_monitor`. `AGENTS.md` no longer lists the removed
+  repo-root shim packages or `test_integration.py`. Docs and
+  `examples/advanced_features_demo.py` import the research modules from
+  `stateset_agents.experimental` instead of the deprecated `core` shims.
+- **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
+  partition issue combinations between eval and harvest, so the same seed
+  yields different prompts than before; reference bases shift upward only when
+  a set would run into the next. `FlywheelConfig` rejects eval prompts that
+  match a harvest prompt with digits masked. `build_ladder` requires
+  `depth >= 2` (depth-1 eval prompts were training rows with another
+  reference) and checks eval against the training rows too;
+  `build_episode_ladder` takes `train_count` so episode references clear the
+  training rows. A domain with exactly `depth` (or `turns`) issues now raises
+  instead of giving eval and harvest reorderings of one issue set, and
+  `check_disjoint_prompts` treats prompts with the same words in another order
+  (and, in the ladder, the same set of issues) as the same request.
+- **`expect` checks honour negation.** An expected phrase counts only where it
+  is not negated ("I can't open a baggage trace" does not deliver one), with
+  the same governing rule as `forbid`, and phrases ending in a digit match
+  whole numbers only ("7701" no longer matches "77015"). Harvests keep fewer,
+  correct samples.
+- `ConversationDataset` raises on NaN or infinite rewards instead of turning
+  every normalized reward into NaN.
+- The harvest job seeds its sampling (`--seed`, default 42, recorded in
+  `harvest_summary.json`) and shares SFT's prompt encoding, generation
+  settings and tokenizer loading (`sft.encode_chat_prompt`,
+  `generate_from_prompt`, `load_tokenizer_for`).
+- GSM8K answer extraction graded the first "answer is" instead of the final
+  answer; `####` and `\boxed{}` now win and the last match is used. Markdown
+  emphasis no longer hides the answer ("The answer is **18**, which is 2 more
+  than 16" graded 16), and text after a new few-shot "Question:" is ignored.
+- JSONL readers split records on U+2028, U+2029 and U+0085, which the repo's
+  writers leave unescaped, so valid rows were dropped or rejected and source
+  row counts were wrong; every reader now uses `stateset_agents.data.jsonl`,
+  which splits on newlines only.
+- A flywheel rerun into the same `output_root` scored a generation whose
+  training died before evaluating with the previous run's
+  `eval_results.json`, and advanced that stale adapter.
+- `last_assistant_token_mask` (offline RL transitions, offline GRPO) failed
+  for whole datasets when a template strips earlier `<think>` blocks; it falls
+  back to the final-turn mask.
+- The harvest encoded prompts with an extra BOS on Llama/Gemma-style
+  tokenizers, and the SFT training plan crashed on a tool-call first example.
+- `stateset-agents runpod-orphans --terminate` (and
+  `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
+  at the first failure. A pod that is already gone (HTTP 404) counts as
+  cleaned up, pod deletion retries 429/5xx with backoff, and failures are
+  reported together at the end with their leases kept; the command exits 1
+  if any pod could not be confirmed terminated.
+- On macOS (and on Windows when `psutil` is installed) studio owner checks
+  compare process creation-time tokens, as Linux does with `/proc` start
+  ticks, so a reused PID no longer keeps a dead supervisor or worker looking
+  alive. Records written without a token keep presence-only checks.
+- `stateset-agents runpod-orphans --terminate` no longer terminates the pods
+  of jobs that are still running (which made them rent a replacement and
+  doubled billing). Cleanup leases now record the submitting process (PID,
+  start-time token, host); `--terminate` ends only pods whose process has
+  provably exited, the listing shows each owner's state, and `--force`
+  reclaims the rest explicitly. `RunPodExecutor.orphaned_leases()` excludes
+  live owners and `cleanup_orphans()` gains `force=`.
+- RunPod run deadlines and spend accounting keep counting while the host is
+  suspended. They used `CLOCK_MONOTONIC`, which pauses during a laptop sleep,
+  so a pod could bill past the cap, a replacement could be rented on wake,
+  and the ledger under-reported. Linux now uses `CLOCK_BOOTTIME`; elsewhere
+  monotonic time is extended by wall-clock time it missed, never decreasing
+  when the wall clock steps back.
+- A RunPod pod no longer bills indefinitely when its submitting host crashes
+  while the pod is still provisioning. Each RunPod submission, and the studio
+  at start-up when `RUNPOD_API_KEY` is set, first terminates leased pods whose
+  submitting process on this host has provably exited. An opt-in boot-time
+  watchdog (`STATESET_RUNPOD_BOOT_WATCHDOG=1` or
+  `RunPodExecutor(boot_watchdog=True)`, off by default and awaiting live-pod
+  verification) also arms the run deadline in the start command of RunPod's
+  `runpod/pytorch` images, using the pod-scoped key RunPod injects; no user key
+  is copied. The SSH-armed watchdog remains the default pod-side backstop.
+- CLI hints name real commands: the worker's orphan hint pointed to a
+  nonexistent `stateset-agents remote runpod-orphans` (the command is the
+  top-level `runpod-orphans`), and a `--curated` help text named the
+  `make grade-batch` target as a CLI command. A test now resolves every
+  backtick-quoted `stateset-agents ...` hint in the package against the CLI.
+- On Windows, studio supervisors and workers are now really detached:
+  `start_new_session` is ignored there, so closing the launching console
+  killed the supervisor and worker (orphaning a RunPod pod). Launches use one
+  helper, `detached_process_options()`, which gives Windows children their
+  own process group and hidden console. A supervisor interrupted by Ctrl+C or
+  `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
+  failure instead of leaving no outcome.
+- Shipped heuristic factories preferred a canned template to a correct,
+  specific answer (0.91 vs 0.128 for the multi-objective customer service
+  reward; the template won in 9 of 12 offline factories, including every
+  starter's default). A template or keyword stuffing now scores strictly below
+  a task-specific answer in every factory across several scenarios.
+- A bug in a composite component (e.g. `CorrectnessReward` raising
+  `AttributeError` on a string ground truth) was silently reweighted away, so
+  the tutoring reward scored correct and wrong answers alike.
+- An unrecognized reward result became 0.0 in environments while the trainer
+  path raised; `ComputationalGRPOEngine`'s dict turns made role-based rewards
+  score 0 (HelpfulnessReward always 0.0).
+- `NSRVerifierReward` and `RulerRewardFunction` turned outages into a neutral
+  or heuristic score by default.
+- Single-turn trainers never lifted scenario labels into the reward context
+  (`CorrectnessReward` scored "4" and "5" alike).
+- An episode's total depended on where the reward was attached for
+  environment subclasses with their own step reward (1.0 vs -1.0) and for
+  stateful per-step rewards replayed on the final state (15.83 vs 16.0).
+- Evaluation reported a 0% success rate for perfectly correct
+  `CorrectnessReward` runs.
+- **DAPO, GEPO and VAPO no longer step on non-finite gradients.** Each inner
+  update now commits through the spine's `OptimizerStep`
+  (`counter="train_steps"`): with the default `nonfinite_grad_policy="raise"`
+  a NaN/Inf gradient raises `ValueError("<trainer> gradients must be finite")`
+  with the weights, optimizer and LR-scheduler state untouched; with
+  `nonfinite_grad_policy="skip"` that pass is discarded and logged (naming the
+  non-finite parameters) and training continues, aborting after
+  `max_consecutive_nonfinite_skips` consecutive skips. Previously the bad
+  gradient was clipped and stepped, turning the weights and AdamW state into
+  NaN. A VAPO pass whose actor or critic gradient is non-finite skips both
+  optimizers, and VAPO's value warmup follows the same policy. `train_step`
+  metrics gain `optimizer_updates` (committed passes). A skipped pass, or a
+  DAPO pass with no response tokens, no longer advances the LR scheduler;
+  `global_step` still counts `train_step` calls. Finite updates are
+  numerically unchanged (step goldens).
+
+## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
+
+### Added
+
+- `docs/REWARD_CONTRACT.md` documents the reward contract (score range and
+  finiteness, the reward-context shape, who scores an episode, IMMEDIATE vs
+  CUMULATIVE/SPARSE semantics, failure handling).
+  `tests/unit/test_reward_contracts.py` checks every shipped reward and
+  `create_*_reward` factory against it, and `tests/unit/test_reward_gaming.py`
+  pins the known reward-hacking exploits (length padding, keyword stuffing,
+  digit listing, refusal phrasing around unsafe content, stalling).
+  `tests/unit/test_episode_scoring_paths.py` checks that training, periodic and
+  post-training evaluation and the distributed trainer give an episode the same
+  reward, wherever the reward is attached.
+
+### Deprecated
+
+- `stateset_agents.core.enhanced.PPOTrainer` (and `create_ppo_trainer`) duplicates
+  the maintained `stateset_agents.experimental.ppo.PPOTrainer`, and
+  `GSPOTrainerStub` (and `create_gspo_trainer`) is a no-op stand-in for
+  `stateset_agents.training.gspo_trainer.GSPOTrainer`. Both warn on construction
+  and are removed in v0.70.0. The enhanced DPO and A2C trainers have no
+  maintained duplicate and are unchanged.
+
+### Changed
+
+- mypy checks the bodies of untyped functions across the whole package
+  (`check_untyped_defs`), guarded by the mypy ratchet test.
+- **Each episode is scored exactly once, on one path.**
+  `reward_context.score_episode` settles an episode's reward for training
+  (including batched rollouts), periodic evaluation (`evaluate_agent`),
+  post-training evaluation and the distributed trainer. When the trainer's
+  `reward_fn` is the environment's own (the default `train()` wiring) and the
+  environment applied it, that reward stands; otherwise the reward is applied
+  as the environment would apply it and added to the environment's own step
+  rewards, so the total no longer depends on where the reward is attached
+  (`TaskEnvironment` + `TaskCompletionReward` is 16.0 either way, not 1.0
+  through the trainer). `evaluate_agent(reward_fn=...)` passes the standard
+  reward context instead of the bare scenario or final state.
+- **Per-step reward functions contribute the mean of their step scores**
+  (credited as `score / steps` per step) instead of the sum, like the default
+  heuristic, so an episode's reward-function score stays within the reward's
+  range whatever the episode length. Episode-end rewards are unchanged.
+- An untyped reward function (no `reward_type`) is applied once at episode end
+  by `ConversationEnvironment` too (it used to score every step there), so it
+  judges the same thing whether the environment or the trainer holds it.
+- Reward functions receive one context shape from every caller
+  (`stateset_agents.core.reward_context.build_reward_context`): scenario keys
+  at the top level, environment state over them, and the scenario under
+  `"scenario"`. Rewards with `requires_environment_context` get no lifted
+  scenario keys.
+- IMMEDIATE/DENSE step rewards score only the newest assistant turn (the
+  conversation is still passed, marked `reward_scope="latest_turn"`).
+- `ConversationEnvironment` without a `reward_fn` averages its built-in length
+  heuristic over the episode's steps instead of summing it, and the trainer
+  warns once when that heuristic is the training signal.
+- `MultiObjectiveRewardFunction` leaves a failed component out and spreads its
+  weight over the components that scored (as `CompositeReward` does) instead
+  of scoring it 0; failed components are listed in
+  `metadata["failed_components"]` and no longer appear in `components`.
+- `TaskCompletionReward`: when `required_actions` are given, `goal_keywords`
+  only scale the action credit (by up to 20%) and earn nothing on their own.
+- `RulerRewardFunction` rejects judge responses with missing, duplicate or
+  unknown trajectory ids or scores outside [0, 1] (retried, then the heuristic
+  fallback in `compute_reward`) instead of padding with 0.5.
+- `ModelBasedRewardComponent(strict=True)` raises when no `api_client` is
+  configured.
+- **Reward failures fail closed.** Judges raise instead of returning a neutral
+  score: `LLMJudge` raises `JudgeUnavailableError` (exported from
+  `stateset_agents.rewards`) when it gets no verdict, and `LLMJudgeReward`,
+  `LLMJudgeRewardComponent` and `ModelBasedRewardComponent` propagate judge
+  failures, replies without a score and scores outside [0, 1].
+  `CompositeReward` and `MultiObjectiveRewardFunction` raise `ValueError` when
+  no component scored or none is configured. `Environment.get_reward` raises
+  for a failed or non-finite reward and when there is no `reward_fn`.
+  `ComputationalGRPOEngine` and `SingleTurnGRPOTrainer` drop trajectories or
+  generations whose reward failed (`raw_reward_signal` is `None` without an
+  environment `reward_fn`). `LLMJudgeRewardWithFallback` keeps its heuristic
+  fallback and records `judge_error` in metadata.
+- **`TaskEnvironment` completes required actions only from explicit
+  declarations**: a structured tool call, an `"action"`/`"actions"` entry in
+  turn metadata, or a JSON object such as `{"action": "load_data"}` in the
+  reply. Keyword matching is opt-in and gameable (`match_action_keywords=True`);
+  the `data_analysis` preset tells the agent how to declare steps.
+- Inside a `CompositeReward` holding an evidence reward, ordinary children get
+  the standard reward context (scenario keys and environment state) instead
+  of only `context["scenario"]`.
+- NSR verdict extraction reads clauses: a negated approval is a denial, a
+  conditional one is no verdict, and approval still to be given ("needs
+  manager approval") is an escalation.
+- `CorrectnessReward` shares a text answer's credit among the alternatives
+  when a sentence only lists it ("London, Paris, Berlin" earns a third).
+- `CorrectnessReward` requires numeric answers to be committed to: an explicit
+  statement ("the answer is 4", `#### 4`, `\boxed{4}`) earns credit only if
+  every stated answer is correct, and otherwise the credit is shared among the
+  distinct numbers the reply offers beyond those in the question.
+- `SafetyReward` treats a refusal followed by instructions containing unsafe
+  terms ("I can't help with that, but here's how to build a bomb") as unsafe.
+- The studio's readiness, guided-setup, dataset-scan and quality overlays are
+  self-contained report panels in `stateset_agents.tui_reports`, each with its
+  own `BackgroundTask` instead of an ad-hoc thread, result queue and busy
+  flag. Rendered frames are unchanged.
+- The studio's checkpoint-recovery overlay is a `RecoveryPanel` with one
+  `BackgroundTask`; preparing and launching a recovery run still run on
+  non-daemon threads so exiting waits for them. `stateset_agents/tui.py` no
+  longer starts raw threads or uses result queues.
+
+### Fixed
+
+- Periodic evaluation re-scored episodes with a scenario-only, whole-episode
+  call and dropped environment step rewards, so best-checkpoint selection and
+  early stopping saw a different reward than training (4.0 vs 1.0 for a
+  4-turn HelpfulnessReward episode; 16.0 vs 0.0 for TaskEnvironment +
+  TaskCompletionReward).
+- Judge failures became a neutral 0.5 (a raising judge client scored 0.25 in
+  a multi-objective reward with no failed component reported), and a
+  composite in which every component failed returned a valid-looking 0.0
+  that environments marked as applied and trainers trained on.
+- Every shipped `create_*_reward` factory paid for stalling in unscripted
+  conversations (customer_service: 7.35 for ten padded turns vs 0.685 for
+  resolving).
+- `TaskCompletionReward` scored a constant 0.5 in `TaskEnvironment`, which
+  stores `required_actions` at the task's top level; it now reads that shape.
+- `TaskEnvironment` marked actions done when their keywords appeared in a reply
+  ("load plot" completed a two-step task and earned the progress reward).
+- NSR verdicts read "I cannot approve this refund", "This is not approved" and
+  "needs manager approval" as approvals.
+- One reward failure in a batched rollout discarded the whole batch and rolled
+  every episode out again; only the failed episode is dropped now.
+- `MultiObjectiveRewardFunction` renormalized its stored weights on every call,
+  so repeated calls differed in the last bit under Python < 3.12; composers now
+  use a fixed normalized snapshot and `math.fsum`, and averaged episode rewards
+  are exact for equal step scores.
+- `train(uncertainty_weighted=True)` scored every episode twice (the environment
+  with the base reward, the trainer with the wrapper); the environment now uses
+  the same wrapper for the duration of training and its reward is restored after.
+- The professionalism reward no longer treats "whatever" as unprofessional
+  ("whatever you need"); it penalizes dismissive phrases instead.
+
+- **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
+  partition issue combinations between eval and harvest, so the same seed
+  yields different prompts than before; reference bases shift upward only when
+  a set would run into the next. `FlywheelConfig` rejects eval prompts that
+  match a harvest prompt with digits masked. `build_ladder` requires
+  `depth >= 2` (depth-1 eval prompts were training rows with another
+  reference) and checks eval against the training rows too;
+  `build_episode_ladder` takes `train_count` so episode references clear the
+  training rows.
+- **SFT rows may become several sequences.** When a chat template renders an
+  assistant turn differently once it is history (Qwen3 drops the newest
+  turn's empty `<think>` block, Qwen3.5 omits its generation-prompt stub, both
+  strip earlier reasoning), the row is split into one sequence per target
+  turn, each rendered as the newest turn, instead of training contradictory
+  targets in one sequence. Assistant messages with `"weight": 0` (the OpenAI
+  fine-tuning convention) are context, not targets. The adapter manifest
+  records `training_sequences`, `split_per_turn_rows` and
+  `untargeted_rows_dropped`; `final_turn_only_rows` is gone with the fallback
+  it counted.
+- Curated SFT rows mark every earlier assistant reply `"weight": 0`, so only
+  the graded, passing reply is trained (a failed reply was trained whenever a
+  later reply in its transcript passed, and the first reply of a transcript
+  with k passing replies k times). `prepare_sft_dataset.py --format
+  hf-trainer` is single-turn again: plain text cannot keep earlier replies out
+  of the loss.
+- `stateset_agents.data.identity` is the one request identity (NFKC, casefold,
+  collapsed whitespace; optional reference or digit masking) shared by
+  `split_finetuning_data`, `ConversationDataset.split`, the text SFT and
+  held-out evaluation leakage checks, the eval ladder and the flywheel.
+- The flywheel scores every generation with one scorer
+  (`sft.score_eval_rows`, used by the harvest baseline and `_eval_score`), and
+  `FlywheelConfig` and `stateset-agents flywheel` reject specs with no
+  `expect`, `forbid` or `turn_expect` checks.
+- `scripts/grade_transcript.py` fails on malformed or role-less transcript
+  lines and on a context file whose length differs from the number of
+  assistant turns, instead of skipping or padding. Curated examples carry
+  `messages`, the full graded context; `prepare_sft_dataset.py` emits it for
+  every format (`--flatten` restores single-turn pairs), drops unscored
+  entries under `--min-score`, and reads UTF-8 regardless of locale.
+- `ConversationDataset.split()` defaults to a fixed seed and keeps
+  trajectories with the same normalized content, the same first user request
+  (rollouts of one prompt) or `group_id`/`source_id` together. `ConversationDatasetConfig.min/max_trajectory_length` are
+  enforced; `max_turns` is deprecated and ignored.
+- Text SFT and finetune evaluation leakage checks compare initial requests
+  under NFKC/casefold/whitespace normalization
+  (`finetuning.normalize_identity_text`).
+- Judge `summarize()` computes `self_disagreement` only over items whose two
+  passes parsed (`self_disagreement_n` counts them), with exactly rounded sums
+  so the summary does not depend on result order. The flagship matrix
+  requires `judge_parse_failure_rate` and rejects a seed above 0.02; the
+  rejudge summary reports it against the same ceiling.
+- A fine-tuning success the worker committed (its `completion.json` artifact
+  still verifies) is now authoritative: a later non-zero exit observed by the
+  supervisor (interpreter teardown crash, queue timeout) is recorded as
+  `teardown_error`/`teardown_exit_code` on the run, shown by `finetune status`
+  and the studio's run details, instead of demoting the run to `failed`.
+  Failures recorded before the commit, or a commit whose artifact no longer
+  verifies, still end the run as `failed`.
+- Every fine-tuning run and evaluation `state.json` change now goes through one
+  locked transition helper (`finetune_workspace.transition_run` /
+  `transition_state`). A recorded outcome (succeeded, failed, cancelled) never
+  moves to a different status, so a stop or launch failure that races a
+  finished run is a no-op instead of an overwrite, a refused failure leaves no
+  `failure.json` behind, and an evaluation supervisor starts no queue work once
+  an outcome is recorded.
+- Studio owner-liveness checks (run status, checkpoint recovery and validation
+  comparisons) share one classifier, `finetune_workspace.owner_evidence`, with
+  a tri-state `owner_alive(path)` (alive / gone / undecided). Each caller keeps
+  its existing decisions and messages.
+- The studio's log viewer and file picker are self-contained panels
+  (`stateset_agents.tui_panels.LogViewer` / `FilePicker`, each with
+  `handle(key)` and `lines(width, available)`), and the terminal-safe text
+  helpers live in `stateset_agents.tui_text`. Rendered frames are unchanged.
+- Local SFT labeled every token, system and user turns included, when a chat
+  template rewrote earlier turns (Qwen3/Qwen3.5 strip earlier `<think>`
+  blocks); such turns are now trained in their own sequences, and the adapter
+  manifest counts `unmaskable_rows_dropped`, `truncated_rows_dropped` and
+  `partially_truncated_rows`.
+- Assistant spans ended at the first occurrence of the reply text after the
+  turn start, even inside reasoning or template text: with reasoning "9*2=18
+  dollars." and answer "18" the rest of the reasoning, `</think>`, the answer
+  and `<|im_end|>` were unlabeled, and replies such as "hi" or "think" labeled
+  only `<think>` (local SFT, River SFT and sequence GRPO). Spans now end where
+  the turn's own render ends; pure tool-call turns are supervised in full.
+- Eval ladder eval and harvest prompts overlapped (7 of 12 identical modulo
+  the reference at 6 issues / depth 2), and refs collided past 1100 evals.
+- Forbid checks no longer fail replies that negate the forbidden remedy
+  ("I won't rebook you") and match only at word starts. A negation counts
+  only when it governs the phrase, so "I won't hesitate to rebook you", "Not
+  only will I rebook you" and "I can't wait to rebook you!" still fail
+  (the same check filters harvested samples).
+- The flywheel's harvest baseline counted check-less eval specs (which pass
+  trivially) while post-training scores did not, so real improvements were
+  read as plateaus.
+- Conversation datasets with only `total_reward` had all-zero turn rewards,
+  returns-to-go and transitions, and normalization zeroed `total_reward`.
+- Transcript grading misaligned contexts after a dropped line and reported
+  the wrong `user_query`; curated SFT pairs lost the graded multi-turn context.
+- GSM8K answer extraction graded the first "answer is" instead of the final
+  answer; `####` and `\boxed{}` now win and the last match is used.
+- Judge parse failures were counted as self-disagreement, and a skipped
+  `min_judge_score` gate left no trace; eval rows now carry
+  `judge_unavailable` and the manifest records `eval_judge_gates_skipped`.
+- `DistributedGRPOTrainer.setup_model()` called agent methods that do not exist;
+  it now uses `agent.model` and builds AdamW from the training config.
+- FSDP received the `"full_shard"` string instead of a `ShardingStrategy`.
+- The training orchestrator's monitoring loop no longer raises every pass when
+  metrics are disabled.
+- `retry_async` could `raise None`; `RetryConfig(max_attempts < 1)` is now
+  rejected, and circuit breakers are re-created if their registry entry is gone.
+- `ContinuousMonitor` was handed an evaluation result instead of the agent.
+- OpenTelemetry tracing is installed only when every component is available,
+  and span processors attach to the provider that was created.
+- helm-based tests bound their subprocesses, so a stalled `helm` on a loaded
+  Windows runner fails one test instead of aborting the xdist run.
+- Rewards were computed twice per episode under default trainer wiring
+  (doubling LLM-judge cost and halving `SupportJudgeReward` budgets).
+- `CorrectnessReward`, `TaskCompletionReward` and `SimilarityAwareReward` fell
+  back to neutral scores on the environment path because the scenario was
+  nested under `"scenario"`.
+- IMMEDIATE step rewards overweighted early turns (the total was the sum of
+  running means).
+- `SafetyReward` scored refusals that name an unsafe topic as 0.0 and missed
+  plurals ("bombs", "weapons", "drugs").
+- `CorrectnessReward` credited substrings ("14" for "4"; any digit run).
+- `TaskEnvironment` ignored IMMEDIATE reward functions, paid its +5 completion
+  bonus on every step after completion, and `TaskCompletionReward` raised
+  `TypeError` on its dict-shaped `completed_actions`.
+- `RulerRewardFunction` mapped judge scores by list position instead of
+  `trajectory_id` and passed through out-of-range scores.
+- Reward failures in environments were swallowed silently (no log or DEBUG)
+  as 0.0; they are now logged at WARNING and recorded as
+  `metadata["reward_error"]`, and the trainer drops such episodes.
+- `ModelBasedRewardComponent` silently scored replies by length without a
+  client; it now warns once.
+- `ProfessionalismRewardComponent` penalized "frustrated" and matched "hate"
+  inside "whatever".
+- `create_adaptive_reward` mutated the caller's reward weights.
+- A NaN or infinite reward score propagated silently into composite scores and
+  episode totals; it is now a reward failure (flagged, or raised for
+  `fail_on_error` rewards), and the trainer drops such episodes.
+- RunPod `timeout_s` and `max_cost_usd` now bound the whole run instead of each
+  pod. A pod that dies mid-job is replaced only within the time left on the
+  first pod's deadline (readiness waits included), and only when the spend so
+  far plus the replacement's worst case fits the ceiling; otherwise the run
+  stops with a `budget`/`deadline` error. Previously a replacement got a fresh
+  timeout and a retried run could spend about twice `max_cost_usd`.
+- A fine-tuning run whose supervisor was lost before it claimed the run (OOM,
+  reboot, import failure) no longer stays "prepared" forever. Run status now
+  checks the admitting process while a launch is being claimed, and reports a
+  launch that no process claimed within 120 seconds as `interrupted`. A stop
+  request cancels such an unclaimed launch outright, and a supervisor that
+  cannot claim supervision after admission records a failure.
+- Studio evaluations whose supervisor or executor died (reboot, OOM) are now
+  reported as `interrupted` with `execution_unconfirmed` instead of
+  `queued`/`running` forever, and can be stopped from the evaluation panel. The
+  evaluation supervisor claims `supervisor.json` exclusively, so a second
+  supervisor can no longer take over or rewrite a supervised evaluation.
+- The terminal studio keeps the handles of the run and evaluation supervisors
+  it launches and reaps them when status is refreshed, so finished supervisors
+  no longer linger as zombies (which on macOS also looked alive to owner
+  checks).
+- The terminal studio no longer freezes while it verifies retained bytes:
+  launching a reviewed run, launching a prepared run, opening a prepared-run
+  review and saving a stop request now run in the background (single-flight,
+  with progress shown in the status line). Exiting the studio waits for an
+  authorized launch or stop submission to finish.
+- `stateset-agents remote runpod-orphans --terminate` (and
+  `RunPodExecutor.cleanup_orphans`) attempts every lease instead of stopping
+  at the first failure. A pod that is already gone (HTTP 404) counts as
+  cleaned up, pod deletion retries 429/5xx with backoff, and failures are
+  reported together at the end with their leases kept; the command exits 1
+  if any pod could not be confirmed terminated.
+- The RunPod cost ceiling no longer fails open when the submitting worker
+  dies. SIGTERM/SIGHUP now end a RunPod submission (and the fine-tuning
+  worker) through its cleanup, so the pod is terminated and its lease
+  cleared; the studio supervisor terminates any pod the exited worker had
+  allocated but never cleaned up (found by journaled id, or by its owned name
+  when creation was journaled without an id) and records the outcome in the
+  provider journal; and each pod arms a pod-side deadline that deletes it at
+  the run deadline using RunPod's own pod-scoped credentials (no user key is
+  copied to the pod), logging when those credentials are unavailable.
+- Studio file locking is portable: the lock primitive (`fcntl` or `msvcrt`) is
+  chosen once at import, so code that fakes `sys.platform` for process checks
+  no longer makes Windows import `fcntl` (three studio tests failed on hosted
+  Windows CI). The validation-comparison submit lock uses the same shared
+  `finetune_workspace.private_file_lock` instead of a direct `fcntl` call.
+- A cooperative stop is no longer refused just because the package source
+  changed after launch. Plans now record the stop-receipt protocol their
+  worker honors (`stop_protocol`), and `request_stop` checks that version
+  instead of the whole-package source hash; plans from before the field
+  existed keep the old identical-code requirement.
+- Local studio training no longer fails at its first checkpoint save on
+  Windows or when the launching environment carries `WORLD_SIZE != 1`.
+  Recovery receipts need Linux ownership checks and a single training
+  process; where those are missing the worker keeps training and records
+  `recovery_unavailable` (shown by `finetune status` and the studio's run
+  details) instead of raising inside the trainer's save callback.
+- A checkpoint validation comparison can no longer sit in `queued` forever
+  and block its anchor. A verification worker that cannot start records
+  `failed`; a claimed request whose worker died reads `interrupted`; a request
+  no worker claimed within six hours reads `stale`; none of these block a new
+  submission. `finetune validation-compare --resubmit` (and `b` on an
+  uncertain submission in the evaluation panel) explicitly queues a fresh
+  verification.
+- Validation comparison history no longer breaks after about 100
+  comparisons. The 100-record cap counted the `.submit.lock` file and never
+  pruned, so submission and the evaluation panel reported unreadable
+  history. Only record directories count now, and a submission at the cap
+  removes the oldest finished records (never active ones, nor successful
+  ones a retained nomination depends on), refusing with a clear message if
+  none can be removed.
+- A studio evaluation whose executor committed a result can no longer be
+  overwritten with `failed` by a later queue or supervisor error. As for
+  training runs, a success whose `result.json` still binds the reviewed plan
+  is final, and the late error is kept as `teardown_error` /
+  `teardown_exit_code` in the evaluation status.
+
+### Security
+
+- The fine-tuning studio no longer falls back to hard-coded developer paths
+  (`/home/dom/agent-builds/...`) when looking for the shared Buildr queue. Only
+  `STATESET_BUILDR` or `buildr` on `PATH` is used, so a shared host can no
+  longer run another user's binary with the launching user's environment. A
+  test now rejects absolute home-directory paths in packaged modules.
+
+## [0.68.0] - 2026-10-22 — Audited RL core, GSPO multi-iteration and hardened gateway
+
+### Changed
+
+- **Per-model starter commands moved under `stateset-agents model <preset>`.**
+  The old top-level spellings (e.g. `stateset-agents qwen3-5-0-8b`) are hidden,
+  deprecated aliases that print a notice on stderr and are removed in v0.69.0.
+- `stateset_agents.training` is documented as a provisional namespace; only
+  `stateset_agents.__all__` carries the API compatibility guarantee.
+- The gateway rejects `max_tokens`, `n`/`best_of`, `logit_bias` and stop lists
+  above configurable ceilings (`API_MAX_GENERATION_TOKENS`,
+  `API_MAX_COMPLETIONS_PER_REQUEST`, `API_MAX_LOGIT_BIAS_ENTRIES`,
+  `API_MAX_STOP_SEQUENCES`) with 422, and forwards only an allowlist of
+  sampling fields to the inference backend.
+- Rate limiting reads the client IP `API_TRUSTED_PROXY_HOPS` entries from the
+  right of `X-Forwarded-For`, and uses the same credential precedence as auth.
+- JWTs must carry `exp`. Training-lab WebSockets reject unknown experiment ids
+  and accept credentials via `Sec-WebSocket-Protocol`; query-string credentials
+  log a deprecation warning.
+- RunPod SSH sessions pin the pod host key per session (`accept-new` with a
+  private known_hosts) instead of disabling host-key checking.
+- **Docker Compose requires passwords and binds to loopback.** Redis and Postgres
+  passwords come from `.env` (see `.env.example`); published ports bind to
+  `127.0.0.1`.
+- Kubernetes vLLM manifests and the Helm chart ship a NetworkPolicy allowing
+  only gateway pods (and metrics scraping) to reach vLLM.
+- Every GitHub Action is pinned to a commit SHA; workflows default to
+  `contents: read`, and benchmark results are pushed to gh-pages only from
+  `main`/`master`.
 
 - Merge the checkpointed IQL policy extractor with the experimental module layout
   and support aligned logged-message datasets without changing its objective.
@@ -20,6 +1734,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **GSPO and GSPO-token honour `num_iterations`.** Each rollout batch is scored
+  once, old-policy sequence scores are frozen on the first pass, and the trainer
+  takes `num_iterations` optimizer steps against them, so GSPO's sequence clip
+  engages in the off-policy regime it was designed for. The cosine schedule
+  spans `num_outer_iterations * num_iterations` steps, and `train_step` reports
+  `optimizer_updates`. `num_iterations` is no longer listed as ignored.
+- Learning tests asserting that a KL penalty measurably restrains drift on the
+  token path, and that multi-iteration GSPO engages its clip while learning.
+
 - Replay recorded industry policy traces offline, checking every transition,
   terminal outcome, and external-stop failure reward against a fresh sandbox.
   Exercise all five support domains through the real River SDK's rollout and
@@ -31,6 +1754,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and preserved synthetic provenance through Studio and the existing SFT trainer.
 
 ### Fixed
+
+- **The development lock no longer contains a vulnerable MCP SDK.** Semgrep pins
+  `mcp==1.29.0` (CVE-2026-59951), so it moved out of the `[dev]` extra; CI's
+  security jobs install it separately and `make security-scan` runs it via
+  `pipx`. `cryptography` and `jsonschema`, previously transitive through
+  Semgrep, are now explicit `[dev]` test dependencies. The strict dependency
+  audit passes with no override or waiver.
+- `virtualenv` 21.7.13 -> 21.14.12 in the development lock (five CVEs).
+- Windows: timed-out fine-tune workers are stopped with `taskkill /T /F` (there
+  is no `os.killpg`), refund recovery bundles are written with LF so their hash
+  audit passes, directory datasets get the normal validation error, and worker
+  logs are UTF-8.
+
+- GRPO loss loops propagate rollout-contract violations and out-of-memory
+  errors instead of skipping the trajectory, and raise when every trajectory in
+  a group fails instead of returning a constant zero loss.
+- `beta > 0` without `use_reference_model=True` now warns (config validation and
+  trainer start-up) instead of silently disabling the KL penalty.
+- The old-policy snapshot for inner updates is scored in eval mode, so dropout
+  no longer perturbs the first importance ratio.
+- `/v1/chat/completions` returns 422 for unsupported OpenAI `response_format`
+  types instead of a 500.
+- Cache decompression is bounded (`CACHE_MAX_DECOMPRESSED_BYTES`) and corrupt
+  payloads surface as cache errors.
+- Pod log-server tokens are compared in constant time, and adapter names are
+  validated and shell-quoted before reaching the pod.
 
 - Keep verified PyPI install pins separate from source candidates during version
   bumps, and correct the v0.67.0 publication status and install instructions.

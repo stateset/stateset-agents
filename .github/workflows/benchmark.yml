@@ -17,20 +17,25 @@ on:
       - '.github/workflows/benchmark.yml'
   workflow_dispatch:
 
+# Least privilege by default. Only `publish-benchmark` (push to main/master)
+# may write the gh-pages history; pull requests never get a write token.
+permissions:
+  contents: read
+
 jobs:
   benchmark:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v7
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
     - name: Set up Python
-      uses: actions/setup-python@v7
+      uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
       with:
         python-version: "3.12"
 
     - name: Cache pip dependencies
-      uses: actions/cache@v6
+      uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-benchmark-${{ hashFiles('**/pyproject.toml') }}
@@ -56,8 +61,44 @@ jobs:
         # unless benchmarks run serially in the main process.
         python -m pytest tests/performance -m benchmark -v -n0 --benchmark-json=benchmark-results.json
 
+    - name: Compare benchmark result (no push)
+      if: github.event_name != 'push'
+      uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+      with:
+        name: Python Benchmark
+        tool: 'pytest'
+        output-file-path: benchmark-results.json
+        # Read-only token (top-level permissions) — used only to fetch gh-pages history.
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        auto-push: false
+        save-data-file: false
+
+    - name: Upload benchmark result
+      if: github.event_name == 'push'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: benchmark-results
+        path: benchmark-results.json
+        retention-days: 7
+
+  publish-benchmark:
+    # Only trusted pushes to the default branches may update gh-pages.
+    needs: benchmark
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+    - name: Download benchmark result
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+      with:
+        name: benchmark-results
+
     - name: Store benchmark result
-      uses: benchmark-action/github-action-benchmark@v1
+      uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
       with:
         name: Python Benchmark
         tool: 'pytest'

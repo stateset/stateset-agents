@@ -140,10 +140,52 @@ def test_launch_is_detached_shell_free_and_exclusive(settings, tmp_path, monkeyp
     assert workspace.launch_run(run) == 123
     argv, kwargs = calls[0]
     assert argv[-2:] == ["--supervise", str(run)]
-    assert kwargs["start_new_session"] and "shell" not in kwargs
+    detached = workspace.detached_process_options()
+    assert {key: kwargs.get(key) for key in detached} == detached
+    assert "shell" not in kwargs
     with pytest.raises(FileExistsError):
         workspace.launch_run(run)
     assert len(calls) == 1
+
+
+def _process_state(pid):
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return None  # reaped: no process table entry remains
+
+
+@pytest.mark.skipif(sys.platform != "linux", reason="Reads the Linux process table")
+def test_finished_supervisor_is_reaped_on_the_next_status_refresh(
+    settings, tmp_path, monkeypatch
+):
+    """The long-lived studio must not accumulate zombie supervisors."""
+    import subprocess
+
+    run = create_run(tmp_path / "workspace", plan_run(settings))
+    real_popen = subprocess.Popen
+
+    def short_lived(argv, **kwargs):
+        return real_popen([sys.executable, "-c", "pass"], **kwargs)
+
+    monkeypatch.setattr(workspace.subprocess, "Popen", short_lived)
+    pid = workspace.launch_run(run)
+    deadline = time.monotonic() + 10
+    while _process_state(pid) not in {"Z", None} and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert _process_state(pid) in {"Z", None}
+    workspace.run_status(run)
+    assert _process_state(pid) is None
+
+
+def test_reaping_skips_handles_that_cannot_be_polled(monkeypatch):
+    finished = SimpleNamespace(poll=lambda: 0)
+    running = SimpleNamespace(poll=lambda: None)
+    monkeypatch.setattr(workspace, "_DETACHED_CHILDREN", [])
+    for handle in (finished, running, SimpleNamespace(pid=1)):
+        workspace.retain_child(handle)
+    workspace.reap_children()
+    assert workspace._DETACHED_CHILDREN == [running]
 
 
 @pytest.mark.parametrize(
@@ -274,6 +316,7 @@ def test_ui_plan_model_search_edit_cancel_and_launch_review(
     reviewed_data = studio.plan.data
     Path(settings.dataset).write_text("changed after launch review")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert len(calls) == 1 and studio.tab == "runs"
     assert (calls[0] / "dataset").read_bytes() == reviewed_data
     assert studio.handle("q") is False
@@ -289,6 +332,7 @@ def test_missing_runpod_key_blocks_launch_and_never_persists_secrets(
     settle_preview(studio)
     assert studio.overlay == "review"
     studio.handle("ENTER")
+    settle_preview(studio)
     assert "RUNPOD_API_KEY is missing" in studio.message
     assert not studio.workspace.exists()
     monkeypatch.setenv("RUNPOD_API_KEY", "synthetic-secret-never-save")
@@ -785,11 +829,11 @@ def test_file_picker_filters_selects_without_reading_contents(
     studio = Studio(tmp_path / "studio", settings)
     studio.handle("f")
     assert studio.overlay == "files"
-    assert "unrelated.txt" not in {row[0] for row in studio.file_entries}
-    assert ".hidden.json" not in {row[0] for row in studio.file_entries}
+    assert "unrelated.txt" not in {row[0] for row in studio.file_picker.entries}
+    assert ".hidden.json" not in {row[0] for row in studio.file_picker.entries}
     for char in chosen.name:
         studio.handle(char)
-    assert len(studio._filtered_files()) == 1
+    assert len(studio.file_picker.filtered()) == 1
     monkeypatch.setattr(
         Path, "read_bytes", lambda _: pytest.fail("picker must not read file content")
     )
@@ -809,10 +853,10 @@ def test_file_picker_directory_navigation_and_cancel_preserve_draft(settings, tm
     for char in "cases":
         studio.handle(char)
     studio.handle("ENTER")
-    assert studio.file_directory == directory
-    assert studio.file_search == ""
+    assert studio.file_picker.directory == directory
+    assert studio.file_picker.search == ""
     studio.handle("BACKSPACE")
-    assert studio.file_directory == tmp_path
+    assert studio.file_picker.directory == tmp_path
     studio.handle("ESC")
     assert studio.values["dataset"] == settings.dataset
     assert studio.overlay is None
@@ -823,12 +867,12 @@ def test_file_picker_permission_failure_remains_navigable(
 ):
     studio = Studio(tmp_path / "studio", settings)
     monkeypatch.setattr(
-        "stateset_agents.tui.os.scandir",
+        "stateset_agents.tui_panels.os.scandir",
         lambda _: (_ for _ in ()).throw(PermissionError("denied")),
     )
     studio.handle("f")
-    assert studio.overlay == "files" and "PermissionError" in studio.file_error
-    assert studio.file_entries[0][0] == ".."
+    assert studio.overlay == "files" and "PermissionError" in studio.file_picker.error
+    assert studio.file_picker.entries[0][0] == ".."
     assert "DATASET PICKER" in "\n".join(studio.lines(74, 44))
     studio.handle("ESC")
     assert studio.overlay is None

@@ -40,6 +40,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+from .._deprecation import deprecated_alias_getattr
 from .advanced_monitoring_models import (
     Alert,
     AlertSeverity,
@@ -72,8 +73,14 @@ PROMETHEUS_METRIC_ALIASES = {
 }
 
 
-class MetricsCollector:
-    """Advanced metrics collection and aggregation"""
+class TimeSeriesMetricsCollector:
+    """Time-series metric store with windowed aggregation for
+    :class:`AdvancedMonitoringService`.
+
+    The general-purpose collector is
+    :class:`stateset_agents.utils.monitoring.MetricsCollector`; this one keeps
+    retention-bounded points so threshold alerts can aggregate over a window.
+    """
 
     def __init__(self, retention_period: int = 86400):  # 24 hours
         self.metrics: dict[str, deque] = defaultdict(lambda: deque())
@@ -381,10 +388,15 @@ class MetricsCollector:
                 await asyncio.sleep(60)
 
 
-class AlertManager:
-    """Advanced alerting system"""
+class ThresholdAlertManager:
+    """Evaluates ``"metric > threshold"`` alert definitions over a
+    :class:`TimeSeriesMetricsCollector` window.
 
-    def __init__(self, metrics_collector: MetricsCollector):
+    The general-purpose alert manager is
+    :class:`stateset_agents.utils.monitoring.AlertManager`.
+    """
+
+    def __init__(self, metrics_collector: TimeSeriesMetricsCollector):
         self.metrics_collector = metrics_collector
         self.alerts: dict[str, Alert] = {}
         self.active_alerts: dict[str, Alert] = {}
@@ -520,10 +532,10 @@ class AdvancedMonitoringService:
         retention_period: int = 86400,
     ):
         self.metrics_collector = (
-            MetricsCollector(retention_period) if enable_metrics else None
+            TimeSeriesMetricsCollector(retention_period) if enable_metrics else None
         )
         self.alert_manager = (
-            AlertManager(self.metrics_collector)
+            ThresholdAlertManager(self.metrics_collector)
             if enable_alerts and self.metrics_collector
             else None
         )
@@ -897,7 +909,7 @@ if __name__ == "__main__":
             "example_operation", component="test"
         ) as span:
             await asyncio.sleep(0.1)
-            if span:
+            if span and monitoring.tracer is not None:
                 monitoring.tracer.add_span_log(
                     span.span_id, "info", "Operation completed"
                 )
@@ -913,18 +925,29 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
+# The old names collided with the canonical classes in
+# ``stateset_agents.utils.monitoring``; they are served with a warning and
+# will be removed in v0.71.0.
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {
+        "AlertManager": (__name__, "ThresholdAlertManager", "0.71.0"),
+        "MetricsCollector": (__name__, "TimeSeriesMetricsCollector", "0.71.0"),
+    },
+)
+
 __all__ = [
     "ADV_MONITORING_EXCEPTIONS",
     "Alert",
-    "AlertManager",
     "AlertSeverity",
     "AdvancedMonitoringService",
     "DistributedTracer",
     "MetricPoint",
     "MetricType",
-    "MetricsCollector",
     "OPENTELEMETRY_AVAILABLE",
     "PROMETHEUS_AVAILABLE",
+    "ThresholdAlertManager",
+    "TimeSeriesMetricsCollector",
     "TraceSpan",
     "get_monitoring_service",
     "monitor_async_function",

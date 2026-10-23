@@ -6,9 +6,18 @@ from __future__ import annotations
 
 import inspect
 import logging
+from collections.abc import Mapping
 from typing import Any
 
 import numpy as np
+
+from stateset_agents.core.reward_context import (
+    RewardUnavailableError,
+    reward_score,
+    score_episode,
+)
+
+from .config import config_value
 
 logger = logging.getLogger(__name__)
 
@@ -17,42 +26,26 @@ async def coerce_reward_result(
     reward_result: Any,
     trainer_exceptions: tuple[type[BaseException], ...],
 ) -> tuple[float, dict[str, float]]:
-    """Normalize reward outputs into a numeric score plus breakdown."""
+    """Normalize a reward output into a numeric score plus breakdown.
+
+    The score comes from ``reward_context.reward_score``, the one reward
+    parser: an unparseable result raises ``TypeError``, a non-finite one
+    ``ValueError``, and an awaitable that fails propagates, so no failure is
+    read as 0.0. ``trainer_exceptions`` is accepted for compatibility.
+    """
     if inspect.isawaitable(reward_result):
-        try:
-            reward_result = await reward_result
-        except trainer_exceptions:
-            reward_result = None
+        reward_result = await reward_result
+    score = reward_score(reward_result)
 
     breakdown: dict[str, float] = {}
-
-    if isinstance(reward_result, (int, float)) and not isinstance(reward_result, bool):
-        return float(reward_result), breakdown
-
-    if isinstance(reward_result, dict):
-        raw_score = reward_result.get("score")
-        score = 0.0
-        if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
-            score = float(raw_score)
+    if isinstance(reward_result, Mapping):
         raw_breakdown = reward_result.get("breakdown")
-        if isinstance(raw_breakdown, dict):
-            for key, value in raw_breakdown.items():
-                if isinstance(value, (int, float)) and not isinstance(value, bool):
-                    breakdown[str(key)] = float(value)
-        return score, breakdown
-
-    raw_score = getattr(reward_result, "score", None)
-    if isinstance(raw_score, (int, float)) and not isinstance(raw_score, bool):
-        score = float(raw_score)
     else:
-        score = 0.0
-
-    raw_breakdown = getattr(reward_result, "breakdown", None)
-    if isinstance(raw_breakdown, dict):
+        raw_breakdown = getattr(reward_result, "breakdown", None)
+    if isinstance(raw_breakdown, Mapping):
         for key, value in raw_breakdown.items():
             if isinstance(value, (int, float)) and not isinstance(value, bool):
                 breakdown[str(key)] = float(value)
-
     return score, breakdown
 
 
@@ -94,7 +87,12 @@ async def run_post_training_evaluation(
     trainer_exceptions: tuple[type[BaseException], ...],
     coerce_reward_result_fn: Any,
 ) -> dict[str, Any]:
-    """Run comprehensive post-training evaluation."""
+    """Run comprehensive post-training evaluation.
+
+    Episodes are scored with ``reward_context.score_episode``, the path
+    training uses; ``coerce_reward_result_fn`` is accepted for compatibility
+    and no longer used.
+    """
     logger.info("Running post-training evaluation on %s samples...", num_samples)
 
     trainer.agent.model.eval()
@@ -112,7 +110,7 @@ async def run_post_training_evaluation(
             "trajectories": [],
         }
 
-        num_eval_generations = min(4, getattr(trainer.config, "num_generations", 4))
+        num_eval_generations = min(4, config_value(trainer.config, "num_generations"))
 
         for gen_idx in range(num_eval_generations):
             try:
@@ -122,17 +120,12 @@ async def run_post_training_evaluation(
 
                 trajectory = await trainer.environment.run_episode(agent_fn, scenario)
 
-                if trainer.reward_fn:
-                    reward_result = await trainer.reward_fn.compute_reward(
-                        trajectory.turns, scenario
-                    )
-                    score, reward_breakdown = await coerce_reward_result_fn(
-                        reward_result
-                    )
-                    trajectory.total_reward = score
-                else:
-                    # Keep the reward the environment computed for the episode.
-                    reward_breakdown = {}
+                # The scoring path training uses (reward_context.score_episode).
+                await score_episode(
+                    trajectory, trainer.reward_fn, trainer.environment, scenario
+                )
+                metadata = getattr(trajectory, "metadata", None) or {}
+                reward_breakdown = dict(metadata.get("reward_breakdown") or {})
 
                 traj_info = {
                     "generation_idx": gen_idx,
@@ -165,8 +158,10 @@ async def run_post_training_evaluation(
 
                 scenario_results["trajectories"].append(traj_info)
 
-            except trainer_exceptions as exc:
-                logger.warning("Failed to evaluate trajectory: %s", exc)
+            except RewardUnavailableError as exc:
+                # Only a reward outage skips the episode; a bug, bad data or a
+                # None/NaN reward propagates instead of shrinking the sample.
+                logger.warning("Skipping an evaluation episode: %s", exc)
                 continue
 
         if scenario_results["trajectories"]:

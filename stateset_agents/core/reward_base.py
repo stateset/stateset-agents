@@ -7,24 +7,33 @@ including the base class, result types, and composite reward implementation.
 
 import asyncio
 import logging
+import math
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-import numpy as np
-
+from .reward_context import (
+    COMPONENT_FAILURES_KEY,
+    REWARD_FALLBACK_KEY,
+    RewardUnavailableError,
+    build_reward_context,
+    check_score_range,
+    reward_fallback,
+)
 from .trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
 
-REWARD_EXCEPTIONS = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    AttributeError,
-)
+
+class SyncRewardCallError(RuntimeError):
+    """A reward was called synchronously (``reward(...)``) inside a running
+    event loop; await ``reward.compute_reward(...)`` there instead."""
+
+
+#: ``CompositeReward.outage_policy`` values.
+OUTAGE_POLICIES = ("raise", "renormalize")
 
 
 class RewardType(Enum):
@@ -100,6 +109,11 @@ class RewardFunction(ABC):
     Abstract base class for reward functions
     """
 
+    #: True for style heuristics (keyword, phrase or length scoring) that a
+    #: canned reply can satisfy without answering the request. The shipped
+    #: factories wrap these in ``core.grounding.GroundedReward``.
+    shaping: bool = False
+
     def __init__(
         self,
         weight: float = 1.0,
@@ -131,30 +145,49 @@ class RewardFunction(ABC):
     def __call__(self, *args: Any, **kwargs: Any) -> "RewardResult":
         """Make reward function callable (sync wrapper for async compute_reward).
 
-        Warning: Do not call this from within an async context.
-        Use `await compute_reward()` directly instead.
+        Raises :class:`SyncRewardCallError` inside a running event loop; use
+        ``await reward.compute_reward(...)`` there. Errors raised by the
+        reward itself propagate unchanged.
         """
-        try:
-            # Check if we're already in an async context
-            asyncio.get_running_loop()
-            # We're in an async context - can't use asyncio.run()
-            raise RuntimeError(
-                "Cannot call RewardFunction synchronously from within an async context. "
-                "Use `await reward_function.compute_reward(...)` instead of `reward_function(...)`."
+        if _event_loop_running():
+            raise SyncRewardCallError(
+                "Cannot call RewardFunction synchronously from within an async "
+                "context. Use `await reward_function.compute_reward(...)` instead "
+                "of `reward_function(...)`."
             )
-        except RuntimeError as e:
-            if "no running event loop" in str(e).lower():
-                # No running loop, safe to use asyncio.run()
-                return asyncio.run(self.compute_reward(*args, **kwargs))
-            else:
-                # Re-raise the "already in async context" error
-                raise
+        return asyncio.run(self.compute_reward(*args, **kwargs))
+
+
+def _event_loop_running() -> bool:
+    """Whether this thread is running an event loop (no message parsing)."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
 
 
 class CompositeReward(RewardFunction):
+    """Combines multiple reward functions with weights.
+
+    Outages (a component raising ``RewardUnavailableError``) follow
+    :attr:`outage_policy`:
+
+    * ``"raise"`` (the default): the composite raises
+      ``RewardUnavailableError`` too, so the episode is dropped rather than
+      scored by the surviving components alone (a judge outage must not turn
+      the conciseness term into the whole reward).
+    * ``"renormalize"`` (opt-in, ``composite.outage_policy = "renormalize"``):
+      the failed component is left out and its weight spread over the rest;
+      the result lists it in ``metadata["failed_components"]``, counts it in
+      ``breakdown["unavailable_components"]`` and is flagged
+      ``metadata["reward_fallback"]``, which environments and
+      ``score_episode`` copy to the trajectory (with
+      ``metadata["reward_failed_components"]``).
     """
-    Combines multiple reward functions with weights
-    """
+
+    #: How a component outage is handled (see the class docs).
+    outage_policy: str = "raise"
 
     def __init__(
         self,
@@ -201,15 +234,18 @@ class CompositeReward(RewardFunction):
     ) -> RewardResult:
         """Compute composite reward from all functions"""
 
-        # Handle empty reward functions
+        # An empty composite has nothing to score with; a 0.0 would look like
+        # a real (worst) score.
         if not self.reward_functions:
-            logger.warning("CompositeReward has no reward functions configured")
-            return RewardResult(
-                score=0.0,
-                breakdown={},
-                metadata={"error": "No reward functions configured"},
-            )
+            raise ValueError("CompositeReward has no reward functions configured")
 
+        if self.outage_policy not in OUTAGE_POLICIES:
+            from .errors import ConfigurationError
+
+            raise ConfigurationError(
+                f"CompositeReward.outage_policy must be one of {OUTAGE_POLICIES}, "
+                f"got {self.outage_policy!r}"
+            )
         results: list[tuple[RewardFunction, RewardResult]] = []
         failed: list[str] = []
         for reward_fn in self.reward_functions:
@@ -219,64 +255,81 @@ class CompositeReward(RewardFunction):
                     self.requires_environment_context
                     and not getattr(reward_fn, "requires_environment_context", False)
                     and isinstance(context, dict)
-                    and isinstance(context.get("scenario"), dict)
                 ):
-                    # Ordinary components retain their historical scenario
-                    # context; outcome components receive executed tool state.
-                    child_context = context["scenario"]
+                    # This composite was handed the evidence context (state
+                    # plus "scenario", no lifted keys). Ordinary components get
+                    # the standard context built from it, so they see both the
+                    # scenario's keys and the environment state.
+                    child_context = build_reward_context(context, reward_fn=reward_fn)
                 result = await reward_fn.compute_reward(turns, child_context)
-                results.append((reward_fn, result))
-            except REWARD_EXCEPTIONS as e:
-                if getattr(reward_fn, "fail_on_error", False):
-                    raise
-                logger.warning(f"Reward function {reward_fn.name} failed: {e}")
+            except RewardUnavailableError as e:
+                # An outage. By default the whole composite is unavailable,
+                # so the episode is dropped; renormalizing is an opt-in.
+                # Anything else (TypeError, AttributeError, bad data) is a bug
+                # and propagates rather than silently reweighting the reward.
+                if (
+                    getattr(reward_fn, "fail_on_error", False)
+                    or self.outage_policy != "renormalize"
+                ):
+                    raise RewardUnavailableError(
+                        f"CompositeReward: component {reward_fn.name} is "
+                        f"unavailable: {e}"
+                    ) from e
+                logger.warning(
+                    "Reward function %s is unavailable; its weight is spread "
+                    "over the other components (outage_policy='renormalize'): %s",
+                    reward_fn.name,
+                    e,
+                )
                 failed.append(str(reward_fn.name))
-                # Continue with other reward functions
                 continue
+            if not math.isfinite(float(result.score)):
+                # A NaN/inf component would silently poison the total.
+                raise ValueError(
+                    f"Reward function {reward_fn.name} returned a non-finite "
+                    f"score {result.score}"
+                )
+            check_score_range(reward_fn, float(result.score))
+            results.append((reward_fn, result))
 
-        # Handle case where all reward functions failed
+        # No component scored: there is no reward, so fail rather than
+        # return a valid-looking 0.0 that environments and trainers would use.
         if not results:
-            logger.error("All reward functions failed to compute")
-            return RewardResult(
-                score=0.0,
-                components={},
-                metadata={"error": "All reward functions failed"},
+            raise RewardUnavailableError(
+                "CompositeReward: every reward function failed "
+                f"({', '.join(failed)})"
             )
 
-        # Combine rewards with safe defaults for empty results
+        # Combine rewards. math.fsum keeps the totals exactly rounded and
+        # independent of summation order and Python version.
         component_weights = [float(rf.weight) for rf, _ in results]
-        if self.normalize_weights and sum(component_weights) > 0:
-            weight_sum = float(sum(component_weights))
+        if self.normalize_weights and math.fsum(component_weights) > 0:
+            weight_sum = math.fsum(component_weights)
             component_weights = [w / weight_sum for w in component_weights]
-        elif failed and sum(component_weights) > 0:
+        elif failed and math.fsum(component_weights) > 0:
             # Spread a failed component's weight over the survivors so the
             # score keeps its scale; otherwise a failure scores as 0 and
             # biases advantages within the group.
-            configured = float(sum(float(rf.weight) for rf in self.reward_functions))
-            scale = configured / float(sum(component_weights))
+            configured = math.fsum(float(rf.weight) for rf in self.reward_functions)
+            scale = configured / math.fsum(component_weights)
             component_weights = [w * scale for w in component_weights]
 
+        weighted_sum = math.fsum(
+            rr.score * w for (_, rr), w in zip(results, component_weights, strict=True)
+        )
         if self.combination_method == "weighted_sum":
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
         elif self.combination_method == "average":
-            total_score = (
-                float(np.mean([r.score for _, r in results])) if results else 0.0
-            )
+            total_score = math.fsum(r.score for _, r in results) / len(results)
         elif self.combination_method == "min":
-            total_score = min((r.score for _, r in results), default=0.0)
+            total_score = min(r.score for _, r in results)
         elif self.combination_method == "max":
-            total_score = max((r.score for _, r in results), default=0.0)
+            total_score = max(r.score for _, r in results)
         else:
             logger.warning(
                 f"Unknown combination method '{self.combination_method}', defaulting to weighted_sum"
             )
-            total_score = sum(
-                rr.score * w
-                for (rf, rr), w in zip(results, component_weights, strict=False)
-            )
+            total_score = weighted_sum
 
         components: dict[str, float] = {}
         for reward_fn, result in results:
@@ -285,6 +338,19 @@ class CompositeReward(RewardFunction):
                 name = name[: -len("reward")]
             components[name] = float(result.score)
 
+        metadata: dict[str, Any] = {}
+        fallbacks = [
+            f"{rf.name}: {reason}"
+            for rf, rr in results
+            if (reason := reward_fallback(rr)) is not None
+        ]
+        if failed:
+            # An opted-in renormalization is a fallback score: flag it.
+            fallbacks.append(f"renormalized without {', '.join(failed)}")
+            components["unavailable_components"] = float(len(failed))
+        if fallbacks:
+            # A child's opted-in fallback score is part of this score too.
+            metadata[REWARD_FALLBACK_KEY] = "; ".join(fallbacks)
         return RewardResult(
             score=total_score,
             components=components,
@@ -295,7 +361,8 @@ class CompositeReward(RewardFunction):
                 "component_metadata": [r.metadata for _, r in results],
                 "combination_method": self.combination_method,
                 "normalize_weights": self.normalize_weights,
-                "failed_components": failed,
+                COMPONENT_FAILURES_KEY: failed,
+                **metadata,
             },
         )
 

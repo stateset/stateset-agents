@@ -21,20 +21,20 @@ from stateset_agents.core.curriculum_learning import (
     CurriculumStage,
     PerformanceBasedScheduler,
 )
-from stateset_agents.core.few_shot_adaptation import (
+from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
+from stateset_agents.experimental.few_shot_adaptation import (
     DomainDetector,
     DomainProfile,
     FewShotAdaptationManager,
     FewShotExample,
     PromptBasedAdaptation,
 )
-from stateset_agents.core.multi_agent_coordination import (
+from stateset_agents.experimental.multi_agent_coordination import (
     AgentRole,
     CooperativeRewardShaping,
     CoordinationStrategy,
     MultiAgentCoordinator,
 )
-from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 
 # ============================================================================
 # Feature 1: Curriculum Learning

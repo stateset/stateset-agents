@@ -350,16 +350,21 @@ class TestDistributedSampler:
 
     def test_epoch_shuffling_concept(self):
         """Test epoch shuffling in distributed sampler."""
-        # Different shuffle per epoch
-        seed = 42
-        epoch = 5
+        pytest.importorskip("torch")
+        from torch.utils.data import DistributedSampler
 
-        import random
+        sampler = DistributedSampler(
+            list(range(64)), num_replicas=4, rank=2, shuffle=True, seed=42
+        )
+        sampler.set_epoch(0)
+        epoch0 = list(sampler)
+        sampler.set_epoch(1)
+        epoch1 = list(sampler)
+        sampler.set_epoch(0)
 
-        random.seed(seed + epoch)
-
-        # Shuffled indices would differ per epoch
-        assert True
+        assert len(epoch0) == len(epoch1) == 16
+        assert epoch0 != epoch1  # a new epoch reshuffles
+        assert list(sampler) == epoch0  # and the same epoch is reproducible
 
 
 class TestSyncBatchNorm:
@@ -564,6 +569,37 @@ class TestDistributedGRPOLoss:
         assert loss_a.item() != 0.0
         assert loss_a.item() != pytest.approx(loss_b.item())
         assert loss_a.requires_grad
+
+    def test_setup_model_uses_agent_model_and_builds_optimizer(self):
+        """Regression: setup_model called nonexistent Agent.get_model/get_optimizer."""
+        from stateset_agents.training import distributed_trainer
+
+        trainer = self._make_trainer()
+        trainer.is_initialized = True
+        trainer.device = torch.device("cpu")
+        agent_model = trainer.agent.model
+
+        with patch.object(
+            distributed_trainer, "DDP", side_effect=lambda module, **_: module
+        ) as ddp:
+            trainer.setup_model()
+
+        assert ddp.call_args.args[0] is agent_model
+        assert ddp.call_args.kwargs["device_ids"] is None
+        assert trainer.model is agent_model
+        assert isinstance(trainer.optimizer, torch.optim.AdamW)
+        group = trainer.optimizer.param_groups[0]
+        assert group["lr"] == trainer.training_config.learning_rate
+        assert group["params"][0] is agent_model.p
+
+    def test_setup_model_requires_loaded_agent_model(self):
+        trainer = self._make_trainer()
+        trainer.is_initialized = True
+        trainer.device = torch.device("cpu")
+        trainer.agent.model = None
+
+        with pytest.raises(RuntimeError, match="no loaded model"):
+            trainer.setup_model()
 
     def test_compute_rewards_uses_reward_function(self):
         """_compute_rewards must delegate to the configured reward function."""

@@ -2,8 +2,8 @@
 Data utilities for offline RL and conversation datasets.
 
 Provides D4RL-style dataset loading, replay buffers, embedding caching for
-conversation trajectory data, and verifiable-reward benchmark datasets
-(GSM8K and friends).
+conversation trajectory data, verifiable-reward benchmark datasets
+(GSM8K and friends), and training/eval decontamination.
 
 Exports are resolved lazily (PEP 562) so that importing a light submodule --
 or the package itself -- does not drag in heavy optional dependencies such as
@@ -29,6 +29,12 @@ _LAZY_EXPORTS: dict[str, str] = {
     "split_finetuning_data": "finetuning",
     "check_finetuning_overlap": "finetuning",
     "group_finetuning_data": "finetuning",
+    "normalize_identity_text": "identity",
+    "count_jsonl_records": "jsonl",
+    "jsonl_lines": "jsonl",
+    "read_jsonl_lines": "jsonl",
+    "prompt_identity": "identity",
+    "first_user_text": "identity",
     "ConversationDataset": "conversation_dataset",
     "ConversationDatasetConfig": "conversation_dataset",
     "ConversationReplayBuffer": "conversation_dataset",
@@ -54,6 +60,23 @@ _LAZY_EXPORTS: dict[str, str] = {
     "extract_tool_call": "tool_calling_bench",
     "load_tool_call_scenarios": "tool_calling_bench",
     "make_tool_call_scenarios": "tool_calling_bench",
+    "BUILTIN_EVAL_SETS": "decontamination",
+    "DEFAULT_ROLES": "decontamination",
+    "LSH_RECALL": "decontamination",
+    "DecontaminationConfig": "decontamination",
+    "DecontaminationResult": "decontamination",
+    "TextRecord": "decontamination",
+    "TextSource": "decontamination",
+    "apply_decontamination": "decontamination",
+    "builtin_eval_set": "decontamination",
+    "extract_segments": "decontamination",
+    "find_contamination": "decontamination",
+    "load_text_source": "decontamination",
+    "lsh_shape": "decontamination",
+    "normalize_text": "decontamination",
+    "read_rows": "decontamination",
+    "resolve_eval_source": "decontamination",
+    "text_source_from_rows": "decontamination",
     "from_langchain_json": "trajectory_ingest",
     "from_openai_jsonl": "trajectory_ingest",
     "from_openai_messages": "trajectory_ingest",

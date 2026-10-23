@@ -118,9 +118,9 @@ python examples/finetune_gspo.py --model gemma4-e4b --config gemma4-e4b.json --n
 The same starters also ship as installed commands, without an examples checkout:
 
 ```bash
-stateset-agents gemma-4-e2b --starter-profile memory --json
-stateset-agents gemma-4-e4b --starter-profile memory --write-config gemma4-e4b.json
-stateset-agents gemma-4-e4b --config gemma4-e4b.json --no-dry-run
+stateset-agents model gemma-4-e2b --starter-profile memory --json
+stateset-agents model gemma-4-e4b --starter-profile memory --write-config gemma4-e4b.json
+stateset-agents model gemma-4-e4b --config gemma4-e4b.json --no-dry-run
 ```
 
 Their default output directories are `outputs/gemma4_e2b_gspo` and
@@ -150,8 +150,9 @@ CUDA it prints a plan instead of training. Gemma 2 2B
 (`google/gemma-3-4b-it`) can also be selected through `--base-model`; obtain
 Hugging Face access for gated checkpoints first. Older Gemma chat templates
 may require putting instructions in the first user message instead of a
-separate system message. The legacy `gemma3` preset still points to Gemma 2
-9B for compatibility; it does not select a Gemma 3 checkpoint.
+separate system message. The Gemma 2 9B preset is `gemma2-9b`; its old name
+`gemma3` (which never selected a Gemma 3 checkpoint) is a deprecated alias
+until v0.71.0.
 
 Google's E2B/E4B labels mean **effective** parameters: their model cards list
 about 5.1B/8B parameters including embeddings. Budget memory for embeddings,
@@ -169,23 +170,23 @@ containing these starters).
 
 | Preset | Installed command | Checkpoint |
 |---|---|---|
-| `qwen3.5-2b` | `stateset-agents qwen3-5-2b` | [`Qwen/Qwen3.5-2B`](https://huggingface.co/Qwen/Qwen3.5-2B) |
-| `qwen3.5-4b` | `stateset-agents qwen3-5-4b` | [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) |
-| `qwen3.5-9b` | `stateset-agents qwen3-5-9b` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) |
-| `smollm3-3b` | `stateset-agents smollm3-3b` | [`HuggingFaceTB/SmolLM3-3B`](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
-| `phi4-mini` | `stateset-agents phi-4-mini` | [`microsoft/Phi-4-mini-instruct`](https://huggingface.co/microsoft/Phi-4-mini-instruct) |
-| `ministral3-3b` | `stateset-agents ministral-3-3b` | [`mistralai/Ministral-3-3B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16) |
-| `ministral3-8b` | `stateset-agents ministral-3-8b` | [`mistralai/Ministral-3-8B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-BF16) |
-| `lfm2.5-2.6b` | `stateset-agents lfm2-5-2-6b` | [`LiquidAI/LFM2.5-2.6B`](https://huggingface.co/LiquidAI/LFM2.5-2.6B) |
+| `qwen3.5-2b` | `stateset-agents model qwen3-5-2b` | [`Qwen/Qwen3.5-2B`](https://huggingface.co/Qwen/Qwen3.5-2B) |
+| `qwen3.5-4b` | `stateset-agents model qwen3-5-4b` | [`Qwen/Qwen3.5-4B`](https://huggingface.co/Qwen/Qwen3.5-4B) |
+| `qwen3.5-9b` | `stateset-agents model qwen3-5-9b` | [`Qwen/Qwen3.5-9B`](https://huggingface.co/Qwen/Qwen3.5-9B) |
+| `smollm3-3b` | `stateset-agents model smollm3-3b` | [`HuggingFaceTB/SmolLM3-3B`](https://huggingface.co/HuggingFaceTB/SmolLM3-3B) |
+| `phi4-mini` | `stateset-agents model phi-4-mini` | [`microsoft/Phi-4-mini-instruct`](https://huggingface.co/microsoft/Phi-4-mini-instruct) |
+| `ministral3-3b` | `stateset-agents model ministral-3-3b` | [`mistralai/Ministral-3-3B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-3B-Instruct-2512-BF16) |
+| `ministral3-8b` | `stateset-agents model ministral-3-8b` | [`mistralai/Ministral-3-8B-Instruct-2512-BF16`](https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512-BF16) |
+| `lfm2.5-2.6b` | `stateset-agents model lfm2-5-2-6b` | [`LiquidAI/LFM2.5-2.6B`](https://huggingface.co/LiquidAI/LFM2.5-2.6B) |
 
 All commands default to previews. They accept `--starter-profile balanced|memory|quality`,
 `--write-config`, `--config`, `--output-dir`, and `--no-dry-run`.
 The example driver accepts the preset names above through `--model`.
 
 ```bash
-stateset-agents qwen3-5-4b --starter-profile memory --json
-stateset-agents phi-4-mini --starter-profile memory --write-config phi-mini.json
-stateset-agents phi-4-mini --config phi-mini.json --no-dry-run
+stateset-agents model qwen3-5-4b --starter-profile memory --json
+stateset-agents model phi-4-mini --starter-profile memory --write-config phi-mini.json
+stateset-agents model phi-4-mini --config phi-mini.json --no-dry-run
 python examples/finetune_gspo.py --model smollm3-3b --starter-profile memory --dry-run
 ```
 
@@ -232,18 +233,18 @@ presets with the same balanced, memory (NF4 QLoRA), and quality profiles:
 
 | Preset | Model card | CLI command |
 |---|---|---|
-| `granite4-micro` | [`ibm-granite/granite-4.0-micro`](https://huggingface.co/ibm-granite/granite-4.0-micro) | `stateset-agents granite-4-micro` |
-| `llama3.2-1b` | [`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | `stateset-agents llama-3-2-1b` |
-| `llama3.2-3b` | [`meta-llama/Llama-3.2-3B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | `stateset-agents llama-3-2-3b` |
-| `qwen3-4b-instruct` | [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) | `stateset-agents qwen3-4b-instruct` |
-| `olmo3-7b` | [`allenai/Olmo-3-7B-Instruct`](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | `stateset-agents olmo-3-7b` |
-| `deepseek-r1-1.5b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) | `stateset-agents deepseek-r1-1-5b` |
-| `deepseek-r1-7b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) | `stateset-agents deepseek-r1-7b` |
+| `granite4-micro` | [`ibm-granite/granite-4.0-micro`](https://huggingface.co/ibm-granite/granite-4.0-micro) | `stateset-agents model granite-4-micro` |
+| `llama3.2-1b` | [`meta-llama/Llama-3.2-1B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-1B-Instruct) | `stateset-agents model llama-3-2-1b` |
+| `llama3.2-3b` | [`meta-llama/Llama-3.2-3B-Instruct`](https://huggingface.co/meta-llama/Llama-3.2-3B-Instruct) | `stateset-agents model llama-3-2-3b` |
+| `qwen3-4b-instruct` | [`Qwen/Qwen3-4B-Instruct-2507`](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507) | `stateset-agents model qwen3-4b-instruct` |
+| `olmo3-7b` | [`allenai/Olmo-3-7B-Instruct`](https://huggingface.co/allenai/Olmo-3-7B-Instruct) | `stateset-agents model olmo-3-7b` |
+| `deepseek-r1-1.5b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B) | `stateset-agents model deepseek-r1-1-5b` |
+| `deepseek-r1-7b` | [`deepseek-ai/DeepSeek-R1-Distill-Qwen-7B`](https://huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B) | `stateset-agents model deepseek-r1-7b` |
 
 ```bash
-stateset-agents granite-4-micro --starter-profile memory --json
-stateset-agents granite-4-micro --starter-profile memory --write-config granite.json
-stateset-agents granite-4-micro --config granite.json --no-dry-run
+stateset-agents model granite-4-micro --starter-profile memory --json
+stateset-agents model granite-4-micro --starter-profile memory --write-config granite.json
+stateset-agents model granite-4-micro --config granite.json --no-dry-run
 ```
 
 Granite Micro targets both attention and its fused `input_linear` /
@@ -462,8 +463,10 @@ python examples/finetune_gspo.py --model glm5.1 --task customer_service --no-dry
 ```
 
 Use it for a quick preview of any supported preset (`muse-glimmer`, `nemotron-3-5`, `qwen3.8-27b`, `qwen3.8-flash-next`, `qwen3-coder`, `gpt-oss`, `deepseek-v4`, `kimi-k3`, `kimi-k2.5`,
-`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen3`, `qwen3.5-0.8b`, `qwen3.5-27b`,
-`gemma3`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. `--dry-run`
+`kimi-k2.6`, `glm5.1`, `glm5.2`, `glm5.3-flash`, `qwen2.5-7b`, `qwen3.5-0.8b`, `qwen3.5-27b`,
+`gemma2-9b`, `gemma4-31b`, `llama3`, `mistral`), or a full real run. The former
+`qwen3` and `gemma3` names (which loaded Qwen2.5 7B and Gemma 2 9B) still resolve
+to `qwen2.5-7b` and `gemma2-9b` with a deprecation warning until v0.71.0. `--dry-run`
 defaults to `True`; pass `--no-dry-run` to actually invoke the training
 entry point (the packaged starter's `run_<name>_config` for starter-backed
 presets, or `stateset_agents.training.gspo_entrypoints.train_with_gspo`

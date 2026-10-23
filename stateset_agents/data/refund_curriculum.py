@@ -17,6 +17,7 @@ from typing import Any
 from stateset_agents.core.environments.refund_policy_environment import (
     RefundPolicyEnvironment,
 )
+from stateset_agents.data.jsonl import jsonl_lines
 from stateset_agents.data.refund_demonstrations import (
     ENVIRONMENT,
     _load_data,
@@ -444,7 +445,7 @@ async def audit_refund_curriculum(
         if hashlib.sha256(raw).hexdigest() != artifacts[name]:
             raise ValueError(f"Curriculum artifact changed: {name}")
         actual = (
-            [json.loads(line) for line in raw.decode().splitlines()]
+            [json.loads(line) for _, line in jsonl_lines(raw.decode())]
             if name == "train.jsonl"
             else json.loads(raw)
         )

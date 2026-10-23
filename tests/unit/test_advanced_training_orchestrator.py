@@ -5,6 +5,7 @@ Tests cover training job management, resource allocation, job scheduling,
 experiment tracking, and training workers.
 """
 
+import asyncio
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -595,6 +596,60 @@ class TestAdvancedTrainingOrchestrator:
             await orchestrator.submit_training_job(training_config)
         assert not orchestrator.scheduler.job_queue
         orchestrator.state_service.state_manager.set.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_monitoring_loop_skips_recording_when_metrics_disabled(
+        self, orchestrator
+    ):
+        """Regression: a disabled collector made every iteration raise and log."""
+        orchestrator.monitoring.metrics_collector = None
+        orchestrator._record_monitoring_metrics = MagicMock()
+        sleeps: list[float] = []
+
+        async def fake_sleep(delay):
+            sleeps.append(delay)
+            raise asyncio.CancelledError
+
+        with (
+            patch(
+                "stateset_agents.training.advanced_training_orchestrator.asyncio.sleep",
+                fake_sleep,
+            ),
+            patch(
+                "stateset_agents.training.advanced_training_orchestrator.logger"
+            ) as mock_logger,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await orchestrator._monitoring_loop()
+
+        orchestrator._record_monitoring_metrics.assert_not_called()
+        mock_logger.error.assert_not_called()
+        assert sleeps == [30]
+
+    @pytest.mark.asyncio
+    async def test_monitoring_loop_records_on_enabled_collector(self, orchestrator):
+        collector = orchestrator.monitoring.metrics_collector
+        orchestrator.resource_manager.get_resource_utilization = MagicMock(
+            return_value={ResourceType.CPU: 0.25}
+        )
+        orchestrator.scheduler.get_queue_status = MagicMock(
+            return_value={"queued": 3, "label": "x"}
+        )
+
+        async def fake_sleep(delay):
+            raise asyncio.CancelledError
+
+        with patch(
+            "stateset_agents.training.advanced_training_orchestrator.asyncio.sleep",
+            fake_sleep,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await orchestrator._monitoring_loop()
+
+        recorded = [c.args for c in collector.record_metric.call_args_list]
+        assert ("orchestrator.resource_utilization.cpu", 0.25) in recorded
+        assert ("orchestrator.queue.queued", 3) in recorded
+        assert all(name != "orchestrator.queue.label" for name, _ in recorded)
 
     @pytest.mark.asyncio
     async def test_invalid_resources_rejected_before_state_write(

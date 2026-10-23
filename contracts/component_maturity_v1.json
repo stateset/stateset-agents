@@ -52,6 +52,30 @@
     },
     {
       "docs": [
+        "docs/IMPROVEMENT_PIPELINE.md"
+      ],
+      "evidence": [
+        "tests/unit/test_capability_regression.py"
+      ],
+      "graduation_criteria": [
+        "Retain a real lm-evaluation-harness run of a base model and an SFT adapter on at least three tasks, with the gate report",
+        "Exercise one pinned lm-eval release in a CI job with the eval-harness extra installed"
+      ],
+      "id": "capability-regression-eval",
+      "limitations": [
+        "Tested only against a fake harness; no retained lm-evaluation-harness run yet",
+        "A pass bounds regression on the chosen tasks and settings only; small deltas need the reported stderr"
+      ],
+      "maturity": "experimental",
+      "name": "General-capability regression gate (lm-evaluation-harness)",
+      "owner": "research",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_capability_regression.py"
+      ]
+    },
+    {
+      "docs": [
         "docs/ARCHITECTURE.md"
       ],
       "evidence": [
@@ -71,6 +95,32 @@
       "tests": [
         "tests/unit/test_agent.py",
         "tests/unit/test_tool_agent.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/DECONTAMINATION.md",
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "benchmark_results/decontamination/20261023/audit.json"
+      ],
+      "graduation_criteria": [
+        "Run the repository audit on every release and fail on new contamination of a shipped eval set",
+        "Measure near-duplicate recall on a labeled paraphrase set and publish the threshold trade-off"
+      ],
+      "id": "data-decontamination",
+      "limitations": [
+        "Lexical matching only: translations, heavy rewrites and contamination inside pretrained base models are not detected",
+        "Near-duplicate detection is in memory; whitespace word splitting needs pre-segmentation for scripts without spaces"
+      ],
+      "maturity": "beta",
+      "name": "Training/eval decontamination (n-gram and MinHash)",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_decontamination.py",
+        "tests/unit/test_cli_data.py"
       ]
     },
     {
@@ -360,6 +410,70 @@
     },
     {
       "docs": [
+        "docs/PREFERENCE_TRAINING.md",
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "tests/learning/test_preference_learns.py",
+        "tests/learning/test_online_dpo_learns.py",
+        "tests/unit/test_preference_trl_pin.py"
+      ],
+      "graduation_criteria": [
+        "Retain a three-seed DPO/SimPO/KTO run on a >=0.5B instruct model with held-out reward accuracy and a downstream evaluation",
+        "Retain a reward-model run (full and LoRA) whose held-out accuracy/AUC and RL usefulness are measured on human or judge preference labels",
+        "Retain a three-seed online DPO run on a >=0.5B instruct model with a learned or LLM judge, showing held-out judged quality rising across rounds against an offline-DPO baseline",
+        "Promote the provisional stateset_agents.training.preference names into the reviewed v1 contract"
+      ],
+      "id": "preference-optimization",
+      "limitations": [
+        "Provisional API (stateset_agents.training.preference): not in the v1 stable manifest and may change in minor releases",
+        "Learning evidence is CPU toy-model tasks (offline methods, LoRA and full reward models, online DPO with a rule-based digit judge); no retained large-model runs yet",
+        "Single-process training only: no DDP/FSDP, gradient checkpointing or fp16 GradScaler (bf16 autocast only)",
+        "Online DPO samples with Hugging Face generate (no vLLM), calls the judge once per completion and pairs only best vs worst per prompt; its learning test uses a rule-based judge, not a learned or LLM judge",
+        "A LoRA reward model's adapter needs its base model available locally to load (or must be saved merged); reward models score one reply per forward pass"
+      ],
+      "maturity": "beta",
+      "name": "Offline and online preference optimization (DPO, IPO, SimPO, KTO, ORPO, iterative online DPO) and Bradley-Terry reward models (full or LoRA)",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_preference_losses.py",
+        "tests/unit/test_preference_trl_pin.py",
+        "tests/unit/test_preference_data.py",
+        "tests/unit/test_preference_trainer.py",
+        "tests/unit/test_online_dpo.py",
+        "tests/unit/test_reward_model_lora.py",
+        "tests/unit/test_cli_preference.py",
+        "tests/learning/test_preference_learns.py",
+        "tests/learning/test_online_dpo_learns.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "tests/unit/test_sft_quantization.py"
+      ],
+      "graduation_criteria": [
+        "Retain CUDA 4-bit and 8-bit QLoRA SFT runs with adapter manifests, loss curves and eval results",
+        "Move the GSPO and TRL GRPO trainers onto the shared stateset_agents.training.quantization helper"
+      ],
+      "id": "qlora-sft",
+      "limitations": [
+        "Covered by CPU tests of configuration objects and failure paths only; no retained GPU QLoRA SFT run",
+        "train-remote does not forward the quantization flags yet"
+      ],
+      "maturity": "experimental",
+      "name": "QLoRA (4-bit/8-bit) supervised fine-tuning",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_sft_quantization.py"
+      ]
+    },
+    {
+      "docs": [
         "docs/WHITEPAPER.md"
       ],
       "evidence": [
@@ -438,22 +552,54 @@
       ],
       "id": "sim-to-real",
       "limitations": [
-        "Lives in stateset_agents.experimental.sim_to_real since v0.64.0; the old stateset_agents.training, .evaluation, and .environments import paths were removed in v0.65.0; the four root exports in the v1 contract stay deprecated through v0.65.x and are removed in v0.66.0",
+        "Lives in stateset_agents.experimental.sim_to_real since v0.64.0; the old stateset_agents.training, .evaluation, and .environments import paths were removed in v0.65.0, and the four deprecated root exports were removed from the v1 contract after their v0.66.0 deadline",
         "No learning test or retained benchmark demonstrates sim-to-real transfer; public benchmark evidence remains pending"
       ],
       "maturity": "experimental",
       "name": "Sim-to-real transfer, domain randomization, conversation simulator, and metrics",
       "owner": "research",
-      "public_contract_refs": [
-        "python:stateset_agents.ConversationSimulator",
-        "python:stateset_agents.ConversationSimulatorConfig",
-        "python:stateset_agents.SimToRealEvaluator",
-        "python:stateset_agents.SimToRealMetrics"
-      ],
+      "public_contract_refs": [],
       "tests": [
         "tests/unit/test_offline_rl_sim_to_real.py",
         "tests/unit/test_sim_to_real_reward_gap.py",
         "tests/unit/test_experimental_shims_removed.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/TOOL_USE_RL.md",
+        "docs/REWARD_CONTRACT.md"
+      ],
+      "evidence": [
+        "tests/learning/test_tool_use_learns.py",
+        "tests/integration/test_tool_use_grpo.py",
+        "tests/unit/test_tool_use_masking.py"
+      ],
+      "graduation_criteria": [
+        "Retain a three-seed tool-use GRPO run on a >=0.5B instruct model with held-out verifier pass rates and tool-call accuracy",
+        "Run the code verifier inside a container or microVM sandbox (no network, read-only root) with a retained isolation test suite",
+        "Promote the provisional ToolUseEnvironment, ToolRegistry, MathAnswerVerifier and SandboxedCodeVerifier names into the reviewed v1 contract"
+      ],
+      "id": "tool-use-rl",
+      "limitations": [
+        "Provisional API (stateset_agents.environments.ToolUseEnvironment and the stateset_agents.rewards verifiers): not in the v1 stable manifest and may change in minor releases",
+        "The code sandbox is resource isolation (python -I, empty environment, temporary working directory, rlimits, process-group kill), not a security boundary: candidate code keeps the trainer user's filesystem and network access, root ignores RLIMIT_NPROC, and it needs POSIX",
+        "Tool timeouts bound waiting only: a synchronous tool holding the GIL is not preempted",
+        "Math equivalence is exact for numbers and rational functions; other functions need sympy, and equivalent forms (expanded vs factored) are not told apart unless symbolic=False",
+        "Learning evidence is a CPU toy model with a supervised warm start and a KL anchor; no retained large-model runs yet"
+      ],
+      "maturity": "beta",
+      "name": "Tool-use environment with observation masking and verifiable rewards (math, sandboxed code)",
+      "owner": "core",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_tool_use_environment.py",
+        "tests/unit/test_tool_use_masking.py",
+        "tests/unit/test_math_verifier.py",
+        "tests/unit/test_code_verifier_sandbox.py",
+        "tests/unit/test_reward_exploit_search.py",
+        "tests/integration/test_tool_use_grpo.py",
+        "tests/learning/test_tool_use_learns.py"
       ]
     },
     {
@@ -477,6 +623,41 @@
       "public_contract_refs": [],
       "tests": [
         "tests/unit/test_vapo_trainer_behavioral.py"
+      ]
+    },
+    {
+      "docs": [
+        "docs/DISTILLATION.md",
+        "docs/CLI_REFERENCE.md"
+      ],
+      "evidence": [
+        "tests/learning/test_distillation_learns.py",
+        "tests/unit/test_distillation_trl_pin.py"
+      ],
+      "graduation_criteria": [
+        "Retain a three-seed offline KD and on-policy GKD run distilling a >=7B teacher into a <=1B student, with held-out KL and a downstream task evaluation against an SFT-on-teacher-samples baseline",
+        "Retain a top-k cache run showing the cached loss tracks the live-teacher loss on a large vocabulary",
+        "Promote the provisional stateset_agents.training.distillation names into the reviewed v1 contract"
+      ],
+      "id": "distillation",
+      "limitations": [
+        "Provisional API (stateset_agents.training.distillation): not in the v1 stable manifest and may change in minor releases",
+        "Learning evidence is a CPU toy task (a tiny GPT-2 student and a tiny fine-tuned GPT-2 teacher); no retained large-model runs yet",
+        "Single-process training only: no DDP/FSDP, gradient checkpointing or fp16 GradScaler; on-policy sampling uses Hugging Face generate (no vLLM)",
+        "Cross-tokenizer distillation aligns identical token strings only; tokenizers that segment text differently are not supported",
+        "The teacher runs a full forward pass per batch (also for the sampled-token objective); the top-k teacher cache is offline only"
+      ],
+      "maturity": "beta",
+      "name": "Knowledge distillation: offline logit KD (forward/reverse KL, generalized JSD, top-k teacher cache) and on-policy GKD",
+      "owner": "training",
+      "public_contract_refs": [],
+      "tests": [
+        "tests/unit/test_distillation_losses.py",
+        "tests/unit/test_distillation_trl_pin.py",
+        "tests/unit/test_distillation_data.py",
+        "tests/unit/test_distillation_trainer.py",
+        "tests/unit/test_cli_distill.py",
+        "tests/learning/test_distillation_learns.py"
       ]
     }
   ],

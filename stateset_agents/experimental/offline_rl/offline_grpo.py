@@ -10,7 +10,7 @@ import hashlib
 import json
 import logging
 import math
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, is_dataclass
 from enum import Enum
 from pathlib import Path
@@ -23,12 +23,10 @@ try:
     import torch
     import torch.nn as nn
     import torch.nn.functional as F
-    from torch.optim import AdamW
 except ImportError:
     torch = cast(Any, None)
     nn = cast(Any, None)
     F = cast(Any, None)
-    AdamW = cast(Any, None)
 
 from ...training.base_trainer import BaseTrainerConfig
 from ...training.callbacks import (
@@ -39,6 +37,7 @@ from ...training.callbacks import (
 )
 from ...training.checkpoint_io import load_checkpoint_file
 from ...training.checkpoint_publication import checkpoint_write
+from ...training.rl_losses import whiten
 from ...training.runtime_state import capture_rng, restore_rng
 
 logger = logging.getLogger(__name__)
@@ -132,7 +131,7 @@ class ValueNetwork(nn.Module):
     ):
         super().__init__()
 
-        layers = []
+        layers: list[nn.Module] = []
         input_dim = state_dim
 
         for i in range(num_layers):
@@ -159,7 +158,8 @@ class ValueNetwork(nn.Module):
                 module.bias.data.zero_()
 
     def forward(self, state: torch.Tensor) -> torch.Tensor:
-        return self.network(state)
+        value: torch.Tensor = self.network(state)
+        return value
 
 
 class QNetwork(nn.Module):
@@ -175,7 +175,7 @@ class QNetwork(nn.Module):
     ):
         super().__init__()
 
-        layers = []
+        layers: list[nn.Module] = []
         input_dim = state_dim + action_dim
 
         for i in range(num_layers):
@@ -203,7 +203,8 @@ class QNetwork(nn.Module):
 
     def forward(self, state: torch.Tensor, action: torch.Tensor) -> torch.Tensor:
         x = torch.cat([state, action], dim=-1)
-        return self.network(x)
+        q_value: torch.Tensor = self.network(x)
+        return q_value
 
 
 class OfflineGRPOTrainer:
@@ -275,10 +276,12 @@ class OfflineGRPOTrainer:
         self.value_target.load_state_dict(self.value_net.state_dict())
 
         # Optimizers
-        self.value_optimizer = AdamW(
+        self.value_optimizer = torch.optim.AdamW(
             self.value_net.parameters(), lr=config.value_learning_rate
         )
-        self.q_optimizer = AdamW(self.q_net.parameters(), lr=config.value_learning_rate)
+        self.q_optimizer = torch.optim.AdamW(
+            self.q_net.parameters(), lr=config.value_learning_rate
+        )
 
         # Embedding cache
         self._embedding_cache: dict[str, torch.Tensor] = {}
@@ -678,7 +681,7 @@ class OfflineGRPOTrainer:
             parameters = [p for p in self.model.parameters() if p.requires_grad]
             if not parameters:
                 raise ValueError("Offline policy has no trainable parameters")
-            self.policy_optimizer = AdamW(
+            self.policy_optimizer = torch.optim.AdamW(
                 parameters,
                 lr=self.config.learning_rate,
                 betas=(self.config.adam_beta1, self.config.adam_beta2),
@@ -838,7 +841,7 @@ class OfflineGRPOTrainer:
 
     def _compute_hybrid_advantage(
         self,
-        online_rewards: torch.Tensor | float,
+        online_rewards: torch.Tensor | float | Sequence[float],
         offline_values: torch.Tensor,
         offline_q_values: torch.Tensor,
     ) -> torch.Tensor:
@@ -866,7 +869,7 @@ class OfflineGRPOTrainer:
         advantages = hybrid_q - offline_values
 
         if self.config.advantage_normalization:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+            advantages = whiten(advantages)
 
         return advantages
 
@@ -1205,7 +1208,7 @@ class OfflineGRPOTrainer:
         self.q_optimizer.load_state_dict(checkpoint["q_optimizer_state_dict"])
         policy_state = checkpoint.get("policy_optimizer_state_dict")
         if policy_state is not None and self.model is not None:
-            self.policy_optimizer = AdamW(
+            self.policy_optimizer = torch.optim.AdamW(
                 [p for p in self.model.parameters() if p.requires_grad],
                 lr=self.config.learning_rate,
                 weight_decay=float(getattr(self.config, "weight_decay", 0.0)),

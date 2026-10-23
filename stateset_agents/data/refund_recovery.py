@@ -20,6 +20,7 @@ from stateset_agents.core.environments.refund_recovery_environment import (
     RefundRecoveryEnvironment,
 )
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.data.jsonl import read_jsonl_lines
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.implementation import package_implementation
 
@@ -252,10 +253,11 @@ async def prepare_refund_recovery_data(
         },
     }
     output.mkdir(parents=True, exist_ok=False)
+    # newline="\n" keeps the on-disk bytes equal to the hashed text on Windows.
     for name, data in serialized.items():
-        with (output / name).open("x", encoding="utf-8") as stream:
+        with (output / name).open("x", encoding="utf-8", newline="\n") as stream:
             stream.write(data)
-    with (output / "manifest.json").open("x", encoding="utf-8") as stream:
+    with (output / "manifest.json").open("x", encoding="utf-8", newline="\n") as stream:
         stream.write(
             json.dumps(manifest, sort_keys=True, indent=2, allow_nan=False) + "\n"
         )
@@ -321,9 +323,7 @@ async def audit_refund_recovery_data(output: Path) -> dict[str, Any]:
     }
     if manifest.get("families") != expected_families:
         raise ValueError("Recovery family counts differ from canonical splits")
-    records = [
-        json.loads(line) for line in (output / "train.jsonl").read_text().splitlines()
-    ]
+    records = [json.loads(line) for _, line in read_jsonl_lines(output / "train.jsonl")]
     by_id, seen = {r["order_id"]: r for r in splits["train"]}, set()
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("metadata"), dict):

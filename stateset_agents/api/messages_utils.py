@@ -1,13 +1,17 @@
 """
-Utilities for converting between Anthropic-style and OpenAI-style messages.
+Utilities for converting between Anthropic-style and OpenAI-style messages,
+and the request checks every chat route shares (message limits, backend
+error text).
 """
 
 from __future__ import annotations
 
 import json
 import uuid
-from collections.abc import Iterable
-from typing import Any
+from collections.abc import Iterable, Sequence
+from typing import Any, Literal
+
+import httpx
 
 
 def _join_text_parts(parts: Iterable[str]) -> str:
@@ -403,3 +407,87 @@ def extract_last_user_text(messages: list[dict[str, Any]]) -> str:
             if text:
                 return text
     return ""
+
+
+# ---------------------------------------------------------------------------
+# Request checks shared by /v1/messages, /v1/chat/completions and /api/v1
+# ---------------------------------------------------------------------------
+
+
+class MessageLimitError(ValueError):
+    """A request exceeded the gateway's message-count or message-length limit.
+
+    ``kind`` is ``"count"`` or ``"length"``; ``index`` names the first message
+    that is too long. Routes map it to a 422 response.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        kind: Literal["count", "length"],
+        index: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.kind = kind
+        self.index = index
+
+
+def estimate_message_content_length(content: Any) -> int:
+    """Estimate the length of message content (text or structured blocks)."""
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, (list, dict)):
+        try:
+            return len(json.dumps(content))
+        except (TypeError, ValueError):
+            return len(str(content))
+    return len(str(content))
+
+
+def validate_message_limits(
+    messages: Sequence[Any], *, max_messages: int, max_length: int
+) -> None:
+    """Raise :class:`MessageLimitError` when ``messages`` exceed the limits.
+
+    Messages may be models with a ``content`` attribute or plain dicts.
+    """
+    if len(messages) > max_messages:
+        raise MessageLimitError(f"Too many messages (max {max_messages})", kind="count")
+    for index, message in enumerate(messages):
+        content = (
+            message.get("content")
+            if isinstance(message, dict)
+            else getattr(message, "content", None)
+        )
+        if estimate_message_content_length(content) > max_length:
+            raise MessageLimitError(
+                f"Message content too long at index {index}",
+                kind="length",
+                index=index,
+            )
+
+
+def inference_error_text(exc: Exception) -> str:
+    """Return a compact, client-safe message for an inference backend error."""
+    response = getattr(exc, "response", None)
+    if isinstance(response, httpx.Response):
+        try:
+            payload = response.json()
+        except ValueError:
+            payload = response.text.strip()
+
+        if isinstance(payload, dict):
+            error = payload.get("error", payload)
+            if isinstance(error, dict):
+                message = error.get("message")
+                if isinstance(message, str) and message:
+                    return message
+            if isinstance(error, str) and error:
+                return error
+        elif isinstance(payload, str) and payload:
+            return payload
+
+    return "Inference backend request failed"

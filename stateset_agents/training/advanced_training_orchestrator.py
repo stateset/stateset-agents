@@ -23,6 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
 try:
     import torch
 
@@ -39,6 +41,7 @@ except ImportError:  # pragma: no cover
     PSUTIL_AVAILABLE = False
 
 from stateset_agents.core.advanced_monitoring import (
+    TimeSeriesMetricsCollector,
     get_monitoring_service,
     monitor_async_function,
 )
@@ -63,17 +66,21 @@ from .resource_capacity import read_cgroup_capacity
 
 logger = logging.getLogger(__name__)
 
+#: Failures the orchestration and monitoring loops survive (a state-service
+#: or filesystem outage, bad job data, a timeout) by logging and retrying.
+#: TypeError/AttributeError/KeyError are bugs: they stop the loop instead of
+#: being logged every 30 seconds forever.
 TRAINING_ORCH_EXCEPTIONS = (
     RuntimeError,
     ValueError,
-    TypeError,
-    AttributeError,
-    KeyError,
     OSError,
     asyncio.TimeoutError,
     pickle.PickleError,
     shutil.Error,
 )
+#: What a capacity probe (os, psutil, torch.cuda, disk_usage) may raise when
+#: the measurement is unavailable; the probe's own checks raise ValueError.
+RESOURCE_PROBE_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 class ResourceManager:
@@ -132,7 +139,7 @@ class ResourceManager:
                 if not math.isfinite(measured) or measured < 0:
                     raise ValueError("Invalid capacity")
                 return measured
-            except Exception as exc:
+            except RESOURCE_PROBE_EXCEPTIONS as exc:
                 self.detection_issues.append(
                     f"{label} unavailable ({type(exc).__name__})"
                 )
@@ -1016,18 +1023,21 @@ class AdvancedTrainingOrchestrator:
 
         logger.info(f"Started training job {job.job_id} on worker {worker_id}")
 
-    async def _cleanup_completed_tasks(self):
+    async def _cleanup_completed_tasks(self) -> None:
         """Clean up completed worker tasks"""
         async with self._cleanup_lock:
             errors: list[Exception] = []
+            # Collect-and-reraise: one failure must not skip the remaining
+            # state writes; the first error is re-raised below.
             try:
                 await self._reap_completed_tasks()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - collect-and-reraise
                 errors.append(exc)
             for job in list(self._pending_state_jobs.values()):
                 try:
                     await self._persist_job(job)
-                except Exception as exc:
+                # Collect-and-reraise (see above).
+                except Exception as exc:  # noqa: BLE001
                     errors.append(exc)
             if errors:
                 raise errors[0]
@@ -1067,9 +1077,10 @@ class AdvancedTrainingOrchestrator:
                     # Update job in state
                     try:
                         await self._persist_job(job)
-                    except Exception as exc:
-                        # One failed write must not strand other finished jobs'
-                        # reservations. Keep this task for a later write retry.
+                    # Collect-and-reraise: one failed write must not strand
+                    # other finished jobs' reservations. Keep this task for a
+                    # later write retry; the first error is re-raised below.
+                    except Exception as exc:  # noqa: BLE001
                         persistence_errors.append(exc)
                         continue
                 completed_workers.append(worker_id)
@@ -1083,26 +1094,29 @@ class AdvancedTrainingOrchestrator:
         if persistence_errors:
             raise persistence_errors[0]
 
+    def _record_monitoring_metrics(self, collector: TimeSeriesMetricsCollector) -> None:
+        """Record resource-utilization and queue gauges on ``collector``."""
+        resource_util = self.resource_manager.get_resource_utilization()
+        for resource_type, utilization in resource_util.items():
+            collector.record_metric(
+                f"orchestrator.resource_utilization.{resource_type.value}",
+                utilization,
+            )
+
+        queue_status = self.scheduler.get_queue_status()
+        for metric_name, value in queue_status.items():
+            if isinstance(value, (int, float)):
+                collector.record_metric(f"orchestrator.queue.{metric_name}", value)
+
     async def _monitoring_loop(self):
         """Background monitoring loop"""
         while True:
             try:
-                # Record system metrics
-                resource_util = self.resource_manager.get_resource_utilization()
-
-                for resource_type, utilization in resource_util.items():
-                    self.monitoring.metrics_collector.record_metric(
-                        f"orchestrator.resource_utilization.{resource_type.value}",
-                        utilization,
-                    )
-
-                # Record queue metrics
-                queue_status = self.scheduler.get_queue_status()
-                for metric_name, value in queue_status.items():
-                    if isinstance(value, (int, float)):
-                        self.monitoring.metrics_collector.record_metric(
-                            f"orchestrator.queue.{metric_name}", value
-                        )
+                # The monitoring service may run with metrics disabled; skip
+                # recording instead of raising (and logging) every iteration.
+                collector = self.monitoring.metrics_collector
+                if collector is not None:
+                    self._record_monitoring_metrics(collector)
 
                 await asyncio.sleep(30)  # Monitor every 30 seconds
 

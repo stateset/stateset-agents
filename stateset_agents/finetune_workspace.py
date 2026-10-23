@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import json
 import math
@@ -12,15 +13,17 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Collection, Iterator, Mapping
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from stateset_agents.finetune_remote_code import RemoteCodeSelection
-from stateset_agents.utils.process_probe import probe_process
+from stateset_agents.utils.process_probe import probe_process, process_start_token
 
 MAX_DATA_BYTES = 64 * 1024 * 1024
 MAX_STUDIO_CHECKPOINTS = 100
@@ -94,6 +97,11 @@ def require_backend_credentials(provider: str) -> None:
         raise ValueError(f"{name} is missing from this session's environment")
 
 
+#: Version of the ``stop.json`` receipt this package's workers honor. A plan
+#: records it, so a later package can still stop that run's (older) worker as
+#: long as it writes the same receipt version.
+STOP_PROTOCOL_VERSION = 1
+
 TERMINAL_STATES = frozenset({"succeeded", "failed", "interrupted", "cancelled"})
 FAILURE_GUIDANCE = {
     "cancelled": (
@@ -143,6 +151,10 @@ FAILURE_GUIDANCE = {
     "missing_receipt": (
         "The worker produced no completion receipt",
         "Inspect worker and export logs. A zero exit code without an artifact receipt is not successful training.",
+    ),
+    "supervisor_stopped": (
+        "The run's supervisor was stopped",
+        "The supervising process was interrupted (Ctrl+C, shutdown or a closed console) and stopped the worker it owned. Inspect run.log and supervisor.log, then prepare a fresh run.",
     ),
     "permissions": (
         "A file or executable permission was denied",
@@ -270,6 +282,19 @@ class ConfigIssue:
     message: str
 
 
+class _IssueLog:
+    """Ordered settings issues, at most one (the first) per field."""
+
+    def __init__(self) -> None:
+        self.issues: list[ConfigIssue] = []
+        self.seen: set[str] = set()
+
+    def add(self, field: str, code: str, message: str) -> None:
+        if field not in self.seen:
+            self.issues.append(ConfigIssue(field, code, message))
+            self.seen.add(field)
+
+
 def check_config_values(
     values: Mapping[str, Any], *, parse_text: bool = False
 ) -> tuple[dict[str, Any], list[ConfigIssue]]:
@@ -281,16 +306,30 @@ def check_config_values(
     """
     defaults = asdict(FinetuneConfig())
     parsed = {name: values.get(name, default) for name, default in defaults.items()}
-    issues: list[ConfigIssue] = []
-    seen: set[str] = set()
+    log = _IssueLog()
+    # The checks run in a fixed order; the first issue recorded for a field wins.
+    _check_field_types(values, defaults, parsed, log, parse_text=parse_text)
+    _check_recipe(parsed, log)
+    _check_cost_and_hardware(parsed, log)
+    _check_positive_ranges(defaults, parsed, log)
+    _check_backend_limits(parsed, log)
+    return parsed, log.issues
 
-    def add(field: str, code: str, message: str) -> None:
-        if field not in seen:
-            issues.append(ConfigIssue(field, code, message))
-            seen.add(field)
 
+def _number_kind(default: Any) -> str:
+    return "an integer" if type(default) is int else "a finite number"
+
+
+def _check_field_types(
+    values: Mapping[str, Any],
+    defaults: dict[str, Any],
+    parsed: dict[str, Any],
+    log: _IssueLog,
+    *,
+    parse_text: bool,
+) -> None:
     if set(values) - defaults.keys():
-        add(
+        log.add(
             "config",
             "unknown_fields",
             "Unknown configuration fields; use finetune schema for supported fields.",
@@ -299,40 +338,48 @@ def check_config_values(
         value = parsed[name]
         if isinstance(default, str):
             if not isinstance(value, str):
-                add(name, "invalid_type", f"{name} must be text")
+                log.add(name, "invalid_type", f"{name} must be text")
         elif type(default) in {int, float}:
             if parse_text and isinstance(value, str):
                 try:
                     value = int(value) if type(default) is int else float(value)
                     parsed[name] = value
                 except (ValueError, OverflowError):
-                    add(
+                    log.add(
                         name,
                         "invalid_type",
-                        f"{name} must be {'an integer' if type(default) is int else 'a finite number'}",
+                        f"{name} must be {_number_kind(default)}",
                     )
             if (
                 isinstance(value, bool)
                 or (type(default) is int and type(value) is not int)
                 or (type(default) is float and not isinstance(value, (int, float)))
             ):
-                add(
+                log.add(
                     name,
                     "invalid_type",
-                    f"{name} must be {'an integer' if type(default) is int else 'a finite number'}",
+                    f"{name} must be {_number_kind(default)}",
                 )
 
+
+def _method_and_provider(parsed: Mapping[str, Any]) -> tuple[Any, Any, bool, bool]:
     method, provider = parsed["method"], parsed["provider"]
     method_valid = isinstance(method, str) and method in METHODS
     provider_valid = isinstance(provider, str) and provider in PROVIDERS
+    return method, provider, method_valid, provider_valid
+
+
+def _check_recipe(parsed: dict[str, Any], log: _IssueLog) -> None:
+    """Method, backend, model, dataset and revision."""
+    method, provider, method_valid, provider_valid = _method_and_provider(parsed)
     if not method_valid:
-        add(
+        log.add(
             "method",
             "unsupported_method",
             "Choose SFT/GRPO/GSPO/DAPO and local/RunPod/Modal/River",
         )
     if not provider_valid:
-        add(
+        log.add(
             "provider",
             "unsupported_backend",
             "Choose SFT/GRPO/GSPO/DAPO and local/RunPod/Modal/River",
@@ -340,66 +387,74 @@ def check_config_values(
     if isinstance(parsed["model"], str) and (
         not parsed["model"].strip() or parsed["model"].startswith("stub://")
     ):
-        add("model", "invalid_model", "Choose a real Hugging Face model")
+        log.add("model", "invalid_model", "Choose a real Hugging Face model")
     if (
         provider_valid
         and provider in {"local", "runpod", "modal"}
         and isinstance(parsed["model"], str)
     ):
-        from stateset_agents.core.frontier_models import (
-            get_frontier_model,
-            require_frontier_training,
-        )
-
-        try:
-            frontier = get_frontier_model(parsed["model"].strip())
-        except ValueError:
-            pass
-        else:
-            try:
-                require_frontier_training(frontier, generic_loader=True)
-            except RuntimeError:
-                if frontier.blockers:
-                    add(
-                        "model",
-                        "blocked_training_layout",
-                        "This checkpoint has an unsupported training layout for this backend; inspect frontier-models for blockers and choose a supported checkpoint.",
-                    )
-                else:
-                    add(
-                        "model",
-                        "requires_frontier_recipe",
-                        "This FP8 checkpoint requires the dedicated frontier-sft BF16 dequantization recipe; inspect frontier-sft --help or choose a supported Studio checkpoint.",
-                    )
+        _check_frontier_layout(parsed["model"], log)
     if isinstance(parsed["dataset"], str) and not parsed["dataset"].strip():
-        add("dataset", "dataset_required", "Set the dataset path first")
+        log.add("dataset", "dataset_required", "Set the dataset path first")
     revision = parsed["revision"]
     if (
         isinstance(revision, str)
         and revision
         and not re.fullmatch(r"[0-9a-f]{40}", revision)
     ):
-        add(
+        log.add(
             "revision",
             "invalid_revision",
             "Revision must be a full 40-character commit or blank",
         )
     if provider_valid and provider != "local":
         if method_valid and method != "sft":
-            add(
+            log.add(
                 "method",
                 "backend_method",
                 f"Studio supports {BACKENDS[provider]['label']} SFT; choose local for native RL or the dedicated River RL workflow",
             )
         if isinstance(revision, str) and revision:
-            add(
+            log.add(
                 "revision",
                 "backend_revision",
                 f"{BACKENDS[provider]['label']}'s SFT contract cannot enforce a revision; use local",
             )
+
+
+def _check_frontier_layout(model: str, log: _IssueLog) -> None:
+    from stateset_agents.core.frontier_models import (
+        get_frontier_model,
+        require_frontier_training,
+    )
+
+    try:
+        frontier = get_frontier_model(model.strip())
+    except ValueError:
+        return
+    try:
+        require_frontier_training(frontier, generic_loader=True)
+    except RuntimeError:
+        if frontier.blockers:
+            log.add(
+                "model",
+                "blocked_training_layout",
+                "This checkpoint has an unsupported training layout for this backend; inspect frontier-models for blockers and choose a supported checkpoint.",
+            )
+        else:
+            log.add(
+                "model",
+                "requires_frontier_recipe",
+                "This FP8 checkpoint requires the dedicated frontier-sft BF16 dequantization recipe; inspect frontier-sft --help or choose a supported Studio checkpoint.",
+            )
+
+
+def _check_cost_and_hardware(parsed: dict[str, Any], log: _IssueLog) -> None:
+    """Cost policy, seed, checkpoint cadence and GPU overrides."""
+    method, provider = parsed["method"], parsed["provider"]
     policy = parsed["cost_policy"]
     if not isinstance(policy, str) or policy not in {"require_cap", "provider_billed"}:
-        add(
+        log.add(
             "cost_policy",
             "invalid_cost_policy",
             "Choose require_cap or provider_billed cost policy",
@@ -409,83 +464,99 @@ def check_config_values(
         and provider in {"modal", "river"}
         and policy != "provider_billed"
     ):
-        add(
+        log.add(
             "cost_policy",
             "uncapped_backend",
             "This backend has no enforced dollar ceiling; explicitly choose provider_billed cost policy before review",
         )
     seed = parsed["seed"]
     if type(seed) is int and not 0 <= seed <= 2**32 - 1:
-        add(
+        log.add(
             "seed",
             "invalid_range",
             "Training seed must be an integer in [0, 4294967295]",
         )
+    _check_checkpoint_cadence(parsed, log, method=method, provider=provider)
     gpu, count = parsed["gpu"], parsed["gpu_count"]
-    cadence = parsed["checkpoint_every"]
-    if type(cadence) is int:
-        if cadence < 0:
-            add(
-                "checkpoint_every",
-                "invalid_range",
-                "Checkpoint interval must be nonnegative (0 saves only the final checkpoint)",
-            )
-        elif cadence and (provider != "local" or method == "sft"):
-            add(
-                "checkpoint_every",
-                "checkpoint_backend",
-                "Periodic checkpoint intervals currently require local native RL",
-            )
-        elif (
-            cadence
-            and type(parsed["steps"]) is int
-            and parsed["steps"] > 0
-            and (parsed["steps"] + cadence - 1) // cadence > MAX_STUDIO_CHECKPOINTS
-        ):
-            add(
-                "checkpoint_every",
-                "checkpoint_limit",
-                "Increase the checkpoint interval to retain at most 100 checkpoints",
-            )
     if (
         isinstance(gpu, str)
         and gpu
         and (not gpu.strip() or any(not c.isprintable() for c in gpu))
     ):
-        add("gpu", "invalid_gpu", "GPU must be printable nonempty text or blank")
+        log.add("gpu", "invalid_gpu", "GPU must be printable nonempty text or blank")
     if type(count) is int and count < 0:
-        add(
+        log.add(
             "gpu_count",
             "invalid_range",
             "GPU count must be a nonnegative integer (0 is automatic)",
         )
     if provider == "river":
         if isinstance(gpu, str) and gpu:
-            add(
+            log.add(
                 "gpu", "managed_hardware", "River manages hardware; clear GPU overrides"
             )
         if type(count) is int and count != 0:
-            add(
+            log.add(
                 "gpu_count",
                 "managed_hardware",
                 "River manages hardware; clear GPU overrides",
             )
+
+
+def _check_checkpoint_cadence(
+    parsed: Mapping[str, Any], log: _IssueLog, *, method: Any, provider: Any
+) -> None:
+    cadence = parsed["checkpoint_every"]
+    if type(cadence) is not int:
+        return
+    if cadence < 0:
+        log.add(
+            "checkpoint_every",
+            "invalid_range",
+            "Checkpoint interval must be nonnegative (0 saves only the final checkpoint)",
+        )
+    elif cadence and (provider != "local" or method == "sft"):
+        log.add(
+            "checkpoint_every",
+            "checkpoint_backend",
+            "Periodic checkpoint intervals currently require local native RL",
+        )
+    elif (
+        cadence
+        and type(parsed["steps"]) is int
+        and parsed["steps"] > 0
+        and (parsed["steps"] + cadence - 1) // cadence > MAX_STUDIO_CHECKPOINTS
+    ):
+        log.add(
+            "checkpoint_every",
+            "checkpoint_limit",
+            "Increase the checkpoint interval to retain at most 100 checkpoints",
+        )
+
+
+def _check_positive_ranges(
+    defaults: dict[str, Any], parsed: Mapping[str, Any], log: _IssueLog
+) -> None:
     for name, default in defaults.items():
         value = parsed[name]
-        if name in seen or name in {"gpu_count", "checkpoint_every", "seed"}:
+        if name in log.seen or name in {"gpu_count", "checkpoint_every", "seed"}:
             continue
         if type(default) is int and value < 1:
-            add(name, "invalid_range", f"{name} must be a positive integer")
+            log.add(name, "invalid_range", f"{name} must be a positive integer")
         elif type(default) is float:
             try:
                 valid = math.isfinite(value) and value > 0
             except (OverflowError, TypeError):
                 valid = False
             if not valid:
-                add(name, "invalid_range", f"{name} must be finite and positive")
+                log.add(name, "invalid_range", f"{name} must be finite and positive")
+
+
+def _check_backend_limits(parsed: Mapping[str, Any], log: _IssueLog) -> None:
+    method, provider, method_valid, _ = _method_and_provider(parsed)
     rank = parsed["lora_rank"]
     if provider == "river" and type(rank) is int and rank > 32:
-        add("lora_rank", "backend_rank", "River SFT supports LoRA ranks up to 32")
+        log.add("lora_rank", "backend_rank", "River SFT supports LoRA ranks up to 32")
     generations = parsed["generations"]
     if (
         method_valid
@@ -493,12 +564,11 @@ def check_config_values(
         and type(generations) is int
         and generations < 2
     ):
-        add(
+        log.add(
             "generations",
             "rl_generations",
             "RL needs at least two generations per scenario",
         )
-    return parsed, issues
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -519,6 +589,190 @@ def write_json(path: Path, value: Any) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+_STATE_LOCK_TIMEOUT = 1.0
+#: Outcomes that, once recorded, only ever gain detail (exit codes, timings).
+FINAL_STATUSES = frozenset({"succeeded", "failed", "cancelled"})
+
+
+# The lock primitive is chosen once, at import, from the real platform: a
+# caller (or a test) that later fakes ``sys.platform`` for process checks must
+# not switch file locking to a module this platform does not have.
+if sys.platform == "win32":
+    import msvcrt
+
+    def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
+
+else:
+    import fcntl
+
+    def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
+        fcntl.flock(
+            descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
+        )
+
+
+@contextmanager
+def state_lock(directory: Path) -> Iterator[None]:
+    """Serialize bounded state transitions through a stable private descriptor."""
+    with private_file_lock(
+        directory / ".state.lock",
+        timeout_s=_STATE_LOCK_TIMEOUT,
+        unavailable="Fine-tuning state lock is unavailable",
+        busy="Fine-tuning state is busy",
+    ):
+        yield
+
+
+@contextmanager
+def private_file_lock(
+    path: Path, *, timeout_s: float, unavailable: str, busy: str
+) -> Iterator[None]:
+    """Hold an exclusive OS lock on a private regular file, on any platform.
+
+    The OS releases it if the holder dies. Waits up to ``timeout_s``, then
+    raises ``ValueError(busy)``; a symlink, non-regular or group/world
+    accessible lock file raises ``ValueError(unavailable)``.
+    """
+    if path.is_symlink():
+        raise ValueError(unavailable)
+    descriptor = os.open(
+        path,
+        os.O_RDWR
+        | os.O_CREAT
+        | getattr(os, "O_NOFOLLOW", 0)
+        | getattr(os, "O_NONBLOCK", 0),
+        0o600,
+    )
+    try:
+        info = os.fstat(descriptor)
+        if not stat.S_ISREG(info.st_mode) or (
+            os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
+        ):
+            raise ValueError(unavailable)
+        if os.name == "nt" and info.st_size == 0:
+            os.write(descriptor, b"\0")
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                _state_lock_operation(descriptor)
+                break
+            except OSError as error:
+                if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise ValueError(busy) from None
+                time.sleep(0.01)
+        try:
+            yield
+        finally:
+            _state_lock_operation(descriptor, release=True)
+    finally:
+        os.close(descriptor)
+
+
+def transition_state(
+    directory: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    success_is_final: Callable[[Path], bool] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """Atomically merge ``changes`` into ``directory/state.json`` under its lock.
+
+    Writes nothing and returns ``False`` for an illegal transition:
+
+    * ``allowed_from`` is given and the current status is not in it;
+    * the current status is final (succeeded, failed, cancelled) and the
+      change would move it to any other status. The one exception is a
+      success that ``success_is_final`` does not confirm, which a failure or
+      cancellation may still replace (no callback: never confirmed).
+
+    ``before_write`` runs under the lock once the transition is known to be
+    legal, for records that must only exist alongside it (failure receipts).
+    An unreadable state is replaced, keeping a ``previous_state_unreadable``
+    marker, unless ``allowed_from`` demands a known status.
+    """
+    with state_lock(directory):
+        try:
+            state = read_json(directory / "state.json")
+        except (OSError, ValueError):
+            state = {"previous_state_unreadable": True}
+        current, status = state.get("status"), changes.get("status")
+        if allowed_from is not None and current not in allowed_from:
+            return False
+        if current in FINAL_STATUSES and status is not None and status != current:
+            demotable = (
+                current == "succeeded"
+                and status in {"failed", "cancelled"}
+                and not (success_is_final is not None and success_is_final(directory))
+            )
+            if not demotable:
+                return False
+        if before_write is not None:
+            before_write(state)
+        write_json(
+            directory / "state.json", {**state, **changes, "updated_at": time.time()}
+        )
+        return True
+
+
+def completion_verified(run: Path) -> bool:
+    """The worker's completion receipt still points at a usable artifact."""
+    try:
+        completion = read_json(run / "completion.json", max_bytes=128 * 1024)
+    except (OSError, ValueError, TypeError, RecursionError):
+        return False
+    if completion.get("result_kind") == "hosted_pointer":
+        checkpoint = completion.get("checkpoint")
+        return (
+            isinstance(checkpoint, str)
+            and checkpoint.startswith("river://")
+            and len(checkpoint) > len("river://")
+        )
+    output, weights = completion.get("output_dir"), completion.get("weights")
+    if not isinstance(output, str) or not isinstance(weights, list) or not weights:
+        return False
+    for name in weights:
+        if (
+            not isinstance(name, str)
+            or not name
+            or Path(name).is_absolute()
+            or ".." in Path(name).parts
+        ):
+            return False
+        path = Path(output) / name
+        try:
+            if path.is_symlink() or not path.is_file() or path.stat().st_size <= 0:
+                return False
+        except OSError:
+            return False
+    return True
+
+
+def transition_run(
+    run: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """The one way to change a fine-tuning run's ``state.json``.
+
+    A success whose committed artifact still verifies is final; see
+    :func:`transition_state` for every other rule.
+    """
+    return transition_state(
+        run,
+        allowed_from=allowed_from,
+        success_is_final=completion_verified,
+        before_write=before_write,
+        **changes,
+    )
 
 
 def read_json(path: Path, *, max_bytes: int = 128 * 1024) -> dict[str, Any]:
@@ -645,6 +899,7 @@ class RunPlan:
             "resources": self.resources,
             "notes": list(self.notes),
             "quality_gain_verified": False,
+            "stop_protocol": STOP_PROTOCOL_VERSION,
             **({"resume": self.resume} if self.resume is not None else {}),
             **(
                 {"remote_code": self.remote_code.describe()}
@@ -844,6 +1099,11 @@ def plan_run(config: FinetuneConfig, *, cwd: Path | None = None) -> RunPlan:
         raw = read_training_data(source)
     except (FileNotFoundError, IsADirectoryError):
         raise ValueError("Dataset must be a file no larger than 64 MiB") from None
+    except PermissionError:
+        # Windows reports opening a directory as EACCES rather than EISDIR.
+        if not source.is_dir():
+            raise
+        raise ValueError("Dataset must be a file no larger than 64 MiB") from None
     data_provenance: dict[str, Any] = {}
     if config.method == "sft":
         # The strict parser rejects every malformed row instead of skipping it.
@@ -981,20 +1241,69 @@ def create_run(workspace: Path, plan: RunPlan) -> Path:
     return run.resolve()
 
 
+#: Detached supervisors this process started. Their handles are kept so the
+#: long-lived terminal studio can reap them once they exit: an unreaped child
+#: lingers as a zombie, and on macOS ``kill(pid, 0)`` succeeds on a zombie, so
+#: a finished supervisor would keep looking alive to the owner checks.
+_DETACHED_CHILDREN: list[Any] = []
+_DETACHED_CHILDREN_LOCK = threading.Lock()
+
+
+def retain_child(process: Any) -> None:
+    """Keep a detached supervisor's handle so its exit can be reaped later."""
+    with _DETACHED_CHILDREN_LOCK:
+        _DETACHED_CHILDREN.append(process)
+
+
+def reap_children() -> None:
+    """Collect every retained supervisor that has exited, without waiting."""
+    with _DETACHED_CHILDREN_LOCK:
+        running = []
+        for process in _DETACHED_CHILDREN:
+            poll = getattr(process, "poll", None)
+            try:
+                if callable(poll) and poll() is None:
+                    running.append(process)
+            except OSError:
+                continue
+        _DETACHED_CHILDREN[:] = running
+
+
+#: Windows process-creation flags: a new process group (so the whole tree can
+#: be stopped together) with its own hidden console, detached from the
+#: launching terminal so that closing it cannot end the run.
+_WINDOWS_DETACHED = (
+    0x00000200 | 0x08000000
+)  # CREATE_NEW_PROCESS_GROUP | CREATE_NO_WINDOW
+
+
+def detached_process_options(*, windows: bool | None = None) -> dict[str, Any]:
+    """``Popen`` options for a child that must outlive the launching terminal.
+
+    POSIX starts a new session. Windows ignores ``start_new_session``, so a
+    supervisor or worker started without these flags shares the console and
+    dies (or sees Ctrl+C) with it.
+    """
+    if os.name == "nt" if windows is None else windows:
+        return {"creationflags": _WINDOWS_DETACHED}
+    return {"start_new_session": True}
+
+
 def queue_executable() -> str | None:
-    """Find an installed shared queue, honoring an explicit executable path."""
+    """Find the shared queue: ``STATESET_BUILDR`` if set, else ``buildr`` on PATH.
+
+    There is deliberately no fixed-path fallback: the queue wrapper runs with
+    the caller's environment, so only an executable the user configured or
+    put on their own PATH may be chosen.
+    """
     configured = os.environ.get("STATESET_BUILDR")
     if configured:
         if not Path(configured).is_file() or not os.access(configured, os.X_OK):
             raise ValueError("STATESET_BUILDR must point to an executable")
         return configured
-    for candidate in (
-        shutil.which("buildr"),
-        "/home/dom/agent-builds/buildr",
-        "/home/dom/agent-builds/agent-builds",
-    ):
-        if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-            return candidate
+    candidate = shutil.which("buildr")
+    if candidate and os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+        return candidate
     return None
 
 
@@ -1032,16 +1341,18 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=subprocess.STDOUT,
-                start_new_session=True,
+                **detached_process_options(),
             )
+        retain_child(process)
     except (OSError, ValueError, TypeError, KeyError, RecursionError):
-        state = read_json(run / "state.json")
         cancelled = False
         try:
             cancelled = stop_requested(run)
         except (OSError, ValueError, TypeError, RecursionError):
             pass
-        state.update(
+        transition_run(
+            run,
+            allowed_from={"prepared"},
             status="cancelled" if cancelled else "failed",
             error=(
                 "Local stop requested before launch"
@@ -1049,7 +1360,6 @@ def launch_run(run: Path, *, expected_plan_sha256: str | None = None) -> int:
                 else "Worker could not start or reviewed inputs changed"
             ),
         )
-        write_json(run / "state.json", state)
         raise
     return process.pid
 
@@ -1072,21 +1382,82 @@ def stop_requested(run: Path) -> bool:
         len(raw) > 4096
         or not isinstance(value, dict)
         or type(value.get("schema_version")) is not int
-        or value["schema_version"] != 1
+        or value["schema_version"] != STOP_PROTOCOL_VERSION
         or value.get("plan_sha256") != read_run_plan(run)[1]
     ):
         raise ValueError("Stop receipt differs from the reviewed plan")
     return True
 
 
+def _stop_protocol_supported(plan: Mapping[str, Any]) -> bool:
+    """Whether this package writes a stop receipt the run's worker honors.
+
+    A worker runs the package that planned it, and the plan records the
+    receipt version that package checks. Source changes since then do not
+    matter while the version matches. Plans from before the version was
+    recorded fall back to requiring the identical package implementation.
+    """
+    if "stop_protocol" in plan:
+        version = plan["stop_protocol"]
+        return type(version) is int and version == STOP_PROTOCOL_VERSION
+    from stateset_agents.evaluation.agent_runs import content_hash
+    from stateset_agents.evaluation.implementation import package_implementation
+
+    return plan.get("package_implementation_sha256") == content_hash(
+        package_implementation()
+    )
+
+
+#: Remote providers whose worker ends its own allocation when signalled.
+REMOTE_STOP_PROVIDERS = frozenset({"runpod"})
+
+
+def remote_stop_supported(provider: object) -> bool:
+    """Whether this host can stop a paid run of ``provider`` from the studio.
+
+    RunPod workers turn SIGTERM into their cleanup (pod termination). Windows
+    cannot deliver that signal to a detached worker without killing it
+    outright, so remote stop is POSIX-only.
+    """
+    return provider in REMOTE_STOP_PROVIDERS and os.name != "nt"
+
+
+def _signal_remote_worker(run: Path) -> bool:
+    """Ask the verified execution owner to stop; return whether it was signalled.
+
+    Only a process whose start-time token matches ``execution.json`` is
+    signalled, so a reused PID is never touched. The worker converts SIGTERM
+    into ``SystemExit``: the executor terminates its pod, and the stop receipt
+    makes the outcome ``cancelled``.
+    """
+    import signal
+
+    owner = run / "execution.json"
+    try:
+        if not _present(owner) or owner_evidence(owner) != "alive":
+            return False
+        os.kill(read_json(owner, max_bytes=4096)["pid"], signal.SIGTERM)
+    except (OSError, ValueError, TypeError, KeyError, RecursionError, OverflowError):
+        return False
+    return True
+
+
 def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
-    """Request a local worker stop without signalling PIDs or cancelling queue jobs."""
+    """Request a plan-bound stop: cooperative for local runs, signalled for RunPod.
+
+    Local workers stop at their next safe boundary and are never signalled.
+    A RunPod worker is signalled (only after its identity is verified) so it
+    terminates its pod; other remote providers are refused.
+    """
     plan, digest = read_run_plan(run)
     if digest != expected_plan_sha256:
         raise ValueError("Plan checksum differs from the reviewed plan")
-    if plan["config"].get("provider") != "local":
+    provider = plan["config"].get("provider")
+    remote = provider != "local"
+    if remote and not remote_stop_supported(provider):
         raise ValueError(
-            "Remote stop is unavailable; use provider-specific cleanup controls"
+            "Remote stop is available for RunPod runs on POSIX hosts; use "
+            "provider-specific cleanup controls for this run"
         )
     state = run_status(run)
     if run_terminal_status(state) is True:
@@ -1096,42 +1467,64 @@ def request_stop(run: Path, *, expected_plan_sha256: str) -> dict[str, Any]:
             "execution_unconfirmed": False,
             "stop_requested": stop_requested(run),
         }
-    from stateset_agents.evaluation.agent_runs import content_hash
-    from stateset_agents.evaluation.implementation import package_implementation
-
-    if plan.get("package_implementation_sha256") != content_hash(
-        package_implementation()
-    ):
+    if not _stop_protocol_supported(plan):
         raise ValueError(
-            "Stop support requires the run's matching package implementation"
+            "Stop support requires a stop receipt version the run's worker honors"
         )
     if not stop_requested(run):
         # Publish a complete receipt atomically; concurrent callers are idempotent.
-        write_json(run / "stop.json", {"schema_version": 1, "plan_sha256": digest})
-    if state.get("status") == "prepared" and not (run / "launch.lock").exists():
         write_json(
-            run / "state.json",
-            {**state, "status": "cancelled", "finished_at": time.time()},
+            run / "stop.json",
+            {"schema_version": STOP_PROTOCOL_VERSION, "plan_sha256": digest},
         )
+    # The stop receipt is published before this check, and every supervisor or
+    # direct worker claims admission before it checks for a stop. So a launch
+    # that no process has claimed yet can be cancelled outright: any process
+    # that claims it later stops before doing work.
+    if not (run / "launch.lock").exists() or launch_unclaimed(run):
+        # Only a still-prepared run changes; anything else is left as is.
+        transition_run(
+            run,
+            allowed_from={"prepared"},
+            status="cancelled",
+            finished_at=time.time(),
+        )
+    signalled = remote and _signal_remote_worker(run)
     current = run_status(run)
-    return {
+    result = {
         "status": current["status"],
         "terminal": run_terminal_status(current),
         "execution_unconfirmed": current.get("execution_unconfirmed") is True,
         "stop_requested": True,
         "scope": "Cooperative local stop at the next safe boundary; queued entries remain until admitted. Supervisor loss does not establish worker exit. Remote resources are not controlled.",
     }
+    if remote:
+        result["worker_signalled"] = signalled
+        result["scope"] = (
+            "The verified RunPod worker was asked to stop; it terminates its pod and records the cancellation. An acknowledged deletion does not prove billing ended."
+            if signalled
+            else "Stop receipt saved, but no verified RunPod worker is running to signal; inspect the run and `stateset-agents runpod-orphans`."
+        )
+    return result
 
 
 def process_token(pid: int) -> str | None:
-    """Use Linux process start ticks to distinguish a worker from a reused PID."""
+    """A start-time token that distinguishes a worker from a reused PID.
+
+    Linux reads start ticks from ``/proc``. Other platforms use the process
+    creation time (``psutil``, or ``ps`` on macOS); ``None`` when unavailable.
+    """
     try:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
         if fields[0] in {"Z", "X"}:
             return None
         return fields[19]
     except (OSError, IndexError):
+        pass
+    if sys.platform == "linux":
         return None
+    else:
+        return process_start_token(pid)
 
 
 def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
@@ -1150,44 +1543,160 @@ def run_terminal_status(state: Mapping[str, Any]) -> bool | None:
     return None
 
 
-def _owner_confirmed(path: Path) -> bool:
-    """Boundedly inspect one local owner without signaling it or proving exit."""
+OWNER_EVIDENCE = frozenset(
+    {"alive", "reused", "gone", "running", "denied", "malformed"}
+)
+
+
+def owner_evidence(
+    path: Path,
+    *,
+    use_tokens: bool = True,
+    probe: bool = True,
+    max_bytes: int = 128 * 1024,
+) -> str:
+    """Classify the process named by one owner record, without signalling it.
+
+    * ``"alive"``: its Linux start-time token matches the record;
+    * ``"reused"``: the PID now belongs to a different process;
+    * ``"gone"``: no process has that PID;
+    * ``"running"``: a process with that PID answers, identity unproven
+      (no token available: non-Linux, a zombie, or an unreadable ``/proc``);
+    * ``"denied"``: a process exists but may not be inspected;
+    * ``"malformed"``: the record names no valid PID.
+
+    ``use_tokens``/``probe`` select which evidence to gather (a skipped probe
+    reports ``"running"`` as unknown would). An unreadable record raises.
+    """
+    owner = read_json(path, max_bytes=max_bytes)
+    pid = owner.get("pid")
+    if type(pid) is not int or pid < 1:
+        return "malformed"
+    if use_tokens:
+        current = process_token(pid)
+        if current is not None:
+            return "alive" if current == owner.get("process_token") else "reused"
+    if not probe:
+        return "running"
     try:
-        owner = read_json(path, max_bytes=4096)
-        pid = owner.get("pid")
-        if type(pid) is not int or pid < 1:
-            return False
+        probe_process(pid)
+    except ProcessLookupError:
+        return "gone"
+    except PermissionError:
+        return "denied"
+    return "running"
+
+
+def owner_alive(path: Path) -> bool | None:
+    """Whether a recorded owner is provably running (True) or gone (False).
+
+    ``None`` means the evidence cannot decide: a PID that answers without a
+    matching start-time token, a process that may not be inspected, or a
+    record without a valid PID. Callers choose how cautious to be about it.
+    """
+    evidence = owner_evidence(path)
+    if evidence == "alive":
+        return True
+    if evidence in {"gone", "reused"}:
+        return False
+    return None
+
+
+def _owner_confirmed(path: Path) -> bool:
+    """Boundedly inspect one local owner without signaling it or proving exit.
+
+    Linux trusts only a matching start-time token. Without tokens, a PID that
+    still answers (or refuses inspection) is taken as the owner.
+    """
+    try:
         if sys.platform == "linux":
-            token = process_token(pid)
-            return token is not None and token == owner.get("process_token")
+            return owner_evidence(path, probe=False, max_bytes=4096) == "alive"
         else:
-            try:
-                probe_process(pid)
-                return True
-            except PermissionError:
-                return True
-            except ProcessLookupError:
-                return False
+            # A recorded creation-time token tells a reused PID apart; records
+            # without one (or hosts that cannot read one now) fall back to
+            # presence, where an answering PID counts as the owner.
+            recorded = read_json(path, max_bytes=4096).get("process_token")
+            return owner_evidence(
+                path, use_tokens=isinstance(recorded, str), max_bytes=4096
+            ) in {"alive", "running", "denied"}
     except (OSError, ValueError, TypeError, RecursionError, OverflowError):
         return False
 
 
+#: How long a submitted launch may go without any process claiming it before
+#: its owner counts as lost. A supervisor normally claims admission within a
+#: second of ``launch_run``; this only bounds how long a launch whose process
+#: died first (OOM, reboot, import failure) can keep looking "prepared".
+LAUNCH_CLAIM_GRACE_SECONDS = 120.0
+
+
+def _present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def launch_unclaimed(directory: Path) -> bool:
+    """A launch receipt exists, but no admission/supervisor/execution owner does."""
+    return _present(directory / "launch.lock") and not any(
+        _present(directory / name)
+        for name in ("admission.json", "supervisor.json", "execution.json")
+    )
+
+
+def launch_claim_lost(
+    directory: Path, *, grace_seconds: float = LAUNCH_CLAIM_GRACE_SECONDS
+) -> bool:
+    """An unclaimed launch receipt is older than the startup grace window."""
+    if not launch_unclaimed(directory):
+        return False
+    try:
+        submitted = (directory / "launch.lock").lstat().st_mtime
+    except OSError:
+        return False
+    return time.time() - submitted > grace_seconds
+
+
+def detached_owner_lost(directory: Path, status: object) -> bool:
+    """Whether unfinished detached work in ``directory`` has lost its owner.
+
+    The supervisor record owns the work once it exists, otherwise a worker's
+    execution record does; a submitted launch that no process claimed within
+    the startup grace window is lost too. Like :func:`run_status`, this cannot
+    establish that detached queue work has exited.
+    """
+    if status not in {"prepared", "starting", "queued", "running"}:
+        return False
+    supervisor = directory / "supervisor.json"
+    execution = directory / "execution.json"
+    if _present(supervisor):
+        return not _owner_confirmed(supervisor)
+    if status == "running" or _present(execution):
+        return not _owner_confirmed(execution)
+    return status == "prepared" and launch_claim_lost(directory)
+
+
 def run_status(run: Path) -> dict[str, Any]:
     """Read committed outcomes; missing owners leave unfinished work unconfirmed."""
+    reap_children()
     state = read_json(run / "state.json")
     if state.get("status") not in TERMINAL_STATES:
         supervisor = run / "supervisor.json"
         execution = run / "execution.json"
+        admission = run / "admission.json"
         owner = None
-        if supervisor.exists() or supervisor.is_symlink():
+        lost = False
+        if _present(supervisor):
             owner = supervisor
-        elif (
-            state.get("status") == "running"
-            or execution.exists()
-            or execution.is_symlink()
-        ):
+        elif state.get("status") == "running" or _present(execution):
             owner = execution
-        if owner is not None and not _owner_confirmed(owner):
+        elif state.get("status") == "prepared":
+            # Between admission and the supervisor/execution claim, the
+            # admitting process owns the run. A launch nobody ever claimed
+            # is lost once its startup grace window has passed.
+            if _present(admission):
+                owner = admission
+            else:
+                lost = launch_claim_lost(run)
+        if lost or (owner is not None and not _owner_confirmed(owner)):
             state = {
                 **state,
                 "status": "interrupted",

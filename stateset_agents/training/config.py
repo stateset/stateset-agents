@@ -5,6 +5,8 @@ This module provides training configurations that implement best practices
 and integrate seamlessly with HuggingFace and Weights & Biases.
 """
 
+import dataclasses
+import functools
 import json
 import math
 from collections.abc import Sequence
@@ -12,6 +14,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Any
+
+from ..core.errors import ConfigurationError
 
 
 def estimate_grpo_optimizer_steps(
@@ -58,6 +62,92 @@ class TrainingProfile(Enum):
     BALANCED = "balanced"  # Default, good balance
     AGGRESSIVE = "aggressive"  # Maximum performance
     EXPERIMENTAL = "experimental"  # Cutting edge
+
+
+_NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
+#: ``rollout_sync_failure`` values: stop after repeated failures, or warn.
+ROLLOUT_SYNC_FAILURE_POLICIES: tuple[str, ...] = ("raise", "warn")
+
+
+def require_positive_ints(config: Any, *names: str) -> None:
+    """Each named field must be an ``int`` of at least 1 (``ConfigurationError``)."""
+    for name in names:
+        value = getattr(config, name)
+        if type(value) is not int or value < 1:
+            raise ConfigurationError(
+                f"{name} must be a positive integer (got {value!r})"
+            )
+
+
+def require_finite(
+    config: Any,
+    *names: str,
+    minimum: float | None = None,
+    maximum: float | None = None,
+    exclusive_minimum: bool = False,
+    exclusive_maximum: bool = False,
+) -> None:
+    """Each named field must be a finite real number in the given range."""
+    for name in names:
+        value = getattr(config, name)
+        valid = type(value) in (int, float) and math.isfinite(value)
+        if valid and minimum is not None:
+            valid = value > minimum if exclusive_minimum else value >= minimum
+        if valid and maximum is not None:
+            valid = value < maximum if exclusive_maximum else value <= maximum
+        if not valid:
+            bounds = []
+            if minimum is not None:
+                bounds.append(f"{'>' if exclusive_minimum else '>='} {minimum}")
+            if maximum is not None:
+                bounds.append(f"{'<' if exclusive_maximum else '<='} {maximum}")
+            rule = f" {' and '.join(bounds)}" if bounds else ""
+            raise ConfigurationError(
+                f"{name} must be a finite number{rule} (got {value!r})"
+            )
+
+
+#: Release that removes the dead algorithm-config fields deprecated in 0.70.
+DEAD_FIELD_REMOVAL = "v0.71.0"
+
+
+def reject_dead_fields(config: Any, fields: dict[str, str | None]) -> None:
+    """Reject a non-default value for a field no trainer reads.
+
+    ``fields`` maps each dead field to the field to use instead (``None``:
+    nothing replaces it). The field keeps its default until its removal
+    (:data:`DEAD_FIELD_REMOVAL`), so existing configs that never set it
+    still load; setting it now fails with a dated deprecation instead of
+    being silently ignored.
+    """
+    from .._deprecation import deprecation_message
+
+    defaults = {
+        item.name: item.default
+        for item in dataclasses.fields(type(config))
+        if item.name in fields
+    }
+    for name, replacement in fields.items():
+        value = getattr(config, name)
+        if value != defaults[name]:
+            message = deprecation_message(
+                f"{type(config).__name__}.{name}",
+                removal="0.71.0",
+                replacement=replacement,
+            )
+            raise ConfigurationError(
+                f"{message} No trainer reads it, so {name}={value!r} would be "
+                f"silently ignored; leave it at its default ({defaults[name]!r})."
+            )
+
+
+def validate_group_size(group_size: object) -> None:
+    """Group-relative algorithms (DAPO, GEPO, VAPO) need two responses per
+    prompt: a lone response has no group baseline (GEPO and VAPO drop such a
+    group, DAPO gives it a zero advantage), so a smaller ``group_size``
+    trains on nothing."""
+    if type(group_size) is not int or group_size < 2:
+        raise ConfigurationError("group_size must be an integer of at least 2")
 
 
 @dataclass
@@ -270,15 +360,28 @@ class TrainingConfig:
     # Off by default: only enable for a repo you trust whose architecture is
     # not native to transformers (curated presets opt in explicitly).
     trust_remote_code: bool = field(default=False, kw_only=True)
+    # When the token-offset path fails, the sequence path may only supervise
+    # every token (prompt included) if this is set; otherwise the loss raises
+    # ``RolloutContractError``. Keyword-only so positional field order holds.
+    allow_unmasked_labels: bool = field(default=False, kw_only=True)
+    # A training callback that raises is logged at WARNING with its traceback
+    # and training continues; True makes any callback failure stop training.
+    strict_callbacks: bool = field(default=False, kw_only=True)
+    # A failed rollout-engine weight sync leaves the engine serving the
+    # previous policy (``rollout_weights_stale`` in the step metrics).
+    # ``"raise"`` stops training after ``max_consecutive_rollout_sync_failures``
+    # consecutive failures; ``"warn"`` keeps training on stale rollouts.
+    rollout_sync_failure: str = field(default="raise", kw_only=True)
+    max_consecutive_rollout_sync_failures: int = field(default=3, kw_only=True)
 
     def __post_init__(self):
         if self.nonfinite_grad_policy not in ("raise", "skip"):
-            raise ValueError(
+            raise ConfigurationError(
                 "nonfinite_grad_policy must be 'raise' or 'skip', got "
                 f"{self.nonfinite_grad_policy!r}"
             )
         if self.max_consecutive_nonfinite_skips < 0:
-            raise ValueError("max_consecutive_nonfinite_skips must be >= 0")
+            raise ConfigurationError("max_consecutive_nonfinite_skips must be >= 0")
         # Map compatibility aliases
         if self.batch_size is not None and self.batch_size > 0:
             self.per_device_train_batch_size = int(self.batch_size)
@@ -410,9 +513,12 @@ class TrainingConfig:
                 f"num_generations {self.num_generations} is low for GRPO, consider increasing"
             )
 
-        # Hardware checks
+        # Hardware checks (validate_for_training rejects this combination)
         if self.bf16 and self.fp16:
-            warnings.append("Both bf16 and fp16 enabled, bf16 will take precedence")
+            warnings.append(
+                "bf16 and fp16 are mutually exclusive; enable at most one "
+                "(training rejects this config)"
+            )
 
         # W&B checks
         if self.report_to == "wandb" and not self.wandb_project:
@@ -464,6 +570,11 @@ class TrainingConfig:
             warnings.append("ewc_num_samples must be > 0 when ewc_lambda > 0")
         if self.ewc_decay < 0.0 or self.ewc_decay > 1.0:
             warnings.append("ewc_decay should be between 0 and 1 for stable updates")
+        if self.beta > 0 and not self.use_reference_model:
+            warnings.append(
+                f"beta={self.beta} has no effect without use_reference_model=True; "
+                "the KL penalty needs a frozen reference policy"
+            )
         if self.continual_kl_beta > 0 and "lwf" not in self.continual_strategy:
             warnings.append(
                 "continual_kl_beta set but continual_strategy does not include lwf"
@@ -486,10 +597,54 @@ class TrainingConfig:
 
         return warnings
 
+    def _supported_lr_schedulers(self) -> frozenset[str] | None:
+        """Schedulers the native trainers implement; ``None`` accepts any name.
+
+        A config that hands ``lr_scheduler_type`` to another library (TRL)
+        overrides this to defer to that library's own set.
+        """
+        return _NATIVE_LR_SCHEDULERS
+
+    def _validate_lr_scheduler_type(self) -> None:
+        schedulers = self._supported_lr_schedulers()
+        name = self.lr_scheduler_type
+        if (
+            isinstance(name, str)
+            and name
+            and (schedulers is None or name in schedulers)
+        ):
+            return
+        expected = (
+            "one of " + ", ".join(sorted(schedulers))
+            if schedulers is not None
+            else "a non-empty scheduler name"
+        )
+        raise ConfigurationError(f"lr_scheduler_type must be {expected} (got {name!r})")
+
+    def _validate_fallback_switches(self) -> None:
+        """The compatibility paths change the estimator, so their opt-ins
+        must be real booleans (a truthy string must not enable one)."""
+        for name in (
+            "allow_sequence_fallback",
+            "allow_missing_sampler_logprobs",
+            "allow_unmasked_labels",
+            "strict_callbacks",
+        ):
+            if type(getattr(self, name)) is not bool:
+                raise ConfigurationError(f"{name} must be a boolean")
+        if self.rollout_sync_failure not in ROLLOUT_SYNC_FAILURE_POLICIES:
+            raise ConfigurationError(
+                "rollout_sync_failure must be one of "
+                f"{ROLLOUT_SYNC_FAILURE_POLICIES} (got {self.rollout_sync_failure!r})"
+            )
+        require_positive_ints(self, "max_consecutive_rollout_sync_failures")
+
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
-            raise ValueError("zero_signal_patience must be a nonnegative integer")
+            raise ConfigurationError(
+                "zero_signal_patience must be a nonnegative integer"
+            )
         for name in (
             "num_episodes",
             "num_epochs",
@@ -503,10 +658,15 @@ class TrainingConfig:
             "max_completion_length",
             "num_gradient_updates",
             "save_total_limit",
+            "logging_steps",
+            "save_steps",
+            "eval_steps",
         ):
             value = getattr(self, name)
             if type(value) is not int or value < 1:
-                raise ValueError(f"{name} must be a positive integer")
+                raise ConfigurationError(f"{name} must be a positive integer")
+        self._validate_lr_scheduler_type()
+        self._validate_fallback_switches()
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (
@@ -514,7 +674,7 @@ class TrainingConfig:
                 or not math.isfinite(value)
                 or value <= 0
             ):
-                raise ValueError(f"{name} must be finite and positive")
+                raise ConfigurationError(f"{name} must be finite and positive")
         for name in ("warmup_ratio", "eval_split_size", "top_p", "lora_dropout"):
             value = getattr(self, name)
             if (
@@ -522,21 +682,23 @@ class TrainingConfig:
                 or not math.isfinite(value)
                 or not 0 <= value <= 1
             ):
-                raise ValueError(f"{name} must be between zero and one")
+                raise ConfigurationError(f"{name} must be between zero and one")
         if self.top_p == 0:
-            raise ValueError("top_p must be positive")
+            raise ConfigurationError("top_p must be positive")
         if self.bf16 and self.fp16:
-            raise ValueError("bf16 and fp16 are mutually exclusive")
+            raise ConfigurationError("bf16 and fp16 are mutually exclusive")
         if getattr(self, "use_4bit", False) and getattr(self, "use_8bit", False):
-            raise ValueError("use_4bit and use_8bit are mutually exclusive")
+            raise ConfigurationError("use_4bit and use_8bit are mutually exclusive")
         if type(self.seed) is not int or self.seed < 0:
-            raise ValueError("seed must be a nonnegative integer")
+            raise ConfigurationError("seed must be a nonnegative integer")
         if self.compute_cost_per_hour is not None and (
             type(self.compute_cost_per_hour) not in (int, float)
             or not math.isfinite(self.compute_cost_per_hour)
             or self.compute_cost_per_hour < 0
         ):
-            raise ValueError("compute_cost_per_hour must be finite and nonnegative")
+            raise ConfigurationError(
+                "compute_cost_per_hour must be finite and nonnegative"
+            )
         for name in (
             "beta",
             "entropy_coef",
@@ -546,33 +708,37 @@ class TrainingConfig:
         ):
             value = getattr(self, name)
             if type(value) not in (int, float) or not math.isfinite(value) or value < 0:
-                raise ValueError(f"{name} must be finite and nonnegative")
+                raise ConfigurationError(f"{name} must be finite and nonnegative")
         if self.old_logprobs_source not in {"recompute", "sampler"}:
-            raise ValueError("old_logprobs_source must be 'recompute' or 'sampler'")
+            raise ConfigurationError(
+                "old_logprobs_source must be 'recompute' or 'sampler'"
+            )
         if not self.rollout_sync and self.old_logprobs_source != "sampler":
-            raise ValueError(
+            raise ConfigurationError(
                 "Asynchronous rollouts require old_logprobs_source='sampler'"
             )
         if self.objective is not None:
             from .objectives import OBJECTIVES
 
             if self.objective not in OBJECTIVES:
-                raise ValueError(f"Unknown objective: {self.objective!r}")
+                raise ConfigurationError(f"Unknown objective: {self.objective!r}")
         if self.objective_overrides:
             from .objectives import OBJECTIVES
 
             OBJECTIVES[self.objective or "grpo"].with_(**self.objective_overrides)
         if not isinstance(self.model_name, str) or not self.model_name.strip():
-            raise ValueError("model_name must be nonempty")
+            raise ConfigurationError("model_name must be nonempty")
         if self.model_revision is not None and (
             not isinstance(self.model_revision, str) or not self.model_revision.strip()
         ):
-            raise ValueError("model_revision must be a nonempty string or None")
+            raise ConfigurationError("model_revision must be a nonempty string or None")
         if (
             self.resume_from_checkpoint
             and not Path(self.resume_from_checkpoint).is_dir()
         ):
-            raise ValueError("resume_from_checkpoint must be an existing directory")
+            raise ConfigurationError(
+                "resume_from_checkpoint must be an existing directory"
+            )
 
     def get_effective_batch_size(self) -> int:
         """Get effective batch size"""
@@ -771,41 +937,6 @@ def create_config_from_args(
     return config
 
 
-# Example usage and testing
-def example_config_usage():
-    """Example of how to use training configurations"""
-
-    # Create from profile
-    conservative_config = TrainingConfig.from_profile(TrainingProfile.CONSERVATIVE)
-    print(f"Conservative LR: {conservative_config.learning_rate}")
-
-    # Create for specific task
-    customer_config = get_config_for_task("customer_service", num_episodes=1200)
-    print(f"Customer service episodes: {customer_config.num_episodes}")
-
-    # Optimize for hardware
-    optimized_config = optimize_config_for_hardware(
-        customer_config, gpu_memory_gb=12.0, num_gpus=2
-    )
-    print(f"Optimized batch size: {optimized_config.per_device_train_batch_size}")
-
-    # Validate configuration
-    warnings = optimized_config.validate()
-    if warnings:
-        print("Configuration warnings:")
-        for warning in warnings:
-            print(f"  - {warning}")
-
-    # Save and load
-    optimized_config.save("config.json")
-    loaded_config = TrainingConfig.load("config.json")
-    print(f"Loaded config learning rate: {loaded_config.learning_rate}")
-
-
-if __name__ == "__main__":
-    example_config_usage()
-
-
 def cuda_is_available() -> bool:
     """Return whether a CUDA device is usable, without importing torch eagerly.
 
@@ -818,3 +949,36 @@ def cuda_is_available() -> bool:
     except ImportError:  # pragma: no cover - torch is installed in CI
         return False
     return bool(torch.cuda.is_available())
+
+
+_MISSING = object()
+
+
+@functools.cache
+def _training_field_defaults() -> dict[str, tuple[bool, Any]]:
+    """Each ``TrainingConfig`` field's ``(is_factory, default)``."""
+    defaults: dict[str, tuple[bool, Any]] = {}
+    for item in dataclasses.fields(TrainingConfig):
+        if item.default is not dataclasses.MISSING:
+            defaults[item.name] = (False, item.default)
+        elif item.default_factory is not dataclasses.MISSING:
+            defaults[item.name] = (True, item.default_factory)
+    return defaults
+
+
+def config_value(config: Any, name: str) -> Any:
+    """``config.<name>``, or ``TrainingConfig``'s default for that field.
+
+    Trainers accept legacy duck-typed configs that may lack a field. Reading
+    through this helper keeps the dataclass as the one source of defaults,
+    instead of a ``getattr(config, name, default)`` that restates (and can
+    drift from) it. ``name`` must be a ``TrainingConfig`` field.
+    """
+    value = getattr(config, name, _MISSING)
+    if value is not _MISSING:
+        return value
+    try:
+        is_factory, default = _training_field_defaults()[name]
+    except KeyError:
+        raise AttributeError(f"{name!r} is not a TrainingConfig field") from None
+    return default() if is_factory else default

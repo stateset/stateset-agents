@@ -215,7 +215,11 @@ def test_single_turn_optimizer_step_syncs_rollout_backend():
 
 def test_rollout_sync_can_be_disabled():
     agent = _SyncingAgent(_model())
-    trainer = _multi_turn_trainer(agent, rollout_sync=False)
+    # Asynchronous rollouts need sampler log-probs (TrainingConfig's rule,
+    # now enforced for duck-typed configs too).
+    trainer = _multi_turn_trainer(
+        agent, rollout_sync=False, old_logprobs_source="sampler"
+    )
     _fake_grad(agent.model)
     trainer._apply_optimizer_step(torch)
     assert agent.sync_calls == 0

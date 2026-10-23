@@ -80,6 +80,16 @@ def install_training(monkeypatch, run, config, observe=lambda: None):
         monkeypatch.setattr(registry, "get_executor", lambda _name: Executor())
 
 
+def lose_owners(monkeypatch):
+    """Report every recorded owner as exited on Linux and non-Linux probes."""
+
+    def absent(_pid):
+        raise ProcessLookupError()
+
+    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    monkeypatch.setattr(workspace, "probe_process", absent)
+
+
 def supervised(run):
     token = "a" * 64
     assert worker._claim_admission(run, "supervised", token)
@@ -125,7 +135,7 @@ def test_worker_success_survives_lost_supervision_without_claiming_judge_quality
 ):
     run, config = make_run(provider)
     token = supervised(run)
-    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    lose_owners(monkeypatch)
 
     def during_training():
         status = workspace.run_status(run)
@@ -320,7 +330,7 @@ def test_success_metadata_failure_never_reports_a_successful_worker_return(
     else:
         assert worker.execute(run) == 1
     assert (run / "completion.json").exists()
-    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
+    lose_owners(monkeypatch)
     reported = workspace.run_status(run)
     if failure == "temporary":
         assert reported["status"] == "failed"
@@ -333,9 +343,15 @@ def test_success_metadata_failure_never_reports_a_successful_worker_return(
         )
 
 
-def test_late_supervisor_failure_can_override_committed_worker_outcome(
-    make_run, monkeypatch
+@pytest.mark.parametrize("artifact", ["verified", "missing"])
+def test_late_supervisor_failure_keeps_a_verified_committed_success(
+    make_run, monkeypatch, artifact
 ):
+    """A teardown crash after the worker's commit is recorded, not a demotion.
+
+    Only a commit whose artifact still verifies is authoritative; without it
+    the supervisor-observed failure still wins.
+    """
     run, config = make_run()
     install_training(monkeypatch, run, config)
     monkeypatch.setattr(worker, "queue_executable", lambda: None)
@@ -346,6 +362,8 @@ def test_late_supervisor_failure_can_override_committed_worker_outcome(
             assert worker.execute(run, supervisor_token=token) == 0
             outcome = workspace.read_json(run / "state.json")
             assert outcome["status"] == "succeeded" and "exit_code" not in outcome
+            if artifact == "missing":
+                (run / "artifacts" / "adapter_model.safetensors").unlink()
             return 2
 
         return SimpleNamespace(wait=wait)
@@ -353,9 +371,59 @@ def test_late_supervisor_failure_can_override_committed_worker_outcome(
     monkeypatch.setattr(worker.subprocess, "Popen", start)
     assert worker.supervise(run) == 2
     reported = workspace.run_status(run)
-    assert reported["status"] == "failed" and reported["exit_code"] == 2
-    assert workspace.read_json(run / "failure.json")["code"] == "worker_exit"
     assert (run / "completion.json").exists()
+    if artifact == "verified":
+        assert reported["status"] == "succeeded"
+        assert reported["teardown_error"] == "worker_exit"
+        assert reported["teardown_exit_code"] == 2
+        assert "exit_code" not in reported
+        assert not (run / "failure.json").exists()
+        assert workspace.failure_info(run, reported) is None
+    else:
+        assert reported["status"] == "failed" and reported["exit_code"] == 2
+        assert workspace.read_json(run / "failure.json")["code"] == "worker_exit"
+
+
+def test_failure_recorded_before_the_commit_still_wins(make_run, monkeypatch):
+    run, config = make_run()
+    install_training(monkeypatch, run, config)
+    worker._record_failure(
+        run, workspace.FinetuneFailure("worker_exit"), stage="supervisor"
+    )
+    assert worker._state(run, status="succeeded") is False
+    assert workspace.read_json(run / "state.json")["status"] == "failed"
+
+
+def test_teardown_error_is_reported_by_cli_status_and_run_details(
+    make_run, monkeypatch
+):
+    from typer.testing import CliRunner
+
+    from stateset_agents import cli_finetune as cli
+    from stateset_agents.tui import Studio
+
+    run, config = make_run()
+    install_training(monkeypatch, run, config)
+    assert worker.execute(run) == 0
+    worker._record_failure(
+        run,
+        workspace.FinetuneFailure("timeout"),
+        stage="supervisor",
+        preserve=True,
+        exit_code=-9,
+    )
+    response = CliRunner().invoke(
+        cli.app, ["status", run.name, "--workspace", str(run.parent)]
+    )
+    state = json.loads(response.stdout)["result"]["run"]["state"]
+    assert state["status"] == "succeeded"
+    assert state["teardown_error"] == "timeout"
+    assert state["teardown_exit_code"] == -9
+    studio = Studio(run.parent)
+    studio.tab = "runs"
+    studio.refresh()
+    details = "\n".join(studio._run_details())
+    assert "exited after committing" in details
 
 
 @pytest.mark.parametrize("status", ["failed", "cancelled"])
@@ -414,8 +482,8 @@ def test_concurrent_state_transitions_serialize_and_preserve_failure(
         threading.Event(),
         threading.Event(),
     )
-    write = worker.write_json
-    lock_operation = worker._state_lock_operation
+    write = workspace.write_json
+    lock_operation = workspace._state_lock_operation
     second = "failed" if first == "succeeded" else "succeeded"
 
     def held_write(path, value):
@@ -436,8 +504,8 @@ def test_concurrent_state_transitions_serialize_and_preserve_failure(
                 contended.set()
             raise
 
-    monkeypatch.setattr(worker, "write_json", held_write)
-    monkeypatch.setattr(worker, "_state_lock_operation", observed_lock)
+    monkeypatch.setattr(workspace, "write_json", held_write)
+    monkeypatch.setattr(workspace, "_state_lock_operation", observed_lock)
     with ThreadPoolExecutor(max_workers=2) as executor:
         first_result = executor.submit(
             worker._state, run, status=first, committed_updates=3
@@ -496,9 +564,9 @@ def test_busy_state_lock_refuses_boundedly_and_retains_stable_private_inode(
     make_run, monkeypatch
 ):
     run, _ = make_run()
-    monkeypatch.setattr(worker, "_STATE_LOCK_TIMEOUT", 0.0)
+    monkeypatch.setattr(workspace, "_STATE_LOCK_TIMEOUT", 0.0)
     before = (run / "state.json").read_bytes()
-    with worker._state_lock(run):
+    with workspace.state_lock(run):
         original = (run / ".state.lock").stat()
         with pytest.raises(ValueError, match="Fine-tuning state is busy"):
             worker._state(run, status="running")
@@ -559,7 +627,7 @@ def test_recovery_still_requires_exited_owner_after_committed_success(
     assert worker.execute(run) == 0
     with pytest.raises(ValueError, match="Wait for the parent worker"):
         recovery.inspect_checkpoints(run)
-    monkeypatch.setattr(recovery, "process_token", lambda _pid: None)
+    monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
 
     def exited(*_args):
         raise ProcessLookupError()

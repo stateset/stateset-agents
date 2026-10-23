@@ -220,6 +220,45 @@ class TestDirectVllmImage:
 
         compile(session._direct_log_server_source(), "<log-server>", "exec")
 
+    def test_log_server_compares_token_in_constant_time(self, monkeypatch):
+        """The embedded log server must use hmac.compare_digest, and still
+        reject wrong tokens / accept the right one."""
+        session = make_session(direct_vllm_image=True, image="image")
+        source = session._direct_log_server_source()
+        assert "hmac.compare_digest" in source
+        assert '!= "Bearer " + TOKEN' not in source
+
+        # Execute everything except the final serve_forever() line.
+        body, _, _ = source.rstrip().rpartition("\n")
+        monkeypatch.setenv("VLLM_API_KEY", "secret-token")
+        namespace: dict = {}
+        exec(compile(body, "<log-server>", "exec"), namespace)
+        handler_cls = namespace["Handler"]
+
+        def call(auth):
+            handler = handler_cls.__new__(handler_cls)
+            handler.path = "/logs"
+            handler.headers = {"Authorization": auth} if auth is not None else {}
+            errors: list[int] = []
+            handler.send_error = errors.append
+            handler.send_response = lambda code: errors.append(code)
+            handler.send_header = lambda *a: None
+            handler.end_headers = lambda: None
+
+            class _Sink:
+                def write(self, data):
+                    pass
+
+            handler.wfile = _Sink()
+            namespace["LOG"] = "/nonexistent/stateset-test.log"
+            handler.do_GET()
+            return errors[0]
+
+        assert call(None) == 401
+        assert call("Bearer wrong") == 401
+        assert call("Bearer secret-token-extra") == 401
+        assert call("Bearer secret-token") == 200
+
     def test_multi_gpu_prebuilt_image_skips_ssh_and_arms_watchdog(self):
         api, ssh = FakeApi(), FakeSsh()
         session = make_session(
@@ -425,6 +464,36 @@ class TestAdapter:
         launch = next(c for c in ssh.commands if "vllm serve" in c)
         assert "gen1=/workspace/gen1" in launch
         assert "gen2=/workspace/gen2" in launch
+
+    def test_adapter_tar_paths_are_shell_quoted(self, tmp_path):
+        adapter = tmp_path / "a"
+        adapter.mkdir()
+        ssh = FakeSsh()
+        session = make_session(ssh=ssh)
+
+        session.start("m", adapters={"gen.v1-final_2": adapter})
+
+        untar = next(c for c in ssh.commands if c.startswith("tar xzf"))
+        assert untar == (
+            "tar xzf /workspace/gen.v1-final_2.tar.gz -C /workspace "
+            "&& rm -f /workspace/gen.v1-final_2.tar.gz"
+        )
+
+    @pytest.mark.parametrize(
+        "bad_name",
+        ["x;rm -rf /", "a b", "$(id)", "../evil", "..", ".", "a/b", "", "`x`"],
+    )
+    def test_unsafe_adapter_names_are_refused_before_renting(self, tmp_path, bad_name):
+        adapter = tmp_path / "a"
+        adapter.mkdir()
+        api, ssh = FakeApi(), FakeSsh()
+        session = make_session(api, ssh)
+
+        with pytest.raises(RemoteExecutionError, match="invalid adapter name"):
+            session.start("m", adapters={bad_name: adapter})
+
+        assert api.created == []
+        assert ssh.commands == []
 
     def test_adapter_dir_and_adapters_compose(self, tmp_path):
         """The single-adapter sugar keeps working alongside named ones."""

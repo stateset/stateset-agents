@@ -423,9 +423,14 @@ Use the repo compose files in `deployment/docker/`:
 - `deployment/docker/docker-compose.yml`: runtime gateway + optional deps (redis/postgres/prometheus)
 - `deployment/docker/docker-compose.dev.yml`: minimal dev gateway + test container
 
+Published ports bind to `127.0.0.1` only, and the compose file has no default
+passwords: copy `deployment/docker/.env.example` to `deployment/docker/.env`
+and set `REDIS_PASSWORD` / `POSTGRES_PASSWORD` first.
+
 Examples:
 
 ```bash
+cp deployment/docker/.env.example deployment/docker/.env  # then edit the passwords
 docker compose -f deployment/docker/docker-compose.yml up -d stateset-agents-api
 docker compose -f deployment/docker/docker-compose.yml --profile monitoring up -d prometheus
 ```

@@ -46,6 +46,7 @@ _CONFIG = (
     "old_logprobs_source",
     "allow_sequence_fallback",
     "allow_missing_sampler_logprobs",
+    "allow_unmasked_labels",
     "disable_dropout",
     "learning_rate",
     "weight_decay",

@@ -2,6 +2,7 @@
 
 import copy
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -115,7 +116,8 @@ def test_replay_preserves_transcripts_all_passes_and_parse_retries(tmp_path, ret
     assert replay["results"][0]["checks"] == [dict.fromkeys(ALL_CHECKS, True)] * 2
     assert len(calls) == (2 if retry else 1)  # Replay performs no inference.
     assert (Path(reference["path"]) / "request-000.json").is_file()
-    assert (Path(reference["path"]).stat().st_mode & 0o077) == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (Path(reference["path"]).stat().st_mode & 0o077) == 0
 
 
 def test_transport_failure_keeps_request_and_failure_type_without_secret(tmp_path):

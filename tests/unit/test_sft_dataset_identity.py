@@ -311,6 +311,75 @@ def test_real_cpu_lora_retains_captured_source_after_training_side_effects(
     )
     assert manifest["hyperparameters"]["training_input_rows"] == 1
     assert manifest["hyperparameters"]["effective_training_rows"] == 1
+    assert manifest["hyperparameters"]["training_sequences"] == 1
+    assert manifest["hyperparameters"]["split_per_turn_rows"] == 0
+    assert manifest["hyperparameters"]["untargeted_rows_dropped"] == 0
+    assert manifest["hyperparameters"]["unmaskable_rows_dropped"] == 0
+    assert manifest["hyperparameters"]["truncated_rows_dropped"] == 0
+    assert manifest["hyperparameters"]["partially_truncated_rows"] == 0
+    assert manifest["eval_judge_gates_skipped"] is None
+
+
+def test_real_cpu_sft_records_rows_split_per_assistant_turn(
+    tmp_path, tiny_cpu_sft, monkeypatch
+):
+    """A template that renders history differently from new turns used to
+    train contradictory targets in one sequence; such rows are split into
+    one sequence per assistant turn and the manifest counts them."""
+    import transformers
+
+    load = transformers.AutoTokenizer.from_pretrained
+
+    def decorating_new_turns(*args, **kwargs):
+        tokenizer = load(*args, **kwargs)
+        # The newest assistant turn (and the generation prompt) carry an
+        # extra word that history drops, like Qwen3's empty <think> block.
+        tokenizer.chat_template = (
+            "{% for m in messages %}{{ m['role'] + ' ' }}"
+            "{% if loop.last and m['role'] == 'assistant' %}{{ 'request ' }}"
+            "{% endif %}{{ m['content'] + ' ' }}{% endfor %}"
+            "{% if add_generation_prompt %}{{ 'assistant request ' }}{% endif %}"
+        )
+        return tokenizer
+
+    monkeypatch.setattr(
+        transformers.AutoTokenizer, "from_pretrained", decorating_new_turns
+    )
+    multi_turn = {
+        "messages": [
+            *chat()["messages"],
+            *chat(answer="response response")["messages"],
+        ]
+    }
+    output = tmp_path / "adapter"
+    sft.run_sft(rows=[chat(), multi_turn], **train_options(output))
+    hyper = json.loads((output / "stateset_manifest.json").read_text())[
+        "hyperparameters"
+    ]
+    assert hyper["effective_training_rows"] == 2
+    assert hyper["training_sequences"] == 3
+    assert hyper["split_per_turn_rows"] == 1
+    assert hyper["unmaskable_rows_dropped"] == 0
+
+
+def test_real_cpu_sft_manifest_counts_skipped_judge_gates(
+    tmp_path, tiny_cpu_sft, monkeypatch
+):
+    def unavailable(name):
+        raise ImportError("no reward stack on this worker")
+
+    monkeypatch.setattr(sft, "_create_domain_reward", unavailable)
+    output = tmp_path / "adapter"
+    sft.run_sft(
+        rows=[chat()],
+        eval_prompts=[{"prompt": "request", "judge": "cs", "min_judge_score": 0.5}],
+        eval_max_new_tokens=2,
+        **train_options(output),
+    )
+    manifest = json.loads((output / "stateset_manifest.json").read_text())
+    assert manifest["eval_judge_gates_skipped"] == 1
+    (row,) = json.loads((output / "eval_results.json").read_text())
+    assert row["judge_unavailable"] is True
 
 
 def test_real_cpu_in_memory_sft_keeps_source_unbound(tmp_path, tiny_cpu_sft):

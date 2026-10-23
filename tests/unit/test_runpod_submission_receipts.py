@@ -136,7 +136,7 @@ def test_submit_retains_identity_before_work_and_distinguishes_cleanup_acknowled
     assert "PRIVATE" not in json.dumps(events) and "data.jsonl" not in json.dumps(
         events
     )
-    assert api.terminated == ["pod-abc"] and executor.orphaned_leases() == []
+    assert api.terminated == ["pod-abc"] and executor.leases() == []
 
 
 @pytest.mark.parametrize(
@@ -256,7 +256,7 @@ def test_failed_termination_records_uncertainty_and_retains_cleanup_lease(submis
     executor.submit(spec)
     assert events[-1]["event"] == "cleanup_unconfirmed"
     assert "PRIVATE" not in json.dumps(events)
-    assert executor.orphaned_leases()[0]["pod_id"] == "pod-abc"
+    assert executor.leases()[0]["pod_id"] == "pod-abc"
 
 
 def test_existing_transport_retry_has_separate_attempt_receipts(submission):
@@ -299,7 +299,7 @@ def test_process_death_retains_intent_or_identity_without_false_cleanup(
             events[1]["event"] == "allocated" and events[1]["resource_id"] == "pod-abc"
         )
         assert (
-            RunPodExecutor(lease_dir=tmp_path / "leases").orphaned_leases()[0]["pod_id"]
+            RunPodExecutor(lease_dir=tmp_path / "leases").leases()[0]["pod_id"]
             == "pod-abc"
         )
 
@@ -481,7 +481,7 @@ def test_uncertain_cleanup_blocks_automatic_replacement_for_observed_submission(
         executor.submit(spec)
     assert len(api.created) == 1
     assert events[-1]["event"] == "cleanup_unconfirmed"
-    assert executor.orphaned_leases()[0]["pod_id"] == "pod-abc"
+    assert executor.leases()[0]["pod_id"] == "pod-abc"
     assert executor._jobs == {}
     rows = [json.loads(line) for line in executor.ledger_path.read_text().splitlines()]
     assert len(rows) == 1 and rows[0]["status"] == "failed"
@@ -648,7 +648,7 @@ def test_unconfirmed_cleanup_records_only_observed_window_and_warns_billing_may_
     assert rows[0]["cost_usd"] == 7.0
     assert executor.job_cost(handle) == (7.0, 7.0)
     assert events[-1]["event"] == "cleanup_unconfirmed"
-    assert executor.orphaned_leases()[0]["pod_id"] == "pod-abc"
+    assert executor.leases()[0]["pod_id"] == "pod-abc"
     assert api.terminated == ["pod-abc"]
     assert any("billing may still be active" in line for line in executor.logs(handle))
 

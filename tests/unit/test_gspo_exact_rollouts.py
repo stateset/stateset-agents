@@ -210,7 +210,7 @@ def _gspo_trainer(rescore: bool):
 
     class Reward:
         async def compute_reward(self, turns, context=None):
-            score = 1.0 if turns[0].content == "ok" else 0.0
+            score = 1.0 if turns[-1].content == "ok" else 0.0
             return SimpleNamespace(total_reward=score, score=score)
 
     cfg = GSPOConfig(
@@ -326,3 +326,14 @@ def test_overlong_prompt_keeps_latest_turn_and_assistant_cue():
     assert ids.shape[0] == 32
     assert tok.decode(ids).endswith("LATEST\nAssistant: ")
     assert tok.truncation_side == original
+
+
+@pytest.mark.asyncio
+async def test_train_step_metrics_are_builtin_floats_with_tensor_lr(monkeypatch):
+    """``train_step`` promises ``dict[str, float]``: numpy means and a
+    tensor-valued scheduler LR must not leak into logged metrics."""
+    trainer = _gspo_trainer(rescore=True)
+    monkeypatch.setattr(trainer.scheduler, "get_last_lr", lambda: [torch.tensor(2e-5)])
+    metrics = await trainer.train_step(["hello"], num_groups=1)
+    assert {k: type(v) for k, v in metrics.items() if type(v) is not float} == {}
+    assert metrics["learning_rate"] == pytest.approx(2e-5)

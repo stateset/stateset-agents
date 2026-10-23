@@ -40,6 +40,7 @@ from typing import Any
 
 from stateset_agents.remote.executor import RemoteExecutor
 from stateset_agents.remote.job import JobStatus, RemoteJobSpec
+from stateset_agents.training.eval_ladder import check_disjoint_prompts
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +61,9 @@ class FlywheelConfig:
     #: are mandatory — without them every sample "passes" and the harvest is
     #: noise (enforced by the harvest job itself).
     harvest_prompts: list[dict[str, Any]]
-    #: ``{prompt, expect, forbid}`` specs that score each generation. Keep
-    #: them disjoint from ``harvest_prompts`` or the score measures leakage.
+    #: ``{prompt, expect, forbid}`` specs that score each generation. They
+    #: must be disjoint from ``harvest_prompts`` even with reference numbers
+    #: masked (checked on construction), or the score measures leakage.
     eval_prompts: list[dict[str, Any]]
     output_root: Path = Path("outputs/flywheel")
     #: Adapter directory of the current generation, if one already exists
@@ -113,6 +115,22 @@ class FlywheelConfig:
     timeout_s: int = 3600
     dry_run: bool = False
 
+    def __post_init__(self) -> None:
+        from stateset_agents.training.sft import has_eval_assertions
+
+        for label, specs in (
+            ("eval_prompts", self.eval_prompts),
+            ("harvest_prompts", self.harvest_prompts),
+        ):
+            unchecked = [spec for spec in specs if not has_eval_assertions(spec)]
+            if unchecked:
+                raise ValueError(
+                    f"{len(unchecked)} {label} spec(s) carry no expect, forbid "
+                    "or turn_expect checks; a spec without checks passes "
+                    "trivially and skews the score"
+                )
+        check_disjoint_prompts(self.eval_prompts, self.harvest_prompts)
+
 
 @dataclass
 class GenerationOutcome:
@@ -144,6 +162,8 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
     as ``checks.passed`` (rows for plain prompts have no ``checks`` and are
     not counted). The first live run shipped a reader for an imagined
     ``{"results": [...]}`` envelope and scored every real file as None.
+    Scored by :func:`stateset_agents.training.sft.score_eval_rows`, exactly
+    like the harvest job's baseline, so generations share one denominator.
     """
     if output_dir is None:
         return None, None
@@ -151,21 +171,36 @@ def _eval_score(output_dir: Path | None) -> tuple[int | None, int | None]:
         data = json.loads((Path(output_dir) / "eval_results.json").read_text())
     except (OSError, ValueError):
         return None, None
+    from stateset_agents.training.sft import score_eval_rows
+
     rows = data.get("results") if isinstance(data, dict) else data
-    if not isinstance(rows, list):
-        return None, None
-    outcomes = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        checks = row.get("checks")
-        if isinstance(checks, dict) and "passed" in checks:
-            outcomes.append(bool(checks["passed"]))
-        elif "passed" in row:
-            outcomes.append(bool(row["passed"]))
-    if not outcomes:
-        return None, None
-    return sum(outcomes), len(outcomes)
+    return score_eval_rows(rows)
+
+
+#: Files a job writes that the flywheel reads to decide what happened. A
+#: rerun into the same ``output_root`` must not read the previous run's.
+_HARVEST_RESULTS = ("harvest_summary.json", "harvest.jsonl")
+_TRAIN_RESULTS = ("eval_results.json",)
+
+
+def _clear_results(output_dir: Path, names: tuple[str, ...]) -> None:
+    """Delete a job's result files before it runs, so only its own count.
+
+    A job that dies before writing them then reads as "no results" rather
+    than as the previous run's outcome (which, for a training job, used to
+    advance a stale adapter as the next generation).
+    """
+    for name in names:
+        stale = Path(output_dir) / name
+        if stale.is_file():
+            logger.info("removing stale %s from a previous run", stale)
+            stale.unlink()
+
+
+def _fresh(output_dir: Path, names: tuple[str, ...]) -> Path:
+    """``output_dir`` with the previous run's result files removed."""
+    _clear_results(output_dir, names)
+    return output_dir
 
 
 def _spend(results: list[float | None]) -> float:
@@ -197,7 +232,7 @@ def _probe_temperature(
         spec = RemoteJobSpec(
             dataset=probe_file,
             base_model=harvest_base,
-            output_dir=gen_dir / f"probe_t{temp}",
+            output_dir=_fresh(gen_dir / f"probe_t{temp}", _HARVEST_RESULTS),
             job_kind="harvest",
             harvest={
                 "adapter_dir": adapter_dir,
@@ -288,7 +323,7 @@ def run_flywheel(
         harvest_spec = RemoteJobSpec(
             dataset=prompts_file,
             base_model=config.teacher_base_model or config.base_model,
-            output_dir=gen_dir / "harvest",
+            output_dir=_fresh(gen_dir / "harvest", _HARVEST_RESULTS),
             job_kind="harvest",
             harvest={
                 # In distillation the teacher is fixed; otherwise the
@@ -390,7 +425,7 @@ def run_flywheel(
         train_spec = RemoteJobSpec(
             dataset=harvest_dataset,
             base_model=config.base_model,
-            output_dir=gen_dir / "adapter",
+            output_dir=_fresh(gen_dir / "adapter", _TRAIN_RESULTS),
             num_epochs=config.num_epochs,
             lora_r=config.lora_r,
             lora_alpha=config.lora_alpha,

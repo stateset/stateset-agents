@@ -9,13 +9,22 @@ from copy import deepcopy
 from numbers import Integral, Real
 from typing import Any
 
+from ..core.errors import ErrorCode, TrainingError
 from .callbacks import has_no_policy_signal
+from .config import config_value
 
 logger = logging.getLogger(__name__)
 
 
-class TrainingSignalError(RuntimeError):
-    """Training produced invalid metrics or repeatedly measured no policy signal."""
+class TrainingSignalError(TrainingError, RuntimeError):
+    """Training produced invalid metrics or repeatedly measured no policy signal.
+
+    A :class:`~stateset_agents.core.errors.TrainingError` that is still a
+    ``RuntimeError`` and prints its bare message.
+    """
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_NO_SIGNAL
 
 
 class DiagnosticsMonitor:
@@ -37,7 +46,7 @@ class DiagnosticsMonitor:
         self.failure: str | None = None
         self.latest: dict[str, Any] = {}
         self._last_step: Any = None
-        patience = getattr(config, "zero_signal_patience", 5)
+        patience = config_value(config, "zero_signal_patience")
         self.patience = patience if type(patience) is int and patience >= 0 else 5
 
     def __call__(self, event: str, data: dict[str, Any] | None = None) -> None:

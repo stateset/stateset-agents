@@ -195,7 +195,7 @@ class RefundPolicyEnvironment(Environment):
                     ctx["refunds"].append(args["amount_cents"])
                 ctx["resolution"] = tool
                 observation = {"applied": tool, **args}
-        except (ValueError, TypeError) as exc:
+        except ValueError as exc:
             ctx["violations"] += 1
             observation = {"error": str(exc)}
         done = finish or state.turn_count >= self.max_turns

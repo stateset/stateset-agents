@@ -129,6 +129,22 @@ class SubmissionJournal:
             os.fsync(stream.fileno())
         _sync_directory(run)
 
+    @classmethod
+    def resume(cls, run: Path) -> SubmissionJournal:
+        """Reopen a retained journal once its submitting worker has exited.
+
+        Only the supervisor that observed the worker's exit may do this, to
+        append the cleanup it performed on the worker's behalf.
+        """
+        record, _ = _read_record(run)
+        _validate_record(run, record)
+        journal = cls.__new__(cls)
+        journal.run = run
+        journal.plan_sha256 = record["plan_sha256"]
+        journal._lock = threading.RLock()
+        journal._record = record
+        return journal
+
     def _write(self) -> None:
         if read_run_plan(self.run)[1] != self.plan_sha256:
             raise ValueError("Reviewed plan changed during provider submission")
@@ -183,11 +199,9 @@ class SubmissionJournal:
             self._write()
 
 
-def inspect_submission(run: Path) -> dict[str, Any]:
-    """Read retained allocation identities and uncertainty without provider calls."""
+def _read_record(run: Path) -> tuple[Any, bytes]:
+    """Read the bounded private journal record and its exact bytes."""
     path = run / "provider-submission.json"
-    if not path.exists() and not path.is_symlink():
-        return {"available": False, "live_status_checked": False}
     flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     if path.is_symlink():
         raise ValueError("Provider journal must be a regular private record")
@@ -204,7 +218,11 @@ def inspect_submission(run: Path) -> dict[str, Any]:
         raw = stream.read(_LIMIT + 1)
     if len(raw) > _LIMIT:
         raise ValueError("Provider journal exceeds its record limit")
-    record = json.loads(raw)
+    return json.loads(raw), raw
+
+
+def _validate_record(run: Path, record: Any) -> str:
+    """Check the journal header against the reviewed plan; return its digest."""
     plan, digest = read_run_plan(run)
     if (
         not isinstance(record, dict)
@@ -245,6 +263,16 @@ def inspect_submission(run: Path) -> dict[str, Any]:
             or not math.isfinite(value)
         ):
             raise ValueError("Invalid provider observation time")
+    return digest
+
+
+def inspect_submission(run: Path) -> dict[str, Any]:
+    """Read retained allocation identities and uncertainty without provider calls."""
+    path = run / "provider-submission.json"
+    if not path.exists() and not path.is_symlink():
+        return {"available": False, "live_status_checked": False}
+    record, raw = _read_record(run)
+    digest = _validate_record(run, record)
     resources: dict[tuple[str, str], dict[str, Any]] = {}
     intents: dict[tuple[str, str | None, int | None], dict[str, Any]] = {}
     for item in record["events"]:
@@ -305,3 +333,61 @@ def inspect_submission(run: Path) -> dict[str, Any]:
         "automatic_restart_supported": False,
         "provider_cleanup_verified": False,
     }
+
+
+#: Journal states after which the worker itself asked the provider to clean up.
+_CLEANED = frozenset({"cleanup_acknowledged", "cleanup_confirmed"})
+
+
+def reclaim_abandoned_pods(run: Path, executor: Any = None) -> dict[str, Any]:
+    """Terminate RunPod pods an exited worker allocated but never saw cleaned up.
+
+    The worker terminates its pod on every path it survives; a SIGKILL, OOM
+    kill or crash skips that. Its supervisor calls this only after observing
+    the worker's exit. Pods are taken from the journal; a pod whose creation
+    was journaled but whose identity was not is found by its owned name.
+    Outcomes are appended to the journal; nothing here certifies billing ended.
+    """
+    report = inspect_submission(run)
+    if not report["available"] or report["provider"] != "runpod":
+        return {"reclaimed": [], "failed": {}}
+    pending = [
+        entry["id"]
+        for entry in report["resources"]
+        if entry["kind"] == "pod" and entry["state"] not in _CLEANED
+    ]
+    names = {
+        intent["resource_name"]
+        for intent in report["unresolved_intents"]
+        if intent["resource_kind"] == "pod" and intent.get("resource_name")
+    }
+    if not pending and not names:
+        return {"reclaimed": [], "failed": {}}
+    if executor is None:
+        from stateset_agents.remote.runpod import RunPodExecutor
+
+        executor = RunPodExecutor(allow_environment_wheel=False)
+    if names:
+        pending += [pod for pod in executor.pods_named(names) if pod not in pending]
+    reclaimed, failed = executor.reclaim_pods(pending)
+    journal = SubmissionJournal.resume(run)
+    job_id = report["job_id"]
+    for pod_id in [*reclaimed, *failed]:
+        if not isinstance(job_id, str) or not _IDENTIFIER.fullmatch(pod_id):
+            continue
+        journal.publish(
+            {
+                "schema_version": 1,
+                "provider": "runpod",
+                "job_id": job_id,
+                "event": (
+                    "cleanup_unconfirmed"
+                    if pod_id in failed
+                    else "cleanup_acknowledged"
+                ),
+                "resource_kind": "pod",
+                "resource_id": pod_id,
+                "resource_name": "stateset-sft-" + job_id,
+            }
+        )
+    return {"reclaimed": reclaimed, "failed": failed}

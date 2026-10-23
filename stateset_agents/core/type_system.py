@@ -8,7 +8,6 @@ type-safe interfaces for all framework components.
 import inspect
 import json
 import logging
-import warnings
 from abc import ABC, abstractmethod
 from collections.abc import Awaitable, Callable
 from enum import Enum
@@ -25,6 +24,8 @@ from typing import (
 )
 
 from typing_extensions import NotRequired, Required, TypedDict
+
+from .._deprecation import warn_deprecated
 
 logger = logging.getLogger(__name__)
 
@@ -219,8 +220,12 @@ class TrainingConfigDict(TypedDict, total=False):
 TypedTrainingConfig = TrainingConfigDict
 
 
-class ConversationTurn(TypedDict):
-    """Type-safe conversation turn"""
+class ConversationTurnDict(TypedDict):
+    """Type-safe conversation turn (a plain dict).
+
+    Renamed from ``ConversationTurn``, which collided with the canonical
+    :class:`stateset_agents.core.trajectory.ConversationTurn`.
+    """
 
     role: Literal["user", "assistant", "system"]
     content: str
@@ -232,7 +237,7 @@ class TrajectoryData(TypedDict):
     """Type-safe trajectory data"""
 
     conversation_id: ConversationId
-    turns: list[ConversationTurn]
+    turns: list[ConversationTurnDict]
     total_tokens: TokenCount
     duration_seconds: float
     context_metadata: NotRequired[dict[str, Any]]
@@ -323,7 +328,7 @@ class Agent(Protocol):
 
     async def generate_response(
         self,
-        messages: str | list[ConversationTurn],
+        messages: str | list[ConversationTurnDict],
         **kwargs: Any,
     ) -> str:
         """Generate response to conversation"""
@@ -712,7 +717,7 @@ __all__ = [
     "ModelConfig",
     "TrainingConfigDict",
     "TypedTrainingConfig",
-    "ConversationTurn",
+    "ConversationTurnDict",
     "TrajectoryData",
     "RewardMetrics",
     # Protocols
@@ -736,12 +741,22 @@ __all__ = [
 
 
 def __getattr__(name: str) -> Any:
-    """Serve the renamed ``TrainingConfig`` TypedDict under its old name."""
+    """Serve renamed TypedDicts under their old names (with a warning)."""
+    if name == "ConversationTurn":
+        warn_deprecated(
+            f"{__name__}.ConversationTurn",
+            removal="0.71.0",
+            replacement=(
+                "ConversationTurnDict (or the canonical "
+                "stateset_agents.core.trajectory.ConversationTurn)"
+            ),
+        )
+        return ConversationTurnDict
     if name == "TrainingConfig":
-        warnings.warn(
-            "use TrainingConfigDict",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"{__name__}.TrainingConfig",
+            removal="0.71.0",
+            replacement=f"{__name__}.TrainingConfigDict",
         )
         return TrainingConfigDict
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

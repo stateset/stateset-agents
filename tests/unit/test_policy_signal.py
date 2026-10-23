@@ -111,7 +111,7 @@ async def test_real_trainers_record_group_advantages(
             )
 
         async def compute_reward(self, turns, context):
-            return await self.compute_turn_reward(turns[0], context)
+            return await self.compute_turn_reward(turns[-1], context)
 
     trainer_class = GSPOTokenTrainer if token_level else GSPOTrainer
     trainer = trainer_class(

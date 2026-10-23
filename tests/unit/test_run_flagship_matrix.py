@@ -83,6 +83,7 @@ def run(seed: int, improvement: float = 0.05) -> dict[str, Any]:
             "baseline_score": 0.50,
             "final_score": 0.50 + improvement,
             "judge_self_disagreement": 0.02,
+            "judge_parse_failure_rate": 0.0,
             "cost_usd": 4.0,
         },
         "wall_clock_seconds": 100.0,
@@ -119,6 +120,7 @@ def retained_run(root: Path, value: dict[str, Any], seed: int) -> dict[str, Any]
             "baseline_score": 0.50,
             "final_score": 0.55,
             "judge_self_disagreement": 0.01,
+            "judge_parse_failure_rate": 0.0,
             "train_examples": 500,
             "eval_examples": 200,
             "peak_vram_mb": 40000,
@@ -250,6 +252,17 @@ def test_matrix_rejects_unstable_or_insignificant_results() -> None:
         runner.validate_matrix(values, manifest())
 
 
+def test_matrix_gates_judge_parse_failures_separately() -> None:
+    """Parse failures used to be folded into self-disagreement and were
+    otherwise never gated; they bias scores, so they have their own ceiling."""
+    values = [run(42), run(1337), run(2026)]
+    values[2]["metrics"]["judge_parse_failure_rate"] = 0.021
+    with pytest.raises(runner.FlagshipError, match="parse-failure rate"):
+        runner.validate_matrix(values, manifest())
+    values[2]["metrics"]["judge_parse_failure_rate"] = 0.02
+    assert runner.validate_matrix(values, manifest())["passed"] is True
+
+
 def test_adapter_requires_cost_topology_and_owned_artifact(tmp_path: Path) -> None:
     value = manifest()
     config_sha = runner.digest_json(value["config"])
@@ -272,6 +285,7 @@ def test_adapter_requires_cost_topology_and_owned_artifact(tmp_path: Path) -> No
             "baseline_score": 0.5,
             "final_score": 0.56,
             "judge_self_disagreement": 0.01,
+            "judge_parse_failure_rate": 0.0,
             "train_examples": 500,
             "eval_examples": 200,
             "peak_vram_mb": 40000,
@@ -312,6 +326,7 @@ def test_run_seed_measures_externally_and_hashes_owned_artifact(
                 "baseline_score": 0.5,
                 "final_score": 0.55,
                 "judge_self_disagreement": 0.01,
+                "judge_parse_failure_rate": 0.0,
                 "train_examples": 500,
                 "eval_examples": 200,
                 "peak_vram_mb": 40000,

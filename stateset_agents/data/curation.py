@@ -8,9 +8,18 @@ import hashlib
 import json
 import math
 import re
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from stateset_agents.data.jsonl import read_jsonl_lines
+
+if TYPE_CHECKING:
+    from stateset_agents.data.decontamination import (
+        DecontaminationConfig,
+        TextSource,
+    )
 
 _EMAIL = re.compile(r"[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}")
 _PHONE = re.compile(r"(?<!\w)(?:\+\d[\d ()-]{8,}\d|\(\d{3}\)\s*\d{3}[- ]\d{4})(?!\w)")
@@ -76,12 +85,20 @@ def curate_conversations(
     validation_after: str,
     test_after: str,
     minimum_reward: float | None = None,
+    decontaminate_against: Sequence[TextSource] = (),
+    decontamination: DecontaminationConfig | None = None,
 ) -> dict[str, Any]:
     """Return redacted, deduplicated temporal splits with source-group isolation.
 
     Duplicate conversations union their source groups before splitting; a group
     spanning a cutoff moves entirely into its newest split. Reward filtering
     applies only to training, leaving all held-out outcomes available for eval.
+
+    ``decontaminate_against`` names eval sets (see
+    :mod:`stateset_agents.data.decontamination`): training rows that share an
+    n-gram (or, when configured, a near duplicate) with any of them are removed
+    and counted in the manifest's ``decontamination`` block. Held-out splits are
+    never filtered.
     """
     validation_time, test_time = _time(validation_after), _time(test_after)
     if validation_time >= test_time:
@@ -176,6 +193,11 @@ def curate_conversations(
         clean["content_sha256"] = fingerprint
         clean["split"] = split
         splits[split].append(clean)
+    decontaminated = (
+        _decontaminate_training(splits, decontaminate_against, decontamination)
+        if decontaminate_against
+        else None
+    )
     manifest = {
         "schema_version": 1,
         "input_rows": len(records),
@@ -188,7 +210,45 @@ def curate_conversations(
         "split_sha256": {name: _digest(rows) for name, rows in splits.items()},
         "split_rows": {name: len(rows) for name, rows in splits.items()},
     }
+    if decontaminated is not None:
+        manifest["decontamination"] = decontaminated
     return {"manifest": manifest, "splits": splits}
+
+
+def _decontaminate_training(
+    splits: dict[str, list[dict[str, Any]]],
+    evals: Sequence[TextSource],
+    config: DecontaminationConfig | None,
+) -> dict[str, Any]:
+    """Drop training rows that overlap the eval sets; return the manifest block."""
+    from stateset_agents.data.decontamination import (
+        find_contamination,
+        text_source_from_rows,
+    )
+
+    train = text_source_from_rows(
+        "train",
+        [(str(index), row) for index, row in enumerate(splits["train"])],
+        config=config,
+    )
+    result = find_contamination([train], evals, config)
+    removed = {int(row_id) for row_id in result.contaminating}
+    splits["train"] = [
+        row for index, row in enumerate(splits["train"]) if index not in removed
+    ]
+    return {
+        "method": result.report["method"],
+        "config": result.report["config"],
+        "eval_sets": {
+            name: {
+                "sha256": report["sha256"],
+                "rows": report["rows"],
+                "contaminated_rows": report["contaminated_rows"],
+            }
+            for name, report in result.report["eval_sets"].items()
+        },
+        "removed_training_rows": len(removed),
+    }
 
 
 def main() -> None:
@@ -199,15 +259,39 @@ def main() -> None:
     parser.add_argument("--validation-after", required=True)
     parser.add_argument("--test-after", required=True)
     parser.add_argument("--minimum-reward", type=float)
+    parser.add_argument(
+        "--decontaminate-against",
+        action="append",
+        default=[],
+        metavar="EVAL",
+        help="Eval set (path, NAME=PATH or builtin:NAME) whose n-grams training "
+        "rows must not contain; repeatable.",
+    )
+    parser.add_argument("--ngram-size", type=int, default=13)
     args = parser.parse_args()
-    records = [
-        json.loads(line) for line in args.input.read_text().splitlines() if line.strip()
-    ]
+    records = [json.loads(line) for _, line in read_jsonl_lines(args.input)]
+    evals: list[TextSource] = []
+    config = None
+    if args.decontaminate_against:
+        from stateset_agents.data.decontamination import (
+            DecontaminationConfig,
+            resolve_eval_source,
+        )
+
+        config = DecontaminationConfig(
+            ngram_size=args.ngram_size, min_tokens=min(8, args.ngram_size)
+        )
+        evals = [
+            resolve_eval_source(spec, config=config)
+            for spec in args.decontaminate_against
+        ]
     bundle = curate_conversations(
         records,
         validation_after=args.validation_after,
         test_after=args.test_after,
         minimum_reward=args.minimum_reward,
+        decontaminate_against=evals,
+        decontamination=config,
     )
     bundle["manifest"]["source_file_sha256"] = hashlib.sha256(
         args.input.read_bytes()

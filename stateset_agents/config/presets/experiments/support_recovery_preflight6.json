@@ -2,7 +2,7 @@
   "schema_version": 1,
   "kind": "stateset-support-recovery-profile",
   "protocol": "stateset-support-recovery-v1",
-  "framework_version": "0.67.0",
+  "framework_version": "0.69.0",
   "model_parameter_count": 9653104368,
   "validation_decoding": {"do_sample": false, "temperature": 0.0, "num_beams": 1, "repetition_penalty": 1.0},
   "agent": {

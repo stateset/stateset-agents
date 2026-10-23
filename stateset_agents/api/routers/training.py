@@ -10,6 +10,8 @@ from typing import Any, Literal
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from stateset_agents.utils.clock import utc_now
+
 from ..dependencies import (
     AuthenticatedUser,
     get_current_user,
@@ -17,8 +19,12 @@ from ..dependencies import (
     require_role,
 )
 from ..errors import InternalError, TrainingConfigError, TrainingJobNotFoundError
-from ..models import PaginatedResponse
-from ..schemas import ErrorResponse, TrainingRequest, TrainingResponse
+from ..schemas import (
+    ErrorResponse,
+    PaginatedResponse,
+    TrainingRequest,
+    TrainingResponse,
+)
 from ..services.training_service import TrainingService
 
 router = APIRouter(prefix="/training", tags=["training"])
@@ -47,24 +53,28 @@ class TrainingJobDetail(BaseModel):
     training_id: str = Field(..., description="Training job identifier")
     status: str = Field(..., description="Current status")
     created_at: datetime = Field(..., description="Creation timestamp")
-    started_at: datetime | None = Field(None, description="Start timestamp")
-    completed_at: datetime | None = Field(None, description="Completion timestamp")
+    started_at: datetime | None = Field(default=None, description="Start timestamp")
+    completed_at: datetime | None = Field(
+        default=None, description="Completion timestamp"
+    )
     completion_scope: (
         Literal[
             "final_episode_reported", "partial_episode_progress", "no_episode_progress"
         ]
         | None
     ) = Field(
-        None,
+        default=None,
         description="Episode progress observed when the trainer returned normally; not proof of optimizer updates or saved artifacts",
     )
-    progress: float = Field(0.0, ge=0.0, le=100.0, description="Progress percentage")
-    current_episode: int = Field(0, description="Current training episode")
-    total_episodes: int = Field(0, description="Total episodes")
+    progress: float = Field(
+        default=0.0, ge=0.0, le=100.0, description="Progress percentage"
+    )
+    current_episode: int = Field(default=0, description="Current training episode")
+    total_episodes: int = Field(default=0, description="Total episodes")
     metrics: dict[str, Any] = Field(
         default_factory=dict, description="Training metrics"
     )
-    error: str | None = Field(None, description="Error message if failed")
+    error: str | None = Field(default=None, description="Error message if failed")
     config: dict[str, Any] = Field(
         default_factory=dict, description="Training configuration"
     )
@@ -232,7 +242,7 @@ async def list_training_jobs(
         TrainingJobDetail(
             training_id=job_id,
             status=job.get("status", "unknown"),
-            created_at=job.get("created_at", datetime.utcnow()),
+            created_at=job.get("created_at", utc_now()),
             started_at=job.get("started_at"),
             completed_at=job.get("completed_at"),
             completion_scope=job.get("completion_scope"),
@@ -293,7 +303,7 @@ async def get_training_status(
     return TrainingJobDetail(
         training_id=training_id,
         status=job.get("status", "unknown"),
-        created_at=job.get("created_at", datetime.utcnow()),
+        created_at=job.get("created_at", utc_now()),
         started_at=job.get("started_at"),
         completed_at=job.get("completed_at"),
         completion_scope=job.get("completion_scope"),

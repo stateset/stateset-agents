@@ -11,20 +11,20 @@ Reference: https://arxiv.org/abs/2507.18071v2
 from __future__ import annotations
 
 import asyncio
-import functools
+import dataclasses
 import importlib.util
 import logging
 import math
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 # Import framework components (absolute imports so legacy `training.*` works)
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
-from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
 )
@@ -38,6 +38,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from . import objectives, rl_losses
+from .config import config_value
 from .gspo_config import GSPOConfig
 from .gspo_generation import (
     VLLM_AVAILABLE,
@@ -47,7 +48,17 @@ from .gspo_generation import (
     render_prompt_for_scoring,
     scoring_prompt_length,
 )
+from .quantization import QuantizationConfig, build_bnb_config
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
+)
+from .spine.rollouts import RewardFallbacks
+from .spine.scoring import ResponseScorer, ScoredReply
+from .spine.update import UpdatePasses
 from .trainer_runtime import SharedModelManager
 
 logger = logging.getLogger(__name__)
@@ -61,21 +72,19 @@ def _require_finite_vector(values: torch.Tensor, name: str) -> None:
         raise ValueError(f"{name} must contain only finite values")
 
 
-# Optional training dependencies
+# Optional training dependencies (W&B reporting: dedicated_reporting.WandbRun)
 try:
-    import wandb as _wandb
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+    from peft import prepare_model_for_kbit_training as _prepare_kbit
 
-    wandb: Any | None = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import (
-        LoraConfig,
-        TaskType,
-        get_peft_model,
-        prepare_model_for_kbit_training,
-    )
+    # Optional-dependency slots: rebound to ``None`` when peft is missing and
+    # monkeypatched by tests, so they are deliberately typed ``Any``.
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
+    prepare_model_for_kbit_training: Any = _prepare_kbit
 except ImportError:  # pragma: no cover - optional dependency
     LoraConfig = None
     TaskType = None
@@ -114,15 +123,6 @@ def _require_bitsandbytes() -> None:
             "If you just installed it in a notebook, restart the runtime/kernel. "
             "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
         ) from exc
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GSPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
@@ -274,18 +274,14 @@ class GSPOModelManager(SharedModelManager):
         if self.config.use_lora or self.config.use_8bit or self.config.use_4bit:
             _require_peft()
 
-        # Add quantization if specified
+        # Add quantization if specified: the shared QLoRA config (Transformers
+        # 5 removed the legacy load_in_* model kwargs).
         if self.config.use_8bit or self.config.use_4bit:
             _require_bitsandbytes()
-            from transformers import BitsAndBytesConfig
-
-            # Transformers 5 removed the legacy load_in_* model kwargs.
-            model_kwargs["quantization_config"] = BitsAndBytesConfig(
-                load_in_8bit=self.config.use_8bit,
-                load_in_4bit=self.config.use_4bit and not self.config.use_8bit,
-                bnb_4bit_quant_type="nf4",
-                bnb_4bit_use_double_quant=True,
-                bnb_4bit_compute_dtype=model_kwargs.get("torch_dtype", torch.bfloat16),
+            model_kwargs["quantization_config"] = build_bnb_config(
+                QuantizationConfig.from_trainer_flags(
+                    self.config, model_kwargs.get("torch_dtype", torch.bfloat16)
+                )
             )
 
     def _prepare_base_model(self, base_model: Any) -> Any:
@@ -328,7 +324,7 @@ class GSPOModelManager(SharedModelManager):
                 torch_dtype=model_kwargs["torch_dtype"],
                 device_map="auto" if torch.cuda.device_count() > 1 else None,
                 trust_remote_code=self.config.trust_remote_code,
-                revision=getattr(self.config, "model_revision", None),
+                revision=config_value(self.config, "model_revision"),
             )
             if self.ref_model is not None:
                 self.ref_model.eval()
@@ -350,24 +346,123 @@ class GSPOModelManager(SharedModelManager):
             raise
 
 
-def _clamped_cosine_lr(step: int, *, warmup_steps: int, total_steps: int) -> float:
-    """Linear warmup then half-cosine decay to 0, held at 0 past ``total_steps``."""
-    if step < warmup_steps:
-        return float(step) / float(max(1, warmup_steps))
-    progress = (step - warmup_steps) / float(max(1, total_steps - warmup_steps))
-    return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
+def _scoring_system_prompt(trainer: Any) -> str | None:
+    """The agent's system prompt, part of the rendered scoring prompt."""
+    agent_config = getattr(getattr(trainer, "agent", None), "config", None)
+    return getattr(agent_config, "system_prompt", None)
 
 
-class GSPOTrainer(TrainingRuntime):
-    #: Preset evaluated when ``config.objective`` is unset; the token variant
-    #: overrides this instead of reassigning ``_objective`` after ``__init__``.
-    _native_objective = "gspo"
+def score_response_group(
+    model: Any,
+    tokenizer: Any,
+    prompt: str,
+    responses: list[str],
+    *,
+    system_prompt: str | None,
+    max_completion_length: int,
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Summed response-token log-probs and response lengths for one group.
 
+    ``prompt`` is rendered with ``render_prompt_for_scoring`` and each
+    response appended with ``build_scoring_text`` -- the convention the
+    generation side scores with -- so current, old and reference log-probs
+    share one tokenization. Rows are right-padded; log-probs come from the
+    shared fp32 shift-by-one gather (``rl_losses.gather_token_logprobs``, no
+    full-vocabulary log-softmax tensor) masked to response tokens: unshifted
+    position ``p`` counts when ``p >= prompt_length`` and is not padding.
+    Gradients follow the caller's grad mode.
+    """
+    rendered_prompt = render_prompt_for_scoring(tokenizer, prompt, system_prompt)
+    prompt_length = scoring_prompt_length(tokenizer, rendered_prompt)
+    full_texts = [
+        build_scoring_text(rendered_prompt, response) for response in responses
+    ]
+
+    # Use right-padding for stable response positions across the batch.
+    original_padding_side = getattr(tokenizer, "padding_side", "right")
+    if hasattr(tokenizer, "padding_side"):
+        tokenizer.padding_side = "right"
+    try:
+        inputs = tokenizer(
+            full_texts,
+            return_tensors="pt",
+            padding=True,
+            truncation=True,
+            max_length=prompt_length + max_completion_length,
+            add_special_tokens=False,
+        )
+    finally:
+        if hasattr(tokenizer, "padding_side"):
+            tokenizer.padding_side = original_padding_side
+
+    model_device = _get_model_device(model)
+    if model_device is not None:
+        if hasattr(inputs, "to"):
+            inputs = inputs.to(model_device)
+        else:
+            inputs = {
+                k: v.to(model_device) if hasattr(v, "to") else v
+                for k, v in inputs.items()
+            }
+
+    logits = model(**inputs).logits
+    response_mask = inputs["attention_mask"].to(torch.float32)
+    response_mask[:, :prompt_length] = 0.0
+    token_log_probs, shifted_mask = rl_losses.gather_token_logprobs(
+        logits, inputs["input_ids"], response_mask
+    )
+    return token_log_probs.sum(dim=-1), shifted_mask.sum(dim=-1).clamp(min=1.0)
+
+
+@dataclass
+class _PolicyStats:
+    """What a GSPO step's update passes observed (for its metrics)."""
+
+    clipped: int = 0
+    samples: int = 0
+    importance_ratios: list[float] = field(default_factory=list)
+    generation_gaps: list[float] = field(default_factory=list)
+
+
+@dataclass
+class _ScoredGroups:
+    """One step's prompt groups after sampling and scoring."""
+
+    #: ``(prompt, responses, generation_log_probs, advantages, ref_log_probs)``
+    groups: list[
+        tuple[str, list[str], torch.Tensor, torch.Tensor, torch.Tensor | None]
+    ] = field(default_factory=list)
+    rewards: list[float] = field(default_factory=list)
+    nonzero_advantages: int = 0
+    advantage_count: int = 0
+    zero_advantage_groups: int = 0
+    #: Replies left out for a reward fallback (never trained on).
+    fallbacks: RewardFallbacks = field(default_factory=RewardFallbacks)
+
+
+def _policy_iterations(config: Any) -> int:
+    """Optimizer steps per rollout batch (GSPO ``num_iterations``, >= 1)."""
+    iterations = getattr(config, "num_iterations", 1)
+    if type(iterations) is not int or iterations < 1:
+        raise ValueError("num_iterations must be a positive integer")
+    return iterations
+
+
+def _outer_iterations(config: Any) -> int:
+    """Outer iterations of a GSPO run (``num_outer_iterations``)."""
+    return int(config.num_outer_iterations)
+
+
+class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
     """
     Group Sequence Policy Optimization trainer
 
     Implements the GSPO algorithm from: https://arxiv.org/abs/2507.18071v2
     """
+
+    #: Preset evaluated when ``config.objective`` is unset (the spec's
+    #: ``objective``); the token variant overrides both.
+    _native_objective = "gspo"
 
     def __init__(
         self,
@@ -379,7 +474,7 @@ class GSPOTrainer(TrainingRuntime):
         reward_model: MultiObjectiveReward,
         ref_model: Any | None = None,
     ):
-        validate_training_config(config)
+        validate_training_config(config, GSPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -388,16 +483,9 @@ class GSPOTrainer(TrainingRuntime):
         self.reward_model = reward_model
         self.ref_model = ref_model
         # The GSPO objective (length-normalised sequence ratio, asymmetric
-        # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective.
-        self._objective = objectives.resolve_objective(
-            config,
-            self._native_objective,
-            kl_coef=float(config.beta),
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("sequence", "sequence_token"),
-            clip_low=float(config.clip_range_left),
-            clip_high=float(config.clip_range_right),
-        )
+        # clip, k3 KL on sequence log-probs) as one declarative PolicyObjective
+        # (GSPO_SPEC / GSPO_TOKEN_SPEC).
+        self._objective = self._resolve_algorithm_objective()
 
         # Optimizer
         params = list(self.model.parameters())
@@ -413,18 +501,12 @@ class GSPOTrainer(TrainingRuntime):
             weight_decay=float(config.weight_decay),
         )
 
-        # Cosine schedule over the optimizer steps actually taken: train_step
-        # makes exactly one per outer iteration. Progress is clamped so steps
-        # past the end hold the final LR (HF's cosine is periodic there and
-        # flipped the LR between full and zero on alternate steps).
-        total_steps = max(1, int(config.num_outer_iterations))
-        warmup_steps = int(total_steps * float(config.warmup_ratio))
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            self.optimizer,
-            lr_lambda=functools.partial(
-                _clamped_cosine_lr, warmup_steps=warmup_steps, total_steps=total_steps
-            ),
-        )
+        # ``lr_scheduler_type`` over the optimizer steps actually taken:
+        # train_step makes ``num_iterations`` per outer iteration (the spine
+        # budget). Progress is clamped so steps past the end hold the final LR
+        # (HF's cosine is periodic there and flipped the LR between full and
+        # zero on alternate steps).
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Trajectory generator
         self.generator = GSPOTrajectoryGenerator(config, agent, environment)
@@ -471,7 +553,8 @@ class GSPOTrainer(TrainingRuntime):
         # Convert to ratio via exp, clamped: an inf ratio multiplied by an
         # advantage of exactly 0 (which a constant-reward group produces) is
         # NaN, and that NaN reaches the GSPO-token gate.
-        return rl_losses.safe_exp_ratio(normalized_log_ratio)
+        ratios: torch.Tensor = rl_losses.safe_exp_ratio(normalized_log_ratio)
+        return ratios
 
     def compute_group_advantages(
         self, rewards: Any
@@ -547,11 +630,18 @@ class GSPOTrainer(TrainingRuntime):
         )
         return old_log_probs, gaps
 
-    def _apply_optimizer_step(self, loss: torch.Tensor) -> None:
-        """Update only after scalar loss and clipped gradient norm are finite.
+    def _rollout_engine(self) -> Any:
+        """The trajectory generator's vLLM engine (``VLLMEngineMixin``)."""
+        return self.generator
 
-        Failed backward or clipping clears partial gradients. Optimizer and
-        scheduler state are untouched until these checks pass.
+    def _apply_optimizer_step(self, loss: torch.Tensor) -> bool:
+        """Backpropagate ``loss`` and commit it; return whether it committed.
+
+        The loss must be a finite scalar and ``max_grad_norm`` valid before
+        backward. Failed backward, non-finite gradients or clipping clear
+        partial gradients, and optimizer and scheduler state are untouched
+        unless the update commits. A pass skipped under
+        ``nonfinite_grad_policy="skip"`` returns False.
         """
         self.optimizer.zero_grad(set_to_none=True)
         try:
@@ -561,14 +651,37 @@ class GSPOTrainer(TrainingRuntime):
             if not math.isfinite(max_norm) or max_norm < 0:
                 raise ValueError("max_grad_norm must be finite and nonnegative")
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), max_norm, error_if_nonfinite=True
-            )
         except Exception:
             self.optimizer.zero_grad(set_to_none=True)
             raise
-        self.optimizer.step()
-        self.scheduler.step()
+        return self._build_optimizer_step()()
+
+    def _score_policy_group(
+        self, prompt: str, responses: list[str]
+    ) -> tuple[list[torch.Tensor] | None, torch.Tensor, torch.Tensor]:
+        """Token rows (GSPO-token only), summed log-probs and lengths."""
+        current_log_probs, lengths = self._compute_group_sequence_log_probs(
+            prompt, responses
+        )
+        return None, current_log_probs, lengths
+
+    def _policy_group_loss(
+        self,
+        importance_ratios: torch.Tensor,
+        advantages: torch.Tensor,
+        current_log_probs: torch.Tensor,
+        sequence_lengths: torch.Tensor,
+        ref_log_probs: torch.Tensor | None,
+        token_rows: list[torch.Tensor] | None,
+    ) -> torch.Tensor:
+        """One prompt group's objective (GSPO: sequence-level)."""
+        return self.compute_gspo_loss(
+            importance_ratios,
+            advantages,
+            current_log_probs,
+            sequence_lengths,
+            ref_log_probs,
+        )
 
     def compute_gspo_loss(
         self,
@@ -623,68 +736,104 @@ class GSPOTrainer(TrainingRuntime):
         ratio numerator (current log prob) and denominator (old log prob)
         share one tokenization convention.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
+        return score_response_group(
+            self.model,
+            self.tokenizer,
+            prompt,
+            responses,
+            system_prompt=_scoring_system_prompt(self),
+            max_completion_length=self.config.max_completion_length,
         )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_texts = [
-            build_scoring_text(rendered_prompt, response) for response in responses
-        ]
 
-        # Use right-padding for stable response_start_idx across the batch.
-        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
-        if hasattr(self.tokenizer, "padding_side"):
-            self.tokenizer.padding_side = "right"
+    async def _reward_for_response(
+        self, prompt: str, query_context: dict[str, Any], response: str
+    ) -> float:
+        """Score one sampled response on the shared single-response path
+        (spine ``ResponseScorer``, i.e. ``reward_context.score_response``)."""
+        return await self._score_reply(prompt, response, query_context)
 
-        try:
-            inputs = self.tokenizer(
-                full_texts,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=prompt_length + self.config.max_completion_length,
-                add_special_tokens=False,
+    async def _sample_and_score_groups(
+        self, queries: list[str | dict[str, Any]], *, device: Any
+    ) -> _ScoredGroups:
+        """Sample every query's group, then score it and its advantages.
+
+        A query is a prompt string or ``{"prompt": ..., "context": {...}}``;
+        the context (gold answers, expected tools, ...) reaches the reward.
+        Every group of the step is sampled in one batched generate before any
+        scoring; weights only change in the update passes afterwards. Each
+        reply is scored by :meth:`_reward_for_response` (a group's replies
+        concurrently); with ``beta > 0`` and a reference model the group's
+        reference log-probs are scored in one batch.
+        """
+        scored = _ScoredGroups()
+        step_groups = await self.generator.generate_groups_batch(
+            [_query_prompt(query) for query in queries],
+            self.config.num_generations,
+        )
+        for query, group_responses in zip(queries, step_groups, strict=True):
+            prompt = _query_prompt(query)
+            context = query.get("context") if isinstance(query, dict) else None
+            query_context = dict(context) if isinstance(context, dict) else {}
+
+            # A reply whose reward is a fallback is left out (never trained
+            # on): score first, then keep the genuine replies and their
+            # rollout log-probs.
+            replies = list(
+                await asyncio.gather(
+                    *[
+                        self._score_reply_checked(prompt, response, query_context)
+                        for response, _ in group_responses
+                    ]
+                )
             )
-        finally:
-            if hasattr(self.tokenizer, "padding_side"):
-                self.tokenizer.padding_side = original_padding_side
+            kept, rewards = scored.fallbacks.keep(group_responses, replies)
+            if group_responses and not kept:
+                continue  # every reply was a fallback; the group is dropped
+            # (An empty group from the generator still fails validation below.)
+            group_responses = kept
 
-        response_start_idx = max(prompt_length - 1, 0)
+            # Extract responses and old log probs
+            responses = [resp for resp, _ in group_responses]
+            old_log_probs = torch.tensor(
+                [log_prob for _, log_prob in group_responses],
+                dtype=torch.float32,
+                device=device,
+            )
+            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
 
-        model_device = _get_model_device(self.model)
-        if model_device is not None:
-            if hasattr(inputs, "to"):
-                inputs = inputs.to(model_device)
-            else:
-                inputs = {
-                    k: v.to(model_device) if hasattr(v, "to") else v
-                    for k, v in inputs.items()
-                }
+            rewards_tensor = torch.tensor(rewards, dtype=torch.float32, device=device)
+            scored.rewards.extend(rewards)
 
-        outputs = self.model(**inputs)
-        logits = outputs.logits
+            # Compute group advantages
+            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
+            active = int(torch.count_nonzero(advantages).item())
+            scored.nonzero_advantages += active
+            scored.advantage_count += advantages.numel()
+            scored.zero_advantage_groups += int(active == 0)
 
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][:, 1:].contiguous()
-        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
+            ref_log_probs = None
+            if self.config.beta > 0 and self.ref_model is not None:
+                ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
+                if device is not None:
+                    ref_log_probs = ref_log_probs.to(device)
+            scored.groups.append(
+                (prompt, responses, old_log_probs, advantages, ref_log_probs)
+            )
+        scored.fallbacks.require_trainable("GSPO")
+        return scored
 
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
+    async def _gspo_step(
+        self, queries: list[str | dict[str, Any]], num_groups: int
+    ) -> dict[str, float]:
+        """One GSPO step: sample and score the groups, then update the policy
+        (:attr:`algorithm` on the spine step, ``spine.run_algorithm_step``).
 
-        response_mask = torch.zeros_like(shift_mask)
-        if response_start_idx < response_mask.shape[1]:
-            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
-
-        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
-        response_lengths = (
-            response_mask.sum(dim=-1).to(dtype=torch.float32).clamp(min=1.0)
+        ``GSPOTokenTrainer`` runs the same step with its own group scoring
+        and loss (``_score_policy_group`` / ``_policy_group_loss``).
+        """
+        return await run_algorithm_step(
+            self, self.algorithm, list(queries[:num_groups])
         )
-
-        return sequence_log_probs, response_lengths
 
     async def train_step(
         self, queries: list[str | dict[str, Any]], num_groups: int = 1
@@ -699,284 +848,70 @@ class GSPOTrainer(TrainingRuntime):
         Returns:
             Training metrics
         """
-        self.model.train()
-        self.optimizer.zero_grad(set_to_none=True)
-        model_device = _get_model_device(self.model)
+        return await self._gspo_step(queries, num_groups)
 
-        total_loss = torch.tensor(0.0, device=model_device)
-        total_clipped = 0
-        total_samples = 0
-        all_rewards = []
-        all_importance_ratios = []
-        all_generation_gaps: list[float] = []
-
-        processed_groups = 0
-        nonzero_advantages = 0
-        advantage_count = 0
-        zero_advantage_groups = 0
-        step_queries = list(queries[:num_groups])
-        # Every group of the step is sampled in one batched generate before any
-        # scoring; weights only change at the optimizer step after the loop.
-        step_groups = await self.generator.generate_groups_batch(
-            [_query_prompt(query) for query in step_queries],
-            self.config.num_generations,
-        )
-        for query, group_responses in zip(step_queries, step_groups, strict=True):
-            processed_groups += 1
-            if isinstance(query, dict):
-                prompt = str(query.get("prompt", ""))
-                query_context = query.get("context")
-                if not isinstance(query_context, dict):
-                    query_context = {}
-            else:
-                prompt = str(query)
-                query_context = {}
-            prompt_value = prompt
-            query_context_value = dict(query_context)
-
-            # Extract responses and old log probs
-            responses = [resp for resp, _ in group_responses]
-            old_log_probs = torch.tensor(
-                [log_prob for _, log_prob in group_responses],
-                dtype=torch.float32,
-                device=model_device,
-            )
-            _require_finite_vector(old_log_probs, "GSPO rollout log probabilities")
-
-            # Compute rewards for each response in parallel
-            async def _compute_reward_for_response(
-                resp: str,
-                *,
-                _prompt: str = prompt_value,
-                _query_context: dict[str, Any] = query_context_value,
-            ) -> float:
-                turn = ConversationTurn(
-                    role="assistant", content=resp, metadata={"generated": True}
-                )
-                reward_context = {"user_query": _prompt}
-                reward_context.update(_query_context)
-                reward_info = await self.reward_model.compute_reward(
-                    turns=[turn],
-                    context=reward_context,
-                )
-                return float(reward_info.total_reward)
-
-            rewards = list(
-                await asyncio.gather(
-                    *[_compute_reward_for_response(r) for r in responses]
-                )
-            )
-
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=model_device
-            )
-            all_rewards.extend(rewards)
-
-            # Compute group advantages
-            advantages, reward_stats = self.compute_group_advantages(rewards_tensor)
-            active = int(torch.count_nonzero(advantages).item())
-            nonzero_advantages += active
-            advantage_count += advantages.numel()
-            zero_advantage_groups += int(active == 0)
-
-            # Compute current log probs (with gradients) for each response
-            (
-                current_log_probs,
-                sequence_lengths,
-            ) = self._compute_group_sequence_log_probs(prompt, responses)
-            old_log_probs, generation_gaps = self._prepare_old_log_probs(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_generation_gaps.extend(generation_gaps)
-
-            # Compute sequence importance ratios
-            importance_ratios = self.compute_sequence_importance_ratio(
-                current_log_probs, old_log_probs, sequence_lengths
-            )
-            all_importance_ratios.extend(importance_ratios.detach().cpu().tolist())
-
-            # Apply clipping to importance ratios
-            clipped_ratios = torch.clamp(
-                importance_ratios,
-                1 - self.config.clip_range_left,
-                1 + self.config.clip_range_right,
-            )
-
-            # Count clipped sequences
-            num_clipped = (importance_ratios != clipped_ratios).sum().item()
-            total_clipped += num_clipped
-            total_samples += len(responses)
-
-            ref_log_probs = None
-            if self.config.beta > 0 and self.ref_model is not None:
-                ref_log_probs = self._compute_batch_ref_log_probs(prompt, responses)
-                if model_device is not None:
-                    ref_log_probs = ref_log_probs.to(model_device)
-            total_loss_item = self.compute_gspo_loss(
-                importance_ratios,
-                advantages,
-                current_log_probs,
-                sequence_lengths,
-                ref_log_probs,
-            )
-
-            # Accumulate loss
-            total_loss += total_loss_item
-
-        # Normalize accumulated loss by the number of processed query groups
-        # so gradient magnitude does not scale with batch composition.
-        total_loss = normalize_total_loss(total_loss, processed_groups)
-
-        self._apply_optimizer_step(total_loss)
-
-        # Compute metrics
-        clipping_fraction = total_clipped / max(total_samples, 1)
-        avg_reward = np.mean(all_rewards) if all_rewards else 0.0
-        avg_importance_ratio = (
-            np.mean(all_importance_ratios) if all_importance_ratios else 1.0
-        )
-
+    def _record_step_metrics(
+        self, passes: UpdatePasses, stats: _PolicyStats, scored: _ScoredGroups
+    ) -> dict[str, float]:
+        """A step's metrics, also appended to ``training_metrics``."""
+        rewards = scored.rewards
+        groups = len(scored.groups)
         metrics = {
-            "policy_loss": total_loss.item(),
-            "clipping_fraction": clipping_fraction,
-            "average_reward": avg_reward,
-            "reward_std": float(np.std(all_rewards)) if all_rewards else 0.0,
-            "nonzero_advantage_fraction": nonzero_advantages / max(advantage_count, 1),
-            "zero_advantage_group_fraction": zero_advantage_groups
-            / max(processed_groups, 1),
-            "advantage_group_count": float(processed_groups),
+            "policy_loss": float(np.mean(passes.losses)),
+            "optimizer_updates": float(passes.committed),
+            "clipping_fraction": stats.clipped / max(stats.samples, 1),
+            "average_reward": float(np.mean(rewards)) if rewards else 0.0,
+            "reward_std": float(np.std(rewards)) if rewards else 0.0,
+            "nonzero_advantage_fraction": scored.nonzero_advantages
+            / max(scored.advantage_count, 1),
+            "zero_advantage_group_fraction": scored.zero_advantage_groups
+            / max(groups, 1),
+            "advantage_group_count": float(groups),
             "generation_log_prob_gap": (
-                float(np.mean(all_generation_gaps)) if all_generation_gaps else 0.0
+                float(np.mean(stats.generation_gaps)) if stats.generation_gaps else 0.0
             ),
-            "sequence_importance_ratio": avg_importance_ratio,
-            "learning_rate": self.scheduler.get_last_lr()[0],
+            "sequence_importance_ratio": (
+                float(np.mean(stats.importance_ratios))
+                if stats.importance_ratios
+                else 1.0
+            ),
+            "learning_rate": float(self.scheduler.get_last_lr()[0]),
         }
-
-        # Store metrics
         for key, value in metrics.items():
             if key in self.training_metrics:
                 self.training_metrics[key].append(value)
-
         return metrics
 
     async def _compute_ref_log_prob(self, prompt: str, response: str) -> float:
-        """Compute log probability under reference model.
+        """Summed response-token log-prob of one response under the reference.
 
-        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
-        convention as current-log-prob scoring, so KL(current || ref) is
-        computed over identically tokenized sequences.
+        Same scoring convention as current-log-prob scoring
+        (:func:`score_response_group`), so KL(current || ref) compares
+        identically tokenized sequences.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
-        )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_text = build_scoring_text(rendered_prompt, response)
-        inputs = self.tokenizer(
-            full_text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=prompt_length + self.config.max_completion_length,
-            add_special_tokens=False,
-        )
-
-        model_device = _get_model_device(self.ref_model)
-        if model_device and hasattr(inputs, "to"):
-            inputs = inputs.to(model_device)
-
-        ref_model = self.ref_model
-        if ref_model is None:
-            raise RuntimeError("Reference model must be initialized before use")
-        with torch.no_grad():
-            outputs = ref_model(**inputs)
-            logits = outputs.logits
-
-        shift_logits = logits[..., :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][..., 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        response_start = max(prompt_length - 1, 0)
-        if response_start >= token_log_probs.shape[-1]:
-            return float(token_log_probs.sum().item())
-
-        response_log_probs = token_log_probs[..., response_start:]
-        sequence_log_prob = float(response_log_probs.sum().item())
-
-        return sequence_log_prob
+        return float(self._compute_batch_ref_log_probs(prompt, [response])[0].item())
 
     def _compute_batch_ref_log_probs(
         self, prompt: str, responses: list[str]
     ) -> torch.Tensor:
-        """Compute log probabilities under reference model for a batch of responses.
+        """Summed response-token log-probs of a group under the reference model.
 
-        Uses the same `render_prompt_for_scoring` + `build_scoring_text`
-        convention as `_compute_group_sequence_log_probs` so the KL penalty
-        is computed over identically tokenized current/reference sequences.
+        Same scoring convention as :meth:`_compute_group_sequence_log_probs`
+        (:func:`score_response_group`), so the KL penalty compares identically
+        tokenized current/reference sequences.
         """
-        agent_config = getattr(getattr(self, "agent", None), "config", None)
-        system_prompt = getattr(agent_config, "system_prompt", None)
-        rendered_prompt = render_prompt_for_scoring(
-            self.tokenizer, prompt, system_prompt
-        )
-        prompt_length = scoring_prompt_length(self.tokenizer, rendered_prompt)
-        full_texts = [
-            build_scoring_text(rendered_prompt, response) for response in responses
-        ]
-
-        # Batch tokenize with padding
-        original_padding_side = getattr(self.tokenizer, "padding_side", "right")
-        if hasattr(self.tokenizer, "padding_side"):
-            self.tokenizer.padding_side = "right"
-
-        try:
-            inputs = self.tokenizer(
-                full_texts,
-                return_tensors="pt",
-                padding=True,
-                truncation=True,
-                max_length=prompt_length + self.config.max_completion_length,
-                add_special_tokens=False,
-            )
-        finally:
-            if hasattr(self.tokenizer, "padding_side"):
-                self.tokenizer.padding_side = original_padding_side
-
-        response_start_idx = max(prompt_length - 1, 0)
-
-        model_device = _get_model_device(self.ref_model)
-        if model_device is not None:
-            inputs = {
-                k: v.to(model_device) if hasattr(v, "to") else v
-                for k, v in inputs.items()
-            }
-
         ref_model = self.ref_model
         if ref_model is None:
             raise RuntimeError("Reference model must be initialized before use")
         with torch.no_grad():
-            outputs = ref_model(**inputs)
-            logits = outputs.logits
-
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = inputs["input_ids"][:, 1:].contiguous()
-        shift_mask = inputs["attention_mask"][:, 1:].contiguous()
-
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask for response tokens only (exclude prompt and padding)
-        response_mask = torch.zeros_like(shift_mask)
-        if response_start_idx < response_mask.shape[1]:
-            response_mask[:, response_start_idx:] = shift_mask[:, response_start_idx:]
-
-        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
+            sequence_log_probs, _ = score_response_group(
+                ref_model,
+                self.tokenizer,
+                prompt,
+                responses,
+                system_prompt=_scoring_system_prompt(self),
+                max_completion_length=self.config.max_completion_length,
+            )
         return sequence_log_probs
 
     def save_checkpoint(self, output_dir: str) -> None:
@@ -992,6 +927,151 @@ class GSPOTrainer(TrainingRuntime):
         self.save_runtime_checkpoint(output_dir)
 
 
+@dataclass
+class _GSPOStep:
+    """One GSPO step's scored groups and what its update passes observe."""
+
+    scored: _ScoredGroups
+    device: Any
+    stats: _PolicyStats = field(default_factory=_PolicyStats)
+    #: Old-policy sequence scores, frozen on the first pass.
+    frozen_old: list[torch.Tensor | None] = field(default_factory=list)
+
+
+async def _gspo_score(
+    trainer: GSPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> float:
+    return await ResponseScorer(trainer.reward_model).score(
+        prompt, response, dict(context)
+    )
+
+
+async def _gspo_score_checked(
+    trainer: GSPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await ResponseScorer(trainer.reward_model).score_checked(
+        prompt, response, dict(context)
+    )
+
+
+async def _gspo_rollouts(trainer: GSPOTrainer, queries: list[Any]) -> StepRollouts:
+    """Every query's group sampled in one batched generate, then scored
+    (:meth:`GSPOTrainer._sample_and_score_groups`)."""
+    trainer.optimizer.zero_grad(set_to_none=True)
+    device = _get_model_device(trainer.model)
+    scored = await trainer._sample_and_score_groups(queries, device=device)
+    return StepRollouts(
+        items=scored.groups,
+        info=_GSPOStep(scored, device, frozen_old=[None] * len(scored.groups)),
+        reward_fallbacks=scored.fallbacks.flagged,
+    )
+
+
+def _gspo_group_loss(
+    trainer: GSPOTrainer,
+    rollouts: StepRollouts,
+    _pass: int,
+    index: int,
+    group: tuple[Any, ...],
+) -> Any:
+    """One prompt group's loss in one pass.
+
+    Rollouts are scored once; each pass recomputes current log-probs against
+    old-policy scores frozen on the first pass. With one pass the update is
+    on-policy (ratio 1); later passes are the off-policy regime GSPO's
+    sequence clip exists for.
+    """
+    step: _GSPOStep = rollouts.info
+    stats = step.stats
+    prompt, responses, generation_log_probs, advantages, ref_log_probs = group
+    token_rows, current_log_probs, lengths = trainer._score_policy_group(
+        prompt, responses
+    )
+    old_log_probs = step.frozen_old[index]
+    if old_log_probs is None:
+        prepared, generation_gaps = trainer._prepare_old_log_probs(
+            current_log_probs, generation_log_probs, lengths
+        )
+        old_log_probs = step.frozen_old[index] = prepared.detach()
+        stats.generation_gaps.extend(generation_gaps)
+
+    ratios = trainer.compute_sequence_importance_ratio(
+        current_log_probs, old_log_probs, lengths
+    )
+    stats.importance_ratios.extend(ratios.detach().cpu().tolist())
+    clipped = torch.clamp(
+        ratios,
+        1 - trainer.config.clip_range_left,
+        1 + trainer.config.clip_range_right,
+    )
+    stats.clipped += int((ratios != clipped).sum().item())
+    stats.samples += len(responses)
+    return trainer._policy_group_loss(
+        ratios,
+        advantages,
+        current_log_probs,
+        lengths,
+        ref_log_probs,
+        token_rows,
+    )
+
+
+def _gspo_update_options(
+    trainer: GSPOTrainer, rollouts: StepRollouts
+) -> dict[str, Any]:
+    """Each pass sums every group's loss in one graph, normalised by the
+    processed group count (so gradient magnitude does not scale with batch
+    composition), and commits it through ``_apply_optimizer_step``."""
+    processed_groups = len(rollouts.items)
+    device = rollouts.info.device
+    return {
+        "initial_loss": lambda: torch.tensor(0.0, device=device),
+        "reduce": lambda total: normalize_total_loss(total, processed_groups),
+        "commit": lambda loss: trainer._apply_optimizer_step(loss),
+    }
+
+
+def _gspo_metrics(
+    trainer: GSPOTrainer, rollouts: StepRollouts, passes: UpdatePasses | None
+) -> dict[str, Any]:
+    step: _GSPOStep = rollouts.info
+    assert passes is not None  # GSPO always runs its passes (update_empty)
+    return trainer._record_step_metrics(passes, step.stats, step.scored)
+
+
+#: GSPO: the length-normalised sequence ratio with an asymmetric clip and a
+#: k3 KL on sequence log-probs; every group's loss in one graph per pass,
+#: ``num_iterations`` passes, no step counter.
+GSPO_SPEC = AlgorithmSpec(
+    name="gspo",
+    objective="gspo",
+    objective_options=lambda config: {
+        "kl_coef": float(config.beta),
+        "supported_ratios": ("sequence", "sequence_token"),
+        "clip_low": float(config.clip_range_left),
+        "clip_high": float(config.clip_range_right),
+    },
+    counter="none",
+    update_mode="single_graph",
+    passes=_policy_iterations,
+    score=_gspo_score,
+    score_checked=_gspo_score_checked,
+    rollouts=_gspo_rollouts,
+    group_loss=_gspo_group_loss,
+    metrics=_gspo_metrics,
+    update_options=_gspo_update_options,
+    update_empty=True,
+    label="GSPO",
+    iterations=_outer_iterations,
+)
+#: GSPO-token: GSPO's step with per-token rows and the ``gspo_token``
+#: objective (``GSPOTokenTrainer`` scores and weighs the rows).
+GSPO_TOKEN_SPEC = dataclasses.replace(
+    GSPO_SPEC, name="gspo_token", objective="gspo_token"
+)
+GSPOTrainer.algorithm = GSPO_SPEC
+
+
 from .gspo_entrypoints import train_customer_service_with_gspo, train_with_gspo
 
 # Backwards-compatible alias (some users expect snake_case-like class names).
@@ -1001,6 +1081,8 @@ GSPO_Trainer = GSPOTrainer
 # Export main components
 __all__ = [
     "GSPOConfig",
+    "GSPO_SPEC",
+    "GSPO_TOKEN_SPEC",
     "GSPOModelManager",
     "GSPOTrajectoryGenerator",
     "GSPOTrainer",

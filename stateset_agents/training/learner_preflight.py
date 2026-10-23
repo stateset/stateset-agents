@@ -14,6 +14,7 @@ import math
 from dataclasses import asdict
 from typing import Any
 
+from .config import config_value
 from .ddp_control import ddp_learner_poisoned
 
 LEARNER_PREFLIGHT_PROTOCOL = "stateset-native-learner-preflight-v5"
@@ -68,7 +69,7 @@ def _layout(model: Any) -> Any:
 
 def _reference(trainer: Any) -> tuple[Any, float]:
     reference = trainer.reference_model
-    beta = float(getattr(trainer.config, "beta", 0.0))
+    beta = float(config_value(trainer.config, "beta"))
     manager = trainer.continual_manager
     if manager is not None:
         manager_reference = getattr(manager, "reference_model", None)
@@ -90,38 +91,39 @@ def _loss(trainer: Any) -> dict[str, Any]:
     )
     if beta > 0 and reference is not None:
         objective = _token_kl_objective(objective, config, beta=beta)
-    disable_dropout = getattr(config, "disable_dropout", False)
+    disable_dropout = config_value(config, "disable_dropout")
     if type(disable_dropout) is not bool:
         raise ValueError("Learner disable_dropout must be a boolean")
     clip = getattr(config, "reward_clip", None)
     if clip is not None and (not math.isfinite(float(clip)) or float(clip) < 0):
         raise ValueError("Learner reward clipping must be finite and nonnegative")
-    if getattr(config, "old_logprobs_source", "recompute") not in {
+    if config_value(config, "old_logprobs_source") not in {
         "recompute",
         "sampler",
     }:
         raise ValueError("Unknown learner old-policy likelihood source")
     return {
         "objective": asdict(objective),
-        "explicit_objective": getattr(config, "objective", None) is not None,
-        "baseline_type": getattr(config, "baseline_type", "group_mean"),
+        "explicit_objective": config_value(config, "objective") is not None,
+        "baseline_type": config_value(config, "baseline_type"),
         "advantage_normalization": bool(
-            getattr(config, "advantage_normalization", True)
+            config_value(config, "advantage_normalization")
         ),
         "reward_clip": None if clip is None else float(clip),
         "max_prompt_length": getattr(config, "max_prompt_length", None),
         "disable_dropout": disable_dropout,
         "beta": beta,
         "enhanced": beta > 0
-        or bool(getattr(config, "use_reference_model", False))
+        or bool(config_value(config, "use_reference_model"))
         or reference is not None,
-        "old_logprobs_source": getattr(config, "old_logprobs_source", "recompute"),
+        "old_logprobs_source": config_value(config, "old_logprobs_source"),
         "allow_sequence_fallback": bool(
-            getattr(config, "allow_sequence_fallback", False)
+            config_value(config, "allow_sequence_fallback")
         ),
         "allow_missing_sampler_logprobs": bool(
-            getattr(config, "allow_missing_sampler_logprobs", False)
+            config_value(config, "allow_missing_sampler_logprobs")
         ),
+        "allow_unmasked_labels": bool(config_value(config, "allow_unmasked_labels")),
     }
 
 
@@ -137,20 +139,20 @@ def _schedule(trainer: Any) -> dict[str, Any]:
     guard = diagnostic_control(trainer)
     if guard["failure"] is not None:
         raise ValueError("A failed native diagnostic guard requires a healthy reload")
-    inner = _integer(getattr(config, "num_gradient_updates", 1), minimum=1)
-    steps = _integer(getattr(config, "gradient_accumulation_steps", 1), minimum=1)
+    inner = _integer(config_value(config, "num_gradient_updates"), minimum=1)
+    steps = _integer(config_value(config, "gradient_accumulation_steps"), minimum=1)
     counter = _integer(trainer._grad_accum_step)
     # Chunk counts may differ across ranks, but must be locally usable before
     # an old-policy forward. They deliberately do not enter the digest.
     _integer(getattr(config, "generation_batch_size", 0) or 0)
-    max_norm = getattr(config, "max_grad_norm", 1.0)
+    max_norm = config_value(config, "max_grad_norm")
     if max_norm is not None and (
         type(max_norm) not in (int, float)
         or not math.isfinite(max_norm)
         or max_norm < 0
     ):
         raise ValueError("Learner gradient norm limit must be finite and nonnegative")
-    if getattr(config, "bf16", False) and getattr(config, "fp16", False):
+    if getattr(config, "bf16", False) and config_value(config, "fp16"):
         raise ValueError("Learner precision modes are mutually exclusive")
     pending = getattr(trainer, "_grpo_accumulation", None)
     normalization = None
@@ -191,8 +193,8 @@ def _schedule(trainer: Any) -> dict[str, Any]:
         "grad_accum_step": counter,
         "normalization": normalization,
         "bf16": bool(getattr(config, "bf16", False)),
-        "fp16": bool(getattr(config, "fp16", False)),
-        "max_grad_norm": getattr(config, "max_grad_norm", 1.0),
+        "fp16": bool(config_value(config, "fp16")),
+        "max_grad_norm": config_value(config, "max_grad_norm"),
         "strategy": trainer.distributed_config.strategy,
         "diagnostics": guard,
     }
@@ -252,7 +254,7 @@ def _estimator(trainer: Any) -> dict[str, Any]:
     return {
         "baseline": (
             _reward_baseline(trainer)
-            if getattr(config, "objective", None) is None
+            if config_value(config, "objective") is None
             and getattr(config, "baseline_type", None) == "global_mean"
             else None
         ),
@@ -321,15 +323,15 @@ def _rollouts(trainer: Any, groups: list[Any]) -> dict[str, Any]:
                     if metadata.get("prompt_token_ids") and metadata.get("token_ids"):
                         SampledTurn.from_metadata(metadata)
     if not token_path:
-        if not getattr(config, "allow_sequence_fallback", False):
+        if not config_value(config, "allow_sequence_fallback"):
             raise ValueError("DDP rollout lacks exact sampled-token metadata")
         _grpo_objective(config)
         source = "sequence"
-    elif getattr(config, "num_gradient_updates", 1) > 1:
+    elif config_value(config, "num_gradient_updates") > 1:
         source = "snapshot"
-    elif getattr(config, "old_logprobs_source", "recompute") == "sampler":
-        if not sampler_complete and not getattr(
-            config, "allow_missing_sampler_logprobs", False
+    elif config_value(config, "old_logprobs_source") == "sampler":
+        if not sampler_complete and not config_value(
+            config, "allow_missing_sampler_logprobs"
         ):
             raise ValueError("DDP rollout lacks required sampler likelihoods")
         source = "sampler" if sampler_complete else "recompute_fallback"
@@ -485,7 +487,7 @@ def verify_ddp_learner_batch(trainer: Any, groups: list[Any]) -> dict[str, Any] 
         verify_ddp_replica_state(trainer)
         trainer._ddp_replica_consensus_pending = False
     return {
-        "local_empty": bool(header[1].item() & 128),
+        "local_empty": bool(int(header[1].item()) & 128),
         "global_empty": not populated,
         "rollout_path": effective["path"],
         "rollout_source": effective["source"],

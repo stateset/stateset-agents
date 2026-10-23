@@ -231,7 +231,7 @@ The framework defines a three-tier agent hierarchy in `stateset_agents/core/`:
 | Class | File | Role |
 |------|------|------|
 | `Agent` | `core/agent.py` | Base class. Owns a `ModelBackend`, handles lazy initialization, exposes `generate_response`. |
-| `MultiTurnAgent` | `core/multiturn_agent.py` | Adds `ConversationContext`, optional `DialogueDatabase`, planning manager, and async `reset()`. |
+| `MultiTurnAgent` | `core/agent.py` | Multi-turn chat generation over the conversation history, with async `reset()`. |
 | `ToolAgent` | `core/tool_agent.py` | Adds OpenAI-compatible function calling, `tool_registry`, JSON schema validation, parallel tool execution. |
 
 All response generation follows a single async signature:
@@ -855,7 +855,7 @@ A production training and serving stack must be observable. The framework expose
 
 These are the standard latency/throughput/error triplet — the basis of any RED-method ([Rate, Errors, Duration](https://www.weave.works/blog/the-red-method-key-metrics-for-microservices-architecture/)) dashboard.
 
-**Domain-specific metrics** (`stateset_agents/api/grpo/metrics.py`): a `GRPOMetrics` class tracks:
+**Domain-specific metrics** (`stateset_agents/api/grpo/metrics.py`, part of the secondary GRPO app that is deprecated and removed in v0.71.0): a `GRPOMetrics` class tracks:
 
 - Request counts and status counts (per endpoint)
 - Latencies (a rolling `deque`, with `get_latency_percentiles()` computing avg/p50/p95/p99)
@@ -923,18 +923,18 @@ StateSet Agents ships first-class starters (with dedicated CLI commands, configu
 
 | Model | HF ID | CLI |
 |-------|-------|-----|
-| Qwen 3.5 0.8B | `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` |
-| Gemma 4 31B IT | `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` |
-| Kimi-K2.6 | `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` |
+| Qwen 3.5 0.8B | `Qwen/Qwen3.5-0.8B` | `stateset-agents model qwen3-5-0-8b` |
+| Gemma 4 31B IT | `google/gemma-4-31B-it` | `stateset-agents model gemma-4-31b` |
+| Kimi-K2.6 | `moonshotai/Kimi-K2.6` | `stateset-agents model kimi-k2-6` |
 | GLM 5.1 (754B MoE) | `zai-org/GLM-5.1` | module + example (QLoRA-only) |
 | GLM 5.2 (754B MoE) | `zai-org/GLM-5.2` | module + example (QLoRA-only) |
-| Kimi-K3 (released; MXFP4 training loader blocked) | `moonshotai/Kimi-K3` | `stateset-agents kimi-k3` |
-| Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` |
-| Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` |
-| Qwen3.8 27B | `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` |
-| Qwen3 Coder 30B A3B | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` |
-| gpt-oss 20B | `openai/gpt-oss-20b` | `stateset-agents gpt-oss` |
-| DeepSeek V4 Flash (MoE) | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` |
+| Kimi-K3 (released; MXFP4 training loader blocked) | `moonshotai/Kimi-K3` | `stateset-agents model kimi-k3` |
+| Muse Glimmer 30B | `meta-models/Muse-Glimmer-30B` | `stateset-agents model muse-glimmer` |
+| Nemotron 3.5 Lightning 30B A3B | `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents model nemotron-3-5` |
+| Qwen3.8 27B | `Qwen/Qwen3.8-27B` | `stateset-agents model qwen3-8-27b` |
+| Qwen3 Coder 30B A3B | `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents model qwen3-coder` |
+| gpt-oss 20B | `openai/gpt-oss-20b` | `stateset-agents model gpt-oss` |
+| DeepSeek V4 Flash (MoE) | `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents model deepseek-v4` |
 
 Reference models with examples and Kubernetes manifests: Qwen 3.5 27B, Qwen 3, Qwen 2.5 3B Instruct, Kimi-K2.5, Gemma 3 / 2 27B IT, Llama 3, Llama 2 7B, Mistral 7B, GPT-2. Generic support: any Hugging Face causal LM compatible with `AutoModelForCausalLM` and TRL GRPO.
 
@@ -1376,7 +1376,7 @@ The five design principles that anchor the framework are stated in **§1.0 (Desi
 | Auto-research | `stateset_agents/training/auto_research/` |
 | Rust acceleration | `rust_core/` (crate `stateset-rl-core`) |
 | FastAPI app | `stateset_agents/api/main.py` |
-| GRPO metrics | `stateset_agents/api/grpo/metrics.py` |
+| GRPO metrics (deprecated app, removed in v0.71.0) | `stateset_agents/api/grpo/metrics.py` |
 | API middleware | `stateset_agents/api/middleware.py` |
 | Dashboard | `dashboard/` (React 19 + Vite) |
 | Exception taxonomy | `stateset_agents/exceptions.py` |

@@ -7,7 +7,7 @@ These tests simulate real-world usage scenarios from start to finish.
 import asyncio
 import importlib.machinery
 import sys
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -179,9 +179,7 @@ class TestCustomerServiceE2E:
         )
 
         # Step 4: Train the agent (short training for E2E test)
-        with patch.object(
-            reward_fn, "compute_reward", return_value=AsyncMock(return_value=0.8)
-        ):
+        with patch.object(reward_fn, "compute_reward", return_value=0.8):
             trained_agent = await train(
                 agent=agent,
                 environment=environment,

@@ -1,8 +1,10 @@
-"""
-Multi-turn Conversational Agent for GRPO Agent Framework
+"""Deprecated dialogue-session agent used only by the ``api.grpo`` app.
 
-This module provides advanced multi-turn conversation capabilities with
-context management, tool usage, and sophisticated dialogue strategies.
+Its class was also named ``MultiTurnAgent``, colliding with the stable
+:class:`stateset_agents.core.agent.MultiTurnAgent`. It is now
+``DialogueSessionAgent``; the old name is a deprecated alias. The module (with
+``multiturn_context`` and ``multiturn_analysis``) is deprecated together with
+``stateset_agents.api.grpo`` and will be removed in v0.71.0.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from typing import TYPE_CHECKING, Any
 
 from stateset_agents.utils.cache import CacheService
 
+from .._deprecation import deprecated_alias_getattr, warn_deprecated
 from .agent import Agent
 from .agent_config import AgentConfig
 from .multiturn_analysis import (
@@ -36,6 +39,12 @@ from .trajectory import ConversationTurn
 
 if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
+
+warn_deprecated(
+    "stateset_agents.core.multiturn_agent",
+    removal="0.71.0",
+    replacement="stateset_agents.core.agent.MultiTurnAgent",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +75,10 @@ TOOL_EXCEPTIONS: tuple[type[BaseException], ...] = (
 )
 
 
-class MultiTurnAgent(Agent):
+class DialogueSessionAgent(Agent):
     """
-    Advanced multi-turn conversational agent with context management
-    and sophisticated dialogue strategies.
+    Multi-turn dialogue sessions with context management and dialogue
+    strategies (the ``api.grpo`` app's conversation backend).
     """
 
     def __init__(
@@ -773,8 +782,13 @@ class MultiTurnAgent(Agent):
         return None
 
 
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {"MultiTurnAgent": (__name__, "DialogueSessionAgent", "0.71.0")},
+)
+
 __all__ = [
     "ConversationContext",
     "DialogueDatabase",
-    "MultiTurnAgent",
+    "DialogueSessionAgent",
 ]

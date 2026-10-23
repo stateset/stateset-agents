@@ -11,6 +11,8 @@ import json
 import math
 from typing import Any
 
+from .config import config_value
+
 
 def _ddp_group(model: Any) -> Any:
     from torch.nn.parallel import DistributedDataParallel
@@ -50,8 +52,8 @@ def prepare_reward_batch(
         clip = None if clip is None else float(clip)
         if clip is not None and (not math.isfinite(clip) or clip < 0):
             raise ValueError("reward_clip must be finite and nonnegative")
-        explicit = getattr(config, "objective", None) is not None
-        baseline = getattr(config, "baseline_type", "group_mean")
+        explicit = config_value(config, "objective") is not None
+        baseline = config_value(config, "baseline_type")
         running = not explicit and baseline == "global_mean"
         eps = float(objective.advantage_eps)
         if not math.isfinite(eps) or eps < 0:
@@ -82,7 +84,7 @@ def prepare_reward_batch(
             "stateset-native-advantages-v2",
             explicit,
             objective.advantage if explicit else baseline,
-            eps if explicit else bool(getattr(config, "advantage_normalization", True)),
+            eps if explicit else bool(config_value(config, "advantage_normalization")),
             clip,
             state,
             updating if running else False,

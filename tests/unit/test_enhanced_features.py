@@ -457,13 +457,14 @@ class TestIntegration:
     def test_comprehensive_framework_integration(self):
         """Test overall framework integration"""
 
-        # Test that all new components can be imported together
-        from stateset_agents import (
-            ErrorHandler,
+        # The root re-exports are deprecated (removed in v0.72.0); the
+        # provisional modules keep serving the components.
+        from stateset_agents.core.error_handling import ErrorHandler
+        from stateset_agents.core.performance_optimizer import (
             OptimizationLevel,
             PerformanceOptimizer,
-            TypeValidator,
         )
+        from stateset_agents.core.type_system import TypeValidator
 
         # Test basic initialization
         optimizer = PerformanceOptimizer(OptimizationLevel.BALANCED)

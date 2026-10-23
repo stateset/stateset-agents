@@ -340,7 +340,8 @@ class StubModel:
             elif input_ids is not None and isinstance(input_ids, (list, tuple)):
                 batch_size = len(input_ids)
                 seq_len = len(input_ids[0]) if input_ids else 10
-        except Exception:
+        # A 1-D tensor or a flat list of ids: keep the default shape.
+        except (IndexError, TypeError):
             pass
 
         class MockOutput:

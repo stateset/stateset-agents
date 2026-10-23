@@ -8,7 +8,6 @@ proper rank handling, memory optimization, and fault tolerance.
 import asyncio
 import logging
 import os
-import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +16,10 @@ from typing import Any
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
+from .._deprecation import warn_deprecated
 
 try:
     from torch.distributed.elastic.multiprocessing.errors import record
@@ -41,11 +44,11 @@ from stateset_agents.utils.monitoring import MonitoringService
 
 from .config import TrainingConfig
 from .loss_computation import compute_grpo_loss
-from .multi_turn_evaluation import coerce_reward_result
+from .spine.scoring import EpisodeScorer
 
 logger = logging.getLogger(__name__)
 
-DISTRIBUTED_TRAIN_EXCEPTIONS = (OSError, RuntimeError, ValueError)
+DISTRIBUTED_TRAIN_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 @dataclass
@@ -136,11 +139,11 @@ class DistributedGRPOTrainer:
         self._global_reward_sum = 0.0
         self._global_reward_count = 0
 
-        warnings.warn(
-            "DistributedGRPOTrainer is deprecated and non-functional for real "
-            "training; use stateset_agents.training.distributed.DistributedTrainer",
-            DeprecationWarning,
-            stacklevel=2,
+        # Non-functional for real training.
+        warn_deprecated(
+            "DistributedGRPOTrainer",
+            removal="0.71.0",
+            replacement="stateset_agents.training.distributed.DistributedTrainer",
         )
 
     def setup_distributed(self, rank: int, world_size: int):
@@ -187,26 +190,43 @@ class DistributedGRPOTrainer:
         if not self.is_initialized:
             raise RuntimeError("Distributed training not initialized")
 
-        # Get model from agent
-        self.model = self.agent.get_model()
+        device = self.device
+        if device is None:
+            raise RuntimeError("Distributed device not set; call setup_distributed")
+
+        # Get model from agent. ``Agent`` exposes the loaded model as ``.model``
+        # (there is no ``get_model()``); it is None until the agent initializes.
+        model = getattr(self.agent, "model", None)
+        if model is None:
+            raise RuntimeError(
+                "Agent has no loaded model; await agent.initialize() before "
+                "setup_model()"
+            )
 
         # Move to device
-        self.model.to(self.device)
+        model.to(device)
 
         # Enable gradient checkpointing for memory efficiency
         if self.distributed_config.activation_checkpointing:
-            self.model.gradient_checkpointing_enable()
+            model.gradient_checkpointing_enable()
 
         # Wrap with DDP
+        on_cuda = device.type == "cuda"
         self.model = DDP(
-            self.model,
-            device_ids=[self.device.index] if self.device.type == "cuda" else None,
-            output_device=self.device.index if self.device.type == "cuda" else None,
+            model,
+            device_ids=[device.index] if on_cuda else None,
+            output_device=device.index if on_cuda else None,
             find_unused_parameters=self.distributed_config.find_unused_parameters,
         )
 
-        # Setup optimizer
-        self.optimizer = self.agent.get_optimizer()
+        # Setup optimizer. ``Agent`` has no ``get_optimizer()``; build one from
+        # the training config, as the single-process trainers do.
+        self.optimizer = torch.optim.AdamW(
+            self.model.parameters(),
+            lr=self.training_config.learning_rate,
+            betas=(self.training_config.adam_beta1, self.training_config.adam_beta2),
+            weight_decay=self.training_config.weight_decay,
+        )
 
         # Setup mixed precision scaler
         if self.distributed_config.mixed_precision:
@@ -219,6 +239,9 @@ class DistributedGRPOTrainer:
         """Setup Weights & Biases for distributed training"""
         if not WANDB_AVAILABLE or not self.is_master:
             return
+        model = self.model
+        if model is None:
+            raise RuntimeError("setup_model() must run before setup_wandb()")
 
         # Initialize wandb only on master process
         wandb.init(
@@ -231,10 +254,10 @@ class DistributedGRPOTrainer:
         )
 
         # Log model architecture
-        if hasattr(self.model, "module"):
-            wandb.watch(self.model.module)
+        if hasattr(model, "module"):
+            wandb.watch(model.module)
         else:
-            wandb.watch(self.model)
+            wandb.watch(model)
 
     async def train(self) -> dict[str, Any]:
         """
@@ -404,23 +427,9 @@ class DistributedGRPOTrainer:
         return trajectories
 
     async def _compute_rewards(self, trajectories: list[Any]) -> list[float]:
-        """Score each trajectory with the configured reward function."""
-        rewards: list[float] = []
-        for trajectory in trajectories:
-            context = getattr(trajectory, "metadata", None) or {}
-            reward_result = await self.reward_function.compute_reward(
-                getattr(trajectory, "turns", []), context
-            )
-            score, breakdown = await coerce_reward_result(
-                reward_result, DISTRIBUTED_TRAIN_EXCEPTIONS
-            )
-            trajectory.total_reward = score
-            if hasattr(trajectory, "metadata") and isinstance(
-                trajectory.metadata, dict
-            ):
-                trajectory.metadata["reward_breakdown"] = breakdown
-            rewards.append(score)
-        return rewards
+        """Score each trajectory on the shared path (spine ``EpisodeScorer``)."""
+        scorer = EpisodeScorer(self.reward_function, self.environment)
+        return [await scorer.score(trajectory) for trajectory in trajectories]
 
     def _compute_grpo_loss(
         self, trajectories: list[Any], rewards: list[float]
@@ -445,7 +454,7 @@ class DistributedGRPOTrainer:
             global_reward_count=self._global_reward_count,
             update_global_stats=self._update_global_stats,
         )
-        loss = loss_dict["total_loss"]
+        loss: torch.Tensor = loss_dict["total_loss"]
         if self.device is not None:
             loss = loss.to(self.device)
         return loss

@@ -7,29 +7,56 @@ including standard GRPO loss and enhanced GRPO loss with KL penalty.
 
 from __future__ import annotations
 
-import contextlib
 import inspect
 import logging
 import re
-from collections.abc import Callable, Mapping
-from typing import Any
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any, ClassVar, Protocol, TypeGuard, cast
 
 import numpy as np
 
-from ..core.chat_masking import assistant_char_spans
+from ..core.chat_masking import assistant_char_spans, has_observation_turns
+from ..core.errors import TrainingError
 from ..exceptions import LOSS_EXCEPTIONS
 from . import rl_losses  # noqa: F401  (re-exported; tests spy on it)
 from . import objectives
+from .config import config_value
 from .ddp_population import run_token_local, token_policy
 from .distributed_advantages import prepare_reward_batch, validate_advantages
 from .grpo_accumulation import NormalizedLoss
 from .metric_reduction import LossMetricReduction
-from .trainer_utils import get_amp, get_functional, get_torch, require_torch
+from .objectives import PolicyObjective
+from .rollout_contract import (
+    RolloutContractError,
+    SampledTurn,
+    require_explicit_fallback,
+)
+from .typing_protocols import (
+    AgentLike,
+    BackwardFn,
+    CausalLMOutput,
+    ChatTokenizerLike,
+    DeviceLike,
+    LossConfig,
+    PolicyModel,
+    ScoredTrajectory,
+    TokenizerLike,
+    TokenRow,
+    TrajectoryGroupLike,
+)
+
+if TYPE_CHECKING:  # torch stays a lazy runtime dependency
+    from collections.abc import Iterator
+    from types import ModuleType
+
+    from torch import Tensor
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "LOSS_EXCEPTIONS",
+    "TrajectoryLossError",
     "compute_grpo_loss",
     "compute_enhanced_grpo_loss",
     "compute_ppo_ratio",
@@ -38,31 +65,94 @@ __all__ = [
 
 _warned_missing_log_probs = False
 _warned_missing_assistant_mask = False
+_warned_observation_fallback = False
+_warned_unmasked_labels = False
+
+#: Opt-in for supervising every token when assistant tokens cannot be located.
+UNMASKED_LABELS_OPTION = "allow_unmasked_labels"
 
 
-def _resolve_model_device(agent: Any, torch_mod: Any) -> Any:
+class TrajectoryLossError(TrainingError, RuntimeError):
+    """One trajectory's sequence-path policy loss could not be computed.
+
+    Skipping the row and averaging the rest would silently change the group
+    objective, so the loss raises instead (the token path never skips rows
+    either). The original exception is chained as ``__cause__``.
+    """
+
+    message_only_str: ClassVar[bool] = True
+
+    def __init__(self, trajectory_index: int, group_size: int, cause: BaseException):
+        message = (
+            f"policy loss failed for trajectory {trajectory_index} of {group_size} "
+            f"in the group: {type(cause).__name__}: {cause}"
+        )
+        super().__init__(
+            message, trajectory_index=trajectory_index, group_size=group_size
+        )
+        self.trajectory_index = trajectory_index
+        self.group_size = group_size
+        self.cause = cause
+
+    def __reduce__(
+        self,
+    ) -> tuple[type[TrajectoryLossError], tuple[int, int, BaseException]]:
+        """Pickle by constructor arguments, so the error survives multiprocessing."""
+        assert self.cause is not None
+        return type(self), (self.trajectory_index, self.group_size, self.cause)
+
+
+class _DeviceCarrier(Protocol):
+    """A Hugging Face model, which exposes ``device``."""
+
+    @property
+    def device(self) -> DeviceLike: ...
+
+
+class _ParameterCarrier(Protocol):
+    """A torch module, which exposes ``parameters()``."""
+
+    def parameters(self) -> Iterator[Tensor]: ...
+
+
+def _policy(agent: AgentLike) -> PolicyModel:
+    """``agent.model``, which a loss needs to be set."""
+    model = agent.model
+    if model is None:
+        raise TypeError("agent.model is None; initialize the agent before the loss")
+    return model
+
+
+def _tokenizer(agent: AgentLike) -> TokenizerLike:
+    """``agent.tokenizer``, which the sequence path needs to be set."""
+    tokenizer = agent.tokenizer
+    if tokenizer is None:
+        raise TypeError("agent.tokenizer is None; initialize the agent first")
+    return tokenizer
+
+
+def _resolve_model_device(agent: AgentLike, torch_mod: ModuleType) -> DeviceLike:
     """Resolve the device for model tensors with safe CPU fallback."""
     device = getattr(agent.model, "device", None)
     if device is None and hasattr(agent.model, "parameters"):
         try:
-            first_param = next(agent.model.parameters())
+            first_param = next(cast(_ParameterCarrier, agent.model).parameters())
             device = getattr(first_param, "device", None)
         except StopIteration:
             device = None
     if device is None:
         device = torch_mod.device("cpu")
-    return device
+    return cast("DeviceLike", device)
 
 
-def _grpo_objective(config: Any) -> Any:
+def _grpo_objective(config: LossConfig) -> PolicyObjective:
     """GRPO trainers score a trajectory as summed log-probs, so the ratio is
     sequence-level and clipped at ``seq_clip_ratio`` (GSPO scale)."""
-    seq_clip = float(getattr(config, "seq_clip_ratio", 3e-4))
+    seq_clip = float(config_value(config, "seq_clip_ratio"))
     return objectives.resolve_objective(
         config,
         "gspo",
-        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
-        or None,
+        max_completion_length=int(config_value(config, "max_completion_length")),
         supported_ratios=("sequence", "sequence_token"),
         name="grpo_sequence",
         clip_low=seq_clip,
@@ -72,8 +162,12 @@ def _grpo_objective(config: Any) -> Any:
 
 
 def _clipped_trajectory_loss(
-    nll: Any, token_count: int, advantage: Any, old_log_prob: Any, objective: Any
-) -> Any:
+    nll: Tensor,
+    token_count: int,
+    advantage: Tensor | float,
+    old_log_prob: Tensor,
+    objective: PolicyObjective,
+) -> Tensor:
     """Clipped sequence-ratio loss for one trajectory via ``objectives.policy_loss``.
 
     ``nll`` is the model's mean per-token NLL (differentiable); ``old_log_prob``
@@ -83,13 +177,14 @@ def _clipped_trajectory_loss(
     ``compute_ppo_ratio`` quantity, and ``seq_mean`` over identical tokens is
     the row value.
     """
-    torch = require_torch()
+    import torch
+
     count = max(int(token_count), 1)
     logp_cur = (-nll).reshape(1, 1).expand(1, count)
     mask = torch.ones(1, count, dtype=logp_cur.dtype, device=logp_cur.device)
     adv = (
         advantage.reshape(1)
-        if torch.is_tensor(advantage)
+        if isinstance(advantage, torch.Tensor)
         else torch.tensor([float(advantage)], device=logp_cur.device)
     )
     result = objectives.policy_loss(
@@ -105,11 +200,11 @@ def _clipped_trajectory_loss(
 # --- batched per-token path ---------------------------------------------------
 
 
-def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] | None:
+def _token_rows_for_group(group: object) -> list[TokenRow] | None:
     """Rows ``(prompt_ids, response_ids, trajectory_index)`` for every assistant
     turn in ``group``; ``None`` when any trajectory lacks token metadata (the
     caller then takes the sequence-level path)."""
-    rows: list[tuple[list[int], list[int], int]] = []
+    rows: list[TokenRow] = []
     for ti, trajectory in enumerate(getattr(group, "trajectories", [])):
         found = False
         for turn in getattr(trajectory, "turns", []):
@@ -129,8 +224,6 @@ def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] 
             prompt_ids, token_ids = md.get("prompt_token_ids"), md.get("token_ids")
             if not prompt_ids or not token_ids:
                 return None
-            from .rollout_contract import SampledTurn
-
             sampled = SampledTurn.from_metadata(md)
             rows.append((list(sampled.prompt_token_ids), list(sampled.token_ids), ti))
             found = True
@@ -139,22 +232,23 @@ def _token_rows_for_group(group: Any) -> list[tuple[list[int], list[int], int]] 
     return rows or None
 
 
-def _token_objective(config: Any) -> Any:
+def _token_objective(config: LossConfig) -> PolicyObjective:
     """Native token-path objective: the ``grpo`` preset with ``clip_ratio`` as
     the symmetric trust region; ``config.objective`` selects any preset."""
     clip = float(getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2)))
     return objectives.resolve_objective(
         config,
         "grpo",
-        max_completion_length=int(getattr(config, "max_completion_length", 0) or 0)
-        or None,
+        max_completion_length=int(config_value(config, "max_completion_length")),
         clip_low=clip,
         clip_high=clip,
         kl="none",
     )
 
 
-def _token_kl_objective(objective: Any, config: Any, *, beta: float) -> Any:
+def _token_kl_objective(
+    objective: PolicyObjective, config: LossConfig, *, beta: float
+) -> PolicyObjective:
     """Enable the KL penalty with coefficient ``beta`` on the token path.
 
     An objective chosen through ``config.objective`` keeps its own estimator
@@ -167,11 +261,12 @@ def _token_kl_objective(objective: Any, config: Any, *, beta: float) -> Any:
     return objective.with_(kl=kind, kl_coef=float(beta))
 
 
-def _scale_by_group_std(advantages: Any) -> Any:
+def _scale_by_group_std(advantages: Tensor) -> Tensor:
     """Divide by the group's population std without re-centring, so a
     median or running-mean baseline survives normalisation (the std of
     ``rewards - baseline`` equals the std of the rewards)."""
-    torch = require_torch()
+    import torch
+
     if advantages.numel() <= 1:
         return advantages
     std = advantages.std(correction=0)
@@ -181,18 +276,19 @@ def _scale_by_group_std(advantages: Any) -> Any:
 
 
 def _sequence_group_advantages(
-    rewards: Any,
-    config: Any,
+    rewards: Tensor,
+    config: LossConfig,
     *,
     global_reward_mean: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
-) -> Any:
+) -> Tensor:
     """Group advantages for both sequence-level GRPO losses.
 
     Applies ``reward_clip``, then the ``objective`` preset's estimator when one
     is configured, else ``baseline_type`` with optional std scaling.
     """
-    torch = require_torch()
+    import torch
+
     reward_clip = getattr(config, "reward_clip", None)
     if reward_clip is not None:
         rewards = torch.clamp(rewards, min=-float(reward_clip), max=float(reward_clip))
@@ -223,8 +319,8 @@ def _sequence_group_advantages(
 
 
 def _response_token_logprobs(
-    logits: Any, input_ids: Any, response_mask: Any, *, want_entropy: bool
-) -> tuple[Any, Any, Any | None]:
+    logits: Tensor, input_ids: Tensor, response_mask: Tensor, *, want_entropy: bool
+) -> tuple[Tensor, Tensor, Tensor | None]:
     """Shift-by-one token log-probs computed at response positions only.
 
     Same contract as :func:`rl_losses.gather_token_logprobs` (``[B, T-1]``
@@ -235,7 +331,8 @@ def _response_token_logprobs(
     one ``log_softmax`` over the selected rows serves both. ``entropy`` is the
     per-token entropy at response positions (zero elsewhere) or ``None``.
     """
-    torch = require_torch()
+    import torch
+
     shifted_mask = response_mask[..., 1:].to(torch.float32)
     selected = shifted_mask > 0
     dtype = torch.promote_types(logits.dtype, torch.float32)
@@ -255,21 +352,22 @@ def _response_token_logprobs(
 
 
 def _forward_token_chunk(
-    model: Any,
-    chunk: list[tuple[list[int], list[int], int]],
+    model: PolicyModel,
+    chunk: Sequence[TokenRow],
     width: int,
-    device: Any,
+    device: DeviceLike,
     *,
     grad: bool,
     want_entropy: bool = False,
-) -> tuple[Any, Any, Any | None]:
+) -> tuple[Tensor, Tensor, Tensor | None]:
     """Pad ``chunk`` to ``width`` and run one forward pass.
 
     Returns ``(token_logprobs, response_mask, entropy)``, each ``[len(chunk),
     width-1]``; see :func:`_response_token_logprobs`. The full-vocabulary
     logits are released on return; only the response-position graph is kept.
     """
-    torch = require_torch()
+    import torch
+
     ids = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
     attn = torch.zeros(len(chunk), width, dtype=torch.long, device=device)
     resp = torch.zeros(len(chunk), width, dtype=torch.float32, device=device)
@@ -279,18 +377,19 @@ def _forward_token_chunk(
         attn[i, : seq.numel()] = 1
         resp[i, len(p) : seq.numel()] = 1.0
     with torch.set_grad_enabled(grad):
-        logits = token_policy(model)(input_ids=ids, attention_mask=attn).logits
+        policy = cast(PolicyModel, token_policy(model))
+        logits = policy(input_ids=ids, attention_mask=attn).logits
         return _response_token_logprobs(logits, ids, resp, want_entropy=want_entropy)
 
 
 def _legacy_group_advantages(
-    rewards: Any,
-    config: Any,
+    rewards: Tensor,
+    config: LossConfig,
     *,
     global_reward_mean: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
     normalize: bool | None = None,
-) -> Any:
+) -> Tensor:
     """``group_median`` / ``global_mean`` baselines, shared by both GRPO paths.
 
     ``global_mean`` subtracts the trainer's running mean (and reports this
@@ -298,7 +397,8 @@ def _legacy_group_advantages(
     With ``advantage_normalization`` the centred advantages are scaled by their
     population std, as on the sequence path.
     """
-    torch = require_torch()
+    import torch
+
     baseline_type = getattr(config, "baseline_type", "group_mean")
     if baseline_type == "global_mean" and update_global_stats is not None:
         update_global_stats(float(rewards.mean().item()), len(rewards))
@@ -317,16 +417,17 @@ def _legacy_group_advantages(
 
 
 def _token_advantages(
-    rewards: Any,
-    config: Any,
-    objective: Any,
+    rewards: Tensor,
+    config: LossConfig,
+    objective: PolicyObjective,
     *,
     global_reward_mean: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
-) -> Any:
+) -> Tensor:
     """Group advantages for the token path: the configured preset's estimator,
     or the legacy ``baseline_type``/``advantage_normalization`` switches."""
-    torch = require_torch()
+    import torch
+
     zeros = torch.zeros_like(rewards, dtype=torch.long)
     if getattr(config, "objective", None) is not None:
         return objectives.compute_advantages(rewards, zeros, objective)
@@ -351,19 +452,20 @@ def _token_advantages(
 
 
 def _token_batch_advantages(
-    trajectory_groups: list[Any],
-    config: Any,
-    objective: Any,
-    device: Any,
+    trajectory_groups: list[TrajectoryGroupLike],
+    config: LossConfig,
+    objective: PolicyObjective,
+    device: DeviceLike,
     *,
-    model: Any = None,
+    model: PolicyModel | None = None,
     global_reward_mean: float | None = None,
     global_reward_count: int = 0,
     global_reward_sum: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
-) -> list[Any]:
+) -> list[Tensor]:
     """Preserve prompt baselines while applying batch statistics to the batch."""
-    torch = require_torch()
+    import torch
+
     if not trajectory_groups and model is None:
         return []
     rewards_by_group, count, mean, std = prepare_reward_batch(
@@ -378,9 +480,9 @@ def _token_batch_advantages(
         updating=update_global_stats is not None,
     )
 
-    def local_advantages() -> list[Any]:
+    def local_advantages() -> list[Tensor]:
         if not rewards_by_group:
-            result = []
+            result: list[Tensor] = []
         elif getattr(config, "objective", None) is not None:
             group_ids = torch.cat(
                 [
@@ -426,19 +528,20 @@ def _token_batch_advantages(
         and getattr(config, "baseline_type", "group_mean") == "global_mean"
         and update_global_stats is not None
     ):
-        run_token_local(model, "baseline", lambda: update_global_stats(mean, count))
+        record = update_global_stats
+        run_token_local(model, "baseline", lambda: record(mean, count))
     return result
 
 
 def _forward_token_rows(
-    model: Any,
-    rows: list[tuple[list[int], list[int], int]],
-    device: Any,
+    model: PolicyModel,
+    rows: Sequence[TokenRow],
+    device: DeviceLike,
     chunk_size: int,
     *,
     grad: bool,
     want_entropy: bool = False,
-) -> tuple[Any, Any, Any | None]:
+) -> tuple[Tensor, Tensor, Tensor | None]:
     """Pad ``rows`` and run ``model`` in chunks of ``chunk_size`` rows.
 
     Returns ``(token_logprobs [R, W-1], response_mask [R, W-1], entropy)``
@@ -446,7 +549,8 @@ def _forward_token_rows(
     Graphs are retained across chunks when ``grad`` is True; the training
     loss uses :func:`_forward_token_chunk` per chunk instead.
     """
-    torch = require_torch()
+    import torch
+
     width = max(len(p) + len(r) for p, r, _ in rows)
     size = max(int(chunk_size), 1)
     lp_chunks, mask_chunks, ent_chunks = [], [], []
@@ -462,13 +566,17 @@ def _forward_token_rows(
         lp_chunks.append(lp)
         mask_chunks.append(m)
         ent_chunks.append(ent)
-    entropy = torch.cat(ent_chunks) if want_entropy else None
+    entropy = (
+        torch.cat([cast("Tensor", ent) for ent in ent_chunks]) if want_entropy else None
+    )
     return torch.cat(lp_chunks), torch.cat(mask_chunks), entropy
 
 
 def compute_token_old_logprobs(
-    trajectory_groups: list[Any], config: Any, agent: Any
-) -> list[Any] | None:
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+    config: LossConfig,
+    agent: AgentLike,
+) -> list[Tensor] | None:
     """Freeze the old policy's per-token log-probs for every group (one no-grad
     chunked forward on the stored token ids), for multiple inner updates.
 
@@ -476,7 +584,8 @@ def compute_token_old_logprobs(
     ``None`` when any group lacks token metadata (the sequence fallback has no
     per-token old log-probs; inner updates are then not applied).
     """
-    torch = require_torch()
+    import torch
+
     groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
     rows = [_token_rows_for_group(g) for g in groups]
     if not groups and getattr(agent.model, "_stateset_token_forward", False) is True:
@@ -484,20 +593,30 @@ def compute_token_old_logprobs(
     if not groups or any(r is None for r in rows):
         return None
     device = _resolve_model_device(agent, torch)
-    chunk = int(getattr(config, "generation_batch_size", 0) or 0) or max(
-        len(r) for r in rows if r
-    )
+    chunk = _old_logprob_chunk(config, max(len(r) for r in rows if r))
     snapshots = []
-    for group_rows in rows:
-        assert group_rows is not None
-        lp, _, _ = _forward_token_rows(
-            agent.model, group_rows, device, chunk, grad=False
-        )
-        snapshots.append(lp.detach())
+    # Score the old policy without dropout: a stochastic snapshot makes the
+    # first inner-update ratio noise rather than 1, so the clip bites on it.
+    model = _policy(agent)
+    was_training = bool(getattr(model, "training", False))
+    set_eval = getattr(model, "eval", None) if was_training else None
+    if callable(set_eval):
+        set_eval()
+    try:
+        for group_rows in rows:
+            assert group_rows is not None
+            lp, _, _ = _forward_token_rows(model, group_rows, device, chunk, grad=False)
+            snapshots.append(lp.detach())
+    finally:
+        set_train = getattr(model, "train", None) if was_training else None
+        if callable(set_train):
+            set_train()
     return snapshots
 
 
-def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any] | None:
+def sampler_old_logprobs(
+    trajectory_groups: Sequence[TrajectoryGroupLike], device: DeviceLike
+) -> list[Tensor] | None:
     """The log-probs recorded at sampling time (``sampler_log_probs`` on each
     assistant turn), laid out like :func:`_forward_token_rows` output: one
     ``[rows, width-1]`` tensor per non-empty group with response token ``k``
@@ -507,9 +626,10 @@ def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any]
     log-probs disagree in length with its token ids (corrupt metadata, never
     silently misaligned).
     """
-    torch = require_torch()
+    import torch
+
     groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
-    out: list[Any] = []
+    out: list[Tensor] = []
     for group in groups:
         rows = _token_rows_for_group(group)
         if rows is None:
@@ -537,7 +657,7 @@ def sampler_old_logprobs(trajectory_groups: list[Any], device: Any) -> list[Any]
     return out or None
 
 
-def _assistant_turns(group: Any) -> list[Any]:
+def _assistant_turns(group: object) -> list[Any]:
     """Assistant turns of ``group`` in :func:`_token_rows_for_group` row order."""
     turns: list[Any] = []
     for trajectory in getattr(group, "trajectories", []):
@@ -552,21 +672,419 @@ def _assistant_turns(group: Any) -> list[Any]:
     return turns
 
 
+@dataclass(frozen=True)
+class _TokenPathOptions:
+    """Optional inputs shared by both GRPO entry points' token path."""
+
+    beta: float = 0.0
+    reference_model: PolicyModel | None = None
+    old_logprobs: Sequence[Tensor] | None = None
+    global_reward_mean: float | None = None
+    global_reward_count: int = 0
+    global_reward_sum: float | None = None
+    update_global_stats: Callable[[float, int], None] | None = None
+    backward_fn: BackwardFn | None = None
+
+
+@dataclass(frozen=True)
+class _TokenBatch:
+    """Everything the token-path forwards need, fixed before the first one."""
+
+    groups: list[TrajectoryGroupLike]
+    rows_per_group: list[list[TokenRow]]
+    objective: PolicyObjective
+    entropy_coef: float
+    reference_model: PolicyModel | None
+    chunk_size: int
+    old_logprobs: Sequence[Tensor] | None
+    old_source: str
+    advantages: list[Tensor]
+    device: DeviceLike
+    n_trajectories: int
+    n_tokens: int
+
+    @property
+    def sequence_measure(self) -> bool:
+        """Whether the policy term is reduced per trajectory (else per token)."""
+        return self.objective.aggregate in {"seq_mean", "seq_sum_const"}
+
+    @property
+    def measure(self) -> str:
+        """``"trajectory"`` or ``"token"``: the policy denominator's unit."""
+        return "trajectory" if self.sequence_measure else "token"
+
+    @property
+    def denominator(self) -> int:
+        """Batch-level count the policy term is normalised by."""
+        return self.n_trajectories if self.sequence_measure else self.n_tokens
+
+    @property
+    def kl_measure(self) -> str:
+        """Unit the KL metric is averaged over."""
+        return "trajectory" if self.objective.kl == "k3_sequence" else "token"
+
+
+@dataclass
+class _TokenLossTotals:
+    """Running sums over chunks; tensors are detached once backward has run."""
+
+    policy_shares: list[Tensor] = field(default_factory=list)
+    entropy_shares: list[Tensor] = field(default_factory=list)
+    advantages: list[float] = field(default_factory=list)
+    rows: int = 0
+    kl_sum: float = 0.0
+    ratio_sum: float = 0.0
+    clip_sum: float = 0.0
+    entropy_sum: float = 0.0
+
+
+def _old_logprob_chunk(config: LossConfig, largest_group: int) -> int:
+    """Rows per old-log-prob forward: ``generation_batch_size`` (the
+    dataclass's 4 for a config without it); an explicit 0 means one chunk
+    per group (``largest_group`` rows)."""
+    return int(config_value(config, "generation_batch_size") or 0) or int(largest_group)
+
+
+def _token_objective_settings(config: LossConfig) -> tuple[PolicyObjective, float]:
+    """The validated token objective (entropy split out) and ``entropy_coef``.
+
+    Validates before forwards, reward statistics or streamed backward; the
+    entropy bonus is then applied separately with its own token denominator.
+    """
+    entropy = float(config_value(config, "entropy_coef"))
+    validated = _token_objective(config).with_(entropy_coef=entropy)
+    return validated.with_(entropy_coef=0.0), entropy
+
+
+def _resolve_old_logprobs(
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+    rows_per_group: Sequence[Sequence[TokenRow]],
+    config: LossConfig,
+    agent: AgentLike,
+    old_logprobs: Sequence[Tensor] | None,
+    device: DeviceLike,
+) -> tuple[Sequence[Tensor] | None, str]:
+    """The old-policy log-probs to evaluate against and their source label."""
+    if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
+        raise ValueError("old_logprobs and loss must contain the same groups")
+    source = "snapshot" if old_logprobs is not None else "recompute"
+    if (
+        old_logprobs is None
+        and getattr(config, "old_logprobs_source", "recompute") == "sampler"
+    ):
+        old_logprobs = (
+            []
+            if not trajectory_groups
+            and getattr(agent.model, "_stateset_rollout_source", None) == "sampler"
+            else sampler_old_logprobs(trajectory_groups, device)
+        )
+        if old_logprobs is not None:
+            source = "sampler"
+        else:
+            require_explicit_fallback(
+                config,
+                "allow_missing_sampler_logprobs",
+                "Rollouts lack sampler log probabilities",
+            )
+            source = "recompute_fallback"
+    return old_logprobs, source
+
+
+def _build_token_batch(
+    trajectory_groups: list[TrajectoryGroupLike],
+    rows_per_group: list[list[TokenRow]],
+    config: LossConfig,
+    agent: AgentLike,
+    options: _TokenPathOptions,
+) -> _TokenBatch:
+    """Fix the objective, old log-probs, advantages and counts of a batch.
+
+    Runs the token-bank phases ``objective``, ``old-source`` and (inside
+    :func:`_token_batch_advantages`) ``advantages``/``baseline`` in that
+    order, and rejects objectives the chunked loss cannot evaluate before any
+    forward pass.
+    """
+    import torch
+
+    device = _resolve_model_device(agent, torch)
+    objective, entropy_coef = run_token_local(
+        agent.model, "objective", lambda: _token_objective_settings(config)
+    )
+    reference = options.reference_model if options.beta > 0 else None
+    if reference is not None:
+        objective = _token_kl_objective(objective, config, beta=options.beta)
+    if objective.ratio == "group_expectation":
+        raise ValueError(
+            "group_expectation couples rows and cannot use chunked token loss"
+        )
+    sequence_measure = objective.aggregate in {"seq_mean", "seq_sum_const"}
+    if reference is not None and objective.kl == "k3_sequence" and not sequence_measure:
+        raise ValueError(
+            "Sequence KL requires a trajectory reduction on the native token path"
+        )
+    size = max(
+        1,
+        _old_logprob_chunk(config, len(max(rows_per_group, key=len, default=[]))),
+    )
+    old_logprobs, source = run_token_local(
+        agent.model,
+        "old-source",
+        lambda: _resolve_old_logprobs(
+            trajectory_groups,
+            rows_per_group,
+            config,
+            agent,
+            options.old_logprobs,
+            device,
+        ),
+    )
+    advantages = _token_batch_advantages(
+        trajectory_groups,
+        config,
+        objective,
+        device,
+        model=agent.model,
+        global_reward_mean=options.global_reward_mean,
+        global_reward_count=options.global_reward_count,
+        global_reward_sum=options.global_reward_sum,
+        update_global_stats=options.update_global_stats,
+    )
+    return _TokenBatch(
+        groups=trajectory_groups,
+        rows_per_group=rows_per_group,
+        objective=objective,
+        entropy_coef=entropy_coef,
+        reference_model=reference,
+        chunk_size=size,
+        old_logprobs=old_logprobs,
+        old_source=source,
+        advantages=advantages,
+        device=device,
+        n_trajectories=sum(len(group.trajectories) for group in trajectory_groups),
+        n_tokens=sum(len(reply) for rows in rows_per_group for _, reply, _ in rows),
+    )
+
+
+def _prepare_streamed_backward(
+    backward_fn: BackwardFn | None, batch: _TokenBatch
+) -> None:
+    """Tell a streaming ``backward_fn`` the batch denominators up front."""
+    prepare = getattr(backward_fn, "prepare", None)
+    if callable(prepare):
+        prepare(
+            policy_count=batch.denominator,
+            token_count=batch.n_tokens,
+            measure=batch.measure,
+            separate_entropy=batch.sequence_measure and batch.entropy_coef > 0,
+        )
+
+
+def _backward_token_chunk(
+    backward_fn: BackwardFn | None,
+    batch: _TokenBatch,
+    share: Tensor,
+    policy: Tensor,
+    entropy_loss: Tensor | None,
+) -> None:
+    """Backpropagate one chunk's additive share of the loss, if streaming."""
+    normalized = getattr(backward_fn, "backward_normalized", None)
+    if callable(normalized):
+        normalized(
+            NormalizedLoss(
+                {"total_loss": share},
+                policy_mean=policy if batch.sequence_measure else share,
+                policy_count=batch.denominator,
+                measure=batch.measure,
+                entropy_loss=entropy_loss if batch.sequence_measure else None,
+                token_count=batch.n_tokens,
+            )
+        )
+    elif backward_fn is not None:
+        backward_fn(share)
+
+
+def _token_chunk_loss(
+    batch: _TokenBatch,
+    totals: _TokenLossTotals,
+    model: PolicyModel,
+    rows: Sequence[TokenRow],
+    width: int,
+    advantages: Tensor,
+    old: Tensor | None,
+    backward_fn: BackwardFn | None,
+) -> None:
+    """Forward one row chunk, evaluate its loss share and fold it into ``totals``.
+
+    With ``backward_fn`` the share is backpropagated here and only detached
+    values are kept, so the chunk's graph is released when this returns,
+    before the next chunk's forward pass.
+    """
+    logp, mask, entropy = _forward_token_chunk(
+        model,
+        rows,
+        width,
+        batch.device,
+        grad=True,
+        want_entropy=batch.entropy_coef > 0,
+    )
+    reference = None
+    if batch.reference_model is not None:
+        reference, _, _ = _forward_token_chunk(
+            batch.reference_model, rows, width, batch.device, grad=False
+        )
+    result = objectives.policy_loss(
+        logp_cur=logp,
+        mask=mask,
+        advantages=advantages,
+        objective=batch.objective,
+        logp_old=old,
+        logp_ref=reference,
+        total_rows=max(batch.n_trajectories, 1),
+        total_tokens=max(batch.n_tokens, 1),
+    )
+    policy = result.loss
+    entropy_sum = (entropy * mask).sum() if entropy is not None else None
+    entropy_loss = (
+        -batch.entropy_coef * entropy_sum / max(batch.n_tokens, 1)
+        if entropy_sum is not None
+        else None
+    )
+    share = policy if entropy_loss is None else policy + entropy_loss
+    _backward_token_chunk(backward_fn, batch, share, policy, entropy_loss)
+    chunk_tokens = sum(len(reply) for _, reply, _ in rows)
+    totals.ratio_sum += result.metrics["ratio_mean"] * chunk_tokens
+    totals.clip_sum += result.metrics["clip_fraction"] * chunk_tokens
+    totals.kl_sum += result.metrics["kl"] * (
+        len(rows) if batch.objective.kl == "k3_sequence" else chunk_tokens
+    )
+    if entropy_sum is not None:
+        totals.entropy_sum += float(entropy_sum.detach())
+    streamed = backward_fn is not None
+    totals.policy_shares.append(policy.detach() if streamed else policy)
+    if entropy_loss is not None:
+        totals.entropy_shares.append(
+            entropy_loss.detach() if streamed else entropy_loss
+        )
+    totals.rows += len(rows)
+
+
+def _token_forwards(
+    batch: _TokenBatch, agent: AgentLike, backward_fn: BackwardFn | None
+) -> NormalizedLoss:
+    """Run every chunk of every group (the token bank's ``forwards`` phase)."""
+    import torch
+
+    totals = _TokenLossTotals()
+    size = batch.chunk_size
+    for gi, (_group, rows, group_adv) in enumerate(
+        zip(batch.groups, batch.rows_per_group, batch.advantages, strict=True)
+    ):
+        totals.advantages.extend(group_adv.detach().cpu().tolist())
+        row_adv = group_adv[
+            torch.tensor([ti for _, _, ti in rows], device=batch.device)
+        ]
+        width = max(len(prompt) + len(reply) for prompt, reply, _ in rows)
+        for start in range(0, len(rows), size):
+            _token_chunk_loss(
+                batch,
+                totals,
+                _policy(agent),
+                rows[start : start + size],
+                width,
+                row_adv[start : start + size],
+                (
+                    None
+                    if batch.old_logprobs is None
+                    else batch.old_logprobs[gi][start : start + size]
+                ),
+                backward_fn,
+            )
+    return _finish_token_loss(batch, totals, streamed=backward_fn is not None)
+
+
+def _finish_token_loss(
+    batch: _TokenBatch, totals: _TokenLossTotals, *, streamed: bool
+) -> NormalizedLoss:
+    """Aggregate the chunk shares into the loss, its metrics and reduction."""
+    import torch
+
+    n_tokens, denominator = batch.n_tokens, batch.denominator
+    zero = torch.tensor(0.0, device=batch.device, requires_grad=not streamed)
+    policy = torch.stack(totals.policy_shares).sum() if totals.policy_shares else zero
+    entropy_loss = (
+        torch.stack(totals.entropy_shares).sum()
+        if totals.entropy_shares
+        else (zero if batch.entropy_coef > 0 else None)
+    )
+    total = policy if entropy_loss is None else policy + entropy_loss
+    adv_log = totals.advantages
+    values = np.asarray(adv_log, dtype=np.float64)
+    mean = float(values.mean()) if adv_log else 0.0
+    reduction = LossMetricReduction(
+        measure=batch.measure,
+        policy_count=denominator,
+        token_count=n_tokens,
+        trajectory_count=batch.n_trajectories,
+        row_count=totals.rows,
+        advantage_count=len(adv_log),
+        nonzero_advantages=int(np.count_nonzero(values)),
+        policy_sum=float(policy.detach()) * denominator,
+        entropy_loss_sum=(
+            float(entropy_loss.detach()) * n_tokens if entropy_loss is not None else 0.0
+        ),
+        entropy_sum=totals.entropy_sum,
+        kl_sum=totals.kl_sum,
+        ratio_sum=totals.ratio_sum,
+        clip_sum=totals.clip_sum,
+        advantage_mean=mean,
+        advantage_m2=float(np.square(values - mean).sum()),
+        kl_measure=batch.kl_measure,
+    )
+    kl_count = batch.n_trajectories if batch.kl_measure == "trajectory" else n_tokens
+    metrics = {
+        "total_loss": total,
+        "policy_loss": total,
+        "policy_objective_loss": policy,
+        "backward_done": streamed,
+        "kl_penalty": torch.tensor(
+            totals.kl_sum / max(kl_count, 1), device=batch.device
+        ),
+        "entropy": totals.entropy_sum / max(n_tokens, 1),
+        "entropy_measured": batch.entropy_coef > 0,
+        "mean_advantage": mean,
+        "advantage_std": float(values.std()) if adv_log else 0.0,
+        "nonzero_advantage_fraction": (
+            float(np.count_nonzero(values) / len(values)) if adv_log else 0.0
+        ),
+        "num_trajectories": batch.n_trajectories,
+        "num_rows": totals.rows,
+        "num_tokens": n_tokens,
+        "policy_denominator": denominator,
+        "path": "token",
+        "objective": batch.objective.name,
+        "ratio_mean": totals.ratio_sum / n_tokens if n_tokens else 1.0,
+        "clip_fraction": totals.clip_sum / max(n_tokens, 1),
+        "off_policy": batch.old_logprobs is not None,
+        "old_logprobs_source": batch.old_source,
+    }
+    return NormalizedLoss(
+        metrics,
+        policy_mean=policy if batch.sequence_measure else total,
+        policy_count=denominator,
+        measure=batch.measure,
+        entropy_loss=entropy_loss if batch.sequence_measure else None,
+        token_count=n_tokens,
+        metric_reduction=reduction,
+    )
+
+
 def _compute_token_path_loss(
-    trajectory_groups: list[Any],
-    rows_per_group: list[list[tuple[list[int], list[int], int]]],
-    config: Any,
-    agent: Any,
-    *,
-    beta: float = 0.0,
-    reference_model: Any | None = None,
-    old_logprobs: list[Any] | None = None,
-    global_reward_mean: float | None = None,
-    global_reward_count: int = 0,
-    global_reward_sum: float | None = None,
-    update_global_stats: Callable[[float, int], None] | None = None,
-    backward_fn: Callable[[Any], None] | None = None,
-) -> dict[str, Any]:
+    trajectory_groups: list[TrajectoryGroupLike],
+    rows_per_group: list[list[TokenRow]],
+    config: LossConfig,
+    agent: AgentLike,
+    options: _TokenPathOptions,
+) -> NormalizedLoss:
     """Score exact sampled actions with population-weighted chunk contributions.
 
     Sequence reductions sum assistant-turn losses within each trajectory;
@@ -574,270 +1092,31 @@ def _compute_token_path_loss(
     its own token denominator. A callback releases each chunk's graph before
     the next forward. Native callbacks preserve these separate gradient banks.
     """
-    torch = require_torch()
-    device = _resolve_model_device(agent, torch)
-
-    def objective_settings() -> tuple[Any, float]:
-        entropy = float(getattr(config, "entropy_coef", 0.0))
-        # Validate before forwards, reward statistics or streamed backward.
-        # Entropy is then applied separately with its own token denominator.
-        validated = _token_objective(config).with_(entropy_coef=entropy)
-        return validated.with_(entropy_coef=0.0), entropy
-
-    objective, entropy_coef = run_token_local(
-        agent.model, "objective", objective_settings
+    batch = _build_token_batch(
+        trajectory_groups, rows_per_group, config, agent, options
     )
-    use_kl = beta > 0 and reference_model is not None
-    if use_kl:
-        objective = _token_kl_objective(objective, config, beta=beta)
-    if objective.ratio == "group_expectation":
-        raise ValueError(
-            "group_expectation couples rows and cannot use chunked token loss"
-        )
-    sequence_measure = objective.aggregate in {"seq_mean", "seq_sum_const"}
-    if use_kl and objective.kl == "k3_sequence" and not sequence_measure:
-        raise ValueError(
-            "Sequence KL requires a trajectory reduction on the native token path"
-        )
-    size = max(
-        1,
-        int(getattr(config, "generation_batch_size", 0) or 0)
-        or len(max(rows_per_group, key=len, default=[])),
+    _prepare_streamed_backward(options.backward_fn, batch)
+    return run_token_local(
+        agent.model,
+        "forwards",
+        lambda: _token_forwards(batch, agent, options.backward_fn),
     )
-
-    def local_old_source() -> str:
-        nonlocal old_logprobs
-        if old_logprobs is not None and len(old_logprobs) != len(rows_per_group):
-            raise ValueError("old_logprobs and loss must contain the same groups")
-        source = "snapshot" if old_logprobs is not None else "recompute"
-        if (
-            old_logprobs is None
-            and getattr(config, "old_logprobs_source", "recompute") == "sampler"
-        ):
-            old_logprobs = (
-                []
-                if not trajectory_groups
-                and getattr(agent.model, "_stateset_rollout_source", None) == "sampler"
-                else sampler_old_logprobs(trajectory_groups, device)
-            )
-            if old_logprobs is not None:
-                source = "sampler"
-            else:
-                from .rollout_contract import require_explicit_fallback
-
-                require_explicit_fallback(
-                    config,
-                    "allow_missing_sampler_logprobs",
-                    "Rollouts lack sampler log probabilities",
-                )
-                source = "recompute_fallback"
-        return source
-
-    source = run_token_local(agent.model, "old-source", local_old_source)
-    advantages = _token_batch_advantages(
-        trajectory_groups,
-        config,
-        objective,
-        device,
-        model=agent.model,
-        global_reward_mean=global_reward_mean,
-        global_reward_count=global_reward_count,
-        global_reward_sum=global_reward_sum,
-        update_global_stats=update_global_stats,
-    )
-    n_trajectories = sum(len(group.trajectories) for group in trajectory_groups)
-    n_tokens = sum(len(reply) for rows in rows_per_group for _, reply, _ in rows)
-    denominator = n_trajectories if sequence_measure else n_tokens
-    measure = "trajectory" if sequence_measure else "token"
-    prepare = getattr(backward_fn, "prepare", None)
-    if callable(prepare):
-        prepare(
-            policy_count=denominator,
-            token_count=n_tokens,
-            measure=measure,
-            separate_entropy=sequence_measure and entropy_coef > 0,
-        )
-
-    def local_loss() -> dict[str, Any]:
-        policy_shares, entropy_shares, adv_log = [], [], []
-        n_rows = 0
-        sums = {"kl": 0.0, "ratio_mean": 0.0, "clip_fraction": 0.0, "entropy": 0.0}
-        for gi, (_group, rows, group_adv) in enumerate(
-            zip(trajectory_groups, rows_per_group, advantages, strict=True)
-        ):
-            adv_log.extend(group_adv.detach().cpu().tolist())
-            row_adv = group_adv[torch.tensor([ti for _, _, ti in rows], device=device)]
-            width = max(len(prompt) + len(reply) for prompt, reply, _ in rows)
-            for start in range(0, len(rows), size):
-                sub = rows[start : start + size]
-                logp, mask, entropy = _forward_token_chunk(
-                    agent.model,
-                    sub,
-                    width,
-                    device,
-                    grad=True,
-                    want_entropy=entropy_coef > 0,
-                )
-                reference = None
-                if use_kl:
-                    reference, _, _ = _forward_token_chunk(
-                        reference_model,
-                        sub,
-                        width,
-                        device,
-                        grad=False,
-                    )
-                result = objectives.policy_loss(
-                    logp_cur=logp,
-                    mask=mask,
-                    advantages=row_adv[start : start + size],
-                    objective=objective,
-                    logp_old=(
-                        None
-                        if old_logprobs is None
-                        else old_logprobs[gi][start : start + size]
-                    ),
-                    logp_ref=reference,
-                    total_rows=max(n_trajectories, 1),
-                    total_tokens=max(n_tokens, 1),
-                )
-                policy = result.loss
-                entropy_sum = (entropy * mask).sum() if entropy is not None else None
-                entropy_loss = (
-                    -entropy_coef * entropy_sum / max(n_tokens, 1)
-                    if entropy_sum is not None
-                    else None
-                )
-                share = policy if entropy_loss is None else policy + entropy_loss
-                normalized = getattr(backward_fn, "backward_normalized", None)
-                if callable(normalized):
-                    normalized(
-                        NormalizedLoss(
-                            {"total_loss": share},
-                            policy_mean=policy if sequence_measure else share,
-                            policy_count=denominator,
-                            measure=measure,
-                            entropy_loss=entropy_loss if sequence_measure else None,
-                            token_count=n_tokens,
-                        )
-                    )
-                elif backward_fn is not None:
-                    backward_fn(share)
-                chunk_tokens = sum(len(reply) for _, reply, _ in sub)
-                for name in ("ratio_mean", "clip_fraction"):
-                    sums[name] += result.metrics[name] * chunk_tokens
-                sums["kl"] += result.metrics["kl"] * (
-                    len(sub) if objective.kl == "k3_sequence" else chunk_tokens
-                )
-                if entropy_sum is not None:
-                    sums["entropy"] += float(entropy_sum.detach())
-                policy_shares.append(
-                    policy.detach() if backward_fn is not None else policy
-                )
-                if entropy_loss is not None:
-                    entropy_shares.append(
-                        entropy_loss.detach()
-                        if backward_fn is not None
-                        else entropy_loss
-                    )
-                n_rows += len(sub)
-                del (
-                    result,
-                    logp,
-                    reference,
-                    entropy,
-                    entropy_sum,
-                    entropy_loss,
-                    share,
-                    policy,
-                )
-        zero = torch.tensor(0.0, device=device, requires_grad=backward_fn is None)
-        policy = torch.stack(policy_shares).sum() if policy_shares else zero
-        entropy_loss = (
-            torch.stack(entropy_shares).sum()
-            if entropy_shares
-            else (zero if entropy_coef > 0 else None)
-        )
-        total = policy if entropy_loss is None else policy + entropy_loss
-        values = np.asarray(adv_log, dtype=np.float64)
-        mean = float(values.mean()) if adv_log else 0.0
-        kl_measure = "trajectory" if objective.kl == "k3_sequence" else "token"
-        reduction = LossMetricReduction(
-            measure=measure,
-            policy_count=denominator,
-            token_count=n_tokens,
-            trajectory_count=n_trajectories,
-            row_count=n_rows,
-            advantage_count=len(adv_log),
-            nonzero_advantages=int(np.count_nonzero(values)),
-            policy_sum=float(policy.detach()) * denominator,
-            entropy_loss_sum=(
-                float(entropy_loss.detach()) * n_tokens
-                if entropy_loss is not None
-                else 0.0
-            ),
-            entropy_sum=sums["entropy"],
-            kl_sum=sums["kl"],
-            ratio_sum=sums["ratio_mean"],
-            clip_sum=sums["clip_fraction"],
-            advantage_mean=mean,
-            advantage_m2=float(np.square(values - mean).sum()),
-            kl_measure=kl_measure,
-        )
-        metrics = {
-            "total_loss": total,
-            "policy_loss": total,
-            "policy_objective_loss": policy,
-            "backward_done": backward_fn is not None,
-            "kl_penalty": torch.tensor(
-                sums["kl"]
-                / max(n_trajectories if kl_measure == "trajectory" else n_tokens, 1),
-                device=device,
-            ),
-            "entropy": sums["entropy"] / max(n_tokens, 1),
-            "entropy_measured": entropy_coef > 0,
-            "mean_advantage": mean,
-            "advantage_std": float(values.std()) if adv_log else 0.0,
-            "nonzero_advantage_fraction": (
-                float(np.count_nonzero(values) / len(values)) if adv_log else 0.0
-            ),
-            "num_trajectories": n_trajectories,
-            "num_rows": n_rows,
-            "num_tokens": n_tokens,
-            "policy_denominator": denominator,
-            "path": "token",
-            "objective": objective.name,
-            "ratio_mean": sums["ratio_mean"] / n_tokens if n_tokens else 1.0,
-            "clip_fraction": sums["clip_fraction"] / max(n_tokens, 1),
-            "off_policy": old_logprobs is not None,
-            "old_logprobs_source": source,
-        }
-        return NormalizedLoss(
-            metrics,
-            policy_mean=policy if sequence_measure else total,
-            policy_count=denominator,
-            measure=measure,
-            entropy_loss=entropy_loss if sequence_measure else None,
-            token_count=n_tokens,
-            metric_reduction=reduction,
-        )
-
-    return run_token_local(agent.model, "forwards", local_loss)
 
 
 def _try_token_path(
-    trajectory_groups: list[Any], config: Any, agent: Any, **kwargs: Any
-) -> dict[str, Any] | None:
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+    config: LossConfig,
+    agent: AgentLike,
+    options: _TokenPathOptions,
+) -> NormalizedLoss | None:
     """Run the batched token path when every group carries token metadata."""
     groups = [g for g in trajectory_groups if getattr(g, "trajectories", None)]
     if not groups:
         if getattr(agent.model, "_stateset_token_forward", False) is not True:
             return None
-        return _compute_token_path_loss([], [], config, agent, **kwargs)
+        return _compute_token_path_loss([], [], config, agent, options)
     rows = [_token_rows_for_group(g) for g in groups]
     if any(r is None for r in rows):
-        from .rollout_contract import require_explicit_fallback
-
         require_explicit_fallback(
             config,
             "allow_sequence_fallback",
@@ -845,21 +1124,43 @@ def _try_token_path(
         )
         return None
     return _compute_token_path_loss(
-        groups, [r for r in rows if r], config, agent, **kwargs
+        groups, [r for r in rows if r], config, agent, options
     )
 
 
+def _group_rewards(group: TrajectoryGroupLike, device: DeviceLike) -> Tensor:
+    """``total_reward`` of every trajectory in ``group`` as fp32 ``[G]``."""
+    import torch
+
+    return torch.tensor(
+        [cast(ScoredTrajectory, t).total_reward for t in group.trajectories],
+        dtype=torch.float32,
+        device=device,
+    )
+
+
+def _float_moments(values: list[float]) -> dict[str, float]:
+    """Mean, population std and nonzero share of logged advantages."""
+    if not values:
+        return {"mean": 0.0, "std": 0.0, "nonzero": 0.0}
+    return {
+        "mean": float(np.mean(values)),
+        "std": float(np.std(values)),
+        "nonzero": float(np.count_nonzero(values) / len(values)),
+    }
+
+
 def compute_grpo_loss(
-    trajectory_groups: list[Any],
-    config: Any,
-    agent: Any,
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+    config: LossConfig,
+    agent: AgentLike,
     global_reward_mean: float,
     global_reward_count: int,
     update_global_stats: Callable[[float, int], None] | None,
-    old_logprobs: list[Any] | None = None,
+    old_logprobs: Sequence[Tensor] | None = None,
     *,
     global_reward_sum: float | None = None,
-    backward_fn: Callable[[Any], None] | None = None,
+    backward_fn: BackwardFn | None = None,
 ) -> dict[str, Any]:
     """
     Compute GRPO loss from trajectory groups with configurable baseline and normalization.
@@ -882,36 +1183,33 @@ def compute_grpo_loss(
         trajectory_groups,
         config,
         agent,
-        old_logprobs=old_logprobs,
-        global_reward_mean=global_reward_mean,
-        global_reward_count=global_reward_count,
-        global_reward_sum=global_reward_sum,
-        update_global_stats=update_global_stats,
-        backward_fn=backward_fn,
+        _TokenPathOptions(
+            old_logprobs=old_logprobs,
+            global_reward_mean=global_reward_mean,
+            global_reward_count=global_reward_count,
+            global_reward_sum=global_reward_sum,
+            update_global_stats=update_global_stats,
+            backward_fn=backward_fn,
+        ),
     )
     if token_result is not None:
         return token_result
 
-    torch = require_torch()
+    import torch
+
     device = _resolve_model_device(agent, torch)
 
     policy_losses = []
     all_advantages_for_logging: list[float] = []
     entropy_values_for_logging: list[float] = []
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    entropy_coef = float(config_value(config, "entropy_coef"))
 
     for group in trajectory_groups:
         if not group.trajectories:
             continue
 
-        # Extract rewards and optionally clip
-        rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories],
-            dtype=torch.float32,
-            device=device,
-        )
         advantages = _sequence_group_advantages(
-            rewards,
+            _group_rewards(group, device),
             config,
             global_reward_mean=global_reward_mean if global_reward_count > 0 else None,
             update_global_stats=update_global_stats,
@@ -942,38 +1240,23 @@ def compute_grpo_loss(
         if entropy_values_for_logging
         else 0.0
     )
-
+    moments = _float_moments(all_advantages_for_logging)
     return {
         "path": "sequence",
         "objective": _grpo_objective(config).name,
         "fallback": "explicit_sequence_compatibility",
-        "nonzero_advantage_fraction": (
-            float(
-                np.count_nonzero(all_advantages_for_logging)
-                / len(all_advantages_for_logging)
-            )
-            if all_advantages_for_logging
-            else 0.0
-        ),
+        "nonzero_advantage_fraction": moments["nonzero"],
         "policy_loss": total_loss_tensor,
         "total_loss": total_loss_tensor,
-        "mean_advantage": (
-            float(np.mean(all_advantages_for_logging))
-            if all_advantages_for_logging
-            else 0.0
-        ),
-        "advantage_std": (
-            float(np.std(all_advantages_for_logging))
-            if all_advantages_for_logging
-            else 0.0
-        ),
+        "mean_advantage": moments["mean"],
+        "advantage_std": moments["std"],
         "entropy": entropy_value,
     }
 
 
 def compute_ppo_ratio(
-    new_log_prob_sum: Any, old_log_prob_sum: Any, token_count: int
-) -> Any:
+    new_log_prob_sum: Tensor, old_log_prob_sum: Tensor, token_count: int
+) -> Tensor:
     """Length-normalized PPO importance ratio.
 
     Ratios computed from raw summed log-probs blow up (overflow) or vanish
@@ -981,18 +1264,20 @@ def compute_ppo_ratio(
     length. Dividing by `token_count` first yields a bounded, O(1)
     sequence-mean ratio, matching standard PPO/GRPO implementations.
     """
-    torch = get_torch() or require_torch()
+    import torch
+
     return torch.exp((new_log_prob_sum - old_log_prob_sum) / max(token_count, 1))
 
 
-def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
+def compute_entropy_bonus(logits: Tensor, response_mask: Tensor | None) -> Tensor:
     """Differentiable masked-mean policy entropy from logits.
 
     Unlike a `torch.no_grad()` estimate, this stays in the autograd graph so
     the entropy bonus actually contributes gradient to the loss it's added
     to (encouraging exploration), rather than being a dead metric.
     """
-    F = get_functional()
+    import torch.nn.functional as F
+
     log_probs = F.log_softmax(logits, dim=-1)
     probs = log_probs.exp()
     # H = -sum(p * log p)
@@ -1017,15 +1302,159 @@ def compute_entropy_bonus(logits: Any, response_mask: Any) -> Any:
 _estimate_policy_entropy = compute_entropy_bonus
 
 
+def _out_of_memory_types(torch_mod: object) -> tuple[type[BaseException], ...]:
+    """torch's typed OOM errors: ``torch.OutOfMemoryError`` (2.5+) and
+    ``torch.cuda.OutOfMemoryError`` (1.13+); empty on older torch."""
+    found: list[type[BaseException]] = []
+    for owner in (torch_mod, getattr(torch_mod, "cuda", None)):
+        oom = getattr(owner, "OutOfMemoryError", None)
+        if isinstance(oom, type) and issubclass(oom, BaseException):
+            found.append(oom)
+    return tuple(found)
+
+
+def _is_fatal_loss_error(error: BaseException, torch: object) -> bool:
+    """Errors a per-trajectory loss loop re-raises unchanged.
+
+    Out-of-memory and rollout-contract violations are not properties of one
+    trajectory, and callers act on their type (OOM recovery, configuration
+    errors), so they are not wrapped in :class:`TrajectoryLossError`. OOM is
+    detected by torch's exception types; the message is matched only on
+    torch versions too old to have them.
+    """
+    if isinstance(error, RolloutContractError):
+        return True
+    oom_types = _out_of_memory_types(torch)
+    if oom_types:
+        return isinstance(error, oom_types)
+    return "out of memory" in str(error).lower()
+
+
+def _old_log_prob_sum(trajectory: object, device: DeviceLike) -> Tensor | None:
+    """The rollout-time summed log-prob of ``trajectory``, if it carries one.
+
+    Read from ``trajectory.log_probs`` or ``trajectory.metadata["log_probs"]``
+    (a tensor, a list of per-token values or a scalar sum).
+    """
+    import torch
+
+    log_probs = getattr(trajectory, "log_probs", None)
+    if log_probs is None and hasattr(trajectory, "metadata"):
+        log_probs = trajectory.metadata.get("log_probs")
+    if log_probs is None:
+        return None
+    if isinstance(log_probs, torch.Tensor):
+        return log_probs.sum().detach()
+    if isinstance(log_probs, (list, tuple)):
+        return torch.tensor(float(sum(log_probs)), device=device)
+    if isinstance(log_probs, (int, float)):
+        return torch.tensor(float(log_probs), device=device)
+    return None
+
+
+def _supervised_token_count(labels: Tensor | None) -> int:
+    """Number of supervised (non ``-100``) label positions."""
+    import torch
+
+    if isinstance(labels, torch.Tensor):
+        return int(labels.ne(-100).sum().item())
+    return 0
+
+
+def _nothing_supervised(labels: Tensor | None) -> bool:
+    """Whether every label is masked (e.g. the reply was truncated away)."""
+    import torch
+
+    return isinstance(labels, torch.Tensor) and not bool(labels.ne(-100).any())
+
+
+def _entropy_bonus(outputs: CausalLMOutput, labels: Tensor) -> Tensor:
+    """Differentiable entropy over supervised positions of one forward pass.
+
+    Logits at position ``t`` predict token ``t+1``: shift like the NLL.
+    """
+    response_mask = labels[:, 1:].ne(-100).to(dtype=outputs.logits.dtype)
+    return compute_entropy_bonus(outputs.logits[:, :-1], response_mask)
+
+
+def _unclipped_fallback(config: LossConfig) -> None:
+    """Allow the unclipped REINFORCE loss only when explicitly requested."""
+    require_explicit_fallback(
+        config,
+        "allow_sequence_fallback",
+        "Rollouts lack old policy log probabilities",
+    )
+    global _warned_missing_log_probs
+    if not _warned_missing_log_probs:
+        logger.warning(
+            "clip_ratio set but trajectories lack log_probs; "
+            "using unclipped REINFORCE loss."
+        )
+        _warned_missing_log_probs = True
+
+
+def _sequence_policy_term(
+    trajectory: object,
+    advantage: Tensor,
+    config: LossConfig,
+    agent: AgentLike,
+    objective: PolicyObjective,
+    *,
+    clip_ratio: float,
+    entropy_coef: float,
+    device: DeviceLike,
+) -> tuple[Tensor, float | None] | None:
+    """One trajectory's policy loss and entropy (``None``: nothing supervised).
+
+    GRPO policy gradient ``advantage * nll`` (``outputs.loss`` is the mean
+    per-token NLL), or the clipped sequence-ratio loss when the rollout kept
+    its old log-probs. No further length division: the NLL is already a
+    per-token mean and the clipped branch normalises inside the ratio
+    (dividing again gave a 1/L^2 bias).
+    """
+    import torch
+
+    inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
+    if _nothing_supervised(labels):
+        return None
+    with torch.set_grad_enabled(True):
+        outputs = _policy(agent)(**inputs, labels=labels)
+        nll = outputs.loss
+        policy_loss = advantage * nll
+        token_count = _supervised_token_count(labels)
+        old_log_prob = _old_log_prob_sum(trajectory, device)
+        if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
+            policy_loss = _clipped_trajectory_loss(
+                outputs.loss, token_count, advantage, old_log_prob, objective
+            )
+        elif clip_ratio > 0:
+            # Without old log_probs, PPO-style clipping is impossible
+            # (clip_ratio operates in ratio space, not advantage magnitude).
+            _unclipped_fallback(config)
+            policy_loss = advantage * nll
+        entropy = None
+        if entropy_coef > 0 and isinstance(labels, torch.Tensor):
+            # Differentiable: from the same grad-enabled forward pass, so it
+            # contributes gradient rather than being a dead no-grad metric.
+            entropy_bonus = _entropy_bonus(outputs, labels)
+            policy_loss = policy_loss - entropy_coef * entropy_bonus
+            entropy = float(entropy_bonus.detach().item())
+        return policy_loss, entropy
+
+
 def _compute_group_policy_loss(
-    group: Any,
-    advantages: Any,
-    config: Any,
-    agent: Any,
+    group: TrajectoryGroupLike,
+    advantages: Tensor,
+    config: LossConfig,
+    agent: AgentLike,
     entropy_coef: float = 0.0,
-) -> tuple[Any, float | None]:
+) -> tuple[Tensor, float | None]:
     """
     Compute policy loss for a single trajectory group with proper GRPO implementation.
+
+    A trajectory whose loss raises fails the group with
+    :class:`TrajectoryLossError` (out-of-memory and rollout-contract errors
+    propagate unchanged); a trajectory with no supervised tokens is skipped.
 
     Args:
         group: TrajectoryGroup object
@@ -1037,7 +1466,7 @@ def _compute_group_policy_loss(
     Returns:
         Tuple of (policy loss tensor, mean entropy for logging or None)
     """
-    torch = require_torch()
+    import torch
 
     device = _resolve_model_device(agent, torch)
     total_loss = torch.tensor(0.0, device=device, requires_grad=True)
@@ -1051,98 +1480,34 @@ def _compute_group_policy_loss(
     # needs a GSPO-scale bound (+/-0.2 would never trigger).
     clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
     objective = _grpo_objective(config)
+    trajectories = group.trajectories
 
     for traj_idx, (trajectory, advantage) in enumerate(
-        zip(group.trajectories, advantages, strict=False)
+        zip(trajectories, advantages, strict=False)
     ):
         try:
-            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
-            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
-                continue  # nothing to supervise (e.g. reply truncated away)
-
-            # Forward pass to get log probabilities
-            with torch.set_grad_enabled(True):
-                outputs = agent.model(**inputs, labels=labels)
-
-                # Get the negative log likelihood (this is the loss from the model)
-                nll = outputs.loss
-
-                # GRPO policy gradient: -advantage * log_prob
-                # Since outputs.loss is already negative log likelihood,
-                # policy loss = advantage * nll (nll = -log_prob).
-                policy_loss = advantage * nll
-
-                old_log_prob = None
-                token_count = 0
-                if torch.is_tensor(labels):
-                    loss_mask = labels.ne(-100)
-                    token_count = int(loss_mask.sum().item())
-
-                log_probs = getattr(trajectory, "log_probs", None)
-                if log_probs is None and hasattr(trajectory, "metadata"):
-                    log_probs = trajectory.metadata.get("log_probs")
-                if log_probs is not None:
-                    if torch.is_tensor(log_probs):
-                        old_log_prob = log_probs.sum().detach()
-                    elif isinstance(log_probs, (list, tuple)):
-                        old_log_prob = torch.tensor(
-                            float(sum(log_probs)), device=device
-                        )
-                    elif isinstance(log_probs, (int, float)):
-                        old_log_prob = torch.tensor(float(log_probs), device=device)
-
-                # Optional: PPO-style clipping when old log probs are available.
-                if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
-                    policy_loss = _clipped_trajectory_loss(
-                        outputs.loss, token_count, advantage, old_log_prob, objective
-                    )
-                elif clip_ratio > 0:
-                    from .rollout_contract import require_explicit_fallback
-
-                    require_explicit_fallback(
-                        config,
-                        "allow_sequence_fallback",
-                        "Rollouts lack old policy log probabilities",
-                    )
-                    global _warned_missing_log_probs
-                    if not _warned_missing_log_probs:
-                        logger.warning(
-                            "clip_ratio set but trajectories lack log_probs; "
-                            "using unclipped REINFORCE loss."
-                        )
-                        _warned_missing_log_probs = True
-                    # Without old log_probs, PPO-style clipping is impossible.
-                    # clip_ratio operates in ratio space, not advantage magnitude.
-                    policy_loss = advantage * nll
-
-                # outputs.loss is already the per-token mean NLL, and the
-                # clipped branch normalizes inside the ratio; no further
-                # length division (dividing again gave a 1/L^2 bias).
-
-                # Differentiable entropy bonus: computed from the same
-                # grad-enabled forward pass's logits, so it actually
-                # contributes gradient (encourages exploration) rather than
-                # being a dead no-grad metric.
-                if entropy_coef > 0 and torch.is_tensor(labels):
-                    # Logits at position t predict token t+1: shift like the NLL.
-                    response_mask = (
-                        labels[:, 1:].ne(-100).to(dtype=outputs.logits.dtype)
-                    )
-                    entropy_bonus = compute_entropy_bonus(
-                        outputs.logits[:, :-1], response_mask
-                    )
-                    policy_loss = policy_loss - entropy_coef * entropy_bonus
-                    entropy_sum += float(entropy_bonus.detach().item())
-                    entropy_count += 1
-
-                total_loss = total_loss + policy_loss
-                num_trajectories += 1
-
-        except LOSS_EXCEPTIONS as e:
-            logger.warning(
-                f"Failed to compute policy loss for trajectory {traj_idx}: {e}"
+            term = _sequence_policy_term(
+                trajectory,
+                advantage,
+                config,
+                agent,
+                objective,
+                clip_ratio=clip_ratio,
+                entropy_coef=entropy_coef,
+                device=device,
             )
-            continue
+        except LOSS_EXCEPTIONS as e:
+            if _is_fatal_loss_error(e, torch):
+                raise
+            raise TrajectoryLossError(traj_idx, len(trajectories), e) from e
+        if term is None:
+            continue  # nothing to supervise (e.g. reply truncated away)
+        policy_loss, entropy = term
+        if entropy is not None:
+            entropy_sum += entropy
+            entropy_count += 1
+        total_loss = total_loss + policy_loss
+        num_trajectories += 1
 
     mean_entropy = (entropy_sum / entropy_count) if entropy_count > 0 else None
 
@@ -1153,19 +1518,147 @@ def _compute_group_policy_loss(
         return torch.tensor(0.0, device=device, requires_grad=True), mean_entropy
 
 
-def compute_enhanced_grpo_loss(
-    trajectory_groups: list[Any],
+def _sequence_kl(
+    outputs: CausalLMOutput,
+    reference_model: PolicyModel,
+    inputs: dict[str, Tensor],
+    labels: Tensor | None,
+) -> Tensor:
+    """Masked mean token KL(p || p_ref) at supervised positions.
+
+    ``KL = sum_v p(v) * (log p(v) - log p_ref(v))`` per token; logits at ``t``
+    predict the scored token at ``t+1``, as in the NLL.
+    """
+    import torch
+
+    log_probs = outputs.logits.log_softmax(dim=-1)
+    with torch.no_grad():
+        ref_outputs = reference_model(**inputs)
+        ref_log_probs = ref_outputs.logits.log_softmax(dim=-1)
+    kl_per_token = (log_probs.exp() * (log_probs - ref_log_probs)).sum(dim=-1)
+    if isinstance(labels, torch.Tensor):
+        kl_per_token = kl_per_token[:, :-1]
+        loss_mask = labels[:, 1:].ne(-100)
+        if loss_mask.any():
+            return (kl_per_token * loss_mask).sum() / loss_mask.sum()
+        return kl_per_token.mean()
+    return kl_per_token.mean()  # pragma: no cover - non-tensor labels (stub)
+
+
+@dataclass
+class _EnhancedTerms:
+    """Per-trajectory terms of the enhanced sequence loss, in batch order."""
+
+    losses: list[Tensor] = field(default_factory=list)
+    advantages: list[float] = field(default_factory=list)
+    kl_divs: list[Tensor] = field(default_factory=list)
+    entropy_values: list[float] = field(default_factory=list)
+
+
+def _enhanced_trajectory_terms(
+    terms: _EnhancedTerms,
+    trajectory: object,
+    advantage: Tensor,
+    config: LossConfig,
+    agent: AgentLike,
+    *,
     beta: float,
-    config: Any,
-    agent: Any,
-    reference_model: Any | None = None,
-    old_logprobs: list[Any] | None = None,
+    reference_model: PolicyModel | None,
+    objective: PolicyObjective,
+    entropy_coef: float,
+    device: DeviceLike,
+) -> None:
+    """Append one trajectory's policy loss, entropy and KL to ``terms``."""
+    import torch
+
+    inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
+    if _nothing_supervised(labels):
+        return  # nothing to supervise (e.g. reply truncated away)
+    use_amp = getattr(config, "bf16", False) or getattr(config, "fp16", False)
+    autocast_ctx = torch.amp.autocast(
+        device_type="cuda" if torch.cuda.is_available() else "cpu",
+        enabled=bool(use_amp),
+    )
+    with autocast_ctx:
+        outputs = _policy(agent)(**inputs, labels=labels)
+        # Policy loss with advantage weighting; optional PPO-style clipping
+        # mirrors `_compute_group_policy_loss`.
+        nll = outputs.loss
+        policy_loss = advantage * nll
+        clip_ratio = getattr(config, "clip_ratio", getattr(config, "clip_epsilon", 0.2))
+        old_log_prob = _old_log_prob_sum(trajectory, device)
+        token_count = _supervised_token_count(labels)
+        if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
+            policy_loss = _clipped_trajectory_loss(
+                nll, token_count, advantage, old_log_prob, objective
+            )
+        if entropy_coef > 0 and isinstance(labels, torch.Tensor):
+            entropy_bonus = _entropy_bonus(outputs, labels)
+            policy_loss = policy_loss - entropy_coef * entropy_bonus
+            terms.entropy_values.append(float(entropy_bonus.detach().item()))
+        terms.losses.append(policy_loss)
+        # Skip the full-vocab log_softmax entirely when there's no KL
+        # penalty to compute — it's an expensive (batch, seq, vocab)
+        # materialization that's otherwise dead weight.
+        if beta > 0 and reference_model is not None:
+            terms.kl_divs.append(_sequence_kl(outputs, reference_model, inputs, labels))
+
+
+def _enhanced_loss_result(
+    terms: _EnhancedTerms,
+    beta: float,
+    device: DeviceLike,
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+) -> dict[str, Any]:
+    """Aggregate the enhanced loss terms into the loss and its metrics."""
+    import torch
+
+    all_advantages = terms.advantages
+    if terms.losses:
+        policy_loss = torch.stack(terms.losses).mean()
+        # Add KL penalty if applicable
+        if terms.kl_divs and beta > 0:
+            kl_penalty = torch.stack(terms.kl_divs).mean()
+            total_loss = policy_loss + beta * kl_penalty
+        else:
+            total_loss = policy_loss
+            kl_penalty = torch.tensor(0.0, device=device)
+    else:
+        total_loss = torch.tensor(0.0, requires_grad=True, device=device)
+        policy_loss = total_loss
+        kl_penalty = torch.tensor(0.0, device=device)
+
+    entropy_values = terms.entropy_values
+    return {
+        "path": "sequence",
+        "total_loss": total_loss,
+        "policy_loss": policy_loss,
+        "kl_penalty": kl_penalty,
+        "entropy": float(np.mean(entropy_values)) if entropy_values else 0.0,
+        "mean_advantage": np.mean(all_advantages) if all_advantages else 0.0,
+        "nonzero_advantage_fraction": (
+            float(np.count_nonzero(all_advantages) / len(all_advantages))
+            if all_advantages
+            else 0.0
+        ),
+        "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
+        "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
+    }
+
+
+def compute_enhanced_grpo_loss(
+    trajectory_groups: Sequence[TrajectoryGroupLike],
+    beta: float,
+    config: LossConfig,
+    agent: AgentLike,
+    reference_model: PolicyModel | None = None,
+    old_logprobs: Sequence[Tensor] | None = None,
     *,
     global_reward_mean: float | None = None,
     global_reward_count: int = 0,
     global_reward_sum: float | None = None,
     update_global_stats: Callable[[float, int], None] | None = None,
-    backward_fn: Callable[[Any], None] | None = None,
+    backward_fn: BackwardFn | None = None,
 ) -> dict[str, Any]:
     """
     Enhanced GRPO loss computation with KL penalty and proper advantages.
@@ -1184,188 +1677,61 @@ def compute_enhanced_grpo_loss(
         trajectory_groups,
         config,
         agent,
-        beta=beta,
-        reference_model=reference_model,
-        old_logprobs=old_logprobs,
-        global_reward_mean=global_reward_mean,
-        global_reward_count=global_reward_count,
-        global_reward_sum=global_reward_sum,
-        update_global_stats=update_global_stats,
-        backward_fn=backward_fn,
+        _TokenPathOptions(
+            beta=beta,
+            reference_model=reference_model,
+            old_logprobs=old_logprobs,
+            global_reward_mean=global_reward_mean,
+            global_reward_count=global_reward_count,
+            global_reward_sum=global_reward_sum,
+            update_global_stats=update_global_stats,
+            backward_fn=backward_fn,
+        ),
     )
     if token_result is not None:
         return token_result
 
-    torch = require_torch()
+    import torch
+
     device = _resolve_model_device(agent, torch)
-    F = get_functional()
-    amp = get_amp()
-
-    if F is None:
-        raise ImportError(
-            "torch.nn.functional is required for enhanced GRPO loss computation."
-        )
-
-    all_losses = []
-    all_advantages = []
-    all_kl_divs = []
-    entropy_values = []
-    entropy_coef = float(getattr(config, "entropy_coef", 0.0))
+    terms = _EnhancedTerms()
+    entropy_coef = float(config_value(config, "entropy_coef"))
     objective = _grpo_objective(config)
 
     for group in trajectory_groups:
         if not group.trajectories:
             continue
-
-        # Extract rewards for this group
-        rewards = torch.tensor(
-            [t.total_reward for t in group.trajectories],
-            dtype=torch.float32,
-            device=device,
-        )
-
         advantages = _sequence_group_advantages(
-            rewards,
+            _group_rewards(group, device),
             config,
             global_reward_mean=global_reward_mean if global_reward_count > 0 else None,
             update_global_stats=update_global_stats,
         )
-
-        all_advantages.extend(advantages.tolist())
-
-        # Process each trajectory in the group
-        for _traj_idx, (trajectory, advantage) in enumerate(
-            zip(group.trajectories, advantages, strict=False)
-        ):
-            inputs, labels = _prepare_inputs_and_labels(trajectory, agent, config)
-            if torch.is_tensor(labels) and not bool(labels.ne(-100).any()):
-                continue  # nothing to supervise (e.g. reply truncated away)
-
-            # Forward pass
-            use_amp = getattr(config, "bf16", False) or getattr(config, "fp16", False)
-            if amp is not None:
-                autocast_ctx = amp.autocast(
-                    device_type="cuda" if torch.cuda.is_available() else "cpu",
-                    enabled=bool(use_amp),
-                )
-            else:  # pragma: no cover
-                autocast_ctx = contextlib.nullcontext()
-
-            with autocast_ctx:
-                outputs = agent.model(**inputs, labels=labels)
-
-                # Compute policy loss with advantage weighting.
-                nll = outputs.loss
-                policy_loss = advantage * nll
-
-                # Optional PPO-style clipping, mirroring `_compute_group_policy_loss`.
-                clip_ratio = getattr(
-                    config, "clip_ratio", getattr(config, "clip_epsilon", 0.2)
-                )
-                old_log_prob = None
-                log_probs_attr = getattr(trajectory, "log_probs", None)
-                if log_probs_attr is None and hasattr(trajectory, "metadata"):
-                    log_probs_attr = trajectory.metadata.get("log_probs")
-                if log_probs_attr is not None:
-                    if torch.is_tensor(log_probs_attr):
-                        old_log_prob = log_probs_attr.sum().detach()
-                    elif isinstance(log_probs_attr, (list, tuple)):
-                        old_log_prob = torch.tensor(
-                            float(sum(log_probs_attr)), device=device
-                        )
-                    elif isinstance(log_probs_attr, (int, float)):
-                        old_log_prob = torch.tensor(
-                            float(log_probs_attr), device=device
-                        )
-
-                token_count = 0
-                if torch.is_tensor(labels):
-                    token_count = int(labels.ne(-100).sum().item())
-
-                if clip_ratio > 0 and old_log_prob is not None and token_count > 0:
-                    policy_loss = _clipped_trajectory_loss(
-                        nll, token_count, advantage, old_log_prob, objective
-                    )
-
-                if entropy_coef > 0 and torch.is_tensor(labels):
-                    entropy_bonus = compute_entropy_bonus(
-                        outputs.logits[:, :-1],
-                        labels[:, 1:].ne(-100).to(dtype=outputs.logits.dtype),
-                    )
-                    policy_loss = policy_loss - entropy_coef * entropy_bonus
-                    entropy_values.append(float(entropy_bonus.detach().item()))
-
-                all_losses.append(policy_loss)
-
-                # Skip the full-vocab log_softmax entirely when there's no KL
-                # penalty to compute — it's an expensive (batch, seq, vocab)
-                # materialization that's otherwise dead weight.
-                if beta > 0 and reference_model is not None:
-                    log_probs = outputs.logits.log_softmax(dim=-1)
-                    with torch.no_grad():
-                        ref_outputs = reference_model(**inputs)
-                        ref_log_probs = ref_outputs.logits.log_softmax(dim=-1)
-
-                    # Token-wise KL(p || p_ref) = sum_v p(v) * (log p(v) - log p_ref(v))
-                    kl_per_token = (log_probs.exp() * (log_probs - ref_log_probs)).sum(
-                        dim=-1
-                    )
-
-                    # Logits at t predict the scored token at t+1, as in the NLL.
-                    if torch.is_tensor(labels):
-                        kl_per_token = kl_per_token[:, :-1]
-                        loss_mask = labels[:, 1:].ne(-100)
-                        if loss_mask.any():
-                            kl_div = (kl_per_token * loss_mask).sum() / loss_mask.sum()
-                        else:
-                            kl_div = kl_per_token.mean()
-                    else:  # pragma: no cover - non-tensor labels (stub tokenizer)
-                        kl_div = kl_per_token.mean()
-                    all_kl_divs.append(kl_div)
-
-    # Aggregate losses
-    if all_losses:
-        policy_loss = torch.stack(all_losses).mean()
-
-        # Add KL penalty if applicable
-        if all_kl_divs and beta > 0:
-            kl_penalty = torch.stack(all_kl_divs).mean()
-            total_loss = policy_loss + beta * kl_penalty
-        else:
-            total_loss = policy_loss
-            kl_penalty = torch.tensor(0.0, device=device)
-    else:
-        total_loss = torch.tensor(0.0, requires_grad=True, device=device)
-        policy_loss = total_loss
-        kl_penalty = torch.tensor(0.0, device=device)
-
-    return {
-        "path": "sequence",
-        "total_loss": total_loss,
-        "policy_loss": policy_loss,
-        "kl_penalty": kl_penalty,
-        "entropy": float(np.mean(entropy_values)) if entropy_values else 0.0,
-        "mean_advantage": np.mean(all_advantages) if all_advantages else 0.0,
-        "nonzero_advantage_fraction": (
-            float(np.count_nonzero(all_advantages) / len(all_advantages))
-            if all_advantages
-            else 0.0
-        ),
-        "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
-        "num_trajectories": sum(len(g.trajectories) for g in trajectory_groups),
-    }
+        terms.advantages.extend(advantages.tolist())
+        for trajectory, advantage in zip(group.trajectories, advantages, strict=False):
+            _enhanced_trajectory_terms(
+                terms,
+                trajectory,
+                advantage,
+                config,
+                agent,
+                beta=beta,
+                reference_model=reference_model,
+                objective=objective,
+                entropy_coef=entropy_coef,
+                device=device,
+            )
+    return _enhanced_loss_result(terms, beta, device, trajectory_groups)
 
 
-def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
+def _format_trajectory_for_model(trajectory: object, agent: AgentLike) -> str:
     """Format trajectory into text for model input."""
     messages = _trajectory_to_messages(trajectory)
 
     tokenizer = agent.tokenizer
-    if hasattr(tokenizer, "apply_chat_template") and not (
-        hasattr(tokenizer, "chat_template") and tokenizer.chat_template is None
-    ):
+    if _uses_chat_template(tokenizer):
         # Use tokenizer's chat template
-        rendered: object = agent.tokenizer.apply_chat_template(
+        rendered: object = tokenizer.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=False
         )
         return rendered if isinstance(rendered, str) else str(rendered)
@@ -1381,7 +1747,7 @@ def _format_trajectory_for_model(trajectory: Any, agent: Any) -> str:
         return "\n".join(parts)
 
 
-def _trajectory_to_messages(trajectory: Any) -> list[dict[str, str]]:
+def _trajectory_to_messages(trajectory: object) -> list[dict[str, str]]:
     """Convert trajectory turns into normalized chat messages."""
     messages: list[dict[str, str]] = []
     for turn in getattr(trajectory, "turns", []):
@@ -1396,7 +1762,7 @@ def _trajectory_to_messages(trajectory: Any) -> list[dict[str, str]]:
 
 
 def _format_trajectory_with_spans(
-    trajectory: Any,
+    trajectory: object,
 ) -> tuple[str, list[tuple[int, int]]]:
     """Format trajectory text and track assistant spans for masking."""
     messages = _trajectory_to_messages(trajectory)
@@ -1434,9 +1800,12 @@ _OFFSET_EXCEPTIONS: tuple[type[BaseException], ...] = (
 _GENERATION_TAG = re.compile(r"\{%-?\s*generation\s*-?%\}")
 
 
-def _as_bool_mask(value: Any, like: Any, allow_empty: bool = False) -> Any | None:
+def _as_bool_mask(
+    value: object, like: Tensor, allow_empty: bool = False
+) -> Tensor | None:
     """Coerce a tokenizer-produced mask to a bool tensor shaped like ``like``."""
-    torch = require_torch()
+    import torch
+
     try:
         mask = torch.as_tensor(value, dtype=torch.bool)
     except (TypeError, ValueError, RuntimeError):
@@ -1449,8 +1818,8 @@ def _as_bool_mask(value: Any, like: Any, allow_empty: bool = False) -> Any | Non
 
 
 def _chat_template_generation_mask(
-    tokenizer: Any, messages: list[dict[str, str]], max_length: int
-) -> tuple[Any, Any, Any] | None:
+    tokenizer: ChatTokenizerLike, messages: list[dict[str, str]], max_length: int
+) -> tuple[Tensor, Tensor | None, Tensor] | None:
     """Use HF ``return_assistant_tokens_mask`` when the template marks generations."""
     try:
         params = inspect.signature(tokenizer.apply_chat_template).parameters
@@ -1498,7 +1867,9 @@ def _chat_template_generation_mask(
 
 
 def _render_chat(
-    tokenizer: Any, messages: list[dict[str, str]], add_generation_prompt: bool
+    tokenizer: ChatTokenizerLike,
+    messages: list[dict[str, str]],
+    add_generation_prompt: bool,
 ) -> str | None:
     try:
         rendered = tokenizer.apply_chat_template(
@@ -1510,8 +1881,8 @@ def _render_chat(
 
 
 def _chat_template_prefix_mask(
-    tokenizer: Any, messages: list[dict[str, str]], max_length: int
-) -> tuple[Any, Any, Any] | None:
+    tokenizer: ChatTokenizerLike, messages: list[dict[str, str]], max_length: int
+) -> tuple[Tensor, Tensor | None, Tensor] | None:
     """Assistant spans anchored inside the full render (see
     :func:`stateset_agents.core.chat_masking.assistant_char_spans`), mapped to
     tokens with offsets. ``None`` when the template rewrites history.
@@ -1526,7 +1897,8 @@ def _chat_template_prefix_mask(
     if not spans:
         return None
     try:
-        encoded = tokenizer(
+        # Typed ``object``: fakes and odd tokenizers may return non-mappings.
+        encoded: object = tokenizer(
             full,
             return_tensors="pt",
             truncation=True,
@@ -1543,7 +1915,8 @@ def _chat_template_prefix_mask(
     offsets = encoded.get("offset_mapping")
     if input_ids is None or offsets is None or not hasattr(input_ids, "clone"):
         return None
-    torch = require_torch()
+    import torch
+
     offsets = torch.as_tensor(offsets)
     if offsets.dim() == 2:
         offsets = offsets.unsqueeze(0)
@@ -1564,40 +1937,54 @@ def _chat_template_prefix_mask(
     return input_ids, attention_mask, mask
 
 
-def _prepare_inputs_and_labels(
-    trajectory: Any, agent: Any, config: Any
-) -> tuple[dict[str, Any], Any]:
-    """Prepare model inputs and loss labels, masking to assistant tokens when possible."""
-    torch = get_torch() or require_torch()
-    max_length = int(getattr(config, "max_prompt_length", 512)) + int(
-        getattr(config, "max_completion_length", 512)
+def _unsupervised_inputs(
+    tokenizer: TokenizerLike, trajectory: object, agent: AgentLike, max_length: int
+) -> tuple[dict[str, Tensor], Tensor]:
+    """Inputs for ``trajectory`` with every label masked (nothing supervised)."""
+    global _warned_observation_fallback
+    if not _warned_observation_fallback:
+        logger.warning(
+            "Could not locate assistant tokens in a conversation with tool "
+            "observations; skipping it rather than training on tool output."
+        )
+        _warned_observation_fallback = True
+    text, _spans = _format_trajectory_with_spans(trajectory)
+    inputs = tokenizer(
+        text, return_tensors="pt", truncation=True, max_length=max_length
     )
+    input_ids = inputs["input_ids"]
+    labels = input_ids.clone().fill_(-100)
+    device = _model_device(agent)
+    moved = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    return moved, labels.to(device)
 
-    tokenizer = agent.tokenizer
-    device = agent.model.device
 
-    # Assistant-only masking for chat-template tokenizers: prefer the template's
-    # own ``{% generation %}`` mask, then derive spans by rendering prefixes.
-    use_chat_template = hasattr(tokenizer, "apply_chat_template") and not (
-        # HF tokenizers expose apply_chat_template even with no template set.
+def _model_device(agent: AgentLike) -> DeviceLike:
+    """``agent.model.device`` (an ``AttributeError`` when the model has none)."""
+    return cast(_DeviceCarrier, agent.model).device
+
+
+def _uses_chat_template(tokenizer: object) -> TypeGuard[ChatTokenizerLike]:
+    """HF tokenizers expose ``apply_chat_template`` even with no template set."""
+    return hasattr(tokenizer, "apply_chat_template") and not (
         hasattr(tokenizer, "chat_template")
-        and tokenizer.chat_template is None
+        and getattr(tokenizer, "chat_template", None) is None
     )
-    if use_chat_template:
-        messages = _trajectory_to_messages(trajectory)
-        encoded = _chat_template_generation_mask(tokenizer, messages, max_length)
-        if encoded is None:
-            encoded = _chat_template_prefix_mask(tokenizer, messages, max_length)
-        if encoded is not None:
-            input_ids, attention_mask, assistant_mask = encoded
-            labels = input_ids.clone().masked_fill(~assistant_mask, -100)
-            inputs: dict[str, Any] = {"input_ids": input_ids}
-            if attention_mask is not None:
-                labels = labels.masked_fill(attention_mask.eq(0), -100)
-                inputs["attention_mask"] = attention_mask
-            inputs = {k: v.to(device) for k, v in inputs.items()}
-            return inputs, labels.to(device)
 
+
+def _chat_template_inputs(
+    tokenizer: ChatTokenizerLike,
+    trajectory: object,
+    max_length: int,
+    device: DeviceLike,
+) -> tuple[dict[str, Tensor], Tensor] | None:
+    """Assistant-only labels from the chat template: the template's own
+    ``{% generation %}`` mask, else spans found by rendering prefixes."""
+    messages = _trajectory_to_messages(trajectory)
+    encoded = _chat_template_generation_mask(tokenizer, messages, max_length)
+    if encoded is None:
+        encoded = _chat_template_prefix_mask(tokenizer, messages, max_length)
+    if encoded is None:
         global _warned_missing_assistant_mask
         if not _warned_missing_assistant_mask:
             logger.warning(
@@ -1605,65 +1992,153 @@ def _prepare_inputs_and_labels(
                 "loss will include non-assistant tokens."
             )
             _warned_missing_assistant_mask = True
+        return None
+    input_ids, attention_mask, assistant_mask = encoded
+    labels = input_ids.clone().masked_fill(~assistant_mask, -100)
+    inputs: dict[str, Tensor] = {"input_ids": input_ids}
+    if attention_mask is not None:
+        labels = labels.masked_fill(attention_mask.eq(0), -100)
+        inputs["attention_mask"] = attention_mask
+    inputs = {k: v.to(device) for k, v in inputs.items()}
+    return inputs, labels.to(device)
 
-    if not use_chat_template:
-        # Try assistant-only masking with offsets for non-chat-template tokenizers.
-        conversation_text, assistant_spans = _format_trajectory_with_spans(trajectory)
-        if assistant_spans:
-            try:
-                inputs = tokenizer(
-                    conversation_text,
-                    return_tensors="pt",
-                    truncation=True,
-                    max_length=max_length,
-                    padding=True,
-                    return_offsets_mapping=True,
-                )
-                offsets = inputs.pop("offset_mapping", None)
-                input_ids = inputs.get("input_ids")
-                if offsets is not None and input_ids is not None:
-                    if torch.is_tensor(offsets):
-                        offsets_list = offsets[0].tolist()
-                    elif isinstance(offsets, (list, tuple)):
-                        offsets_list = offsets[0] if offsets else []
-                    else:
-                        offsets_list = []
 
-                    if offsets_list and len(offsets_list) == input_ids.shape[1]:
-                        assistant_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-                        for idx, (start, end) in enumerate(offsets_list):
-                            if start == end:
-                                continue
-                            if any(
-                                start < span_end and end > span_start
-                                for span_start, span_end in assistant_spans
-                            ):
-                                assistant_mask[0, idx] = True
+def _offsets_list(offsets: object) -> list[Sequence[int]]:
+    """First row of a tokenizer's offset mapping as a list of ``(start, end)``."""
+    import torch
 
-                        labels = (
-                            input_ids.clone()
-                            if hasattr(input_ids, "clone")
-                            else input_ids
-                        )
-                        labels = labels.masked_fill(~assistant_mask, -100)
-                        if "attention_mask" in inputs and torch.is_tensor(labels):
-                            labels = labels.masked_fill(
-                                inputs["attention_mask"].eq(0), -100
-                            )
+    if isinstance(offsets, torch.Tensor):
+        return list(offsets[0].tolist())
+    if isinstance(offsets, (list, tuple)):
+        return list(offsets[0]) if offsets else []
+    return []
 
-                        inputs = {
-                            k: v.to(device) if hasattr(v, "to") else v
-                            for k, v in inputs.items()
-                        }
-                        if hasattr(labels, "to"):
-                            labels = labels.to(device)
-                        return inputs, labels
-            except TypeError:
-                pass
-            except LOSS_EXCEPTIONS:
-                pass
 
-    # Fallback: compute loss over the full token stream.
+def _offset_assistant_mask(
+    input_ids: Tensor,
+    offsets_list: list[Sequence[int]],
+    spans: list[tuple[int, int]],
+) -> Tensor:
+    """Bool mask of tokens overlapping any assistant character span."""
+    import torch
+
+    assistant_mask = torch.zeros_like(input_ids, dtype=torch.bool)
+    for idx, (start, end) in enumerate(offsets_list):
+        if start == end:
+            continue
+        if any(start < span_end and end > span_start for span_start, span_end in spans):
+            assistant_mask[0, idx] = True
+    return assistant_mask
+
+
+def _offset_masked_inputs(
+    tokenizer: TokenizerLike,
+    conversation_text: str,
+    assistant_spans: list[tuple[int, int]],
+    max_length: int,
+    device: DeviceLike,
+) -> tuple[dict[str, Tensor], Tensor | None] | None:
+    """Assistant-only labels via offset mappings (tokenizers without a chat
+    template); ``None`` when the tokenizer returns no usable offsets."""
+    import torch
+
+    inputs = tokenizer(
+        conversation_text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=max_length,
+        padding=True,
+        return_offsets_mapping=True,
+    )
+    offsets = inputs.pop("offset_mapping", None)
+    input_ids = inputs.get("input_ids")
+    if offsets is None or input_ids is None:
+        return None
+    offsets_list = _offsets_list(offsets)
+    if not offsets_list or len(offsets_list) != input_ids.shape[1]:
+        return None
+    assistant_mask = _offset_assistant_mask(input_ids, offsets_list, assistant_spans)
+    labels = input_ids.clone() if hasattr(input_ids, "clone") else input_ids
+    labels = labels.masked_fill(~assistant_mask, -100)
+    if "attention_mask" in inputs and isinstance(labels, torch.Tensor):
+        labels = labels.masked_fill(inputs["attention_mask"].eq(0), -100)
+    moved = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    if hasattr(labels, "to"):
+        labels = labels.to(device)
+    return moved, labels
+
+
+def _offset_inputs_or_error(
+    tokenizer: TokenizerLike, trajectory: object, max_length: int, device: DeviceLike
+) -> tuple[tuple[dict[str, Tensor], Tensor | None] | None, BaseException | None]:
+    """Offset-masked inputs, or the tokenizer error that prevented them
+    (e.g. slow tokenizers have no offset mapping)."""
+    conversation_text, assistant_spans = _format_trajectory_with_spans(trajectory)
+    if not assistant_spans:
+        return None, None
+    try:
+        masked = _offset_masked_inputs(
+            tokenizer, conversation_text, assistant_spans, max_length, device
+        )
+    except _OFFSET_EXCEPTIONS as error:
+        return None, error
+    return masked, None
+
+
+def _allow_unmasked_labels(config: LossConfig, error: BaseException) -> None:
+    """Gate the every-token fallback taken when offsets are unavailable.
+
+    Supervising user (and system) tokens changes the estimator, so it needs
+    ``allow_unmasked_labels``; otherwise raise ``RolloutContractError``
+    chained to the tokenizer's error.
+    """
+    try:
+        require_explicit_fallback(
+            config,
+            UNMASKED_LABELS_OPTION,
+            "The tokenizer cannot map assistant spans to tokens "
+            f"({type(error).__name__}: {error}), so the loss would also train "
+            "on user and system tokens",
+        )
+    except RolloutContractError as contract:
+        raise contract from error
+    global _warned_unmasked_labels
+    if not _warned_unmasked_labels:
+        logger.warning(
+            "Tokenizer offsets unavailable (%s); %s=True supervises every token.",
+            type(error).__name__,
+            UNMASKED_LABELS_OPTION,
+        )
+        _warned_unmasked_labels = True
+
+
+def _turns_after_first_reply(turns: Sequence[object]) -> bool:
+    """Whether a non-assistant turn follows the first assistant turn."""
+    replied = False
+    for turn in turns:
+        role = (
+            turn.get("role")
+            if isinstance(turn, Mapping)
+            else getattr(turn, "role", None)
+        )
+        if role == "assistant":
+            replied = True
+        elif replied:
+            return True
+    return False
+
+
+def _full_stream_inputs(
+    tokenizer: TokenizerLike,
+    trajectory: object,
+    agent: AgentLike,
+    use_chat_template: bool,
+    max_length: int,
+    device: DeviceLike,
+) -> tuple[dict[str, Tensor], Tensor | None]:
+    """Fallback: supervise the full token stream (padding excluded)."""
+    import torch
+
     if use_chat_template:
         conversation_text = _format_trajectory_for_model(trajectory, agent)
     else:
@@ -1684,7 +2159,59 @@ def _prepare_inputs_and_labels(
     if "attention_mask" in inputs and isinstance(labels, torch.Tensor):
         labels = labels.masked_fill(inputs["attention_mask"].eq(0), -100)
 
-    inputs = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
-    if hasattr(labels, "to"):
+    moved = {k: v.to(device) if hasattr(v, "to") else v for k, v in inputs.items()}
+    if labels is not None and hasattr(labels, "to"):
         labels = labels.to(device)
-    return inputs, labels
+    return moved, labels
+
+
+def _prepare_inputs_and_labels(
+    trajectory: object, agent: AgentLike, config: LossConfig
+) -> tuple[dict[str, Tensor], Tensor | None]:
+    """Prepare model inputs and loss labels, masking to assistant tokens when possible.
+
+    Order: the chat template's assistant mask; offset mappings for tokenizers
+    without a template; nothing supervised for conversations with tool
+    observations (never train on tool output); else the full token stream.
+
+    The full stream also trains on non-assistant tokens, so it needs
+    ``allow_unmasked_labels`` (else ``RolloutContractError``) when the
+    tokenizer's offsets failed, or when a non-assistant turn follows the
+    first reply (the policy would learn to write the user's next turn). A
+    prompt and one reply keep the fallback with a warning: the stub backend
+    (no chat template, no offsets) trains through it.
+    """
+    max_length = int(config_value(config, "max_prompt_length")) + int(
+        config_value(config, "max_completion_length")
+    )
+    tokenizer = _tokenizer(agent)
+    device = _model_device(agent)
+    chat_tokenizer = tokenizer if _uses_chat_template(tokenizer) else None
+    use_chat_template = chat_tokenizer is not None
+    offsets_error: BaseException | None = None
+    masked: tuple[dict[str, Tensor], Tensor | None] | None
+    if chat_tokenizer is not None:
+        masked = _chat_template_inputs(chat_tokenizer, trajectory, max_length, device)
+    else:
+        masked, offsets_error = _offset_inputs_or_error(
+            tokenizer, trajectory, max_length, device
+        )
+    if masked is not None:
+        return masked
+    if has_observation_turns(getattr(trajectory, "turns", [])):
+        # Tool observations must never be trained on: without faithful
+        # assistant spans, supervise nothing (the caller skips the row).
+        return _unsupervised_inputs(tokenizer, trajectory, agent, max_length)
+    if offsets_error is not None:
+        _allow_unmasked_labels(config, offsets_error)
+    elif _turns_after_first_reply(getattr(trajectory, "turns", [])):
+        require_explicit_fallback(
+            config,
+            UNMASKED_LABELS_OPTION,
+            "Assistant token spans could not be located in a conversation "
+            "with user turns after the first reply, so the loss would also "
+            "train the policy on those user turns",
+        )
+    return _full_stream_inputs(
+        tokenizer, trajectory, agent, use_chat_template, max_length, device
+    )

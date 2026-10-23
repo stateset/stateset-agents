@@ -258,3 +258,52 @@ async def test_real_accelerate_accumulates_before_optimizer_step():
     assert trainer.global_step == 1
     assert torch.equal(before, after_first)
     assert not torch.equal(after_first, trainer.agent.model.weight.detach())
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ("full_shard", "FULL_SHARD"),
+        (" Shard_Grad_Op ", "SHARD_GRAD_OP"),
+        ("no_shard", "NO_SHARD"),
+    ],
+)
+def test_fsdp_sharding_strategy_config_resolves_to_enum(value, expected):
+    from torch.distributed.fsdp import ShardingStrategy
+
+    resolved = distributed._resolve_fsdp_sharding_strategy(value)
+
+    assert resolved is ShardingStrategy[expected]
+    assert distributed._resolve_fsdp_sharding_strategy(resolved) is resolved
+
+
+def test_fsdp_sharding_strategy_rejects_unknown_value():
+    with pytest.raises(ValueError, match="fsdp_sharding_strategy"):
+        distributed._resolve_fsdp_sharding_strategy("quarter_shard")
+
+
+def test_fsdp_wrap_passes_sharding_strategy_enum(monkeypatch):
+    """Regression: FSDP received the raw config string, not a ShardingStrategy."""
+    from torch.distributed.fsdp import ShardingStrategy
+
+    trainer = object.__new__(DistributedTrainer)
+    trainer.distributed_config = DistributedConfig(
+        strategy="fsdp",
+        fsdp_sharding_strategy="shard_grad_op",
+        fsdp_mixed_precision=False,
+        fsdp_auto_wrap_min_params=0,
+    )
+    trainer.config = SimpleNamespace(bf16=False, fp16=False)
+    module = torch.nn.Linear(1, 1)
+    trainer.agent = SimpleNamespace(model=module)
+    fsdp = MagicMock(side_effect=lambda model, **kwargs: model)
+    monkeypatch.setattr(distributed, "FSDP", fsdp)
+    monkeypatch.setattr(distributed.torch.cuda, "current_device", lambda: 0)
+
+    trainer._wrap_model_fsdp()
+
+    kwargs = fsdp.call_args.kwargs
+    assert fsdp.call_args.args[0] is module
+    assert kwargs["sharding_strategy"] is ShardingStrategy.SHARD_GRAD_OP
+    assert kwargs["auto_wrap_policy"] is None
+    assert kwargs["device_id"] == 0

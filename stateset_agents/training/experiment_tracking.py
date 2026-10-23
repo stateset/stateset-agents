@@ -143,7 +143,9 @@ class ExperimentTracker:
             if on_success is not None:
                 on_success(result)
             return True
-        except Exception as exc:  # Optional SDK boundary; preserve measured training.
+        # Optional SDK boundary (W&B/MLflow raise their own Exception
+        # subclasses); a tracker failure must not lose measured training.
+        except Exception as exc:  # noqa: BLE001
             self.experiments[experiment_id]["backend_errors"].append(
                 {
                     "backend": backend,

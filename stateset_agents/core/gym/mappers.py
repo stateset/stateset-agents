@@ -12,7 +12,7 @@ import logging
 import random
 import re
 from abc import ABC, abstractmethod
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 
@@ -188,7 +188,10 @@ class ContinuousActionMapper(ActionMapper):
     ):
         self.action_dim = action_dim
 
-        # Set bounds
+        # Set bounds (declared up front: np.full's stub shape is narrower than
+        # np.asarray's on some numpy versions).
+        self.action_low: np.ndarray
+        self.action_high: np.ndarray
         if action_low is None:
             self.action_low = np.full(action_dim, -1.0)
         else:
@@ -271,7 +274,8 @@ class ContinuousActionMapper(ActionMapper):
         clipped = np.clip(action, self.action_low, self.action_high)
         if not np.allclose(action, clipped):
             logger.debug(f"Clipped action {action} to bounds.")
-        return cast(np.ndarray, np.asarray(clipped, dtype=float))
+        result: np.ndarray = np.asarray(clipped, dtype=float)
+        return result
 
     def get_action_space_size(self, gym_env: Any) -> int:
         """Get dimension of continuous action space."""

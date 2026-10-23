@@ -11,7 +11,7 @@ This module provides distributed training capabilities including:
 import inspect
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -26,6 +26,7 @@ from torch.distributed.fsdp.fully_sharded_data_parallel import (
     BackwardPrefetch,
     CPUOffload,
     MixedPrecision,
+    ShardingStrategy,
 )
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -35,7 +36,7 @@ from stateset_agents.core.reward import RewardFunction
 
 from .callbacks import notify_checkpoint_saved
 from .checkpoint_state import save_training_checkpoint
-from .config import TrainingConfig
+from .config import TrainingConfig, config_value
 from .trainer import MultiTurnGRPOTrainer
 
 logger = logging.getLogger(__name__)
@@ -82,6 +83,26 @@ class DistributedConfig:
     # Checkpointing
     checkpoint_parallel: bool = True
     checkpoint_dir: str = "./distributed_checkpoints"
+
+
+def _resolve_fsdp_sharding_strategy(
+    value: str | ShardingStrategy,
+) -> ShardingStrategy:
+    """Map a config value such as ``"full_shard"`` to a ``ShardingStrategy``.
+
+    FSDP requires the enum: a raw string is stored as-is and later fails when
+    FSDP reads ``sharding_strategy.name`` on multi-rank runs.
+    """
+    if isinstance(value, ShardingStrategy):
+        return value
+    key = value.strip().upper()
+    try:
+        return ShardingStrategy[key]
+    except KeyError:
+        choices = ", ".join(s.name.lower() for s in ShardingStrategy)
+        raise ValueError(
+            f"Unknown fsdp_sharding_strategy {value!r}; expected one of: {choices}"
+        ) from None
 
 
 class DistributedTrainer(MultiTurnGRPOTrainer):
@@ -250,7 +271,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
         # Auto-wrap policy: wrap layers with >= min_params parameters.
         # This gives FSDP proper per-layer sharding granularity instead of
         # wrapping the entire model as one flat unit.
-        auto_wrap_policy = None
+        auto_wrap_policy: Callable[..., bool] | None = None
         min_params = self.distributed_config.fsdp_auto_wrap_min_params
         if min_params > 0:
             try:
@@ -263,20 +284,20 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             except ImportError:
                 logger.debug("size_based_auto_wrap_policy not available")
 
-        # Wrap model
-        fsdp_kwargs = {
-            "cpu_offload": cpu_offload,
-            "backward_prefetch": backward_prefetch,
-            "mixed_precision": mixed_precision,
-            "sharding_strategy": self.distributed_config.fsdp_sharding_strategy,
-            "device_id": torch.cuda.current_device(),
-            "sync_module_states": self.distributed_config.fsdp_sync_module_states,
-            "limit_all_gathers": self.distributed_config.fsdp_limit_all_gathers,
-        }
-        if auto_wrap_policy is not None:
-            fsdp_kwargs["auto_wrap_policy"] = auto_wrap_policy
-
-        self.agent.model = FSDP(self.agent.model, **fsdp_kwargs)
+        # Wrap model (``auto_wrap_policy=None`` is FSDP's own default).
+        self.agent.model = FSDP(
+            self.agent.model,
+            cpu_offload=cpu_offload,
+            backward_prefetch=backward_prefetch,
+            mixed_precision=mixed_precision,
+            sharding_strategy=_resolve_fsdp_sharding_strategy(
+                self.distributed_config.fsdp_sharding_strategy
+            ),
+            device_id=torch.cuda.current_device(),
+            sync_module_states=self.distributed_config.fsdp_sync_module_states,
+            limit_all_gathers=self.distributed_config.fsdp_limit_all_gathers,
+            auto_wrap_policy=auto_wrap_policy,
+        )
 
         # Activation checkpointing: trade compute for memory by recomputing
         # activations during backward pass instead of storing them.
@@ -548,9 +569,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 "episodes": plan[0],
                 "steps": plan[2],
                 "windows": windows,
-                "early_stopping": bool(getattr(self.config, "early_stopping", False)),
-                "patience": getattr(self.config, "patience", 50),
-                "resume": str(getattr(self.config, "resume_from_checkpoint", None)),
+                "early_stopping": bool(config_value(self.config, "early_stopping")),
+                "patience": config_value(self.config, "patience"),
+                "resume": str(config_value(self.config, "resume_from_checkpoint")),
             }
 
         group.run("controls", controls, agree=True)
@@ -707,7 +728,7 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
             "episode_num_trajectories": episode["total_trajectories"],
             "episode_reward_scope": "ddp_global_new_rollouts",
         }
-        if self._step_event_due(getattr(self.config, "logging_steps", 10), metrics):
+        if self._step_event_due(config_value(self.config, "logging_steps"), metrics):
             result["trajectory_metrics"] = summarize_ddp_rollouts(
                 self, training_groups, phase="training", details=True
             )
@@ -882,6 +903,9 @@ class DistributedTrainer(MultiTurnGRPOTrainer):
                 path=str(checkpoint_path),
                 step=int(self.global_step),
                 is_best=bool(is_best),
+                strict=bool(
+                    config_value(getattr(self, "config", None), "strict_callbacks")
+                ),
             )
 
     def cleanup(self):

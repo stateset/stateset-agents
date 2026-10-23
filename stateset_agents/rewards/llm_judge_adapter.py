@@ -18,13 +18,27 @@ Factory functions:
 
 from __future__ import annotations
 
+import inspect
 import logging
+import math
+from collections.abc import Mapping
 from typing import Any
 
-from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
+from stateset_agents.core.reward_base import (
+    RewardFunction,
+    RewardResult,
+    RewardType,
+    RewardUnavailableError,
+)
 from stateset_agents.core.trajectory import ConversationTurn
 
 logger = logging.getLogger(__name__)
+
+#: What building a judge can raise when it cannot be configured: a missing
+#: client package, an unknown provider or criterion, a bad keyword. The
+#: factories fall back to the heuristic on these only; anything else is a
+#: bug and propagates.
+_JUDGE_SETUP_ERRORS = (ImportError, ValueError, TypeError, OSError)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -52,6 +66,68 @@ def _extract_query_and_response(
             query = text
 
     return query or "Hello", response or ""
+
+
+#: Context keys that hold a scenario's reference answer, in order of
+#: preference (each also looked up in a nested ``scenario``).
+REFERENCE_KEYS = (
+    "reference",
+    "reference_answer",
+    "reference_response",
+    "expected_response",
+    "ideal_response",
+    "gold_response",
+    "ground_truth",
+)
+
+
+def scenario_reference(context: Mapping[str, Any] | None) -> str | None:
+    """The scenario's reference answer, if the context carries one.
+
+    Read from ``REFERENCE_KEYS`` at the top level or in ``context["scenario"]``;
+    a ``ground_truth`` mapping contributes its ``"answer"`` (or
+    ``"reference"``). Returns ``None`` when there is none.
+    """
+    if not isinstance(context, Mapping):
+        return None
+    sources = [context]
+    if isinstance(context.get("scenario"), Mapping):
+        sources.append(context["scenario"])
+    for key in REFERENCE_KEYS:
+        for source in sources:
+            value = source.get(key)
+            if isinstance(value, Mapping):
+                value = value.get("answer", value.get("reference"))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                value = str(value)
+            if isinstance(value, str) and value.strip():
+                return value
+    return None
+
+
+def _accepts_reference(judge: Any) -> bool:
+    try:
+        parameters = inspect.signature(judge.evaluate).parameters
+    except (TypeError, ValueError, AttributeError):
+        return False
+    return "reference" in parameters or any(
+        p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
+    )
+
+
+async def judge_score(
+    judge: Any, query: str, response: str, context: Mapping[str, Any] | None
+) -> float:
+    """Ask ``judge`` for a verdict, showing it the scenario's reference
+    answer when the context carries one and the judge accepts it."""
+    reference = scenario_reference(context)
+    if reference is not None and _accepts_reference(judge):
+        verdict = await judge.evaluate(
+            query=query, response=response, reference=reference
+        )
+    else:
+        verdict = await judge.evaluate(query=query, response=response)
+    return _checked_judge_score(verdict)
 
 
 # ---------------------------------------------------------------------------
@@ -88,11 +164,10 @@ class LLMJudgeReward(RewardFunction):
         if not response:
             return RewardResult(score=0.0, metadata={"error": "no response"})
 
-        try:
-            score = await self.judge.evaluate(query=query, response=response)
-        except Exception as exc:
-            logger.warning("LLMJudge evaluation failed: %s", exc)
-            score = 0.5  # Neutral fallback
+        # A judge failure propagates: composers redistribute the component's
+        # weight, environments flag the episode and trainers drop it. A
+        # neutral stand-in score would be trained on as if it were a verdict.
+        score = await judge_score(self.judge, query, response, context)
 
         return RewardResult(
             score=float(score),
@@ -101,6 +176,19 @@ class LLMJudgeReward(RewardFunction):
                 "judge_model": getattr(self.judge.config, "model_name", "unknown")
             },
         )
+
+
+def _checked_judge_score(score: Any) -> float:
+    """A judge verdict as a float in [0, 1]; anything else is a judge failure."""
+    try:
+        value = float(score)
+    except (TypeError, ValueError) as exc:
+        raise RewardUnavailableError(f"LLM judge returned no score: {score!r}") from exc
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise RewardUnavailableError(
+            f"LLM judge score must be a finite value in [0, 1], got {score}"
+        )
+    return value
 
 
 # ---------------------------------------------------------------------------
@@ -152,11 +240,9 @@ class LLMJudgeRewardComponent:
         if not response:
             return 0.0
 
-        try:
-            return float(await self.judge.evaluate(query=query, response=response))
-        except Exception as exc:
-            logger.warning("LLMJudge component failed: %s", exc)
-            return 0.5
+        # Failures propagate so MultiObjectiveRewardFunction leaves this
+        # component out and spreads its weight, instead of scoring it 0.5.
+        return await judge_score(self.judge, query, response, context)
 
     def get_info(self) -> dict[str, Any]:
         return {"name": self.name, "weight": self.weight, "config": self.config}
@@ -200,17 +286,20 @@ class LLMJudgeRewardWithFallback(RewardFunction):
 
     def _get_heuristic(self) -> RewardFunction:
         if self._heuristic is None:
+            from stateset_agents.core.grounding import ground_shaping_rewards
             from stateset_agents.core.reward import (
                 CompositeReward,
                 HelpfulnessReward,
                 SafetyReward,
             )
 
+            # HelpfulnessReward is a style heuristic: gated on grounding, as
+            # in every shipped factory, so a canned template cannot carry the
+            # fallback.
             self._heuristic = CompositeReward(
-                reward_functions=[
-                    HelpfulnessReward(weight=0.6),
-                    SafetyReward(weight=0.4),
-                ],
+                reward_functions=ground_shaping_rewards(
+                    [HelpfulnessReward(weight=0.6), SafetyReward(weight=0.4)]
+                ),
             )
         return self._heuristic
 
@@ -226,21 +315,31 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         if self._judge_available and self.judge is not None:
             query, response = _extract_query_and_response(turns, context)
             try:
-                judge_score = await self.judge.evaluate(query=query, response=response)
+                verdict = await judge_score(self.judge, query, response, context)
                 combined = (
-                    self.judge_weight * judge_score
+                    self.judge_weight * verdict
                     + self.heuristic_weight * heuristic_score
                 )
                 return RewardResult(
                     score=combined,
                     components={
-                        "llm_judge": judge_score,
+                        "llm_judge": verdict,
                         "heuristic": heuristic_score,
                     },
                     metadata={"mode": "llm_judge"},
                 )
-            except Exception as exc:
+            except RewardUnavailableError as exc:
+                # The documented fallback of this class covers judge outages
+                # only (flagged in metadata); bugs still propagate.
                 logger.warning("LLM judge failed, using heuristic: %s", exc)
+                return RewardResult(
+                    score=heuristic_score,
+                    components={"heuristic": heuristic_score},
+                    metadata={
+                        "mode": "heuristic_fallback",
+                        "judge_error": f"{type(exc).__name__}: {exc}",
+                    },
+                )
 
         # Fallback to heuristic only
         return RewardResult(
@@ -319,7 +418,7 @@ def create_rlaif_reward(
             logger.info("RLAIF reward: no API key found, using heuristic fallback")
             return LLMJudgeRewardWithFallback(judge=None)
 
-    except Exception as exc:
+    except _JUDGE_SETUP_ERRORS as exc:
         logger.warning("Failed to initialize LLM judge: %s — using heuristic", exc)
         return LLMJudgeRewardWithFallback(judge=None)
 
@@ -351,12 +450,15 @@ def create_rlaif_component(
         judge = LLMJudge(config)
         return LLMJudgeRewardComponent(judge=judge, weight=weight)
 
-    except Exception as exc:
+    except _JUDGE_SETUP_ERRORS as exc:
         logger.warning("Failed to create LLM judge component: %s", exc)
         return None
 
 
 __all__ = [
+    "REFERENCE_KEYS",
+    "judge_score",
+    "scenario_reference",
     "LLMJudgeReward",
     "LLMJudgeRewardComponent",
     "LLMJudgeRewardWithFallback",

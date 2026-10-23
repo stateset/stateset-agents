@@ -8,11 +8,18 @@ This module provides reward functions tailored to specific domains:
 - DomainSpecificReward (base class)
 """
 
+import re
 from abc import abstractmethod
 from typing import Any
 
 from .reward_base import RewardFunction, RewardResult, RewardType
+from .reward_context import assistant_turns_in_scope
 from .trajectory import ConversationTurn
+
+
+def _mentions(text: str, keyword: str) -> bool:
+    """Whole-word keyword match ("help" matches "helping", not "whelp")."""
+    return re.search(r"\b" + re.escape(keyword) + r"\w*", text) is not None
 
 
 def _turn_text(turn: ConversationTurn) -> str:
@@ -24,6 +31,9 @@ class DomainSpecificReward(RewardFunction):
     """
     Base class for domain-specific reward functions
     """
+
+    #: Keyword-based style heuristics: shipped factories gate them on grounding.
+    shaping = True
 
     def __init__(
         self,
@@ -40,14 +50,19 @@ class DomainSpecificReward(RewardFunction):
     ) -> RewardResult:
         """Compute domain-specific reward"""
 
-        assistant_turns = [t for t in turns if t.role == "assistant"]
-        if not assistant_turns:
+        all_assistant_turns = [t for t in turns if t.role == "assistant"]
+        if not all_assistant_turns:
             return RewardResult(score=0.0, breakdown={}, metadata={})
+
+        # One step's reward scores only the newest reply (see reward_context).
+        scored = len(assistant_turns_in_scope(turns, context))
+        first = len(all_assistant_turns) - scored
+        assistant_turns = all_assistant_turns[first:]
 
         total_score = 0.0
         breakdown = {}
 
-        for i, turn in enumerate(assistant_turns):
+        for i, turn in enumerate(assistant_turns, start=first):
             # Get expected response if available
             query = self._get_query_for_turn(turns, i)
             expected = self.expected_responses.get(query) if query else None
@@ -156,7 +171,9 @@ class CustomerServiceReward(DomainSpecificReward):
         # Empathy score — redistribute weight when no expected response
         empathy_weight = 0.3 if not expected else 0.2
         empathy_matches = sum(
-            1 for word in self.domain_keywords["empathy"] if word in response_lower
+            1
+            for word in self.domain_keywords["empathy"]
+            if _mentions(response_lower, word)
         )
         empathy_score = min(empathy_matches / 3, 1.0)
         score += empathy_score * empathy_weight
@@ -164,7 +181,9 @@ class CustomerServiceReward(DomainSpecificReward):
         # Action-oriented score
         action_weight = 0.3 if not expected else 0.2
         action_matches = sum(
-            1 for word in self.domain_keywords["action"] if word in response_lower
+            1
+            for word in self.domain_keywords["action"]
+            if _mentions(response_lower, word)
         )
         action_score = min(action_matches / 2, 1.0)
         score += action_score * action_weight
@@ -174,14 +193,16 @@ class CustomerServiceReward(DomainSpecificReward):
         prof_matches = sum(
             1
             for word in self.domain_keywords["professionalism"]
-            if word in response_lower
+            if _mentions(response_lower, word)
         )
         prof_score = min(prof_matches / 2, 1.0)
         score += prof_score * prof_weight
 
         # Resolution keywords bonus
         resolution_matches = sum(
-            1 for word in self.domain_keywords["resolution"] if word in response_lower
+            1
+            for word in self.domain_keywords["resolution"]
+            if _mentions(response_lower, word)
         )
         if resolution_matches > 0:
             score += min(resolution_matches * 0.05, 0.1)
@@ -224,32 +245,40 @@ class TechnicalSupportReward(DomainSpecificReward):
 
         # Diagnostic approach
         diagnostic_score = sum(
-            1 for word in self.domain_keywords["diagnostic"] if word in response_lower
+            1
+            for word in self.domain_keywords["diagnostic"]
+            if _mentions(response_lower, word)
         )
         score += min(diagnostic_score * 0.1, 0.2)
 
         # Solution-oriented
         solution_score = sum(
-            1 for word in self.domain_keywords["solution"] if word in response_lower
+            1
+            for word in self.domain_keywords["solution"]
+            if _mentions(response_lower, word)
         )
         score += min(solution_score * 0.15, 0.3)
 
         # Clear explanation
         explanation_score = sum(
-            1 for word in self.domain_keywords["explanation"] if word in response_lower
+            1
+            for word in self.domain_keywords["explanation"]
+            if _mentions(response_lower, word)
         )
         score += min(explanation_score * 0.1, 0.2)
 
         # Step-by-step guidance
         steps_score = sum(
-            1 for word in self.domain_keywords["steps"] if word in response_lower
+            1
+            for word in self.domain_keywords["steps"]
+            if _mentions(response_lower, word)
         )
         if steps_score >= 2:  # Multiple step indicators
             score += 0.2
 
         # Technical accuracy (simplified check)
         if any(
-            tech_term in response_lower
+            _mentions(response_lower, tech_term)
             for tech_term in ["settings", "configuration", "system", "software"]
         ):
             score += 0.1
@@ -290,7 +319,9 @@ class SalesAssistantReward(DomainSpecificReward):
 
         # Benefits highlighting
         benefits_score = sum(
-            1 for word in self.domain_keywords["benefits"] if word in response_lower
+            1
+            for word in self.domain_keywords["benefits"]
+            if _mentions(response_lower, word)
         )
         score += min(benefits_score * 0.1, 0.25)
 
@@ -298,19 +329,23 @@ class SalesAssistantReward(DomainSpecificReward):
         personal_phrases = sum(
             1
             for phrase in self.domain_keywords["personalization"]
-            if phrase in response_lower
+            if _mentions(response_lower, phrase)
         )
         score += min(personal_phrases * 0.15, 0.25)
 
         # Trust building
         trust_score = sum(
-            1 for word in self.domain_keywords["trust"] if word in response_lower
+            1
+            for word in self.domain_keywords["trust"]
+            if _mentions(response_lower, word)
         )
         score += min(trust_score * 0.1, 0.2)
 
         # Not too pushy (penalize excessive urgency)
         urgency_score = sum(
-            1 for word in self.domain_keywords["urgency"] if word in response_lower
+            1
+            for word in self.domain_keywords["urgency"]
+            if _mentions(response_lower, word)
         )
         if urgency_score <= 1:
             score += 0.1

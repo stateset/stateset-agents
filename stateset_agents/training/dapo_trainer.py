@@ -15,8 +15,9 @@ GitHub: https://github.com/BytedTsinghua-SIA/DAPO
 
 import asyncio
 import logging
-from collections.abc import Awaitable, Callable
-from typing import Any, cast
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
 
 import numpy as np
 import torch
@@ -24,6 +25,15 @@ import torch
 from . import objectives, rl_losses
 from .dapo_config import DAPOConfig
 from .runtime_state import TrainingRuntime, validate_training_config
+from .spine.algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
+)
+from .spine.rollouts import PromptGroupRollouts, VLLMEngineMixin
+from .spine.scoring import CallableScorer, ScoredReply
+from .spine.update import UpdatePasses, batch_shares, share_size
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
@@ -40,79 +50,6 @@ DAPO_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
-
-try:
-    import wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = cast(Any, None)
-
-try:
-    from peft import LoraConfig, TaskType, get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = cast(Any, None)
-    TaskType = cast(Any, None)
-    get_peft_model = cast(Any, None)
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_dapo_loaded = False
-AutoModelForCausalLM: Any = None
-AutoTokenizer: Any = None
-get_cosine_schedule_with_warmup: Any = None
-get_constant_schedule: Any = None
-
-
-def _load_transformers_dapo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_dapo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup, get_constant_schedule
-    if _transformers_dapo_loaded:
-        return True
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_dapo_loaded = True
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_constant_schedule as _get_constant
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        get_constant_schedule = _get_constant
-        _transformers_dapo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_transformers_dapo() -> None:
-    """Ensure transformers components are available before model loading."""
-    if not _load_transformers_dapo():
-        raise ImportError(
-            "transformers is required for DAPO training. "
-            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
-        )
-
-
-def _require_peft() -> None:
-    """Ensure PEFT is available before using LoRA features."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for DAPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for DAPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
-
 
 # Lazy import vLLM backend to avoid torch/torchvision compatibility issues
 # vllm imports transformers which imports torchvision at module level
@@ -147,20 +84,13 @@ def _load_vllm_backend() -> bool:
 
 
 class DAPOModelManager(SharedModelManager):
-    """Manages model loading for DAPO training"""
+    """Manages model loading for DAPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "DAPO"
 
     def __init__(self, config: DAPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        _require_transformers_dapo()
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise ImportError("transformers exports are unavailable for DAPO")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
 
 
 class DAPORewardShaper:
@@ -299,7 +229,7 @@ class DynamicSamplingBuffer:
         return len(self.buffer)
 
 
-class DAPOTrainer(TrainingRuntime):
+class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
     """
     Decoupled Clip and Dynamic Sampling Policy Optimization (DAPO) Trainer
 
@@ -330,26 +260,15 @@ class DAPOTrainer(TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_dapo()
-
-        validate_training_config(config)
+        validate_training_config(config, DAPOConfig)
         self.config = config
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(
             getattr(config, "logprob_dtype", None)
         )
         # The DAPO objective (Clip-Higher, token- or sequence-level
-        # aggregation) as one declarative PolicyObjective.
-        self._objective = objectives.resolve_objective(
-            config,
-            "dapo",
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("token", "sequence", "sequence_token"),
-            clip_low=float(config.clip_eps_low),
-            clip_high=float(config.clip_eps_high),
-            aggregate="token_mean" if config.use_token_level_loss else "seq_mean",
-        )
+        # aggregation) as one declarative PolicyObjective (DAPO_SPEC).
+        self._objective = self._resolve_algorithm_objective()
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -359,12 +278,11 @@ class DAPOTrainer(TrainingRuntime):
         except StopIteration:
             self.device = torch.device("cpu")
 
-        # vLLM generator for fast generation
-        self.vllm_generator: Any | None = None
-        self._vllm_initialized = False
-
-        # Setup vLLM if configured
-        if config.use_vllm and VLLM_BACKEND_AVAILABLE:
+        # vLLM generator for fast generation (spine VLLMEngineMixin).
+        # _setup_vllm loads the backend itself (VLLM_BACKEND_AVAILABLE is
+        # only known after loading), falling back to HuggingFace without it.
+        self._reset_vllm_state()
+        if config.use_vllm:
             self._setup_vllm()
 
         # Reward shaper for length penalty
@@ -394,16 +312,11 @@ class DAPOTrainer(TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Constant scheduler (DAPO uses constant LR)
-        if get_constant_schedule is not None:
-            self.scheduler = get_constant_schedule(self.optimizer)
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer,
-                factor=1.0,
-                total_iters=config.num_episodes * config.num_epochs,
-            )
+        # ``lr_scheduler_type`` (DAPOConfig's default: "constant", as in the
+        # paper) over every update pass of the run (num_episodes x
+        # num_gradient_updates, the spine budget). It used to be constant
+        # whatever the config asked for.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics
         self.metrics_history: dict[str, list[float]] = {
@@ -419,70 +332,23 @@ class DAPOTrainer(TrainingRuntime):
         # includes groups later rejected by dynamic sampling.
         self.rollout_samples_total = 0
 
+    def _rollout_engine(self) -> Any:
+        """DAPO's own vLLM engine (``VLLMEngineMixin``)."""
+        return self
+
     async def _compute_reward(self, prompt: str, response: str) -> float:
-        """Support sync or async reward callables."""
-        reward = self.reward_fn(prompt, response)
-        if asyncio.iscoroutine(reward):
-            reward_value = await cast(Awaitable[float], reward)
-        else:
-            reward_value = cast(float, reward)
-        return float(reward_value)
+        """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
+        return await self._score_reply(prompt, response)
+
+    _vllm_label = "DAPO"
+    _vllm_init_exceptions = DAPO_EXCEPTIONS
 
     def _setup_vllm(self) -> None:
-        """Setup vLLM generator"""
-        logger.info("Setting up vLLM for fast DAPO generation...")
-
-        # Load vLLM backend lazily
+        """Create the vLLM engine (started by ``initialize_vllm``)."""
         if not _load_vllm_backend():
             logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
             return
-
-        vllm_config_cls = VLLMConfig
-        vllm_generator_cls = VLLMGenerator
-        if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning(
-                "vLLM backend exports unavailable, using HuggingFace fallback"
-            )
-            return
-
-        vllm_config = vllm_config_cls(
-            model_name=self.config.model_name,
-            revision=getattr(self.config, "model_revision", None),
-            gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
-            tensor_parallel_size=self.config.vllm_tensor_parallel_size,
-            enable_prefix_caching=self.config.vllm_enable_prefix_caching,
-            max_tokens=self.config.max_completion_length,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            dtype="bfloat16" if self.config.bf16 else "float16",
-        )
-
-        self.vllm_generator = vllm_generator_cls(vllm_config)
-
-    async def initialize_vllm(self) -> bool:
-        """Initialize vLLM engine"""
-        if self.vllm_generator is None:
-            return False
-
-        if self._vllm_initialized:
-            return True
-
-        try:
-            success = bool(await self.vllm_generator.initialize())
-            self._vllm_initialized = success
-            if success:
-                logger.info(
-                    "vLLM initialized for DAPO - generation will be 5-20x faster!"
-                )
-            return success
-        except DAPO_EXCEPTIONS as e:
-            logger.warning(f"Failed to initialize vLLM: {e}")
-            return False
-
-    @property
-    def using_vllm(self) -> bool:
-        """Check if vLLM is being used"""
-        return self._vllm_initialized and self.vllm_generator is not None
+        self._install_vllm_generator(VLLMConfig, VLLMGenerator)
 
     def compute_token_log_probs(
         self,
@@ -518,7 +384,10 @@ class DAPOTrainer(TrainingRuntime):
         ``rl_losses.safe_exp_ratio``) so a single wildly off-policy token
         cannot overflow to inf and make the whole batch's loss non-finite.
         """
-        return rl_losses.safe_exp_ratio(current_log_probs - old_log_probs)
+        ratios: torch.Tensor = rl_losses.safe_exp_ratio(
+            current_log_probs - old_log_probs
+        )
+        return ratios
 
     def compute_group_advantages(self, rewards: torch.Tensor) -> torch.Tensor:
         """Advantages for one group of rewards [group_size] using the
@@ -530,7 +399,10 @@ class DAPOTrainer(TrainingRuntime):
             rewards.numel(), dtype=torch.long, device=rewards.device
         )
         objective = getattr(self, "_objective", None) or objectives.OBJECTIVES["dapo"]
-        return objectives.compute_advantages(rewards, group_ids, objective)
+        advantages: torch.Tensor = objectives.compute_advantages(
+            rewards, group_ids, objective
+        )
+        return advantages
 
     def compute_dapo_loss_from_log_probs(
         self,
@@ -571,7 +443,10 @@ class DAPOTrainer(TrainingRuntime):
         per_token = objectives.surrogate(
             self._objective, importance_ratios, advantages, importance_ratios
         )
-        return objectives.aggregate(self._objective, per_token, response_mask)
+        loss: torch.Tensor = objectives.aggregate(
+            self._objective, per_token, response_mask
+        )
+        return loss
 
     async def generate_group_responses(
         self,
@@ -695,26 +570,21 @@ class DAPOTrainer(TrainingRuntime):
         Continues generating until we have enough non-trivial samples
         (accuracy not 0 or 1).
         """
-        collected_samples: list[dict[str, Any]] = []
-        prompts_processed = 0
-        prompts_filtered = 0
 
-        prompt_idx = 0
-        while len(collected_samples) < target_batch_size and prompt_idx < len(prompts):
-            prompt = prompts[prompt_idx % len(prompts)]
-            prompt_idx += 1
-            prompts_processed += 1
-
-            # Generate group
-            group_responses = await self.generate_group_responses(prompt)
-
+        async def build(
+            prompt: str, group_responses: list[dict[str, Any]]
+        ) -> dict[str, Any] | None:
             # Score the group first: without a verifier, accuracy and the
-            # dynamic-sampling filter are both derived from these rewards.
-            base_rewards = []
-            for resp in group_responses:
-                base_reward = await self._compute_reward(prompt, resp["response"])
+            # dynamic-sampling filter are both derived from these rewards. A
+            # reply whose reward is a fallback is left out (never trained on).
+            group_responses, base_rewards = await rollouts.score_group(
+                group_responses,
+                lambda resp: self._score_reply_checked(prompt, resp["response"]),
+            )
+            if not group_responses:
+                return None
+            for resp, base_reward in zip(group_responses, base_rewards, strict=True):
                 resp["reward"] = base_reward
-                base_rewards.append(base_reward)
 
             accuracy = self.compute_group_accuracy(prompt, group_responses)
 
@@ -727,8 +597,7 @@ class DAPOTrainer(TrainingRuntime):
                 else:
                     informative = max(base_rewards) - min(base_rewards) > 1e-8
                 if not informative:
-                    prompts_filtered += 1
-                    continue
+                    return None
 
             # Apply overlong reward shaping
             rewards = []
@@ -759,8 +628,7 @@ class DAPOTrainer(TrainingRuntime):
                     batch_input_ids, batch_attention_mask, batch_response_mask
                 )
 
-            # Store sample
-            sample = {
+            return {
                 "prompt": prompt,
                 "responses": group_responses,
                 "rewards": rewards,
@@ -768,8 +636,14 @@ class DAPOTrainer(TrainingRuntime):
                 "accuracy": accuracy,
                 "old_token_log_probs": old_token_log_probs,
             }
-            collected_samples.append(sample)
 
+        rollouts = PromptGroupRollouts(self.generate_group_responses, label="DAPO")
+        collected_samples = await rollouts.collect(
+            prompts, build, limit=target_batch_size
+        )
+        self._step_reward_fallbacks = rollouts.fallbacks.flagged
+        prompts_processed = rollouts.prompts_processed
+        prompts_filtered = rollouts.groups_dropped
         filter_ratio = prompts_filtered / max(prompts_processed, 1)
         logger.debug(
             f"Dynamic sampling: {prompts_filtered}/{prompts_processed} filtered ({filter_ratio:.1%})"
@@ -782,7 +656,7 @@ class DAPOTrainer(TrainingRuntime):
         prompts: list[str],
     ) -> dict[str, float]:
         """
-        Execute one DAPO training step.
+        Execute one DAPO training step (:data:`DAPO_SPEC` on the spine step).
 
         1. Collect samples with dynamic sampling
         2. For each of ``num_gradient_updates`` inner updates:
@@ -790,132 +664,164 @@ class DAPOTrainer(TrainingRuntime):
            b. Compute importance ratios against the rollout-time policy
            c. Apply Clip-Higher
            d. Accumulate the token-level loss over the whole batch
-           e. Take one optimizer step
+           e. Take one optimizer step (only on finite gradients; see
+              ``config.nonfinite_grad_policy``)
         """
-        self.model.train()
-
-        # Collect samples with dynamic sampling
-        samples, filter_ratio = await self.collect_samples_with_dynamic_sampling(
-            prompts, self.config.mini_batch_size
-        )
-
-        if len(samples) == 0:
-            logger.warning("No valid samples after dynamic sampling")
-            return {"policy_loss": 0.0, "filtered_ratio": 1.0}
-
-        total_loss = 0.0
-        all_rewards: list[float] = []
-        all_accuracies: list[float] = []
-        all_seq_lengths: list[int] = []
-        num_updates = 0
-
-        # Freeze each group's batch tensors and old log-probs once.
-        prepared = []
-        for sample in samples:
-            responses = sample["responses"]
-
-            all_rewards.extend(sample["rewards"])
-            all_accuracies.append(sample["accuracy"])
-            all_seq_lengths.extend([r["sequence_length"] for r in responses])
-
-            (
-                batch_input_ids,
-                batch_attention_mask,
-                batch_response_mask,
-            ) = self._build_batch_tensors(responses)
-
-            # Old log probs: prefer the ones frozen at rollout time (before any
-            # inner updates could have moved the policy). Fall back to computing
-            # them here once, before the inner loop, for backward compatibility
-            # with callers that don't populate this key.
-            old_token_log_probs = sample.get("old_token_log_probs")
-            if old_token_log_probs is None:
-                with torch.no_grad():
-                    old_token_log_probs, _ = self.compute_token_log_probs(
-                        batch_input_ids, batch_attention_mask, batch_response_mask
-                    )
-            prepared.append(
-                (
-                    batch_input_ids,
-                    batch_attention_mask,
-                    batch_response_mask,
-                    old_token_log_probs.detach(),
-                    sample["advantages"],
-                )
-            )
-
-        # The objective aggregates over the whole batch (DAPO: token-mean over
-        # every response token of every group). Each group's loss is the
-        # aggregate over its own rows, so weighting it by its share of the
-        # batch's tokens (or rows) makes the accumulated gradient exactly the
-        # batch-level loss, with one optimizer step per inner update.
-        by_tokens = self._objective.aggregate == "token_mean"
-        sizes = [
-            float(p[2][:, 1:].sum()) if by_tokens else float(p[2].shape[0])
-            for p in prepared
-        ]
-        total_size = sum(sizes)
-
-        # Multiple gradient updates per rollout batch (mu updates)
-        for _ in range(max(1, self.config.num_gradient_updates)):
-            self.optimizer.zero_grad()
-            batch_loss = 0.0
-            for (ids, attn, resp_mask, old_lp, advantages), size in zip(
-                prepared, sizes, strict=True
-            ):
-                if size <= 0:
-                    continue
-                current_token_log_probs, _ = self.compute_token_log_probs(
-                    ids, attn, resp_mask
-                )
-                # Clip-Higher surrogate + aggregation through the objective.
-                loss, _objective_metrics = self.compute_dapo_loss_from_log_probs(
-                    current_token_log_probs,
-                    old_lp,
-                    advantages,
-                    resp_mask[:, 1:],  # Shift for next-token prediction
-                )
-                weighted = loss * (size / total_size)
-                weighted.backward()
-                batch_loss += weighted.item()
-
-            # Gradient clipping
-            _params = list(self.model.parameters())
-            if _params:
-                torch.nn.utils.clip_grad_norm_(_params, self.config.max_grad_norm)
-
-            # Update
-            self.optimizer.step()
-            self.scheduler.step()
-
-            total_loss += batch_loss
-            num_updates += 1
-
-        self.global_step += 1
-
-        # Compute metrics
-        metrics = {
-            "policy_loss": float(total_loss / max(num_updates, 1)),
-            "average_reward": float(np.mean(all_rewards)) if all_rewards else 0.0,
-            "accuracy": float(np.mean(all_accuracies)) if all_accuracies else 0.0,
-            "filtered_ratio": filter_ratio,
-            "avg_sequence_length": (
-                float(np.mean(all_seq_lengths)) if all_seq_lengths else 0.0
-            ),
-            "learning_rate": float(self.config.learning_rate),
-            "global_step": float(self.global_step),
-        }
-
-        # Store metrics
-        for key in ["policy_loss", "average_reward", "accuracy", "filtered_ratio"]:
-            if key in self.metrics_history:
-                self.metrics_history[key].append(metrics[key])
-
-        return metrics
+        return await run_algorithm_step(self, self.algorithm, prompts)
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Publish a complete resumable checkpoint."""
         self.save_runtime_checkpoint(output_dir)
+
+
+@dataclass
+class _DAPOStep:
+    """One DAPO step's rollout data (for the update shares and metrics)."""
+
+    filter_ratio: float
+    rewards: list[float] = field(default_factory=list)
+    accuracies: list[float] = field(default_factory=list)
+    sequence_lengths: list[int] = field(default_factory=list)
+    shares: list[float] = field(default_factory=list)
+
+
+async def _dapo_score(
+    trainer: DAPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> float:
+    return await CallableScorer(trainer.reward_fn).score(prompt, response)
+
+
+async def _dapo_score_checked(
+    trainer: DAPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
+async def _dapo_rollouts(trainer: DAPOTrainer, prompts: list[Any]) -> StepRollouts:
+    """Dynamic-sampling rollouts, each group's batch tensors and old-policy
+    log-probs frozen once, and its token (or row) share of the batch."""
+    samples, filter_ratio = await trainer.collect_samples_with_dynamic_sampling(
+        prompts, trainer.config.mini_batch_size
+    )
+    step = _DAPOStep(filter_ratio)
+    fallbacks = int(getattr(trainer, "_step_reward_fallbacks", 0))
+    if len(samples) == 0:
+        logger.warning("No valid samples after dynamic sampling")
+        return StepRollouts(info=step, reward_fallbacks=fallbacks)
+
+    prepared = []
+    for sample in samples:
+        responses = sample["responses"]
+
+        step.rewards.extend(sample["rewards"])
+        step.accuracies.append(sample["accuracy"])
+        step.sequence_lengths.extend([r["sequence_length"] for r in responses])
+
+        (
+            batch_input_ids,
+            batch_attention_mask,
+            batch_response_mask,
+        ) = trainer._build_batch_tensors(responses)
+
+        # Old log probs: prefer the ones frozen at rollout time (before any
+        # inner updates could have moved the policy). Fall back to computing
+        # them here once, before the inner loop, for backward compatibility
+        # with callers that don't populate this key.
+        old_token_log_probs = sample.get("old_token_log_probs")
+        if old_token_log_probs is None:
+            with torch.no_grad():
+                old_token_log_probs, _ = trainer.compute_token_log_probs(
+                    batch_input_ids, batch_attention_mask, batch_response_mask
+                )
+        prepared.append(
+            (
+                batch_input_ids,
+                batch_attention_mask,
+                batch_response_mask,
+                old_token_log_probs.detach(),
+                sample["advantages"],
+            )
+        )
+
+    # The objective aggregates over the whole batch (DAPO: token-mean over
+    # every response token of every group). Each group's loss is the
+    # aggregate over its own rows, so weighting it by its share of the
+    # batch's tokens (or rows) makes the accumulated gradient exactly the
+    # batch-level loss, with one optimizer step per inner update.
+    step.shares = batch_shares(
+        [share_size(group[2], trainer._objective.aggregate) for group in prepared]
+    )
+    return StepRollouts(items=prepared, info=step, reward_fallbacks=fallbacks)
+
+
+def _dapo_group_loss(
+    trainer: DAPOTrainer,
+    rollouts: StepRollouts,
+    _pass: int,
+    _index: int,
+    group: tuple[Any, ...],
+) -> Any:
+    ids, attn, resp_mask, old_lp, advantages = group
+    current_token_log_probs, _ = trainer.compute_token_log_probs(ids, attn, resp_mask)
+    # Clip-Higher surrogate + aggregation through the objective.
+    loss, _objective_metrics = trainer.compute_dapo_loss_from_log_probs(
+        current_token_log_probs,
+        old_lp,
+        advantages,
+        resp_mask[:, 1:],  # Shift for next-token prediction
+    )
+    return loss
+
+
+def _dapo_metrics(
+    trainer: DAPOTrainer, rollouts: StepRollouts, passes: UpdatePasses | None
+) -> dict[str, Any]:
+    if passes is None:
+        return {"policy_loss": 0.0, "filtered_ratio": 1.0}
+    step: _DAPOStep = rollouts.info
+    metrics = {
+        "policy_loss": float(sum(passes.losses) / max(len(passes.losses), 1)),
+        "average_reward": float(np.mean(step.rewards)) if step.rewards else 0.0,
+        "accuracy": float(np.mean(step.accuracies)) if step.accuracies else 0.0,
+        "filtered_ratio": step.filter_ratio,
+        "avg_sequence_length": (
+            float(np.mean(step.sequence_lengths)) if step.sequence_lengths else 0.0
+        ),
+        "learning_rate": float(trainer.config.learning_rate),
+        "global_step": float(trainer.global_step),
+        "optimizer_updates": float(passes.committed),
+    }
+
+    # Store metrics
+    for key in ["policy_loss", "average_reward", "accuracy", "filtered_ratio"]:
+        if key in trainer.metrics_history:
+            trainer.metrics_history[key].append(metrics[key])
+    return metrics
+
+
+#: DAPO: Clip-Higher with token-level aggregation over dynamic-sampling
+#: rollouts; one backward per group weighted by its token share, ``mu``
+#: (``num_gradient_updates``) passes, ``global_step`` counting train steps.
+DAPO_SPEC = AlgorithmSpec(
+    name="dapo",
+    objective="dapo",
+    objective_options=lambda config: {
+        "supported_ratios": ("token", "sequence", "sequence_token"),
+        "clip_low": float(config.clip_eps_low),
+        "clip_high": float(config.clip_eps_high),
+        "aggregate": "token_mean" if config.use_token_level_loss else "seq_mean",
+    },
+    counter="train_steps",
+    update_mode="chunked",
+    passes=lambda config: max(1, config.num_gradient_updates),
+    score=_dapo_score,
+    score_checked=_dapo_score_checked,
+    rollouts=_dapo_rollouts,
+    group_loss=_dapo_group_loss,
+    metrics=_dapo_metrics,
+    update_options=lambda trainer, rollouts: {"shares": rollouts.info.shares},
+)
+DAPOTrainer.algorithm = DAPO_SPEC
 
 
 from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo
@@ -923,6 +829,7 @@ from .dapo_entrypoints import train_reasoning_with_dapo, train_with_dapo
 # Export
 __all__ = [
     "DAPOConfig",
+    "DAPO_SPEC",
     "DAPOTrainer",
     "DAPORewardShaper",
     "DynamicSamplingBuffer",

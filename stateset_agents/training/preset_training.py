@@ -4,10 +4,14 @@ Scenario-specific training convenience helpers.
 
 from __future__ import annotations
 
+import logging
 from copy import deepcopy
 from typing import Any
 
 from stateset_agents.core.agent import Agent
+from stateset_agents.core.grounding import log_heuristic_reward_notice
+
+logger = logging.getLogger(__name__)
 
 
 async def train_customer_service_agent(
@@ -36,6 +40,9 @@ async def train_customer_service_agent(
 
     environment = ConversationEnvironment(**env_config)
     reward_fn = create_customer_service_reward()
+    log_heuristic_reward_notice(
+        logger, "This preset", "create_customer_service_reward()"
+    )
 
     return await train(
         agent=agent,
@@ -68,6 +75,7 @@ async def train_tutoring_agent(
         scenario["subject"] = subject
     environment = ConversationEnvironment(**env_config)
     reward_fn = create_tutoring_reward()
+    log_heuristic_reward_notice(logger, "This preset", "create_tutoring_reward()")
 
     return await train(
         agent=agent,
@@ -103,6 +111,7 @@ async def train_task_agent(
     environment = TaskEnvironment(success_criteria=success_criteria, **env_config)
     task_criteria = env_config["tasks"][0] if env_config["tasks"] else {}
     reward_fn = create_task_agent_reward(task_criteria)
+    log_heuristic_reward_notice(logger, "This preset", "create_task_agent_reward()")
 
     return await train(
         agent=agent,

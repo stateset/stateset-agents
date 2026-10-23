@@ -17,6 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.integration._spawn_budget import spawn_budget
+
 pytestmark = pytest.mark.integration
 
 
@@ -287,7 +289,7 @@ def _worker(rank, directory):
         dist.destroy_process_group()
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(spawn_budget(120))
 def test_ddp_rollout_populations_callbacks_and_loggers(tmp_path):
     torch = pytest.importorskip("torch")
     if (
@@ -299,10 +301,12 @@ def test_ddp_rollout_populations_callbacks_and_loggers(tmp_path):
         _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
     )
     try:
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + spawn_budget(90)
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("rollout metrics contract exceeded 90 seconds")
+                pytest.fail(
+                    f"rollout metrics contract exceeded {spawn_budget(90):.0f} seconds"
+                )
     finally:
         for p in context.processes:
             if p.is_alive():

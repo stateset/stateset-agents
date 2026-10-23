@@ -6,6 +6,7 @@ import math
 from copy import deepcopy
 from typing import Any
 
+from .config import config_value
 from .diagnostics import apply_diagnostics, capture_diagnostics, prepare_diagnostics
 
 
@@ -86,7 +87,7 @@ def prepare_learning_state(trainer: Any, checkpoint: dict[str, Any]) -> dict[str
     if saved is None:
         if (
             hasattr(trainer, "_global_reward_mean")
-            and getattr(trainer.config, "baseline_type", None) == "global_mean"
+            and config_value(trainer.config, "baseline_type") == "global_mean"
         ):
             raise ValueError("Legacy checkpoint has no global reward baseline state")
         baseline = (

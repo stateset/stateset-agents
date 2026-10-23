@@ -7,6 +7,7 @@ metrics collection, log correlation, and performance monitoring.
 
 import asyncio
 import functools
+import logging
 import threading
 import uuid
 from collections import defaultdict, deque
@@ -16,6 +17,16 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, cast
+
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.observability",
+    removal="0.71.0",
+    replacement="stateset_agents.api.observability (tracing)",
+)
+
+logger = logging.getLogger(__name__)
 
 # Optional imports for enhanced functionality
 try:
@@ -229,16 +240,24 @@ class ObservabilityTracer:
         """Setup OpenTelemetry tracing"""
         trace.set_tracer_provider(TracerProvider())
 
-        # Setup exporters
-        if enable_jaeger:
-            jaeger_exporter = JaegerExporter(endpoint=jaeger_endpoint)
-            span_processor = BatchSpanProcessor(jaeger_exporter)
-            trace.get_tracer_provider().add_span_processor(span_processor)
+        # The global provider is set once per process, so another component may
+        # already own it; only an SDK provider accepts span processors.
+        provider = trace.get_tracer_provider()
+        if not isinstance(provider, TracerProvider):
+            if enable_jaeger or enable_otlp:
+                logger.warning(
+                    "Global tracer provider %s does not accept span processors; "
+                    "span exporters are disabled",
+                    type(provider).__name__,
+                )
+        else:
+            if enable_jaeger:
+                jaeger_exporter = JaegerExporter(endpoint=jaeger_endpoint)
+                provider.add_span_processor(BatchSpanProcessor(jaeger_exporter))
 
-        if enable_otlp:
-            otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
-            span_processor = BatchSpanProcessor(otlp_exporter)
-            trace.get_tracer_provider().add_span_processor(span_processor)
+            if enable_otlp:
+                otlp_exporter = OTLPSpanExporter(endpoint=otlp_endpoint)
+                provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
 
         self.tracer = trace.get_tracer(self.service_name)
 

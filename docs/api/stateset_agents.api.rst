@@ -7,7 +7,6 @@ Subpackages
 .. toctree::
    :maxdepth: 4
 
-   stateset_agents.api.grpo
    stateset_agents.api.routers
    stateset_agents.api.services
 
@@ -106,14 +105,6 @@ stateset\_agents.api.middleware module
 --------------------------------------
 
 .. automodule:: stateset_agents.api.middleware
-   :members:
-   :undoc-members:
-   :show-inheritance:
-
-stateset\_agents.api.models module
-----------------------------------
-
-.. automodule:: stateset_agents.api.models
    :members:
    :undoc-members:
    :show-inheritance:

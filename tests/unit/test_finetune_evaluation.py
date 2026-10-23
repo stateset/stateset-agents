@@ -186,6 +186,38 @@ def test_cases_fail_closed_without_writes_or_private_errors(tmp_path, problem):
 
 
 @pytest.mark.parametrize(
+    "turn",
+    [
+        "private\u00a0\u00a0customer",  # case + non-breaking, repeated spaces
+        "\uff30\uff32\uff29\uff36\uff21\uff34\uff25 CUSTOMER",  # full-width
+        "  PRIVATE\n\tCUSTOMER ",
+    ],
+)
+def test_normalized_overlap_with_training_text_is_rejected(tmp_path, turn):
+    """Only byte-identical-after-strip().casefold() repeats were caught."""
+    run, config = make_evaluation(tmp_path)
+    source = Path(config.cases)
+    document = json.loads(source.read_text())
+    document["cases"][0]["user_turns"] = [turn]
+    source.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="overlap retained training text"):
+        evaluation.plan_evaluation(run, config)
+
+
+def test_normalized_duplicate_initial_questions_are_rejected(tmp_path):
+    run, config = make_evaluation(tmp_path)
+    source = Path(config.cases)
+    document = json.loads(source.read_text())
+    first = document["cases"][0]["user_turns"][0]
+    document["cases"][1]["user_turns"] = [
+        "\u00a0" + first.upper().replace(" ", "  ") + " "
+    ]
+    source.write_text(json.dumps(document))
+    with pytest.raises(ValueError, match="must be distinct"):
+        evaluation.plan_evaluation(run, config)
+
+
+@pytest.mark.parametrize(
     "changes",
     [
         {"judge_revision": "main"},
@@ -224,7 +256,8 @@ def test_launch_requires_queue_and_exact_once_receipt(tmp_path, monkeypatch):
         evaluation.launch_evaluation(path, expected_plan_sha256=review.sha256)
     assert len(calls) == 1
     assert calls[0][0][-2:] == ["--supervise", str(path)]
-    assert calls[0][1]["start_new_session"]
+    detached = ws.detached_process_options()
+    assert {key: calls[0][1].get(key) for key in detached} == detached
     assert not (review.run / "stop.json").exists()
 
 
@@ -269,6 +302,78 @@ def test_supervisor_preserves_queue_argv_and_bounds_entire_pipeline(
     assert kwargs["env"]["HF_HUB_OFFLINE"] == "1"
     assert evaluation.evaluation_status(path)["queue"]["job_id"] == "abcdef123456"
     assert (path / "queue-events.jsonl").stat().st_mode & 0o777 == 0o600
+
+
+def _owner(pid, token):
+    return {"pid": pid, "process_token": token}
+
+
+@pytest.fixture
+def controlled_owners(monkeypatch):
+    """Decide owner liveness deterministically; never inspect a real PID."""
+    alive = {}
+    monkeypatch.setattr(ws, "sys", type("Sys", (), {"platform": "linux"})())
+    monkeypatch.setattr(ws, "process_token", lambda pid: alive.get(pid))
+    return alive
+
+
+@pytest.mark.parametrize(
+    "status,record", [("queued", "supervisor.json"), ("running", "execution.json")]
+)
+def test_lost_evaluation_owner_is_interrupted_not_active_forever(
+    tmp_path, controlled_owners, status, record
+):
+    """After a reboot or OOM kill nobody will ever finish or fail the job."""
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    ws.write_json(path / "state.json", {"status": status})
+    ws.write_json(path / record, _owner(4242, "owner-start"))
+    controlled_owners[4242] = "owner-start"
+    assert evaluation.evaluation_status(path)["state"]["status"] == status
+    assert evaluation.evaluation_status(path)["state"]["execution_unconfirmed"] is False
+
+    controlled_owners.pop(4242)
+    state = evaluation.evaluation_status(path)["state"]
+    assert state["status"] == "interrupted"
+    assert state["execution_unconfirmed"] is True
+    assert "Evaluation incomplete" in state["error"]
+    assert ws.read_json(path / "state.json")["status"] == status  # derived only
+    panel = EvaluationPanel(review.run)
+    panel.selected, panel.mode = evaluation.evaluation_status(path), "detail"
+    assert "Supervisor lost" in "\n".join(panel.lines())
+    panel.handle("s")
+    assert panel.mode == "stop"
+
+
+def test_unclaimed_evaluation_launch_is_interrupted_after_grace_and_stoppable(
+    tmp_path, controlled_owners
+):
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    assert evaluation.evaluation_status(path)["state"]["status"] == "prepared"
+    submitted = os.stat(path / "launch.lock").st_mtime - 600
+    os.utime(path / "launch.lock", (submitted, submitted))
+    assert evaluation.evaluation_status(path)["state"]["status"] == "interrupted"
+    evaluation.stop_evaluation(path, expected_plan_sha256=review.sha256)
+    assert ws.read_json(path / "state.json")["status"] == "cancelled"
+
+
+def test_second_supervisor_cannot_claim_or_change_a_supervised_evaluation(
+    tmp_path, monkeypatch
+):
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    ws.write_json(path / "state.json", {"status": "queued"})
+    original = _owner(4242, "first-supervisor")
+    ws.write_json(path / "supervisor.json", original)
+    monkeypatch.setattr(worker, "queue_executable", lambda: "/queue")
+    monkeypatch.setattr(
+        worker.subprocess, "call", lambda *_a, **_k: pytest.fail("No second queue job")
+    )
+    assert worker.supervise(path) == 1
+    assert ws.read_json(path / "supervisor.json") == original
+    assert ws.read_json(path / "state.json") == {"status": "queued"}
+    assert not (path / "command.json").exists()
 
 
 def test_queue_progress_is_bounded_private_and_survives_partial_events(tmp_path):
@@ -900,3 +1005,35 @@ def test_real_terminal_edits_and_reviews_evaluation_without_submitting(tmp_path,
         if process.poll() is None:
             process.kill()
             process.wait()
+
+
+@pytest.mark.parametrize("receipt", ["bound", "missing", "other-plan"])
+def test_queue_exit_after_a_committed_evaluation_keeps_its_success(
+    tmp_path, monkeypatch, receipt
+):
+    """A teardown or queue error after the executor committed is not a failure."""
+    path, review = prepared(tmp_path)
+    ws.write_json(path / "launch.lock", {"plan_sha256": review.sha256})
+    monkeypatch.setattr(worker, "queue_executable", lambda: "/queue")
+
+    def call(argv, **kwargs):
+        if receipt != "missing":
+            plan_sha = (
+                review.sha256 if receipt == "bound" else "0" * 64
+            )  # result.json binds the reviewed plan by hash
+            ws.write_json(
+                path / "result.json",
+                {"schema_version": 1, "evaluation_plan_sha256": plan_sha},
+            )
+        ws.write_json(path / "state.json", {"status": "succeeded"})
+        return 3
+
+    monkeypatch.setattr(worker.subprocess, "call", call)
+    assert worker.supervise(path) == 3
+    state = evaluation.evaluation_status(path)["state"]
+    if receipt == "bound":
+        assert state["status"] == "succeeded"
+        assert state["teardown_error"] == "queue_exit"
+        assert state["teardown_exit_code"] == 3
+    else:
+        assert state["status"] == "failed" and state["exit_code"] == 3

@@ -82,7 +82,8 @@ def test_phone_filters_paths_and_evaluation_editor_preserve_all_digits(
     studio = tui.Studio(tmp_path)
     studio.overlay = overlay
     if overlay == "logs":
-        studio.log_search_edit = ""
+        studio.log_viewer = tui.LogViewer(tmp_path)
+        studio.log_viewer.search_edit = ""
     if overlay == "evaluation":
         studio.evaluation_panel = EvaluationPanel(tmp_path / "absent")
         studio.evaluation_panel.mode = "edit"
@@ -91,9 +92,9 @@ def test_phone_filters_paths_and_evaluation_editor_preserve_all_digits(
     for key in "208394":
         studio.handle(key)
     if overlay == "files":
-        value = studio.file_search
+        value = studio.file_picker.search
     elif overlay == "logs":
-        value = studio.log_search_edit
+        value = studio.log_viewer.search_edit
     elif overlay == "evaluation":
         value = studio.evaluation_panel.edit
     else:

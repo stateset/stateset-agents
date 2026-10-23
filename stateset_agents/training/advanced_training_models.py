@@ -6,10 +6,11 @@ from __future__ import annotations
 
 import math
 import time
-import warnings
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
+
+from .._deprecation import warn_deprecated
 
 
 class TrainingStatus(Enum):
@@ -263,11 +264,11 @@ __all__ = [
 def __getattr__(name: str) -> Any:
     """Serve the renamed ``TrainingJobSpec`` under its old name."""
     if name == "TrainingConfig":
-        warnings.warn(
-            "use TrainingJobSpec (TrainingConfig now refers only to "
-            "stateset_agents.training.config.TrainingConfig)",
-            DeprecationWarning,
-            stacklevel=2,
+        # TrainingConfig now refers only to training.config.TrainingConfig.
+        warn_deprecated(
+            f"{__name__}.TrainingConfig",
+            removal="0.71.0",
+            replacement=f"{__name__}.TrainingJobSpec",
         )
         return TrainingJobSpec
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

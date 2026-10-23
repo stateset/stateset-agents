@@ -22,6 +22,7 @@ import torch
 # Import framework components
 from stateset_agents.core.agent import Agent
 from stateset_agents.core.environment import ConversationEnvironment
+from stateset_agents.core.reward_context import normalize_turns
 from stateset_agents.core.trajectory import ConversationTurn, MultiTurnTrajectory
 from stateset_agents.exceptions import (
     ATTRIBUTE_VALUE_EXCEPTIONS as INPUT_GRADS_EXCEPTIONS,
@@ -35,7 +36,10 @@ from stateset_agents.exceptions import INFERENCE_EXCEPTIONS as VLLM_EXCEPTIONS
 from stateset_agents.exceptions import MODEL_IO_EXCEPTIONS as MODEL_LOAD_EXCEPTIONS
 from stateset_agents.rewards.multi_objective_reward import MultiObjectiveRewardFunction
 
+from .config import config_value
+from .quantization import QuantizationConfig, quantized_load_kwargs
 from .runtime_state import validate_training_config
+from .spine.scoring import ResponseScorer
 from .trl_grpo_config import TRLGRPOConfig
 
 logger = logging.getLogger(__name__)
@@ -45,18 +49,6 @@ GRPOConfig = None
 TRLGRPOTrainer = None
 
 
-def _try_import_wandb() -> Any | None:
-    try:
-        import wandb
-
-        return wandb
-    except ImportError:  # pragma: no cover - optional dependency
-        return None
-
-
-_wandb: Any | None = _try_import_wandb()
-wandb: Any | None = _wandb
-
 try:
     from datasets import Dataset as _DatasetType
 except ImportError:  # pragma: no cover - optional dependency
@@ -64,12 +56,17 @@ except ImportError:  # pragma: no cover - optional dependency
 Dataset: Any | None = _DatasetType
 
 try:
-    from peft import (
-        LoraConfig,
-        TaskType,
-        get_peft_model,
-        prepare_model_for_kbit_training,
-    )
+    from peft import LoraConfig as _LoraConfig
+    from peft import TaskType as _TaskType
+    from peft import get_peft_model as _get_peft_model
+    from peft import prepare_model_for_kbit_training as _prepare_kbit
+
+    # Optional-dependency slots: rebound to ``None`` when peft is missing and
+    # monkeypatched by tests, so they are deliberately typed ``Any``.
+    LoraConfig: Any = _LoraConfig
+    TaskType: Any = _TaskType
+    get_peft_model: Any = _get_peft_model
+    prepare_model_for_kbit_training: Any = _prepare_kbit
 except ImportError:  # pragma: no cover - optional dependency
     LoraConfig = None
     TaskType = None
@@ -140,15 +137,6 @@ def _require_transformers() -> None:
         raise ImportError(
             "transformers is required for TRL GRPO training. "
             "Install with `pip install stateset-agents[trl]` or `pip install transformers`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for TRL GRPO logging. "
-            "Install with `pip install stateset-agents[trl]` or `pip install wandb`."
         )
 
 
@@ -229,7 +217,7 @@ def trl_objective_kwargs(config: Any) -> dict[str, Any]:
     """
     from . import objectives
 
-    name = getattr(config, "objective", None)
+    name = config_value(config, "objective")
     if name is None:
         return {}
     if name not in _TRL_LOSS_TYPES:
@@ -305,9 +293,11 @@ def _trl_generation_batch_kwargs(config: Any) -> dict[str, Any]:
     short, round up to the smallest batch that is a multiple of both the
     group size and the per-step global batch.
     """
-    per_device = max(1, int(getattr(config, "per_device_train_batch_size", 1) or 1))
-    accumulation = max(1, int(getattr(config, "gradient_accumulation_steps", 1) or 1))
-    group = max(1, int(getattr(config, "num_generations", 1) or 1))
+    # The same fields the bridge hands TRL (``config.<field>``): sizing the
+    # batch from invented fallbacks disagreed with what TRL was given.
+    per_device = max(1, int(config_value(config, "per_device_train_batch_size") or 1))
+    accumulation = max(1, int(config.gradient_accumulation_steps))
+    group = max(1, int(config.num_generations))
     world = max(1, int(os.environ.get("WORLD_SIZE", "1") or 1))
     step_batch = per_device * world
     default = step_batch * accumulation
@@ -422,9 +412,7 @@ class TrajectoryGenerator:
             self.vllm_engine = LLM(
                 model=self.config.model_name,
                 revision=self.config.model_revision,
-                trust_remote_code=bool(
-                    getattr(self.config, "trust_remote_code", False)
-                ),
+                trust_remote_code=bool(config_value(self.config, "trust_remote_code")),
                 dtype="float16" if self.config.fp16 else "bfloat16",
                 gpu_memory_utilization=0.6,  # Reserve memory for training
             )
@@ -522,7 +510,7 @@ class ModelManager:
     """Manages model loading and LoRA configuration for TRL training"""
 
     def __init__(self, config: TRLGRPOConfig):
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = None
         self.tokenizer = None
@@ -567,9 +555,7 @@ class ModelManager:
 
             self.tokenizer = tokenizer_cls.from_pretrained(
                 self.config.model_name,
-                trust_remote_code=bool(
-                    getattr(self.config, "trust_remote_code", False)
-                ),
+                trust_remote_code=bool(config_value(self.config, "trust_remote_code")),
                 padding_side="left",  # Important for generation
                 revision=self.config.model_revision,
             )
@@ -586,20 +572,22 @@ class ModelManager:
                 ),
                 "device_map": "auto" if torch.cuda.is_available() else None,
                 "trust_remote_code": bool(
-                    getattr(self.config, "trust_remote_code", False)
+                    config_value(self.config, "trust_remote_code")
                 ),
                 "revision": self.config.model_revision,
             }
 
-            # Add quantization if specified
-            if self.config.use_8bit:
+            # Add quantization if specified: the shared QLoRA config
+            # (Transformers 5 removed the legacy load_in_* model kwargs).
+            if self.config.use_8bit or self.config.use_4bit:
                 _require_bitsandbytes()
                 _require_kbit_training_support()
-                model_kwargs["load_in_8bit"] = True
-            elif self.config.use_4bit:
-                _require_bitsandbytes()
-                _require_kbit_training_support()
-                model_kwargs["load_in_4bit"] = True
+                model_kwargs = quantized_load_kwargs(
+                    QuantizationConfig.from_trainer_flags(
+                        self.config, model_kwargs["torch_dtype"]
+                    ),
+                    model_kwargs,
+                )
 
             # Load base model
             base_model = model_cls.from_pretrained(
@@ -768,52 +756,57 @@ class TRLGRPORewardFunction:
         self.environment = environment
 
     async def compute_rewards(
-        self, completions: list[Any], prompts: list[str], **kwargs: Any
+        self, completions: list[Any], prompts: list[Any], **kwargs: Any
     ) -> list[float]:
-        """Compute rewards for generated completions"""
+        """Compute rewards for generated completions.
+
+        ``prompts`` are formatted strings ("User: ...\\nAssistant:") or, in
+        TRL's conversational format, lists of chat messages.
+        """
 
         rewards = []
         scenario_indices = kwargs.get("scenario_index")
         for position, (prompt, completion) in enumerate(
             zip(prompts, completions, strict=False)
         ):
-            # Parse the prompt to extract the user query
-            user_query = self._extract_user_query(prompt)
+            # A plain prompt is "User: ...\nAssistant:"; a conversational one
+            # is the chat messages so far.
+            if isinstance(prompt, str):
+                conversation: Any = self._extract_user_query(prompt)
+                user_query = conversation
+            else:
+                conversation = normalize_turns(prompt)
+                users = [t for t in conversation if t.role == "user"]
+                user_query = str(users[-1].content) if users else ""
 
-            # Create a conversation turn
             if isinstance(completion, list) and completion:
                 last = completion[-1]
                 completion = last.get("content", "") if isinstance(last, dict) else last
-            turn = ConversationTurn(
-                role="assistant", content=str(completion), metadata={"generated": True}
-            )
 
-            # Compute reward using the framework's reward model.
-            # Uses the canonical RewardFunction.compute_reward(turns, context) API
-            # documented in §4.1 of the whitepaper, so any RewardFunction subclass
-            # (not just MultiObjectiveRewardFunction) works.
-            context: dict[str, Any] = {"user_query": user_query}
+            # The shared single-response path (spine ResponseScorer, i.e.
+            # reward_context.score_response):
+            # [user, assistant] turns and the standard context, so any
+            # RewardFunction scores the completion as it would a one-turn
+            # episode and scenario labels reach it.
+            scenario: dict[str, Any] | None = None
             if isinstance(scenario_indices, list) and position < len(scenario_indices):
                 scenario_index = int(scenario_indices[position])
                 if 0 <= scenario_index < len(self.environment.scenarios):
-                    context.update(self.environment.scenarios[scenario_index])
+                    scenario = dict(self.environment.scenarios[scenario_index])
             else:
-                matching = next(
+                scenario = next(
                     (
-                        scenario
-                        for scenario in self.environment.scenarios
-                        if scenario.get("user_query") == user_query
+                        dict(candidate)
+                        for candidate in self.environment.scenarios
+                        if candidate.get("user_query") == user_query
                     ),
                     None,
                 )
-                if matching is not None:
-                    context.update(matching)
-            reward_info = await self.reward_model.compute_reward(
-                turns=[turn],
-                context=context,
+            rewards.append(
+                await ResponseScorer(self.reward_model).score(
+                    conversation, str(completion), scenario
+                )
             )
-
-            rewards.append(reward_info.total_reward)
 
         return rewards
 
@@ -840,7 +833,7 @@ class TRLGRPOTrainerWrapper:
         ref_model: Any | None = None,
     ) -> None:
         _require_trl_grpo()
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
@@ -928,7 +921,7 @@ class TRLGRPOTrainerWrapper:
         """Run training, resuming from ``config.resume_from_checkpoint`` if set."""
         logger.info("Starting TRL GRPO training...")
         self.trainer.train(
-            resume_from_checkpoint=getattr(self.config, "resume_from_checkpoint", None)
+            resume_from_checkpoint=config_value(self.config, "resume_from_checkpoint")
         )
 
     def save_model(self, output_dir: str) -> None:

@@ -14,6 +14,7 @@ from .checkpoint_publication import (
     checkpoint_write,
     validate_checkpoint_publication,
 )
+from .config import config_value
 from .learning_state import (
     apply_learning_state,
     capture_learning_state,
@@ -42,6 +43,10 @@ _NATIVE_COUNTER_KEYS = {
     "_next_episode": "_next_episode",
 }
 _NATIVE_REQUIRED_COUNTERS = set(_NATIVE_COUNTER_KEYS) - {"_next_episode"}
+#: Resume-bound config fields added after native checkpoints were first
+#: published: a checkpoint (or config) without one compares as its default,
+#: the strict setting, so older checkpoints keep resuming.
+_ADDED_CONFIG_DEFAULTS: dict[str, Any] = {"allow_unmasked_labels": False}
 
 
 def unwrap_model(model: Any) -> Any:
@@ -107,7 +112,7 @@ def _accumulation_steps(trainer: Any) -> int:
     getter = getattr(trainer, "_get_grad_accum_steps", None)
     if callable(getter):
         return int(getter())
-    return max(1, int(getattr(trainer.config, "gradient_accumulation_steps", 1) or 1))
+    return max(1, int(config_value(trainer.config, "gradient_accumulation_steps")))
 
 
 def _prepare_episode_cursor(state: dict[str, Any]) -> int:
@@ -609,11 +614,15 @@ def _load_training_checkpoint(
                 "old_logprobs_source",
                 "allow_sequence_fallback",
                 "allow_missing_sampler_logprobs",
+                "allow_unmasked_labels",
                 "disable_dropout",
                 "rollout_sync",
                 "num_generations",
             ):
-                if saved_config.get(name) != getattr(trainer.config, name, None):
+                default = _ADDED_CONFIG_DEFAULTS.get(name)
+                if saved_config.get(name, default) != getattr(
+                    trainer.config, name, default
+                ):
                     raise ValueError(f"Checkpoint configuration differs: {name}")
         components = _native_components(trainer)
         saved_components = {}

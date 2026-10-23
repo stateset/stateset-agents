@@ -55,6 +55,13 @@ or duplicate conversation from crossing a split. The reward threshold filters
 training only; failed held-out conversations remain available for evaluation.
 The manifest retains counts and fingerprints for every partition.
 
+Pass `--decontaminate-against EVAL` (repeatable: a path, `NAME=PATH` or
+`builtin:NAME`, e.g. `builtin:gsm8k-test`) to drop training rows that share a
+13-gram with an external eval set; `--ngram-size` changes the window. Held-out
+partitions are not filtered. The manifest's `decontamination` block records
+each eval set's SHA-256 and contaminated-row count and the number of training
+rows removed. See [Decontamination](DECONTAMINATION.md).
+
 ## Train on actual logged actions
 
 `ConversationDataset.policy_transitions()` defines ordered assistant actions.
@@ -124,6 +131,48 @@ These timings do not synchronize CUDA kernels. Success counts require explicit
 evaluator booleans; positive reward alone does not establish success. Optional
 costs are caller-supplied and phase estimates exclude provisioning/storage;
 retain the provider ledger for total spend.
+
+## Check general capability before promotion
+
+Domain fine-tuning can quietly cost general ability. With the optional
+lm-evaluation-harness extra installed, score the base model and the candidate
+adapter on the same public tasks, then gate on a bounded regression:
+
+```bash
+pip install 'stateset-agents[eval-harness]'
+python -m stateset_agents.evaluation.capability_regression run \
+  --checkpoint Qwen/Qwen3.5-0.8B --tasks hellaswag,arc_easy,gsm8k \
+  --num-fewshot 0 --limit 500 --output outputs/capability-base.json
+python -m stateset_agents.evaluation.capability_regression run \
+  --checkpoint Qwen/Qwen3.5-0.8B --adapter outputs/sft_v1 \
+  --tasks hellaswag,arc_easy,gsm8k --num-fewshot 0 --limit 500 \
+  --output outputs/capability-candidate.json
+python -m stateset_agents.evaluation.capability_regression compare \
+  --baseline outputs/capability-base.json \
+  --candidate outputs/capability-candidate.json \
+  --max-regression 0.02 --task-max-regression gsm8k=0.03 \
+  --output outputs/capability-gate.json
+```
+
+`run` drives lm-eval's `hf` model (`peft=` loads the adapter) with fixed seeds
+and writes a report in the repo's evaluation shape (`schema_version`,
+`base_model`, `seed`, `settings`, `selected_checkpoint`, per-task metrics and
+stderr, and a headline metric per task: `acc_norm`, then `acc`, then
+`exact_match`, and so on). `compare` exits `1` when a task's headline metric
+gets worse by more than the allowed amount, in the metric's own units (`0.02` =
+two accuracy points; `--relative` makes it a fraction of the baseline score).
+Lower-is-better metrics such as perplexity are handled using lm-eval's
+`higher_is_better`. Reports with different tasks, few-shot counts, limits,
+seeds or chat-template settings are refused. Batch size is ignored. The gate
+report carries both reports' content hashes. From Python:
+`run_capability_eval(checkpoint, CapabilityEvalSettings(tasks=...), adapter=...)`
+and `compare_capability_reports(baseline, candidate, max_regression=...)`. Any
+object with lm-eval's `simple_evaluate` can be passed as `harness=`.
+
+Without the extra, `run` exits `2` with the install command. The hook is tested
+against a fake harness only. No retained lm-eval run backs it yet, and a pass
+bounds regression on the chosen tasks only. Compare deltas with the reported
+stderr before reading a small move as real.
 
 ## Promote evaluated bytes
 

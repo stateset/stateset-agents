@@ -25,7 +25,7 @@ from collections.abc import Callable
 from contextlib import closing
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, TypedDict
 
 from stateset_agents.core.environments.refund_environment import (
     RefundEnvironment,
@@ -72,8 +72,31 @@ from stateset_agents.utils.async_calls import closing_async_generator, run_sync_
 logger = logging.getLogger(__name__)
 
 TRAJECTORY_TOKEN_LIMIT = 1024
-TRUNCATION_POLICY = {"train": "reward"}
-EVALUATION_SETTINGS = {
+
+
+class TruncationPolicy(TypedDict):
+    """Keyword arguments for ``river_client.rl.Truncation``."""
+
+    train: Literal["zero_reward", "reward", "drop", "drop_and_exclude_from_baseline"]
+
+
+class EvaluationSettings(TypedDict):
+    """Frozen held-out evaluation settings recorded in every run manifest."""
+
+    max_turns: int
+    max_generated_tokens: int
+    max_context_tokens: int
+    max_turn_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    group_size: int
+    thinking: bool
+    truncation_reward: float
+
+
+TRUNCATION_POLICY: TruncationPolicy = {"train": "reward"}
+EVALUATION_SETTINGS: EvaluationSettings = {
     "max_turns": 4,
     "max_generated_tokens": TRAJECTORY_TOKEN_LIMIT,
     "max_context_tokens": 8192,
@@ -366,11 +389,10 @@ async def campaign(
         record_trace=True,
     )
     budget = rl.Budget(
-        **{
-            key: value
-            for key, value in EVALUATION_SETTINGS.items()
-            if key.startswith("max_")
-        }
+        max_turns=EVALUATION_SETTINGS["max_turns"],
+        max_generated_tokens=EVALUATION_SETTINGS["max_generated_tokens"],
+        max_context_tokens=EVALUATION_SETTINGS["max_context_tokens"],
+        max_turn_tokens=EVALUATION_SETTINGS["max_turn_tokens"],
     )
 
     def evaluation_engine(checkpoint: Any, variant: str) -> Any:

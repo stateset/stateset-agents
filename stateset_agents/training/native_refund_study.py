@@ -450,7 +450,7 @@ def main() -> None:
     result["representative_cases"] = not args.synthetic
     result["passed"] = result["passed"] and not args.synthetic
     (args.output / "comparison.json").write_text(json.dumps(result, indent=2) + "\n")
-    print(json.dumps(result))
+    print(json.dumps(result))  # noqa: T201 - CLI result line
     raise SystemExit(0 if result["passed"] else 1)
 
 

@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import math
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 import traceback
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Collection, Sequence
 from itertools import islice
 from pathlib import Path
 from typing import Any
@@ -28,16 +30,24 @@ from stateset_agents.finetune_evaluation import (
 )
 from stateset_agents.finetune_recovery import CHECKPOINT_NAME_PATTERN
 from stateset_agents.finetune_workspace import (
+    owner_alive,
+    private_file_lock,
     process_token,
     queue_executable,
     read_json,
     read_run_plan,
+    transition_state,
     write_json,
 )
-from stateset_agents.utils.process_probe import probe_process
 
 RECORD_ID = r"[0-9]{8}-[0-9]{6}-[0-9a-f]{8}"
 MAX_COMPARISON_RECORDS = 100
+#: A queued verification no worker has claimed after this long is reported as
+#: ``stale``: it no longer blocks a new submission for its anchor. The queue
+#: job itself is not cancelled; if it starts later it simply verifies again.
+QUEUED_STALE_AFTER_SECONDS = 6 * 3600
+#: Derived statuses that still represent work that may complete.
+ACTIVE_COMPARISON_STATUSES = frozenset({"queued", "running", "submission_uncertain"})
 DIRECTORY = "validation-comparisons"
 GUARDS = (
     "no_success_regressions",
@@ -476,9 +486,19 @@ def compare_validations(
 
 
 def submit_comparison(
-    run: Path, anchor_id: str, evaluation_ids: Sequence[str] | None = None
+    run: Path,
+    anchor_id: str,
+    evaluation_ids: Sequence[str] | None = None,
+    *,
+    resubmit: bool = False,
 ) -> Path:
-    """Retain and submit read-only verification once, without model inference."""
+    """Retain and submit read-only verification once, without model inference.
+
+    An active comparison for the same anchor is returned instead of queuing a
+    duplicate, unless ``resubmit`` explicitly asks for a fresh one (for
+    example after an uncertain submission). Stale, interrupted and failed
+    comparisons never block a new submission.
+    """
     run = run.resolve()
     plan = comparison_plan(run, anchor_id, evaluation_ids)
     queue = queue_executable()
@@ -498,24 +518,27 @@ def submit_comparison(
         raise ValidationComparisonError(
             "Published-checkpoint comparison currently requires Linux."
         )
-    import fcntl
-
-    fd = os.open(
-        directory / ".submit.lock",
-        os.O_CREAT | os.O_RDWR | getattr(os, "O_NOFOLLOW", 0),
-        0o600,
-    )
-    with os.fdopen(fd, "a") as lock:
-        fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
-        latest = latest_comparison(run)
+    with contextlib.ExitStack() as held:
+        try:
+            held.enter_context(
+                private_file_lock(
+                    directory / ".submit.lock",
+                    timeout_s=60.0,
+                    unavailable="Comparison submission lock must be a private regular file.",
+                    busy="Another comparison submission is still in progress; retry shortly.",
+                )
+            )
+        except ValueError as error:
+            raise ValidationComparisonError(str(error)) from None
+        latest = None if resubmit else latest_comparison(run)
         if latest is not None:
             previous = comparison_status(latest)
-            if previous["anchor_id"] == anchor_id and previous["state"]["status"] in {
-                "queued",
-                "running",
-                "submission_uncertain",
-            }:
+            if (
+                previous["anchor_id"] == anchor_id
+                and previous["state"]["status"] in ACTIVE_COMPARISON_STATUSES
+            ):
                 return latest
+        _prune_history(run, directory)
         return _submit_request(run, plan, queue, directory)
 
 
@@ -605,11 +628,43 @@ def _submit_request(
     return path
 
 
-def _state(path: Path, **changes: Any) -> None:
-    write_json(
-        path / "state.json",
-        {**read_json(path / "state.json"), **changes, "updated_at": time.time()},
+def _state(
+    path: Path, *, allowed_from: Collection[str] | None = None, **changes: Any
+) -> bool:
+    """Change a verification's state through the shared locked transition.
+
+    A recorded outcome is never overwritten, and a success whose result is
+    retained is final, so a late progress update cannot reopen it.
+    """
+    return transition_state(
+        path,
+        allowed_from=allowed_from,
+        success_is_final=lambda directory: (directory / "result.json").is_file(),
+        **changes,
     )
+
+
+def _fail_unclaimed(path: Path) -> None:
+    """Record that a queued verification's worker could not start.
+
+    Only an own comparison record that is still queued changes; without this
+    the record stayed ``queued`` forever and blocked its anchor.
+    """
+    try:
+        if (
+            path.parent.name == DIRECTORY
+            and not path.is_symlink()
+            and (path / "state.json").is_file()
+        ):
+            _state(
+                path,
+                allowed_from={"queued"},
+                status="failed",
+                error="The verification worker could not start; inspect inputs and private queue logs.",
+                finished_at=time.time(),
+            )
+    except (OSError, ValueError):
+        pass
 
 
 def execute_comparison(path: Path) -> int:
@@ -630,17 +685,18 @@ def execute_comparison(path: Path) -> int:
                 stream,
             )
     except FileExistsError:
-        return 1
+        return 1  # Another worker owns this verification; keep its state.
     except (OSError, ValueError):
+        _fail_unclaimed(path)
         return 1
     try:
         plan = read_json(path / "plan.json")
         _state(path, status="running", phase="verifying_checkpoints")
-        result = compare_validations(
-            run,
-            plan,
-            progress=lambda done, total: _state(path, completed=done, total=total),
-        )
+
+        def progress(done: int, total: int) -> None:
+            _state(path, completed=done, total=total)
+
+        result = compare_validations(run, plan, progress=progress)
         write_json(path / "result.json", result)
         _state(
             path,
@@ -698,22 +754,22 @@ def comparison_status(path: Path) -> dict[str, Any]:
         not isinstance(job, str) or not re.fullmatch(r"[0-9a-f]{12}", job)
     ):
         raise ValidationComparisonError("Comparison queue receipt is unreadable.")
-    if status == "queued" and submission.get("status") == "uncertain":
-        status = "submission_uncertain"
-    if status == "running" and (path / "execution.json").exists():
-        owner = read_json(path / "execution.json")
-        pid = owner.get("pid")
-        if type(pid) is int and pid > 0:
-            token = process_token(pid)
-            if token is not None and token != owner.get("process_token"):
-                status = "interrupted"
-            elif token is None:
-                try:
-                    probe_process(pid)
-                except ProcessLookupError:
-                    status = "interrupted"
-                except PermissionError:
-                    pass
+    claimed = (path / "execution.json").exists()
+    if status in {"queued", "running"} and claimed:
+        # Only an owner that is provably gone (or replaced) interrupts it.
+        if owner_alive(path / "execution.json") is False:
+            status = "interrupted"
+    elif status == "queued":
+        created = state.get("created_at")
+        if (
+            isinstance(created, (int, float))
+            and not isinstance(created, bool)
+            and math.isfinite(created)
+            and time.time() - created > QUEUED_STALE_AFTER_SECONDS
+        ):
+            status = "stale"
+        elif submission.get("status") == "uncertain":
+            status = "submission_uncertain"
     result = None
     if status == "succeeded":
         result = read_json(path / "result.json", max_bytes=256 * 1024)
@@ -742,7 +798,7 @@ def comparison_status(path: Path) -> dict[str, Any]:
         "inference_started": False,
         "notes": [
             "Queue work survives leaving the TUI. Reopening does not resubmit.",
-            "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain.",
+            "No cancellation or automatic retry is performed; inspect the retained job handle if progress is uncertain, then resubmit explicitly.",
         ],
     }
 
@@ -941,6 +997,86 @@ def _public_result(result: dict[str, Any]) -> dict[str, Any]:
     return public
 
 
+#: Directory entries read from the history (records plus the submit lock and
+#: any stray files); a larger directory is reported rather than scanned.
+_HISTORY_SCAN_LIMIT = 4 * MAX_COMPARISON_RECORDS
+
+
+def _history_records(directory: Path) -> list[Path]:
+    """Own comparison record directories, oldest first; other entries ignored."""
+    entries = list(islice(directory.iterdir(), _HISTORY_SCAN_LIMIT + 1))
+    if len(entries) > _HISTORY_SCAN_LIMIT:
+        raise ValidationComparisonError(
+            f"Comparison history has more than {_HISTORY_SCAN_LIMIT} entries; "
+            f"remove stray files from {DIRECTORY}."
+        )
+    return sorted(
+        path
+        for path in entries
+        if re.fullmatch(RECORD_ID, path.name)
+        and path.is_dir()
+        and not path.is_symlink()
+    )
+
+
+def _nominated_comparisons(run: Path) -> set[str] | None:
+    """Comparison IDs that retained nominations depend on; ``None`` if unknown."""
+    directory = run / "nominations"
+    if not directory.exists():
+        return set()
+    if directory.is_symlink():
+        return None
+    referenced: set[str] = set()
+    try:
+        for path in islice(directory.iterdir(), _HISTORY_SCAN_LIMIT + 1):
+            if not re.fullmatch(RECORD_ID, path.name) or path.is_symlink():
+                continue
+            receipt = path / "receipt.json"
+            if not receipt.exists():
+                continue  # an interrupted nomination authorizes nothing
+            plan = read_json(receipt).get("plan")
+            identifier = plan.get("comparison_id") if isinstance(plan, dict) else None
+            if not isinstance(identifier, str):
+                return None
+            referenced.add(identifier)
+    except (OSError, ValueError, RecursionError):
+        return None
+    return referenced
+
+
+def _prune_history(run: Path, directory: Path) -> None:
+    """Make room for one more record by deleting the oldest finished ones.
+
+    Active verifications, and successful ones a retained nomination depends
+    on, are kept. If nothing can be removed the submission is refused with a
+    clear message instead of failing later as unreadable history.
+    """
+    records = _history_records(directory)
+    excess = len(records) - (MAX_COMPARISON_RECORDS - 1)
+    if excess <= 0:
+        return
+    nominated = _nominated_comparisons(run)
+    for path in records:
+        if excess <= 0:
+            return
+        try:
+            status = comparison_status(path)["state"]["status"]
+        except (OSError, ValueError, KeyError, TypeError, RecursionError):
+            status = "unreadable"
+        if status in ACTIVE_COMPARISON_STATUSES or (
+            status == "succeeded" and (nominated is None or path.name in nominated)
+        ):
+            continue
+        shutil.rmtree(path)
+        excess -= 1
+    if excess > 0:
+        raise ValidationComparisonError(
+            f"Comparison history already holds {MAX_COMPARISON_RECORDS} records "
+            "that are still active or back a nomination; wait for active "
+            "verifications to finish before submitting another."
+        )
+
+
 def latest_comparison(run: Path) -> Path | None:
     """Find the newest own request without loading results or model libraries."""
     directory = run / DIRECTORY
@@ -948,17 +1084,7 @@ def latest_comparison(run: Path) -> Path | None:
         return None
     if directory.is_symlink():
         raise ValidationComparisonError("Comparison history must be regular.")
-    paths = list(islice(directory.iterdir(), MAX_COMPARISON_RECORDS + 1))
-    if len(paths) > MAX_COMPARISON_RECORDS:
-        raise ValidationComparisonError("Comparison history exceeds 100 entries.")
-    regular = [
-        path
-        for path in paths
-        if re.fullmatch(RECORD_ID, path.name)
-        and path.is_dir()
-        and not path.is_symlink()
-    ]
-    return max(regular, default=None)
+    return max(_history_records(directory), default=None)
 
 
 if __name__ == "__main__":

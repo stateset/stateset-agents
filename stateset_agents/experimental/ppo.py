@@ -35,10 +35,6 @@ from ..training.config import TrainingConfig
 from ..training.runtime_state import TrainingRuntime, validate_training_config
 from ..training.trainer_utils import apply_dropout_setting
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
 
 
@@ -71,9 +67,9 @@ except ImportError:
     logger.warning("NumPy not available")
 
 # Lazy import transformers
-AutoModelForCausalLM = None
-AutoTokenizer = None
-get_cosine_schedule_with_warmup = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
+get_cosine_schedule_with_warmup: Any | None = None
 
 
 def _load_transformers_ppo():
@@ -222,7 +218,8 @@ class PPOValueHead(nn.Module):
         Returns:
             values: [batch, seq_len, 1]
         """
-        return self.net(hidden_states)
+        values: torch.Tensor = self.net(hidden_states)
+        return values
 
 
 class AdaptiveKLController:
@@ -392,7 +389,7 @@ class PPOTrainer(TrainingRuntime):
         # Ensure transformers is loaded
         _load_transformers_ppo()
 
-        validate_training_config(config)
+        validate_training_config(config, PPOConfig)
         self.config = config
         # PPO clipped surrogate as one declarative PolicyObjective; the KL
         # penalty is added separately in train_step (adaptive coefficient).
@@ -510,7 +507,8 @@ class PPOTrainer(TrainingRuntime):
             attention_mask=attention_mask,
             output_hidden_states=True,
         )
-        return outputs.hidden_states[-1]
+        last_hidden: torch.Tensor = outputs.hidden_states[-1]
+        return last_hidden
 
     def compute_log_probs(
         self,
@@ -558,9 +556,9 @@ class PPOTrainer(TrainingRuntime):
         zero expectation and therefore never pulled the policy toward the
         reference.
         """
-        if mask is None:
-            return rl_losses.k3_kl(current_log_probs, reference_log_probs)
-        return rl_losses.k3_kl(current_log_probs, reference_log_probs, mask)
+        # rl_losses is backend-agnostic (Any in, Any out); torch in, torch out.
+        kl: torch.Tensor = rl_losses.k3_kl(current_log_probs, reference_log_probs, mask)
+        return kl
 
     def ppo_loss(
         self,
@@ -666,9 +664,7 @@ class PPOTrainer(TrainingRuntime):
             gamma=self.config.gamma,
             gae_lambda=self.config.gae_lambda,
         )
-        valid = advantages[action_mask > 0]
-        if valid.numel() > 1:
-            advantages = (advantages - valid.mean()) / (valid.std() + 1e-8)
+        advantages = rl_losses.whiten(advantages, action_mask)
         return advantages * action_mask, returns
 
     async def train_step(
@@ -724,7 +720,7 @@ class PPOTrainer(TrainingRuntime):
         completion_ids: list[list[int]] | None = None,
     ) -> dict[str, float]:
         """Validate and update a text batch with deterministic model scoring."""
-        validate_training_config(self.config)
+        validate_training_config(self.config, PPOConfig)
         if self.config.beta > 0 and self.ref_model is None:
             raise ValueError("PPO beta > 0 requires a reference model")
         if (
@@ -926,13 +922,8 @@ class PPOTrainer(TrainingRuntime):
                     values, old_values[idx], returns[idx], mb_mask
                 )
 
-                # Entropy bonus
-                if mb_mask is not None:
-                    entropy_bonus = (entropy * mb_mask).sum() / mb_mask.sum().clamp(
-                        min=1
-                    )
-                else:
-                    entropy_bonus = entropy.mean()
+                # Entropy bonus over response tokens only
+                entropy_bonus = (entropy * mb_mask).sum() / mb_mask.sum().clamp(min=1)
 
                 # Total loss
                 total_loss = (

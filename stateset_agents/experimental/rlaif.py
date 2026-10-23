@@ -61,8 +61,8 @@ except ImportError:
         logger.warning("LLM Judge not available for RLAIF")
 
 # Lazy imports
-AutoModelForCausalLM = None
-AutoTokenizer = None
+AutoModelForCausalLM: Any | None = None
+AutoTokenizer: Any | None = None
 
 
 def _load_transformers_rlaif():

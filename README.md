@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.67.0`, tagged but not published.
+- **Current Python candidate:** `stateset-agents==0.69.0`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -469,7 +469,23 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.67.0 (latest candidate; publication blocked):**
+**v0.69.0 (latest candidate; publication pending):**
+
+- **One reward scoring path** — training, periodic eval, post-training eval and the distributed trainer score every episode once, through one helper; judge outages and all-failed composites fail closed instead of scoring a neutral 0.5.
+- **Rewards that can't be farmed** — per-step rewards average over the episode, task actions complete only from explicit signals, and a contract suite plus exploit tests cover every shipped reward.
+- **Leak-free data** — one request identity drives every train/eval/harvest split, SFT never labels prompt or failed-reply tokens, and masking is verified against real Qwen3/Qwen3.5 tokenizers.
+- **Fine-tuning studio that can't overspend or wedge** — one run-level RunPod budget, pods reclaimed when a worker dies, every stuck state recoverable, and the TUI split into panels.
+- **Release hygiene** — mypy checks every function body, CI runs on integration PRs, and the dev lock carries no known vulnerabilities.
+
+**v0.68.0:**
+
+- **GSPO/GSPO-token honour `num_iterations`** — frozen old-policy scores, N optimizer steps per rollout, so the sequence clip actually engages.
+- **Loss-loop safety** — OOM and rollout-contract errors propagate; an all-failed group raises instead of a silent zero loss; `beta` without a reference model warns.
+- **Hardened gateway** — generation ceilings and a sampling-field allowlist, rightmost-hop client IPs, JWT `exp` required, pinned RunPod SSH host keys.
+- **Typing and CI** — mypy follows imports with zero errors; Windows CI green; coverage floor 75%; development lock free of known vulnerabilities.
+- **CLI** — per-model starters live under `stateset-agents model <preset>` (old spellings removed in v0.69.0).
+
+**v0.67.0:**
 
 - Add the fine-tuning terminal studio, agent CLI and HTTP controls, with durable run ownership, checkpoint inspection and validation/test separation.
 - Add synthetic ecommerce, logistics and SaaS dataset generation with isolated splits and retained provenance; independent domain review remains required.
@@ -1310,7 +1326,7 @@ results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
 **v0.29.0:**
 
-- **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
+- **Qwen3.8-27B, fine-tuned on rented hardware the week it shipped.** `stateset-agents model qwen3-8-27b` targets `Qwen/Qwen3.8-27B` (27.8B, multimodal, 256K ctx, Apache‑2.0). Verified live on an H100: 140 support conversations, 3 epochs, **2/2 held-out assertions passed**, 467MB adapter returned, **$0.96**, pod terminated.
 - **LoRA inference learned about hybrid attention — and it mattered.** Qwen3.8 puts Mamba-style `linear_attn` (`in_proj_qkv`, `out_proj`, …) in most of its 64 text layers and standard `self_attn` in a minority. Our candidate list only knew llama-style names, so `train-remote` would have adapted the minority and silently skipped the rest. Both families are now targeted, proven on real weights, and the two-pass vision exclusion correctly keeps `out_proj` (it exists in the text stack) while dropping vision-only names. The same fix also improves Qwen3.5, which turns out to be hybrid too.
 
 **v0.28.0:**
@@ -1352,18 +1368,18 @@ results. The full list is in [`CHANGELOG.md`](CHANGELOG.md).
 
 **v0.23.0:**
 
-- **Three new first-class starters.** `stateset-agents qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
+- **Three new first-class starters.** `stateset-agents model qwen3-coder` (`Qwen/Qwen3-Coder-30B-A3B-Instruct`, 256K ctx, Apache‑2.0), `stateset-agents model gpt-oss` (`openai/gpt-oss-20b`, 128K, Apache‑2.0; 120B variant flagged multi‑GPU), and `stateset-agents model deepseek-v4` (`deepseek-ai/DeepSeek-V4-Flash`, 1M ctx, MIT — GLM‑style QLoRA+vLLM path with MLA‑correct LoRA targets verified from the weight map).
 
 **v0.22.0:**
 
 - **Architecture consolidation.** The four flagship trainers (GSPO/DAPO/GEPO/VAPO) share one model-loading/checkpoint runtime (`training/trainer_runtime.py`); the seven model starters are thin definition layers over `training/starter_common.py`; research modules moved to `stateset_agents.experimental` (old paths warn for one cycle). All RL math and public APIs unchanged — the full suite passes unmodified.
-- **NVIDIA Nemotron 3.5 Lightning starter.** `stateset-agents nemotron-3-5` targets `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (hybrid Mamba‑2 + MoE, 30B total / 3B active, 256K ctx, OpenMDW‑1.1) with Mamba-aware LoRA targets. [`docs/nemotron_3_5_starter.rst`](docs/nemotron_3_5_starter.rst)
+- **NVIDIA Nemotron 3.5 Lightning starter.** `stateset-agents model nemotron-3-5` targets `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` (hybrid Mamba‑2 + MoE, 30B total / 3B active, 256K ctx, OpenMDW‑1.1) with Mamba-aware LoRA targets. [`docs/nemotron_3_5_starter.rst`](docs/nemotron_3_5_starter.rst)
 - **Quality gates that enforce themselves.** Coverage and mypy-allowlist ratchets fail CI when floors fall behind reality; the security workflow's scanners now actually gate (45 HIGH/CRITICAL findings cleared); `make benchmark-loop` scores the improvement loop against planted ground truth (precision 0.818 / recall 1.0); a weekly `gpu-verify` workflow re-proves the training job on rented hardware.
 - **Slimmer repo.** `dashboard/` and `mobile/` moved to their own repositories.
 
 **v0.21.0:**
 
-- **Muse Glimmer 30B first‑class starter.** `stateset-agents muse-glimmer` targets `meta-models/Muse-Glimmer-30B` — Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache‑2.0) — with the standard balanced/memory/quality QLoRA profiles, `init --preset muse-glimmer`, and a `muse-glimmer` preset in the unified finetune driver. [`docs/muse_glimmer_starter.rst`](docs/muse_glimmer_starter.rst)
+- **Muse Glimmer 30B first‑class starter.** `stateset-agents model muse-glimmer` targets `meta-models/Muse-Glimmer-30B` — Meta's open agentic model (Aug 2026; dense 30B, 131K ctx, Apache‑2.0) — with the standard balanced/memory/quality QLoRA profiles, `init --preset muse-glimmer`, and a `muse-glimmer` preset in the unified finetune driver. [`docs/muse_glimmer_starter.rst`](docs/muse_glimmer_starter.rst)
 - **RunPod provider for `train-remote`.** `--provider runpod` rents a GPU pod over SSH, runs the same packaged job every other provider runs, and copies the adapter back. GPU defaults are now per‑provider — `RemoteJobSpec.gpu` no longer hard‑codes a Modal‑specific name.
 
 **v0.20.0:**
@@ -1522,7 +1538,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.67.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.69.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -1559,6 +1575,8 @@ dependency audit does not establish GPU compatibility or model quality.
 ```bash
 pip install "stateset-agents[auto-research]" # Autonomous experiment loop + Optuna
 pip install "stateset-agents[trl]"           # TRL GRPO integration + bitsandbytes
+pip install "stateset-agents[qlora]"         # 4-bit/8-bit QLoRA SFT (bitsandbytes, CUDA)
+pip install "stateset-agents[eval-harness]"  # lm-evaluation-harness capability regression gate
 pip install "stateset-agents[vllm]"          # vLLM generation backend
 pip install "stateset-agents[hpo]"           # Optuna/Ray Tune HPO
 pip install "stateset-agents[api]"           # FastAPI service
@@ -1597,7 +1615,7 @@ trains until you ask:
 
 ```bash
 pip install "stateset-agents[training,trl]"
-python examples/finetune_gspo.py --list-models              # 20 presets
+python examples/finetune_gspo.py --list-models              # every packaged preset
 python examples/finetune_gspo.py --model qwen3.5-0.8b       # dry run: show the resolved config
 python examples/finetune_gspo.py --model qwen3.5-0.8b --no-dry-run   # actually train
 ```
@@ -1614,37 +1632,37 @@ wired up:
 
 | Model | Training entry point | Live-verified | Notes |
 |---|---|---|---|
-| `ibm-granite/granite-4.0-micro` | `stateset-agents granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `allenai/Olmo-3-7B-Instruct` | `stateset-agents olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `ibm-granite/granite-4.0-micro` | `stateset-agents model granite-4-micro` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-1B-Instruct` | `stateset-agents model llama-3-2-1b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `meta-llama/Llama-3.2-3B-Instruct` | `stateset-agents model llama-3-2-3b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `Qwen/Qwen3-4B-Instruct-2507` | `stateset-agents model qwen3-4b-instruct` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `allenai/Olmo-3-7B-Instruct` | `stateset-agents model olmo-3-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B` | `stateset-agents model deepseek-r1-1-5b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
+| `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` | `stateset-agents model deepseek-r1-7b` | | LoRA/QLoRA; [guide](examples/README.md#additional-small-models-and-functiongemma) |
 | `google/functiongemma-270m-it` | `python -m stateset_agents.training.sft --base-model google/functiongemma-270m-it ...` | | Tool-calling SFT only; [guide](examples/README.md#additional-small-models-and-functiongemma) |
-| `Qwen/Qwen3.5-0.8B` | `stateset-agents qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
-| `meta-models/Muse-Glimmer-30B` | `stateset-agents muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
+| `Qwen/Qwen3.5-0.8B` | `stateset-agents model qwen3-5-0-8b` | ✅ | Cheapest path to a first run (~$0.30) |
+| `meta-models/Muse-Glimmer-30B` | `stateset-agents model muse-glimmer` | ✅ | Meta's open agentic model; dense 30B, multimodal, 131K ctx, Apache‑2.0 |
 | `meta-models/Muse-Spark-Open-816B-A42B` | `stateset-agents muse-spark-open` | GPU unverified | Distributed BF16 text LoRA SFT; separate text GSPO preset; gated access and cluster-scale memory; [guide](docs/MUSE_SPARK_OPEN.md) |
-| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
+| `nvidia/NVIDIA-Nemotron-3.5-Lightning-30B-A3B-BF16` | `stateset-agents model nemotron-3-5` | ✅ | Hybrid Mamba‑2 + MoE reasoning model, 3B active params |
 | `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16` | `stateset-agents nemotron-3-5-super-vl` | CPU contracts | Image-conditioned LoRA SFT; full-size GPU training unverified; [guide](docs/NEMOTRON_3_5_VL.md) |
 | `nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16` | `stateset-agents nemotron-3-5-bolt` | CPU contracts | Image-conditioned LoRA SFT; BF16 training uses more memory than the 24GB inference artifact; [guide](docs/NEMOTRON_3_5_VL.md) |
-| `Qwen/Qwen3.8-27B` | `stateset-agents qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
+| `Qwen/Qwen3.8-27B` | `stateset-agents model qwen3-8-27b` | ✅ | Hybrid linear/standard attention, multimodal, 256K ctx, Apache‑2.0 — ~56GB BF16 |
 | `Qwen/Qwen3.8-Flash-Next` | `python examples/finetune_gspo.py --model qwen3.8-flash-next` | | Qwen4 architecture preview; 125B main / 6B active + 51B n-gram embeddings; native multimodal, 262K ctx |
-| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
-| `openai/gpt-oss-20b` | `stateset-agents gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
-| `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
-| `google/gemma-4-31B-it` | `stateset-agents gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
-| `google/gemma-4-E2B-it` | `stateset-agents gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
-| `google/gemma-4-E4B-it` | `stateset-agents gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
-| `Qwen/Qwen3.5-2B` | `stateset-agents qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `Qwen/Qwen3.5-4B` | `stateset-agents qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `Qwen/Qwen3.5-9B` | `stateset-agents qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `microsoft/Phi-4-mini-instruct` | `stateset-agents phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `LiquidAI/LFM2.5-2.6B` | `stateset-agents lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
-| `moonshotai/Kimi-K2.6` | `stateset-agents kimi-k2-6` | | |
+| `Qwen/Qwen3-Coder-30B-A3B-Instruct` | `stateset-agents model qwen3-coder` | | 128 experts / 8 active, 256K ctx, Apache‑2.0 |
+| `openai/gpt-oss-20b` | `stateset-agents model gpt-oss` | | 32 experts / 4 active, 128K ctx, Apache‑2.0 |
+| `deepseek-ai/DeepSeek-V4-Flash` | `stateset-agents model deepseek-v4` | | MLA attention, 256 experts, 1M ctx, MIT — QLoRA + vLLM |
+| `google/gemma-4-31B-it` | `stateset-agents model gemma-4-31b` | | Use `--starter-profile memory` on tighter GPU budgets |
+| `google/gemma-4-E2B-it` | `stateset-agents model gemma-4-e2b` | | Text-only LoRA/QLoRA; install `[gemma4]`; [guide](examples/README.md#small-gemma-models-e2b-and-e4b) |
+| `google/gemma-4-E4B-it` | `stateset-agents model gemma-4-e4b` | | Same profiles; E4B includes about 8B parameters with embeddings |
+| `Qwen/Qwen3.5-2B` | `stateset-agents model qwen3-5-2b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-4B` | `stateset-agents model qwen3-5-4b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `Qwen/Qwen3.5-9B` | `stateset-agents model qwen3-5-9b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `HuggingFaceTB/SmolLM3-3B` | `stateset-agents model smollm3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `microsoft/Phi-4-mini-instruct` | `stateset-agents model phi-4-mini` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-3B-Instruct-2512-BF16` | `stateset-agents model ministral-3-3b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `mistralai/Ministral-3-8B-Instruct-2512-BF16` | `stateset-agents model ministral-3-8b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `LiquidAI/LFM2.5-2.6B` | `stateset-agents model lfm2-5-2-6b` | | Text-only LoRA/QLoRA; install `[small-models]`; [guide](examples/README.md#more-small-models-qwen-smollm-phi-ministral-and-liquid) |
+| `moonshotai/Kimi-K2.6` | `stateset-agents model kimi-k2-6` | | |
 | `moonshotai/Kimi-K3` | `stateset-agents frontier-models --model kimi-k3` | | Released MXFP4 checkpoint pinned; training loader blocked; see [frontier guide](docs/FRONTIER_FINETUNING.md) |
 | `zai-org/GLM-5.1` | `python examples/finetune_glm5_1_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
 | `zai-org/GLM-5.2` | `python examples/finetune_glm5_2_gspo.py` | | 754B MoE, QLoRA‑only + vLLM |
@@ -1931,16 +1949,17 @@ More end‑to‑end scripts live in `examples/complete_grpo_training.py` and `ex
 
 ## Continual learning + long‑term planning (optional)
 
-Enable planning context and replay/LwF in the trainer with config overrides:
+Add the (experimental) planner to the agent and enable replay/LwF in the
+trainer with config overrides:
 
 ```python
+from stateset_agents.experimental.long_term_planning import (
+    planning_manager_from_config,
+)
+
 agent = MultiTurnAgent(
-    AgentConfig(
-        model_name="stub://quickstart",
-        use_stub_model=True,
-        enable_planning=True,
-        planning_config={"max_steps": 4},
-    )
+    AgentConfig(model_name="stub://quickstart", use_stub_model=True),
+    planning_manager=planning_manager_from_config({"max_steps": 4}),
 )
 
 trained_agent = await train(
@@ -2087,6 +2106,20 @@ The curated file is **idempotent across reruns** — duplicate (prompt, response
 
 This closes the **human-in-the-loop curation cycle**: train → eval → chat → capture → grade → curate → train again.
 
+Before training on a curated set, check that it does not contain your eval
+sets (exact 13-gram overlap on normalized text, optional MinHash near
+duplicates), and drop the rows that do:
+
+```bash
+stateset-agents data decontaminate --train curated.jsonl \
+    --eval held_out.jsonl --eval builtin:support-bench --report contamination.json
+stateset-agents data decontaminate --train curated.jsonl --eval held_out.jsonl \
+    --action filter --output curated.clean.jsonl
+```
+
+See [docs/DECONTAMINATION.md](docs/DECONTAMINATION.md), including what the
+check found in the repo's own eval sets.
+
 ## Benchmark your fine‑tune
 
 After training, you usually want a defensible number: *did this actually improve over the base model, by how much, and is it reproducible?* The framework ships a Phase‑0 benchmark pipeline across **three tasks** (GSM8K, the bundled customer‑support corpus, and the tool‑calling corpus). Results become publication-grade only after the strict provenance and replication gates below pass.
@@ -2208,7 +2241,7 @@ See `docs/OFFLINE_RL_SIM_TO_REAL_GUIDE.md` for complete documentation.
 > (moved from `stateset_agents.training`, `.evaluation`, and `.environments` in
 > v0.64.0; the old paths were removed in v0.65.0, and the deprecated root
 > `stateset_agents.SimToRealMetrics`/`SimToRealEvaluator`/`ConversationSimulator`/
-> `ConversationSimulatorConfig` exports are removed in v0.66.0). Public benchmark
+> `ConversationSimulatorConfig` exports were removed after their v0.66.0 deadline). Public benchmark
 > evidence is still pending — see [component maturity](docs/COMPONENT_MATURITY.md).
 
 Train in simulation, deploy to real users. The framework provides:
@@ -2424,7 +2457,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.67.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.69.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

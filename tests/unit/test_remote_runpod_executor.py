@@ -259,7 +259,7 @@ class TestCrashRecoveryLeases:
         executor.submit(spec)
 
         assert observed == [True]
-        assert executor.orphaned_leases() == []
+        assert executor.leases() == []
 
     def test_later_process_can_terminate_a_crash_lease(self, spec, tmp_path):
         from stateset_agents.remote.runpod import RunPodExecutor
@@ -272,6 +272,13 @@ class TestCrashRecoveryLeases:
             lease_dir=lease_dir,
         )
         first._write_lease("pod-orphan", "job-1", spec, 123.0)
+        # The submitting process then dies: the lease names an exited owner.
+        from tests.unit.test_runpod_pod_reclamation import dead_owner
+
+        lease = first._lease_path("pod-orphan")
+        record = json.loads(lease.read_text())
+        record["owner_pid"], record["owner_token"] = dead_owner()
+        lease.write_text(json.dumps(record))
 
         api = FakePodApi()
         restarted = RunPodExecutor(
@@ -283,7 +290,7 @@ class TestCrashRecoveryLeases:
 
         assert restarted.cleanup_orphans() == ["pod-orphan"]
         assert api.terminated == ["pod-orphan"]
-        assert restarted.orphaned_leases() == []
+        assert restarted.leases() == []
 
 
 class TestPodTermination:

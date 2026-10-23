@@ -15,97 +15,49 @@ Reference: https://arxiv.org/abs/2508.17850
 
 import logging
 import os
-from collections.abc import Callable
-from dataclasses import dataclass
-from datetime import datetime
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
 import torch
-import torch.nn.functional as F
 
 from . import objectives, rl_losses
-from .config import TrainingConfig
+from .config import (
+    TrainingConfig,
+    config_value,
+    reject_dead_fields,
+    require_finite,
+    validate_group_size,
+)
+from .dedicated_reporting import WandbRun
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
     validate_training_config,
 )
+from .spine.algorithm import (
+    AlgorithmSpec,
+    AlgorithmTrainer,
+    StepRollouts,
+    run_algorithm_step,
+)
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
+from .spine.rollouts import PromptGroupRollouts
+from .spine.scoring import CallableScorer, ScoredReply
+from .spine.update import UpdatePasses
 from .trainer_runtime import (
     SharedModelManager,
     build_group_batch,
+    hf_generate_group,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
-
-try:
-    import wandb as _wandb
-
-    wandb: Any = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_gepo_loaded = False
-AutoModelForCausalLM: Any | None = None
-AutoTokenizer: Any | None = None
-get_cosine_schedule_with_warmup: Any | None = None
-
-
-def _load_transformers_gepo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup
-    if _transformers_gepo_loaded:
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_gepo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_peft() -> None:
-    """Require PEFT only when LoRA model loading actually needs it."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for GEPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Require W&B only when experiment logging is enabled."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GEPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 @dataclass
@@ -148,15 +100,25 @@ class GEPOConfig(TrainingConfig):
     lora_alpha: int = 32
     lora_dropout: float = 0.05
 
-    # Advantage computation
-    use_group_baseline: bool = True  # Use within-group baseline normalization
+    # Advantage computation. Deprecated (removed in v0.71.0): GEPO always
+    # normalises within the group; a non-default value is rejected.
+    use_group_baseline: bool = True
 
     # Inner gradient updates per rollout (mu). The default of 1 keeps GEPO
     # strictly on-policy; values > 1 reuse each rollout, and the sampler
     # (old-policy) log probs are the snapshot taken at rollout time.
     # Cadence (shared with DAPO and VAPO): the LR scheduler advances once per
-    # inner update; global_step counts train_steps, not inner updates.
+    # committed inner update (a pass skipped under nonfinite_grad_policy="skip"
+    # does not advance it); global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
+
+    def validate_for_training(self) -> None:
+        """Also require two responses per group (:func:`validate_group_size`)
+        and a PPO clip in [0, 1)."""
+        super().validate_for_training()
+        validate_group_size(self.group_size)
+        reject_dead_fields(self, {"use_group_baseline": None})
+        require_finite(self, "clip_eps", minimum=0, maximum=1, exclusive_maximum=True)
 
     @classmethod
     def from_training_config(
@@ -172,27 +134,16 @@ class GEPOConfig(TrainingConfig):
 
 
 class GEPOModelManager(SharedModelManager):
-    """Manages model loading for GEPO training"""
+    """Manages model loading for GEPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "GEPO"
 
     def __init__(self, config: GEPOConfig):
         super().__init__(config)
 
-    def _get_transformers(self) -> tuple[Any, Any]:
-        if not _load_transformers_gepo():
-            raise ImportError(
-                "transformers is required for GEPO training. "
-                "Install with `pip install stateset-agents[training]`."
-            )
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise RuntimeError("transformers GEPO loader did not initialize correctly")
-        return AutoTokenizer, AutoModelForCausalLM
 
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
-
-
-class GEPOTrainer(TrainingRuntime):
+class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
     """
     Group Expectation Policy Optimization (GEPO) Trainer
 
@@ -214,28 +165,19 @@ class GEPOTrainer(TrainingRuntime):
         config: GEPOConfig,
         model: Any,
         tokenizer: Any,
-        reward_fn: Callable[[str, str], float],
+        reward_fn: Callable[[str, str], float | Awaitable[float]],
         ref_model: Any | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_gepo()
-
-        validate_training_config(config)
-        if float(getattr(config, "beta", 0.0) or 0.0) > 0:
+        validate_training_config(config, GEPOConfig)
+        if float(config_value(config, "beta") or 0.0) > 0:
             raise ValueError(
                 "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
                 f"(got {config.beta}). Use the GRPO or GSPO trainer for a KL term."
             )
         self.config = config
-        # GEPO objective: group-expectation importance coefficient, PPO clip.
-        self._objective = objectives.resolve_objective(
-            config,
-            "gepo",
-            max_completion_length=int(config.max_completion_length),
-            supported_ratios=("group_expectation", "sequence", "sequence_token"),
-            clip_low=float(config.clip_eps),
-            clip_high=float(config.clip_eps),
-        )
+        # GEPO objective: group-expectation importance coefficient, PPO clip
+        # (GEPO_SPEC).
+        self._objective = self._resolve_algorithm_objective()
         self.model = model
         self.tokenizer = tokenizer
         self.reward_fn = reward_fn
@@ -250,29 +192,17 @@ class GEPOTrainer(TrainingRuntime):
             weight_decay=config.weight_decay,
         )
 
-        # Scheduler
-        total_steps = config.num_episodes * config.num_epochs
-        warmup_steps = int(total_steps * config.warmup_ratio)
-
-        if get_cosine_schedule_with_warmup is not None:
-            self.scheduler = get_cosine_schedule_with_warmup(
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=total_steps,
-            )
-        else:
-            # Fallback to constant learning rate if scheduler unavailable
-            self.scheduler = torch.optim.lr_scheduler.ConstantLR(
-                self.optimizer, factor=1.0, total_iters=total_steps
-            )
+        # ``lr_scheduler_type`` over every committed update pass of the run
+        # (num_episodes x num_gradient_updates, the spine budget), clamped at
+        # the end. Sizing it over num_episodes alone made the cosine reach 0
+        # halfway through a two-pass run and then climb back to the full LR.
+        self.scheduler = self._build_lr_scheduler(self.optimizer)
 
         # Metrics tracking
+        # One entry per updating train_step for each key (_GEPO_HISTORY). GEPO has no
+        # KL term (beta must be 0), so there is no kl_divergence history.
         self.metrics_history: dict[str, list[float]] = {
-            "policy_loss": [],
-            "average_reward": [],
-            "kl_divergence": [],
-            "gepo_coefficient": [],
-            "advantage_std": [],
+            key: [] for key in _GEPO_HISTORY
         }
 
         self.global_step = 0
@@ -319,26 +249,14 @@ class GEPOTrainer(TrainingRuntime):
             outputs = self.model(input_ids=input_ids, attention_mask=attention_mask)
             logits = outputs.logits
 
-        # Shift for next-token prediction
-        shift_logits = logits[:, :-1, :].contiguous()
-        shift_labels = input_ids[:, 1:].contiguous()
-
-        # Compute log probs
-        log_probs = F.log_softmax(shift_logits, dim=-1)
-
-        # Gather log probs for actual tokens
-        token_log_probs = log_probs.gather(
-            dim=-1, index=shift_labels.unsqueeze(-1)
-        ).squeeze(-1)
-
-        # Mask out prompt tokens and padding
+        # Shared shift-by-one gather in fp32 (no full-vocabulary log-softmax
+        # tensor); an all-ones mask keeps every position's log-prob.
+        token_log_probs, _ = rl_losses.gather_token_logprobs(
+            logits, input_ids, torch.ones_like(input_ids, dtype=torch.float32)
+        )
+        # Sum over response tokens only (prompt and padding masked out).
         response_mask = self.build_response_mask(attention_mask, response_start_idx)
-
-        masked_log_probs = token_log_probs * response_mask
-
-        # Sum over sequence
-        sequence_log_probs = masked_log_probs.sum(dim=-1)
-
+        sequence_log_probs = (token_log_probs * response_mask).sum(dim=-1)
         return token_log_probs, sequence_log_probs
 
     @staticmethod
@@ -371,7 +289,8 @@ class GEPOTrainer(TrainingRuntime):
         # Same overflow guard as DAPO/VAPO, at GEPO's historical +/-30 bound:
         # group coefficients are not ratios against a clip boundary, so the
         # wider window is kept.
-        return rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
+        coef: torch.Tensor = rl_losses.safe_exp_ratio(log_coef, clamp=30.0)
+        return coef
 
     def compute_gepo_coefficient(
         self,
@@ -443,6 +362,10 @@ class GEPOTrainer(TrainingRuntime):
         )
         return result.loss
 
+    async def _compute_reward(self, prompt: str, response: str) -> float:
+        """Score one reply with ``reward_fn``, sync or async (spine scorer)."""
+        return await self._score_reply(prompt, response)
+
     def compute_group_advantages(
         self,
         rewards: torch.Tensor,
@@ -483,55 +406,23 @@ class GEPOTrainer(TrainingRuntime):
         """
         Generate a group of responses for a single prompt.
 
-        Returns list of dicts with:
-            - response: Generated text
-            - input_ids: Tokenized full sequence
-            - attention_mask: Attention mask
-            - response_start_idx: Index where response starts
+        Batched HuggingFace sampling (``trainer_runtime.hf_generate_group``,
+        ``generation_batch_size`` rows per ``generate`` call, trimmed after
+        EOS). Returns its response dicts (``response``, ``input_ids``,
+        ``attention_mask``, ``response_mask``, ``sequence_length``,
+        ``prompt_length``) plus ``response_start_idx``, the index where the
+        response starts.
         """
-        responses = []
-
-        # Tokenize prompt
-        prompt_tokens = self.tokenizer(
+        responses: list[dict[str, Any]] = await hf_generate_group(
+            self.model,
+            self.tokenizer,
+            self.config,
+            self.device,
             prompt,
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.config.max_prompt_length,
+            group_size,
         )
-        prompt_length = prompt_tokens["input_ids"].shape[1]
-
-        self.model.eval()
-        with torch.no_grad():
-            for _ in range(group_size):
-                # Generate response
-                input_ids = prompt_tokens["input_ids"].to(self.device)
-                attention_mask = prompt_tokens["attention_mask"].to(self.device)
-
-                outputs = self.model.generate(
-                    input_ids=input_ids,
-                    attention_mask=attention_mask,
-                    max_new_tokens=self.config.max_completion_length,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    do_sample=True,
-                    pad_token_id=self.tokenizer.pad_token_id,
-                )
-
-                # Decode response
-                response_text = self.tokenizer.decode(
-                    outputs[0][prompt_length:], skip_special_tokens=True
-                )
-
-                responses.append(
-                    {
-                        "response": response_text,
-                        "input_ids": outputs[0],
-                        "attention_mask": torch.ones_like(outputs[0]),
-                        "response_start_idx": prompt_length,
-                    }
-                )
-
-        self.model.train()
+        for response in responses:
+            response["response_start_idx"] = response["prompt_length"]
         self.rollout_samples_total += len(responses)
         return responses
 
@@ -540,7 +431,7 @@ class GEPOTrainer(TrainingRuntime):
         prompts: list[str],
     ) -> dict[str, float]:
         """
-        Execute one GEPO training step.
+        Execute one GEPO training step (:data:`GEPO_SPEC` on the spine step).
 
         For each prompt:
         1. Generate G responses (group)
@@ -555,137 +446,29 @@ class GEPOTrainer(TrainingRuntime):
         Returns:
             Training metrics
         """
-        self.model.train()
+        return await run_algorithm_step(self, self.algorithm, prompts)
 
-        all_rewards: list[float] = []
-        all_advantages: list[float] = []
-        all_gepo_coefs: list[float] = []
-
-        # --- Rollout phase ------------------------------------------------
-        # Generate every group and freeze the sampler (old-policy) sequence
-        # log probs here, before any inner update can move the weights. When
-        # they were recomputed from the just-updated model the GEPO
-        # coefficient collapsed to ~1 and clipping never fired.
-        rollouts: list[dict[str, Any]] = []
-        for prompt in prompts:
-            group_responses = await self.generate_group_responses(
-                prompt, self.config.group_size
-            )
-
-            if len(group_responses) < 2:
-                logger.warning("Insufficient responses for prompt, skipping")
-                continue
-
-            rewards = [
-                self.reward_fn(prompt, resp["response"]) for resp in group_responses
-            ]
-            rewards_tensor = torch.tensor(
-                rewards, dtype=torch.float32, device=self.device
-            )
-            all_rewards.extend(rewards)
-
-            advantages, _reward_stats = self.compute_group_advantages(rewards_tensor)
-            all_advantages.extend(advantages.tolist())
-
-            batch_input_ids, batch_attention_mask, _ = build_group_batch(
-                group_responses, self.device, include_response_mask=False
-            )
-            response_start_idx = group_responses[0]["response_start_idx"]
-
-            with torch.no_grad():
-                _, sampler_seq_log_probs = self.compute_sequence_log_probs(
-                    batch_input_ids, batch_attention_mask, response_start_idx
-                )
-
-            rollouts.append(
-                {
-                    "input_ids": batch_input_ids,
-                    "attention_mask": batch_attention_mask,
-                    "response_start_idx": response_start_idx,
-                    "advantages": advantages,
-                    "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
-                }
-            )
-
-        num_groups = len(rollouts)
-        if num_groups == 0:
-            logger.warning("No valid groups in batch")
-            return {"policy_loss": 0.0, "average_reward": 0.0}
-
-        # --- Update phase --------------------------------------------------
-        # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts
-        # against the frozen sampler log probs, exactly like DAPO. With the
-        # default of 1 the formula is identical to the previous single-update
-        # path (only dropout RNG ordering differs, since the sampler log probs
-        # are now drawn before the learner ones).
-        num_updates = max(1, getattr(self.config, "num_gradient_updates", 1))
-        final_loss = torch.tensor(0.0, device=self.device)
-
-        for _ in range(num_updates):
-            all_gepo_coefs = []
-            accumulated_loss = torch.tensor(0.0, device=self.device, requires_grad=True)
-
-            for rollout in rollouts:
-                learner_token_log_probs, learner_seq_log_probs = (
-                    self.compute_sequence_log_probs(
-                        rollout["input_ids"],
-                        rollout["attention_mask"],
-                        rollout["response_start_idx"],
-                    )
-                )
-
-                with torch.no_grad():
-                    all_gepo_coefs.extend(
-                        self.compute_gepo_coefficient(
-                            learner_seq_log_probs.detach(),
-                            rollout["sampler_seq_log_probs"],
-                        ).tolist()
-                    )
-                policy_loss = self.compute_gepo_loss(
-                    learner_seq_log_probs,
-                    rollout["sampler_seq_log_probs"],
-                    rollout["advantages"],
-                    token_log_probs=learner_token_log_probs,
-                    response_mask=self.build_response_mask(
-                        rollout["attention_mask"], rollout["response_start_idx"]
-                    ),
-                )
-
-                accumulated_loss = accumulated_loss + policy_loss
-
-            final_loss = accumulated_loss / num_groups
-
-            self.optimizer.zero_grad()
-            final_loss.backward()
-
-            torch.nn.utils.clip_grad_norm_(
-                self.model.parameters(), self.config.max_grad_norm
-            )
-
-            self.optimizer.step()
-            # Cadence convention shared with DAPO/VAPO: the LR scheduler
-            # advances once per inner update, global_step counts train_steps.
-            self.scheduler.step()
-
-        self.global_step += 1
-
-        # Compute metrics
-        metrics = {
-            "policy_loss": final_loss.item(),
-            "average_reward": np.mean(all_rewards) if all_rewards else 0.0,
-            "advantage_std": np.std(all_advantages) if all_advantages else 0.0,
-            "gepo_coefficient_mean": np.mean(all_gepo_coefs) if all_gepo_coefs else 1.0,
-            "gepo_coefficient_std": np.std(all_gepo_coefs) if all_gepo_coefs else 0.0,
+    def _step_metrics(
+        self,
+        policy_loss: Any,
+        rewards: list[float],
+        advantages: list[float],
+        coefficients: list[float],
+        *,
+        updates: int,
+    ) -> dict[str, Any]:
+        """One ``train_step``'s metrics; a step without a valid group reports
+        the same keys (no updates, coefficient 1)."""
+        return {
+            "policy_loss": policy_loss,
+            "average_reward": np.mean(rewards) if rewards else 0.0,
+            "advantage_std": np.std(advantages) if advantages else 0.0,
+            "gepo_coefficient_mean": np.mean(coefficients) if coefficients else 1.0,
+            "gepo_coefficient_std": np.std(coefficients) if coefficients else 0.0,
             "learning_rate": self.scheduler.get_last_lr()[0],
             "global_step": self.global_step,
+            "optimizer_updates": updates,
         }
-
-        # Store metrics
-        for key in ["policy_loss", "average_reward"]:
-            if key in self.metrics_history:
-                self.metrics_history[key].append(metrics[key])
-
-        return metrics
 
     def save_checkpoint(self, output_dir: str) -> None:
         """Publish a complete resumable checkpoint."""
@@ -696,14 +479,197 @@ class GEPOTrainer(TrainingRuntime):
         return self.load_runtime_checkpoint(checkpoint_dir, trusted=trusted)
 
 
+#: ``metrics_history`` key -> the step metric it records.
+_GEPO_HISTORY: dict[str, str] = {
+    "policy_loss": "policy_loss",
+    "average_reward": "average_reward",
+    "gepo_coefficient": "gepo_coefficient_mean",
+    "advantage_std": "advantage_std",
+}
+
+
+@dataclass
+class _GEPOStep:
+    """One GEPO step's rollout and pass data (for the metrics)."""
+
+    rewards: list[float] = field(default_factory=list)
+    advantages: list[float] = field(default_factory=list)
+    coefficients: list[float] = field(default_factory=list)
+
+
+async def _gepo_score(
+    trainer: GEPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> float:
+    return await CallableScorer(trainer.reward_fn).score(prompt, response)
+
+
+async def _gepo_score_checked(
+    trainer: GEPOTrainer, prompt: str, response: str, context: Mapping[str, Any]
+) -> ScoredReply:
+    return await CallableScorer(trainer.reward_fn).score_checked(prompt, response)
+
+
+async def _gepo_rollouts(trainer: GEPOTrainer, prompts: list[Any]) -> StepRollouts:
+    """One group per prompt (at least two responses for group advantages),
+    with the sampler (old-policy) sequence log probs frozen here, before any
+    inner update can move the weights. When they were recomputed from the
+    just-updated model the GEPO coefficient collapsed to ~1 and clipping
+    never fired."""
+    step = _GEPOStep()
+
+    async def build(
+        prompt: str, group_responses: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        # A reply whose reward is a fallback is left out (never trained on);
+        # the group still needs two replies for a group baseline.
+        group_responses, rewards = await rollouts.score_group(
+            group_responses,
+            lambda resp: trainer._score_reply_checked(prompt, resp["response"]),
+        )
+        if len(group_responses) < 2:
+            return None
+        rewards_tensor = torch.tensor(
+            rewards, dtype=torch.float32, device=trainer.device
+        )
+        step.rewards.extend(rewards)
+
+        advantages, _reward_stats = trainer.compute_group_advantages(rewards_tensor)
+        step.advantages.extend(advantages.tolist())
+
+        batch_input_ids, batch_attention_mask, _ = build_group_batch(
+            group_responses, trainer.device, include_response_mask=False
+        )
+        response_start_idx = group_responses[0]["response_start_idx"]
+
+        with torch.no_grad():
+            _, sampler_seq_log_probs = trainer.compute_sequence_log_probs(
+                batch_input_ids, batch_attention_mask, response_start_idx
+            )
+
+        return {
+            "input_ids": batch_input_ids,
+            "attention_mask": batch_attention_mask,
+            "response_start_idx": response_start_idx,
+            "advantages": advantages,
+            "sampler_seq_log_probs": sampler_seq_log_probs.detach(),
+        }
+
+    rollouts = PromptGroupRollouts(
+        lambda prompt: trainer.generate_group_responses(
+            prompt, trainer.config.group_size
+        ),
+        min_group_size=2,
+        label="GEPO",
+    )
+    items = await rollouts.collect(prompts, build)
+    if not items:
+        logger.warning("No valid groups in batch")
+    return StepRollouts(
+        items=items, info=step, reward_fallbacks=rollouts.fallbacks.flagged
+    )
+
+
+def _gepo_group_loss(
+    trainer: GEPOTrainer,
+    rollouts: StepRollouts,
+    _pass: int,
+    _index: int,
+    rollout: dict[str, Any],
+) -> Any:
+    learner_token_log_probs, learner_seq_log_probs = trainer.compute_sequence_log_probs(
+        rollout["input_ids"],
+        rollout["attention_mask"],
+        rollout["response_start_idx"],
+    )
+    with torch.no_grad():
+        rollouts.info.coefficients.extend(
+            trainer.compute_gepo_coefficient(
+                learner_seq_log_probs.detach(),
+                rollout["sampler_seq_log_probs"],
+            ).tolist()
+        )
+    return trainer.compute_gepo_loss(
+        learner_seq_log_probs,
+        rollout["sampler_seq_log_probs"],
+        rollout["advantages"],
+        token_log_probs=learner_token_log_probs,
+        response_mask=trainer.build_response_mask(
+            rollout["attention_mask"], rollout["response_start_idx"]
+        ),
+    )
+
+
+def _gepo_update_options(
+    trainer: GEPOTrainer, rollouts: StepRollouts
+) -> dict[str, Any]:
+    """One graph per pass: the mean of the group losses is backpropagated,
+    then one validated optimizer step; each pass reports its own
+    coefficients."""
+    num_groups = len(rollouts.items)
+    return {
+        "on_pass_start": lambda _pass: rollouts.info.coefficients.clear(),
+        "initial_loss": lambda: torch.tensor(
+            0.0, device=trainer.device, requires_grad=True
+        ),
+        "reduce": lambda total: total / num_groups,
+    }
+
+
+def _gepo_metrics(
+    trainer: GEPOTrainer, rollouts: StepRollouts, passes: UpdatePasses | None
+) -> dict[str, Any]:
+    if passes is None:
+        return trainer._step_metrics(0.0, [], [], [], updates=0)
+    step: _GEPOStep = rollouts.info
+    metrics = trainer._step_metrics(
+        passes.losses[-1],
+        step.rewards,
+        step.advantages,
+        step.coefficients,
+        updates=passes.committed,
+    )
+
+    # Store metrics
+    for key, source in _GEPO_HISTORY.items():
+        trainer.metrics_history.setdefault(key, []).append(float(metrics[source]))
+    return metrics
+
+
+#: GEPO: the group-expectation importance coefficient with a PPO clip over
+#: prompt groups of at least two replies; one graph per pass, ``mu``
+#: (``num_gradient_updates``) passes against the frozen sampler log probs
+#: (cadence shared with DAPO/VAPO: the LR scheduler advances once per
+#: committed pass, ``global_step`` counts train steps).
+GEPO_SPEC = AlgorithmSpec(
+    name="gepo",
+    objective="gepo",
+    objective_options=lambda config: {
+        "supported_ratios": ("group_expectation", "sequence", "sequence_token"),
+        "clip_low": float(config.clip_eps),
+        "clip_high": float(config.clip_eps),
+    },
+    counter="train_steps",
+    update_mode="single_graph",
+    passes=lambda config: max(1, config_value(config, "num_gradient_updates")),
+    score=_gepo_score,
+    score_checked=_gepo_score_checked,
+    rollouts=_gepo_rollouts,
+    group_loss=_gepo_group_loss,
+    metrics=_gepo_metrics,
+    update_options=_gepo_update_options,
+)
+GEPOTrainer.algorithm = GEPO_SPEC
+
+
 async def train_with_gepo(
     model_name: str,
-    reward_fn: Callable[[str, str], float],
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
     train_prompts: list[str],
     config: GEPOConfig | None = None,
-    output_dir: str = "./outputs/gepo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using GEPO algorithm.
@@ -713,33 +679,56 @@ async def train_with_gepo(
         reward_fn: Function that takes (prompt, response) and returns reward
         train_prompts: List of training prompts
         config: GEPO configuration (uses defaults if None)
-        output_dir: Directory to save checkpoints
+        output_dir: Directory to save checkpoints; overrides
+            ``config.output_dir`` when given (``model_name`` likewise overrides
+            ``config.model_name``). Without it, ``config.output_dir`` is used,
+            or ``./outputs/gepo`` when no config is given.
         use_wandb: Whether to log to Weights & Biases
         wandb_project: W&B project name
+        callbacks: Get ``on_step_end`` after each iteration (after its
+            checkpoint); one setting ``should_abort`` stops training after the
+            final save
 
     Returns:
         Tuple of (model, tokenizer, metrics_history)
     """
-    if config is None:
-        config = GEPOConfig(model_name=model_name, output_dir=output_dir)
+    config = dedicated_run_config(
+        config,
+        GEPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/gepo",
+        entrypoint="train_with_gepo",
+    )
     _reject_unsupported_resume(config, "train_with_gepo")
 
     logger.info("=" * 60)
     logger.info("GEPO Training - Group Expectation Policy Optimization")
     logger.info("=" * 60)
 
-    # Initialize W&B
-    if use_wandb and wandb_project:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"gepo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["gepo", "rl-training"],
+    with WandbRun(
+        "gepo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["gepo", "rl-training"],
+    ) as reporter:
+        return await _run_gepo(
+            config, reward_fn, train_prompts, callbacks or [], reporter
         )
 
+
+async def _run_gepo(
+    config: GEPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_gepo` after its config and W&B run are set up."""
     # Load model and tokenizer
-    logger.info(f"Loading model: {model_name}")
+    seed_dedicated_run(config.seed)
+    logger.info(f"Loading model: {config.model_name}")
     model_manager = GEPOModelManager(config)
     model, tokenizer = model_manager.load_model_and_tokenizer()
 
@@ -757,18 +746,9 @@ async def train_with_gepo(
     logger.info(f"Group size: {config.group_size}")
     logger.info(f"Total iterations: {config.num_episodes}")
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
-        # Sample batch of prompts
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
-
-        # Train step
-        metrics = await trainer.train_step(batch_prompts)
-
-        # Log metrics
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
                 f"Iteration {iteration}/{config.num_episodes} | "
@@ -777,23 +757,26 @@ async def train_with_gepo(
                 f"GEPO Coef: {metrics['gepo_coefficient_mean']:.4f}"
             )
 
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
-        # Save checkpoint
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+        callbacks=callbacks,
+        seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
+    )
 
-    # Save final model
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if use_wandb:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("GEPO Training Complete!")
@@ -805,6 +788,7 @@ async def train_with_gepo(
 # Export
 __all__ = [
     "GEPOConfig",
+    "GEPO_SPEC",
     "GEPOTrainer",
     "train_with_gepo",
 ]

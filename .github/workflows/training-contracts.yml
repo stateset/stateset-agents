@@ -26,8 +26,8 @@ jobs:
           - {python: '3.12', extra: training, dependencies: locked}
           - {python: '3.12', extra: training, dependencies: runtime-locked}
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install build
@@ -68,7 +68,7 @@ jobs:
           cp benchmarks/offline_policy_device_contract.py /tmp/offline_policy_device_contract.py
           cd /tmp
           /tmp/wheel-env/bin/python offline_policy_device_contract.py --device cpu --output /tmp/wheel-device-contract
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.extra == 'training'
         with:
           name: wheel-device-contract-${{ matrix.python }}-${{ matrix.dependencies }}
@@ -84,8 +84,8 @@ jobs:
       TRANSFORMERS_OFFLINE: '1'
       OMP_NUM_THREADS: '1'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - name: Install CPU-only Muse training runtime
@@ -117,8 +117,8 @@ jobs:
       MKL_NUM_THREADS: '1'
       STATESET_DISTRIBUTED_CONTRACT_REPORT_DIR: /tmp/native-ddp-contract
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: pip install torch --index-url https://download.pytorch.org/whl/cpu
@@ -163,7 +163,7 @@ jobs:
           tests/unit/test_distributed_accelerate.py
           tests/unit/test_multi_turn_training_lifecycle.py
           tests/unit/test_training_profiling.py
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: native-ddp-cpu-contract
@@ -177,8 +177,8 @@ jobs:
       TRANSFORMERS_OFFLINE: '1'
       OMP_NUM_THREADS: '1'
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: pip install -r requirements-dev-lock.txt
@@ -252,7 +252,7 @@ jobs:
           tests/unit/test_native_evaluation_isolation.py
           tests/unit/test_evaluation_integrity.py
       - run: python -m stateset_agents.training.sampled_workflow --output /tmp/sampled-workflow --seeds 42 43 44
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()
         with:
           name: sampled-workflow
@@ -272,8 +272,8 @@ jobs:
     env:
       STATESET_TEST_QUEUE_DSN: postgresql://postgres:test-only-password@localhost:5432/postgres
     steps:
-      - uses: actions/checkout@v7
-      - uses: actions/setup-python@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: '3.12'
       - run: pip install -r requirements-dev-lock.txt

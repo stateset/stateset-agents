@@ -17,6 +17,7 @@ from stateset_agents.training.distributed_preflight import (
     sft_preflight_identity,
     verify_sft_rank_consensus,
 )
+from tests.integration._spawn_budget import spawn_budget
 
 pytestmark = pytest.mark.integration
 _COMPONENTS = (
@@ -185,11 +186,13 @@ def test_real_ranks_reject_different_inputs_and_remain_usable(tmp_path):
     context = torch.multiprocessing.spawn(
         _worker, args=(str(tmp_path.resolve()),), nprocs=2, join=False
     )
-    deadline = time.monotonic() + 60
+    deadline = time.monotonic() + spawn_budget(60)
     try:
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail("two-rank SFT consensus exceeded 60 seconds")
+                pytest.fail(
+                    f"two-rank SFT consensus exceeded {spawn_budget(60):.0f} seconds"
+                )
     finally:
         for process in context.processes:
             if process.is_alive():

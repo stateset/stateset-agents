@@ -322,3 +322,34 @@ async def test_uninspectable_environment_receives_canonical_call_once(
     assert reset.calls == [{}]
     callback.on_training_end.assert_not_awaited()
     trainer.environment.step.assert_not_awaited()
+
+
+def test_single_turn_trains_on_the_spine_episode_loop():
+    from stateset_agents.training.spine.loop import SpineLoopMixin
+
+    assert issubclass(module.SingleTurnGRPOTrainer, SpineLoopMixin)
+    assert module.SingleTurnGRPOTrainer.train is SpineLoopMixin.train
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("accumulation", "sources"),
+    [(1, ["batch", "batch"]), (2, ["batch"]), (3, ["final_flush"])],
+)
+async def test_committed_updates_reach_callbacks_as_spine_receipts(
+    lifecycle_trainer, accumulation, sources
+):
+    """Each commit (a turn's update or the final flush) is reported through
+    ``on_optimizer_step`` with the spine's receipt, as MultiTurn does."""
+    trainer, callback, _ = lifecycle_trainer
+    trainer.config.num_episodes = 2
+    trainer.config.gradient_accumulation_steps = accumulation
+    receipts = []
+    callback.on_optimizer_step = lambda step, metrics: receipts.append(metrics)
+    await trainer.train()
+    assert [receipt["update_source"] for receipt in receipts] == sources
+    assert receipts[-1]["optimizer_step_end"] == trainer.global_step
+    assert sum(receipt["optimizer_updates"] for receipt in receipts) == (
+        trainer.global_step
+    )
+    callback.on_training_end.assert_awaited_once()

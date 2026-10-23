@@ -19,8 +19,9 @@ from typing import Any, cast
 import psutil
 
 try:
-    import torch
+    import torch as _torch
 
+    torch: Any = _torch
     TORCH_AVAILABLE = True
 except ImportError:  # pragma: no cover
     torch = None

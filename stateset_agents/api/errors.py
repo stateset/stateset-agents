@@ -5,15 +5,23 @@ Unified error handling with consistent response format across all API services.
 """
 
 import logging
-from datetime import datetime
+from collections.abc import Awaitable, Callable
 from enum import Enum
-from typing import Any
+from typing import Any, TypeVar, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.responses import Response
+from starlette.types import ExceptionHandler
+
+from stateset_agents.utils.clock import utc_isoformat
+
+from .._deprecation import deprecated_alias_getattr
+from ..core.errors import ErrorContext as _CoreErrorContext
+from ..core.errors import StateSetError
 
 logger = logging.getLogger(__name__)
 
@@ -59,9 +67,9 @@ class ErrorCode(str, Enum):
 class ErrorDetail(BaseModel):
     """Individual error detail."""
 
-    field: str | None = Field(None, description="Field that caused the error")
+    field: str | None = Field(default=None, description="Field that caused the error")
     message: str = Field(..., description="Human-readable error message")
-    code: str | None = Field(None, description="Machine-readable error code")
+    code: str | None = Field(default=None, description="Machine-readable error code")
 
 
 class ErrorResponse(BaseModel):
@@ -93,7 +101,7 @@ class ErrorResponse(BaseModel):
     timestamp: str = Field(..., description="ISO 8601 timestamp")
     path: str = Field(..., description="Request path that caused the error")
     documentation_url: str | None = Field(
-        None, description="Link to relevant documentation"
+        default=None, description="Link to relevant documentation"
     )
 
 
@@ -102,8 +110,15 @@ class ErrorResponse(BaseModel):
 # ============================================================================
 
 
-class APIError(Exception):
-    """Base API exception with consistent error information."""
+class APIError(StateSetError):
+    """Base API exception with consistent error information.
+
+    Part of the framework's one hierarchy (``except StateSetError`` catches
+    it); ``code`` is the wire :class:`ErrorCode` and ``str(exc)`` is the bare
+    message.
+    """
+
+    message_only_str = True
 
     def __init__(
         self,
@@ -114,13 +129,19 @@ class APIError(Exception):
         documentation_url: str | None = None,
         internal_error: Exception | None = None,
     ):
-        super().__init__(message)
+        Exception.__init__(self, message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.details = details or []
         self.documentation_url = documentation_url
         self.internal_error = internal_error
+        self.context = _CoreErrorContext(
+            operation="api_request",
+            component="api",
+            details={"status_code": status_code},
+        )
+        self.cause = internal_error
 
     def to_response(self, request_id: str, path: str) -> dict[str, Any]:
         """Convert to response dictionary."""
@@ -130,7 +151,7 @@ class APIError(Exception):
                 "message": self.message,
             },
             "request_id": request_id,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "timestamp": utc_isoformat(),
             "path": path,
         }
 
@@ -183,8 +204,12 @@ class ConflictError(APIError):
         super().__init__(ErrorCode.CONFLICT, message, 409)
 
 
-class ValidationError(APIError):
-    """422 Validation Error."""
+class UnprocessableEntityError(APIError):
+    """422 Unprocessable Entity (request validation failed).
+
+    Formerly ``ValidationError``, a name it shared with
+    :class:`stateset_agents.core.errors.ValidationError`.
+    """
 
     def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.VALIDATION_ERROR, message, 422, details)
@@ -222,8 +247,12 @@ class ServiceUnavailableError(APIError):
         super().__init__(ErrorCode.SERVICE_UNAVAILABLE, message, 503)
 
 
-class TrainingError(APIError):
-    """Training-specific error."""
+class TrainingFailedError(APIError):
+    """500 for a failed training operation.
+
+    Formerly ``TrainingError``, a name it shared with
+    :class:`stateset_agents.core.errors.TrainingError`.
+    """
 
     def __init__(self, message: str, details: list[ErrorDetail] | None = None):
         super().__init__(ErrorCode.TRAINING_FAILED, message, 500, details)
@@ -367,7 +396,7 @@ def build_error_response(
             "message": message,
         },
         "request_id": request_id,
-        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "timestamp": utc_isoformat(),
         "path": str(request.url.path),
     }
 
@@ -678,12 +707,41 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 # ============================================================================
 
 
+_ExcT = TypeVar("_ExcT", bound=Exception)
+
+
+def _add_exception_handler(
+    app: FastAPI,
+    exc_class: type[_ExcT],
+    handler: Callable[[Request, _ExcT], Awaitable[Response]],
+) -> None:
+    """Register ``handler`` for ``exc_class`` with the handler/type pairing checked.
+
+    Starlette types every handler as accepting a bare ``Exception`` even though
+    it only dispatches instances of the registered class, so narrower handlers
+    need a cast at the registration boundary.
+    """
+    app.add_exception_handler(exc_class, cast(ExceptionHandler, handler))
+
+
 def setup_exception_handlers(app: FastAPI) -> None:
     """Register all exception handlers."""
-    app.add_exception_handler(APIError, api_error_handler)
-    app.add_exception_handler(HTTPException, http_exception_handler)
-    app.add_exception_handler(StarletteHTTPException, starlette_http_exception_handler)
-    app.add_exception_handler(RequestValidationError, validation_exception_handler)
-    app.add_exception_handler(Exception, unhandled_exception_handler)
+    _add_exception_handler(app, APIError, api_error_handler)
+    _add_exception_handler(app, HTTPException, http_exception_handler)
+    _add_exception_handler(
+        app, StarletteHTTPException, starlette_http_exception_handler
+    )
+    _add_exception_handler(app, RequestValidationError, validation_exception_handler)
+    _add_exception_handler(app, Exception, unhandled_exception_handler)
 
     logger.info("Exception handlers configured successfully")
+
+
+# Names that collided with the core.errors categories (renamed in v0.70.0).
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {
+        "ValidationError": (__name__, "UnprocessableEntityError", "0.71.0"),
+        "TrainingError": (__name__, "TrainingFailedError", "0.71.0"),
+    },
+)

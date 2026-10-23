@@ -79,9 +79,9 @@ def test_escape_restores_the_captured_form_and_preserves_its_values(tmp_path):
     studio.handle("f")
     filter_name(studio, directory.name)
     studio.handle("ENTER")
-    assert studio.file_directory == directory
+    assert studio.file_picker.directory == directory
     studio.handle("BACKSPACE")
-    assert studio.file_directory == tmp_path
+    assert studio.file_picker.directory == tmp_path
     studio.handle("ESC")
     assert studio.overlay == "evaluation" and studio.file_evaluation is None
     assert panel.mode == "form" and panel.field == 5
@@ -100,7 +100,7 @@ def test_case_picker_lists_supported_regular_json_and_directories(tmp_path):
     os.mkfifo(tmp_path / "pipe.json")
     studio, _ = editor(tmp_path)
     studio.handle("f")
-    names = {name for name, _, directory in studio.file_entries if not directory}
+    names = {name for name, _, directory in studio.file_picker.entries if not directory}
     assert names == {"test.JSON"}
     studio.handle("ESC")
 
@@ -143,11 +143,11 @@ def test_directory_permission_failure_can_return_without_losing_editor(
     def denied(*args, **kwargs):
         raise PermissionError("PRIVATE_DIRECTORY_ERROR")
 
-    monkeypatch.setattr("stateset_agents.tui.os.scandir", denied)
+    monkeypatch.setattr("stateset_agents.tui_panels.os.scandir", denied)
     studio.handle("f")
-    assert "PermissionError" in studio.file_error
-    assert "PRIVATE_DIRECTORY_ERROR" not in studio.file_error
-    assert studio.file_entries[0][0] == ".."
+    assert "PermissionError" in studio.file_picker.error
+    assert "PRIVATE_DIRECTORY_ERROR" not in studio.file_picker.error
+    assert studio.file_picker.entries[0][0] == ".."
     studio.handle("ESC")
     assert studio.overlay == "evaluation" and panel.values == before
 
@@ -172,13 +172,13 @@ def test_directory_scan_is_bounded_and_pages_keep_selection_visible(
 
         yield rows()
 
-    monkeypatch.setattr("stateset_agents.tui.os.scandir", entries)
+    monkeypatch.setattr("stateset_agents.tui_panels.os.scandir", entries)
     studio.handle("f")
-    assert len(scanned) == 2000 and len(studio.file_entries) == 2001
+    assert len(scanned) == 2000 and len(studio.file_picker.entries) == 2001
     studio.handle("PAGEDOWN")
-    assert studio.file_index == 8
+    assert studio.file_picker.index == 8
     studio.handle("PAGEUP")
-    assert studio.file_index == 0
+    assert studio.file_picker.index == 0
     studio.handle("END")
     assert "case-1999.json" in "\n".join(studio.lines(74, 44))
     studio.handle("HOME")

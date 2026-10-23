@@ -33,6 +33,7 @@ VRAM note: vLLM loads the whole model into GPU memory. The default GPU
 
 from __future__ import annotations
 
+import re
 import secrets
 import shlex
 import tarfile
@@ -58,11 +59,16 @@ __all__ = [
     "adapter_no_effect_message",
     "find_serve_pod",
     "greedy_completion",
+    "is_valid_adapter_name",
     "list_serve_pods",
     "self_destruct_script",
 ]
 
 _POD_PREFIX = "stateset-serve-"
+#: Adapter names become remote paths (``/workspace/<name>``), tarball names,
+#: and vLLM ``--lora-modules`` keys, so they are restricted to a shell- and
+#: path-safe alphabet. Names made only of dots are rejected separately.
+_ADAPTER_NAME_RE = re.compile(r"^[A-Za-z0-9._-]{1,128}$")
 _REMOTE_ADAPTER_DIR = f"{_REMOTE_WORKDIR}/adapter"
 _REMOTE_ADAPTER_TAR = f"{_REMOTE_WORKDIR}/adapter.tar.gz"
 _REMOTE_KEY_FILE = f"{_REMOTE_WORKDIR}/.runpod_key"
@@ -199,6 +205,15 @@ def self_destruct_script(
         f'-H "Authorization: Bearer $api_key"\n'
         "unset api_key\n"
     )
+
+
+def is_valid_adapter_name(name: str) -> bool:
+    """Whether ``name`` is safe to use as a served adapter name.
+
+    Allows ``[A-Za-z0-9._-]`` (1-128 chars) and rejects names made only of
+    dots, which would resolve to ``/workspace`` or its parent on the pod.
+    """
+    return bool(_ADAPTER_NAME_RE.match(name)) and set(name) != {"."}
 
 
 def _pod_age(pod: dict[str, Any], *, now: Callable[[], float] = time.time) -> str:
@@ -514,6 +529,10 @@ class RemoteServeSession:
         Each adapter lands at ``/workspace/<name>`` and is served under
         ``name``, so several can ride one endpoint for A/B comparison.
         """
+        if not is_valid_adapter_name(name):
+            raise RemoteExecutionError(
+                f"invalid adapter name {name!r}", provider=self.provider
+            )
         tar_remote = f"{_REMOTE_WORKDIR}/{name}.tar.gz"
         with tempfile.TemporaryDirectory() as staging:
             tar_path = Path(staging) / f"{name}.tar.gz"
@@ -522,7 +541,8 @@ class RemoteServeSession:
             ssh.upload(tar_path, tar_remote)
         self._run_checked(
             ssh,
-            f"tar xzf {tar_remote} -C {_REMOTE_WORKDIR} " f"&& rm -f {tar_remote}",
+            f"tar xzf {shlex.quote(tar_remote)} -C {shlex.quote(_REMOTE_WORKDIR)} "
+            f"&& rm -f {shlex.quote(tar_remote)}",
         )
 
     def _arm_self_destruct(self, ssh: Any, api: Any, max_hours: float) -> None:
@@ -761,6 +781,13 @@ class RemoteServeSession:
         all_adapters: dict[str, Path] = dict(adapters or {})
         if adapter_dir is not None:
             all_adapters.setdefault("adapter", Path(adapter_dir))
+        bad_names = sorted(n for n in all_adapters if not is_valid_adapter_name(n))
+        if bad_names:
+            raise RemoteExecutionError(
+                f"invalid adapter name(s) {bad_names!r}: use only letters, "
+                "digits, '.', '_' and '-'",
+                provider=self.provider,
+            )
         if merge and len(all_adapters) != 1:
             raise RemoteExecutionError(
                 "--merge folds ONE adapter into the base weights; got "
@@ -991,7 +1018,7 @@ class RemoteServeSession:
 
     def _direct_log_server_source(self) -> str:
         """A tiny Bearer-protected endpoint serving only the last 64 KiB."""
-        return f"""import http.server, os
+        return f"""import hmac, http.server, os
 TOKEN = os.environ["VLLM_API_KEY"]
 LOG = {_DIRECT_LOG_FILE!r}
 
@@ -1000,7 +1027,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path != "/logs":
             self.send_error(404)
             return
-        if self.headers.get("Authorization") != "Bearer " + TOKEN:
+        supplied = self.headers.get("Authorization") or ""
+        if not hmac.compare_digest(
+            supplied.encode("utf-8"), ("Bearer " + TOKEN).encode("utf-8")
+        ):
             self.send_error(401)
             return
         try:
