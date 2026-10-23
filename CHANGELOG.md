@@ -72,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   budgets measured with it did not expire on time (in CI: a readiness reply
   after its deadline counted as success, and the pod deadline was armed one
   second late). The anchor now holds the clock object itself.
+- Studio tests wait up to 40 s (was 10 s) for a background preview, launch or
+  review, and apply work that finishes during the last poll. Each of these
+  hashes every package source file, which took several seconds per pass on a
+  loaded Windows runner; a stuck task still fails, with its elapsed time.
 
 - **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
   partition issue combinations between eval and harvest, so the same seed

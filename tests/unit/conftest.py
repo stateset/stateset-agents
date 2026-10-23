@@ -4,17 +4,30 @@ import time
 
 import pytest
 
+#: Upper bound for one preview, launch, stop or review to finish. Planning,
+#: review and launch each hash every package source file; on loaded Windows
+#: CI runners (four xdist workers, real-time scanning) one pass took several
+#: seconds and a 10 s budget ran out. Settling returns as soon as the work is
+#: applied, so the bound only matters for work that is really stuck, and it
+#: stays below pytest's 60 s per-test timeout to report which step stuck.
+SETTLE_TIMEOUT_S = 40.0
 
-def settle_studio(studio, timeout=10):
-    """Apply finished preview and launch/stop/review work on the UI thread."""
-    deadline = time.monotonic() + timeout
-    while (studio.planning.busy or studio.submission.busy) and (
-        time.monotonic() < deadline
-    ):
+
+def settle_studio(studio, timeout=SETTLE_TIMEOUT_S):
+    """Apply finished preview and launch/stop/review work on the UI thread.
+
+    The deadline is checked only after a refresh, so work that finishes
+    during the final sleep is still applied rather than reported as stuck.
+    """
+    start = time.monotonic()
+    while studio.planning.busy or studio.submission.busy:
         studio.refresh()
+        if time.monotonic() - start >= timeout:
+            break
         time.sleep(0.005)
-    assert not studio.planning.busy, "Preview did not finish"
-    assert not studio.submission.busy, "Submission did not finish"
+    elapsed = time.monotonic() - start
+    assert not studio.planning.busy, f"Preview did not finish in {elapsed:.1f}s"
+    assert not studio.submission.busy, f"Submission did not finish in {elapsed:.1f}s"
 
 
 @pytest.fixture(scope="session")
