@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -40,6 +41,10 @@ def dead_owner():
     """
     from stateset_agents.utils.process_probe import probe_process, process_start_token
 
+    if sys.platform == "win32" and process_start_token(os.getpid()) is None:
+        # Windows PIDs are multiples of 4, so this one is never allocated: it
+        # proves "no such process" without racing a reused exited PID.
+        return 0xFFFFFFFB, None
     for _ in range(20):
         child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
         token = process_start_token(child.pid)
