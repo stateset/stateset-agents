@@ -11,6 +11,10 @@ from stateset_agents.core.enhanced.advanced_rl_algorithms import (  # noqa: E402
     DPOTrainer,
 )
 
+pytestmark = pytest.mark.filterwarnings(
+    "ignore:stateset_agents.core.enhanced.DPOTrainer is deprecated:DeprecationWarning"
+)
+
 
 class _ByteTokenizer:
     def __call__(self, text, add_special_tokens=True, **_):
@@ -62,3 +66,12 @@ async def test_train_step_prefers_chosen_over_rejected():
         metrics = await trainer.train_step([pair])
     assert metrics["dpo_loss"] < 0.6931  # below log 2 once preferences are learned
     assert margin() > before
+
+
+def test_dpo_trainer_is_deprecated_in_favour_of_preference_trainer():
+    agent = SimpleNamespace(model=_TinyLM(), tokenizer=_ByteTokenizer())
+    with pytest.warns(
+        DeprecationWarning,
+        match=r"removed in v0\.71\.0; use stateset_agents\.training\.preference\.PreferenceTrainer",
+    ):
+        DPOTrainer(agent, DPOConfig(), device="cpu")

@@ -39,6 +39,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   verified; the worker terminates its pod and records the run as `cancelled`.
   The API capability reports `remote_stop_supported` and
   `remote_stop_providers`. Other remote providers are still refused.
+- **Maintained preference training** (provisional,
+  `stateset_agents.training.preference`; docs/PREFERENCE_TRAINING.md):
+  - typed `PreferencePair` / `UnpairedExample` / `PreferenceDataset` loaded
+    from strict JSONL (prompt strings, chat messages, TRL implicit-prompt
+    conversations, unpaired KTO labels; optional margin, weight, group and
+    source ids) with prompt-disjoint, order-independent train/eval splits on
+    the shared request identity;
+  - pure, validated losses for DPO, conservative DPO, IPO, SimPO, KTO
+    (with its mismatched-pair KL reference point), ORPO and Bradley-Terry,
+    pinned to TRL 1.12 on identical tensors;
+  - `PreferenceTrainer` / `train_preference`: response-only log-probs via
+    `rl_losses.gather_token_logprobs` and `core.chat_masking`, a frozen,
+    LoRA adapter-disabled or precomputed reference (none for SimPO/ORPO),
+    AdamW with warmup schedules, exact weighted gradient accumulation,
+    clipping and a raise/skip non-finite policy through
+    `safe_optimizer_step`, reward accuracy/margin metrics, and checkpoints
+    that resume an interrupted run exactly;
+  - Bradley-Terry `RewardModelTrainer` / `train_reward_model` (accuracy and
+    ROC AUC) exported as `PairwiseRewardFunction`, a reward-contract
+    `RewardFunction` scoring `σ((r - offset) / temperature)` in `[0, 1]`;
+  - `stateset-agents preference` (`--method dpo|ipo|simpo|kto|orpo|rm`,
+    torch-free `--dry-run`);
+  - learning tests on three seeds and the `preference-optimization` (beta)
+    entry in the component maturity contract.
+
+### Deprecated
+
+- `stateset_agents.core.enhanced.DPOTrainer` warns and will be removed in
+  v0.71.0; use `stateset_agents.training.preference.PreferenceTrainer`.
 
 ### Changed
 

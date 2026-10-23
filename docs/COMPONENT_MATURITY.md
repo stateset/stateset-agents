@@ -33,6 +33,7 @@ and `make release-governance` validates it on every pull request and release.
 | `memory` | Beta |
 | `offline-rl` | Experimental |
 | `ppo-rlaif-trainers` | Experimental |
+| `preference-optimization` | Beta |
 | `provider-control-plane` | Beta |
 | `research-modules` | Experimental |
 | `reward-learning-rlaif` | Beta |

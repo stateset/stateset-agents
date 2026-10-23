@@ -1,4 +1,6 @@
-"""The enhanced DPOTrainer learns a digits-over-letters preference.
+"""The (deprecated) enhanced DPOTrainer learns a digits-over-letters preference.
+
+Its maintained replacement is covered by test_preference_learns.py.
 
 Training pairs prefer a random 4-digit reply over a random 4-letter reply;
 the held-out pairs use different prompts and strings. The policy's
@@ -25,7 +27,12 @@ from tests.learning._toy import (  # noqa: E402
     seeds,
 )
 
-pytestmark = pytest.mark.learning
+pytestmark = [
+    pytest.mark.learning,
+    pytest.mark.filterwarnings(
+        "ignore:stateset_agents.core.enhanced.DPOTrainer is deprecated:DeprecationWarning"
+    ),
+]
 
 STEPS = 10
 DIGITS = "0123456789"

@@ -30,6 +30,7 @@ REQUIRED_COMPONENT_IDS = {
     "memory",
     "offline-rl",
     "ppo-rlaif-trainers",
+    "preference-optimization",
     "provider-control-plane",
     "research-modules",
     "reward-learning-rlaif",
