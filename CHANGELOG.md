@@ -84,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ResourceException` a new `ResourceError`, ...) and carries
   `code`/`context`/`to_dict()`; the gateway's `APIError` family derives from
   `StateSetError` too (its `str()` and wire format are unchanged).
+- **Oversized functions split, and their count is ratcheted.**
+  `cli._validate_config`, `AgentConfig.validate`, the `/api/v1/conversations`
+  handler, `finetune_workspace.check_config_values` (81 branches) and
+  `data.finetuning.validate_finetuning_row` are split into ordered helpers
+  with identical results (checked differentially against the previous
+  implementations over tens of thousands of generated inputs; new tests pin
+  the conversation route's 422 details). `tests/unit/test_complexity_ratchet.py`
+  fails if the number of functions over 150 lines or 40 branches rises above
+  77 (it was 82).
 
 ### Deprecated
 

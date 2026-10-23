@@ -282,6 +282,19 @@ class ConfigIssue:
     message: str
 
 
+class _IssueLog:
+    """Ordered settings issues, at most one (the first) per field."""
+
+    def __init__(self) -> None:
+        self.issues: list[ConfigIssue] = []
+        self.seen: set[str] = set()
+
+    def add(self, field: str, code: str, message: str) -> None:
+        if field not in self.seen:
+            self.issues.append(ConfigIssue(field, code, message))
+            self.seen.add(field)
+
+
 def check_config_values(
     values: Mapping[str, Any], *, parse_text: bool = False
 ) -> tuple[dict[str, Any], list[ConfigIssue]]:
@@ -293,16 +306,30 @@ def check_config_values(
     """
     defaults = asdict(FinetuneConfig())
     parsed = {name: values.get(name, default) for name, default in defaults.items()}
-    issues: list[ConfigIssue] = []
-    seen: set[str] = set()
+    log = _IssueLog()
+    # The checks run in a fixed order; the first issue recorded for a field wins.
+    _check_field_types(values, defaults, parsed, log, parse_text=parse_text)
+    _check_recipe(parsed, log)
+    _check_cost_and_hardware(parsed, log)
+    _check_positive_ranges(defaults, parsed, log)
+    _check_backend_limits(parsed, log)
+    return parsed, log.issues
 
-    def add(field: str, code: str, message: str) -> None:
-        if field not in seen:
-            issues.append(ConfigIssue(field, code, message))
-            seen.add(field)
 
+def _number_kind(default: Any) -> str:
+    return "an integer" if type(default) is int else "a finite number"
+
+
+def _check_field_types(
+    values: Mapping[str, Any],
+    defaults: dict[str, Any],
+    parsed: dict[str, Any],
+    log: _IssueLog,
+    *,
+    parse_text: bool,
+) -> None:
     if set(values) - defaults.keys():
-        add(
+        log.add(
             "config",
             "unknown_fields",
             "Unknown configuration fields; use finetune schema for supported fields.",
@@ -311,40 +338,48 @@ def check_config_values(
         value = parsed[name]
         if isinstance(default, str):
             if not isinstance(value, str):
-                add(name, "invalid_type", f"{name} must be text")
+                log.add(name, "invalid_type", f"{name} must be text")
         elif type(default) in {int, float}:
             if parse_text and isinstance(value, str):
                 try:
                     value = int(value) if type(default) is int else float(value)
                     parsed[name] = value
                 except (ValueError, OverflowError):
-                    add(
+                    log.add(
                         name,
                         "invalid_type",
-                        f"{name} must be {'an integer' if type(default) is int else 'a finite number'}",
+                        f"{name} must be {_number_kind(default)}",
                     )
             if (
                 isinstance(value, bool)
                 or (type(default) is int and type(value) is not int)
                 or (type(default) is float and not isinstance(value, (int, float)))
             ):
-                add(
+                log.add(
                     name,
                     "invalid_type",
-                    f"{name} must be {'an integer' if type(default) is int else 'a finite number'}",
+                    f"{name} must be {_number_kind(default)}",
                 )
 
+
+def _method_and_provider(parsed: Mapping[str, Any]) -> tuple[Any, Any, bool, bool]:
     method, provider = parsed["method"], parsed["provider"]
     method_valid = isinstance(method, str) and method in METHODS
     provider_valid = isinstance(provider, str) and provider in PROVIDERS
+    return method, provider, method_valid, provider_valid
+
+
+def _check_recipe(parsed: dict[str, Any], log: _IssueLog) -> None:
+    """Method, backend, model, dataset and revision."""
+    method, provider, method_valid, provider_valid = _method_and_provider(parsed)
     if not method_valid:
-        add(
+        log.add(
             "method",
             "unsupported_method",
             "Choose SFT/GRPO/GSPO/DAPO and local/RunPod/Modal/River",
         )
     if not provider_valid:
-        add(
+        log.add(
             "provider",
             "unsupported_backend",
             "Choose SFT/GRPO/GSPO/DAPO and local/RunPod/Modal/River",
@@ -352,66 +387,74 @@ def check_config_values(
     if isinstance(parsed["model"], str) and (
         not parsed["model"].strip() or parsed["model"].startswith("stub://")
     ):
-        add("model", "invalid_model", "Choose a real Hugging Face model")
+        log.add("model", "invalid_model", "Choose a real Hugging Face model")
     if (
         provider_valid
         and provider in {"local", "runpod", "modal"}
         and isinstance(parsed["model"], str)
     ):
-        from stateset_agents.core.frontier_models import (
-            get_frontier_model,
-            require_frontier_training,
-        )
-
-        try:
-            frontier = get_frontier_model(parsed["model"].strip())
-        except ValueError:
-            pass
-        else:
-            try:
-                require_frontier_training(frontier, generic_loader=True)
-            except RuntimeError:
-                if frontier.blockers:
-                    add(
-                        "model",
-                        "blocked_training_layout",
-                        "This checkpoint has an unsupported training layout for this backend; inspect frontier-models for blockers and choose a supported checkpoint.",
-                    )
-                else:
-                    add(
-                        "model",
-                        "requires_frontier_recipe",
-                        "This FP8 checkpoint requires the dedicated frontier-sft BF16 dequantization recipe; inspect frontier-sft --help or choose a supported Studio checkpoint.",
-                    )
+        _check_frontier_layout(parsed["model"], log)
     if isinstance(parsed["dataset"], str) and not parsed["dataset"].strip():
-        add("dataset", "dataset_required", "Set the dataset path first")
+        log.add("dataset", "dataset_required", "Set the dataset path first")
     revision = parsed["revision"]
     if (
         isinstance(revision, str)
         and revision
         and not re.fullmatch(r"[0-9a-f]{40}", revision)
     ):
-        add(
+        log.add(
             "revision",
             "invalid_revision",
             "Revision must be a full 40-character commit or blank",
         )
     if provider_valid and provider != "local":
         if method_valid and method != "sft":
-            add(
+            log.add(
                 "method",
                 "backend_method",
                 f"Studio supports {BACKENDS[provider]['label']} SFT; choose local for native RL or the dedicated River RL workflow",
             )
         if isinstance(revision, str) and revision:
-            add(
+            log.add(
                 "revision",
                 "backend_revision",
                 f"{BACKENDS[provider]['label']}'s SFT contract cannot enforce a revision; use local",
             )
+
+
+def _check_frontier_layout(model: str, log: _IssueLog) -> None:
+    from stateset_agents.core.frontier_models import (
+        get_frontier_model,
+        require_frontier_training,
+    )
+
+    try:
+        frontier = get_frontier_model(model.strip())
+    except ValueError:
+        return
+    try:
+        require_frontier_training(frontier, generic_loader=True)
+    except RuntimeError:
+        if frontier.blockers:
+            log.add(
+                "model",
+                "blocked_training_layout",
+                "This checkpoint has an unsupported training layout for this backend; inspect frontier-models for blockers and choose a supported checkpoint.",
+            )
+        else:
+            log.add(
+                "model",
+                "requires_frontier_recipe",
+                "This FP8 checkpoint requires the dedicated frontier-sft BF16 dequantization recipe; inspect frontier-sft --help or choose a supported Studio checkpoint.",
+            )
+
+
+def _check_cost_and_hardware(parsed: dict[str, Any], log: _IssueLog) -> None:
+    """Cost policy, seed, checkpoint cadence and GPU overrides."""
+    method, provider = parsed["method"], parsed["provider"]
     policy = parsed["cost_policy"]
     if not isinstance(policy, str) or policy not in {"require_cap", "provider_billed"}:
-        add(
+        log.add(
             "cost_policy",
             "invalid_cost_policy",
             "Choose require_cap or provider_billed cost policy",
@@ -421,83 +464,99 @@ def check_config_values(
         and provider in {"modal", "river"}
         and policy != "provider_billed"
     ):
-        add(
+        log.add(
             "cost_policy",
             "uncapped_backend",
             "This backend has no enforced dollar ceiling; explicitly choose provider_billed cost policy before review",
         )
     seed = parsed["seed"]
     if type(seed) is int and not 0 <= seed <= 2**32 - 1:
-        add(
+        log.add(
             "seed",
             "invalid_range",
             "Training seed must be an integer in [0, 4294967295]",
         )
+    _check_checkpoint_cadence(parsed, log, method=method, provider=provider)
     gpu, count = parsed["gpu"], parsed["gpu_count"]
-    cadence = parsed["checkpoint_every"]
-    if type(cadence) is int:
-        if cadence < 0:
-            add(
-                "checkpoint_every",
-                "invalid_range",
-                "Checkpoint interval must be nonnegative (0 saves only the final checkpoint)",
-            )
-        elif cadence and (provider != "local" or method == "sft"):
-            add(
-                "checkpoint_every",
-                "checkpoint_backend",
-                "Periodic checkpoint intervals currently require local native RL",
-            )
-        elif (
-            cadence
-            and type(parsed["steps"]) is int
-            and parsed["steps"] > 0
-            and (parsed["steps"] + cadence - 1) // cadence > MAX_STUDIO_CHECKPOINTS
-        ):
-            add(
-                "checkpoint_every",
-                "checkpoint_limit",
-                "Increase the checkpoint interval to retain at most 100 checkpoints",
-            )
     if (
         isinstance(gpu, str)
         and gpu
         and (not gpu.strip() or any(not c.isprintable() for c in gpu))
     ):
-        add("gpu", "invalid_gpu", "GPU must be printable nonempty text or blank")
+        log.add("gpu", "invalid_gpu", "GPU must be printable nonempty text or blank")
     if type(count) is int and count < 0:
-        add(
+        log.add(
             "gpu_count",
             "invalid_range",
             "GPU count must be a nonnegative integer (0 is automatic)",
         )
     if provider == "river":
         if isinstance(gpu, str) and gpu:
-            add(
+            log.add(
                 "gpu", "managed_hardware", "River manages hardware; clear GPU overrides"
             )
         if type(count) is int and count != 0:
-            add(
+            log.add(
                 "gpu_count",
                 "managed_hardware",
                 "River manages hardware; clear GPU overrides",
             )
+
+
+def _check_checkpoint_cadence(
+    parsed: Mapping[str, Any], log: _IssueLog, *, method: Any, provider: Any
+) -> None:
+    cadence = parsed["checkpoint_every"]
+    if type(cadence) is not int:
+        return
+    if cadence < 0:
+        log.add(
+            "checkpoint_every",
+            "invalid_range",
+            "Checkpoint interval must be nonnegative (0 saves only the final checkpoint)",
+        )
+    elif cadence and (provider != "local" or method == "sft"):
+        log.add(
+            "checkpoint_every",
+            "checkpoint_backend",
+            "Periodic checkpoint intervals currently require local native RL",
+        )
+    elif (
+        cadence
+        and type(parsed["steps"]) is int
+        and parsed["steps"] > 0
+        and (parsed["steps"] + cadence - 1) // cadence > MAX_STUDIO_CHECKPOINTS
+    ):
+        log.add(
+            "checkpoint_every",
+            "checkpoint_limit",
+            "Increase the checkpoint interval to retain at most 100 checkpoints",
+        )
+
+
+def _check_positive_ranges(
+    defaults: dict[str, Any], parsed: Mapping[str, Any], log: _IssueLog
+) -> None:
     for name, default in defaults.items():
         value = parsed[name]
-        if name in seen or name in {"gpu_count", "checkpoint_every", "seed"}:
+        if name in log.seen or name in {"gpu_count", "checkpoint_every", "seed"}:
             continue
         if type(default) is int and value < 1:
-            add(name, "invalid_range", f"{name} must be a positive integer")
+            log.add(name, "invalid_range", f"{name} must be a positive integer")
         elif type(default) is float:
             try:
                 valid = math.isfinite(value) and value > 0
             except (OverflowError, TypeError):
                 valid = False
             if not valid:
-                add(name, "invalid_range", f"{name} must be finite and positive")
+                log.add(name, "invalid_range", f"{name} must be finite and positive")
+
+
+def _check_backend_limits(parsed: Mapping[str, Any], log: _IssueLog) -> None:
+    method, provider, method_valid, _ = _method_and_provider(parsed)
     rank = parsed["lora_rank"]
     if provider == "river" and type(rank) is int and rank > 32:
-        add("lora_rank", "backend_rank", "River SFT supports LoRA ranks up to 32")
+        log.add("lora_rank", "backend_rank", "River SFT supports LoRA ranks up to 32")
     generations = parsed["generations"]
     if (
         method_valid
@@ -505,12 +564,11 @@ def check_config_values(
         and type(generations) is int
         and generations < 2
     ):
-        add(
+        log.add(
             "generations",
             "rl_generations",
             "RL needs at least two generations per scenario",
         )
-    return parsed, issues
 
 
 def write_json(path: Path, value: Any) -> None:

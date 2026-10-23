@@ -110,7 +110,14 @@ class AgentConfig:
         self.validate()
 
     def validate(self) -> None:
-        """Validate all configuration parameters."""
+        """Validate all configuration parameters (in a fixed order)."""
+        self._validate_chat_template_kwargs()
+        self._validate_model_identity()
+        self._validate_sampling()
+        self._validate_runtime()
+        self._validate_prompting()
+
+    def _validate_chat_template_kwargs(self) -> None:
         if self.chat_template_kwargs is not None:
             reserved = {
                 "conversation",
@@ -132,6 +139,8 @@ class AgentConfig:
                     self.chat_template_kwargs,
                     "must be a dict of template options without tokenizer control arguments",
                 )
+
+    def _validate_model_identity(self) -> None:
         if not self.model_name or not isinstance(self.model_name, str):
             raise ConfigValidationError(
                 "model_name",
@@ -149,6 +158,7 @@ class AgentConfig:
                 ["Pin the full Hugging Face commit SHA for benchmark runs"],
             )
 
+    def _validate_sampling(self) -> None:
         if not isinstance(self.max_new_tokens, int) or self.max_new_tokens < 1:
             raise ConfigValidationError(
                 "max_new_tokens",
@@ -224,6 +234,7 @@ class AgentConfig:
                 ["1.1", "1.2", "1.5"],
             )
 
+    def _validate_runtime(self) -> None:
         valid_dtypes = ["float16", "bfloat16", "float32"]
         if self.torch_dtype not in valid_dtypes:
             raise ConfigValidationError(
@@ -250,6 +261,7 @@ class AgentConfig:
                 ["Set use_peft=True"],
             )
 
+    def _validate_prompting(self) -> None:
         if self.system_prompt and len(self.system_prompt) > 10000:
             raise ConfigValidationError(
                 "system_prompt",

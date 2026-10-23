@@ -474,25 +474,10 @@ async def cancel_training_v1(
     )
 
 
-@router.post(
-    "/conversations",
-    response_model=ConversationResponseV1,
-    summary="Chat (v1)",
-)
-async def chat_v1(
-    request: Request,
-    payload: ConversationRequestV1,
-    service: InferenceService = Depends(get_inference_service),
-    ctx: RequestContext = Depends(get_request_context),
-) -> ConversationResponseV1:
-    """Create or continue a v1 conversation."""
-    config = get_config()
-    max_messages = int(config.validation.max_conversation_messages)
-    if max_messages < 1:
-        max_messages = 128
-    start = time.monotonic()
-    request_id = getattr(request.state, "request_id", "unknown")
-
+def _check_v1_conversation_request(
+    payload: ConversationRequestV1, validation: Any
+) -> None:
+    """Reject requests that give both or neither of message/messages."""
     if payload.message and payload.messages:
         raise HTTPException(
             status_code=422,
@@ -504,10 +489,15 @@ async def chat_v1(
             detail="Provide either 'message' or 'messages'",
         )
     try:
-        validate_max_tokens(payload.max_tokens, config.validation)
+        validate_max_tokens(payload.max_tokens, validation)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
+
+def _open_v1_conversation(
+    request: Request, conversation_id: str, user_id: str
+) -> tuple[dict[str, Any], dict[str, float]]:
+    """Fetch (or create) the caller's conversation and mark it as used."""
     conversations, conversation_access, now = _get_timed_state(
         request,
         "v1_conversations",
@@ -515,8 +505,6 @@ async def chat_v1(
         ttl_seconds=V1_CONVERSATION_TTL_SECONDS,
         max_items=V1_MAX_CONVERSATIONS,
     )
-    conversation_id = payload.conversation_id or str(uuid.uuid4())
-    user_id = ctx.user.user_id
     convo = conversations.get(conversation_id)
     if convo is not None and not _is_v1_conversation_owner(convo, user_id):
         raise HTTPException(status_code=404, detail="Conversation not found")
@@ -537,7 +525,11 @@ async def chat_v1(
         if convo_user is None:
             convo["user_id"] = user_id
         _touch_timed_state(conversation_access, conversation_id, now)
+    return convo, conversation_access
 
+
+def _v1_history(convo: dict[str, Any], max_messages: int) -> list[dict[str, str]]:
+    """Normalize the stored transcript to its newest dict messages."""
     history = convo.get("messages")
     if not isinstance(history, list):
         history = []
@@ -547,12 +539,18 @@ async def chat_v1(
         [msg for msg in history if isinstance(msg, dict)], max_messages
     )
     convo["messages"] = history
+    return history
 
+
+def _incoming_v1_messages(
+    payload: ConversationRequestV1, max_messages: int, max_message_length: int
+) -> tuple[list[dict[str, str]], str]:
+    """Return the request's new messages and the user text they end with."""
     if payload.message is not None:
         user_text = payload.message.strip()
         if not user_text:
             raise HTTPException(status_code=422, detail="Message cannot be empty")
-        if len(user_text) > config.validation.max_message_length:
+        if len(user_text) > max_message_length:
             raise HTTPException(status_code=422, detail="Message too long")
         incoming_messages: list[dict[str, str]] = [
             {"role": "user", "content": user_text}
@@ -567,7 +565,7 @@ async def chat_v1(
             validate_message_limits(
                 incoming_messages,
                 max_messages=max_messages,
-                max_length=config.validation.max_message_length,
+                max_length=max_message_length,
             )
         except MessageLimitError as exc:
             detail = (
@@ -583,12 +581,15 @@ async def chat_v1(
                 break
         if not user_text:
             raise HTTPException(status_code=422, detail="No user message provided")
-        if len(user_text) > config.validation.max_message_length:
+        if len(user_text) > max_message_length:
             raise HTTPException(status_code=422, detail="Message too long")
 
-    messages = _trim_messages(history + incoming_messages, max_messages)
+    return incoming_messages, user_text
 
-    model = payload.model.strip() if isinstance(payload.model, str) else None
+
+def _resolve_v1_model(requested: str | None, service: InferenceService) -> str:
+    """Pick the request's model, the configured default, or the stub model."""
+    model = requested.strip() if isinstance(requested, str) else None
     if model == "":
         model = None
     if model is None:
@@ -603,18 +604,17 @@ async def chat_v1(
                 detail="No model specified. Set payload.model or INFERENCE_DEFAULT_MODEL.",
             )
 
-    logger.info(
-        "v1.conversations request received",
-        extra={
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "user_id": ctx.user.user_id,
-            "model": model,
-            "message_count": len(messages),
-            "is_stub": service.is_stub,
-        },
-    )
+    return model
 
+
+async def _create_v1_completion(
+    service: InferenceService,
+    model: str,
+    messages: list[dict[str, str]],
+    payload: ConversationRequestV1,
+    log_extra: dict[str, Any],
+) -> dict[str, Any]:
+    """Run inference, mapping backend failures to the route's HTTP errors."""
     try:
         openai_request = MessagesRequest(
             model=model,
@@ -622,16 +622,11 @@ async def chat_v1(
             max_tokens=payload.max_tokens,
             temperature=payload.temperature,
         )
-        openai_payload = await service.create_openai_response(openai_request)
+        return await service.create_openai_response(openai_request)
     except ValueError as exc:
         logger.warning(
             "v1.conversations invalid request payload",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-                "error": str(exc),
-            },
+            extra={**log_extra, "error": str(exc)},
         )
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except httpx.HTTPStatusError as exc:
@@ -640,12 +635,7 @@ async def chat_v1(
         if isinstance(status_code, int) and status_code >= 500:
             logger.error(
                 "v1.conversations upstream service error",
-                extra={
-                    "request_id": request_id,
-                    "conversation_id": conversation_id,
-                    "user_id": ctx.user.user_id,
-                    "status_code": status_code,
-                },
+                extra={**log_extra, "status_code": status_code},
             )
             raise HTTPException(
                 status_code=502, detail="Inference backend unavailable"
@@ -653,24 +643,13 @@ async def chat_v1(
 
         logger.warning(
             "v1.conversations upstream request rejected",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-                "status_code": status_code,
-                "detail": detail,
-            },
+            extra={**log_extra, "status_code": status_code, "detail": detail},
         )
         raise HTTPException(status_code=422, detail=detail) from exc
     except httpx.HTTPError as exc:
         logger.warning(
             "v1.conversations upstream unavailable",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-                "error": str(exc),
-            },
+            extra={**log_extra, "error": str(exc)},
         )
         raise HTTPException(
             status_code=502, detail="Inference backend unavailable"
@@ -678,13 +657,60 @@ async def chat_v1(
     except Exception as exc:
         logger.exception(
             "v1.conversations unexpected inference failure",
-            extra={
-                "request_id": request_id,
-                "conversation_id": conversation_id,
-                "user_id": ctx.user.user_id,
-            },
+            extra=log_extra,
         )
         raise HTTPException(status_code=500, detail="Internal server error") from exc
+
+
+@router.post(
+    "/conversations",
+    response_model=ConversationResponseV1,
+    summary="Chat (v1)",
+)
+async def chat_v1(
+    request: Request,
+    payload: ConversationRequestV1,
+    service: InferenceService = Depends(get_inference_service),
+    ctx: RequestContext = Depends(get_request_context),
+) -> ConversationResponseV1:
+    """Create or continue a v1 conversation."""
+    config = get_config()
+    max_messages = int(config.validation.max_conversation_messages)
+    if max_messages < 1:
+        max_messages = 128
+    start = time.monotonic()
+    request_id = getattr(request.state, "request_id", "unknown")
+
+    _check_v1_conversation_request(payload, config.validation)
+    conversation_id = payload.conversation_id or str(uuid.uuid4())
+    user_id = ctx.user.user_id
+    convo, conversation_access = _open_v1_conversation(
+        request, conversation_id, user_id
+    )
+    history = _v1_history(convo, max_messages)
+    incoming_messages, user_text = _incoming_v1_messages(
+        payload, max_messages, config.validation.max_message_length
+    )
+    messages = _trim_messages(history + incoming_messages, max_messages)
+    model = _resolve_v1_model(payload.model, service)
+
+    log_extra = {
+        "request_id": request_id,
+        "conversation_id": conversation_id,
+        "user_id": user_id,
+    }
+    logger.info(
+        "v1.conversations request received",
+        extra={
+            **log_extra,
+            "model": model,
+            "message_count": len(messages),
+            "is_stub": service.is_stub,
+        },
+    )
+    openai_payload = await _create_v1_completion(
+        service, model, messages, payload, log_extra
+    )
 
     response_text = _extract_response_text(openai_payload)
     if not response_text:
@@ -707,9 +733,7 @@ async def chat_v1(
     logger.info(
         "v1.conversations request completed",
         extra={
-            "request_id": request_id,
-            "conversation_id": conversation_id,
-            "user_id": ctx.user.user_id,
+            **log_extra,
             "elapsed_ms": elapsed_ms,
             "tokens_used": tokens_used,
             "response_chars": len(response_text),
