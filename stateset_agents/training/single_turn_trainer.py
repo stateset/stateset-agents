@@ -7,7 +7,6 @@ agents on single-turn interactions (one prompt, one response).
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import logging
 import math
@@ -32,8 +31,8 @@ from stateset_agents.utils.async_calls import run_sync_owned
 from .callbacks import (
     notify_checkpoint_saved,
     notify_episode_end,
+    notify_optimizer_step,
     notify_training_end,
-    notify_training_start,
 )
 from .config import estimate_grpo_optimizer_steps
 from .continual_learning import ContinualLearningManager
@@ -42,7 +41,7 @@ from .loss_computation import (
     compute_grpo_loss,
     compute_token_old_logprobs,
 )
-from .runtime_state import TrainingRuntime, validate_training_config
+from .runtime_state import validate_training_config
 from .single_turn_checkpointing import (
     load_checkpoint_artifacts,
     resolve_checkpoint_path,
@@ -58,6 +57,7 @@ from .single_turn_state import (
     resolve_task_id,
 )
 from .spine.grpo_update import GRPOUpdateMixin
+from .spine.loop import SpineLoopMixin
 from .spine.scoring import ResponseScorer
 from .trainer_utils import (
     apply_dropout_setting,
@@ -107,7 +107,7 @@ async def _call_environment(method: Any, *argument_forms: tuple[Any, ...]) -> An
     raise TypeError("Environment method does not accept a supported argument form")
 
 
-class SingleTurnGRPOTrainer(GRPOUpdateMixin, TrainingRuntime):
+class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
     """
     GRPO trainer for single-turn agents with HuggingFace and W&B integration
 
@@ -595,229 +595,236 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, TrainingRuntime):
         """Preserve selected scenario context across dict-based environments."""
         return merge_scenario_into_state(state, scenario, self.config)
 
-    async def train(self) -> Any:
-        """Train, discarding pending work and closing tracking on every exit."""
-        errored = False
-        cancelled = False
-        try:
-            return await self._train_loop()
-        except BaseException as error:
-            errored = True
-            cancelled = isinstance(error, (asyncio.CancelledError, KeyboardInterrupt))
-            if self.optimizer is not None:
-                try:
-                    self.optimizer.zero_grad(set_to_none=True)
-                except Exception as cleanup_error:
-                    logger.warning(
-                        "Could not discard pending gradients: %s", cleanup_error
-                    )
-            self._grad_accum_step = 0
-            self._grpo_accumulation = None
-            raise
-        finally:
-            try:
-                finish = getattr(self.wandb_logger, "finish_run", None)
-                if callable(finish):
-                    await run_sync_owned(
-                        finish,
-                        {
-                            "final_step": self.global_step,
-                            "best_eval_metric": self.best_eval_metric,
-                            "errored": errored,
-                            "cancelled": cancelled,
-                        },
-                    )
-            except Exception as cleanup_error:
-                if not errored:
-                    raise
-                logger.warning(
-                    "Tracking cleanup failed after training stopped: %s", cleanup_error
-                )
+    # --- the spine episode loop (SpineLoopMixin hooks) -------------------
+    # ``train()`` is the spine's: resume, the training start/end callbacks,
+    # discarding pending gradients and closing tracking on every exit. A
+    # single-turn episode is several environment steps, each one sampled
+    # group and one GRPO update, its commits reported as spine receipts
+    # (``optimizer-step`` callbacks). It keeps its own reporting: per-episode
+    # W&B metrics, no evaluation and no periodic or final checkpoint.
 
-    async def _train_loop(self) -> Any:
-        """Run episodes and success-only finalization inside the owned lifecycle."""
-        logger.info("Starting single-turn GRPO training...")
+    _training_start_message = "Starting single-turn GRPO training..."
+    _training_done_message = "Single-turn GRPO training completed"
 
-        torch = self._get_torch_module()
-        use_amp = bool(
-            getattr(self.config, "bf16", False) or getattr(self.config, "fp16", False)
-        )
+    def _max_steps_per_episode(self) -> int:
+        return int(getattr(self.config, "max_steps_per_episode", 1) or 1)
 
-        num_episodes = getattr(self.config, "num_episodes", 10)
-        max_steps = getattr(self.config, "max_steps_per_episode", 1) or 1
-        num_generations = getattr(self.config, "num_generations", 8)
-        max_grad_norm = getattr(self.config, "max_grad_norm", 1.0)
-
-        grad_accum_steps = self._get_grad_accum_steps()
-        total_steps = num_episodes * max_steps
+    def _prepare_training_loop(self) -> tuple[int, list[dict[str, Any]], int]:
+        """The episode count and optimizer-step budget; scenarios resolve per
+        episode (:meth:`_scenario_for_episode`)."""
+        num_episodes = int(getattr(self.config, "num_episodes", 10))
         total_updates = estimate_grpo_optimizer_steps(
-            total_steps,
-            gradient_accumulation_steps=grad_accum_steps,
+            num_episodes * self._max_steps_per_episode(),
+            gradient_accumulation_steps=self._get_grad_accum_steps(),
             num_gradient_updates=getattr(self.config, "num_gradient_updates", 1),
         )
-        self._setup_scheduler(total_updates)
+        return num_episodes, [], total_updates
 
-        resume_from = getattr(self.config, "resume_from_checkpoint", None)
-        resumed = False
-        if resume_from is not None:
-            if isinstance(resume_from, str) and not resume_from.strip():
-                raise ValueError("resume_from_checkpoint cannot be empty")
-            resumed = self.load_checkpoint(resume_from)
-            if resumed is not True:
-                raise ValueError(
-                    "Requested training checkpoint could not be restored; "
-                    "refusing to start a fresh run instead of resuming"
-                )
+    def _scenario_for_episode(
+        self, episode: int, scenarios: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        return self._get_episode_scenario(episode)
 
-        await notify_training_start(self.callbacks, trainer=self, config=self.config)
+    def _get_eval_scenarios(self) -> list[dict[str, Any]]:
+        return []
 
-        start_episode = 0
-        if resumed:
-            start_episode = min(num_episodes, max(0, int(self.current_epoch) + 1))
+    def _resume_start(self, resumed: bool, num_episodes: int) -> int:
+        """A checkpoint records the episode it was saved in; resume after it."""
+        if not resumed:
+            return 0
+        return min(num_episodes, max(0, int(self.current_epoch) + 1))
 
-        for episode in range(start_episode, num_episodes):
-            self.current_epoch = episode
-            scenario = self._get_episode_scenario(episode)
+    async def _finish_tracking(self, summary: dict[str, Any]) -> None:
+        finish = getattr(self.wandb_logger, "finish_run", None)
+        if callable(finish):
+            await run_sync_owned(finish, summary)
 
-            state = await _call_environment(self.environment.reset, (scenario,), ())
-            state = self._merge_scenario_into_state(state, scenario)
-            episode_rewards: list[float] = []
-            replay_group_count = 0
-
-            for _ in range(max_steps):
-                context = self._extract_context(state)
-                prompt = self._extract_prompt(state, context)
-                task_id = self._resolve_task_id(context)
-                self._maybe_handle_task_switch(task_id)
-
-                group, best_response = await self._generate_trajectory_group(
-                    prompt=str(prompt),
-                    num_generations=num_generations,
-                    context=context,
-                )
-
-                training_groups = [group]
-                replay_groups: list[TrajectoryGroup] = []
-                if self.continual_manager is not None:
-                    replay_groups = self.continual_manager.sample_replay_groups(
-                        len(training_groups)
-                    )
-                    self.continual_manager.add_trajectory_groups(
-                        training_groups, task_id=task_id
-                    )
-                    if replay_groups:
-                        replay_group_count += len(replay_groups)
-                        training_groups = training_groups + replay_groups
-
-                # The GRPO update (the spine's GRPOUpdateMixin, shared with
-                # MultiTurnGRPOTrainer.training_step): inner passes or one
-                # accumulated backward, EWC, and the optimizer commit.
-                loss_dict, _metrics = self._grpo_update(
-                    training_groups, backward=self.optimizer is not None
-                )
-                policy_loss = loss_dict.get("total_loss")
-                if policy_loss is None:
-                    policy_loss = loss_dict.get("policy_loss")
-
-                from .diagnostics import DiagnosticsMonitor
-
-                if getattr(self, "diagnostics", None) is None:
-                    self.diagnostics = DiagnosticsMonitor(self.config)
-                self._diagnostic_observations = (
-                    getattr(self, "_diagnostic_observations", 0) + 1
-                )
-                self.diagnostics(
-                    "step_end",
-                    {
-                        **{
-                            name: (
-                                value.detach().item()
-                                if torch.is_tensor(value) and value.numel() == 1
-                                else value
-                            )
-                            for name, value in loss_dict.items()
-                        },
-                        "step": self._diagnostic_observations,
-                    },
-                )
-
-                # Progress environment once using best response
-                action_turn = ConversationTurn(
-                    role="assistant",
-                    content=str(best_response),
-                )
-                done = False
-                step_result = await _call_environment(
-                    self.environment.step, (state, action_turn), (best_response,)
-                )
-
-                step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
-
-                if isinstance(step_result, tuple) and len(step_result) == 4:
-                    if isinstance(step_result[1], ConversationTurn):
-                        next_state, _, step_reward, done = step_result
-                    else:
-                        next_state, step_reward, done, _info = step_result
-                    state = self._merge_scenario_into_state(next_state, scenario)
-                elif isinstance(step_result, dict):
-                    next_state = step_result.get("state", state)
-                    state = self._merge_scenario_into_state(next_state, scenario)
-                    step_reward = step_result.get(
-                        "reward",
-                        float(loss_dict.get("mean_advantage", 0.0)),
-                    )
-                    done = bool(step_result.get("done", False))
-                else:
-                    step_reward = (
-                        float(np.mean(group.rewards)) if group.rewards else 0.0
-                    )
-
-                episode_rewards.append(float(step_reward))
-
-                if done:
-                    break
-
-            avg_reward = float(np.mean(episode_rewards)) if episode_rewards else 0.0
-            logger.info(
-                "Episode %s/%s: Steps=%s AvgReward=%.3f",
-                episode + 1,
-                num_episodes,
-                len(episode_rewards),
-                avg_reward,
-            )
-
-            if self.wandb_logger is not None:
-                metrics = {
-                    "episode": episode,
-                    "episode_reward": avg_reward,
-                    "episode_steps": len(episode_rewards),
-                    "policy_loss": float(getattr(policy_loss, "item", lambda: 0.0)()),
-                }
-                log_metrics = getattr(self.wandb_logger, "log_metrics", None)
-                if callable(log_metrics):
-                    log_metrics(metrics, step=int(self.global_step))
-                else:
-                    self.wandb_logger.log(metrics)
-
-            await notify_episode_end(
+    async def _report_committed_updates(
+        self, previous_step: int, source: str, metrics: dict[str, Any] | None = None
+    ) -> None:
+        """Report the optimizer updates committed since ``previous_step`` as a
+        spine receipt (``optimizer-step`` callbacks)."""
+        receipt = self._optimizer_update_receipt(
+            previous_step, source, metrics, task_id=self._current_task_id
+        )
+        if receipt is not None:
+            await self._training_phase(
+                "optimizer-step",
+                notify_optimizer_step,
                 self.callbacks,
-                episode=episode,
-                metrics={
-                    "avg_reward": avg_reward,
-                    "total_reward": avg_reward,
-                    "global_step": int(self.global_step),
-                    **(
-                        {
-                            "replay_group_count": replay_group_count,
-                            "replay_buffer_size": self.continual_manager.buffer.size,
-                        }
-                        if self.continual_manager is not None
-                        else {}
-                    ),
-                },
+                step=self.global_step,
+                metrics=dict(receipt),
             )
 
-        self._flush_accumulation(torch, use_amp, max_grad_norm)
+    def _record_diagnostics(self, loss_dict: dict[str, Any]) -> None:
+        torch = self._get_torch_module()
+        from .diagnostics import DiagnosticsMonitor
+
+        if getattr(self, "diagnostics", None) is None:
+            self.diagnostics = DiagnosticsMonitor(self.config)
+        self._diagnostic_observations = getattr(self, "_diagnostic_observations", 0) + 1
+        self.diagnostics(
+            "step_end",
+            {
+                **{
+                    name: (
+                        value.detach().item()
+                        if torch.is_tensor(value) and value.numel() == 1
+                        else value
+                    )
+                    for name, value in loss_dict.items()
+                },
+                "step": self._diagnostic_observations,
+            },
+        )
+
+    async def _train_turn(
+        self, state: Any, scenario: dict[str, Any] | None
+    ) -> tuple[Any, float, bool, int, Any]:
+        """One environment step: sample a group, update, step with the best reply.
+
+        Returns ``(next_state, step_reward, done, replay_groups, policy_loss)``.
+        """
+        context = self._extract_context(state)
+        prompt = self._extract_prompt(state, context)
+        task_id = self._resolve_task_id(context)
+        self._maybe_handle_task_switch(task_id)
+
+        group, best_response = await self._generate_trajectory_group(
+            prompt=str(prompt),
+            num_generations=getattr(self.config, "num_generations", 8),
+            context=context,
+        )
+
+        training_groups = [group]
+        replay_groups: list[TrajectoryGroup] = []
+        if self.continual_manager is not None:
+            replay_groups = self.continual_manager.sample_replay_groups(
+                len(training_groups)
+            )
+            self.continual_manager.add_trajectory_groups(
+                training_groups, task_id=task_id
+            )
+            if replay_groups:
+                training_groups = training_groups + replay_groups
+
+        # The GRPO update (the spine's GRPOUpdateMixin, shared with
+        # MultiTurnGRPOTrainer.training_step): inner passes or one
+        # accumulated backward, EWC, and the optimizer commit.
+        previous_step = self.global_step
+        loss_dict, metrics = self._grpo_update(
+            training_groups, backward=self.optimizer is not None
+        )
+        policy_loss = loss_dict.get("total_loss")
+        if policy_loss is None:
+            policy_loss = loss_dict.get("policy_loss")
+        self._record_diagnostics(loss_dict)
+        await self._report_committed_updates(previous_step, "batch", metrics)
+
+        # Progress environment once using best response
+        action_turn = ConversationTurn(
+            role="assistant",
+            content=str(best_response),
+        )
+        done = False
+        step_result = await _call_environment(
+            self.environment.step, (state, action_turn), (best_response,)
+        )
+
+        step_reward = float(np.mean(group.rewards)) if group.rewards else 0.0
+
+        if isinstance(step_result, tuple) and len(step_result) == 4:
+            if isinstance(step_result[1], ConversationTurn):
+                next_state, _, step_reward, done = step_result
+            else:
+                next_state, step_reward, done, _info = step_result
+            state = self._merge_scenario_into_state(next_state, scenario)
+        elif isinstance(step_result, dict):
+            next_state = step_result.get("state", state)
+            state = self._merge_scenario_into_state(next_state, scenario)
+            step_reward = step_result.get(
+                "reward",
+                float(loss_dict.get("mean_advantage", 0.0)),
+            )
+            done = bool(step_result.get("done", False))
+        return state, float(step_reward), done, len(replay_groups), policy_loss
+
+    async def _train_episode(
+        self,
+        episode: int,
+        scenario: dict[str, Any] | None,
+        eval_scenarios: list[dict[str, Any]],
+    ) -> str | None:
+        """One episode: reset, up to ``max_steps_per_episode`` turns, report."""
+        self.current_epoch = episode
+        state = await _call_environment(self.environment.reset, (scenario,), ())
+        state = self._merge_scenario_into_state(state, scenario)
+        episode_rewards: list[float] = []
+        replay_group_count = 0
+        policy_loss: Any = None
+
+        for _ in range(self._max_steps_per_episode()):
+            state, step_reward, done, replayed, policy_loss = await self._train_turn(
+                state, scenario
+            )
+            replay_group_count += replayed
+            episode_rewards.append(step_reward)
+            if done:
+                break
+
+        avg_reward = float(np.mean(episode_rewards)) if episode_rewards else 0.0
+        logger.info(
+            "Episode %s/%s: Steps=%s AvgReward=%.3f",
+            episode + 1,
+            int(getattr(self.config, "num_episodes", 10)),
+            len(episode_rewards),
+            avg_reward,
+        )
+
+        if self.wandb_logger is not None:
+            metrics = {
+                "episode": episode,
+                "episode_reward": avg_reward,
+                "episode_steps": len(episode_rewards),
+                "policy_loss": float(getattr(policy_loss, "item", lambda: 0.0)()),
+            }
+            log_metrics = getattr(self.wandb_logger, "log_metrics", None)
+            if callable(log_metrics):
+                log_metrics(metrics, step=int(self.global_step))
+            else:
+                self.wandb_logger.log(metrics)
+
+        await self._training_phase(
+            "episode-end",
+            notify_episode_end,
+            self.callbacks,
+            episode=episode,
+            metrics={
+                "avg_reward": avg_reward,
+                "total_reward": avg_reward,
+                "global_step": int(self.global_step),
+                **(
+                    {
+                        "replay_group_count": replay_group_count,
+                        "replay_buffer_size": self.continual_manager.buffer.size,
+                    }
+                    if self.continual_manager is not None
+                    else {}
+                ),
+            },
+        )
+        return None
+
+    async def _finalize_training(
+        self, eval_scenarios: list[dict[str, Any]], boundary_stopped: bool
+    ) -> None:
+        """Flush the pending window, finish the current task, report the end."""
+        torch = self._get_torch_module()
+        previous_step = self.global_step
+        self._flush_accumulation(
+            torch, self._use_amp(), getattr(self.config, "max_grad_norm", 1.0)
+        )
+        await self._report_committed_updates(previous_step, "final_flush")
 
         if self.continual_manager is not None and self._current_task_id is not None:
             self.continual_manager.on_task_end(
@@ -827,12 +834,12 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, TrainingRuntime):
             if reference_model is not None:
                 self.reference_model = reference_model
 
-        await notify_training_end(
+        await self._training_phase(
+            "training-end",
+            notify_training_end,
             self.callbacks,
             metrics={"final_step": int(self.global_step)},
         )
-        logger.info("Single-turn GRPO training completed")
-        return self.agent
 
     async def save_checkpoint(
         self, is_best: bool = False, checkpoint_name: str | None = None

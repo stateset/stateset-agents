@@ -26,8 +26,9 @@ MAX_BRANCHES = 40
 #: spine loop's train() into an episode step brought it to 74; splitting the
 #: GRPO losses (token path, enhanced loss, label preparation), the flywheel
 #: command and the studio's key dispatch, refresh and rendering brought it
-#: to 65.
-CEILING = 65
+#: to 65; moving SingleTurnGRPOTrainer's loop onto the spine (one turn per
+#: method) to 64.
+CEILING = 64
 
 _BRANCH_NODES = (
     ast.If,

@@ -203,6 +203,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   real booleans), bound on native and DDP resume and reported by the learner
   preflight. A native checkpoint written before the field existed resumes as
   `False`.
+- **`SingleTurnGRPOTrainer` trains on the spine episode loop.** It
+  subclasses `spine.SpineLoopMixin`: `train()` (resume, training start/end
+  callbacks, discarding pending gradients and closing tracking on every exit)
+  is MultiTurn's, and the single-turn parts are hooks (`_train_episode` runs
+  up to `max_steps_per_episode` turns via `_train_turn`; `_finalize_training`
+  flushes the pending window). Each committed update -- a turn's or the
+  final flush's -- now reaches callbacks through `on_optimizer_step` with the
+  spine's receipt, as in MultiTurn. Kept as before: per-episode W&B metrics,
+  no evaluation and no periodic or final checkpoint; resume continues after
+  the saved episode. `SpineLoopMixin.train` gained the hooks
+  `_run_training_loop`, `_finalize_training`, `_scenario_for_episode` and
+  `_restore_requested_checkpoint`, with MultiTurn's phases and their order
+  unchanged.
 - **`spine.AlgorithmSpec`: one prompt-group algorithm is one spec.** GSPO,
   GSPO-token, DAPO and GEPO declare their scoring, `PolicyObjective` preset,
   sampling, per-group loss, update mode/passes and metrics as an
