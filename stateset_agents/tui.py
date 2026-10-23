@@ -52,6 +52,7 @@ from stateset_agents.finetune_workspace import (
     write_json,
 )
 from stateset_agents.tui_actions import ActionMenu
+from stateset_agents.tui_keys import handle_key
 from stateset_agents.tui_panels import FilePicker, LogViewer
 from stateset_agents.tui_render import FrameRenderer, configure_terminal
 from stateset_agents.tui_reports import (
@@ -61,6 +62,7 @@ from stateset_agents.tui_reports import (
     RecoveryPanel,
     WorkflowReport,
 )
+from stateset_agents.tui_screens import header_lines, render_body, scroll_body
 from stateset_agents.tui_tasks import BackgroundTask, TaskResult
 from stateset_agents.tui_text import _clip, _safe, _wrap
 from stateset_agents.tui_views import (
@@ -349,41 +351,73 @@ class Studio:
 
     def refresh(self, *, history: bool = True) -> None:
         """Reconnect to retained runs without polling external services."""
-        swept = self.lease_sweep.poll()
-        if swept is not None and swept.value is not None:
-            reclaimed, failed = swept.value
-            if reclaimed or failed:
-                self.message = (
-                    f"Ended {len(reclaimed)} RunPod pod(s) left by exited jobs."
-                    + (
-                        f" {len(failed)} could not be confirmed; run "
-                        "`stateset-agents runpod-orphans`."
-                        if failed
-                        else ""
-                    )
-                )
+        self._poll_lease_sweep()
         submitted = self.submission.poll()
         if submitted is not None:
             self._finish_submission(submitted)
-        selected = (
+        selected = self._selected_run_id()
+        self._load_history(history)
+        self._reconcile_selection(selected)
+        self._poll_preview()
+        self.readiness_panel.poll()
+        self._poll_recovery()
+        self._poll_data()
+        self._poll_workflow()
+        if self.evaluation_panel is not None:
+            self.evaluation_panel.refresh()
+        self._poll_quality()
+
+    def _poll_lease_sweep(self) -> None:
+        """Report RunPod pods the background lease sweep ended or left unconfirmed."""
+        swept = self.lease_sweep.poll()
+        if swept is None or swept.value is None:
+            return
+        reclaimed, failed = swept.value
+        if reclaimed or failed:
+            self.message = (
+                f"Ended {len(reclaimed)} RunPod pod(s) left by exited jobs."
+                + (
+                    f" {len(failed)} could not be confirmed; run "
+                    "`stateset-agents runpod-orphans`."
+                    if failed
+                    else ""
+                )
+            )
+
+    def _selected_run_id(self) -> str | None:
+        """The selected run's ID, captured before the run list is reloaded."""
+        selected: str | None = (
             self.runs[self.run_index]["id"]
             if self.runs and self.run_index < len(self.runs)
             else None
         )
+        return selected
+
+    def _load_history(self, history: bool) -> None:
+        """Collect retained runs, from the background task or synchronously."""
         if self.background_history:
-            history_result = self.history_task.poll()
-            if history_result is not None:
-                if history_result.error is not None:
-                    self.history_error = "Cannot refresh retained runs; check workspace access. Retrying."
-                elif history_result.value is not None:
-                    self.all_runs = history_result.value
-                    self.history_loaded = True
-                    self.history_error = ""
-            if history and not self.history_task.busy:
-                self.history_task.start(lambda: list_runs(self.workspace, limit=None))
+            self._poll_history(history)
         elif history:
             self.all_runs = list_runs(self.workspace, limit=None)
             self.history_loaded = True
+
+    def _poll_history(self, history: bool) -> None:
+        """Apply a finished background history read and start the next one."""
+        history_result = self.history_task.poll()
+        if history_result is not None:
+            if history_result.error is not None:
+                self.history_error = (
+                    "Cannot refresh retained runs; check workspace access. Retrying."
+                )
+            elif history_result.value is not None:
+                self.all_runs = history_result.value
+                self.history_loaded = True
+                self.history_error = ""
+        if history and not self.history_task.busy:
+            self.history_task.start(lambda: list_runs(self.workspace, limit=None))
+
+    def _reconcile_selection(self, selected: str | None) -> None:
+        """Refilter runs, keep the selection and close views of a hidden run."""
         self.runs = self._filter_runs(self.run_query)
         if self.pending_run_id is not None and any(
             row["id"] == self.pending_run_id for row in self.runs
@@ -409,60 +443,72 @@ class Studio:
             (index for index, row in enumerate(self.runs) if row["id"] == selected),
             min(self.run_index, max(0, len(self.runs) - 1)),
         )
+
+    def _poll_preview(self) -> None:
+        """Apply a finished preview unless it was cancelled or settings changed."""
         preview_result = self.planning.poll()
-        if preview_result is not None and not preview_result.cancelled:
-            if self.planning_signature != self._settings_signature():
-                self.message = "Settings changed; press p or r for a fresh preview."
-                if self.overlay == "planning":
-                    self.overlay = None
-            elif preview_result.error is not None:
-                self.message = f"Fix settings: {redact_finetune_secrets(str(preview_result.error))}"
-                if self.overlay == "planning":
-                    self.overlay = None
-            else:
-                self.plan = preview_result.value
-                if self.plan is not None:
-                    self.message = f"Valid: {self.plan.examples} examples. Press r to review launch."
-                    if self.overlay == "planning":
-                        self.overlay = "review" if self.planning_review else None
-                        self.dialog_offset = 0
-        self.readiness_panel.poll()
-
-        result = self.recovery_panel.poll()
-        if result is not None:
-            if "prepared_review" in result:
-                review = result["prepared_review"]
-                if self.overlay == "recovery":
-                    self.prepared_review = review
-                    self.overlay, self.dialog_offset = "prepared-review", 0
-                self.message = f"Prepared recovery run {review.run.name}; separate r/Enter launch review required."
-            elif result.get("launched"):
-                self.message = f"Launched reviewed recovery run {result['run_id']}."
-                if self.overlay == "recovery":
-                    self.overlay = None
-            elif self.overlay == "recovery":
+        if preview_result is None or preview_result.cancelled:
+            return
+        if self.planning_signature != self._settings_signature():
+            self.message = "Settings changed; press p or r for a fresh preview."
+            if self.overlay == "planning":
+                self.overlay = None
+        elif preview_result.error is not None:
+            self.message = (
+                f"Fix settings: {redact_finetune_secrets(str(preview_result.error))}"
+            )
+            if self.overlay == "planning":
+                self.overlay = None
+        else:
+            self.plan = preview_result.value
+            if self.plan is not None:
                 self.message = (
-                    "Recovery inspection failed; check eligibility and retained state."
-                    if "error" in result
-                    else "Recovery choices verified; Enter reviews a selected checkpoint."
+                    f"Valid: {self.plan.examples} examples. Press r to review launch."
                 )
-        if self.data_panel.poll():
-            self.data_panel.show_samples = False
-            if self.message in {
-                "Reading one dataset snapshot; no run is prepared or started.",
-                "Dataset scan is already running. Esc leaves it in the background.",
-            }:
-                if self.data_panel.signature != self._data_settings_signature():
-                    self.message = "Dataset settings changed; press u to scan again."
-                elif (
-                    self.data_panel.report is None or "error" in self.data_panel.report
-                ):
-                    self.message = "Dataset scan failed; press u to inspect and retry."
-                else:
-                    self.message = (
-                        "Dataset scan complete; no run was prepared or started."
-                    )
+                if self.overlay == "planning":
+                    self.overlay = "review" if self.planning_review else None
+                    self.dialog_offset = 0
 
+    def _poll_recovery(self) -> None:
+        """Apply a finished recovery inspection, preparation or launch."""
+        result = self.recovery_panel.poll()
+        if result is None:
+            return
+        if "prepared_review" in result:
+            review = result["prepared_review"]
+            if self.overlay == "recovery":
+                self.prepared_review = review
+                self.overlay, self.dialog_offset = "prepared-review", 0
+            self.message = f"Prepared recovery run {review.run.name}; separate r/Enter launch review required."
+        elif result.get("launched"):
+            self.message = f"Launched reviewed recovery run {result['run_id']}."
+            if self.overlay == "recovery":
+                self.overlay = None
+        elif self.overlay == "recovery":
+            self.message = (
+                "Recovery inspection failed; check eligibility and retained state."
+                if "error" in result
+                else "Recovery choices verified; Enter reviews a selected checkpoint."
+            )
+
+    def _poll_data(self) -> None:
+        """Apply a finished dataset scan, hiding samples and updating its status."""
+        if not self.data_panel.poll():
+            return
+        self.data_panel.show_samples = False
+        if self.message in {
+            "Reading one dataset snapshot; no run is prepared or started.",
+            "Dataset scan is already running. Esc leaves it in the background.",
+        }:
+            if self.data_panel.signature != self._data_settings_signature():
+                self.message = "Dataset settings changed; press u to scan again."
+            elif self.data_panel.report is None or "error" in self.data_panel.report:
+                self.message = "Dataset scan failed; press u to inspect and retry."
+            else:
+                self.message = "Dataset scan complete; no run was prepared or started."
+
+    def _poll_workflow(self) -> None:
+        """Apply a finished guided setup snapshot."""
         if (
             self.workflow_panel.poll()
             and self.message == "Checking guided setup in the background."
@@ -472,8 +518,9 @@ class Studio:
                 if self.workflow_panel.signature == self._settings_signature()
                 else "Settings changed; press w for a current setup snapshot."
             )
-        if self.evaluation_panel is not None:
-            self.evaluation_panel.refresh()
+
+    def _poll_quality(self) -> None:
+        """Apply a finished quality inspection."""
         if self.quality_panel.poll() and self.message in {
             "Verifying recorded outcomes and artifact bytes in the background.",
             "Previous artifact inspection is still running; Esc returns.",
@@ -971,463 +1018,72 @@ class Studio:
         panel.start(prepare, step="preparation", authorized=True)
 
     def handle(self, key: str) -> bool:
-        """Apply a normalized key; return false only when the user exits."""
-        if key == "QUIT":
-            return False
-        if self.compact_layout and not self._text_input_active():
-            if key == "4" and self.overlay is None:
-                key = "TAB"
-            key = {
-                "2": "DOWN",
-                "8": "UP",
-                "3": "PAGEDOWN",
-                "9": "PAGEUP",
-                "0": "ESC",
-            }.get(key, key)
-        if key in {"UP", "DOWN", "b", "w", "z"}:
-            self._compact_follow_selection = True
-        if self.overlay == "planning":
-            if key == "ESC":
-                self.planning.cancel()
-                self.overlay = None
-                self.message = "Preview cancelled. Its result will be discarded; no run was created."
-            return True
-        if self.overlay == "actions" and self.action_menu is not None:
-            if key == "ESC":
-                self.overlay = None
-            else:
-                command = self.action_menu.handle(key)
-                if command is not None:
-                    self.overlay = None
-                    if self.action_run_id is not None and (
-                        not self.runs
-                        or self.runs[self.run_index]["id"] != self.action_run_id
-                    ):
-                        self.message = "Selected run changed. Reopen : actions for the current run."
-                    else:
-                        return self.handle(command)
-            return True
-        if self.overlay == "quality-path":
-            if key == "ESC":
-                self.overlay = "quality"
-            elif key == "ENTER":
-                self.overlay = "quality"
-                if self.search.strip():
-                    self._scan_quality(Path(self.search))
-            elif key == "BACKSPACE":
-                self.search = self.search[:-1]
-            elif key == "CLEAR":
-                self.search = ""
-            elif len(key) == 1 and key.isprintable() and len(self.search) < 4096:
-                self.search += key
-            return True
-        if self.editing is not None:
-            if key == "ESC":
-                self.editing = None
-            elif key == "ENTER":
-                name = self.fields()[self.field].name
-                if name == "model":
-                    self._set_model(self.editing)
-                else:
-                    self.values[name] = self.editing
-                self.editing = None
-                self.plan = None
-            elif key == "BACKSPACE":
-                if self.edit_cursor:
-                    self.editing = (
-                        self.editing[: self.edit_cursor - 1]
-                        + self.editing[self.edit_cursor :]
-                    )
-                    self.edit_cursor -= 1
-            elif key == "DELETE":
-                self.editing = (
-                    self.editing[: self.edit_cursor]
-                    + self.editing[self.edit_cursor + 1 :]
-                )
-            elif key in {"LEFT", "RIGHT"}:
-                self.edit_cursor = max(
-                    0,
-                    min(
-                        len(self.editing),
-                        self.edit_cursor + (1 if key == "RIGHT" else -1),
-                    ),
-                )
-            elif key == "HOME":
-                self.edit_cursor = 0
-            elif key == "END":
-                self.edit_cursor = len(self.editing)
-            elif key == "CLEAR":
-                self.editing = ""
-                self.edit_cursor = 0
-            elif len(key) == 1 and key.isprintable():
-                self.editing = (
-                    self.editing[: self.edit_cursor]
-                    + key
-                    + self.editing[self.edit_cursor :]
-                )
-                self.edit_cursor += 1
-            return True
-        if self.overlay == "evaluation" and self.evaluation_panel is not None:
-            if (
-                key == "f"
-                and self.evaluation_panel.mode == "form"
-                and not self.evaluation_panel.busy
-            ):
-                self._open_files(evaluation=self.evaluation_panel)
-            elif self.evaluation_panel.handle(key):
-                self.overlay = None
-            return True
-        if self.overlay:
-            if self.overlay == "logs":
-                if self.log_viewer is None:
-                    if key == "ESC":
-                        self.overlay = None
-                elif self.log_viewer.handle(key):
-                    self.overlay, self.log_viewer = None, None
-                return True
-            if key == "ESC":
-                if self.overlay == "files":
-                    self._close_files()
-                    return True
-                self.overlay = None
-                self.prepared_review = None
-                self.comparison = None
-                self.data_panel.show_samples = False
-                self.dialog_offset = 0
-            elif self.overlay == "workflow":
-                if key == "w":
-                    self._open_workflow()
-                elif key in {"UP", "DOWN"}:
-                    self.workflow_panel.move(1 if key == "DOWN" else -1)
-                elif key == "ENTER":
-                    self._workflow_action()
-                elif key in {"PAGEUP", "PAGEDOWN"}:
-                    self.dialog_offset = max(
-                        0, self.dialog_offset + (8 if key == "PAGEDOWN" else -8)
-                    )
-            elif self.overlay == "recovery":
-                panel = self.recovery_panel
-                if key == "z" and not panel.busy:
-                    self._open_recovery(panel.run)
-                elif not panel.busy and panel.report:
-                    if key in {"UP", "DOWN"}:
-                        panel.move(1 if key == "DOWN" else -1)
-                    elif key == "ENTER" and panel.select():
-                        self.overlay, self.dialog_offset = "recovery-review", 0
-                if key in {"PAGEUP", "PAGEDOWN"}:
-                    self.dialog_offset = max(
-                        0, self.dialog_offset + (8 if key == "PAGEDOWN" else -8)
-                    )
-            elif self.overlay == "recovery-review" and key == "ENTER":
-                self._prepare_recovery()
-            elif self.overlay == "stop" and key == "ENTER" and self.stop_run:
-                run, digest = self.stop_run, self.stop_digest
-                if self._submit(
-                    "stop",
-                    lambda: request_stop(run, expected_plan_sha256=digest),
-                    "Saving the local stop request in the background.",
-                    authorized=True,
-                ):
-                    self.overlay = None
-            elif self.overlay == "quality":
-                if key == "e":
-                    self._scan_quality()
-                elif key == "j":
-                    self._open_evaluation()
-                elif key == "f" and not self.quality_panel.busy:
-                    self.overlay, self.search = "quality-path", ""
-                elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
-                    delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
-                    self.dialog_offset = max(
-                        0,
-                        self.dialog_offset
-                        + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
-                    )
-            elif self.overlay == "files":
-                chosen = self.file_picker.handle(key)
-                if chosen is not None:
-                    self._close_files(chosen)
-            elif self.overlay == "validation":
-                if key == "v":
-                    self._check_settings()
-                elif key == "ENTER":
-                    self._fix_setting()
-                elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
-                    delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
-                    self.validation_index = max(
-                        0,
-                        min(
-                            len(self.validation_issues) - 1,
-                            self.validation_index
-                            + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
-                        ),
-                    )
-            elif self.overlay == "backends":
-                if key in {"UP", "DOWN"}:
-                    self.backend_index = (
-                        self.backend_index + (1 if key == "DOWN" else -1)
-                    ) % len(PROVIDERS)
-                    self.dialog_offset = 0
-                elif key in {"PAGEUP", "PAGEDOWN"}:
-                    self.dialog_offset = max(
-                        0,
-                        min(
-                            1000000,
-                            self.dialog_offset + (8 if key == "PAGEDOWN" else -8),
-                        ),
-                    )
-                elif key == "ENTER":
-                    self._set_backend(PROVIDERS[self.backend_index])
-                    self.overlay = None
-            elif self.overlay == "data":
-                if key == "u":
-                    self._inspect_data()
-                elif key == "e" and self.data_panel.toggle_samples():
-                    self.dialog_offset = 0
-                elif key in {"LEFT", "RIGHT"} and self.data_panel.report:
-                    if self.data_panel.step_sample(1 if key == "RIGHT" else -1):
-                        self.dialog_offset = 0
-                elif key in {"UP", "DOWN", "PAGEUP", "PAGEDOWN"}:
-                    delta = 8 if key in {"PAGEUP", "PAGEDOWN"} else 1
-                    self.dialog_offset = max(
-                        0,
-                        min(
-                            1000000,
-                            self.dialog_offset
-                            + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
-                        ),
-                    )
-            elif self.overlay == "readiness" and key == "i":
-                self._inspect()
-            elif self.overlay == "run-search":
-                if key == "ENTER":
-                    self.run_query = self.search
-                    self.overlay = None
-                    self.run_index = 0
-                    self.refresh()
-                elif key == "BACKSPACE":
-                    self.search = self.search[:-1]
-                elif key == "CLEAR":
-                    self.search = ""
-                elif len(key) == 1 and key.isprintable():
-                    self.search += key
-            elif self.overlay in {
-                "review",
-                "prepared-review",
-                "help",
-                "details",
-                "readiness",
-                "metrics",
-                "compare",
-                "stop",
-                "recovery-review",
-            } and key in {
-                "UP",
-                "DOWN",
-                "PAGEUP",
-                "PAGEDOWN",
-            }:
-                delta = 1 if key in {"UP", "DOWN"} else 8
-                self.dialog_offset = max(
-                    0,
-                    min(
-                        1000000,
-                        self.dialog_offset
-                        + (delta if key in {"DOWN", "PAGEDOWN"} else -delta),
-                    ),
-                )
-            elif self.overlay == "models":
-                if key in {"UP", "DOWN"}:
-                    self.model_index = max(
-                        0,
-                        min(
-                            max(0, len(self.filtered_models()) - 1),
-                            self.model_index + (1 if key == "DOWN" else -1),
-                        ),
-                    )
-                elif key == "ENTER" and self.filtered_models():
-                    self._set_model(self.filtered_models()[self.model_index][0])
-                    self.overlay = None
-                    self.plan = None
-                elif key == "BACKSPACE":
-                    self.search = self.search[:-1]
-                    self.model_index = 0
-                elif len(key) == 1 and key.isprintable():
-                    self.search += key
-                    self.model_index = 0
-            elif self.overlay == "prepared-review" and key == "ENTER":
-                self._launch_prepared()
-            elif self.overlay == "review" and key == "ENTER" and self.plan:
-                plan, workspace = self.plan, self.workspace
+        """Apply a normalized key; return false only when the user exits.
 
-                def launch_reviewed() -> Path:
-                    require_backend_credentials(plan.config.provider)
-                    run = create_run(workspace, plan)
-                    launch_run(run)
-                    return run
+        Bindings are tables in :mod:`stateset_agents.tui_keys`.
+        """
+        return handle_key(self, key)
 
-                if self._submit(
-                    "launch",
-                    launch_reviewed,
-                    "Submitting the reviewed launch in the background; closing the studio waits for it.",
-                    authorized=True,
-                ):
-                    self.overlay = None
-            elif self.overlay == "details" and key == "c":
-                self._reuse_run()
-                self.overlay = None
-            elif self.overlay == "details" and key == "r":
-                self._review_prepared()
-            elif self.overlay == "details" and key == "l":
-                self._open_logs()
-            elif self.overlay == "details" and key == "a":
-                self._pin_reference()
-            elif self.overlay == "details" and key == "x":
-                self._open_comparison()
-            elif self.overlay == "details" and key == "e":
-                self._open_quality()
-            elif self.overlay == "details" and key == "j":
-                self._open_evaluation()
-            elif self.overlay == "details" and key == "k":
-                self._review_stop()
-            elif self.overlay == "details" and key == "z":
-                self._open_recovery()
-            return True
-        if key in {"q", "QUIT"}:
-            return False
-        if key == "TAB":
-            self.tab = "runs" if self.tab == "configure" else "configure"
-            self.log_offset = 0
-        elif key in {":", "COMMANDS"}:
-            self.action_menu = ActionMenu(
-                self.tab, has_run=bool(self.runs), searchable=key == "COMMANDS"
-            )
-            self.action_run_id = (
-                self.runs[self.run_index]["id"]
-                if self.tab == "runs" and self.runs
-                else None
-            )
-            self.overlay = "actions"
-        elif key == "?":
-            self.overlay = "help"
-            self.dialog_offset = 0
-        elif key == "i":
-            self._inspect()
-        elif self.tab == "configure":
-            fields = self.fields()
-            self.field = min(self.field, len(fields) - 1)
-            field = fields[self.field]
-            if key in {"UP", "DOWN"}:
-                self.field = (self.field + (1 if key == "DOWN" else -1)) % len(fields)
-            elif key in {"HOME", "END", "PAGEUP", "PAGEDOWN"}:
-                if key in {"HOME", "END"}:
-                    self.field = 0 if key == "HOME" else len(fields) - 1
-                else:
-                    self.field = max(
-                        0,
-                        min(
-                            len(fields) - 1,
-                            self.field
-                            + self.field_page_size * (1 if key == "PAGEDOWN" else -1),
-                        ),
-                    )
-            elif key in {"ENTER", "LEFT", "RIGHT"}:
-                if field.choices:
-                    index = field.choices.index(str(self.values[field.name]))
-                    value = field.choices[
-                        (index + (-1 if key == "LEFT" else 1)) % len(field.choices)
-                    ]
-                    if field.name == "provider":
-                        self._set_backend(value)
-                    else:
-                        self.values[field.name] = value
-                    self.field = min(self.field, len(self.fields()) - 1)
-                    self.plan = None
-                elif key == "ENTER":
-                    self.editing = str(self.values[field.name])
-                    self.edit_cursor = len(self.editing)
-            elif key == "w":
-                self._open_workflow()
-            elif key == "m":
-                self.overlay, self.search, self.model_index = "models", "", 0
-            elif key == "u":
-                self._inspect_data()
-            elif key == "v":
-                self._check_settings()
-            elif key == "b":
-                self.backend_index = PROVIDERS.index(str(self.values["provider"]))
-                self.overlay = "backends"
-                self.dialog_offset = 0
-            elif key == "f":
-                try:
-                    self._open_files()
-                except (OSError, ValueError, RuntimeError) as error:
-                    self.overlay = None
-                    self.message = (
-                        f"Cannot open dataset picker ({type(error).__name__})."
-                    )
-            elif key in {"p", "r"}:
-                self.preview(review=key == "r")
-            elif key == "s":
-                try:
-                    config = self.config()
-                    self.workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
-                    write_json(self.workspace / "draft.json", asdict(config))
-                    self.message = f"Saved {self.workspace / 'draft.json'}"
-                except (OSError, ValueError, TypeError) as error:
-                    self.message = f"Cannot save: {error}"
-        elif key in {"UP", "DOWN"}:
-            self.run_index = max(
-                0,
-                min(
-                    max(0, len(self.runs) - 1),
-                    self.run_index + (1 if key == "DOWN" else -1),
-                ),
-            )
-            self.log_offset = 0
-        elif key in {"PAGEUP", "PAGEDOWN"}:
-            self.log_offset = max(0, self.log_offset + (12 if key == "PAGEUP" else -12))
-        elif key == "HOME":
-            self.run_index, self.log_offset = 0, 0
-        elif key == "END":
-            self.log_offset = 0
-        elif key in {"ENTER", "d"} and self.runs:
-            self.overlay = "details"
-            self.dialog_offset = 0
-        elif key == "c":
-            self._reuse_run()
-        elif key == "r":
-            self._review_prepared()
-        elif key == "/":
-            self.overlay = "run-search"
-            self.search = self.run_query
-        elif key == "t":
-            filters = ("all", "active", "failed", "succeeded")
-            self.run_filter = filters[
-                (filters.index(self.run_filter) + 1) % len(filters)
-            ]
-            self.refresh()
-        elif key == "BACKSPACE":
-            self.run_query, self.run_filter = "", "all"
-            self.refresh()
-        elif key == "g" and self.runs:
-            self.overlay = "metrics"
-            self.dialog_offset = 0
-        elif key == "l" and self.runs:
-            self._open_logs()
-        elif key == "a":
-            self._pin_reference()
-        elif key == "x":
-            self._open_comparison()
-        elif key == "e":
-            self._open_quality()
-        elif key == "j":
-            self._open_evaluation()
-        elif key == "k":
-            self._review_stop()
-        elif key == "z":
-            self._open_recovery()
-        return True
+    def _selected_field(self) -> Field:
+        """Clamp the setting cursor to the visible settings and return its field."""
+        fields = self.fields()
+        self.field = min(self.field, len(fields) - 1)
+        return fields[self.field]
+
+    def _open_actions(self, *, searchable: bool) -> None:
+        """Open the action menu for the visible tab (searchable for Ctrl+P)."""
+        self.action_menu = ActionMenu(
+            self.tab, has_run=bool(self.runs), searchable=searchable
+        )
+        self.action_run_id = (
+            self.runs[self.run_index]["id"]
+            if self.tab == "runs" and self.runs
+            else None
+        )
+        self.overlay = "actions"
+
+    def _confirm_stop(self) -> None:
+        """Submit the reviewed stop request for the captured run and plan digest."""
+        run, digest = self.stop_run, self.stop_digest
+        if not run:
+            return
+        if self._submit(
+            "stop",
+            lambda: request_stop(run, expected_plan_sha256=digest),
+            "Saving the local stop request in the background.",
+            authorized=True,
+        ):
+            self.overlay = None
+
+    def _launch_reviewed(self) -> None:
+        """Create and launch the reviewed plan off the terminal thread."""
+        plan, workspace = self.plan, self.workspace
+        if not plan:
+            return
+
+        def launch_reviewed() -> Path:
+            require_backend_credentials(plan.config.provider)
+            run = create_run(workspace, plan)
+            launch_run(run)
+            return run
+
+        if self._submit(
+            "launch",
+            launch_reviewed,
+            "Submitting the reviewed launch in the background; closing the studio waits for it.",
+            authorized=True,
+        ):
+            self.overlay = None
+
+    def _save_draft(self) -> None:
+        """Save the parsed draft settings (never credentials) to the workspace."""
+        try:
+            config = self.config()
+            self.workspace.mkdir(parents=True, exist_ok=True, mode=0o700)
+            write_json(self.workspace / "draft.json", asdict(config))
+            self.message = f"Saved {self.workspace / 'draft.json'}"
+        except (OSError, ValueError, TypeError) as error:
+            self.message = f"Cannot save: {error}"
 
     def _editor_line(self, width: int) -> str:
         text = self.editing or ""
@@ -1830,254 +1486,20 @@ class Studio:
     def _review_lines(self, plan: RunPlan | None = None) -> list[str]:
         return review_lines(plan or self.plan, self.values)
 
+    def _stop_lines(self) -> list[str]:
+        return stop_dialog_lines(
+            self.stop_run, self.stop_digest, remote=self._stop_is_remote()
+        )
+
     def lines(self, width: int = 110, height: int = 32) -> list[str]:
         """Render by terminal cell width, with compact layouts and scrollable details."""
         width, height = max(20, width), max(10, height)
         self.terminal_columns = width
         self.compact_layout = width < COMPACT_COLUMNS or height < COMPACT_ROWS
-        header = [
-            "STATESET / FINE-TUNING STUDIO",
-            ("[CONFIGURE] Runs" if self.tab == "configure" else "Configure [RUNS]")
-            + " | Tab switches views",
-            "=" * width,
-        ]
-        if width >= 90 and not self.compact_layout:
-            active = sum(
-                row.get("state", {}).get("status") in {"queued", "running", "starting"}
-                for row in self.all_runs
-            )
-            context = f"{self.workspace.name}  /  {active} active"
-            header[0] = (
-                set_cell_size(header[0], max(1, width - cell_len(context) - 2))
-                + "  "
-                + context
-            )
-            commands = "Ctrl+P Commands"
-            header[1] = (
-                set_cell_size(header[1], width - len(commands) - 2) + "  " + commands
-            )
-        if self.compact_layout:
-            header = [
-                "STATESET / FINE-TUNING",
-                (
-                    "[CONFIGURE] Runs | 4 views"
-                    if self.tab == "configure"
-                    else "Configure [RUNS] | 4 views"
-                ),
-            ]
+        header = header_lines(self, width)
         footer = self._footer(width)
         available = max(1, height - len(header) - len(footer))
-        if self.overlay == "actions" and self.action_menu is not None:
-            body = self.action_menu.lines(available)
-        elif self.overlay == "planning":
-            body = _wrap(
-                [
-                    "PREPARING PREVIEW",
-                    "",
-                    "Reading and validating the dataset in the background.",
-                    "Esc cancels this preview. The current read may finish in the background.",
-                    "Training requires a separate review and Enter confirmation.",
-                ],
-                width,
-            )
-        elif self.overlay == "help":
-            body = _wrap(
-                [
-                    "KEYBOARD",
-                    "",
-                    "Ctrl+P opens searchable Commands; type words, arrows select and Enter opens a workflow",
-                    ": opens Actions on Configure or Runs; arrows select and Enter opens a workflow",
-                    "Phone terminals: 32 columns x 16 rows minimum. Compact screens use 2 down, 8 up, 3 page down, 9 page up, 0 back and 4 for the main setup/run views, outside text editors.",
-                    "Digits remain literal in values, paths and filters. Enter is still required to confirm a reviewed launch.",
-                    "Up/Down choose a setting or run",
-                    "Enter edits a setting, opens run details, or confirms a reviewed launch",
-                    "Left/Right, Home/End move the text cursor; Delete removes a character",
-                    "Ctrl+U clears text; Esc discards an edit or closes a dialog",
-                    "a pins/unpins a reference run; x compares the selected run to it",
-                    "Comparison shows saved settings and latest metrics; it never ranks quality",
-                    "m searches the model catalog",
-                    "b selects local CUDA, RunPod, Modal or River (remote SFT)",
-                    "v lists all configuration issues; Enter jumps to the selected setting",
-                    "f browses JSON/JSONL datasets without reading their contents",
-                    "i checks local readiness in the background; it never contacts a provider",
-                    "u inspects dataset statistics; e explicitly reveals a bounded private sample",
-                    "w guides settings, dataset, runtime, review and quality with explicit next steps",
-                    "On Runs: e verifies/imports paired held-out quality evidence; k reviews a local stop request",
-                    "z inspects local recovery checkpoints; copying and launch require separate reviews",
-                    "j configures a local base/adapter/judge evaluation; review submits through Buildr",
-                    "Inside j: b compares completed checkpoint validations; g reopens the queued comparison",
-                    "Inside a checkpoint comparison: n reviews a nomination for separate fresh test cases",
-                    "Inside j: h reopens saved checkpoint nominations without creating another receipt",
-                    "p validates data and previews resources without provisioning",
-                    "r reviews exact inputs; on Runs it reviews the same prepared run",
-                    "s saves draft.json (credentials are never saved)",
-                    "Tab switches configuration / retained runs",
-                    "Enter or d opens run details; c copies settings into a NEW run",
-                    "/ searches runs; t cycles all/active/failed/succeeded; Backspace resets filters",
-                    "g shows measured progress and reported loss/reward/other metric samples",
-                    "l opens full logs; s switches sources, Space pauses, / filters, End follows",
-                    "PageUp/Down scrolls dialogs or recent logs; End follows log tail",
-                    "q exits the main screen; Ctrl+C exits from any screen",
-                    "",
-                    "Closing the studio preserves detached jobs. Reopen the same workspace to reconnect.",
-                    "Local training requires CUDA. RunPod SFT is paid and requires RUNPOD_API_KEY in the launching environment.",
-                    "The studio starts no job when opening, previewing, viewing, or copying settings.",
-                ],
-                width,
-            )
-        elif self.overlay == "models":
-            body = self._model_lines(width, available)
-        elif self.overlay == "backends":
-            body = _wrap(self._backend_lines(), width)
-        elif self.overlay == "validation":
-            body = self._validation_lines(width, available)
-        elif self.overlay == "files":
-            body = self.file_picker.lines(width, available)
-        elif self.overlay == "run-search":
-            matches = self._filter_runs(self.search)
-            body = _wrap(
-                [
-                    "FILTER RUNS / ID, model, method, provider or status",
-                    "",
-                    "Search: " + self.search,
-                    f"{len(matches)} matches in the current {self.run_filter} status filter",
-                    "",
-                    *[
-                        row["id"] + " " + str(_run_config(row).get("model", ""))
-                        for row in matches[:8]
-                    ],
-                    "",
-                    "Enter applies; Esc preserves the current filter.",
-                ],
-                width,
-            )
-        elif self.overlay == "data":
-            body = _wrap(self.data_panel.lines(self._data_settings_signature()), width)
-        elif self.overlay == "workflow":
-            body = _wrap(self.workflow_panel.lines(self._settings_signature()), width)
-        elif self.overlay == "evaluation" and self.evaluation_panel is not None:
-            panel = self.evaluation_panel
-            body = _wrap(panel.lines(), width)
-            if panel.mode in {"form", "edit", "targets", "comparison", "nominations"}:
-                selected = next(
-                    (
-                        index
-                        for index, line in enumerate(body)
-                        if line.lstrip().startswith("> ")
-                    ),
-                    0,
-                )
-                if panel.mode == "edit":
-                    selected = next(
-                        (
-                            index
-                            for index, line in enumerate(body)
-                            if line.startswith("Edit:")
-                        ),
-                        selected,
-                    )
-                if selected < panel.offset or selected >= panel.offset + available:
-                    panel.offset = max(0, selected - available // 2)
-            panel.offset = min(panel.offset, max(0, len(body) - available))
-            body = body[panel.offset :]
-        elif self.overlay == "quality":
-            body = _wrap(self.quality_panel.lines(), width)
-        elif self.overlay == "recovery":
-            body = _wrap(self.recovery_panel.lines(self.message), width)
-        elif self.overlay == "recovery-review":
-            body = _wrap(self.recovery_panel.review_lines(), width)
-        elif self.overlay == "quality-path":
-            body = _wrap(
-                [
-                    "IMPORT QUALITY EVIDENCE / private paired reports",
-                    "",
-                    "Path: " + self.search,
-                    "Enter hashes completed weights and validates paired test reports in the background.",
-                    "No models or providers are called. Successful import writes private quality.json.",
-                ],
-                width,
-            )
-        elif self.overlay == "stop":
-            body = _wrap(
-                stop_dialog_lines(
-                    self.stop_run, self.stop_digest, remote=self._stop_is_remote()
-                ),
-                width,
-            )
-        elif self.overlay == "readiness":
-            body = _wrap(
-                self.readiness_panel.lines(self._settings_signature(), self.values),
-                width,
-            )
-        elif self.overlay == "metrics":
-            body = _wrap(self._metric_lines(width), width)
-        elif self.overlay == "logs":
-            body = (
-                self.log_viewer.lines(width, available)
-                if self.log_viewer is not None
-                else ["No log source selected. Esc returns to Runs."]
-            )
-        elif self.overlay == "review":
-            body = _wrap(self._review_lines(), width)
-        elif self.overlay == "prepared-review" and self.prepared_review:
-            review = self.prepared_review
-            body = _wrap(
-                [
-                    "REVIEW PREPARED RUN / same ID, retained snapshot",
-                    "Run: " + review.run.name,
-                    "Plan SHA256: " + review.plan_sha256,
-                    "Enter launches this run; Esc leaves it prepared.",
-                    "",
-                    *self._review_lines(review.plan),
-                ],
-                width,
-            )
-        elif self.overlay == "compare":
-            body = _wrap(self._comparison_lines(), width)
-        elif self.overlay == "details":
-            body = _wrap(self._run_details(), width)
-        elif self.tab == "configure":
-            body = self._configure_lines(width, available)
-        else:
-            body = self._run_lines(width, available)
-        if (
-            self.compact_layout
-            and self._compact_follow_selection
-            and self.overlay in {"backends", "workflow", "recovery"}
-        ):
-            selected_line = next(
-                (
-                    index
-                    for index, line in enumerate(body)
-                    if line.lstrip().startswith("> ")
-                ),
-                None,
-            )
-            if selected_line is not None:
-                if (
-                    selected_line < self.dialog_offset
-                    or selected_line >= self.dialog_offset + available
-                ):
-                    self.dialog_offset = max(0, selected_line - available // 2)
-                self._compact_follow_selection = False
-        if self.overlay in {
-            "backends",
-            "review",
-            "prepared-review",
-            "help",
-            "details",
-            "readiness",
-            "metrics",
-            "compare",
-            "data",
-            "workflow",
-            "quality",
-            "stop",
-            "recovery",
-            "recovery-review",
-        }:
-            self.dialog_offset = min(self.dialog_offset, max(0, len(body) - available))
-            body = body[self.dialog_offset :]
+        body = scroll_body(self, render_body(self, width, available), available)
         result = header + body[:available]
         result += [""] * max(0, height - len(footer) - len(result))
         return [_clip(line, width) for line in (result + footer)[:height]]

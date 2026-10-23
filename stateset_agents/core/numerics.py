@@ -25,8 +25,8 @@ def whiten(
     selects sample (1, ``Tensor.std`` default) or population (0) std, so call
     sites keep their numerics.
 
-    Numerically identical to ``stateset_agents.training.rl_losses.whiten``
-    (``tests/unit/test_layering.py`` pins the parity).
+    ``stateset_agents.training.rl_losses.whiten`` delegates here, so the two
+    are one implementation (``tests/unit/test_layering.py`` pins the parity).
     """
     import torch
 

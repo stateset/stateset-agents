@@ -6,8 +6,8 @@ and :func:`policy_loss` evaluate it on batched tensors. Presets in
 :data:`OBJECTIVES` reproduce GRPO, Dr. GRPO, BNPO, DAPO, GSPO, GSPO-token,
 GEPO, RLOO, REINFORCE++-baseline, CISPO, and PPO.
 
-Pure tensor code: no trainer state, no model calls, torch fetched lazily so
-importing this module never requires torch. Log-prob gathering stays with
+Pure tensor code: no trainer state, no model calls; torch is imported lazily
+inside each function, so importing this module never requires torch. Log-prob gathering stays with
 the trainer (``rl_losses.gather_token_logprobs``); nothing here allocates a
 full-vocabulary tensor.
 
@@ -23,7 +23,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Any
 
 from . import rl_losses
-from .trainer_utils import get_torch, require_torch
+from .typing_protocols import LossConfig, TensorLike
 
 if TYPE_CHECKING:  # torch stays a lazy runtime dependency
     from torch import Tensor
@@ -39,10 +39,6 @@ RATIO_KINDS = ("token", "sequence", "sequence_token", "group_expectation")
 CLIP_KINDS = ("clipped", "cispo", "none")
 AGGREGATE_KINDS = ("seq_mean", "token_mean", "seq_sum_const")
 KL_KINDS = ("none", "k3_token", "k3_sequence", "external")
-
-
-def _t() -> Any:
-    return get_torch() or require_torch()
 
 
 @dataclass(frozen=True)
@@ -107,9 +103,10 @@ class PolicyObjective:
         if self.kl_bias_correction and self.kl != "k3_token":
             raise ValueError("kl_bias_correction only applies to kl='k3_token'")
 
-    def with_(self, **changes: Any) -> PolicyObjective:
+    def with_(self, **changes: object) -> PolicyObjective:
         """Return a copy with ``changes`` applied (re-validated)."""
-        return replace(self, **changes)
+        fields: dict[str, Any] = changes  # validated by __post_init__
+        return replace(self, **fields)
 
 
 @dataclass(frozen=True)
@@ -124,13 +121,16 @@ class PolicyLossResult:
 # --- advantages ------------------------------------------------------------
 
 
-def compute_advantages(rewards: Any, group_ids: Any, objective: PolicyObjective) -> Any:
+def compute_advantages(
+    rewards: TensorLike, group_ids: TensorLike, objective: PolicyObjective
+) -> Tensor:
     """Advantages ``[N]`` from scalar rewards ``[N]`` and integer ``group_ids``.
 
     Groups of size 1, constant rewards, and non-finite statistics give 0,
     never NaN. Always fp32.
     """
-    torch = _t()
+    import torch
+
     if objective.advantage == "external":
         raise ValueError(
             f"objective {objective.name!r} uses external advantages; "
@@ -171,8 +171,9 @@ def compute_advantages(rewards: Any, group_ids: Any, objective: PolicyObjective)
 # --- ratio -----------------------------------------------------------------
 
 
-def _sequence_log_ratio(logp_cur: Any, logp_old: Any, mask: Any) -> Any:
-    torch = _t()
+def _sequence_log_ratio(logp_cur: Tensor, logp_old: Tensor, mask: Tensor) -> Tensor:
+    import torch
+
     lengths = torch.clamp(mask.sum(-1), min=1.0)
     if logp_old.dim() == 2:
         return ((logp_cur - logp_old) * mask).sum(-1) / lengths
@@ -181,12 +182,13 @@ def _sequence_log_ratio(logp_cur: Any, logp_old: Any, mask: Any) -> Any:
 
 def _compute_ratio(
     objective: PolicyObjective,
-    logp_cur: Any,
-    logp_old: Any,
-    mask: Any,
-    group_ids: Any | None,
-) -> Any:
-    torch = _t()
+    logp_cur: Tensor,
+    logp_old: Tensor,
+    mask: Tensor,
+    group_ids: TensorLike | None,
+) -> Tensor:
+    import torch
+
     kind = objective.ratio
     clamp = float(objective.ratio_clamp)
     if kind == "token":
@@ -226,9 +228,12 @@ def _compute_ratio(
 # --- surrogate and aggregation ------------------------------------------------
 
 
-def surrogate(objective: PolicyObjective, ratio: Any, adv: Any, logp_cur: Any) -> Any:
+def surrogate(
+    objective: PolicyObjective, ratio: Tensor, adv: Tensor, logp_cur: Tensor
+) -> Tensor:
     """Per-element policy loss (not reduced) for ``objective.clip``."""
-    torch = _t()
+    import torch
+
     if objective.clip == "clipped":
         if objective.delta is None:
             return rl_losses.clipped_surrogate(
@@ -247,12 +252,12 @@ def surrogate(objective: PolicyObjective, ratio: Any, adv: Any, logp_cur: Any) -
 
 def aggregate(
     objective: PolicyObjective,
-    per_token: Any,
-    mask: Any,
+    per_token: Tensor,
+    mask: Tensor,
     *,
     total_rows: float | None = None,
     total_tokens: float | None = None,
-) -> Any:
+) -> Tensor:
     """Reduce a per-token loss ``[N, T]`` (or ``[N, 1]``) to a scalar.
 
     ``total_rows``/``total_tokens`` replace this slice's own row/token counts
@@ -261,7 +266,8 @@ def aggregate(
     row slices gives exactly the full-batch value). ``None`` uses the slice's
     own counts.
     """
-    torch = _t()
+    import torch
+
     per_token = per_token * torch.ones_like(mask)  # broadcast [N,1] -> [N,T]
     if objective.aggregate == "seq_mean":
         if total_rows is None:
@@ -288,15 +294,15 @@ def aggregate(
 
 def policy_loss(
     *,
-    logp_cur: Any,
-    mask: Any,
-    advantages: Any,
+    logp_cur: Tensor,
+    mask: Tensor,
+    advantages: TensorLike,
     objective: PolicyObjective,
-    logp_old: Any | None = None,
-    logp_ref: Any | None = None,
-    group_ids: Any | None = None,
-    kl: Any | None = None,
-    entropy: Any | None = None,
+    logp_old: Tensor | None = None,
+    logp_ref: Tensor | None = None,
+    group_ids: TensorLike | None = None,
+    kl: Tensor | None = None,
+    entropy: Tensor | None = None,
     total_rows: float | None = None,
     total_tokens: float | None = None,
 ) -> PolicyLossResult:
@@ -317,7 +323,8 @@ def policy_loss(
     couples rows through its group statistic). The returned metrics other
     than ``policy_loss`` stay slice-local means.
     """
-    torch = _t()
+    import torch
+
     if logp_cur.dim() != 2:
         raise ValueError("logp_cur must be [N, T]")
     mask = mask.to(logp_cur.dtype)
@@ -426,36 +433,38 @@ def policy_loss(
 # --- presets -----------------------------------------------------------------
 
 
-def _preset(name: str, **kwargs: Any) -> PolicyObjective:
-    return PolicyObjective(name=name, **kwargs)
-
-
 OBJECTIVES: Mapping[str, PolicyObjective] = MappingProxyType(
     {
-        "grpo": _preset("grpo", kl="k3_token"),
-        "dr_grpo": _preset(
-            "dr_grpo", advantage="group_mean", aggregate="seq_sum_const"
+        "grpo": PolicyObjective(name="grpo", kl="k3_token"),
+        "dr_grpo": PolicyObjective(
+            name="dr_grpo", advantage="group_mean", aggregate="seq_sum_const"
         ),
-        "bnpo": _preset("bnpo", aggregate="token_mean"),
-        "dapo": _preset("dapo", clip_high=0.28, aggregate="token_mean"),
-        "gspo": _preset(
-            "gspo", ratio="sequence", clip_low=3e-4, clip_high=4e-4, kl="k3_sequence"
+        "bnpo": PolicyObjective(name="bnpo", aggregate="token_mean"),
+        "dapo": PolicyObjective(name="dapo", clip_high=0.28, aggregate="token_mean"),
+        "gspo": PolicyObjective(
+            name="gspo",
+            ratio="sequence",
+            clip_low=3e-4,
+            clip_high=4e-4,
+            kl="k3_sequence",
         ),
-        "gspo_token": _preset(
-            "gspo_token",
+        "gspo_token": PolicyObjective(
+            name="gspo_token",
             ratio="sequence_token",
             clip_low=3e-4,
             clip_high=4e-4,
             kl="k3_sequence",
         ),
-        "gepo": _preset("gepo", ratio="group_expectation", ratio_clamp=30.0),
-        "rloo": _preset("rloo", advantage="leave_one_out"),
-        "reinforce_pp_baseline": _preset(
-            "reinforce_pp_baseline", advantage="batch_norm", aggregate="token_mean"
+        "gepo": PolicyObjective(
+            name="gepo", ratio="group_expectation", ratio_clamp=30.0
         ),
-        "cispo": _preset("cispo", clip="cispo", aggregate="token_mean"),
-        "ppo": _preset(
-            "ppo", advantage="external", aggregate="token_mean", kl="k3_token"
+        "rloo": PolicyObjective(name="rloo", advantage="leave_one_out"),
+        "reinforce_pp_baseline": PolicyObjective(
+            name="reinforce_pp_baseline", advantage="batch_norm", aggregate="token_mean"
+        ),
+        "cispo": PolicyObjective(name="cispo", clip="cispo", aggregate="token_mean"),
+        "ppo": PolicyObjective(
+            name="ppo", advantage="external", aggregate="token_mean", kl="k3_token"
         ),
     }
 )
@@ -473,13 +482,13 @@ def compatible_presets(supported_ratios: tuple[str, ...] | None) -> list[str]:
 
 
 def resolve_objective(
-    config: Any,
+    config: LossConfig,
     default: str,
     *,
     kl_coef: float | None = None,
     max_completion_length: int | None = None,
     supported_ratios: tuple[str, ...] | None = None,
-    **native_fields: Any,
+    **native_fields: object,
 ) -> PolicyObjective:
     """Build the objective a trainer should evaluate for ``config``.
 

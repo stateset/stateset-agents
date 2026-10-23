@@ -23,8 +23,11 @@ MAX_BRANCHES = 40
 #: cli._validate_config, AgentConfig.validate, the /api/v1/conversations
 #: handler, finetune_workspace.check_config_values and
 #: data.finetuning.validate_finetuning_row brought it to 77; splitting the
-#: spine loop's train() into an episode step brought it to 74.
-CEILING = 74
+#: spine loop's train() into an episode step brought it to 74; splitting the
+#: GRPO losses (token path, enhanced loss, label preparation), the flywheel
+#: command and the studio's key dispatch, refresh and rendering brought it
+#: to 65.
+CEILING = 65
 
 _BRANCH_NODES = (
     ast.If,
@@ -98,6 +101,14 @@ def test_split_functions_stay_split() -> None:
         ("stateset_agents/api/routers/v1.py", "chat_v1"),
         ("stateset_agents/finetune_workspace.py", "check_config_values"),
         ("stateset_agents/data/finetuning.py", "validate_finetuning_row"),
+        ("stateset_agents/training/loss_computation.py", "_compute_token_path_loss"),
+        ("stateset_agents/training/loss_computation.py", "compute_enhanced_grpo_loss"),
+        ("stateset_agents/training/loss_computation.py", "_prepare_inputs_and_labels"),
+        ("stateset_agents/cli_flywheel.py", "flywheel"),
+        ("stateset_agents/tui.py", "handle"),
+        ("stateset_agents/tui.py", "refresh"),
+        ("stateset_agents/tui.py", "lines"),
+        ("stateset_agents/tui_views.py", "run_details_lines"),
     ):
         assert key not in oversized, f"{key} is oversized again"
 
