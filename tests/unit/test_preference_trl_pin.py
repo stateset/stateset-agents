@@ -92,6 +92,7 @@ def _bare(**attributes: Any) -> SimpleNamespace:
         _metrics={"train": defaultdict(list), "eval": defaultdict(list)},
         _total_train_tokens=0,
         _tp_size=1,
+        use_liger_kernel=False,
         **attributes,
     )
 
