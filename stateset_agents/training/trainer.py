@@ -17,9 +17,8 @@ submodules:
 
 from __future__ import annotations
 
-import warnings
-
 # Re-export loss computation functions
+from .._deprecation import warn_deprecated
 from .loss_computation import compute_enhanced_grpo_loss, compute_grpo_loss
 from .multi_turn_trainer import GRPOTrainer, MultiTurnGRPOTrainer
 
@@ -57,12 +56,10 @@ _DEPRECATED_ALIASES = {
 def __getattr__(name: str):
     if name in _DEPRECATED_ALIASES:
         canonical = _DEPRECATED_ALIASES[name]
-        warnings.warn(
-            f"Importing {name} from stateset_agents.training.trainer is deprecated "
-            "and will be removed in v0.71.0. "
-            f"Use 'from {canonical} import {name}' instead.",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"Importing {name} from stateset_agents.training.trainer",
+            removal="0.71.0",
+            replacement=f"'from {canonical} import {name}'",
         )
         import importlib
 

@@ -13,7 +13,6 @@ PPO duplicate and the GSPO stub were removed in v0.70.0.
 from __future__ import annotations
 
 import logging
-import warnings
 from dataclasses import dataclass
 from typing import Any, TypeAlias
 
@@ -24,6 +23,7 @@ import torch.nn.functional as F
 from numpy.typing import NDArray
 from torch.distributions import Categorical
 
+from ..._deprecation import warn_deprecated
 from ..environment import Environment
 from ..numerics import whiten
 from ..trajectory import ConversationTurn
@@ -31,14 +31,14 @@ from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
-_REMOVAL_RELEASE = "v0.71.0"
+_REMOVAL_RELEASE = "0.71.0"
 
 
 def _warn_deprecated(name: str, replacement: str) -> None:
-    warnings.warn(
-        f"stateset_agents.core.enhanced.{name} is deprecated and will be removed "
-        f"in {_REMOVAL_RELEASE}; use {replacement}.",
-        DeprecationWarning,
+    warn_deprecated(
+        f"stateset_agents.core.enhanced.{name}",
+        removal=_REMOVAL_RELEASE,
+        replacement=replacement,
         stacklevel=3,
     )
 
@@ -169,12 +169,10 @@ class DPOTrainer:
     def __init__(
         self, agent: EnhancedMultiTurnAgent, config: DPOConfig, device: str = "auto"
     ):
-        warnings.warn(
-            "stateset_agents.core.enhanced.DPOTrainer is deprecated and will be "
-            "removed in v0.71.0; use "
-            "stateset_agents.training.preference.PreferenceTrainer.",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            "stateset_agents.core.enhanced.DPOTrainer",
+            removal="0.71.0",
+            replacement="stateset_agents.training.preference.PreferenceTrainer",
         )
         self.agent = agent
         self.config = config
@@ -628,10 +626,10 @@ def create_advanced_rl_orchestrator(
 def __getattr__(name: str) -> Any:
     """Serve the removed duplicate ``GSPOConfig`` from its canonical home."""
     if name == "GSPOConfig":
-        warnings.warn(
-            "import GSPOConfig from stateset_agents.training.gspo_config",
-            DeprecationWarning,
-            stacklevel=2,
+        warn_deprecated(
+            f"{__name__}.GSPOConfig",
+            removal="0.71.0",
+            replacement="stateset_agents.training.gspo_config.GSPOConfig",
         )
         from ...training.gspo_config import GSPOConfig
 

@@ -8,7 +8,6 @@ proper rank handling, memory optimization, and fault tolerance.
 import asyncio
 import logging
 import os
-import warnings
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -17,6 +16,8 @@ from typing import Any
 import torch
 import torch.distributed as dist
 import torch.multiprocessing as mp
+
+from .._deprecation import warn_deprecated
 
 try:
     from torch.distributed.elastic.multiprocessing.errors import record
@@ -136,11 +137,11 @@ class DistributedGRPOTrainer:
         self._global_reward_sum = 0.0
         self._global_reward_count = 0
 
-        warnings.warn(
-            "DistributedGRPOTrainer is deprecated and non-functional for real "
-            "training; use stateset_agents.training.distributed.DistributedTrainer",
-            DeprecationWarning,
-            stacklevel=2,
+        # Non-functional for real training.
+        warn_deprecated(
+            "DistributedGRPOTrainer",
+            removal="0.71.0",
+            replacement="stateset_agents.training.distributed.DistributedTrainer",
         )
 
     def setup_distributed(self, rank: int, world_size: int):

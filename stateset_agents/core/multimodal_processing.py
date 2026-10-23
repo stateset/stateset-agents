@@ -6,16 +6,14 @@ v0.71.0.
 """
 
 import sys
-import warnings
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.experimental import multimodal_processing as _new
 
-warnings.warn(
-    "stateset_agents.core.multimodal_processing has moved to "
-    "stateset_agents.experimental.multimodal_processing; the old import path is "
-    "deprecated and will be removed in v0.71.0.",
-    DeprecationWarning,
-    stacklevel=2,
+warn_deprecated(
+    "stateset_agents.core.multimodal_processing",
+    removal="0.71.0",
+    replacement="stateset_agents.experimental.multimodal_processing",
 )
 
 # Alias the module so attribute access, monkeypatching, and `from ... import`

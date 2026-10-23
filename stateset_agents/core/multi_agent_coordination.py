@@ -6,16 +6,14 @@ v0.71.0.
 """
 
 import sys
-import warnings
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.experimental import multi_agent_coordination as _new
 
-warnings.warn(
-    "stateset_agents.core.multi_agent_coordination has moved to "
-    "stateset_agents.experimental.multi_agent_coordination; the old import path is "
-    "deprecated and will be removed in v0.71.0.",
-    DeprecationWarning,
-    stacklevel=2,
+warn_deprecated(
+    "stateset_agents.core.multi_agent_coordination",
+    removal="0.71.0",
+    replacement="stateset_agents.experimental.multi_agent_coordination",
 )
 
 # Alias the module so attribute access, monkeypatching, and `from ... import`

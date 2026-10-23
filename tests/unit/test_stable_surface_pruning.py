@@ -27,7 +27,6 @@ KEPT = (
     "GRPOException",
     "ValidationException",  # raised by core.input_validation / utils.security
     "ResourceException",  # raised by core.async_pool
-    "ErrorCode",  # passed by those raise sites
     "StateSetError",
     "ConfigurationError",
 )
@@ -40,7 +39,10 @@ def test_the_deprecated_set_is_the_unused_type_error_and_optimizer_names() -> No
         "stateset_agents.core.performance_optimizer",
         "stateset_agents.core.type_system",
     }
-    assert len(DEPRECATED) == 34
+    # 34 in the first pruning pass; ``ErrorCode`` (the legacy GRPO_E### enum,
+    # no longer passed anywhere: ``exc.code`` is a core.errors.ErrorCode) since.
+    assert len(DEPRECATED) == 35
+    assert "ErrorCode" in DEPRECATED
     assert set(DEPRECATED) <= set(sa.__all__)  # contract unchanged until removal
     assert sa._DEPRECATED_STABLE_EXPORTS_REMOVAL == "v0.72.0"
 
