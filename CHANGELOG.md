@@ -210,6 +210,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Stale docs: `docs/GRPO_FRAMEWORK_ENHANCEMENTS_v2.md` imported the deleted
+  `stateset_agents.api.enhanced_ultimate_grpo_service` and drove nonexistent
+  `/api/v2` routes on port 8002 (now the stable `/api/v1` routes of
+  `stateset_agents.api.main`); `docs/RL_FRAMEWORK_GUIDE.md` imported the
+  missing `training.trl_grpo_wrapper` (now `training.trl_grpo_trainer`);
+  `docs/KIMIK25_INTEGRATION.md` imported a nonexistent
+  `training.kimi25_config` (now `examples/kimi_k25_config.get_kimi_k25_config`);
+  two guides imported `PerformanceMonitor` from `utils.monitoring` instead of
+  `utils.performance_monitor`. `AGENTS.md` no longer lists the removed
+  repo-root shim packages or `test_integration.py`. Docs and
+  `examples/advanced_features_demo.py` import the research modules from
+  `stateset_agents.experimental` instead of the deprecated `core` shims.
 - **Eval ladder sets changed.** `build_ladder` / `build_episode_ladder` now
   partition issue combinations between eval and harvest, so the same seed
   yields different prompts than before; reference bases shift upward only when
@@ -313,6 +325,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   stateful per-step rewards replayed on the final state (15.83 vs 16.0).
 - Evaluation reported a 0% success rate for perfectly correct
   `CorrectnessReward` runs.
+
+### Known issues
+
+- `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` never
+  executes code: it scores code-block markers and coding keywords in the last
+  assistant turn. The name overstates what it measures; a rename (for example
+  to a `CodeFormattingHeuristic`) with a deprecated alias is left to the
+  rewards workstream, which owns that module.
 
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 

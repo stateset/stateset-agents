@@ -779,7 +779,7 @@ trained_agent = await train(
 Use HuggingFace TRL trainers:
 
 ```python
-from stateset_agents.training.trl_grpo_wrapper import TRLGRPOTrainerWrapper
+from stateset_agents.training.trl_grpo_trainer import TRLGRPOTrainerWrapper
 
 trainer = TRLGRPOTrainerWrapper(
     agent=agent,
