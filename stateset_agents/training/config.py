@@ -62,6 +62,9 @@ class TrainingProfile(Enum):
     EXPERIMENTAL = "experimental"  # Cutting edge
 
 
+_NATIVE_LR_SCHEDULERS = frozenset({"cosine", "linear", "constant"})
+
+
 @dataclass
 class TrainingConfig:
     """
@@ -493,6 +496,14 @@ class TrainingConfig:
 
         return warnings
 
+    def _supported_lr_schedulers(self) -> frozenset[str] | None:
+        """Schedulers the native trainers implement; ``None`` accepts any name.
+
+        A config that hands ``lr_scheduler_type`` to another library (TRL)
+        overrides this to defer to that library's own set.
+        """
+        return _NATIVE_LR_SCHEDULERS
+
     def validate_for_training(self) -> None:
         """Reject invalid run semantics before allocating a model or optimizer."""
         if type(self.zero_signal_patience) is not int or self.zero_signal_patience < 0:
@@ -512,10 +523,28 @@ class TrainingConfig:
             "max_completion_length",
             "num_gradient_updates",
             "save_total_limit",
+            "logging_steps",
+            "save_steps",
+            "eval_steps",
         ):
             value = getattr(self, name)
             if type(value) is not int or value < 1:
                 raise ConfigurationError(f"{name} must be a positive integer")
+        schedulers = self._supported_lr_schedulers()
+        if (
+            not isinstance(self.lr_scheduler_type, str)
+            or not self.lr_scheduler_type
+            or (schedulers is not None and self.lr_scheduler_type not in schedulers)
+        ):
+            expected = (
+                "one of " + ", ".join(sorted(schedulers))
+                if schedulers is not None
+                else "a non-empty scheduler name"
+            )
+            raise ConfigurationError(
+                f"lr_scheduler_type must be {expected} "
+                f"(got {self.lr_scheduler_type!r})"
+            )
         for name in ("learning_rate", "temperature", "max_grad_norm"):
             value = getattr(self, name)
             if (

@@ -54,6 +54,10 @@ class TRLGRPOConfig(TrainingConfig):
         config_dict.update(kwargs)
         return cls(**config_dict)
 
+    def _supported_lr_schedulers(self) -> frozenset[str] | None:
+        """TRL builds the scheduler, so any name it accepts is valid here."""
+        return None
+
     def validate(self) -> list[str]:
         """Validate configuration and return warnings."""
         warnings: list[str] = list(super().validate())

@@ -482,6 +482,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `use_vllm=True` now builds its engine: its gate read
   `VLLM_BACKEND_AVAILABLE`, which only the setup it guarded sets, so DAPO
   always generated with HuggingFace.
+- **Step cadences and scheduler names are validated before training.**
+  `TrainingConfig.validate_for_training` rejects a `logging_steps`,
+  `save_steps` or `eval_steps` that is not a positive integer (a 0 raised
+  `ZeroDivisionError` mid-run) and an `lr_scheduler_type` outside the native
+  set (`cosine`, `linear`, `constant`; before, an unknown name trained at a
+  constant rate). `TRLGRPOConfig` keeps TRL's wider scheduler set.
+  `SingleTurnGRPOTrainer` now raises when its scheduler cannot be built, as
+  `MultiTurnGRPOTrainer` does, instead of logging at DEBUG and training at a
+  constant rate.
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's

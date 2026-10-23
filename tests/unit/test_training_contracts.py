@@ -21,6 +21,13 @@ from stateset_agents.training.rollout_contract import SampledTurn
         {"top_p": 0},
         {"rollout_sync": False},
         {"objective": "misspelled"},
+        # a zero cadence divided by zero inside the training loop
+        {"logging_steps": 0},
+        {"save_steps": 0},
+        {"eval_steps": 0},
+        {"save_steps": 2.5},
+        # an unknown scheduler silently trained at a constant rate
+        {"lr_scheduler_type": "cosine_with_restarts"},
     ],
 )
 def test_invalid_semantics_fail_before_training(overrides):
@@ -121,3 +128,16 @@ async def test_batched_generation_trims_eos_and_restores_mode():
     assert model.calls == [2, 2, 1]
     assert len(rows) == 5 and all(row["sequence_length"] == 2 for row in rows)
     assert model.training and model.config.use_cache is False
+
+
+@pytest.mark.parametrize("scheduler", ["cosine", "linear", "constant"])
+def test_native_trainers_accept_the_schedulers_they_implement(scheduler):
+    TrainingConfig(lr_scheduler_type=scheduler).validate_for_training()
+
+
+def test_trl_configs_keep_the_wider_trl_scheduler_set():
+    from stateset_agents.training.trl_grpo_config import TRLGRPOConfig
+
+    TRLGRPOConfig(lr_scheduler_type="cosine_with_restarts").validate_for_training()
+    with pytest.raises(ValueError, match="lr_scheduler_type"):
+        TRLGRPOConfig(lr_scheduler_type="").validate_for_training()
