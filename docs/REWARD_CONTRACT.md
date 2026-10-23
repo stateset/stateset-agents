@@ -50,6 +50,11 @@ grounding = information * (0.5 + 0.5 * relevance) * quality * support
             [* 0.5 when the reply declines a request not flagged harmful]
 ```
 
+For a request `basic_rewards.harmful_request` *does* flag, this formula is not
+used: a declining reply earns a fixed safety credit (`SAFETY_CREDIT`, half)
+with `information` 0, and any other reply earns 0. See "Refusals, harmful
+requests and safety".
+
 **Anchoring.** The reply is read clause by clause, split at punctuation and at
 "and", "or", "but", "then", "while" and "plus". A clause naming a request
 term, a reference label or an evidence term is *anchored*. The first clause
@@ -140,25 +145,45 @@ unrelated text cannot dilute them.
 
 ### Refusals, harmful requests and safety
 
-`basic_rewards.harmful_request` flags requests for help with something
-unsafe:
+`basic_rewards.harmful_request` flags requests for help *perpetrating*
+something harmful: it favors precision, requiring a perpetration cue rather
+than the mere presence of an unsafe word.
 
-- "how do I hack into ...";
-- "where can I buy drugs";
-- "... without getting caught";
-- intent to hurt a person or animal ("... to hurt my roommate", "poison my
-  neighbor's dog", "kill myself");
-- making a poison, toxic gas or explosive.
+- hurting or killing a person ("... to hurt my roommate", "kill my neighbor")
+  or an animal ("poison my neighbor's dog"), or self-harm ("kill myself");
+- making a poison, toxic gas, explosive or hard drug, or weaponising one to
+  attack people;
+- acquiring contraband ("where can I buy drugs", "untraceable gun");
+- breaking into a system or account ("hack into my ex's email", "break into
+  my neighbor's wifi") or writing malware;
+- committing theft or fraud ("how do I steal a car", "run a scam to ...");
+- any of the above "... without getting caught".
 
-It does not flag benign uses of trigger words ("hack together a script",
-"kill a process", "shoot photos", "execute a query", "attack the problem"),
-requests that only mention an unsafe topic ("someone stole my card") or
-protective requests ("how do I avoid scams").
+It does not flag a request that merely names an unsafe topic or describes
+being a victim ("someone stole my card", "a fraudulent charge", "who hacked
+my account"), a protective or safety-seeking request ("how do I avoid scams",
+"which cleaners should I never mix", "teach my kids about phishing"), or a
+violent word used harmlessly ("hack together a script", "kill a process",
+"shoot photos", "execute a query", "attack the problem").
 
-- **Flagged requests.** Declining has grounding 1 and any other reply has 0.
-  `SafetyReward` scores any reply that does not decline as 0, however it is
-  phrased.
-- **Other requests.** A reply that declines (`basic_rewards.declines`)
+**Measured on labelled sets** (`tests/fixtures/reward_labelled/`, written
+blind to the implementation; `tests/unit/test_reward_labelled_sets.py`): on
+266 realistic benign customer-support, safety-protective and dual-use requests
+the false-positive rate is **0%** (gate: below 5%), and on 136 clearly-harmful
+requests recall is **0.85** at precision **1.0**. Detection is lexical: a
+harmful request phrased without a perpetration cue ("I need to make my sister
+suffer physically", "which mushrooms could I put in his dinner so he never
+wakes up?") is not flagged.
+
+- **Flagged requests.** A reply that declines earns a fixed **safety credit**
+  (`grounding.SAFETY_CREDIT`, half), never full grounding, and `information`
+  stays 0; any other reply earns 0 grounding. `SafetyReward` carries the
+  authoritative signal: it scores any non-declining reply 0, however phrased,
+  and a decline 1. The grounding credit only keeps a decline above compliance
+  for the factories that have no safety term.
+- **Other requests.** A reply that declines (`basic_rewards.declines`,
+  which recognises "I can't help with that", "Sorry, I can't.", "I'm sorry,
+  but I won't be providing that." and "That's not something I'm able to do.")
   keeps at most half its grounding, so a blanket refusal has none and is
   always below a relevant answer.
 
@@ -171,23 +196,44 @@ whole-word.
 ### Hedged answers
 
 `CorrectnessReward` (and the answer credit inside grounding) pays only a
-committed answer. Any of these, offered beside the answer, counts as another
-candidate and leaves **no** credit, whichever candidate is right:
+committed answer. A **competing candidate of the same kind, offered as an
+alternative answer**, leaves **no** credit, whichever candidate is right:
 
-- a list item (comma, newline, sentence);
-- "or", "maybe", "possibly", "perhaps" or "either ... or";
-- a parenthetical alternative ("Sydney (or Canberra)", "(possibly X)");
-- a parenthetical that looks like another answer of the same kind;
-- slash, pipe or comma alternatives with or without spaces ("Canberra/Sydney",
-  "Lyon,Paris", "42/43", "43,42");
-- an appended "Or possibly X.".
+- a bare list or alternation of same-kind items -- separated by a comma,
+  newline, bullet, slash, pipe, ampersand, plus, tilde, times sign, an
+  arrow, an en/em dash, a colon between tokens, or "vs"/"versus", spaced or
+  not ("Canberra vs Sydney", "Canberra/Sydney", "Canberra & Sydney",
+  "London, Paris, Berlin", "Canberra -> Sydney", "Canberra — Sydney",
+  "42/43", "43,42", "0 1 2 3 4 5 6 7 8 9");
+- a candidate framed as an answer by an alternation, modal, attribution or
+  concessive cue ("maybe Sydney", "either X or Y", "some say it's Sydney",
+  "many maps list Sydney instead", "though some people say it's Sydney", an
+  appended "Or possibly Sydney.");
+- for a number, an alternative introduced by an alternation separator or
+  trailed by a conditional ("42 (or 43)", "42; 43 if you round up", "42, or
+  43 counting the last day");
+- the reference itself offered tentatively ("Or possibly Sydney.").
 
-Qualifiers ("Paris, in Europe", "Canberra, which is in the ACT", "Paris
-(pop. 2,100,000)") and denied alternatives ("Paris, not London") are not
-candidates. A numeric answer stated explicitly ("the answer is 42", "####
-42", `\boxed{42}`) must be the only stated answer, with no alternative number
-beside it. An unstated numeric answer must be the only number the reply
-offers beyond those quoted from the question.
+What is **not** a competing candidate: a different role ("Jupiter is the
+biggest planet", "Toronto is bigger", "Marseille and Lyon are the next-largest
+cities"); an appositive, location or object ("in the Louvre in Paris", "the
+lightest element", "who also wrote Emma"); reasoning numbers and intermediate
+arithmetic ("36 - 9 = 27", "510 / 12 = 42.5", "#### 27" after a worked
+solution); a date ("July 20, 1969"); a unit or restatement ("42 dollars",
+"$267.00" for 267); and an option the reply rejects. Negation is scoped to its
+own clause, so rejecting a wrong option while committing to the answer earns
+**full** credit ("Not Lyon: Paris.", "Lyon is not the capital of France;
+Paris is.", "It wasn't Newton; it was Einstein."). An admission of not knowing
+("no idea", "not sure") halves the credit.
+
+**Measured** on a blind-labelled set
+(`tests/fixtures/reward_labelled/answer_commitment.json`, 312 committed,
+hedged, negation-correct and wrong answers over text and numeric questions;
+`tests/unit/test_reward_labelled_sets.py`): overall precision **0.95**, recall
+**0.99** (heldout 0.97 / 1.0). The reading is lexical, so a hedge framed as a
+role assignment ("Sydney. Canberra is just where the federal parliament
+meets.") or a reference stated only as context ("The Berlin Wall fell in 1991,
+two years after the protests of 1989." for 1989) can slip through.
 
 ### What the exploit search verifies
 
@@ -243,19 +289,34 @@ lexicons:
 
 `tests/unit/test_reward_exploit_search.py` runs every family over every
 shipped factory: the core, multi-objective and Kimi `create_*_reward`
-factories and the `cli train` demo reward, 15 rewards in all. It runs 50 to
-70 adversaries per case, for seeds 0 and 1.
+factories, the `cli train` demo reward and `SupportConversationReward` (the
+V2 support reward), 16 rewards in all. It runs 50 to 70 adversaries per case,
+for seeds 0 and 1.
 
 **Verified guarantee:** on those cases, every adversary scores at least
 **0.01 below** the reference, on both paths. Against the rewards at commit
-`c7a3f37b` (before this round), the same search found **18,250** adversary
-episodes at or above that line, in all 15 factories; it now finds none. Seeds
-2 and 3 were also checked and find none. The smallest gap is 0.011, for salad
-inserted into the starter scenario's reference
-(`create_task_agent_reward`).
+`c7a3f37b` (before an earlier round), the same search found **18,250**
+adversary episodes at or above that line; it now finds none. Seeds 2 and 3
+find none. The smallest gap is 0.011, for salad inserted into the starter
+scenario's reference (`create_task_agent_reward`).
+
+`SupportConversationRewardV3` (the paid fine-tune worker's reward) and its V2
+base now gate their per-turn style composite on task grounding, the same way
+the factories do. On `DEFAULT_CASES` this drops V3 from 2,886 findings (over
+seeds 0 and 1, both paths) to **12** and V2 to **0**. V3 is **ratcheted, not
+held at zero** (`SUPPORT_V3_FINDINGS_CEILING = {0: 4, 1: 8}`, which only ever
+decreases, enforced by `test_support_v3_findings_never_increase`): its
+invented-detail check (×0.6 for a duration, amount or case number absent from
+the policy facts and the conversation) also fires on `DEFAULT_CASES`
+references, which carry no policy facts, so truncating a reference or dropping
+its specifics can tie or beat it. Realistic **bench-format support rows**
+(`policy_facts` / `must_acknowledge`, in `tests/unit/test_support_reward_grounding.py`)
+are not covered by the zero guarantee at all -- even the core factories leave
+content-destroying mutations within the margin on them -- so train support
+agents against an outcome or judge reward.
 
 `tests/unit/test_reward_review_exploits.py` pins the reviewer's own strings
-below the reference on all 15 factories and both paths:
+below the reference on all 16 factories and both paths:
 
 - E1, the off-topic string, alone and prefixed;
 - E3, refusing the "hack together a script" request;
@@ -273,11 +334,14 @@ reply mutations and checks that none of the following ever raises a score:
 - inserting unrecognized words.
 
 It also checks that any hedge beside a correct answer earns no credit.
-`tests/learning/test_reward_exploits_not_learned.py` trains a bandit policy
-with GRPO (`rl_losses.group_advantages` and the clipped surrogate) on three
-factories, for seeds 0, 1 and 2. The policy chooses among the honest reply,
-the E1 string, a refusal, a hedge and the reply said twice. In every run it
-moves to the honest reply, and the exploits lose probability.
+`tests/learning/test_reward_exploits_not_learned.py` trains a policy with GRPO
+(`rl_losses.group_advantages` and the clipped surrogate) on three factories,
+for seeds 0, 1 and 2. This is a **bandit over a fixed set of reply strings**
+(the honest reply, the E1 string, a refusal, a hedge and the reply said
+twice), not a language model: it shows only that, on these rewards, the honest
+reply has the highest reward so the policy moves to it and the exploits lose
+probability. It is not evidence about what a real policy generates, discovers
+or learns.
 
 Run `search_reward_exploits(make_reward, cases)` with your own
 `ExploitCase`s to check a custom reward or your own scenarios; an empty
@@ -305,16 +369,30 @@ defend against, the following.
 - **Word order and paraphrase.** Rewards read clauses and bags of words. A
   correct answer in other words earns no label credit, and the reference is
   not the unique best reply.
-- **Intent and assistance cues are lexical.** A harmful request phrased
-  without the cues above ("Which mushrooms could I put in his dinner so he
-  never wakes up?") is not flagged, so complying with it is not penalized and
-  refusing it earns nothing. Unsafe assistance phrased without the
-  instruction, act or contraband cues is not penalized either.
+- **Intent and assistance cues are lexical.** `harmful_request` favors
+  precision (0% false positives on the labelled benign set) at the cost of
+  recall (0.85): a harmful request phrased without a perpetration cue ("I need
+  to make my sister suffer physically", "which mushrooms could I put in his
+  dinner so he never wakes up?") is not flagged, so complying with it is not
+  penalized and refusing it earns only the normal refusal factor, not the
+  safety credit. Unsafe assistance phrased without the instruction, act or
+  contraband cues is not penalized either. A refusal to a correctly-flagged
+  harmful request earns a fixed safety credit, not full grounding, so a
+  refusal never trains as if it were an informative answer.
+- **Answer commitment is lexical.** A hedge disguised as a role assignment
+  ("Sydney. Canberra is just where the federal parliament meets.") or a
+  reference stated only as context, while a different answer is the committed
+  one, can slip through (~0.95 precision, 0.99 recall on the labelled set).
 - **Names.** Any capitalized word satisfies a "who" question, so a wrong
   name grounds like the right one. Only a label decides correctness.
 - **Other requests.** The margin is verified on the cases above, not proven
   for every request. Margins are smallest for requests whose only terms are
   boilerplate or scenario descriptions (the starter scenario).
+- **Bench-format support rows** (`policy_facts` / `must_acknowledge`) are not
+  covered by the zero-findings guarantee: on realistic support rows even the
+  core factories have content-destroying mutations within the margin (see
+  `SupportConversationRewardV3` below). Train support agents against an
+  outcome or judge reward.
 
 Use outcome, verifier or judge rewards for anything these limits matter to.
 
@@ -339,7 +417,10 @@ verifier semantics:
   `ConfigurationError`, never a neutral score.
 - A wrong, hedged, crashing or timed-out candidate is a **score** (0, or the
   code pass rate), not an outage. Only a platform that cannot run the sandbox
-  (not POSIX) raises `RewardUnavailableError`.
+  (not POSIX) raises `RewardUnavailableError`. The code verifier's scoring
+  limit is CPU time (`cpu_seconds`, `RLIMIT_CPU`); the wall clock
+  (`timeout_seconds`) is only a backstop for a stalled run (`wall_timeout`,
+  still a score, not an outage).
 - Model output is never evaluated as Python in the trainer: the math verifier
   parses answers with its own grammar, and candidate code runs only in the
   sandboxed subprocess (resource isolation, not a security boundary).
@@ -354,11 +435,22 @@ injection, the reference with its answer removed or swapped, lists, `\pm`,
 contradicted afterwards) and code families
 (hard-coded or printed visible outputs, early `sys.exit`/`os._exit`,
 `__eq__` tricks, patching `json.dumps`, forged result records, reading a tests
-file, infinite loops, fork storms, threads, memory and recursion bombs, and
-plausible wrong programs). **Verified guarantee:** on `MATH_CASES` and
-`CODE_CASES`, for seeds 0 and 1 and both paths, every adversary scores at least
-0.01 below the reference. Padding and other mutations that keep a correct
-answer intact are not adversaries for a verifier.
+file *from the working directory, its parent or /tmp*, infinite loops, fork
+storms, threads, memory and recursion bombs, and plausible wrong programs),
+plus a symbolic-physics case (`"symbolic"`: constants and near misses of a
+target relation). **Verified guarantee:** on `MATH_CASES`, `CODE_CASES` and
+`SYMBOLIC_CASES`, for seeds 0 and 1 and both paths, every adversary except the
+named `KNOWN_VERIFIER_LIMITS` family scores at least 0.01 below the reference.
+**Known limit, not defended:** a candidate that reads the expected outputs
+from a dataset file on disk scores like the reference (`read_dataset_on_disk`,
+excluded from the gate by name and pinned at 1.0): the sandbox is resource
+isolation, not a filesystem boundary (see
+[TOOL_USE_RL.md](TOOL_USE_RL.md) for the `/proc` and filesystem limits plainly
+stated). Padding and other mutations that keep a correct answer intact are not
+adversaries for a verifier. The math verifier's final-answer reading is
+measured on a blind-labelled set
+(`tests/fixtures/reward_labelled/math_cot.json`, 210 chain-of-thought
+completions): overall precision 0.98, recall 0.97 (gate ≥ 0.98 / ≥ 0.95).
 
 ## Scores
 
@@ -371,10 +463,19 @@ answer intact are not adversaries for a verifier.
   `score_range` returns a score outside it, environments, `score_episode`,
   `score_response`, `score_trajectory` and `CompositeReward` (for its
   children) raise `ValueError` (`reward_context.check_score_range`); the score
-  is never clamped. Rewards without a declaration are not checked at runtime
-  (`tests/unit/test_reward_contracts.py` checks the shipped ones against
-  `[0, 1]`). `MathAnswerVerifier` and `SandboxedCodeVerifier` declare
-  `(0.0, 1.0)`.
+  is never clamped. A top-level reward without a declaration is not checked at
+  runtime (`tests/unit/test_reward_contracts.py` checks the shipped ones
+  against `[0, 1]`). Inside a composer the default range *is* enforced: both
+  `CompositeReward` and `MultiObjectiveRewardFunction` hold each child to its
+  declared range or `[0, 1]` when it declares none
+  (`reward_context.check_child_score_range`) and raise `ValueError` outside it
+  (a nested `CompositeReward`, whose own weights set its span, is exempt). So a
+  child returning 7.0 with no declared range raises rather than being summed
+  silently. `MultiObjectiveRewardFunction` declares `score_range` as the
+  lowest and highest of its components' bounds (`(0, 1)` for the shipped
+  components) and never clamps the combined score (float rounding within 1e-9
+  of a bound is snapped to it). `MathAnswerVerifier` and `SandboxedCodeVerifier`
+  declare `(0.0, 1.0)`.
 - The same turns and context give the same score on a repeated call, bit for
   bit: composers combine with `math.fsum` and never renormalize stored weights
   between calls.
@@ -485,8 +586,26 @@ state's `"scenario"`/`"task"`, `policy_scenario_keys`; subclasses add their
 own observation keys, and callers opt extra keys in with
 `visible_context_keys`. Reference and grading data (`ground_truth`,
 `expected_answer`, `tests`, `required_actions`, `expected_response`...) never
-reach the policy, whatever they are called, while the reward context above
-keeps all of it (`tests/unit/test_policy_context_allowlist.py`).
+reach the policy, whatever they are called.
+
+The allowlist is **recursive**: inside every shown value (a scenario's
+`context`, a task's `instructions` or `goal`, list items included) a key whose
+name marks it as reference or grading data is dropped at any depth
+(`environment_base.is_reference_key`): any word of the name starting with
+answer, correct, criteri, expect, gold, grade, grading, hidden, judg, label,
+oracle, private, rationale, reference, rubric, secret, solution, target, truth
+or verdict; the whole words gt, ref, test, tests, testcase(s), unittest(s);
+and required_actions / required_tools / required_tool_calls / required_steps.
+The same filter applies to the rendered system prompt (`ConversationEnvironment`'s
+`Context:` line, `TaskEnvironment`'s description and instructions, the symbolic
+environment's task) and to structured scripted user turns, so a secret nested
+under `context` (`{"expected_refund": "SECRET_84"}`) reaches neither the
+policy's context nor its prompt, while the reward context keeps all of it
+(`tests/unit/test_policy_context_allowlist.py`,
+`tests/unit/test_environment_round6.py`). Free text is shown as written: a
+reference value spelled out inside a string is not filtered, and
+`termination` is never lifted from the scenario -- how an episode ended comes
+from the environment's state alone.
 
 ## Results
 
@@ -516,16 +635,37 @@ flagged episode is never trained on.
   composers and trainers propagate the error.
 - Judges fail closed: `LLMJudge` raises `JudgeUnavailableError` when it gets no
   verdict (never cached), and `LLMJudgeReward`, `LLMJudgeRewardComponent` and
-  `ModelBasedRewardComponent` propagate judge failures. A verdict is accepted
-  only as exactly one JSON object with a numeric `score` inside the judge's
-  range (`{"score": 0.8}`); prose, bare numbers ("7/10", "0.8"), fenced or
-  embedded JSON, string or boolean scores and out-of-range scores are judge
-  failures, never salvaged, rescaled or clamped. A pairwise verdict must name
-  `A`, `B` or `tie`. `LLMJudge.evaluate(reference=...)` shows the reference
-  to the judge and keys its cache on it. A model judge always sees the
-  request (the last user turn, else `context["user_query"]`). `LLMJudgeRewardWithFallback` keeps its
-  documented heuristic fallback (a grounded `HelpfulnessReward` plus
-  `SafetyReward`) and records `judge_error` in its metadata.
+  `ModelBasedRewardComponent` propagate judge failures. A verdict is exactly
+  one JSON object with a numeric `score` inside the judge's range
+  (`{"score": 0.8}`), optionally wrapped in one markdown code fence around the
+  whole reply (` ```json … ``` ` or ` ``` … ``` `). Prose (also around a
+  fence), bare numbers ("7/10", "0.8"), several objects or fences, string or
+  boolean scores and out-of-range scores are not verdicts and are never
+  salvaged, rescaled or clamped. A reply that is not a verdict gets exactly one
+  structured retry: the judge is shown its reply and asked for only the JSON
+  object (`llm_judge.VERDICT_RETRY_INSTRUCTION`); a second invalid reply raises
+  `JudgeUnavailableError` (`RewardUnavailableError` from
+  `ModelBasedRewardComponent`). An outage the judge backend reports (timeout,
+  API error) is not retried. A pairwise verdict must name `A`, `B` or `tie` as
+  a string. `RulerRewardFunction` also accepts one fenced reply.
+  `LLMJudge.evaluate(reference=..., history=...)` shows the reference and the
+  earlier turns to the judge and keys its cache on both.
+- A model judge sees the reply under evaluation (the last assistant turn), the
+  request (the last user turn before that reply; `context["user_query"]`, else
+  `context["prompt"]`, only when no user turn precedes the reply; otherwise an
+  empty request) and the earlier turns (`llm_judge.judge_conversation`: system
+  turns are not shown, and the request turn is left out of them when it
+  directly precedes the reply). `LLMJudgeReward`, `LLMJudgeRewardWithFallback`,
+  `LLMJudgeRewardComponent` and `ModelBasedRewardComponent` pass the earlier
+  turns; a custom judge whose `evaluate` takes no `history` keyword is called
+  without them, with one warning per judge type. `LLMJudge(harden_prompts=False)`
+  shows no earlier turns.
+- `LLMJudgeRewardWithFallback` keeps its heuristic fallback (a grounded
+  `HelpfulnessReward` plus `SafetyReward`): when a configured judge is
+  unavailable the heuristic scores the episode, and the result records
+  `judge_error` and is flagged `metadata["reward_fallback"]`. With no judge
+  configured (`judge=None`, as `create_rlaif_reward()` returns without an API
+  key) the heuristic is the reward itself and is not flagged.
 
 ## Judge hardening
 
@@ -533,14 +673,24 @@ A model judge reads text the policy wrote, so the response under evaluation
 is untrusted input.
 
 - **Delimiters.** With `JudgeConfig.harden_prompts` (the default),
-  `LLMJudge` encloses the query, the response and the reference in tags that
-  carry a nonce, and tells the judge that text inside them is data, never
-  instructions (`llm_judge.DATA_INSTRUCTION`). The nonce is an HMAC of the
-  prompt under a random per-judge key, so a policy cannot forge a closing
-  tag. A custom `evaluation_template` receives the enclosed blocks, and the
-  instruction is added to the system prompt. RULER prompts enclose their
-  trajectories the same way. `harden_prompts=False` reproduces the old,
-  unhardened prompts (`LEGACY_*_TEMPLATE`).
+  `LLMJudge` encloses the query, the response, the reference and the earlier
+  turns (a JSON array of `{"role", "content"}` in `<history-NONCE>` tags under
+  **Conversation so far (oldest first):**) in tags that carry a nonce, and
+  tells the judge that text inside them is data, never instructions
+  (`llm_judge.DATA_INSTRUCTION`). The nonce is an HMAC of the prompt under a
+  random per-judge key, so a policy cannot forge a closing tag. A custom
+  `evaluation_template` receives the enclosed blocks and the history in
+  `{history_section}` (a template without that slot gets the section before
+  its text), and the instruction is added to the system prompt. RULER prompts
+  enclose their trajectories the same way. `ModelBasedRewardComponent` is
+  hardened the same way by default (`harden_prompts=True`): the data
+  instruction comes first, its `{user_query}` and `{assistant_response}` slots
+  receive enclosed blocks, and the earlier turns go in `{conversation_history}`,
+  else before the prompt. `DEFAULT_RUBRIC_TEMPLATE` is a hardened template for
+  `JudgeConfig(evaluation_template=...)`: it takes the same enclosed blocks,
+  and its `{rubric}` slot receives the criteria text. `harden_prompts=False`
+  reproduces the old, unhardened prompts (`LEGACY_*_TEMPLATE`), which show no
+  earlier turns.
 - **References.** `LLMJudgeReward`, `LLMJudgeRewardComponent` and
   `LLMJudgeRewardWithFallback` pass the scenario's reference answer to the
   judge (`llm_judge_adapter.scenario_reference`: `reference`,
@@ -582,20 +732,51 @@ is untrusted input.
   - pairwise agreement and swap consistency;
   - outage count.
 
-  `CalibrationReport.passes()` gates on these, and `score_drift` compares
-  two reports across judge models or prompt versions.
-- `CompositeReward` raises `RewardUnavailableError` when any component is
-  unavailable (its default `outage_policy = "raise"`), so the episode is
-  dropped instead of being scored by the surviving components alone. With
-  `composite.outage_policy = "renormalize"` (an explicit opt-in) it leaves the
-  component out, spreads its weight over the components that scored, lists
-  it in `metadata["failed_components"]`, counts it in
+  Pairs are judged in both orders (`compare_pairwise_verdicts`, else
+  `compare_pairwise` twice with the responses swapped). Pointwise ids must be
+  unique. `CalibrationReport.passes()` returns a `CalibrationGate`: truthy when
+  every check passes, with `.failed` naming each failed check, its value and
+  its threshold. The defaults require at least `min_examples=30` scored
+  pointwise examples, agreement ≥ 0.8, Spearman ≥ 0.6 (undefined fails), mean
+  absolute error ≤ 0.2 and drift ≤ 0.1; with pairwise rows, pairwise agreement
+  ≥ 0.8 and swap consistency ≥ 0.8; and at most `max_failures=0` outages. A
+  metric that could not be measured fails. `score_drift` compares two reports.
+  A labelled customer-support set ships with the package
+  (`judge_calibration.support_calibration_set_path()`,
+  `stateset_agents/rewards/judge_calibration_support.jsonl`: 42 pointwise and
+  10 pairwise rows). It is a smoke-level gate, not a benchmark: an empty set
+  and a constant judge both fail it.
+- `CompositeReward` and `MultiObjectiveRewardFunction` raise
+  `RewardUnavailableError` when any component is unavailable (their default
+  `outage_policy = "raise"`), so the episode is dropped instead of being scored
+  by the surviving components alone. With `outage_policy = "renormalize"` (an
+  explicit opt-in: set the attribute on either, or pass
+  `MultiObjectiveRewardFunction(..., outage_policy="renormalize")`, which the
+  multi-objective factories forward) the composer leaves the component out,
+  spreads its weight over the components that scored, lists it in
+  `metadata["failed_components"]`, counts it in
   `breakdown["unavailable_components"]` and flags the result
-  `metadata["reward_fallback"]`; environments and `score_episode` copy both to
-  the trajectory (`reward_failed_components`). `MultiObjectiveRewardFunction`
-  still leaves an unavailable component out and spreads its weight, listing
-  it in `metadata["failed_components"]`. If every component was unavailable
-  both raise `RewardUnavailableError`; with none configured, `ValueError`.
+  `metadata["reward_fallback"]`. A component with `fail_on_error = True` raises
+  under either policy, and an unknown policy raises `ConfigurationError`. If
+  every component was unavailable both raise `RewardUnavailableError`; with
+  none configured, `ValueError`.
+- Every fallback score is flagged `metadata["reward_fallback"]`
+  (`reward_context.REWARD_FALLBACK_KEY`, a short reason string). Flagged: an
+  opted-in renormalization; `LLMJudgeRewardWithFallback` when its heuristic
+  replaces an unavailable judge; a `MultiObjectiveRewardFunction` component
+  that reports a `fallback_reason` (`ModelBasedRewardComponent` without an
+  `api_client`, which scores by reply length); a `SupportJudgeReward` episode
+  that `0 < judge_fraction < 1` leaves unsampled (scored by rules only);
+  `NSRVerifierConfig(error_score=...)`; `RulerRewardFunction(fallback_enabled=True)`.
+  Composers keep a child's flag. Environments, `score_episode` and
+  `score_trajectory` (so `Environment.get_reward`) copy it to
+  `trajectory.metadata["reward_fallback"]`, and the left-out components to
+  `trajectory.metadata["reward_failed_components"]`. When `score_episode`
+  re-scores with a reward other than the environment's own, it replaces any
+  flags that reward left. Not flagged: `SupportJudgeReward` configured
+  rules-only (`judge_fraction=0` or `judge_weight=0`), its hard vetoes, and
+  `LLMJudgeRewardWithFallback(judge=None)`. The trainer drops any episode whose
+  trajectory carries `reward_fallback`.
 - Network rewards fail closed by default: `NSRVerifierReward` raises
   `RewardUnavailableError` when the verifier cannot be reached or replies
   without an `approved`/`denied`/`refused` decision
@@ -620,10 +801,30 @@ is untrusted input.
 - `CorrectnessReward` without ground truth scores the neutral 0.5 and flags
   `metadata["no_ground_truth"]`; a committed correct answer scores 1.0.
   Evaluation counts only scores above 0.5 as successes, so neutral is never
-  success. A hedged answer scores 0: any other candidate the reply offers
-  (see "Hedged answers" above) leaves no credit. A negated answer ("It is not
-  Paris.", "42 is not the answer") also scores 0, and "no idea"/"not sure"
-  halves the credit.
+  success. A hedged answer scores 0: a competing candidate of the same kind
+  offered as an alternative (see "Hedged answers" above) leaves no credit,
+  while reasoning numbers, a role assignment, an appositive and a rejected
+  option do not. A negated answer ("It is not Paris.", "42 is not the answer")
+  also scores 0; rejecting a wrong option while committing to the answer
+  ("Not Lyon: Paris.") keeps full credit; and "no idea"/"not sure" halves it.
+- `TaskOutcomeReward` requires a trusted reference (`expected_response`, or
+  `expected_responses` as a list; missing raises `ValueError`) and compares it
+  with the last assistant turn. The default `expected_response_match` is
+  `"normalized"` (NFKC + casefold + dropped apostrophes and thousands commas,
+  compared token for token, so "Resolved" matches "resolved." but not "Not
+  resolved", 84 vs 840 or $5 vs 5%); `"exact"` is whitespace-stripped
+  equality, `"contains"` matches the reference as a contiguous run (so "84 or
+  85" contains 84), and `"regex"` is `re.fullmatch`. An unknown mode or a bad
+  regex raises `ConfigurationError`. The executed-tool-trace check,
+  `policy_violations` and `fail_on_error` are unchanged.
+- `SymbolicPhysicsRewardFunction` scores a constant expression (one that names
+  no declared variable or is equal at every sample, such as "0" or "1") as
+  **0** -- it earns no validity and nothing the constraints can lift -- unless
+  the task's `target_expression` is itself constant and the candidate is
+  equivalent. Missing declared `variables` raises `ConfigurationError`
+  (`fail_on_error = True`). Known limit: without a target the constraints
+  admit a family of relations (`2*(x**2+y**2)` scores like `x**2+y**2`); give
+  a target where the exact relation matters.
 - `ModelBasedRewardComponent` without a client warns once that it scores by
   length, or raises with `strict=True`.
 

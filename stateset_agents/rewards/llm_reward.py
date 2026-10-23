@@ -35,6 +35,7 @@ from stateset_agents.core.reward_base import (
 )
 from stateset_agents.core.reward_context import REWARD_FALLBACK_KEY
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.rewards.llm_judge import strip_code_fence
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 
@@ -524,7 +525,9 @@ class RulerRewardFunction(RewardFunction):
             raise ValueError(f"No choices in response: {response}")
 
         first_choice = response.choices[0]
-        content = first_choice.message.content or "{}"
+        # One markdown code fence around the whole reply is accepted, as for
+        # LLMJudge verdicts; anything else must validate as it stands.
+        content = strip_code_fence(first_choice.message.content or "{}")
 
         try:
             parsed = RulerResponse.model_validate_json(content)

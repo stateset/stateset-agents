@@ -17,6 +17,7 @@ from .environment_base import (
     EnvironmentState,
     EpisodeStatus,
     _context_keys,
+    policy_visible,
 )
 from .reward import RewardFunction
 from .trajectory import ConversationTurn
@@ -232,15 +233,18 @@ class TaskEnvironment(Environment):
         return new_state, env_response, step_reward, done
 
     async def get_initial_prompt(self, scenario: dict[str, Any] | None = None) -> str:
-        """Get initial task description"""
+        """The task's description and instructions, as the policy may see them
+        (reference-like keys inside either are dropped, see
+        :func:`~stateset_agents.core.environment_base.policy_visible`)."""
         active_scenario = scenario or self.current_task or {}
-
-        task_prompt = (
-            f"Task: {active_scenario.get('description', 'Complete the given task.')}"
+        shown = self.visible_context_keys
+        description = policy_visible(
+            active_scenario.get("description", "Complete the given task."), shown
         )
-
-        if active_scenario.get("instructions"):
-            task_prompt += f"\n\nInstructions: {active_scenario['instructions']}"
+        task_prompt = f"Task: {description}"
+        instructions = policy_visible(active_scenario.get("instructions"), shown)
+        if instructions:
+            task_prompt += f"\n\nInstructions: {instructions}"
 
         return task_prompt
 

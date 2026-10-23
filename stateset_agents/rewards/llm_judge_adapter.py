@@ -21,7 +21,7 @@ from __future__ import annotations
 import inspect
 import logging
 import math
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from stateset_agents.core.reward_base import (
@@ -30,7 +30,9 @@ from stateset_agents.core.reward_base import (
     RewardType,
     RewardUnavailableError,
 )
+from stateset_agents.core.reward_context import REWARD_FALLBACK_KEY, reward_fallback
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.rewards.llm_judge import JudgeConversation, judge_conversation
 
 logger = logging.getLogger(__name__)
 
@@ -49,23 +51,15 @@ def _extract_query_and_response(
     turns: list[ConversationTurn],
     context: dict[str, Any] | None = None,
 ) -> tuple[str, str]:
-    """Extract the user query and assistant response from conversation turns."""
-    query = ""
-    response = ""
+    """The user query and assistant response a judge sees.
 
-    # Try context first
-    if context:
-        query = str(context.get("user_query", context.get("prompt", "")))
-
-    # Extract from turns
-    for turn in reversed(turns):
-        text = turn.content if isinstance(turn.content, str) else ""
-        if turn.role == "assistant" and not response:
-            response = text
-        elif turn.role == "user" and not query:
-            query = text
-
-    return query or "Hello", response or ""
+    The response is the last assistant turn; the query is the last user turn
+    before it, and ``context["user_query"]`` (else ``context["prompt"]``) only
+    when no user turn precedes the response. See ``judge_conversation``,
+    which also returns the earlier turns.
+    """
+    conversation = judge_conversation(turns, context)
+    return conversation.query, conversation.response
 
 
 #: Context keys that hold a scenario's reference answer, in order of
@@ -105,29 +99,64 @@ def scenario_reference(context: Mapping[str, Any] | None) -> str | None:
     return None
 
 
-def _accepts_reference(judge: Any) -> bool:
+def _accepts(judge: Any, name: str) -> bool:
+    """Whether ``judge.evaluate`` takes a ``name`` keyword."""
     try:
         parameters = inspect.signature(judge.evaluate).parameters
     except (TypeError, ValueError, AttributeError):
         return False
-    return "reference" in parameters or any(
+    return name in parameters or any(
         p.kind is inspect.Parameter.VAR_KEYWORD for p in parameters.values()
     )
 
 
+def _accepts_reference(judge: Any) -> bool:
+    return _accepts(judge, "reference")
+
+
+#: Judge types already warned that they cannot be shown earlier turns.
+_WARNED_NO_HISTORY: set[type] = set()
+
+
 async def judge_score(
-    judge: Any, query: str, response: str, context: Mapping[str, Any] | None
+    judge: Any,
+    query: str,
+    response: str,
+    context: Mapping[str, Any] | None,
+    history: Sequence[Mapping[str, str]] | None = None,
 ) -> float:
     """Ask ``judge`` for a verdict, showing it the scenario's reference
-    answer when the context carries one and the judge accepts it."""
+    answer when the context carries one, and the earlier turns of the
+    conversation (``history``), when the judge accepts them."""
+    kwargs: dict[str, Any] = {}
     reference = scenario_reference(context)
     if reference is not None and _accepts_reference(judge):
-        verdict = await judge.evaluate(
-            query=query, response=response, reference=reference
-        )
-    else:
-        verdict = await judge.evaluate(query=query, response=response)
+        kwargs["reference"] = reference
+    if history:
+        if _accepts(judge, "history"):
+            kwargs["history"] = list(history)
+        elif type(judge) not in _WARNED_NO_HISTORY:
+            _WARNED_NO_HISTORY.add(type(judge))
+            logger.warning(
+                "%s.evaluate takes no 'history'; it judges multi-turn replies "
+                "without the earlier turns",
+                type(judge).__name__,
+            )
+    verdict = await judge.evaluate(query=query, response=response, **kwargs)
     return _checked_judge_score(verdict)
+
+
+async def judge_conversation_score(
+    judge: Any, conversation: JudgeConversation, context: Mapping[str, Any] | None
+) -> float:
+    """:func:`judge_score` for a :class:`JudgeConversation`."""
+    return await judge_score(
+        judge,
+        conversation.query,
+        conversation.response,
+        context,
+        conversation.history,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -159,15 +188,16 @@ class LLMJudgeReward(RewardFunction):
         turns: list[ConversationTurn],
         context: dict[str, Any] | None = None,
     ) -> RewardResult:
-        query, response = _extract_query_and_response(turns, context)
+        conversation = judge_conversation(turns, context)
 
-        if not response:
+        if not conversation.response:
             return RewardResult(score=0.0, metadata={"error": "no response"})
 
-        # A judge failure propagates: composers redistribute the component's
-        # weight, environments flag the episode and trainers drop it. A
-        # neutral stand-in score would be trained on as if it were a verdict.
-        score = await judge_score(self.judge, query, response, context)
+        # A judge failure propagates: composers raise (or, opted in,
+        # redistribute the component's weight), environments flag the episode
+        # and trainers drop it. A neutral stand-in score would be trained on
+        # as if it were a verdict.
+        score = await judge_conversation_score(self.judge, conversation, context)
 
         return RewardResult(
             score=float(score),
@@ -206,6 +236,10 @@ class LLMJudgeRewardComponent:
         reward = MultiObjectiveRewardFunction(components=[comp, ...])
     """
 
+    #: A judge: ``MultiObjectiveRewardFunction`` passes it the whole
+    #: conversation, earlier replies included, even when scoring one step.
+    sees_whole_conversation = True
+
     def __init__(
         self,
         judge: Any,
@@ -223,26 +257,13 @@ class LLMJudgeRewardComponent:
         context: dict[str, Any] | None = None,
     ) -> float:
         """Compute score for MultiObjectiveRewardFunction."""
-        query = ""
-        response = ""
-
-        for turn in reversed(turns):
-            role = turn.get("role", "")
-            content = str(turn.get("content", ""))
-            if role == "assistant" and not response:
-                response = content
-            elif role == "user" and not query:
-                query = content
-
-        if context:
-            query = query or str(context.get("user_query", context.get("prompt", "")))
-
-        if not response:
+        conversation = judge_conversation(turns, context)
+        if not conversation.response:
             return 0.0
 
-        # Failures propagate so MultiObjectiveRewardFunction leaves this
-        # component out and spreads its weight, instead of scoring it 0.5.
-        return await judge_score(self.judge, query, response, context)
+        # Failures propagate, so MultiObjectiveRewardFunction raises (or,
+        # opted in, leaves this component out) instead of scoring it 0.5.
+        return await judge_conversation_score(self.judge, conversation, context)
 
     def get_info(self) -> dict[str, Any]:
         return {"name": self.name, "weight": self.weight, "config": self.config}
@@ -308,44 +329,61 @@ class LLMJudgeRewardWithFallback(RewardFunction):
         turns: list[ConversationTurn],
         context: dict[str, Any] | None = None,
     ) -> RewardResult:
+        """Blend the judge's verdict with the heuristic, or score with the
+        heuristic alone when no judge is configured.
+
+        When a configured judge is unavailable the heuristic replaces it for
+        this episode: the result is flagged ``metadata["reward_fallback"]``
+        (``REWARD_FALLBACK_KEY``) and records ``judge_error``, so
+        environments and ``score_episode`` copy the flag to the trajectory and
+        trainers can drop the episode rather than mix heuristic and judge
+        scores in one group. A heuristic result's own fallback flag is kept.
+        """
         # Always run heuristic (fast, no API cost)
         heuristic_result = await self._get_heuristic().compute_reward(turns, context)
         heuristic_score = heuristic_result.score
+        metadata: dict[str, Any] = {}
+        inherited = reward_fallback(heuristic_result)
+        if inherited is not None:
+            metadata[REWARD_FALLBACK_KEY] = f"heuristic: {inherited}"
 
         if self._judge_available and self.judge is not None:
-            query, response = _extract_query_and_response(turns, context)
+            conversation = judge_conversation(turns, context)
             try:
-                verdict = await judge_score(self.judge, query, response, context)
-                combined = (
-                    self.judge_weight * verdict
-                    + self.heuristic_weight * heuristic_score
-                )
-                return RewardResult(
-                    score=combined,
-                    components={
-                        "llm_judge": verdict,
-                        "heuristic": heuristic_score,
-                    },
-                    metadata={"mode": "llm_judge"},
+                verdict = await judge_conversation_score(
+                    self.judge, conversation, context
                 )
             except RewardUnavailableError as exc:
                 # The documented fallback of this class covers judge outages
-                # only (flagged in metadata); bugs still propagate.
+                # only, and is flagged; bugs still propagate.
                 logger.warning("LLM judge failed, using heuristic: %s", exc)
+                reason = f"judge unavailable ({type(exc).__name__}); heuristic score"
+                if inherited is not None:
+                    reason = f"{reason}; heuristic: {inherited}"
                 return RewardResult(
                     score=heuristic_score,
                     components={"heuristic": heuristic_score},
                     metadata={
+                        **metadata,
                         "mode": "heuristic_fallback",
                         "judge_error": f"{type(exc).__name__}: {exc}",
+                        REWARD_FALLBACK_KEY: reason,
                     },
                 )
+            combined = (
+                self.judge_weight * verdict + self.heuristic_weight * heuristic_score
+            )
+            return RewardResult(
+                score=combined,
+                components={"llm_judge": verdict, "heuristic": heuristic_score},
+                metadata={**metadata, "mode": "llm_judge"},
+            )
 
-        # Fallback to heuristic only
+        # No judge configured: the heuristic is this reward, not a stand-in.
         return RewardResult(
             score=heuristic_score,
             components={"heuristic": heuristic_score},
-            metadata={"mode": "heuristic_fallback"},
+            metadata={**metadata, "mode": "heuristic_fallback"},
         )
 
 
@@ -457,6 +495,7 @@ def create_rlaif_component(
 
 __all__ = [
     "REFERENCE_KEYS",
+    "judge_conversation_score",
     "judge_score",
     "scenario_reference",
     "LLMJudgeReward",

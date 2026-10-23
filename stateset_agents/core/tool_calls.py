@@ -8,10 +8,15 @@ Two written forms are recognized, plus structured calls on the turn:
   blocks anywhere in the reply (``arguments`` may also be a JSON string);
 * the JSON-action form the benchmark sandboxes already use
   (:func:`stateset_agents.core.environments.json_action.parse_json_action`):
-  the whole reply is ``{"tool": "calculator", "args": {...}}``;
+  the whole reply is ``{"tool": "calculator", "args": {...}}``. Only a JSON
+  object that names a tool (a ``"tool"`` key, or ``"name"`` with
+  ``"arguments"``) is a call; any other whole-reply JSON, such as
+  ``{"answer": "84"}``, is a final answer;
 * ``ConversationTurn.tool_calls`` in the OpenAI shape
   (``{"id": ..., "function": {"name": ..., "arguments": "<json>"}}``), parsed
   with :meth:`stateset_agents.core.function_calling.ToolCall.parsed_arguments`.
+  A call's own ``id`` is kept (``has_own_id``); calls without one are
+  numbered ``call_<n>``.
 
 Parsing never raises on model output. A call that cannot be read (bad JSON,
 duplicate keys, non-finite numbers, a missing name, an unterminated
@@ -50,16 +55,26 @@ _BLOCK = re.compile(
 )
 #: Keep at most this much of a malformed call in its error.
 _RAW_LIMIT = 200
+#: Keys that make an unparseable whole-reply JSON object a call attempt.
+_TOOL_KEY = re.compile(r'"tool"\s*:')
+_NAME_KEY = re.compile(r'"name"\s*:')
+_ARGUMENTS_KEY = re.compile(r'"arguments"\s*:')
 
 
 @dataclass(frozen=True)
 class ToolCallRequest:
-    """One well-formed call: a tool name and its JSON object arguments."""
+    """One well-formed call: a tool name and its JSON object arguments.
+
+    ``has_own_id`` says ``call_id`` is the call's own id (a structured call's
+    ``"id"``), which the observation answering it must keep; otherwise the
+    parser numbered the call and an environment may renumber it.
+    """
 
     name: str
     arguments: dict[str, Any]
     call_id: str
     source: str
+    has_own_id: bool = False
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -72,12 +87,14 @@ class ToolCallRequest:
 
 @dataclass(frozen=True)
 class ToolCallError:
-    """A call the policy attempted but wrote unreadably."""
+    """A call the policy attempted but wrote unreadably (``has_own_id`` as for
+    :class:`ToolCallRequest`)."""
 
     message: str
     source: str
     raw: str
     call_id: str
+    has_own_id: bool = False
 
 
 @dataclass(frozen=True)
@@ -124,20 +141,37 @@ def _call_from_body(body: str, call_id: str) -> ToolCallRequest | ToolCallError:
 
 
 def _request(
-    name: Any, arguments: Any, call_id: str, raw: str, source: str = "chat_template"
+    name: Any,
+    arguments: Any,
+    call_id: str,
+    raw: str,
+    source: str = "chat_template",
+    has_own_id: bool = False,
 ) -> ToolCallRequest | ToolCallError:
     if not isinstance(name, str) or not name.strip():
-        return ToolCallError("missing tool name", source, raw, call_id)
+        return ToolCallError("missing tool name", source, raw, call_id, has_own_id)
     if isinstance(arguments, str):
         try:
             arguments = ToolCall(
                 id=call_id, function={"name": name, "arguments": arguments}
             ).parsed_arguments()
         except ValueError as error:
-            return ToolCallError(str(error), source, raw, call_id)
+            return ToolCallError(str(error), source, raw, call_id, has_own_id)
     if not isinstance(arguments, dict):
-        return ToolCallError("arguments must be a JSON object", source, raw, call_id)
-    return ToolCallRequest(name.strip(), arguments, call_id, source)
+        return ToolCallError(
+            "arguments must be a JSON object", source, raw, call_id, has_own_id
+        )
+    return ToolCallRequest(name.strip(), arguments, call_id, source, has_own_id)
+
+
+def _own_id(call: Mapping[str, Any]) -> str | None:
+    """A structured call's own ``"id"`` (a non-empty string or an integer)."""
+    value = call.get("id")
+    if isinstance(value, str) and value.strip():
+        return value
+    if isinstance(value, int) and not isinstance(value, bool):
+        return str(value)
+    return None
 
 
 def _structured_calls(tool_calls: Any) -> list[ToolCallRequest | ToolCallError]:
@@ -149,13 +183,19 @@ def _structured_calls(tool_calls: Any) -> list[ToolCallRequest | ToolCallError]:
                 ToolCallError("tool call must be an object", "structured", "", call_id)
             )
             continue
+        # The call's own id is what the observation answering it carries;
+        # only a call without one is numbered.
+        own = _own_id(call)
+        call_id = own if own is not None else call_id
+        has_own_id = own is not None
         function = call.get("function") if "function" in call else call
         if not isinstance(function, Mapping):
             items.append(
-                ToolCallError("function must be an object", "structured", "", call_id)
+                ToolCallError(
+                    "function must be an object", "structured", "", call_id, has_own_id
+                )
             )
             continue
-        call_id = str(call.get("id") or call_id)
         arguments = function.get("arguments", {})
         if isinstance(arguments, Mapping):
             # Re-serialized so the same strict checks (finite numbers, depth)
@@ -163,11 +203,15 @@ def _structured_calls(tool_calls: Any) -> list[ToolCallRequest | ToolCallError]:
             try:
                 arguments = json.dumps(dict(arguments))
             except (TypeError, ValueError) as error:
-                items.append(ToolCallError(str(error), "structured", "", call_id))
+                items.append(
+                    ToolCallError(str(error), "structured", "", call_id, has_own_id)
+                )
                 continue
         raw = str(function.get("name"))[:_RAW_LIMIT]
         items.append(
-            _request(function.get("name"), arguments, call_id, raw, "structured")
+            _request(
+                function.get("name"), arguments, call_id, raw, "structured", has_own_id
+            )
         )
     return items
 
@@ -198,10 +242,37 @@ def _template_calls(text: str, offset: int) -> tuple[list[Any], str]:
     return items, "".join(outside).strip()
 
 
+def _names_a_tool(text: str) -> bool:
+    """Whether a whole-reply JSON object is shaped as a tool call.
+
+    It names a tool: it has a ``"tool"`` key (the JSON-action shape), or
+    ``"name"`` and ``"arguments"`` keys (a function call written without
+    ``<tool_call>`` tags). Text that is not valid strict JSON counts when it
+    spells such a key. Any other JSON (``{"answer": "84"}``,
+    ``{"final_answer": 84}``) is a final answer, not a call.
+    """
+    try:
+        parsed = strict_json_loads(text)
+    except ValueError:
+        return bool(
+            _TOOL_KEY.search(text)
+            or (_NAME_KEY.search(text) and _ARGUMENTS_KEY.search(text))
+        )
+    return isinstance(parsed, dict) and (
+        "tool" in parsed or {"name", "arguments"} <= set(parsed)
+    )
+
+
 def _json_action(content: str, offset: int) -> ToolCallRequest | ToolCallError | None:
-    """The whole reply as a ``{"tool": ..., "args": ...}`` action, if it is one."""
+    """The whole reply as a ``{"tool": ..., "args": ...}`` action, if it is one.
+
+    Only a JSON object that names a tool (:func:`_names_a_tool`) is an
+    attempted call; other JSON is the reply's answer text.
+    """
     stripped = content.strip()
     if not (stripped.startswith("{") and stripped.endswith("}")):
+        return None
+    if not _names_a_tool(stripped):
         return None
     call_id = f"call_{offset}"
     try:

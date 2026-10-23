@@ -8,6 +8,8 @@ functions, so they must hand those functions the same context. The contract:
   scored the episode.
 * The environment's episode state is laid over them (it wins a key clash,
   except that an environment value of ``None`` never hides a scenario value).
+  ``termination`` (:data:`TERMINATION_KEY`) is never lifted from the
+  scenario: how an episode ended comes from the environment's state alone.
 * The scenario itself is also available as ``context["scenario"]``.
 
 Rewards that declare ``requires_environment_context`` judge executed evidence
@@ -41,10 +43,11 @@ class RewardUnavailableError(RewardError, RuntimeError):
     """A reward could not be computed for an external reason (judge or network
     outage, a verifier that cannot be reached).
 
-    This is the only failure reward composers absorb: ``CompositeReward`` and
-    ``MultiObjectiveRewardFunction`` leave the component out and spread its
-    weight over the rest. Every other exception is a bug or bad data and
-    propagates, so it is never mistaken for an outage.
+    This is the only failure reward composers may absorb: ``CompositeReward``
+    and ``MultiObjectiveRewardFunction`` raise it in turn by default, and with
+    ``outage_policy = "renormalize"`` leave the component out, spread its
+    weight over the rest and flag the result. Every other exception is a bug
+    or bad data and propagates, so it is never mistaken for an outage.
 
     A :class:`~stateset_agents.core.errors.RewardError` (so a
     ``StateSetError``) that is still a ``RuntimeError`` and prints its bare
@@ -56,10 +59,12 @@ class RewardUnavailableError(RewardError, RuntimeError):
 
 
 #: ``RewardResult.metadata`` key a reward sets (to a short reason) when its
-#: score is an opted-in fallback rather than a real verdict, e.g.
+#: score is a fallback rather than a real verdict, e.g.
 #: ``NSRVerifierConfig(error_score=0.0)`` or ``RulerRewardFunction(
-#: fallback_enabled=True)`` during an outage. Environments and
-#: ``score_episode`` copy it to the trajectory's metadata.
+#: fallback_enabled=True)`` during an outage, ``LLMJudgeRewardWithFallback``
+#: when its heuristic replaces an unavailable judge, or a composer that
+#: renormalized around an outage. Environments, ``score_episode`` and
+#: ``score_trajectory`` copy it to the trajectory's metadata.
 REWARD_FALLBACK_KEY = "reward_fallback"
 
 #: ``RewardResult.metadata`` key a composer sets to the names of components
@@ -125,6 +130,10 @@ def build_reward_context(
     context: dict[str, Any] = {}
     if resolved is not None and not requires_environment_context(reward_fn):
         context.update(resolved)
+        # How the episode ended is the environment's record alone: a
+        # scenario's own ``termination`` is never lifted, so it cannot make
+        # an unanswered episode (``termination`` None) look answered.
+        context.pop(TERMINATION_KEY, None)
     for key, value in environment.items():
         if value is None and context.get(key) is not None:
             continue
@@ -308,6 +317,37 @@ def check_score_range(reward_fn: Any, score: float) -> float:
     return score
 
 
+#: The range a composer holds a child reward to when the child declares none
+#: (docs/REWARD_CONTRACT.md: a score is in ``[0, 1]`` unless declared).
+UNIT_SCORE_RANGE: tuple[float, float] = (0.0, 1.0)
+
+
+def check_child_score_range(
+    reward_fn: Any,
+    score: float,
+    default: tuple[float, float] | None = UNIT_SCORE_RANGE,
+) -> float:
+    """``score``, or ``ValueError`` when a composer's child scored outside its
+    declared ``score_range`` or, when it declares none, outside ``default``
+    (``[0, 1]``; ``None`` leaves an undeclared child unchecked).
+
+    :func:`check_score_range` leaves an undeclared top-level reward
+    unchecked; a composer cannot, because it would weight and sum a child's
+    out-of-range score (a 7.0) silently. Never clamps."""
+    if declared_score_range(reward_fn) is not None or default is None:
+        return check_score_range(reward_fn, score)
+    low, high = default
+    slack = _RANGE_SLACK * max(1.0, abs(low), abs(high))
+    if not low - slack <= score <= high + slack:
+        name = getattr(reward_fn, "name", None) or type(reward_fn).__name__
+        raise ValueError(
+            f"reward {name} scored {score}, outside [{low}, {high}], the range "
+            "a composite holds a child to when it declares no score_range "
+            "(declare score_range on the reward if it scores another range)"
+        )
+    return score
+
+
 def reward_fallback(result: Any) -> str | None:
     """The fallback reason a reward result is flagged with, if any."""
     metadata = getattr(result, "metadata", None)
@@ -478,15 +518,21 @@ async def score_trajectory(
     and scenario), the same context :func:`score_episode` gives a
     CUMULATIVE/SPARSE reward, also for rewards with
     ``requires_environment_context``. ``Environment.get_reward`` scores here.
-    Nothing is replayed per step and the trajectory is not modified; a
-    failure, a ``None`` or a non-finite score raises.
+    Nothing is replayed per step and the trajectory's rewards are not
+    modified; a failure, a ``None`` or a non-finite score raises. A fallback
+    score is flagged on the trajectory's metadata as in :func:`score_episode`
+    (:data:`REWARD_FALLBACK_KEY`, :data:`FAILED_COMPONENTS_KEY`).
     """
     turns = getattr(trajectory, "turns", None)
     if not turns and hasattr(trajectory, "__iter__"):
         turns = list(trajectory)
     context = trajectory_reward_context(trajectory, scenario, reward_fn=reward_fn)
     result = await _call(reward_fn, normalize_turns(turns), context)
-    return reward_score(result, reward_fn)
+    score = reward_score(result, reward_fn)
+    metadata = getattr(trajectory, "metadata", None)
+    if isinstance(metadata, dict):
+        note_fallback(metadata, result)
+    return score
 
 
 async def score_episode(
@@ -601,6 +647,10 @@ async def score_episode(
         if error:
             # The environment's own reward failed; this one scored.
             trajectory.metadata["environment_reward_error"] = error
+        # The flags describe this score: drop any the environment's own
+        # (different) reward left before recording this reward's.
+        trajectory.metadata.pop(REWARD_FALLBACK_KEY, None)
+        trajectory.metadata.pop(FAILED_COMPONENTS_KEY, None)
         if fallback is not None:
             trajectory.metadata[REWARD_FALLBACK_KEY] = fallback
         if failed:
@@ -617,8 +667,10 @@ __all__ = [
     "REWARD_FALLBACK_KEY",
     "REWARD_SCOPE_KEY",
     "TERMINATION_KEY",
+    "UNIT_SCORE_RANGE",
     "assistant_turns_in_scope",
     "build_reward_context",
+    "check_child_score_range",
     "check_score_range",
     "declared_score_range",
     "environment_applied_reward",

@@ -11,8 +11,11 @@ evaluated:
   exactly, as a :class:`fractions.Fraction` (integer powers only, with size
   limits so ``9^9^9`` cannot stall the process);
 * :func:`equivalent` decides whether two trees denote the same value or
-  function: exactly for numbers, by exact evaluation at fixed pseudo-random
-  rational points for rational functions (pure Python, no dependencies), and
+  function: exactly for numbers, by exact evaluation at pseudo-random
+  rational points for rational functions (pure Python, no dependencies; the
+  points are seeded from a hash of both expressions, so a verdict is
+  deterministic but no fixed, public point set exists to craft an answer
+  against), and
   through ``sympy.simplify`` on trees built node by node (never parsed from
   text) when the answer uses functions such as ``sqrt`` and sympy is
   installed. The sympy tree obeys the same size limits as exact evaluation
@@ -33,6 +36,7 @@ from __future__ import annotations
 
 import atexit
 import functools
+import hashlib
 import importlib.util
 import json
 import logging
@@ -363,24 +367,43 @@ def rational_value(node: Node) -> Fraction | None:
         return None
 
 
-def _probe_values(names: list[str], seed: int) -> dict[str, Fraction]:
-    rng = random.Random(seed)
+def _probe_seed(first: Node, second: Node) -> int:
+    """A seed derived from both expressions (in either order).
+
+    Probe points used to come from fixed, public seeds, so an answer could be
+    built to vanish exactly there (``reference + (x - p1)...(x - p8)``).
+    Seeding from a hash of the two trees keeps a verdict deterministic while
+    any change to the answer moves every point.
+    """
+    encoded = sorted(
+        json.dumps(_encode_node(node), separators=(",", ":"))
+        for node in (first, second)
+    )
+    digest = hashlib.sha256("\x00".join(encoded).encode()).digest()
+    return int.from_bytes(digest[:16], "big")
+
+
+def _probe_values(names: list[str], rng: random.Random) -> dict[str, Fraction]:
     return {
         name: Fraction(rng.randint(-997, 997), rng.randint(1, 97)) for name in names
     }
 
 
 def _agree_at_points(first: Node, second: Node, names: list[str]) -> bool | None:
-    """Rational functions agreeing at ``_PROBE_POINTS`` fixed random points.
+    """Rational functions agreeing at ``_PROBE_POINTS`` pseudo-random points.
 
     Two distinct rational functions of moderate degree agree at a random
     rational point with negligible probability, so agreement at every probe
-    is equivalence (Schwartz-Zippel). Points where either side is undefined
-    are skipped; ``None`` when too few points were defined to decide.
+    is equivalence (Schwartz-Zippel). The points are drawn from a generator
+    seeded by both expressions (:func:`_probe_seed`): deterministic, but not a
+    fixed public set an answer can be crafted against. Points where either
+    side is undefined are skipped; ``None`` when too few points were defined
+    to decide.
     """
+    rng = random.Random(_probe_seed(first, second))
     checked = 0
-    for seed in range(4 * _PROBE_POINTS):
-        values = _probe_values(names, seed)
+    for _ in range(4 * _PROBE_POINTS):
+        values = _probe_values(names, rng)
         try:
             a, b = evaluate_expression(first, values), evaluate_expression(
                 second, values
@@ -670,10 +693,10 @@ def equivalent(
     """Whether two parsed expressions are equal as numbers or functions.
 
     Exact for numbers; for symbols and the four operations with integer
-    powers, exact evaluation at fixed pseudo-random rational points (same
-    answer with or without sympy); with function calls, ``sympy.simplify``
-    in the worker process, killed after ``timeout`` seconds (default
-    :data:`SYMPY_TIMEOUT_SECONDS`). ``None`` when it cannot be decided
+    powers, exact evaluation at pseudo-random rational points seeded from
+    both expressions (same answer with or without sympy); with function
+    calls, ``sympy.simplify`` in the worker process, killed after ``timeout``
+    seconds (default :data:`SYMPY_TIMEOUT_SECONDS`). ``None`` when it cannot be decided
     (functions without sympy, a timeout, sizes beyond the limits, or answers
     undefined almost everywhere).
     """
@@ -692,14 +715,34 @@ def equivalent(
 
 # --- LaTeX answer normalization ----------------------------------------------
 
+#: Sizing and spacing commands: ``\left(``, ``\Big|``, ``\,``, ``\!``, ``\ ``.
 _LATEX_DROP = re.compile(
-    r"\\(?:left|right|displaystyle|textstyle|!|,|;|:|quad|qquad)(?![A-Za-z])|\\ "
+    r"\\(?:left|right|[bB]igg?[lrm]?|displaystyle|textstyle|quad|qquad)"
+    r"(?![A-Za-z])|\\[!,;:> ]|~"
+)
+#: Commands whose argument is plain text: ``\text{pens}`` -> ``pens``.
+_TEXT_WRAPPERS = (
+    r"\text",
+    r"\textbf",
+    r"\textit",
+    r"\textrm",
+    r"\textnormal",
+    r"\mathrm",
+    r"\mathbf",
+    r"\mathit",
+    r"\mbox",
 )
 _LATEX_OPS = {
     r"\cdot": "*",
     r"\times": "*",
     r"\div": "/",
+    "\u00d7": "*",
+    "\u00b7": "*",
+    "\u22c5": "*",
+    "\u00f7": "/",
+    "\u2212": "-",
     r"\pi": " pi ",
+    "\u03c0": " pi ",
     r"\dfrac": r"\frac",
     r"\tfrac": r"\frac",
     r"\ln": " ln ",
@@ -709,6 +752,12 @@ _LATEX_OPS = {
     r"\tan": " tan ",
     r"\exp": " exp ",
 }
+#: ``\frac12``, ``\frac1{2}``, ``\frac{1}2``: one-digit arguments without braces.
+_SHORT_FRACTION = re.compile(r"\\frac\s*(\d|\{[^{}]*\})\s*(\d|\{[^{}]*\})")
+#: Degrees are a unit: ``90^\circ``, ``90^{\circ}``, ``90°``.
+_DEGREES = re.compile(r"\^\s*\{?\s*\\circ\s*\}?|\\circ|\\degree|\u00b0")
+#: A LaTeX thousands separator: ``1\,000``, ``1{,}000``, ``1\ 000``.
+_LATEX_THOUSANDS = re.compile(r"(?<=\d)(?:\\,|\{,\}|\\ )(?=\d{3}(?!\d))")
 _THOUSANDS = re.compile(r"(?<![\d.])(\d{1,3}(?:,\d{3})+)(?![\d,])")
 _ASSIGNMENT = re.compile(r"^\s*[A-Za-z]\s*=\s*(?!=)")
 
@@ -745,25 +794,37 @@ def _rewrite_command(text: str, command: str, arity: int, template: str) -> str:
         text = text[:position] + template.format(*groups) + text[cursor:]
 
 
+def _braced_fraction(match: re.Match[str]) -> str:
+    parts = [
+        part if part.startswith("{") else "{" + part + "}" for part in match.groups()
+    ]
+    return r"\frac" + "".join(parts)
+
+
 def normalize_answer_text(text: str) -> str:
     """Rewrite a LaTeX or plain answer into the syntax :func:`parse_expression` reads.
 
-    Drops ``$``/``\\(``/``\\[`` delimiters, spacing commands, ``\\text{}``
-    wrappers, a leading ``x =`` and a trailing period; turns ``\\frac{a}{b}``
-    into ``((a)/(b))``, ``\\sqrt{a}`` into ``sqrt(a)``, ``\\cdot``/``\\times``
-    into ``*`` and remaining braces into parentheses, and reads ``1,299`` as
-    ``1299``.
+    Drops ``$``/``\\(``/``\\[`` delimiters, sizing and spacing commands
+    (``\\left``, ``\\,``, ``\\!``), ``\\text{}``-style wrappers, degree
+    marks, a leading ``x =`` and a trailing period; turns ``\\frac{a}{b}``
+    (also ``\\dfrac``, ``\\tfrac`` and ``\\frac12``) into ``((a)/(b))``,
+    ``\\sqrt{a}`` into ``sqrt(a)``, ``\\cdot``/``\\times`` into ``*`` and
+    remaining braces into parentheses, and reads ``1,299``, ``1{,}299`` and
+    ``1\\,299`` as ``1299``. A percent sign is kept (``\\%`` becomes ``%``).
     """
     text = text.strip()
     if len(text) > _MAX_NORMALIZE_CHARS:
         return text
+    text = _LATEX_THOUSANDS.sub("", text).replace(r"\%", "%").replace(r"\$", " ")
     for delimiter in ("$$", "$", r"\(", r"\)", r"\[", r"\]"):
         text = text.replace(delimiter, " ")
-    text = _rewrite_command(text, r"\text", 1, "{0}")
-    text = _rewrite_command(text, r"\mathrm", 1, "{0}")
+    for wrapper in _TEXT_WRAPPERS:
+        text = _rewrite_command(text, wrapper, 1, " {0} ")
     for latex, plain in _LATEX_OPS.items():
         text = text.replace(latex, plain)
+    text = _DEGREES.sub(" ", text)
     text = _LATEX_DROP.sub(" ", text)
+    text = _SHORT_FRACTION.sub(_braced_fraction, text)
     text = _rewrite_command(text, r"\frac", 2, "(({0})/({1}))")
     text = _rewrite_command(text, r"\sqrt", 1, "sqrt({0})")
     text = text.replace("{", "(").replace("}", ")")

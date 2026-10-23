@@ -1025,6 +1025,64 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   GEPO's `metrics_history` declared keys it never wrote; the
   `example_config_usage()` demo is gone from `training/config.py`.
 
+- **Rewards and environments, round 6** (reviewer regrade from C+). Fixes are
+  gated by hand-labelled precision/recall sets in
+  `tests/fixtures/reward_labelled/`, written blind to the implementation, not
+  only by adversary families.
+  - **`basic_rewards.harmful_request` no longer flags benign support,
+    safety-protective and dual-use requests.** It was over-flagging victimhood
+    and protective phrasing ("refund for a fraudulent charge", "who hacked my
+    account", "which cleaners should I never mix", "teach my kids about
+    scams"); it now requires a *perpetration* cue. Measured on a 266-item
+    benign set and a 136-item harmful set: **0% false positives** (gate below
+    5%), harmful recall 0.85 at precision 1.0
+    (`tests/unit/test_reward_labelled_sets.py`). `declines()` now recognises
+    "Sorry, I can't.", "I'm sorry, but I won't be providing that." and "That's
+    not something I'm able to do."
+  - **A refusal to a flagged harmful request now earns a fixed safety credit
+    in grounding (`grounding.SAFETY_CREDIT`), not full information.** Even a
+    correctly-flagged request's refusal never trains as if it were an
+    informative answer; `SafetyReward` remains the authoritative signal.
+  - **`CorrectnessReward` answer commitment reworked** to credit committed,
+    hedged-free and negation-correct answers and to withhold credit from
+    hedges in any separator or framing, scoped per clause. It no longer
+    over-rejects chain-of-thought and context mentions. Measured precision
+    0.95, recall 0.99 on a 312-item labelled set.
+  - **Nested reference data no longer leaks to the policy.** The observation
+    allowlist (`environment_base`) is recursive and drops reference-like
+    nested keys from context, prompts and scripted turns; a scenario
+    `termination` can no longer override the environment's.
+  - **`MathAnswerVerifier` judges chain-of-thought by its final answer**
+    (self-contained reader in `rewards._math_reading`): reasoning hedges and
+    self-corrections no longer cost credit, LaTeX/markdown and `\pm`/solution
+    sets are normalised, and symbolic probe points are seeded per expression
+    (precision 0.98, recall 0.97 on a 210-item set). The code verifier scores
+    by **CPU time** with a wall-clock backstop and a concurrency semaphore, so
+    identical solutions score identically under load; program idioms
+    (`open(0)`, `exit()`, example blocks) pass.
+  - **`MultiObjectiveRewardFunction` raises on an outage by default**
+    (opt-in `outage_policy="renormalize"`) and no longer clamps out-of-range
+    component scores; every fallback score is flagged
+    `metadata["reward_fallback"]`.
+  - **Judge plumbing**: judges see the last user turn and the conversation
+    history, accept a fenced JSON verdict with one structured retry, and
+    `CalibrationReport.passes()` now gates on N, Spearman, MAE and swap
+    consistency (a shipped labelled set,
+    `rewards/judge_calibration_support.jsonl`).
+  - **Composites validate child scores** against the declared or default
+    `[0, 1]` range (no silent summing of an out-of-range child).
+    `TaskOutcomeReward` gains normalized/contains/regex match modes.
+    `SymbolicPhysicsRewardFunction` scores trivial constants 0 and raises on
+    missing variables.
+  - **Exploit gate coverage**: `SupportConversationReward` (V2, zero findings)
+    and a symbolic-physics case join the gate; `SupportConversationRewardV3`
+    (the paid fine-tune worker) is ratcheted (12 findings, down from 2,886);
+    the reward-contract discovery now spans the whole package except
+    `training/`.
+  - **Breaking:** `MultiObjectiveRewardFunction` raises on an outage by
+    default; `CalibrationReport.passes()` returns a `CalibrationGate` (so
+    `== True` comparisons break); `TaskOutcomeReward` defaults to normalized
+    matching; `ModelBasedRewardComponent` prompts are hardened by default.
 - **A duck-typed config that omits a field trains with `TrainingConfig`'s
   default.** Trainers restated defaults inline (`getattr(config, name,
   default)`) and the copies drifted; they now read through

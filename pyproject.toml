@@ -354,7 +354,7 @@ exclude = [
 include-package-data = true
 
 [tool.setuptools.package-data]
-"stateset_agents" = ["py.typed", "config/presets/**/*.yaml", "config/presets/**/*.json", "evaluation/rubrics/*.md"]
+"stateset_agents" = ["py.typed", "config/presets/**/*.yaml", "config/presets/**/*.json", "evaluation/rubrics/*.md", "rewards/*.jsonl"]
 "traceforge_rl" = ["py.typed"]
 
 

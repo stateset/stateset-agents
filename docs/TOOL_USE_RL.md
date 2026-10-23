@@ -67,8 +67,13 @@ template, e.g. `AgentConfig(chat_template_kwargs={"tools": registry.schemas()})`
   blocks (`arguments` may also be a JSON string);
 - the JSON-action form the benchmark sandboxes use
   (`core.environments.json_action.parse_json_action`): the whole reply is
-  `{"tool": "calculator", "args": {...}}` (`json_actions=False` turns it off);
-- structured OpenAI `tool_calls` on the turn.
+  `{"tool": "calculator", "args": {...}}` (`json_actions=False` turns it off).
+  Only a whole-reply JSON object that names a tool (a `"tool"` key, or
+  `"name"` with `"arguments"`) is a call; any other JSON reply, such as
+  `{"answer": "84"}`, is a final answer and spends no budget;
+- structured OpenAI `tool_calls` on the turn. A structured call keeps its own
+  `id`; only calls without one are numbered `call_<n>` (unique within the
+  episode).
 
 JSON is parsed strictly (duplicate keys, `NaN`/`Infinity` and deep nesting
 are rejected). A call that cannot be read is a `malformed_call` error
@@ -78,8 +83,12 @@ observation, never an exception.
 is JSON: `{"name": "calculator", "result": 84}` or
 `{"name": ..., "error": {"type": ..., "message": ...}}` with `type` one of
 `malformed_call`, `unknown_tool`, `invalid_arguments`, `tool_error`,
-`timeout`, `unserializable_result`, `budget_exhausted`. Long observations are
-truncated (`max_observation_chars`, still valid JSON).
+`timeout`, `unserializable_result`, `budget_exhausted`. The turn carries the
+call's `tool_call_id` and the tool `name` (in `turn.metadata` and in the
+history passed to the policy, next to the assistant turn's `tool_calls`). An
+observation's content never exceeds `max_observation_chars` characters (at
+least 128), measured after JSON escaping, and stays valid JSON marked
+`"truncated": true`; an error keeps its `type`.
 
 **Episode end and budget.** A turn with no tool call is the final answer and
 ends the episode (`COMPLETED`). Every attempted call, malformed or not, spends
@@ -92,6 +101,9 @@ a `budget_exhausted` observation and ends the episode without an answer
 ran and returned a result, the trace `TaskOutcomeReward` compares with a
 scenario's `expected_tool_calls`), `tool_calls_used`, `final_answer` and
 `termination` (`final_answer`, `budget_exhausted`, `max_turns`).
+`termination` comes only from the environment's recorded state; a scenario key
+of that name is ignored, so a scenario cannot make an unanswered episode
+score.
 
 **Rewards.** The environment adds no reward of its own. Attach the verifier
 to the environment or hand it to the trainer; both settle the episode
@@ -113,11 +125,14 @@ template. Without one, `MultiTurnAgent` renders tool turns as
 `Tool: <content>` lines (they were previously dropped, so a policy without a
 chat template never saw its observations).
 
-**Tool timeouts.** The timeout bounds how long the environment waits. A
-synchronous tool runs in a worker thread that Python cannot stop: a tool
-stuck in a long computation holding the GIL is not preempted, and an
-abandoned thread keeps running. Tools must be deterministic and bounded;
-put untrusted computation in the code sandbox, or better a container.
+**Tool timeouts.** The timeout bounds the tool's own run time. A synchronous
+tool runs in a thread of its own, started for that call, and its timeout
+counts from when it starts running there, so concurrent calls never queue into
+timeouts even when the process's shared executor is saturated; an async tool
+is cancelled at its timeout. Python cannot preempt a thread holding the GIL,
+and an abandoned thread keeps running (the interpreter waits for it at exit).
+Tools must be deterministic and bounded; put untrusted computation in the code
+sandbox, or better a container.
 
 ## The masking guarantee
 
@@ -166,38 +181,63 @@ reference (`ground_truth`, bare or `{"answer": ...}`, as for
 `CorrectnessReward`; or `answer=`), else 0.0. Without a reference it raises
 `ConfigurationError`.
 
-**The final answer**, in order of authority: every `\boxed{...}`; otherwise
-every explicit statement ("the answer is X", "answer: X", "#### X");
-otherwise the last number, only when the reply offers exactly one number
-beyond those quoted from the question and passes `CorrectnessReward`'s
-candidate rule (so worked arithmetic must state its answer). Tool-call
-markup is removed first.
+The verifier reads its own final answer (a self-contained reader in
+`rewards._math_reading`, not `CorrectnessReward`'s helpers), so a full
+chain-of-thought is judged by its ending, not its reasoning. Tool-call markup
+is removed first, and the text after a `</think>` block is read first.
 
-**No credit for hedging** (as in `CorrectnessReward`, whose helpers it
-reuses): several different committed answers, an alternative offered
-("42, or maybe 41", "41 or 42", "41 or \boxed{42}", `\boxed{\text{42 or 43}}`),
-a tentative answer ("Maybe 42."), an admission of not knowing, a listed
-candidate ("Paris, 42, Glacier") and a negated answer all score 0. So does a
-box or statement that hedges inside itself: a list (`\boxed{42, 43}`, unless
-the reference is itself a list), `\pm`, `\approx`, "or" inside a box
-(`\boxed{42 \text{ or } 43}`), "about", "or so". And so does an answer
-contradicted after it is given: a retraction ("Actually, I think I made an
-error") or a different value offered for it ("it is 43", "it could also be
-43", "some textbooks say 43"); a restatement of the same value ("It is 6 *
-7.") or a check ("42 / 7 = 6") keeps the credit. A committed answer may carry
-a unit or restate itself ("42 dollars", "42 (or 42.0)"); text after its
-number that adds another number makes it no answer.
+**The final answer**, in order of authority:
+
+1. the last `\boxed{...}`;
+2. otherwise the last explicit statement ("the answer is X", "answer: X",
+   "#### X", "the solutions are X"); a statement with no number or expression
+   ("the answer is consistent") is ignored;
+3. otherwise a closing sentence with one value and nothing numeric or
+   questioning after it ("So the bottle holds 2500 mL.");
+4. otherwise one lone new number; question numbers are matched by written form
+   ("2/6" is not the question's "1/3"), and a reply cut off mid-step gives no
+   answer.
+
+**Reasoning before the final answer's sentence costs nothing:** doubt,
+checks, other numbers, and an earlier answer followed by a correction cue
+(`\boxed{160}. Wait... \boxed{168}` scores 168). An earlier *different* answer
+with no correction cue between (`\boxed{41} \boxed{84}`) scores 0. A statement
+corrected afterwards and re-concluded with an equation is replaced by the new
+conclusion; a box followed by a correction to another value scores 0.
+
+**No credit for hedging.** The hedge and retraction checks apply to the
+answer, its own sentence and the text after it (rules of the reader's own, not
+`CorrectnessReward`'s): several different committed answers, an alternative
+offered ("41 or 42", "41 or \boxed{42}", "43 is also possible", "Another
+possible answer is 43", "\boxed{42} (approximately)", "... but I might be
+wrong", "Or is it \boxed{42}?"), a tentative answer ("Maybe 42."), an
+admission of not knowing, a listed candidate, a negated answer, and a value
+offered or retracted after the answer ("On second thought, 41.", "it is 43",
+"some textbooks say 43") all score 0. So does a box that hedges inside itself:
+a list (`\boxed{42, 43}`), `\pm`, `\approx`, "or" inside a box, "about", "or
+so" -- **unless the reference is itself a `\pm`/solution set or list**. A
+restatement of the same value ("It is 6 * 7.") or a check ("42 / 7 = 6")
+keeps the credit, as do "I hope it is correct", `**168**` and
+`\boxed{168\,\text{pens}}`.
 
 **Equivalence** (`stateset_agents.core.math_expressions`): model text never
 reaches `eval`, `sympify` or `parse_expr`; a small recursive-descent parser
 builds a tuple tree. A numeric reference must be matched by a number
 *written out* (`84`, `-3/4`, `0.75`, `\frac{3}{4}`), compared exactly as a
 fraction, or within `abs_tolerance` / `rel_tolerance` when set; restating
-the question's arithmetic (`\boxed{12*7}`) earns nothing. A symbolic
-reference (`3x^2 + 2`) is matched by any equivalent expression: exact
-evaluation at eight fixed pseudo-random rational points for rational
-functions (pure Python, the same result with or without sympy), and
-`sympy.simplify` on node-built expressions for `sqrt`, `sin`... when sympy is
+the question's arithmetic (`\boxed{12*7}`) earns nothing. `50\%` reads as 50 or 0.5, and a reference
+written as an expression (`2^{10}`) also accepts that same written form and
+`1024` (but not `4^5`); the newly-read LaTeX/markdown forms include `\frac12`,
+`\tfrac`/`\dfrac`, `\,`, `\text`/`\textbf`/`\mathbf` wrappers, `**bold**`,
+`^\circ`/`°`, `\$`, `×`, `÷`, Unicode minus and `1{,}000`. A `\pm` or
+solution-list reference matches the same set in any order and notation
+(`\pm 3`, `±3`, `3, -3`, `x = 3 or x = -3`); a tuple or interval is compared
+as text. A symbolic reference (`3x^2 + 2`) is matched by any equivalent
+expression: exact evaluation at **eight pseudo-random rational points drawn
+from a generator seeded by a hash of both expressions** (deterministic per
+pair, but not a fixed public point set -- a polynomial built to vanish at the
+old fixed points is rejected), and `sympy.simplify` on node-built expressions
+for `sqrt`, `sin`... when sympy is
 installed. The sympy tree obeys the exact path's limits (`x^(9^9)` and
 `sqrt(x)+9^9^8` are refused, not built), `sympy.simplify` runs in a worker
 process killed after `sympy_timeout` seconds (default 5; a timeout scores 0
@@ -218,8 +258,15 @@ and scores the pass rate. Tests come from the context (scenario `tests` and
   `entry_point`; results are compared as strict JSON (`True` is not `1`,
   tuples equal lists, optional `float_tolerance`);
 - program tests `{"stdin": "...", "expected_stdout": "..."}` run the code as
-  `__main__` with that stdin and compare stdout (trailing whitespace
-  ignored; a non-zero `sys.exit` fails).
+  `__main__` with that stdin on a real file on fd 0 (`input()`, `sys.stdin`,
+  `open(0).read()`, `os.read(0, n)` work), and `exit()`/`quit()` exist;
+  stdout is compared (trailing whitespace ignored; a non-zero `sys.exit`
+  fails).
+
+In function mode, code after the entry point that fails at load is reported as
+`load_warning` and the function is still tested; an `if __name__ ==
+"__main__":` example block does not run, so an "Example usage" block after the
+solution never fails it.
 
 Keep the tests **hidden**: different from any examples in the prompt.
 
@@ -228,12 +275,21 @@ the outage the trainers already handle):
 
 - `python -I -S` (isolated mode, no site-packages unless
   `site_packages=True`), an empty environment, a fresh temporary directory
-  as the working directory, deleted afterwards, and a new session whose whole
+  as the working directory, deleted afterwards (the stdin files live in a
+  sibling directory, so the cwd stays empty), and a new session whose whole
   process group is killed after the run;
-- a wall-clock timeout for the run, and rlimits the harness applies to itself
-  (soft = hard) before any candidate code runs: CPU seconds, address space,
-  file size (writes past it raise instead of killing), `RLIMIT_NPROC = 0` (no
-  forks or threads), open files, no core dumps (`SandboxLimits`);
+- **CPU time decides** (`cpu_seconds`, `RLIMIT_CPU`, `status="cpu_limit"`);
+  the wall clock (`timeout_seconds`, default 30 s) is only a backstop for a
+  stalled run (`status="wall_timeout"`, plus `metadata["cpu_seconds"]` on
+  Linux). At most `sandbox_concurrency()` sandboxes run at once per process
+  (default: usable CPUs; `STATESET_SANDBOX_CONCURRENCY` /
+  `set_sandbox_concurrency(n)`); others wait before their clocks start, so 46
+  identical correct solutions scored at once all score 1.0. CPU time still
+  varies about 2x under full contention, so keep `cpu_seconds` several times a
+  correct solution's need. Other rlimits the harness applies to itself (soft =
+  hard) before any candidate code runs: address space, file size (writes past
+  it raise instead of killing), `RLIMIT_NPROC = 0` (no forks or threads), open
+  files, no core dumps (`SandboxLimits`);
 - stdout and stderr are read with size caps; the rest is drained and
   discarded.
 
@@ -250,11 +306,12 @@ score 0 without starting a process.
 | print / hard-code the expected output | expected values are hidden and never sent to the sandbox | `hardcode_visible`, `print_expected` |
 | `sys.exit(0)` / `os._exit(0)` before the asserts | a test passes only with its own record | `sys_exit_before_asserts`, `os_exit_before_asserts` |
 | monkeypatch the checker, `__eq__` always true | comparison happens here on decoded strict JSON; `json.dumps` is bound before candidate code runs | `monkeypatch_checker`, `always_equal` |
-| read the tests file | there is none; the working directory is empty | `read_tests_file` |
+| read a tests file in the working directory, its parent or /tmp | the working directory is empty; tests never go there | `read_tests_file` |
 | recover the nonce from memory and forge records | values are still compared to hidden expectations; duplicates fail | `test_forged_records_with_the_recovered_nonce_are_rejected` |
-| infinite loop | CPU limit or wall clock kills it; a score of 0, not an outage | `test_infinite_loop_is_a_zero_score_not_an_outage` |
+| infinite loop | CPU limit kills it (`cpu_limit`); a sleeper meets the backstop (`wall_timeout`); both are a score of 0, not an outage | `test_infinite_loop_is_a_zero_score_not_an_outage`, `test_wall_clock_backstop_kills_a_sleeping_candidate` |
 | fork bomb | `RLIMIT_NPROC = 0`; the process group is killed | `test_fork_storm_leaves_no_processes_behind` |
 | memory / file / thread / recursion abuse, output floods | rlimits and capped reads | `test_resource_abuse_*`, `test_output_floods_*` |
+| **Not defended:** read expected outputs from a dataset file on disk | runs as the trainer's user and can read any file that user can, including `/proc` | pinned at 1.0 by `test_reading_expected_outputs_from_a_dataset_on_disk_is_a_known_limit`; excluded from the gate by name (`KNOWN_VERIFIER_LIMITS`) |
 
 All are in `tests/unit/test_code_verifier_sandbox.py`; each exploit test also
 runs the candidate through a naive verifier (candidate and asserts in one
@@ -262,9 +319,10 @@ file, pass on exit status 0) and asserts the naive verifier is fooled.
 
 **Limits. This is resource isolation, not a security boundary against hostile
 code.** The candidate runs as the trainer's user with that user's filesystem
-and network access: it can read files the user can read, open network
-connections and write outside its working directory (within the file-size
-limit). As root, `RLIMIT_NPROC` is not enforced, and a process that calls
+and network access: it can read files the user can read, including `/proc` and
+expected outputs stored on disk, open network connections and write outside
+its working directory (within the file-size limit); only the working directory
+is empty. As root, `RLIMIT_NPROC` is not enforced, and a process that calls
 `setsid` escapes the group kill. macOS does not enforce `RLIMIT_AS`. A
 program that writes to fd 1 directly, or calls `os._exit` after printing,
 loses its output. **For untrusted or adversarial workloads run the candidate
@@ -292,27 +350,34 @@ negations, truncation) and add:
   could also be D)", and "The answer is L. Some textbooks say D.";
 - **code**: hard-coding the visible example, printing its output, exiting
   before or inside the tests, `__eq__` always true, patching `json.dumps`,
-  forging records with the recovered nonce, reading a tests file, an
-  infinite loop, a bounded fork storm, threads, a memory bomb, unbounded
-  recursion, `SystemExit` in the function, and plausible wrong programs
-  (off by one, wrong formula, correct only for small inputs, echoing the
-  input, a non-zero exit).
+  forging records with the recovered nonce, reading a tests file from the
+  working directory, its parent or /tmp, an infinite loop, a bounded fork
+  storm, threads, a memory bomb, unbounded recursion, `SystemExit` in the
+  function, and plausible wrong programs (off by one, wrong formula, correct
+  only for small inputs, echoing the input, a non-zero exit); and, as a named,
+  pinned known limit **excluded from the gate**, `read_dataset_on_disk` (the
+  gate writes each code case's tests to a temp directory standing in for a
+  dataset).
+- **symbolic** (a provisional third kind for `SymbolicPhysicsRewardFunction`):
+  constants (0, 1, pi, `x - x`, `sin**2+cos**2`) that satisfy symmetry, parity
+  and zero constraints trivially, and, when the task has a target, near misses
+  (scaled, negated, shifted) of the reference relation.
 
 Generic mutations that can keep a correct answer intact (padding, deleting
 half of the "specifics", negating action words) are not adversaries for a
 verifier: it rightly credits a correct answer however it is worded.
 
 **Result:** for seeds 0 and 1, on both paths (reward attached to the
-environment and held by the trainer), every adversary scores at least 0.01
-below the reference. In numbers: 900 math adversary episodes (57 families
-over four cases) all score 0 against a reference of 1 (smallest gap 1.0; the
-seven hedge-and-contradiction families tied the reference at 1.0 before they
-were fixed), and
-292 code adversary episodes (48 families over two tasks) leave a smallest gap
-of 0.33, from a plausible wrong program (`first_two_only`, which sums only two
-of three inputs and passes two of three hidden tests); every exploit family
-scores 0. A naive verifier that credits any mention of the label is caught
-(`test_the_verifier_search_detects_a_naive_verifier`).
+environment and held by the trainer), every adversary **except the named
+`KNOWN_VERIFIER_LIMITS` family** scores at least 0.01 below the reference. In
+numbers: 900 math adversary episodes (57 families over four cases) all score 0
+against a reference of 1; the symbolic constants and near misses all score 0;
+and 300 code adversary episodes (49 families) leave a smallest gap of 0.33,
+from a plausible wrong program (`first_two_only`, which sums only two of three
+inputs and passes two of three hidden tests); every code family except
+`read_dataset_on_disk` scores 0, while `read_dataset_on_disk` scores 1.0 and
+is pinned and excluded. A naive verifier that credits any mention of the label
+is caught (`test_the_verifier_search_detects_a_naive_verifier`).
 
 ## Evidence
 

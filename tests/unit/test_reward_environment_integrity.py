@@ -468,8 +468,10 @@ async def test_multi_objective_redistributes_a_failed_component_weight():
         async def compute_score(self, turns, context=None):
             raise RewardUnavailableError("down")
 
+    # Renormalizing is an opt-in (round 6); by default the outage raises.
     reward = MultiObjectiveRewardFunction(
-        [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)]
+        [EmpathyRewardComponent(weight=0.5), Boom(name="judge", weight=0.5)],
+        outage_policy="renormalize",
     )
     turns = [{"role": "assistant", "content": "Sorry, I understand, happy to help"}]
     result = await reward.compute_reward(turns)

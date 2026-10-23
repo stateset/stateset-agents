@@ -18,6 +18,7 @@ from .environment_base import (
     EpisodeStatus,
     _context_keys,
     _Episode,
+    policy_visible,
 )
 from .reward import RewardFunction
 from .trajectory import ConversationTurn, MultiTurnTrajectory
@@ -32,7 +33,14 @@ def _scripted_user_turns(scenario: Any) -> list[str] | None:
     turns = scenario.get("user_turns")
     if not isinstance(turns, (list, tuple)) or not turns:
         return None
-    return [str(turn) for turn in turns]
+    return [_user_text(turn) for turn in turns]
+
+
+def _user_text(message: Any) -> str:
+    """A scripted user message as text; a structured one (a mapping) is
+    rendered without its reference-like keys, like everything the policy
+    reads."""
+    return message if isinstance(message, str) else str(policy_visible(message))
 
 
 def _opening_user_message(scenario: Any) -> str | None:
@@ -61,7 +69,9 @@ class ConversationEnvironment(Environment):
     System prompt: the episode opens with a system turn only when one is
     explicitly provided — the ``system_prompt`` argument, a scenario's
     ``"system_prompt"``, or a scenario's ``"context"`` (rendered as
-    ``"Context: ..."``). ``persona`` is appended to that turn when one is
+    ``"Context: ..."`` without its reference-like keys, see
+    :func:`~stateset_agents.core.environment_base.policy_visible`).
+    ``persona`` is appended to that turn when one is
     emitted. Otherwise :meth:`get_initial_prompt` returns ``""`` and the
     agent's own ``AgentConfig.system_prompt`` applies; when both exist, the
     environment's system turn takes precedence (``MultiTurnAgent`` does not
@@ -303,8 +313,11 @@ class ConversationEnvironment(Environment):
         explicit = self.system_prompt or scenario.get("system_prompt")
         if isinstance(explicit, str) and explicit.strip():
             parts.append(explicit.strip())
-        if scenario.get("context"):
-            parts.append(f"Context: {scenario['context']}")
+        # The context is shown as the policy may see it: reference-like keys
+        # (expected_*, gold*, answer...) are dropped at any depth.
+        context = policy_visible(scenario.get("context"), self.visible_context_keys)
+        if context:
+            parts.append(f"Context: {context}")
         if not parts:
             return ""
         if self.persona:
@@ -324,7 +337,7 @@ class ConversationEnvironment(Environment):
                 "Thank you, that's helpful.",
             ],
         )
-        response_content = self._rng.choice(user_responses)
+        response_content = _user_text(self._rng.choice(user_responses))
         return ConversationTurn(
             role="user",
             content=response_content,

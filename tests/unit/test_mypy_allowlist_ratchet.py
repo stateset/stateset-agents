@@ -16,9 +16,10 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # the tool-use environment and verifiers, decontamination, the capability
 # regression hook, the shared QLoRA helper, the RL numerics' typing Protocols,
 # the studio's key-dispatch and screen modules, the spine's algorithm specs
-# and their registry, and the spine LR schedule plus the dedicated entry
-# points' shared dependency loader and W&B reporter.
-ALLOWLIST_FLOOR = 525
+# and their registry, the spine LR schedule plus the dedicated entry points'
+# shared dependency loader and W&B reporter, and round 6's self-contained math
+# final-answer reader.
+ALLOWLIST_FLOOR = 526
 
 
 def _allowlisted_files() -> list[str]:

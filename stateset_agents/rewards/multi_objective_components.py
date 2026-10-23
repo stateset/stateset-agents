@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import math
 import os
@@ -14,6 +13,16 @@ from typing import Any
 
 from stateset_agents.core.grounding import STYLE_SHARE, task_grounding
 from stateset_agents.core.reward_base import RewardUnavailableError
+from stateset_agents.rewards.llm_judge import (
+    DATA_INSTRUCTION,
+    VERDICT_RETRY_INSTRUCTION,
+    history_section,
+    history_text,
+    judge_conversation,
+    parse_verdict_json,
+    prompt_nonce,
+    untrusted_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +115,12 @@ class RewardComponent:
 class BaseRewardComponent(ABC):
     """Base class for individual reward components."""
 
+    #: True for judges: they score the newest reply themselves and read the
+    #: earlier turns as context, so ``MultiObjectiveRewardFunction`` passes
+    #: them the whole conversation even when scoring one step (other
+    #: components get only the newest reply among assistant turns).
+    sees_whole_conversation: bool = False
+
     def __init__(self, name: str, weight: float = 1.0, **kwargs):
         self.name = name
         self.weight = weight
@@ -116,6 +131,14 @@ class BaseRewardComponent(ABC):
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
         """Compute score for this component."""
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """Why this component's scores are a stand-in for what it is meant to
+        measure (a model judge without a client scoring by length), or
+        ``None``. ``MultiObjectiveRewardFunction`` flags such results
+        ``metadata["reward_fallback"]``."""
+        return None
 
     def get_info(self) -> dict[str, Any]:
         """Get component information."""
@@ -407,7 +430,24 @@ class ProfessionalismRewardComponent(BaseRewardComponent):
 
 
 class ModelBasedRewardComponent(BaseRewardComponent):
-    """Reward component that uses a judge model to evaluate response quality."""
+    """Reward component that uses a judge model to evaluate response quality.
+
+    The judge sees the reply under evaluation, the request (the last user
+    turn before it, else ``context["user_query"]``) and the earlier turns of
+    the conversation. With ``harden_prompts`` (the default) all three are
+    enclosed in tags carrying a per-prompt nonce and the judge is told they
+    are data, never instructions (``llm_judge.DATA_INSTRUCTION``); a custom
+    ``judge_prompt_template`` receives the enclosed blocks in its
+    ``{user_query}`` and ``{assistant_response}`` slots (and the earlier turns
+    in ``{conversation_history}``, else before the prompt).
+
+    The reply must be one JSON object ``{"score": x}`` with ``x`` in [0, 1]
+    (optionally in one markdown code fence); otherwise the judge is asked once
+    more for only the JSON object, then the component raises
+    ``RewardUnavailableError``.
+    """
+
+    sees_whole_conversation = True
 
     def __init__(
         self,
@@ -420,9 +460,13 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         provider = kwargs.pop("provider", None)
         model_name = kwargs.pop("model_name", None)
         strict = bool(kwargs.pop("strict", False))
+        harden_prompts = bool(kwargs.pop("harden_prompts", True))
         super().__init__(name, weight, **kwargs)
         #: Raise instead of scoring by reply length when no client is set.
         self.strict = strict
+        #: Enclose the request, reply and earlier turns as untrusted data.
+        self.harden_prompts = harden_prompts
+        self._nonce_key = os.urandom(16)
         self._warned_no_client = False
         self.provider = _normalize_model_provider(
             provider or os.getenv("STATESET_JUDGE_PROVIDER")
@@ -438,27 +482,54 @@ class ModelBasedRewardComponent(BaseRewardComponent):
         )
         self.api_client = api_client
 
+    @property
+    def fallback_reason(self) -> str | None:
+        """Set while no client is configured and ``strict`` is off: replies
+        are then scored by length, not by a judge."""
+        if self.api_client is None and not self.strict:
+            return f"{self.name}: no api_client; scored by reply length"
+        return None
+
+    def build_prompt(
+        self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
+    ) -> str:
+        """The prompt the judge is sent for the last reply in ``turns``."""
+        # The judge always sees the reply; the request comes from the last
+        # user turn before it, else the context's user_query. A reply is
+        # never scored 0.0 in place of a verdict because the request was not
+        # in ``turns``.
+        conversation = judge_conversation(turns, context)
+        earlier = history_text(conversation.history)
+        template = self.judge_prompt_template
+        if not self.harden_prompts:
+            return template.format(
+                user_query=conversation.query,
+                assistant_response=conversation.response,
+                conversation_history=earlier,
+            )
+        nonce = prompt_nonce(
+            self._nonce_key, conversation.query, conversation.response, earlier
+        )
+        section = history_section(earlier, nonce)
+        prompt = template.format(
+            user_query=untrusted_block(conversation.query, "query", nonce),
+            assistant_response=untrusted_block(
+                conversation.response, "response", nonce
+            ),
+            conversation_history=section,
+        )
+        if section and "{conversation_history" not in template:
+            prompt = f"{section.strip()}\n\n{prompt}"
+        instruction = DATA_INSTRUCTION.format(tag="data", nonce=nonce)
+        return f"{instruction}\n\n{prompt}"
+
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None
     ) -> float:
         assistant_responses = [t for t in turns if t.get("role") == "assistant"]
         if not assistant_responses:
             return 0.0  # no reply, nothing to credit
-        # The judge always sees the reply; the request comes from the last
-        # user turn, else the context's user_query. A reply is never scored
-        # 0.0 in place of a verdict because the request was not in ``turns``.
-        user_turns = [t for t in turns if t.get("role") == "user"]
-        if user_turns:
-            user_query = str(user_turns[-1].get("content", "") or "")
-        else:
-            query = (context or {}).get("user_query")
-            user_query = query if isinstance(query, str) else ""
-
-        assistant_response = assistant_responses[-1].get("content", "")
-        prompt = self.judge_prompt_template.format(
-            user_query=user_query,
-            assistant_response=assistant_response,
-        )
+        assistant_response = str(assistant_responses[-1].get("content", "") or "")
 
         client = self.api_client
         if client is None:
@@ -489,25 +560,36 @@ class ModelBasedRewardComponent(BaseRewardComponent):
                 f"{self.name}: api_client for provider {effective_provider!r} "
                 "has no chat/completions/messages/generate interface"
             )
+        prompt = self.build_prompt(turns, context)
+        retry = VERDICT_RETRY_INSTRUCTION.format(example='{"score": <0 to 1>}')
+        # Fail closed: the composer raises (or, opted in, leaves this
+        # component out); a neutral 0.5 would be trained on as a verdict. An
+        # unreadable verdict is asked for once more, an outage is not.
         try:
-            if effective_provider == "openai":
-                response = await self._call_openai_api(prompt)
-            elif effective_provider == "anthropic":
-                response = await self._call_anthropic_api(prompt)
-            else:
-                response = await client.generate(prompt)
-            score = self._parse_score_from_response(response)
+            response = await self._call_judge(effective_provider, prompt)
+            try:
+                return self._parse_score_from_response(response)
+            except ValueError as error:
+                logger.info("%s: asking the judge again: %s", self.name, error)
+            response = await self._call_judge(
+                effective_provider, f"{prompt}\n\n{retry}"
+            )
+            return self._parse_score_from_response(response)
         except _JUDGE_OUTAGES as exc:
-            # Fail closed: the composer leaves this component out and spreads
-            # its weight; a neutral 0.5 would be trained on as a verdict.
             raise RewardUnavailableError(
                 f"{self.name}: model judge failed: {exc}"
             ) from exc
-        if not math.isfinite(score) or not 0.0 <= score <= 1.0:
-            raise RewardUnavailableError(
-                f"{self.name}: judge score {score} is outside [0, 1]"
-            )
-        return score
+
+    async def _call_judge(self, provider: str, prompt: str) -> str:
+        """One call to the configured judge client."""
+        if provider == "openai":
+            return await self._call_openai_api(prompt)
+        if provider == "anthropic":
+            return await self._call_anthropic_api(prompt)
+        client = self.api_client
+        if client is None:
+            raise RuntimeError(f"{self.name}: no api_client configured")
+        return str(await client.generate(prompt))
 
     async def _call_openai_api(self, prompt: str) -> str:
         """Call OpenAI API for scoring."""
@@ -558,15 +640,16 @@ class ModelBasedRewardComponent(BaseRewardComponent):
     def _parse_score_from_response(self, response: str) -> float:
         """Read the score from the judge's reply: exactly ``{"score": x}``.
 
-        The reply must be one JSON object whose ``"score"`` is a number in
-        [0, 1]; anything else (prose, a bare number, "7/10", "85/100", a
-        negative or out-of-range score) raises ``ValueError``, which
-        ``compute_score`` reports as ``RewardUnavailableError``. No number is
-        salvaged from free text and nothing is rescaled or clamped.
+        The reply must be one JSON object (optionally in one markdown code
+        fence) whose ``"score"`` is a number in [0, 1]; anything else (prose,
+        a bare number, "7/10", "85/100", a negative or out-of-range score)
+        raises ``ValueError``, which ``compute_score`` reports as
+        ``RewardUnavailableError`` after one retry. No number is salvaged
+        from free text and nothing is rescaled or clamped.
         """
         try:
-            parsed = json.loads(str(response).strip())
-        except json.JSONDecodeError as error:
+            parsed: Any = parse_verdict_json(response)
+        except ValueError as error:
             raise ValueError(f"judge reply is not strict JSON: {response!r}") from error
         score = parsed.get("score") if isinstance(parsed, dict) else None
         if isinstance(score, bool) or not isinstance(score, (int, float)):
@@ -645,6 +728,17 @@ class GroundedComponent(BaseRewardComponent):
         self.component = component
         self.share = float(STYLE_SHARE if share is None else share)
         self.config = {"grounded": True, **getattr(component, "config", {})}
+
+    @property
+    def sees_whole_conversation(self) -> bool:  # type: ignore[override]
+        """Whether the wrapped component is a judge (see the base class)."""
+        return getattr(self.component, "sees_whole_conversation", False) is True
+
+    @property
+    def fallback_reason(self) -> str | None:
+        """The wrapped component's fallback reason."""
+        reason = getattr(self.component, "fallback_reason", None)
+        return reason if isinstance(reason, str) and reason else None
 
     async def compute_score(
         self, turns: list[dict[str, Any]], context: dict[str, Any] | None = None

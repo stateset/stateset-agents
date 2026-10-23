@@ -2,16 +2,23 @@
 
 import logging
 import math
+from dataclasses import dataclass, field
 from typing import Any, cast
 
 import numpy as np
 
 from stateset_agents.core.reward_base import (
+    OUTAGE_POLICIES,
     RewardFunction,
     RewardResult,
     RewardUnavailableError,
 )
-from stateset_agents.core.reward_context import scores_latest_turn_only
+from stateset_agents.core.reward_context import (
+    COMPONENT_FAILURES_KEY,
+    REWARD_FALLBACK_KEY,
+    declared_score_range,
+    scores_latest_turn_only,
+)
 from stateset_agents.utils.cache import CacheService
 from stateset_agents.utils.monitoring import MonitoringService
 
@@ -32,12 +39,81 @@ from .multi_objective_components import (
 
 logger = logging.getLogger(__name__)
 
+#: Rounding slack at the edges of a score range (as in
+#: ``reward_context.check_score_range``).
+_RANGE_SLACK = 1e-9
+#: The range of a component that declares none.
+_DEFAULT_COMPONENT_RANGE = (0.0, 1.0)
+
+
+def _component_range(component: Any) -> tuple[float, float]:
+    """The ``score_range`` ``component`` declares, else ``[0, 1]``."""
+    return declared_score_range(component) or _DEFAULT_COMPONENT_RANGE
+
+
+def _checked_component_score(component: Any, score: float) -> float:
+    """``score``, or ``ValueError`` when it is not finite or lies outside the
+    component's score range (never clamped)."""
+    name = getattr(component, "name", type(component).__name__)
+    if not math.isfinite(score):
+        raise ValueError(f"Reward component {name} returned a non-finite score {score}")
+    low, high = _component_range(component)
+    slack = _RANGE_SLACK * max(1.0, abs(low), abs(high))
+    if not low - slack <= score <= high + slack:
+        raise ValueError(
+            f"Reward component {name} scored {score}, outside its score range "
+            f"[{low}, {high}]"
+        )
+    return score
+
+
+@dataclass
+class _ComponentScores:
+    """The components that scored in one evaluation, in order."""
+
+    scores: list[float] = field(default_factory=list)
+    weights: list[float] = field(default_factory=list)
+    by_name: dict[str, float] = field(default_factory=dict)
+    failed: list[str] = field(default_factory=list)
+    fallbacks: list[str] = field(default_factory=list)
+
+    def add(self, name: str, score: float, weight: float) -> None:
+        self.scores.append(score)
+        self.weights.append(weight)
+        self.by_name[name] = score
+
 
 class MultiObjectiveRewardFunction(RewardFunction):
     """
     Multi-objective reward function that combines multiple reward components
     with weighted scoring and sophisticated evaluation criteria.
+
+    A component score must be finite and inside the component's
+    ``score_range`` (``[0, 1]`` when it declares none), or the evaluation
+    raises ``ValueError``; scores are never clamped.
+
+    Outages (a component raising ``RewardUnavailableError``) follow
+    :attr:`outage_policy`, exactly as for ``CompositeReward``:
+
+    * ``"raise"`` (the default): the reward raises ``RewardUnavailableError``
+      too, so the episode is dropped rather than scored by the surviving
+      components alone.
+    * ``"renormalize"`` (opt-in: ``outage_policy="renormalize"`` or
+      ``reward.outage_policy = "renormalize"``): the failed component is left
+      out and its weight spread over the rest; the result lists it in
+      ``metadata["failed_components"]``, counts it in
+      ``breakdown["unavailable_components"]`` and is flagged
+      ``metadata["reward_fallback"]``.
+
+    A result is also flagged ``metadata["reward_fallback"]`` when a component
+    that scored reports a ``fallback_reason`` (a model judge without a client
+    scoring by length). Environments and ``score_episode`` copy the flag and
+    the failed components to the trajectory's metadata
+    (``reward_fallback``, ``reward_failed_components``).
     """
+
+    #: How a component outage is handled (see the class docs).
+    outage_policy: str = "raise"
 
     def __init__(
         self,
@@ -46,6 +122,7 @@ class MultiObjectiveRewardFunction(RewardFunction):
         normalization_method: str = "weighted_sum",
         cache_service: CacheService | None = None,
         monitoring_service: MonitoringService | None = None,
+        outage_policy: str | None = None,
     ):
         """
         Initialize multi-objective reward function.
@@ -56,6 +133,8 @@ class MultiObjectiveRewardFunction(RewardFunction):
             normalization_method: How to combine component scores
             cache_service: Optional cache service
             monitoring_service: Optional monitoring service
+            outage_policy: ``"raise"`` (the default) or ``"renormalize"``
+                (see the class docs)
         """
         super().__init__(weight=weight)
 
@@ -63,10 +142,23 @@ class MultiObjectiveRewardFunction(RewardFunction):
         self.normalization_method = normalization_method
         self.cache = cache_service
         self.monitoring = monitoring_service
+        if outage_policy is not None:
+            self.outage_policy = outage_policy
+            self._checked_outage_policy()
 
         self._normalize_component_weights()
         self.evaluation_count = 0
         self.component_scores: dict[str, list[float]] = {}
+
+    @property
+    def score_range(self) -> tuple[float, float]:
+        """The lowest and highest bounds of the components' score ranges
+        (``[0, 1]`` for components that declare none): every combination
+        method keeps the combined score inside them."""
+        ranges = [_component_range(c) for c in self.components]
+        if not ranges:
+            return _DEFAULT_COMPONENT_RANGE
+        return min(low for low, _ in ranges), max(high for _, high in ranges)
 
     def _normalized_weight_snapshot(
         self, components: tuple[BaseRewardComponent, ...]
@@ -132,37 +224,17 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         Returns:
             RewardResult with combined score and component breakdown
+
+        Raises:
+            RewardUnavailableError: a component is unavailable (with the
+                default ``outage_policy = "raise"``), or every component is.
+            ValueError: no components, or a component score that is not
+                finite or lies outside the component's score range.
         """
-        # Support trainer-style calls: compute_reward(trajectory=?, turn=?, context=?)
-        if turns is None and turn is not None:
-            normalized: list[dict[str, Any]] = []
-            if context and isinstance(context, dict):
-                user_query = context.get("user_query") or context.get("prompt")
-                if user_query:
-                    normalized.append({"role": "user", "content": str(user_query)})
-            normalized.append(self._normalize_turn(turn))
-            turns = normalized
-
-        turns = turns or []
-        normalized_turns = [self._normalize_turn(item) for item in turns]
-        if scores_latest_turn_only(context):
-            # One step's reward: keep the conversation, but only the newest
-            # reply among assistant turns, so components that aggregate over
-            # replies score that one.
-            assistant_indices = [
-                index
-                for index, item in enumerate(normalized_turns)
-                if item.get("role") == "assistant"
-            ]
-            earlier = set(assistant_indices[:-1])
-            normalized_turns = [
-                item
-                for index, item in enumerate(normalized_turns)
-                if index not in earlier
-            ]
-
+        scoped, whole = self._turns_in_scope(turns, turn, context)
         if not self.components:
             raise ValueError("MultiObjectiveRewardFunction has no components")
+        policy = self._checked_outage_policy()
 
         # Components are mutable and their callbacks may suspend. Revalidate
         # and use one normalized weight snapshot for the whole evaluation,
@@ -170,98 +242,14 @@ class MultiObjectiveRewardFunction(RewardFunction):
         # drifts them by an ulp per call and made scores differ between calls.
         components = tuple(self.components)
         component_weights = self._normalized_weight_snapshot(components)
-
-        # Compute scores for each component
-        component_scores: dict[str, float] = {}
-        raw_scores: list[float] = []
-        scored_weights: list[float] = []
-        failed: list[str] = []
-
-        for component, component_weight in zip(
-            components, component_weights, strict=True
-        ):
-            try:
-                score = await component.compute_score(normalized_turns, context)
-            except RewardUnavailableError as e:
-                # Only an outage is absorbed; other exceptions are bugs.
-                logger.warning(
-                    "Reward component %s is unavailable; its weight is spread "
-                    "over the other components: %s",
-                    component.name,
-                    e,
-                )
-                failed.append(component.name)
-                continue
-            if not math.isfinite(score):
-                raise ValueError(
-                    f"Reward component {component.name} returned a non-finite "
-                    f"score {score}"
-                )
-            component_scores[component.name] = score
-            raw_scores.append(score)
-            scored_weights.append(component_weight)
-
-            # Track component performance
-            if component.name not in self.component_scores:
-                self.component_scores[component.name] = []
-            self.component_scores[component.name].append(score)
-
-        # A failed component is left out and its weight redistributed over
-        # the components that scored (as CompositeReward does), so a judge
-        # outage neither scores as 0 nor biases advantages within a group.
-        configured_weight = math.fsum(component_weights)
-        surviving_weight = math.fsum(scored_weights)
-        if failed and surviving_weight > 0:
-            scale = configured_weight / surviving_weight
-            scored_weights = [weight * scale for weight in scored_weights]
-        weighted_scores = [
-            score * weight
-            for score, weight in zip(raw_scores, scored_weights, strict=True)
-        ]
-        if not raw_scores:
-            # No component scored: fail rather than return a valid-looking 0.0.
-            raise RewardUnavailableError(
-                "MultiObjectiveRewardFunction: every component failed "
-                f"({', '.join(failed)})"
-            )
-
-        # Combine scores
-        if self.normalization_method == "weighted_sum":
-            final_score = math.fsum(weighted_scores)
-        elif self.normalization_method == "weighted_average":
-            total_weight = math.fsum(scored_weights)
-            final_score = (
-                math.fsum(weighted_scores) / total_weight if total_weight > 0 else 0.0
-            )
-        elif self.normalization_method == "geometric_mean":
-            # Weighted geometric mean: prod(score_i ** w_i) with weights
-            # summing to 1, so all-perfect components score 1.0.
-            total_weight = math.fsum(scored_weights)
-            if (
-                raw_scores
-                and total_weight > 0
-                and all(score > 0 for score in raw_scores)
-            ):
-                final_score = float(
-                    math.exp(
-                        math.fsum(
-                            w * math.log(score)
-                            for score, w in zip(raw_scores, scored_weights, strict=True)
-                        )
-                        / total_weight
-                    )
-                )
-            else:
-                final_score = 0.0
-        else:
-            final_score = math.fsum(weighted_scores)
-
-        # Ensure score is in [0, 1]
-        final_score = max(0.0, min(1.0, final_score))
-
+        scored = await self._score_components(
+            components, component_weights, (scoped, whole), context, policy
+        )
+        final_score = self._settled_score(
+            self._combine(scored, math.fsum(component_weights))
+        )
         self.evaluation_count += 1
 
-        # Create breakdown
         weights = {
             component.name: weight
             for component, weight in zip(components, component_weights, strict=True)
@@ -269,16 +257,23 @@ class MultiObjectiveRewardFunction(RewardFunction):
         breakdown: dict[str, Any] = {
             "total_score": final_score,
             "evaluation_count": float(self.evaluation_count),
-            "components": component_scores,
+            "components": scored.by_name,
             "weights": weights,
             "normalization_method": self.normalization_method,
         }
         metadata: dict[str, Any] = {
-            "components": component_scores,
+            "components": scored.by_name,
             "weights": weights,
             "normalization_method": self.normalization_method,
-            "failed_components": failed,
+            COMPONENT_FAILURES_KEY: scored.failed,
         }
+        fallbacks = list(scored.fallbacks)
+        if scored.failed:
+            # An opted-in renormalization is a fallback score: flag it.
+            fallbacks.append(f"renormalized without {', '.join(scored.failed)}")
+            breakdown["unavailable_components"] = float(len(scored.failed))
+        if fallbacks:
+            metadata[REWARD_FALLBACK_KEY] = "; ".join(fallbacks)
 
         # Log metrics
         if self.monitoring:
@@ -290,13 +285,161 @@ class MultiObjectiveRewardFunction(RewardFunction):
 
         result = RewardResult(
             score=final_score,
-            components=component_scores,
+            components=scored.by_name,
             breakdown=cast(dict[str, float], breakdown),
             metadata=metadata,
         )
         # Some trainers expect `total_reward`; keep it as an alias for score.
         result.total_reward = float(final_score)
         return result
+
+    def _turns_in_scope(
+        self, turns: list[Any] | None, turn: Any, context: dict[str, Any] | None
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+        """The turns to score, as dicts: those in scope (honoring the
+        latest-turn scope) and the whole conversation (for judges)."""
+        # Support trainer-style calls: compute_reward(trajectory=?, turn=?, context=?)
+        if turns is None and turn is not None:
+            normalized: list[dict[str, Any]] = []
+            if context and isinstance(context, dict):
+                user_query = context.get("user_query") or context.get("prompt")
+                if user_query:
+                    normalized.append({"role": "user", "content": str(user_query)})
+            normalized.append(self._normalize_turn(turn))
+            turns = normalized
+
+        normalized_turns = [self._normalize_turn(item) for item in turns or []]
+        if not scores_latest_turn_only(context):
+            return normalized_turns, normalized_turns
+        # One step's reward: keep the conversation, but only the newest reply
+        # among assistant turns, so components that aggregate over replies
+        # score that one.
+        assistant_indices = [
+            index
+            for index, item in enumerate(normalized_turns)
+            if item.get("role") == "assistant"
+        ]
+        earlier = set(assistant_indices[:-1])
+        scoped = [
+            item for index, item in enumerate(normalized_turns) if index not in earlier
+        ]
+        return scoped, normalized_turns
+
+    def _checked_outage_policy(self) -> str:
+        policy = self.outage_policy
+        if policy not in OUTAGE_POLICIES:
+            from stateset_agents.core.errors import ConfigurationError
+
+            raise ConfigurationError(
+                "MultiObjectiveRewardFunction.outage_policy must be one of "
+                f"{OUTAGE_POLICIES}, got {policy!r}"
+            )
+        return policy
+
+    async def _score_components(
+        self,
+        components: tuple[BaseRewardComponent, ...],
+        weights: tuple[float, ...],
+        turns: tuple[list[dict[str, Any]], list[dict[str, Any]]],
+        context: dict[str, Any] | None,
+        policy: str,
+    ) -> _ComponentScores:
+        """Every component's checked score; outages follow ``policy``.
+
+        ``turns`` is (the turns in scope, the whole conversation): a judge
+        (``sees_whole_conversation``) scores the newest reply itself and
+        reads every earlier turn, replies included, as its context.
+        """
+        scoped, whole = turns
+        scored = _ComponentScores()
+        for component, weight in zip(components, weights, strict=True):
+            judge = getattr(component, "sees_whole_conversation", False) is True
+            try:
+                score = await component.compute_score(
+                    whole if judge else scoped, context
+                )
+            except RewardUnavailableError as error:
+                # Only an outage is absorbed, and only when renormalizing is
+                # opted into; other exceptions are bugs and propagate.
+                if (
+                    getattr(component, "fail_on_error", False) is True
+                    or policy != "renormalize"
+                ):
+                    raise RewardUnavailableError(
+                        f"MultiObjectiveRewardFunction: component "
+                        f"{component.name} is unavailable: {error}"
+                    ) from error
+                logger.warning(
+                    "Reward component %s is unavailable; its weight is spread "
+                    "over the other components (outage_policy='renormalize'): %s",
+                    component.name,
+                    error,
+                )
+                scored.failed.append(str(component.name))
+                continue
+            score = _checked_component_score(component, score)
+            scored.add(component.name, score, weight)
+            reason = getattr(component, "fallback_reason", None)
+            if isinstance(reason, str) and reason:
+                scored.fallbacks.append(reason)
+            # Track component performance
+            self.component_scores.setdefault(component.name, []).append(score)
+        if not scored.scores:
+            # No component scored: fail rather than return a valid-looking 0.0.
+            raise RewardUnavailableError(
+                "MultiObjectiveRewardFunction: every component failed "
+                f"({', '.join(scored.failed)})"
+            )
+        return scored
+
+    def _combine(self, scored: _ComponentScores, configured_weight: float) -> float:
+        """Combine the component scores with ``normalization_method``."""
+        weights = scored.weights
+        surviving_weight = math.fsum(weights)
+        if scored.failed and surviving_weight > 0:
+            # Opted-in renormalization: a failed component's weight is spread
+            # over the components that scored, as CompositeReward does.
+            scale = configured_weight / surviving_weight
+            weights = [weight * scale for weight in weights]
+        weighted = [
+            score * weight for score, weight in zip(scored.scores, weights, strict=True)
+        ]
+        total_weight = math.fsum(weights)
+        if self.normalization_method == "weighted_average":
+            return math.fsum(weighted) / total_weight if total_weight > 0 else 0.0
+        if self.normalization_method == "geometric_mean":
+            # Weighted geometric mean: prod(score_i ** w_i) with weights
+            # summing to 1, so all-perfect components score 1.0.
+            if total_weight <= 0 or any(score <= 0 for score in scored.scores):
+                return 0.0
+            return float(
+                math.exp(
+                    math.fsum(
+                        w * math.log(score)
+                        for score, w in zip(scored.scores, weights, strict=True)
+                    )
+                    / total_weight
+                )
+            )
+        # "weighted_sum" (and any unknown method)
+        return math.fsum(weighted)
+
+    def _settled_score(self, score: float) -> float:
+        """``score`` checked against :attr:`score_range`.
+
+        In-range component scores combine to a score in that range, so only
+        float rounding (at most ``1e-9``) can land outside it; that is
+        snapped to the bound. Anything further raises ``ValueError``: a score
+        is never clamped into range.
+        """
+        low, high = self.score_range
+        slack = _RANGE_SLACK * max(1.0, abs(low), abs(high))
+        if not (math.isfinite(score) and low - slack <= score <= high + slack):
+            raise ValueError(
+                f"MultiObjectiveRewardFunction combined score {score} is outside "
+                f"its score range [{low}, {high}]"
+            )
+        return min(max(score, low), high)
 
     def _normalize_turn(self, item: Any) -> dict[str, Any]:
         """Normalize turn inputs while preserving metadata-rich objects."""

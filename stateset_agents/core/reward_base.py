@@ -17,9 +17,10 @@ from typing import Any
 from .reward_context import (
     COMPONENT_FAILURES_KEY,
     REWARD_FALLBACK_KEY,
+    UNIT_SCORE_RANGE,
     RewardUnavailableError,
     build_reward_context,
-    check_score_range,
+    check_child_score_range,
     reward_fallback,
 )
 from .trajectory import ConversationTurn
@@ -184,6 +185,12 @@ class CompositeReward(RewardFunction):
       ``metadata["reward_fallback"]``, which environments and
       ``score_episode`` copy to the trajectory (with
       ``metadata["reward_failed_components"]``).
+
+    Every child score must be finite and inside the child's declared
+    ``score_range``, or ``[0, 1]`` when it declares none (a nested
+    ``CompositeReward`` spans its own weights and is checked through its
+    children); otherwise the composite raises ``ValueError`` rather than
+    weighting an out-of-range score into the total. Scores are never clamped.
     """
 
     #: How a component outage is handled (see the class docs).
@@ -289,7 +296,16 @@ class CompositeReward(RewardFunction):
                     f"Reward function {reward_fn.name} returned a non-finite "
                     f"score {result.score}"
                 )
-            check_score_range(reward_fn, float(result.score))
+            # A child is held to its declared score_range or, declaring
+            # none, to [0, 1]: a 7.0 must not be weighted into the sum. A
+            # nested composite spans its own weights and checks its children.
+            check_child_score_range(
+                reward_fn,
+                float(result.score),
+                default=(
+                    None if isinstance(reward_fn, CompositeReward) else UNIT_SCORE_RANGE
+                ),
+            )
             results.append((reward_fn, result))
 
         # No component scored: there is no reward, so fail rather than
