@@ -393,7 +393,7 @@ class PPOTrainer(TrainingRuntime):
         # Ensure transformers is loaded
         _load_transformers_ppo()
 
-        validate_training_config(config)
+        validate_training_config(config, PPOConfig)
         self.config = config
         # PPO clipped surrogate as one declarative PolicyObjective; the KL
         # penalty is added separately in train_step (adaptive coefficient).
@@ -724,7 +724,7 @@ class PPOTrainer(TrainingRuntime):
         completion_ids: list[list[int]] | None = None,
     ) -> dict[str, float]:
         """Validate and update a text batch with deterministic model scoring."""
-        validate_training_config(self.config)
+        validate_training_config(self.config, PPOConfig)
         if self.config.beta > 0 and self.ref_model is None:
             raise ValueError("PPO beta > 0 requires a reference model")
         if (

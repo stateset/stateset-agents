@@ -1,4 +1,5 @@
 import math
+import sys
 
 import pytest
 import torch
@@ -8,9 +9,13 @@ from stateset_agents.training.gepo_trainer import GEPOTrainer
 
 
 def test_wandb_is_required_only_when_logging_is_requested(monkeypatch):
-    monkeypatch.setattr(gepo_trainer, "wandb", None)
+    from stateset_agents.training.dedicated_reporting import WandbRun
+
+    monkeypatch.setitem(sys.modules, "wandb", None)
+    assert gepo_trainer.GEPOModelManager.algorithm == "GEPO"
+    WandbRun("gepo", enabled=False, project="p", config={}).start()  # no import
     with pytest.raises(ImportError, match="GEPO logging"):
-        gepo_trainer._require_wandb()
+        WandbRun("gepo", enabled=True, project="p", config={}).start()
 
 
 def test_gepo_coefficient_no_underflow_long_sequences():

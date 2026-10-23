@@ -70,14 +70,7 @@ def _require_finite_vector(values: torch.Tensor, name: str) -> None:
         raise ValueError(f"{name} must contain only finite values")
 
 
-# Optional training dependencies
-try:
-    import wandb as _wandb
-
-    wandb: Any | None = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
+# Optional training dependencies (W&B reporting: dedicated_reporting.WandbRun)
 try:
     from peft import LoraConfig as _LoraConfig
     from peft import TaskType as _TaskType
@@ -128,15 +121,6 @@ def _require_bitsandbytes() -> None:
             "If you just installed it in a notebook, restart the runtime/kernel. "
             "Otherwise, verify your CUDA/PyTorch/bitsandbytes compatibility."
         ) from exc
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GSPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 # Lazy import transformers to avoid torch/torchvision compatibility issues
@@ -490,7 +474,7 @@ class GSPOTrainer(AlgorithmTrainer, TrainingRuntime):
         reward_model: MultiObjectiveReward,
         ref_model: Any | None = None,
     ):
-        validate_training_config(config)
+        validate_training_config(config, GSPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer

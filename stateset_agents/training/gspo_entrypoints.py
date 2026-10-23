@@ -8,7 +8,6 @@ import json
 import logging
 import os
 from collections.abc import Mapping, Sequence
-from datetime import datetime
 from typing import Any, cast
 
 from stateset_agents.core.agent import Agent, AgentConfig, MultiTurnAgent
@@ -19,6 +18,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 
 from .callbacks import has_no_policy_signal
 from .config import get_config_for_task
+from .dedicated_reporting import WandbRun, reports_to_wandb
 from .gspo_config import GSPOConfig
 from .runtime_state import _reject_unsupported_resume
 from .spine.loop import run_dedicated_loop, seed_dedicated_run
@@ -145,7 +145,7 @@ async def train_with_gspo(
     spine's :func:`run_dedicated_loop`.
     """
     _reject_unsupported_resume(config, "train_with_gspo")
-    from .gspo_trainer import GSPOModelManager, GSPOTrainer, _require_wandb, wandb
+    from .gspo_trainer import GSPOModelManager, GSPOTrainer
 
     logger.info("Initializing GSPO training")
     logger.info("Configuration: %s", json.dumps(config.to_dict(), indent=2))
@@ -175,27 +175,40 @@ async def train_with_gspo(
 
     os.makedirs(config.output_dir, exist_ok=True)
 
-    use_wandb = config.report_to == "wandb"
-    wb = None
-    if use_wandb:
-        _require_wandb()
-        wb = wandb
-        if config.wandb_project:
-            if wb is None:
-                raise ImportError("wandb is unavailable")
-            wb.init(
-                project=config.wandb_project,
-                name=config.run_name
-                or f"gspo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-                config=config.to_dict(),
-                tags=["gspo"] + (config.wandb_tags or []),
-            )
-        else:
-            logger.warning(
-                "report_to='wandb' but no wandb_project set; disabling wandb logging."
-            )
-            use_wandb = False
+    with WandbRun(
+        "gspo",
+        enabled=reports_to_wandb(config.report_to),
+        project=config.wandb_project,
+        config=config,
+        tags=["gspo"] + list(config.wandb_tags or []),
+        name=config.run_name,
+    ) as reporter:
+        return await _run_gspo(
+            config,
+            agent,
+            environment,
+            reward_model,
+            train_queries,
+            callbacks or [],
+            reporter,
+            model_manager_cls=GSPOModelManager,
+            trainer_cls=GSPOTrainer,
+        )
 
+
+async def _run_gspo(
+    config: GSPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveReward,
+    train_queries: list[str] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+    *,
+    model_manager_cls: Any,
+    trainer_cls: Any,
+) -> Agent:
+    """:func:`train_with_gspo` after its W&B run is set up."""
     seed_dedicated_run(config.seed)
     _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
@@ -209,7 +222,7 @@ async def train_with_gspo(
         tokenizer = agent.tokenizer
         model_manager = None
     else:
-        model_manager = GSPOModelManager(config)
+        model_manager = model_manager_cls(config)
         model, tokenizer = model_manager.load_model_and_tokenizer()
         agent.model = model
         agent.tokenizer = tokenizer
@@ -227,7 +240,6 @@ async def train_with_gspo(
         min(queries_per_iteration, len(queries)),
     )
 
-    trainer_cls: Any = GSPOTrainer
     if getattr(config, "use_gspo_token", False):
         from .gspo_token_trainer import GSPOTokenTrainer
 
@@ -285,9 +297,7 @@ async def train_with_gspo(
             )
 
         logger.info("Metrics: %s", json.dumps(metrics, indent=2))
-
-        if use_wandb and wb is not None:
-            wb.log(metrics, step=iteration)
+        reporter.log(metrics, step=iteration)
 
     run = await run_dedicated_loop(
         iterations=config.num_outer_iterations,
@@ -301,9 +311,6 @@ async def train_with_gspo(
         callbacks=_callbacks,
         seed=config.seed,
     )
-
-    if use_wandb and wb is not None:
-        wb.finish()
 
     if run.aborted:
         logger.info("GSPO training aborted early.")

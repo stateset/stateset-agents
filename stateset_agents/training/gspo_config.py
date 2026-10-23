@@ -12,7 +12,12 @@ from stateset_agents.exceptions import (
     IMPORT_EXCEPTIONS as BITSANDBYTES_IMPORT_EXCEPTIONS,
 )
 
-from .config import TrainingConfig, cuda_is_available
+from .config import (
+    TrainingConfig,
+    cuda_is_available,
+    require_finite,
+    require_positive_ints,
+)
 
 
 @dataclass
@@ -65,6 +70,21 @@ class GSPOConfig(TrainingConfig):
         config_dict = config.to_dict()
         config_dict.update(kwargs)
         return cls(**config_dict)
+
+    def validate_for_training(self) -> None:
+        """Also require GSPO's own loop sizes and clip bounds in range."""
+        super().validate_for_training()
+        require_positive_ints(
+            self,
+            "num_outer_iterations",
+            "num_iterations",
+            "generations_per_iteration",
+            "mini_batch_size",
+        )
+        require_finite(
+            self, "clip_range_left", minimum=0, maximum=1, exclusive_maximum=True
+        )
+        require_finite(self, "clip_range_right", minimum=0)
 
     def validate(self) -> list[str]:
         """Validate configuration and return warnings."""

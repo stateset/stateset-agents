@@ -11,6 +11,7 @@ import stateset_agents.training as public_training
 from stateset_agents.training import (
     dapo_entrypoints,
     dapo_trainer,
+    dedicated_reporting,
     gepo_trainer,
     gspo_entrypoints,
     gspo_token_trainer,
@@ -53,12 +54,13 @@ def setup_sentinels(tmp_path, monkeypatch):
 
     guards = []
     for module, names in (
-        (gspo_trainer, ("GSPOModelManager", "GSPOTrainer", "_require_wandb")),
+        (gspo_trainer, ("GSPOModelManager", "GSPOTrainer")),
         (gspo_token_trainer, ("GSPOTokenTrainer",)),
-        (gepo_trainer, ("GEPOModelManager", "GEPOTrainer", "_require_wandb")),
-        (dapo_trainer, ("DAPOModelManager", "DAPOTrainer", "_require_wandb")),
-        (vapo_trainer, ("VAPOModelManager", "VAPOTrainer", "_require_wandb")),
+        (gepo_trainer, ("GEPOModelManager", "GEPOTrainer")),
+        (dapo_trainer, ("DAPOModelManager", "DAPOTrainer")),
+        (vapo_trainer, ("VAPOModelManager", "VAPOTrainer")),
         (gspo_entrypoints, ("MultiTurnAgent",)),
+        (dedicated_reporting, ("require_wandb",)),
     ):
         for name in names:
             guard = forbidden(name)
@@ -68,8 +70,6 @@ def setup_sentinels(tmp_path, monkeypatch):
     wandb_init = forbidden("wandb.init")
     guards.append(wandb_init)
     wandb = SimpleNamespace(init=wandb_init)
-    for module in (gspo_trainer, gepo_trainer, dapo_trainer, vapo_trainer):
-        monkeypatch.setattr(module, "wandb", wandb)
     monkeypatch.setitem(sys.modules, "wandb", wandb)
     mkdir = forbidden("os.makedirs")
     guards.append(mkdir)

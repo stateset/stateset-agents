@@ -184,7 +184,9 @@ class AlgorithmTrainer:
         """Optimizer steps of a full run: the spec's outer ``iterations`` times
         its update ``passes`` (each committed pass steps the scheduler once)."""
         spec = self.algorithm
-        return optimizer_step_budget(spec.iterations(self.config), spec.passes(self.config))
+        return optimizer_step_budget(
+            spec.iterations(self.config), spec.passes(self.config)
+        )
 
     def _build_lr_scheduler(self, optimizer: Any) -> Any:
         """``config.lr_scheduler_type`` over :meth:`_optimizer_step_budget`

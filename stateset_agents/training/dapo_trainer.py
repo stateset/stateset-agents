@@ -17,7 +17,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any
 
 import numpy as np
 import torch
@@ -50,85 +50,6 @@ DAPO_EXCEPTIONS = (
     OSError,
     asyncio.TimeoutError,
 )
-
-try:
-    import wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = cast(Any, None)
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_dapo_loaded = False
-AutoModelForCausalLM: Any = None
-AutoTokenizer: Any = None
-get_cosine_schedule_with_warmup: Any = None
-get_constant_schedule: Any = None
-
-
-def _load_transformers_dapo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_dapo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup, get_constant_schedule
-    if _transformers_dapo_loaded:
-        return True
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_dapo_loaded = True
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_constant_schedule as _get_constant
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        get_constant_schedule = _get_constant
-        _transformers_dapo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_transformers_dapo() -> None:
-    """Ensure transformers components are available before model loading."""
-    if not _load_transformers_dapo():
-        raise ImportError(
-            "transformers is required for DAPO training. "
-            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
-        )
-
-
-def _require_peft() -> None:
-    """Ensure PEFT is available before using LoRA features."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for DAPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for DAPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
-
 
 # Lazy import vLLM backend to avoid torch/torchvision compatibility issues
 # vllm imports transformers which imports torchvision at module level
@@ -163,20 +84,13 @@ def _load_vllm_backend() -> bool:
 
 
 class DAPOModelManager(SharedModelManager):
-    """Manages model loading for DAPO training"""
+    """Manages model loading for DAPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "DAPO"
 
     def __init__(self, config: DAPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        _require_transformers_dapo()
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise ImportError("transformers exports are unavailable for DAPO")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
 
 
 class DAPORewardShaper:
@@ -346,10 +260,7 @@ class DAPOTrainer(AlgorithmTrainer, VLLMEngineMixin, TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_dapo()
-
-        validate_training_config(config)
+        validate_training_config(config, DAPOConfig)
         self.config = config
         # Parsed once here rather than per forward pass.
         self._logprob_dtype = rl_losses.resolve_logprob_dtype(

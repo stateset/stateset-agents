@@ -50,102 +50,15 @@ from .vapo_config import VAPOConfig
 
 logger = logging.getLogger(__name__)
 
-try:
-    import wandb as _wandb
-
-    wandb: Any = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_vapo_loaded = False
-AutoModelForCausalLM: Any | None = None
-AutoTokenizer: Any | None = None
-get_cosine_schedule_with_warmup: Any | None = None
-
-
-def _load_transformers_vapo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_vapo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup
-    if _transformers_vapo_loaded:
-        return True
-    # Allow pre-injected mocks without importing transformers.
-    if AutoModelForCausalLM is not None and AutoTokenizer is not None:
-        _transformers_vapo_loaded = True
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_vapo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_transformers_vapo() -> None:
-    """Ensure transformers components are available before model loading."""
-    if not _load_transformers_vapo():
-        raise ImportError(
-            "transformers is required for VAPO training. "
-            "Install with `pip install stateset-agents[training]` or `pip install transformers`."
-        )
-
-
-def _require_peft() -> None:
-    """Ensure PEFT is available before using LoRA features."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for VAPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for VAPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
-
 
 class VAPOModelManager(SharedModelManager):
-    """Manages model loading for VAPO training"""
+    """Manages model loading for VAPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "VAPO"
 
     def __init__(self, config: VAPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        _require_transformers_vapo()
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise ImportError("transformers is required for VAPO training")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        if get_peft_model is None:
-            raise ImportError("PEFT is required for VAPO LoRA training")
-        return LoraConfig, TaskType, get_peft_model
 
 
 class ValueHead(nn.Module):
@@ -414,10 +327,7 @@ class VAPOTrainer(TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         verifier_fn: Callable[[str, str], bool] | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_vapo()
-
-        validate_training_config(config)
+        validate_training_config(config, VAPOConfig)
         self.config = config
         # Value warmup draws its prompts from ``config.seed``, not the global
         # NumPy generator.
@@ -702,7 +612,9 @@ class VAPOTrainer(TrainingRuntime):
         # untrained whenever warmup_ratio > 0.
         scheduled = [group["lr"] for group in self.critic_optimizer.param_groups]
         for group, base in zip(
-            self.critic_optimizer.param_groups, self.critic_scheduler.base_lrs
+            self.critic_optimizer.param_groups,
+            self.critic_scheduler.base_lrs,
+            strict=True,
         ):
             group["lr"] = base
         try:
@@ -710,7 +622,9 @@ class VAPOTrainer(TrainingRuntime):
                 prompts, critic_step, explained_variances
             )
         finally:
-            for group, rate in zip(self.critic_optimizer.param_groups, scheduled):
+            for group, rate in zip(
+                self.critic_optimizer.param_groups, scheduled, strict=True
+            ):
                 group["lr"] = rate
 
         self.value_warmup_complete = True

@@ -17,14 +17,19 @@ import logging
 import os
 from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 import numpy as np
 import torch
 
 from . import objectives, rl_losses
-from .config import TrainingConfig, config_value, validate_group_size
+from .config import (
+    TrainingConfig,
+    config_value,
+    require_finite,
+    validate_group_size,
+)
+from .dedicated_reporting import WandbRun
 from .runtime_state import (
     TrainingRuntime,
     _reject_unsupported_resume,
@@ -51,76 +56,7 @@ from .trainer_runtime import (
     hf_generate_group,
 )
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-)
 logger = logging.getLogger(__name__)
-
-try:
-    import wandb as _wandb
-
-    wandb: Any = _wandb
-except ImportError:  # pragma: no cover - optional dependency
-    wandb = None
-
-try:
-    from peft import LoraConfig as _LoraConfig
-    from peft import TaskType as _TaskType
-    from peft import get_peft_model as _get_peft_model
-
-    LoraConfig: Any = _LoraConfig
-    TaskType: Any = _TaskType
-    get_peft_model: Any = _get_peft_model
-except ImportError:  # pragma: no cover - optional dependency
-    LoraConfig = None
-    TaskType = None
-    get_peft_model = None
-
-# Lazy import transformers to avoid torch/torchvision compatibility issues
-_transformers_gepo_loaded = False
-AutoModelForCausalLM: Any | None = None
-AutoTokenizer: Any | None = None
-get_cosine_schedule_with_warmup: Any | None = None
-
-
-def _load_transformers_gepo() -> bool:
-    """Lazily load transformers to avoid import-time errors."""
-    global _transformers_gepo_loaded, AutoModelForCausalLM, AutoTokenizer
-    global get_cosine_schedule_with_warmup
-    if _transformers_gepo_loaded:
-        return True
-    try:
-        from transformers import AutoModelForCausalLM as _AutoModelForCausalLM
-        from transformers import AutoTokenizer as _AutoTokenizer
-        from transformers import get_cosine_schedule_with_warmup as _get_cosine
-
-        AutoModelForCausalLM = _AutoModelForCausalLM
-        AutoTokenizer = _AutoTokenizer
-        get_cosine_schedule_with_warmup = _get_cosine
-        _transformers_gepo_loaded = True
-        return True
-    except (ImportError, RuntimeError) as e:
-        logger.warning(f"Failed to load transformers: {e}")
-        return False
-
-
-def _require_peft() -> None:
-    """Require PEFT only when LoRA model loading actually needs it."""
-    if get_peft_model is None or LoraConfig is None or TaskType is None:
-        raise ImportError(
-            "PEFT is required for GEPO LoRA training. "
-            "Install with `pip install stateset-agents[training]` or `pip install peft`."
-        )
-
-
-def _require_wandb() -> None:
-    """Require W&B only when experiment logging is enabled."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for GEPO logging. "
-            "Install with `pip install stateset-agents[training]` or `pip install wandb`."
-        )
 
 
 @dataclass
@@ -175,9 +111,11 @@ class GEPOConfig(TrainingConfig):
     num_gradient_updates: int = 1
 
     def validate_for_training(self) -> None:
-        """Also require two responses per group (:func:`validate_group_size`)."""
+        """Also require two responses per group (:func:`validate_group_size`)
+        and a PPO clip in [0, 1)."""
         super().validate_for_training()
         validate_group_size(self.group_size)
+        require_finite(self, "clip_eps", minimum=0, maximum=1, exclusive_maximum=True)
 
     @classmethod
     def from_training_config(
@@ -193,24 +131,13 @@ class GEPOConfig(TrainingConfig):
 
 
 class GEPOModelManager(SharedModelManager):
-    """Manages model loading for GEPO training"""
+    """Manages model loading for GEPO training (transformers and PEFT through
+    :mod:`~stateset_agents.training.dedicated_deps`)."""
+
+    algorithm = "GEPO"
 
     def __init__(self, config: GEPOConfig):
         super().__init__(config)
-
-    def _get_transformers(self) -> tuple[Any, Any]:
-        if not _load_transformers_gepo():
-            raise ImportError(
-                "transformers is required for GEPO training. "
-                "Install with `pip install stateset-agents[training]`."
-            )
-        if AutoTokenizer is None or AutoModelForCausalLM is None:
-            raise RuntimeError("transformers GEPO loader did not initialize correctly")
-        return AutoTokenizer, AutoModelForCausalLM
-
-    def _peft_components(self) -> tuple[Any, Any, Any]:
-        _require_peft()
-        return LoraConfig, TaskType, get_peft_model
 
 
 class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
@@ -238,10 +165,7 @@ class GEPOTrainer(AlgorithmTrainer, TrainingRuntime):
         reward_fn: Callable[[str, str], float | Awaitable[float]],
         ref_model: Any | None = None,
     ):
-        # Ensure transformers is loaded for scheduler
-        _load_transformers_gepo()
-
-        validate_training_config(config)
+        validate_training_config(config, GEPOConfig)
         if float(config_value(config, "beta") or 0.0) > 0:
             raise ValueError(
                 "GEPOTrainer has no reference-model KL penalty; beta must be 0 "
@@ -759,16 +683,26 @@ async def train_with_gepo(
     logger.info("GEPO Training - Group Expectation Policy Optimization")
     logger.info("=" * 60)
 
-    # Initialize W&B
-    if use_wandb and wandb_project:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"gepo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["gepo", "rl-training"],
+    with WandbRun(
+        "gepo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["gepo", "rl-training"],
+    ) as reporter:
+        return await _run_gepo(
+            config, reward_fn, train_prompts, callbacks or [], reporter
         )
 
+
+async def _run_gepo(
+    config: GEPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_gepo` after its config and W&B run are set up."""
     # Load model and tokenizer
     seed_dedicated_run(config.seed)
     logger.info(f"Loading model: {config.model_name}")
@@ -800,8 +734,7 @@ async def train_with_gepo(
                 f"GEPO Coef: {metrics['gepo_coefficient_mean']:.4f}"
             )
 
-            if use_wandb:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
     await run_dedicated_loop(
@@ -813,16 +746,13 @@ async def train_with_gepo(
         save_steps=config.save_steps,
         final_name="final",
         report=report,
-        callbacks=callbacks or [],
+        callbacks=callbacks,
         seed=config.seed,
     )
 
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if use_wandb:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("GEPO Training Complete!")

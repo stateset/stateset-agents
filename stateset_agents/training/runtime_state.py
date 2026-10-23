@@ -98,12 +98,49 @@ def restore_rng(state: dict[str, Any], torch: Any) -> None:
         torch.cuda.set_rng_state_all([value.cpu() for value in state["cuda"]])
 
 
-def validate_training_config(config: Any) -> None:
-    """Validate native configuration without importing the optional ML stack."""
+def validate_training_config(config: Any, kind: type | None = None) -> None:
+    """Validate native configuration without importing the optional ML stack.
+
+    A ``TrainingConfig`` (any algorithm subclass) runs its own
+    ``validate_for_training``. A legacy duck-typed config used to skip
+    validation entirely; it is now checked by the rules of ``kind`` (the
+    trainer's config class, ``TrainingConfig`` by default): the ``kind``
+    fields set on the object (its instance attributes) are copied onto a
+    ``kind`` instance, the rest keep the defaults that ``config_value`` falls
+    back to, and that instance is validated. Two readings differ from the
+    dataclass for such a config and are mirrored: an unset ``bf16`` means
+    off (the trainers read ``getattr(config, "bf16", False)``), and
+    ``resume_from_checkpoint`` is checked when the resume is attempted, not
+    here (the directory may be written after the trainer is built).
+    """
+    import dataclasses
+
+    from ..core.errors import ConfigurationError
     from .config import TrainingConfig
 
     if isinstance(config, TrainingConfig):
         config.validate_for_training()
+        return
+    if config is None:
+        return
+    cls = kind or TrainingConfig
+    fields = {item.name for item in dataclasses.fields(cls) if item.init}
+    try:
+        attributes = vars(config)
+    except TypeError:  # __slots__ objects: fall back to attribute lookup
+        attributes = {
+            name: getattr(config, name) for name in fields if hasattr(config, name)
+        }
+    present = {name: value for name, value in attributes.items() if name in fields}
+    present.pop("resume_from_checkpoint", None)
+    present.setdefault("bf16", False)
+    try:
+        proxy = cls(**present)
+    except (TypeError, ValueError) as error:
+        raise ConfigurationError(
+            f"Invalid {cls.__name__} fields on {type(config).__name__}: {error}"
+        ) from error
+    proxy.validate_for_training()
 
 
 def capture_rollout_state(agent: Any) -> dict[str, int] | None:

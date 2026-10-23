@@ -65,7 +65,8 @@ def assert_full_cosine(recorder: RateRecorder, steps: int, *, first: int = 0) ->
         [cosine(step, steps) for step in range(first, steps)], rel=1e-12, abs=1e-15
     )
     assert all(
-        later <= earlier for earlier, later in zip(recorder.rates, recorder.rates[1:])
+        later <= earlier
+        for earlier, later in zip(recorder.rates, recorder.rates[1:], strict=False)
     ), recorder.rates
     assert recorder.final == pytest.approx(0.0, abs=1e-15)
 
@@ -252,7 +253,7 @@ def test_vapo_value_warmup_trains_the_critic_at_its_base_rate() -> None:
     assert rates.rates == [LR, LR]
     moved = any(
         not torch.equal(old, new)
-        for old, new in zip(before, trainer.value_head.parameters())
+        for old, new in zip(before, trainer.value_head.parameters(), strict=True)
     )
     assert moved
 
@@ -274,7 +275,9 @@ def test_schedule_is_monotone_after_warmup_and_clamped_past_the_end(
         assert factors == [1.0] * len(factors)
         return
     decay = factors[warmup:]
-    assert all(later <= earlier for earlier, later in zip(decay, decay[1:]))
+    assert all(
+        later <= earlier for earlier, later in zip(decay, decay[1:], strict=False)
+    )
     assert factors[total:] == [0.0] * 6  # held at zero, never climbs back
 
 

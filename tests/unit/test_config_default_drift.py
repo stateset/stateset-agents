@@ -73,7 +73,10 @@ def test_episode_and_accumulation_budgets_use_the_dataclass(factory) -> None:
         assert trainer._prepare_training_loop()[0] == DEFAULTS.num_episodes
     else:
         assert trainer._planned_optimizer_steps() > 100
-        assert _multi_turn(num_episodes=0)._planned_optimizer_steps() == 0
+        # An explicit 0 stays 0 (a trainer now rejects it at construction, as
+        # TrainingConfig always did, so set it afterwards).
+        trainer.config.num_episodes = 0
+        assert trainer._planned_optimizer_steps() == 0
 
 
 @pytest.mark.asyncio

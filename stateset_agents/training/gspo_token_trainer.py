@@ -19,6 +19,7 @@ from stateset_agents.rewards.multi_objective_reward import (
 )
 
 from . import objectives, rl_losses
+from .dedicated_reporting import WandbRun, reports_to_wandb
 from .gspo_generation import (
     _get_model_device,
     build_scoring_text,
@@ -280,9 +281,6 @@ async def train_with_gspo_token(
     _reject_unsupported_resume(config, "train_with_gspo_token")
     import json
     import os
-    from datetime import datetime
-
-    from .gspo_trainer import GSPOModelManager
 
     logger.info("Initializing GSPO-token training")
     logger.info(f"Configuration: {json.dumps(config.to_dict(), indent=2)}")
@@ -290,17 +288,38 @@ async def train_with_gspo_token(
     # Create output directory
     os.makedirs(config.output_dir, exist_ok=True)
 
-    # Initialize wandb if configured
-    if config.report_to == "wandb" and config.wandb_project:
-        import wandb
-
-        wandb.init(
-            project=config.wandb_project,
-            name=config.run_name
-            or f"gspo-token-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["gspo-token"] + (config.wandb_tags or []),
+    with WandbRun(
+        "gspo-token",
+        enabled=reports_to_wandb(config.report_to),
+        project=config.wandb_project,
+        config=config,
+        tags=["gspo-token"] + list(config.wandb_tags or []),
+        name=config.run_name,
+    ) as reporter:
+        return await _run_gspo_token(
+            config,
+            agent,
+            environment,
+            reward_model,
+            train_queries,
+            callbacks or [],
+            reporter,
         )
+
+
+async def _run_gspo_token(
+    config: GSPOConfig,
+    agent: Agent,
+    environment: ConversationEnvironment,
+    reward_model: MultiObjectiveReward,
+    train_queries: list[str] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> Agent:
+    """:func:`train_with_gspo_token` after its W&B run is set up."""
+    import json
+
+    from .gspo_trainer import GSPOModelManager
 
     # Initialize model manager
     seed_dedicated_run(config.seed)
@@ -349,10 +368,7 @@ async def train_with_gspo_token(
 
     def report(iteration: int, metrics: dict[str, Any]) -> None:
         logger.info(f"Metrics: {json.dumps(metrics, indent=2)}")
-        if config.report_to == "wandb":
-            import wandb
-
-            wandb.log(metrics, step=iteration)
+        reporter.log(metrics, step=iteration)
 
     # The spine's dedicated outer loop (periodic and final saves included).
     run = await run_dedicated_loop(
@@ -364,19 +380,13 @@ async def train_with_gspo_token(
         save_steps=config.save_steps,
         final_name="final_model",
         report=report,
-        callbacks=callbacks or [],
+        callbacks=callbacks,
         seed=config.seed,
     )
     if run.aborted:
         setattr(  # noqa: B010
             agent, "_training_aborted", "; ".join(run.abort_reasons) or "aborted"
         )
-
-    # Finish wandb run
-    if config.report_to == "wandb":
-        import wandb
-
-        wandb.finish()
 
     logger.info("✨ GSPO-token training completed successfully!")
     return agent

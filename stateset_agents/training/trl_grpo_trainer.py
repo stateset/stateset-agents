@@ -48,18 +48,6 @@ GRPOConfig = None
 TRLGRPOTrainer = None
 
 
-def _try_import_wandb() -> Any | None:
-    try:
-        import wandb
-
-        return wandb
-    except ImportError:  # pragma: no cover - optional dependency
-        return None
-
-
-_wandb: Any | None = _try_import_wandb()
-wandb: Any | None = _wandb
-
 try:
     from datasets import Dataset as _DatasetType
 except ImportError:  # pragma: no cover - optional dependency
@@ -148,15 +136,6 @@ def _require_transformers() -> None:
         raise ImportError(
             "transformers is required for TRL GRPO training. "
             "Install with `pip install stateset-agents[trl]` or `pip install transformers`."
-        )
-
-
-def _require_wandb() -> None:
-    """Ensure Weights & Biases is available before logging."""
-    if wandb is None:
-        raise ImportError(
-            "wandb is required for TRL GRPO logging. "
-            "Install with `pip install stateset-agents[trl]` or `pip install wandb`."
         )
 
 
@@ -528,7 +507,7 @@ class ModelManager:
     """Manages model loading and LoRA configuration for TRL training"""
 
     def __init__(self, config: TRLGRPOConfig):
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = None
         self.tokenizer = None
@@ -849,7 +828,7 @@ class TRLGRPOTrainerWrapper:
         ref_model: Any | None = None,
     ) -> None:
         _require_trl_grpo()
-        validate_training_config(config)
+        validate_training_config(config, TRLGRPOConfig)
         self.config = config
         self.model = model
         self.tokenizer = tokenizer
