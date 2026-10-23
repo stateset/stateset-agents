@@ -451,12 +451,24 @@ class PPOTrainer:
 
 class DPOTrainer:
     """
-    Direct Preference Optimization trainer
+    Direct Preference Optimization trainer.
+
+    .. deprecated:: 0.70.0
+        Research scaffolding. Use the maintained
+        :class:`stateset_agents.training.preference.PreferenceTrainer`
+        (DPO, IPO, SimPO, KTO, ORPO). Removed in v0.71.0.
     """
 
     def __init__(
         self, agent: EnhancedMultiTurnAgent, config: DPOConfig, device: str = "auto"
     ):
+        warnings.warn(
+            "stateset_agents.core.enhanced.DPOTrainer is deprecated and will be "
+            "removed in v0.71.0; use "
+            "stateset_agents.training.preference.PreferenceTrainer.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         self.agent = agent
         self.config = config
         model = _require_model(agent)
