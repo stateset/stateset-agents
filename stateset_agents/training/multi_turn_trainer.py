@@ -55,6 +55,7 @@ from .profiling import (
 from .runtime_state import validate_training_config
 from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
+from .spine.rollouts import record_rollout_sync
 from .spine.scoring import EpisodeScorer
 from .trainer_utils import (
     apply_dropout_setting,
@@ -543,7 +544,8 @@ class MultiTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
-            self.last_rollout_sync = bool(sync())
+            # Applies config.rollout_sync_failure to a failed sync.
+            record_rollout_sync(self, bool(sync()), label="GRPO")
 
     def _apply_optimizer_step(self, torch, *, gradient_scale: float = 1.0) -> bool:
         skip_policy = config_value(self.config, "nonfinite_grad_policy") == "skip"

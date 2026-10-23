@@ -36,6 +36,7 @@ from dataclasses import dataclass, field
 from typing import Any, ClassVar
 
 from ..config import config_value
+from .rollouts import record_rollout_sync, rollout_sync_metrics
 from .schedule import build_lr_scheduler, optimizer_step_budget
 from .update import (
     OptimizerStep,
@@ -139,7 +140,11 @@ async def run_algorithm_step(
         ),
         **spec.update_options(trainer, rollouts),
     )
-    return spec.metrics(trainer, rollouts, passes)
+    metrics = spec.metrics(trainer, rollouts, passes)
+    # The rollout engine's weight status once a sync was attempted
+    # (``rollout_weights_stale``, ``rollout_sync_failures``).
+    metrics.update(rollout_sync_metrics(trainer))
+    return metrics
 
 
 class AlgorithmTrainer:
@@ -233,15 +238,21 @@ class AlgorithmTrainer:
 
         ``last_rollout_sync`` is True/False for the sync outcome and ``None``
         when nothing was attempted (``config.rollout_sync`` off or no engine
-        in use); a failed sync leaves the engine stale and training continues
-        (``VLLMEngineMixin.sync_vllm_weights``).
+        in use). A failed sync leaves the engine stale
+        (``VLLMEngineMixin.sync_vllm_weights``) and ``config.
+        rollout_sync_failure`` decides whether training goes on
+        (:func:`~stateset_agents.training.spine.rollouts.record_rollout_sync`).
         """
         self.last_rollout_sync = None
         if not bool(config_value(self.config, "rollout_sync")):
             return
         engine = self._rollout_engine()
         if engine is not None:
-            self.last_rollout_sync = engine.sync_vllm_weights(self.model)
+            record_rollout_sync(
+                self,
+                engine.sync_vllm_weights(self.model),
+                label=self.algorithm.commit_label,
+            )
 
     async def _score_reply(
         self, prompt: str, response: str, context: Mapping[str, Any] | None = None

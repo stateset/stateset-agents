@@ -40,6 +40,7 @@ from typing import Any
 from ..config import config_value
 from ..grpo_accumulation import NativeChunkedBackward, backward_accumulated_loss
 from ..metric_reduction import carry_loss_metrics
+from .rollouts import rollout_sync_metrics
 
 
 class GRPOUpdateMixin:
@@ -275,6 +276,8 @@ class GRPOUpdateMixin:
             ),
             "global_step": self.global_step,
             **step,
+            # Rollout-engine weight status once a sync was attempted.
+            **rollout_sync_metrics(self),
         }
         result: dict[str, Any] = carry_loss_metrics(metrics, loss_dict)
         return result

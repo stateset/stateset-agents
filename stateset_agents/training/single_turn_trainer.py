@@ -58,6 +58,7 @@ from .single_turn_state import (
 )
 from .spine.grpo_update import GRPOUpdateMixin
 from .spine.loop import SpineLoopMixin
+from .spine.rollouts import record_rollout_sync
 from .spine.scoring import ResponseScorer
 from .trainer_utils import (
     apply_dropout_setting,
@@ -325,7 +326,8 @@ class SingleTurnGRPOTrainer(GRPOUpdateMixin, SpineLoopMixin):
             return
         sync = getattr(self.agent, "sync_rollout_backend", None)
         if callable(sync):
-            self.last_rollout_sync = bool(sync())
+            # Applies config.rollout_sync_failure to a failed sync.
+            record_rollout_sync(self, bool(sync()), label="GRPO")
 
     def _flush_accumulation(
         self, torch: Any, use_amp: bool, max_grad_norm: float
