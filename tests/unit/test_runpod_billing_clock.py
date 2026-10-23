@@ -127,3 +127,33 @@ def test_suspend_mid_job_is_billed_and_rents_no_replacement(clock, tmp_path):
     assert api.created == api.terminated == ["pod-1"]
     (row,) = read_entries(tmp_path / "ledger.jsonl")
     assert row["duration_s"] >= 3660 and row["cost_usd"] >= 1.0
+
+
+def test_a_new_clock_never_inherits_a_discarded_clocks_readings(monkeypatch):
+    """Suspend tracking is anchored to the clock object, not its address.
+
+    CPython hands a freed object's address to the next object of the same
+    size, so an anchor keyed by ``id()`` let a fresh clock double inherit the
+    high-water reading of one a previous test discarded: its time stood still
+    until it caught up, and deadlines measured with it never expired.
+    """
+    import gc
+
+    class Placeholder:
+        pass
+
+    # Swap clocks directly: monkeypatch would keep every replaced clock alive.
+    monkeypatch.setattr(runpod, "time", Placeholder())
+    for _ in range(20):
+        old = SuspendableClock()
+        old.mono = 900.0
+        runpod.time = old
+        assert runpod._billing_now() == 900.0
+        runpod.time = Placeholder()
+        del old
+        gc.collect()
+        fresh = SuspendableClock()
+        runpod.time = fresh
+        assert runpod._billing_now() == 100.0
+        fresh.advance(4)
+        assert runpod._billing_now() == 104.0
