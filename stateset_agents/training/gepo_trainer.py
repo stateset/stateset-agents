@@ -23,6 +23,7 @@ from typing import Any
 import numpy as np
 import torch
 
+from ..core.errors import ConfigurationError
 from . import objectives, rl_losses
 from .config import TrainingConfig
 from .runtime_state import (
@@ -162,6 +163,13 @@ class GEPOConfig(TrainingConfig):
     # committed inner update (a pass skipped under nonfinite_grad_policy="skip"
     # does not advance it); global_step counts train_steps, not inner updates.
     num_gradient_updates: int = 1
+
+    def validate_for_training(self) -> None:
+        """GEPO drops groups of fewer than two responses, so a smaller
+        ``group_size`` would train on nothing."""
+        super().validate_for_training()
+        if type(self.group_size) is not int or self.group_size < 2:
+            raise ConfigurationError("group_size must be an integer of at least 2")
 
     @classmethod
     def from_training_config(
@@ -597,8 +605,18 @@ class GEPOTrainer(TrainingRuntime):
 
         num_groups = len(rollouts)
         if num_groups == 0:
+            # Same keys as an update step, so callers can report either.
             logger.warning("No valid groups in batch")
-            return {"policy_loss": 0.0, "average_reward": 0.0}
+            return {
+                "policy_loss": 0.0,
+                "average_reward": 0.0,
+                "advantage_std": 0.0,
+                "gepo_coefficient_mean": 1.0,
+                "gepo_coefficient_std": 0.0,
+                "learning_rate": self.scheduler.get_last_lr()[0],
+                "global_step": self.global_step,
+                "optimizer_updates": 0,
+            }
 
         # --- Update phase --------------------------------------------------
         # ``num_gradient_updates`` (mu) inner updates reuse the same rollouts

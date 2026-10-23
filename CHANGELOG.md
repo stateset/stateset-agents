@@ -491,6 +491,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `SingleTurnGRPOTrainer` now raises when its scheduler cannot be built, as
   `MultiTurnGRPOTrainer` does, instead of logging at DEBUG and training at a
   constant rate.
+- **`train_with_gepo` no longer dies on a batch without a valid group.**
+  `GEPOTrainer.train_step` returned only `policy_loss`/`average_reward` when
+  every prompt produced fewer than two responses, and the entry point's log
+  line then raised `KeyError: 'gepo_coefficient_mean'`; the step now reports
+  every key an update step does (`optimizer_updates` 0, coefficient mean 1).
+  `GEPOConfig` and `VAPOConfig` reject a `group_size` below 2 with a
+  `ConfigurationError` (both drop groups smaller than two, so such a run
+  trained on nothing).
 - Trainer step goldens are portable across environments: an environment
   fingerprint selects strict comparison where the goldens were captured and
   magnitude-scaled tolerances elsewhere; VAPO's value-head dropout and AdamW's
