@@ -10,10 +10,12 @@ import pytest
 
 torch = pytest.importorskip("torch")
 
+from stateset_agents.training.config import TrainingConfig  # noqa: E402
 from stateset_agents.training.spine import (  # noqa: E402
     NONFINITE_GRAD_POLICIES,
     STEP_COUNTERS,
     OptimizerStep,
+    nonfinite_grad_settings,
 )
 
 
@@ -378,3 +380,22 @@ def test_grad_scaler_overflow_with_one_optimizer_uses_scaler_step() -> None:
     assert scaler.get_scale() < 64.0
     assert _same(before, _state([module]))
     assert schedulers[0].last_epoch == 0
+
+
+def test_nonfinite_grad_settings_read_the_training_config() -> None:
+    assert nonfinite_grad_settings(TrainingConfig(report_to="none")) == {
+        "nonfinite_grad_policy": "raise",
+        "max_consecutive_nonfinite_skips": 3,
+    }
+    config = TrainingConfig(
+        report_to="none",
+        nonfinite_grad_policy="skip",
+        max_consecutive_nonfinite_skips=5,
+    )
+    assert nonfinite_grad_settings(config) == {
+        "nonfinite_grad_policy": "skip",
+        "max_consecutive_nonfinite_skips": 5,
+    }
+    assert nonfinite_grad_settings(object())["nonfinite_grad_policy"] == "raise"
+    with pytest.raises(ValueError, match="nonfinite_grad_policy"):
+        nonfinite_grad_settings(SimpleNamespace(nonfinite_grad_policy="ignore"))

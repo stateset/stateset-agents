@@ -22,6 +22,7 @@ from .update import (
     NonfiniteGradPolicy,
     OptimizerStep,
     StepCounter,
+    nonfinite_grad_settings,
 )
 
 __all__ = [
@@ -30,4 +31,5 @@ __all__ = [
     "NonfiniteGradPolicy",
     "OptimizerStep",
     "StepCounter",
+    "nonfinite_grad_settings",
 ]

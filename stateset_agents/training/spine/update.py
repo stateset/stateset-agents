@@ -42,6 +42,26 @@ STEP_COUNTERS: tuple[str, ...] = get_args(StepCounter)
 NONFINITE_GRAD_POLICIES: tuple[str, ...] = get_args(NonfiniteGradPolicy)
 
 
+def nonfinite_grad_settings(config: Any) -> dict[str, Any]:
+    """:class:`OptimizerStep` keyword arguments for a trainer config's policy.
+
+    Reads ``nonfinite_grad_policy`` and ``max_consecutive_nonfinite_skips``
+    (``TrainingConfig`` fields; their defaults when a config lacks them).
+    """
+    policy = getattr(config, "nonfinite_grad_policy", "raise")
+    if policy not in NONFINITE_GRAD_POLICIES:
+        raise ValueError(
+            "nonfinite_grad_policy must be one of "
+            f"{NONFINITE_GRAD_POLICIES}, got {policy!r}"
+        )
+    return {
+        "nonfinite_grad_policy": policy,
+        "max_consecutive_nonfinite_skips": int(
+            getattr(config, "max_consecutive_nonfinite_skips", 3)
+        ),
+    }
+
+
 class OptimizerStep:
     """Validate, clip and commit one update across one or more optimizers.
 
@@ -343,4 +363,5 @@ __all__ = [
     "NonfiniteGradPolicy",
     "OptimizerStep",
     "StepCounter",
+    "nonfinite_grad_settings",
 ]

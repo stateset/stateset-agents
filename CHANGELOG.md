@@ -35,6 +35,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   whose total norm overflows still raises that `RuntimeError`. Either way the
   weights, optimizer and scheduler stay untouched, as before.
 
+### Fixed
+
+- **DAPO, GEPO and VAPO no longer step on non-finite gradients.** Each inner
+  update now commits through the spine's `OptimizerStep`
+  (`counter="train_steps"`): with the default `nonfinite_grad_policy="raise"`
+  a NaN/Inf gradient raises `ValueError("<trainer> gradients must be finite")`
+  with the weights, optimizer and LR-scheduler state untouched; with
+  `nonfinite_grad_policy="skip"` that pass is discarded and logged (naming the
+  non-finite parameters) and training continues, aborting after
+  `max_consecutive_nonfinite_skips` consecutive skips. Previously the bad
+  gradient was clipped and stepped, turning the weights and AdamW state into
+  NaN. A VAPO pass whose actor or critic gradient is non-finite skips both
+  optimizers, and VAPO's value warmup follows the same policy. `train_step`
+  metrics gain `optimizer_updates` (committed passes). A skipped pass, or a
+  DAPO pass with no response tokens, no longer advances the LR scheduler;
+  `global_step` still counts `train_step` calls. Finite updates are
+  numerically unchanged (step goldens).
+
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
 ### Added
