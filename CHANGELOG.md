@@ -490,8 +490,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   one) the spine `OptimizerStep` pushes the policy weights into the engine
   (`VLLMEngineMixin.sync_vllm_weights`, honouring `config.rollout_sync`);
   before, vLLM kept sampling from the starting weights for the whole run.
-  A failed sync logs a warning, marks the engine stale
-  (`vllm_weights_stale`) and training continues. `DAPOTrainer` with
+  A sync that fails with an engine error (runtime, I/O, missing
+  `sync_weights`, weight-name or layout mismatch) logs a warning, marks the
+  engine stale (`vllm_weights_stale`) and training continues; any other
+  exception is a bug and propagates. `DAPOTrainer` with
   `use_vllm=True` now builds its engine: its gate read
   `VLLM_BACKEND_AVAILABLE`, which only the setup it guarded sets, so DAPO
   always generated with HuggingFace.

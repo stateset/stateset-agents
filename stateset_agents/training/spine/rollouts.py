@@ -19,9 +19,21 @@ import logging
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from typing import Any, TypeVar
 
+from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+
 logger = logging.getLogger(__name__)
 
 _Item = TypeVar("_Item")
+
+#: Engine failures a weight sync survives (the engine is marked stale): the
+#: engine's runtime/I-O errors, a missing ``sync_weights`` (TypeError) and
+#: weight-name or layout mismatches (KeyError, AttributeError, ValueError).
+#: Anything else is a bug in the sync path and propagates.
+_WEIGHT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    *INFERENCE_EXCEPTIONS,
+    KeyError,
+    AttributeError,
+)
 
 
 class PromptGroupRollouts:
@@ -197,8 +209,8 @@ class VLLMEngineMixin:
                 raise TypeError(f"{type(generator).__name__} has no sync_weights")
             sync(model)
         except (
-            Exception
-        ) as error:  # noqa: BLE001 - a stale engine must not stop training
+            _WEIGHT_SYNC_EXCEPTIONS
+        ) as error:  # a stale engine must not stop training
             self.vllm_weights_stale = True
             logger.warning(
                 "%s: vLLM weight sync failed; rollouts lag the policy: %s",

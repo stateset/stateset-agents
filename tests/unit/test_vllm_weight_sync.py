@@ -129,3 +129,32 @@ async def test_dapo_falls_back_without_a_vllm_backend(monkeypatch, caplog) -> No
     assert trainer.vllm_generator is None
     assert "HuggingFace fallback" in caplog.text
     assert await trainer.initialize_vllm() is False
+
+
+@pytest.mark.asyncio
+async def test_an_unexpected_sync_error_is_not_swallowed() -> None:
+    """Only engine failures (runtime, I/O, layout and lookup errors) leave the
+    engine stale; anything else is a bug and propagates."""
+
+    class BrokenEngine(FakeEngine):
+        def sync_weights(self, model: Any) -> None:
+            raise ZeroDivisionError("bug in the sync path")
+
+    trainer = _dapo(num_gradient_updates=1)
+    _attach(trainer, BrokenEngine())
+    with pytest.raises(ZeroDivisionError):
+        await trainer.train_step(["q"])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error", [RuntimeError, OSError, KeyError, ValueError])
+async def test_engine_failures_leave_the_engine_stale(error: type) -> None:
+    class FailingEngine(FakeEngine):
+        def sync_weights(self, model: Any) -> None:
+            raise error("engine")
+
+    trainer = _dapo(num_gradient_updates=1)
+    _attach(trainer, FailingEngine())
+    metrics = await trainer.train_step(["q"])
+    assert metrics["optimizer_updates"] == 1.0
+    assert trainer.last_rollout_sync is False and trainer.vllm_weights_stale
