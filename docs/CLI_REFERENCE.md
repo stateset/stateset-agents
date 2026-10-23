@@ -95,6 +95,38 @@ refused. Exit codes: 0 for passing checks, 1 for failed checks with a report,
 2 for invalid inputs or execution setup errors. See [REWARD_AUDIT.md](REWARD_AUDIT.md)
 for the suite schema, custom factories, and limitations.
 
+### `stateset-agents preference`
+
+Train a policy on preference data (DPO, conservative DPO, IPO, SimPO, KTO,
+ORPO) or a Bradley-Terry reward model (`--method rm`). Provisional; see
+[PREFERENCE_TRAINING.md](PREFERENCE_TRAINING.md).
+
+```bash
+# Validate data, split and settings without loading a model (torch-free)
+stateset-agents preference --train-data pairs.jsonl --validation-fraction 0.05 --dry-run
+# DPO with a LoRA adapter (the reference is the adapter-disabled policy)
+stateset-agents preference --method dpo --model Qwen/Qwen3.5-0.8B \
+  --train-data pairs.jsonl --validation-fraction 0.05 --lora --output-dir outputs/dpo
+# Reward model with explicit held-out data
+stateset-agents preference --method rm --model Qwen/Qwen3.5-0.8B \
+  --train-data pairs.jsonl --eval-data heldout.jsonl --output-dir outputs/rm
+```
+
+Options: `--train-data` (required JSONL), `--model` (Hugging Face id or local
+directory; required unless `--dry-run`), `--method`
+(`dpo`/`ipo`/`simpo`/`kto`/`orpo`/`rm`, default `dpo`), `--eval-data`
+(must not share prompts, groups or sources with the training data) or
+`--validation-fraction` (prompt-disjoint held-out groups), `--output-dir`
+(final checkpoint in `<dir>/final` plus a metrics JSON), `--config` (JSON
+object of `PreferenceConfig`/`RewardModelConfig` fields; unknown keys are
+refused; flags override it), `--model-revision`, `--beta`, `--learning-rate`,
+`--epochs`, `--max-steps`, `--batch-size`, `--gradient-accumulation-steps`,
+`--max-length`, `--max-prompt-length`, `--label-smoothing`, `--simpo-gamma`,
+`--lora/--no-lora`, `--precompute-reference/--no-precompute-reference`,
+`--seed`, `--device`, `--dry-run`. Policy-only flags are refused with
+`--method rm`. Prints a JSON plan (dry run) or report; exits 2 on invalid
+data or settings.
+
 ### `stateset-agents provider-canary`
 
 Run read-only live authentication, SDK compatibility, and cleanup checks for
