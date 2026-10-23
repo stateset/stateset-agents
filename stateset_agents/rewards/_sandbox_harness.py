@@ -106,7 +106,9 @@ def run_function_tests(
 ) -> None:  # pragma: no cover - child
     namespace: dict[str, Any] = {"__name__": "__candidate__"}
     try:
-        exec(code, namespace)
+        # Running the candidate is this child's purpose: it executes only in
+        # the rlimited ``python -I -S`` subprocess code_verifier starts.
+        exec(code, namespace)  # nosec: B102
         function = namespace.get(entry_point)
         if not callable(function):
             raise NameError(f"no callable named {entry_point}")
@@ -132,7 +134,7 @@ def run_program_tests(
         sys.stdin, sys.stdout = stdin, sink
         status = "ok"
         try:
-            exec(code, {"__name__": "__main__"})
+            exec(code, {"__name__": "__main__"})  # nosec: B102 - sandbox child
         except SystemExit as stop:
             if stop.code not in (None, 0):
                 status = "exit_nonzero"
