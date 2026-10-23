@@ -143,8 +143,12 @@ async def test_fallback_reward_flags_the_judge_failure_it_falls_back_from():
 
 
 async def test_composite_with_no_scored_component_raises():
-    with pytest.raises(RewardUnavailableError, match="every reward function failed"):
+    with pytest.raises(RewardUnavailableError, match="unavailable"):
         await CompositeReward([Boom()]).compute_reward(TURNS)
+    renormalizing = CompositeReward([Boom()])
+    renormalizing.outage_policy = "renormalize"
+    with pytest.raises(RewardUnavailableError, match="every reward function failed"):
+        await renormalizing.compute_reward(TURNS)
     with pytest.raises(ValueError, match="no reward functions"):
         await CompositeReward([]).compute_reward(TURNS)
 
@@ -168,7 +172,7 @@ async def test_an_all_failed_composite_is_flagged_and_never_trained_on():
     reward = CompositeReward([Boom()])
     environment = ConversationEnvironment([scenario], max_turns=2, reward_fn=reward)
     trajectory = await environment.run_episode(_replies("hello", "sure"), scenario)
-    assert "every reward function failed" in trajectory.metadata["reward_error"]
+    assert "unavailable" in trajectory.metadata["reward_error"]
 
     trainer = MultiTurnGRPOTrainer(
         agent=SimpleNamespace(generate_response=_replies(*["ok"] * 8)),
@@ -301,6 +305,11 @@ async def test_composite_reraises_programming_errors(error):
 
 async def test_composite_redistributes_only_an_unavailable_component():
     composite = CompositeReward([Buggy(RewardUnavailableError("judge 503")), Half()])
+    # By default an outage makes the whole composite unavailable...
+    with pytest.raises(RewardUnavailableError, match="judge 503"):
+        await composite.compute_reward(TURNS)
+    # ...and renormalizing over the survivors is an explicit opt-in.
+    composite.outage_policy = "renormalize"
     result = await composite.compute_reward(TURNS)
     assert result.metadata["failed_components"] == ["buggy"]
     assert result.score == pytest.approx(1.0)  # Half's 0.5 x the whole weight 2
@@ -407,6 +416,9 @@ async def test_nsr_outage_is_unavailable_by_default_and_redistributed():
     with pytest.raises(RewardUnavailableError, match="nsr unreachable"):
         await nsr.compute_reward(_verdict_turns("Decision: approve"), {})
     composite = CompositeReward([nsr, Half()])
+    with pytest.raises(RewardUnavailableError, match="nsr unreachable"):
+        await composite.compute_reward(_verdict_turns("Decision: approve"), {})
+    composite.outage_policy = "renormalize"
     result = await composite.compute_reward(_verdict_turns("Decision: approve"), {})
     assert result.metadata["failed_components"] == ["NSRVerifierReward"]
 

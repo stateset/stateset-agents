@@ -395,3 +395,96 @@ def test_per_step_rewards_replay_identically_and_state_is_json(attach):
         "tool",
         "assistant",
     ]
+
+
+# --- an unanswered episode earns nothing (round 5) ---------------------------
+
+#: The right answer stated beside another call, every turn: the episode runs
+#: out of budget and never gives a final answer.
+ANSWER_AND_CALL = "The answer is 84. " + CALL
+
+
+@pytest.mark.parametrize("attach", [True, False])
+def test_an_episode_that_ran_out_of_budget_earns_nothing(attach):
+    """docs/TOOL_USE_RL.md: an episode that ran out of budget earns nothing,
+    even when its last turn states the right answer next to a call; on the
+    environment path and the trainer path alike."""
+    from stateset_agents.core.reward_context import score_trajectory
+
+    verifier = MathAnswerVerifier()
+    env = _environment(reward_fn=verifier if attach else None)
+    trajectory = asyncio.run(
+        env.run_episode(_scripted([ANSWER_AND_CALL] * 3), SCENARIO)
+    )
+    assert trajectory.final_state["termination"] == "budget_exhausted"
+    assert trajectory.final_state["final_answer"] is None
+    if attach:
+        assert trajectory.total_reward == 0.0
+    total = asyncio.run(score_episode(trajectory, verifier, env, SCENARIO))
+    assert total == 0.0
+    assert asyncio.run(score_trajectory(MathAnswerVerifier(), trajectory)) == 0.0
+
+
+def test_an_episode_cut_off_by_max_turns_earns_nothing():
+    env = _environment(max_tool_calls=5, max_turns=2)
+    trajectory = asyncio.run(
+        env.run_episode(_scripted([ANSWER_AND_CALL] * 2), SCENARIO)
+    )
+    assert trajectory.final_state["termination"] == "max_turns"
+    total = asyncio.run(score_episode(trajectory, MathAnswerVerifier(), env, SCENARIO))
+    assert total == 0.0
+
+
+def test_the_code_verifier_also_needs_a_final_answer():
+    from stateset_agents.rewards import code_verifier
+    from stateset_agents.rewards.code_verifier import SandboxedCodeVerifier
+
+    if not code_verifier.sandbox_available():
+        pytest.skip("the sandbox needs POSIX rlimits")
+    code = "```python\ndef double(n):\n    return 2 * n\n```\n"
+    scenario = {
+        "id": "code",
+        "question": "Write double(n).",
+        "tests": [{"args": [2], "expected": 4}],
+        "entry_point": "double",
+    }
+    env = ToolUseEnvironment([scenario], [calculator_tool()], max_tool_calls=1)
+    exhausted = asyncio.run(env.run_episode(_scripted([code + CALL] * 2), scenario))
+    assert exhausted.final_state["termination"] == "budget_exhausted"
+    verifier = SandboxedCodeVerifier()
+    assert asyncio.run(score_episode(exhausted, verifier, env, scenario)) == 0.0
+    answered = asyncio.run(env.run_episode(_scripted([code]), scenario))
+    assert asyncio.run(score_episode(answered, verifier, env, scenario)) == 1.0
+
+
+def test_verifiers_without_episode_state_still_score_replies():
+    """Single-reply paths carry no termination; nothing changes for them."""
+    from stateset_agents.core.reward_context import score_response
+
+    score = asyncio.run(
+        score_response(MathAnswerVerifier(), "What is 12*7?", "\\boxed{84}", SCENARIO)
+    )
+    assert score == 1.0
+
+
+# --- executed calls feed TaskOutcomeReward (round 5) --------------------------
+
+
+@pytest.mark.parametrize("attach", [True, False])
+def test_executed_tool_calls_are_recorded_for_outcome_rewards(attach):
+    from stateset_agents.rewards.task_outcome import TaskOutcomeReward
+
+    scenario = {
+        **SCENARIO,
+        "expected_response": "The answer is 84.",
+        "expected_tool_calls": [{"tool": "calculator", "args": {"expression": "12*7"}}],
+    }
+    reward = TaskOutcomeReward()
+    env = _environment(reward_fn=reward if attach else None)
+    replies = ["<tool_call>{oops</tool_call>", CALL, "The answer is 84."]
+    trajectory = asyncio.run(env.run_episode(_scripted(replies), scenario))
+    # The malformed call never executed, so only the calculator call counts.
+    assert trajectory.final_state["executed_tool_calls"] == [
+        {"tool": "calculator", "args": {"expression": "12*7"}}
+    ]
+    assert asyncio.run(score_episode(trajectory, reward, env, scenario)) == 1.0

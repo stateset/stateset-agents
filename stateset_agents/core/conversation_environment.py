@@ -16,6 +16,7 @@ from .environment_base import (
     Environment,
     EnvironmentState,
     EpisodeStatus,
+    _context_keys,
     _Episode,
 )
 from .reward import RewardFunction
@@ -71,6 +72,13 @@ class ConversationEnvironment(Environment):
     (default ``True``) — an assistant reply containing a farewell
     (:data:`FAREWELL_PHRASES`, matched as whole words). Scripted scenarios
     never end early on a farewell: the script defines the episode length.
+
+    Randomness (the scenario when ``reset()`` gets none, and unscripted user
+    replies) comes from the environment's own ``random.Random(seed)``
+    (``seed=`` keyword), never the global ``random`` module. The policy's
+    context is an allowlist (the conversation, its topic, goal and persona,
+    and the scenario's descriptive keys); reference data never reaches it,
+    and ``visible_context_keys=`` opts extra keys in explicitly.
     """
 
     # An untyped reward function (no ``reward_type``) judges the whole
@@ -88,7 +96,12 @@ class ConversationEnvironment(Environment):
         end_on_farewell: bool = True,
         **kwargs: Any,
     ) -> None:
+        self.seed: int | None = kwargs.pop("seed", None)
+        self.visible_context_keys = _context_keys(
+            kwargs.pop("visible_context_keys", None)
+        )
         super().__init__(max_turns, reward_fn, **kwargs)
+        self._rng = random.Random(self.seed)
         self.scenarios = scenarios
         self.persona = persona
         self.system_prompt = system_prompt
@@ -111,7 +124,7 @@ class ConversationEnvironment(Environment):
                 raise ValueError(f"Unknown scenario_id: {scenario_id}")
 
         if scenario is None:
-            scenario = random.choice(self.scenarios) if self.scenarios else {}
+            scenario = self._rng.choice(self.scenarios) if self.scenarios else {}
         self.current_scenario = scenario
         episode_id = str(uuid.uuid4())
         scenario_conv_id = None
@@ -311,7 +324,7 @@ class ConversationEnvironment(Environment):
                 "Thank you, that's helpful.",
             ],
         )
-        response_content = random.choice(user_responses)
+        response_content = self._rng.choice(user_responses)
         return ConversationTurn(
             role="user",
             content=response_content,
@@ -382,4 +395,6 @@ class ConversationEnvironment(Environment):
             system_prompt=self.system_prompt,
             end_on_farewell=self.end_on_farewell,
             timeout_seconds=self.timeout_seconds,
+            seed=self.seed,
+            visible_context_keys=self.visible_context_keys,
         )

@@ -15,7 +15,12 @@ evaluated:
   rational points for rational functions (pure Python, no dependencies), and
   through ``sympy.simplify`` on trees built node by node (never parsed from
   text) when the answer uses functions such as ``sqrt`` and sympy is
-  installed.
+  installed. The sympy tree obeys the same size limits as exact evaluation
+  (``x^(9^9)`` is refused, not built), and the simplification runs in a
+  separate worker process with a hard timeout (:data:`SYMPY_TIMEOUT_SECONDS`;
+  the worker is killed and replaced when it runs over), so no answer can stall
+  the trainer. A timeout decides nothing (``None``), which a verifier scores
+  as not equivalent.
 
 :func:`normalize_answer_text` rewrites the common LaTeX answer forms
 (``\\frac{3}{4}``, ``\\sqrt{2}``, ``2 \\cdot 3``, ``x^{2}``) into the plain syntax
@@ -26,16 +31,30 @@ the parser reads. The calculator tool of
 
 from __future__ import annotations
 
+import atexit
+import functools
+import importlib.util
+import json
+import logging
+import os
+import queue
 import random
 import re
+import subprocess
+import sys
+import threading
+from collections.abc import Iterable
 from decimal import Decimal, InvalidOperation
 from fractions import Fraction
-from typing import Any
+from typing import IO, Any
+
+logger = logging.getLogger(__name__)
 
 __all__ = [
     "MAX_EXPRESSION_CHARS",
     "Node",
     "ExpressionError",
+    "SYMPY_TIMEOUT_SECONDS",
     "equivalent",
     "evaluate_expression",
     "free_symbols",
@@ -64,6 +83,11 @@ _PROBE_POINTS = 8
 _MAX_DECIMAL_EXPONENT = 400
 #: Longer text is not normalized (it cannot parse as an expression anyway).
 _MAX_NORMALIZE_CHARS = 4 * MAX_EXPRESSION_CHARS
+#: Seconds sympy may spend deciding one equivalence before its worker process
+#: is killed; a timeout decides nothing.
+SYMPY_TIMEOUT_SECONDS = 5.0
+#: Seconds a fresh sympy worker may take to start (importing sympy is slow).
+_WORKER_START_SECONDS = 120.0
 
 FUNCTIONS = frozenset({"sqrt", "sin", "cos", "tan", "log", "ln", "exp", "abs"})
 CONSTANTS = frozenset({"pi"})
@@ -372,7 +396,13 @@ def _agree_at_points(first: Node, second: Node, names: list[str]) -> bool | None
 
 
 def _to_sympy(node: Node, sympy: Any) -> Any:
-    """Build a sympy expression node by node: model text is never parsed."""
+    """Build a sympy expression node by node: model text is never parsed.
+
+    The exact path's limits apply here too: a power whose exponent is a
+    number above ``_MAX_EXPONENT`` (``x^(9^9)``, ``sqrt(x)+9^9^8``), or whose
+    exact value would exceed ``_MAX_BITS``, raises :class:`ExpressionError`
+    instead of building a multi-million-digit number.
+    """
     kind = node[0]
     if kind == "num":
         return sympy.Rational(node[1].numerator, node[1].denominator)
@@ -383,6 +413,8 @@ def _to_sympy(node: Node, sympy: Any) -> Any:
     if kind == "call":
         function = {"abs": sympy.Abs}.get(node[1]) or getattr(sympy, node[1])
         return function(_to_sympy(node[2], sympy))
+    if kind == "pow":
+        return _sympy_power(node, sympy)
     left, right = _to_sympy(node[1], sympy), _to_sympy(node[2], sympy)
     if kind == "add":
         return left + right
@@ -390,32 +422,260 @@ def _to_sympy(node: Node, sympy: Any) -> Any:
         return left - right
     if kind == "mul":
         return left * right
-    if kind == "div":
-        return left / right
-    return left**right
+    return left / right
 
 
-def _sympy_equivalent(first: Node, second: Node) -> bool | None:
-    try:
-        import sympy
-    except ImportError:
-        return None
+def _sympy_power(node: Node, sympy: Any) -> Any:
+    """A bounded power: the exact path's exponent and size limits."""
+    value = _checked_power(node)
+    if value is not None:
+        return sympy.Rational(value.numerator, value.denominator)
+    return _to_sympy(node[1], sympy) ** _to_sympy(node[2], sympy)
+
+
+def _checked_power(node: Node) -> Fraction | None:
+    """The exact value of a numeric integer power, ``None`` for any other
+    allowed power; :class:`ExpressionError` beyond the exact path's limits."""
+    exponent = rational_value(node[2])
+    if exponent is None and _exact_only(node[2]) and not free_symbols(node[2]):
+        # A numeric exponent too large to evaluate exactly (9^9^8).
+        raise ExpressionError("exponent exceeds the exact-arithmetic limits")
+    if exponent is not None and abs(exponent) > _MAX_EXPONENT:
+        raise ExpressionError("exponent exceeds the exact-arithmetic limits")
+    base = rational_value(node[1])
+    if base is not None and exponent is not None and exponent.denominator == 1:
+        return _bounded(_power(base, exponent))
+    return None
+
+
+def _sympy_difference_is_zero(first: Node, second: Node, sympy: Any) -> bool | None:
+    """``simplify(first - second) == 0`` in this process (the worker's job)."""
     try:
         difference = sympy.simplify(_to_sympy(first, sympy) - _to_sympy(second, sympy))
-    except (TypeError, ValueError, ZeroDivisionError, RecursionError):
+    except (
+        ExpressionError,
+        TypeError,
+        ValueError,
+        ZeroDivisionError,
+        RecursionError,
+        OverflowError,
+        MemoryError,
+    ):
         return None
     # Anything sympy cannot reduce to zero is treated as different.
     return bool(difference == 0)
 
 
-def equivalent(first: Node, second: Node) -> bool | None:
+# --- the sympy worker -----------------------------------------------------------
+
+
+def _encode_node(node: Node) -> list[Any]:
+    """A JSON form of a tree (numbers as exact numerator/denominator)."""
+    kind = node[0]
+    if kind == "num":
+        value = Fraction(node[1])
+        return ["num", value.numerator, value.denominator]
+    if kind == "sym":
+        return ["sym", node[1]]
+    if kind == "call":
+        return ["call", node[1], _encode_node(node[2])]
+    return [kind, *(_encode_node(child) for child in node[1:])]
+
+
+def _decode_node(data: Any) -> Node:
+    kind = data[0]
+    if kind == "num":
+        return ("num", Fraction(int(data[1]), int(data[2])))
+    if kind == "sym":
+        return ("sym", str(data[1]))
+    if kind == "call":
+        return ("call", str(data[1]), _decode_node(data[2]))
+    return (str(kind), *(_decode_node(child) for child in data[1:]))
+
+
+def _serve_sympy(
+    requests: Iterable[str] | None = None, out: IO[str] | None = None
+) -> None:  # pragma: no cover - runs in the worker process
+    """The worker's loop: one JSON request per line, one JSON verdict per line."""
+    requests = sys.stdin if requests is None else requests
+    out = sys.stdout if out is None else out
+    try:
+        import sympy
+    except ImportError:
+        out.write(json.dumps({"ready": False}) + "\n")
+        out.flush()
+        return
+    out.write(json.dumps({"ready": True}) + "\n")
+    out.flush()
+    for line in requests:
+        # An unexpected error (a sympy bug on odd input) ends this worker; the
+        # parent reads that as "undecided" and starts a fresh one next time.
+        request = json.loads(line)
+        verdict = _sympy_difference_is_zero(
+            _decode_node(request["a"]), _decode_node(request["b"]), sympy
+        )
+        out.write(json.dumps({"equal": verdict}) + "\n")
+        out.flush()
+
+
+#: Loads this file as a module in the worker (no package import needed).
+_WORKER_BOOT = (
+    "import importlib.util, sys\n"
+    "spec = importlib.util.spec_from_file_location('_stateset_sympy_worker', "
+    "sys.argv[1])\n"
+    "module = importlib.util.module_from_spec(spec)\n"
+    "sys.modules[spec.name] = module\n"
+    "spec.loader.exec_module(module)\n"
+    "module._serve_sympy()\n"
+)
+
+
+def _pump(stream: IO[str], lines: queue.Queue[str | None]) -> None:
+    for line in stream:
+        lines.put(line)
+    lines.put(None)
+
+
+class _SympyWorker:
+    """One long-lived ``python`` process that runs ``sympy.simplify``.
+
+    A call that runs over its timeout kills the process (a hard stop, on
+    Linux and Windows alike) and the next call starts a fresh one. Calls are
+    serialized; the startup time is not counted against a call's timeout.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._process: subprocess.Popen[str] | None = None
+        self._lines: queue.Queue[str | None] = queue.Queue()
+        self._owner = os.getpid()
+        self._unavailable = False
+
+    def ask(self, first: Node, second: Node, timeout: float) -> bool | None:
+        request = json.dumps({"a": _encode_node(first), "b": _encode_node(second)})
+        with self._lock:
+            if not self._ensure_started():
+                return None
+            process = self._process
+            assert process is not None and process.stdin is not None
+            timed_out = False
+            try:
+                process.stdin.write(request + "\n")
+                process.stdin.flush()
+                line = self._lines.get(timeout=max(float(timeout), 0.0))
+            except queue.Empty:
+                line, timed_out = None, True
+            except OSError:  # the worker already exited (a broken pipe)
+                line = None
+            if line is None:
+                logger.warning(
+                    "the sympy worker %s; it was stopped and the answer scores "
+                    "as not equivalent",
+                    f"ran over {timeout:.1f}s" if timed_out else "exited",
+                )
+                self._stop()
+                return None
+            verdict = json.loads(line).get("equal")
+            return verdict if isinstance(verdict, bool) else None
+
+    def _ensure_started(self) -> bool:
+        if self._owner != os.getpid():
+            # A forked child must not share its parent's pipes.
+            self._process, self._lines, self._owner = None, queue.Queue(), os.getpid()
+        if self._process is not None and self._process.poll() is None:
+            return True
+        if self._unavailable:
+            return False
+        try:
+            process = subprocess.Popen(
+                [sys.executable, "-c", _WORKER_BOOT, os.path.abspath(__file__)],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                text=True,
+                encoding="utf-8",
+            )
+        except OSError as error:
+            logger.warning("cannot start the sympy worker: %s", error)
+            self._unavailable = True
+            return False
+        lines: queue.Queue[str | None] = queue.Queue()
+        assert process.stdout is not None
+        threading.Thread(
+            target=_pump, args=(process.stdout, lines), daemon=True
+        ).start()
+        try:
+            ready = lines.get(timeout=_WORKER_START_SECONDS)
+        except queue.Empty:
+            ready = None
+        if ready is None or not json.loads(ready).get("ready"):
+            process.kill()
+            process.wait()
+            logger.warning(
+                "the sympy worker did not start; symbolic answers "
+                "with functions cannot be checked"
+            )
+            self._unavailable = ready is not None  # sympy missing: stay off
+            return False
+        self._process, self._lines = process, lines
+        return True
+
+    def _stop(self) -> None:
+        process, self._process = self._process, None
+        if process is not None:
+            process.kill()
+            process.wait()
+
+    def close(self) -> None:
+        with self._lock:
+            self._stop()
+
+
+_WORKER = _SympyWorker()
+atexit.register(_WORKER.close)
+
+
+@functools.lru_cache(maxsize=1)
+def _sympy_installed() -> bool:
+    return importlib.util.find_spec("sympy") is not None
+
+
+def _sympy_equivalent(
+    first: Node, second: Node, timeout: float | None = None
+) -> bool | None:
+    if not _sympy_installed():
+        return None
+    try:
+        # Refuse oversized trees here, before any process is involved.
+        _check_sympy_bounds(first)
+        _check_sympy_bounds(second)
+    except ExpressionError:
+        return None
+    limit = SYMPY_TIMEOUT_SECONDS if timeout is None else float(timeout)
+    return _WORKER.ask(first, second, limit)
+
+
+def _check_sympy_bounds(node: Node) -> None:
+    """Raise :class:`ExpressionError` where :func:`_to_sympy` would refuse."""
+    if node[0] == "pow":
+        _checked_power(node)
+    for child in node[1:]:
+        if isinstance(child, tuple):
+            _check_sympy_bounds(child)
+
+
+def equivalent(
+    first: Node, second: Node, *, timeout: float | None = None
+) -> bool | None:
     """Whether two parsed expressions are equal as numbers or functions.
 
     Exact for numbers; for symbols and the four operations with integer
     powers, exact evaluation at fixed pseudo-random rational points (same
     answer with or without sympy); with function calls, ``sympy.simplify``
-    when sympy is installed. ``None`` when it cannot be decided (functions
-    without sympy, or answers undefined almost everywhere).
+    in the worker process, killed after ``timeout`` seconds (default
+    :data:`SYMPY_TIMEOUT_SECONDS`). ``None`` when it cannot be decided
+    (functions without sympy, a timeout, sizes beyond the limits, or answers
+    undefined almost everywhere).
     """
     names = sorted(free_symbols(first) | free_symbols(second))
     if _exact_only(first) and _exact_only(second):
@@ -427,7 +687,7 @@ def equivalent(first: Node, second: Node) -> bool | None:
             decided = _agree_at_points(first, second, names)
             if decided is not None:
                 return decided
-    return _sympy_equivalent(first, second)
+    return _sympy_equivalent(first, second, timeout)
 
 
 # --- LaTeX answer normalization ----------------------------------------------

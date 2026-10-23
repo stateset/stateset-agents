@@ -450,7 +450,6 @@ class TestRewardErrorHandling:
             async def compute_reward(self, turns, context):
                 raise RewardUnavailableError("Simulated outage")
 
-        # Composite should handle failure gracefully
         components = [
             HelpfulnessReward(weight=0.5),
             FailingReward(weight=0.5, name="failing"),
@@ -463,9 +462,16 @@ class TestRewardErrorHandling:
             ConversationTurn(role="assistant", content="Response"),
         ]
 
-        # Should still return a result despite one component failing
+        # By default the outage makes the whole composite unavailable, so the
+        # episode is dropped rather than scored by the survivor alone.
+        with pytest.raises(RewardUnavailableError, match="Simulated outage"):
+            await composite.compute_reward(turns, {})
+
+        # Renormalizing over the survivors is an explicit opt-in.
+        composite.outage_policy = "renormalize"
         result = await composite.compute_reward(turns, {})
         assert isinstance(result, RewardResult)
+        assert result.metadata["failed_components"] == ["failing"]
 
 
 if __name__ == "__main__":

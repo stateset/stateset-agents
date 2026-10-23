@@ -39,10 +39,14 @@ the shared reward path) and declares `supports_concurrent_episodes`.
 
 **Scenarios.** Each scenario has a question (`question`, `prompt`,
 `user_query`, `query` or `task`) and the verifier's reference data:
-`ground_truth` for math, `tests` (and `entry_point`) for code. Reference keys
-(`ground_truth`, `answer`, `tests`, `hidden_tests`, `solution`, `reference`,
-`expected_response`, `expected_tool_calls`) are removed from the context the
-policy receives (`observation_context`); the reward still sees them.
+`ground_truth` for math, `tests` (and `entry_point`) for code. The context
+the policy receives (`observation_context`) is an **allowlist**: the question,
+the tool log, and the scenario's descriptive keys (`id`, `question`,
+`prompt`, `description`, `entry_point`, `examples`...). Every other key, any
+reference data whatever it is called (`ground_truth`, `tests`,
+`expected_answer`, `correct_facts`, `label`...), stays reward-side only;
+`visible_context_keys=` opts extra keys in explicitly. The reward still sees
+everything (`tests/unit/test_policy_context_allowlist.py`).
 
 **Tools.** A `ToolSpec` is a name, a JSON-schema `parameters` object, a
 deterministic Python callable and a per-call `timeout_seconds`.
@@ -83,17 +87,26 @@ one unit of `max_tool_calls`; a call attempted once the budget is spent gets
 a `budget_exhausted` observation and ends the episode without an answer
 (`FAILED`). `max_turns` (default `max_tool_calls + 1`) also bounds it
 (`TIMEOUT`). The final state records the executed evidence: `tool_log`
-(every call with its arguments, result or error type), `tool_calls_used`,
-`final_answer` and `termination` (`final_answer`, `budget_exhausted`,
-`max_turns`).
+(every call with its arguments, result or error type),
+`executed_tool_calls` (`{"tool": name, "args": arguments}` for each call that
+ran and returned a result, the trace `TaskOutcomeReward` compares with a
+scenario's `expected_tool_calls`), `tool_calls_used`, `final_answer` and
+`termination` (`final_answer`, `budget_exhausted`, `max_turns`).
 
 **Rewards.** The environment adds no reward of its own. Attach the verifier
 to the environment or hand it to the trainer; both settle the episode
 through `reward_context.score_episode`, with the same total either way
 (`tests/unit/test_tool_use_environment.py`). Use SPARSE rewards (both
 verifiers are): applied once to the finished conversation, they read the
-newest assistant turn, so tool calls are never scored as answers, and an
-episode that ran out of budget (last assistant turn a call) earns nothing.
+newest assistant turn, so tool calls are never scored as answers. Both
+verifiers also score 0 unless the episode state says it ended with a final
+answer (`termination == "final_answer"`), so an episode that ran out of
+budget or hit `max_turns` earns nothing even when its last turn states the
+right answer beside another call; the termination travels with the
+trajectory's final state, so the environment and trainer paths agree
+(`test_an_episode_that_ran_out_of_budget_earns_nothing`,
+`test_the_code_verifier_also_needs_a_final_answer` in
+`tests/unit/test_tool_use_environment.py`).
 
 **Prompts.** With a chat template the `tool` role is rendered by the
 template. Without one, `MultiTurnAgent` renders tool turns as
@@ -164,7 +177,16 @@ markup is removed first.
 reuses): several different committed answers, an alternative offered
 ("42, or maybe 41", "41 or 42", "41 or \boxed{42}", `\boxed{\text{42 or 43}}`),
 a tentative answer ("Maybe 42."), an admission of not knowing, a listed
-candidate ("Paris, 42, Glacier") and a negated answer all score 0.
+candidate ("Paris, 42, Glacier") and a negated answer all score 0. So does a
+box or statement that hedges inside itself: a list (`\boxed{42, 43}`, unless
+the reference is itself a list), `\pm`, `\approx`, "or" inside a box
+(`\boxed{42 \text{ or } 43}`), "about", "or so". And so does an answer
+contradicted after it is given: a retraction ("Actually, I think I made an
+error") or a different value offered for it ("it is 43", "it could also be
+43", "some textbooks say 43"); a restatement of the same value ("It is 6 *
+7.") or a check ("42 / 7 = 6") keeps the credit. A committed answer may carry
+a unit or restate itself ("42 dollars", "42 (or 42.0)"); text after its
+number that adds another number makes it no answer.
 
 **Equivalence** (`stateset_agents.core.math_expressions`): model text never
 reaches `eval`, `sympify` or `parse_expr`; a small recursive-descent parser
@@ -176,7 +198,11 @@ reference (`3x^2 + 2`) is matched by any equivalent expression: exact
 evaluation at eight fixed pseudo-random rational points for rational
 functions (pure Python, the same result with or without sympy), and
 `sympy.simplify` on node-built expressions for `sqrt`, `sin`... when sympy is
-installed. This cannot tell `(x+1)^2` from `x^2+2x+1`: pass `symbolic=False`
+installed. The sympy tree obeys the exact path's limits (`x^(9^9)` and
+`sqrt(x)+9^9^8` are refused, not built), `sympy.simplify` runs in a worker
+process killed after `sympy_timeout` seconds (default 5; a timeout scores 0
+and a fresh worker takes over), and `compute_reward` verifies in a worker
+thread, so no answer stalls the trainer's event loop. This cannot tell `(x+1)^2` from `x^2+2x+1`: pass `symbolic=False`
 for expand/factor/simplify tasks to require the same written form. A
 reference that is not math is compared as normalized text (it must be boxed
 or stated).
@@ -260,7 +286,10 @@ negations, truncation) and add:
   uncertainty, a negated box, a wrong box "corrected" later, a dump of fifty
   numbers, a near miss, the question's arithmetic boxed unevaluated, the
   answer only inside a tool call or JSON action, an empty box, a hedge inside
-  `\text{}`, a Python injection in a box;
+  `\text{}`, a Python injection in a box, and hedges inside or after a box:
+  `\boxed{L, D}`, `\boxed{L \pm 1}`, `\boxed{L \text{ or } D}`,
+  `\boxed{\approx L}`, a box retracted afterwards, a box followed by "(it
+  could also be D)", and "The answer is L. Some textbooks say D.";
 - **code**: hard-coding the visible example, printing its output, exiting
   before or inside the tests, `__eq__` always true, patching `json.dumps`,
   forging records with the recovered nonce, reading a tests file, an
@@ -275,8 +304,10 @@ verifier: it rightly credits a correct answer however it is worded.
 
 **Result:** for seeds 0 and 1, on both paths (reward attached to the
 environment and held by the trainer), every adversary scores at least 0.01
-below the reference. In numbers: 788 math adversary episodes (50 families
-over four cases) all score 0 against a reference of 1 (smallest gap 1.0), and
+below the reference. In numbers: 900 math adversary episodes (57 families
+over four cases) all score 0 against a reference of 1 (smallest gap 1.0; the
+seven hedge-and-contradiction families tied the reference at 1.0 before they
+were fixed), and
 292 code adversary episodes (48 families over two tasks) leave a smallest gap
 of 0.33, from a plausible wrong program (`first_two_only`, which sums only two
 of three inputs and passes two of three hidden tests); every exploit family

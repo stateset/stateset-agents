@@ -130,8 +130,8 @@ async def test_total_does_not_depend_on_where_the_reward_is_attached(case):
 
 async def test_environment_rewards_add_to_the_reward_functions_score():
     totals = await _all_paths("cumulative-task", attach_to_environment=False)
-    # 2 actions: 2 x 5 progress + 5 completion bonus, plus TaskCompletion 1.0
-    assert totals["training"] == pytest.approx(16.0)
+    # 2 actions: 2 x 1/3 progress + 1/3 completion bonus, plus TaskCompletion 1.0
+    assert totals["training"] == pytest.approx(2.0)
 
 
 async def test_immediate_reward_contributes_its_mean_not_its_sum():
@@ -153,7 +153,7 @@ async def test_periodic_eval_reports_the_training_reward_not_a_rescore():
     # The regression: eval re-scored the whole episode with scenario-only
     # context, so TaskEnvironment + TaskCompletionReward evaluated at 0.0.
     totals = await _all_paths("cumulative-task", attach_to_environment=True)
-    assert totals["periodic_eval"] == pytest.approx(16.0)
+    assert totals["periodic_eval"] == pytest.approx(2.0)
 
 
 # --- Batched rollouts ---------------------------------------------------------
@@ -322,8 +322,8 @@ async def test_stateful_step_rewards_replay_on_the_state_they_saw():
         )
 
     attached, held = await _both_attachments(make_env, TaskProgress, task_agent, TASK)
-    # 15 environment reward + mean progress over the steps (0.5, 1.0, 1.0)
-    assert attached == pytest.approx(15.0 + 2.5 / 3)
+    # 1.0 environment reward + mean progress over the steps (0.5, 1.0, 1.0)
+    assert attached == pytest.approx(1.0 + 2.5 / 3)
     assert held == pytest.approx(attached)
 
 

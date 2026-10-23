@@ -155,7 +155,7 @@ class TestMetricsCollectorThreadSafety:
                         labels={"thread": str(thread_id)},
                     )
                     metrics_collector.record_metric(metric)
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - thread errors go to the assert
                 errors.append(e)
 
         threads = []
@@ -185,7 +185,7 @@ class TestMetricsCollectorThreadSafety:
                     )
                     metrics_collector.record_metric(metric)
                     metrics_collector.get_metrics_summary()
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - thread errors go to the assert
                 errors.append(e)
 
         threads = []
@@ -438,6 +438,9 @@ class TestCompositeRewardEdgeCases:
         composite = CompositeReward(reward_functions=[failing_reward])
 
         # A valid-looking 0.0 would be trained on; failing is the contract.
+        with pytest.raises(RewardUnavailableError, match="Simulated outage"):
+            await composite.compute_reward([])
+        composite.outage_policy = "renormalize"
         with pytest.raises(
             RewardUnavailableError, match="every reward function failed"
         ):

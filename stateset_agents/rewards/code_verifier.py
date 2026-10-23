@@ -65,6 +65,7 @@ from stateset_agents.core.reward_base import RewardFunction, RewardResult, Rewar
 from stateset_agents.core.reward_context import (
     RewardUnavailableError,
     assistant_turns_in_scope,
+    unanswered_termination,
 )
 from stateset_agents.core.tool_calls import strip_tool_calls
 
@@ -481,9 +482,15 @@ class SandboxedCodeVerifier(RewardFunction):
     crashes, exceeds a limit or times out fails the tests it did not finish;
     that is a score, not an outage.
 
+    An episode whose context records that it ended without a final answer
+    (``termination`` other than ``"final_answer"``, e.g. a spent tool budget)
+    scores 0 without running anything.
+
     Resource isolation only: see the module docs before running untrusted
     code, and prefer a container sandbox for it.
     """
+
+    score_range = (0.0, 1.0)
 
     def __init__(
         self,
@@ -526,6 +533,18 @@ class SandboxedCodeVerifier(RewardFunction):
         self, turns: list[Any], context: dict[str, Any] | None = None
     ) -> RewardResult:
         mode, tests, entry_point = self._test_spec(context)
+        termination = unanswered_termination(context)
+        if termination is not None:
+            return RewardResult(
+                score=0.0,
+                breakdown={"pass_rate": 0.0},
+                metadata={
+                    "passed": 0,
+                    "total": len(tests),
+                    "status": "no_final_answer",
+                    "termination": termination,
+                },
+            )
         replies = assistant_turns_in_scope(turns, context)
         reply = replies[-1].content if replies else ""
         code = extract_code(reply if isinstance(reply, str) else "")

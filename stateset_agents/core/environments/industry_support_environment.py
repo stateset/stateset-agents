@@ -632,7 +632,7 @@ class IndustrySupportEnvironment(Environment):
                 raise ValueError(
                     "Lookup required; one resolution, then finish with empty args"
                 )
-        except (TypeError, ValueError) as error:
+        except ValueError as error:
             ctx["violations"] += 1
             observation = {"error": str(error)}
         done = finished or state.turn_count >= self.max_turns
