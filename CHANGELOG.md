@@ -24,6 +24,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - The studio's run details, metrics, run comparison, launch review and
   resource summaries are pure renderers in `stateset_agents.tui_views`
   (testable without a `Studio`); rendered frames are unchanged.
+- **Heuristic factories gate style on task grounding.** Every style
+  heuristic in the shipped `create_*_reward` factories (core, multi-objective
+  and Kimi) and in the `cli train` demo reward is wrapped in
+  `core.grounding.GroundedReward` / `GroundedComponent`: it pays
+  `grounding * (0.5 + 0.5 * style)`, where grounding measures engagement with
+  the request and specific content beyond boilerplate (the boilerplate lexicon
+  covers every keyword the heuristics reward). Outcome terms (correctness,
+  completed actions, safety) are not gated. Starters and presets log that
+  heuristic factories are shaping signals and recommend outcome, verifier or
+  judge rewards. New: `TaskGroundingReward`, `RewardFunction.shaping`.
+- Keyword components (`EmpathyRewardComponent`,
+  `ActionOrientedRewardComponent`) match whole words and score
+  `1 - 0.5 ** distinct_keywords` instead of saturating at two substring hits;
+  the domain rewards (`CustomerServiceReward`, ...) match whole words too.
+- **Only outages are absorbed.** `CompositeReward` and
+  `MultiObjectiveRewardFunction` redistribute a component's weight only for
+  the new `RewardUnavailableError` (judge, network or verifier outage;
+  `JudgeUnavailableError` is one); other exceptions and non-finite component
+  scores propagate. A composite whose every component was unavailable raises
+  `RewardUnavailableError`.
+- **Network rewards fail closed by default.** `NSRVerifierConfig.error_score`
+  defaults to `None` and `RulerRewardFunction`/`RulerConfig` default to
+  `fallback_enabled=False`: an outage raises `RewardUnavailableError`. An
+  opted-in fallback score carries `metadata["reward_fallback"]`, which
+  composites, environments and `score_episode` copy to the trajectory.
+- `CorrectnessReward` scores a correct answer 1.0 (was 0.5, the same as its
+  "no ground truth" neutral); unlabeled results stay 0.5 and are flagged
+  `metadata["no_ground_truth"]`. It also accepts a bare ground-truth label.
+- One result parser (`reward_context.reward_score`) everywhere: `None`, strings
+  and other unknown results raise `TypeError` in environments too (they scored
+  0.0 there); NumPy/0-d tensor scalars and the `total_reward` alias are scores.
+  Dict turns are normalized (`reward_context.normalize_turns`).
+- Single-turn trainers (`SingleTurnGRPOTrainer`, `GSPOTrainer`,
+  `GSPOTokenTrainer`, the TRL reward bridge) pass the standard reward context
+  (`build_reward_context` / `response_reward_context`).
+- A `ConversationEnvironment` subclass's `_calculate_step_reward` always
+  counts as the environment's own step reward, also when a reward function is
+  attached. Environments record each step's scoring state in
+  `trajectory.state_history`, and per-step rewards see the system prompt.
 
 ### Fixed
 
@@ -110,6 +149,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   own process group and hidden console. A supervisor interrupted by Ctrl+C or
   `SystemExit` now stops the worker it owns and records a `supervisor_stopped`
   failure instead of leaving no outcome.
+- Shipped heuristic factories preferred a canned template to a correct,
+  specific answer (0.91 vs 0.128 for the multi-objective customer service
+  reward; the template won in 9 of 12 offline factories, including every
+  starter's default). A template or keyword stuffing now scores strictly below
+  a task-specific answer in every factory across several scenarios.
+- A bug in a composite component (e.g. `CorrectnessReward` raising
+  `AttributeError` on a string ground truth) was silently reweighted away, so
+  the tutoring reward scored correct and wrong answers alike.
+- An unrecognized reward result became 0.0 in environments while the trainer
+  path raised; `ComputationalGRPOEngine`'s dict turns made role-based rewards
+  score 0 (HelpfulnessReward always 0.0).
+- `NSRVerifierReward` and `RulerRewardFunction` turned outages into a neutral
+  or heuristic score by default.
+- Single-turn trainers never lifted scenario labels into the reward context
+  (`CorrectnessReward` scored "4" and "5" alike).
+- An episode's total depended on where the reward was attached for
+  environment subclasses with their own step reward (1.0 vs -1.0) and for
+  stateful per-step rewards replayed on the final state (15.83 vs 16.0).
+- Evaluation reported a 0% success rate for perfectly correct
+  `CorrectnessReward` runs.
 
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
@@ -136,46 +195,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   maintained duplicate and are unchanged.
 
 ### Changed
-
-- **Heuristic factories gate style on task grounding.** Every style
-  heuristic in the shipped `create_*_reward` factories (core, multi-objective
-  and Kimi) and in the `cli train` demo reward is wrapped in
-  `core.grounding.GroundedReward` / `GroundedComponent`: it pays
-  `grounding * (0.5 + 0.5 * style)`, where grounding measures engagement with
-  the request and specific content beyond boilerplate (the boilerplate lexicon
-  covers every keyword the heuristics reward). Outcome terms (correctness,
-  completed actions, safety) are not gated. Starters and presets log that
-  heuristic factories are shaping signals and recommend outcome, verifier or
-  judge rewards. New: `TaskGroundingReward`, `RewardFunction.shaping`.
-- Keyword components (`EmpathyRewardComponent`,
-  `ActionOrientedRewardComponent`) match whole words and score
-  `1 - 0.5 ** distinct_keywords` instead of saturating at two substring hits;
-  the domain rewards (`CustomerServiceReward`, ...) match whole words too.
-- **Only outages are absorbed.** `CompositeReward` and
-  `MultiObjectiveRewardFunction` redistribute a component's weight only for
-  the new `RewardUnavailableError` (judge, network or verifier outage;
-  `JudgeUnavailableError` is one); other exceptions and non-finite component
-  scores propagate. A composite whose every component was unavailable raises
-  `RewardUnavailableError`.
-- **Network rewards fail closed by default.** `NSRVerifierConfig.error_score`
-  defaults to `None` and `RulerRewardFunction`/`RulerConfig` default to
-  `fallback_enabled=False`: an outage raises `RewardUnavailableError`. An
-  opted-in fallback score carries `metadata["reward_fallback"]`, which
-  composites, environments and `score_episode` copy to the trajectory.
-- `CorrectnessReward` scores a correct answer 1.0 (was 0.5, the same as its
-  "no ground truth" neutral); unlabeled results stay 0.5 and are flagged
-  `metadata["no_ground_truth"]`. It also accepts a bare ground-truth label.
-- One result parser (`reward_context.reward_score`) everywhere: `None`, strings
-  and other unknown results raise `TypeError` in environments too (they scored
-  0.0 there); NumPy/0-d tensor scalars and the `total_reward` alias are scores.
-  Dict turns are normalized (`reward_context.normalize_turns`).
-- Single-turn trainers (`SingleTurnGRPOTrainer`, `GSPOTrainer`,
-  `GSPOTokenTrainer`, the TRL reward bridge) pass the standard reward context
-  (`build_reward_context` / `response_reward_context`).
-- A `ConversationEnvironment` subclass's `_calculate_step_reward` always
-  counts as the environment's own step reward, also when a reward function is
-  attached. Environments record each step's scoring state in
-  `trajectory.state_history`, and per-step rewards see the system prompt.
 
 - mypy checks the bodies of untyped functions across the whole package
   (`check_untyped_defs`), guarded by the mypy ratchet test.
@@ -259,27 +278,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   longer starts raw threads or uses result queues.
 
 ### Fixed
-
-- Shipped heuristic factories preferred a canned template to a correct,
-  specific answer (0.91 vs 0.128 for the multi-objective customer service
-  reward; the template won in 9 of 12 offline factories, including every
-  starter's default). A template or keyword stuffing now scores strictly below
-  a task-specific answer in every factory across several scenarios.
-- A bug in a composite component (e.g. `CorrectnessReward` raising
-  `AttributeError` on a string ground truth) was silently reweighted away, so
-  the tutoring reward scored correct and wrong answers alike.
-- An unrecognized reward result became 0.0 in environments while the trainer
-  path raised; `ComputationalGRPOEngine`'s dict turns made role-based rewards
-  score 0 (HelpfulnessReward always 0.0).
-- `NSRVerifierReward` and `RulerRewardFunction` turned outages into a neutral
-  or heuristic score by default.
-- Single-turn trainers never lifted scenario labels into the reward context
-  (`CorrectnessReward` scored "4" and "5" alike).
-- An episode's total depended on where the reward was attached for
-  environment subclasses with their own step reward (1.0 vs -1.0) and for
-  stateful per-step rewards replayed on the final state (15.83 vs 16.0).
-- Evaluation reported a 0% success rate for perfectly correct
-  `CorrectnessReward` runs.
 
 - Periodic evaluation re-scored episodes with a scenario-only, whole-episode
   call and dropped environment step rewards, so best-checkpoint selection and
