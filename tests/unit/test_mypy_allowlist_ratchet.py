@@ -13,7 +13,7 @@ from pathlib import Path
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
 # Floor = the full packaged source, including native studies and durable workers.
-ALLOWLIST_FLOOR = 473
+ALLOWLIST_FLOOR = 474
 
 
 def _allowlisted_files() -> list[str]:
