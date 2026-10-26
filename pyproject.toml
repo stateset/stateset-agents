@@ -437,7 +437,9 @@ omit = [
 # Hosted Python 3.11 CI measured 78.47% after spine S9, distillation/online
 # DPO, decontamination and the errors/layering pass (2026-10-23, head
 # af310130); floor 78.
-fail_under = 78
+# Hosted Python 3.11 CI measured 79.52% after rewards round 6 (2026-10-26, head
+# 3739b5b4); floor 79.
+fail_under = 79
 precision = 2
 show_missing = true
 skip_covered = false

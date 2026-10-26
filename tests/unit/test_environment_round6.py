@@ -683,10 +683,22 @@ ADVERSARIAL_RESULTS: list[Any] = [
     [[["\\u0000", '"']]] * 800,
     [1.5] * 3000,
 ]
+# Short ids: pytest exports each test id in PYTEST_CURRENT_TEST, and Windows
+# rejects environment values longer than 32767 characters.
+ADVERSARIAL_IDS = [
+    "quotes",
+    "backslashes",
+    "quote-backslash",
+    "cjk-emoji",
+    "control-chars",
+    "nested-dict",
+    "nested-lists",
+    "float-list",
+]
 
 
 @pytest.mark.parametrize("bound", [128, 300, 2000])
-@pytest.mark.parametrize("result", ADVERSARIAL_RESULTS)
+@pytest.mark.parametrize("result", ADVERSARIAL_RESULTS, ids=ADVERSARIAL_IDS)
 def test_truncated_results_respect_the_bound_and_stay_json(bound, result):
     observation = ToolObservation("big", "c", True, result)
     content = observation.content(bound)
@@ -724,7 +736,9 @@ def test_small_observations_are_unchanged_and_tiny_bounds_rejected():
         )
 
 
-@pytest.mark.parametrize("result", ['"\\' * 3000, "中文😀" * 2000])
+@pytest.mark.parametrize(
+    "result", ['"\\' * 3000, "中文😀" * 2000], ids=["quote-backslash", "cjk-emoji"]
+)
 def test_environment_observations_respect_max_observation_chars(result):
     spec = ToolSpec("big", {"type": "object"}, lambda: result)
     scenario = {"id": "q", "question": "q?"}
