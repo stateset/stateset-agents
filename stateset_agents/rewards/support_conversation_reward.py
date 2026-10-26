@@ -29,10 +29,25 @@ by penalties that close the exploits a per-turn keyword reward leaves open:
   penalized. The heuristic is deliberately lexical: it cannot tell a good
   answer from a bad one, it only catches replies that ignore the follow-up.
 
+**Task grounding.** The default per-turn composite scores style: keywords
+(``must_acknowledge`` terms, politeness, action and timeframe phrases) and
+length. On its own it pays a canned template, keyword stuffing or the
+customer's message echoed back as much as a reply that answers the customer,
+so it is gated on task grounding (:mod:`stateset_agents.core.grounding`) the
+way the shipped factories gate their style terms: a turn's base is
+``grounding * (STYLE_SHARE + (1 - STYLE_SHARE) * composite)``, where
+``grounding`` reads the reply against the customer messages before it and the
+scenario's request fields, with its ``policy_facts`` and ``product`` (and any
+system or tool turns) as evidence. A failed safety check still zeroes the turn.
+A custom composite (a judge, a test double) is gated only when it is a
+``SupportRewardComposite``, declares ``shaping = True`` or ``ground=True`` is
+passed.
+
 The episode reward is the mean adjusted turn score, in ``[0, 1]``. The result
 breakdown carries per-component means (``repetition_penalty_mean``,
-``placeholder_rate``, ``must_avoid_rate``, ``unresponsive_rate``, ...) so a
-training loop can log drift toward any of these hacks.
+``placeholder_rate``, ``must_avoid_rate``, ``unresponsive_rate``,
+``grounding_mean`` when gated, ...) so a training loop can log drift toward
+any of these hacks. ``base_mean`` is the composite's own (ungated) mean.
 """
 
 from __future__ import annotations
@@ -42,6 +57,7 @@ import re
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
+from stateset_agents.core.grounding import STYLE_SHARE, task_grounding
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
 from stateset_agents.core.trajectory import ConversationTurn
 
@@ -134,6 +150,23 @@ def _phrases(raw: Any) -> list[str]:
     return [str(p) for p in raw]
 
 
+#: Scenario fields holding facts the agent was given: grounding evidence, so a
+#: policy window or amount restated from them is supported, not invented.
+_EVIDENCE_FIELDS = ("policy_facts", "product")
+
+
+def _scores_style(composite: Any) -> bool:
+    """Whether a per-turn composite scores style (keywords, length) rather
+    than an outcome: the built-in ``SupportRewardComposite`` or a reward that
+    declares ``shaping = True``."""
+    from stateset_agents.data.customer_support_bench import SupportRewardComposite
+
+    return (
+        isinstance(composite, SupportRewardComposite)
+        or getattr(composite, "shaping", False) is True
+    )
+
+
 class SupportConversationReward(RewardFunction):
     """Episode-level support reward with anti-hacking penalties.
 
@@ -147,6 +180,11 @@ class SupportConversationReward(RewardFunction):
         responsiveness_min_new_words: New content words a follow-up needs
             before the responsiveness check applies.
         stopwords: Words ignored by the responsiveness heuristic.
+        ground: Gate the per-turn composite on task grounding. ``None`` (the
+            default) gates a style composite (see :func:`_scores_style`): the
+            default ``SupportRewardComposite`` is gated.
+        grounding_share: ``STYLE_SHARE``; the share of a grounded turn's base
+            that the composite cannot take away.
     """
 
     name = "support_conversation_v2"
@@ -161,6 +199,8 @@ class SupportConversationReward(RewardFunction):
         responsiveness_factor: float = 0.8,
         responsiveness_min_new_words: int = 3,
         stopwords: Iterable[str] = DEFAULT_STOPWORDS,
+        ground: bool | None = None,
+        grounding_share: float = STYLE_SHARE,
     ) -> None:
         super().__init__(weight=weight, reward_type=RewardType.SPARSE, name=self.name)
         if not 0.0 <= repetition_threshold < 1.0:
@@ -168,6 +208,7 @@ class SupportConversationReward(RewardFunction):
         for label, factor in (
             ("placeholder_factor", placeholder_factor),
             ("responsiveness_factor", responsiveness_factor),
+            ("grounding_share", grounding_share),
         ):
             if not 0.0 <= factor <= 1.0:
                 raise ValueError(f"{label} must be in [0, 1]")
@@ -180,6 +221,8 @@ class SupportConversationReward(RewardFunction):
 
             composite = SupportRewardComposite()
         self.composite = composite
+        self.ground = _scores_style(composite) if ground is None else bool(ground)
+        self.grounding_share = float(grounding_share)
         self.repetition_threshold = float(repetition_threshold)
         self.placeholder_factor = float(placeholder_factor)
         self.must_avoid_zeroes_episode = bool(must_avoid_zeroes_episode)
@@ -202,6 +245,33 @@ class SupportConversationReward(RewardFunction):
     ) -> float:
         """Per-turn base score from the composite (v2: unchanged)."""
         return score
+
+    def _turn_grounding(
+        self,
+        before: Sequence[ConversationTurn],
+        turn: ConversationTurn,
+        context: Mapping[str, Any],
+    ) -> float:
+        """Grounding of ``turn`` in the customer messages and request fields
+        before it, with the scenario's facts and earlier system or tool turns
+        as evidence (earlier assistant turns are neither)."""
+        facts = [
+            ConversationTurn(role="system", content=text)
+            for field in _EVIDENCE_FIELDS
+            for text in _phrases(context.get(field))
+        ]
+        history = [t for t in before if t.role != "assistant"]
+        return task_grounding([*facts, *history, turn], context)
+
+    def _gate(
+        self, base: float, breakdown: Mapping[str, Any], grounding: float
+    ) -> float:
+        """``grounding * (share + (1 - share) * base)``; a failed safety check
+        (``safety_score`` 0) is an outcome and still zeroes the turn."""
+        if float(breakdown.get("safety_score", 1.0)) <= 0.0:
+            return 0.0
+        share = self.grounding_share
+        return grounding * (share + (1.0 - share) * base)
 
     def _extra_turn_factors(
         self,
@@ -228,7 +298,10 @@ class SupportConversationReward(RewardFunction):
             )
             for t in turns
         ]
-        dialogue = [t for t in normalized if t.role in ("user", "assistant")]
+        positions = [
+            i for i, t in enumerate(normalized) if t.role in ("user", "assistant")
+        ]
+        dialogue = [normalized[i] for i in positions]
         findings = detect_findings(
             JudgeItem(
                 id=str(ctx.get("id", "episode")),
@@ -249,6 +322,7 @@ class SupportConversationReward(RewardFunction):
         base_sums: dict[str, float] = {}
         earlier: list[str] = []
         extra_flags: dict[str, list[float]] = {}
+        groundings: list[float] = []
         earlier_words: set[str] = set()
         latest_user: str | None = None
 
@@ -273,6 +347,12 @@ class SupportConversationReward(RewardFunction):
                 if isinstance(value, (int, float)) and not isinstance(value, bool):
                     base_sums[key] = base_sums.get(key, 0.0) + float(value)
             score = base
+            if self.ground:
+                grounding = self._turn_grounding(
+                    normalized[: positions[index]], turn, ctx
+                )
+                groundings.append(grounding)
+                score = self._gate(base, result_breakdown, grounding)
 
             similarity = max(
                 (turn_similarity(text, prior) for prior in earlier),
@@ -315,7 +395,37 @@ class SupportConversationReward(RewardFunction):
 
         if not adjusted:
             return RewardResult(score=0.0, breakdown={"no_assistant_turn": 1.0})
+        return self._episode_result(
+            adjusted,
+            bases,
+            base_sums,
+            similarities,
+            repetition_penalties,
+            {
+                "placeholder": placeholder_flags,
+                "unresponsive": unresponsive_flags,
+                **extra_flags,
+            },
+            groundings,
+            must_avoid_hits=must_avoid_hits,
+            checked=checked,
+        )
 
+    def _episode_result(
+        self,
+        adjusted: Sequence[float],
+        bases: Sequence[float],
+        base_sums: Mapping[str, float],
+        similarities: Sequence[float],
+        repetition_penalties: Sequence[float],
+        flags: Mapping[str, Sequence[float]],
+        groundings: Sequence[float],
+        *,
+        must_avoid_hits: int,
+        checked: int,
+    ) -> RewardResult:
+        """The episode score (mean adjusted turn, zeroed on a ``must_avoid``
+        hit) with its breakdown: per-turn means and ``<flag>_rate``s."""
         count = float(len(adjusted))
         turn_mean = sum(adjusted) / count
         zeroed = self.must_avoid_zeroes_episode and must_avoid_hits > 0
@@ -333,21 +443,23 @@ class SupportConversationReward(RewardFunction):
                 "max_similarity_mean": (
                     sum(similarities) / len(similarities) if similarities else 0.0
                 ),
-                "placeholder_rate": sum(placeholder_flags) / count,
                 "must_avoid_rate": 1.0 if must_avoid_hits else 0.0,
                 "must_avoid_hits": float(must_avoid_hits),
-                "unresponsive_rate": sum(unresponsive_flags) / count,
                 "responsiveness_checked": float(checked),
             }
         )
-        for name, flags in extra_flags.items():
-            breakdown[f"{name}_rate"] = sum(flags) / count
+        for name, values in flags.items():
+            breakdown[f"{name}_rate"] = sum(values) / count
+        if groundings:
+            breakdown["grounding_mean"] = sum(groundings) / len(groundings)
         explanation = (
             f"turns={len(adjusted)} base={breakdown['base_mean']:.3f} "
             f"adjusted={turn_mean:.3f} repetition={breakdown['repetition_penalty_mean']:.3f} "
             f"placeholders={breakdown['placeholder_rate']:.2f} "
             f"unresponsive={breakdown['unresponsive_rate']:.2f}"
         )
+        if groundings:
+            explanation += f" grounding={breakdown['grounding_mean']:.3f}"
         if zeroed:
             explanation += f" must_avoid_hits={must_avoid_hits} -> 0"
         return RewardResult(

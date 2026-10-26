@@ -94,11 +94,13 @@ async def test_llm_judge_reward_propagates_judge_failures():
 
 
 async def test_judge_component_failure_is_redistributed_not_scored_half():
+    # Renormalizing is an opt-in (round 6); by default the outage raises.
     reward = MultiObjectiveRewardFunction(
         [
             LLMJudgeRewardComponent(DownJudge(), weight=0.5),
             EmpathyRewardComponent(weight=0.5),
-        ]
+        ],
+        outage_policy="renormalize",
     )
     result = await reward.compute_reward(DICT_TURNS)
     assert result.metadata["failed_components"] == ["llm_judge"]
@@ -114,7 +116,8 @@ async def test_model_based_judge_failure_is_redistributed_not_scored_half():
         [
             ModelBasedRewardComponent(api_client=BadClient(), provider="generate"),
             EmpathyRewardComponent(weight=0.5),
-        ]
+        ],
+        outage_policy="renormalize",
     )
     result = await reward.compute_reward(DICT_TURNS)
     assert result.metadata["failed_components"] == ["model_judge"]
@@ -158,8 +161,11 @@ async def test_multi_objective_with_no_scored_component_raises():
         async def compute_score(self, turns, context=None):
             raise RewardUnavailableError("down")
 
-    with pytest.raises(RewardUnavailableError, match="every component failed"):
+    with pytest.raises(RewardUnavailableError, match="unavailable"):
         await MultiObjectiveRewardFunction([Down()]).compute_reward(DICT_TURNS)
+    renormalizing = MultiObjectiveRewardFunction([Down()], outage_policy="renormalize")
+    with pytest.raises(RewardUnavailableError, match="every component failed"):
+        await renormalizing.compute_reward(DICT_TURNS)
     with pytest.raises(ValueError, match="no components"):
         await MultiObjectiveRewardFunction([]).compute_reward(DICT_TURNS)
 
@@ -612,7 +618,7 @@ NOT_STRICT = [
     "-0.4",
     "Score: 0.9",
     'Score: {"score": 0.8}',
-    '```json\n{"score": 0.8}\n```',
+    # One fenced JSON verdict is accepted (round 6); see test_judge_round6.py.
     '{"score": 1.5}',
     '{"score": -0.1}',
     '{"score": "0.8"}',

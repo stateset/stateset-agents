@@ -27,7 +27,6 @@ from typing import Any
 
 import pytest
 
-import stateset_agents.rewards as rewards_package
 from stateset_agents.core.basic_rewards import (
     ConcisenessReward,
     HelpfulnessReward,
@@ -53,15 +52,19 @@ from stateset_agents.rewards.multi_objective_reward import (
 DEFAULT_RANGE = (0.0, 1.0)
 
 
+#: Reward classes live all over the package (core, rewards, data, evaluation,
+#: experimental); only ``training`` is out of scope (its trainers wrap rewards
+#: rather than ship them, and are covered by their own suites).
+_EXCLUDED_PACKAGE_PREFIX = "stateset_agents.training"
+
+
 def _reward_modules() -> list[ModuleType]:
-    modules = [
-        importlib.import_module("stateset_agents.core.reward"),
-        importlib.import_module("stateset_agents.core.grounding"),
-    ]
-    modules.append(rewards_package)
-    for info in pkgutil.iter_modules(
-        rewards_package.__path__, f"{rewards_package.__name__}."
-    ):
+    import stateset_agents as package
+
+    modules: list[ModuleType] = []
+    for info in pkgutil.walk_packages(package.__path__, f"{package.__name__}."):
+        if info.name.startswith(_EXCLUDED_PACKAGE_PREFIX):
+            continue
         try:
             modules.append(importlib.import_module(info.name))
         except ImportError:  # pragma: no cover - optional dependency missing
@@ -89,12 +92,15 @@ def _discover() -> tuple[dict[str, type], dict[str, Callable[..., Any]]]:
                     is_reward
                     and not inspect.isabstract(value)
                     and value.__module__.startswith("stateset_agents.")
+                    and not value.__module__.startswith(_EXCLUDED_PACKAGE_PREFIX)
                 ):
                     classes[_qualname(value)] = value
             elif inspect.isfunction(value) and re.fullmatch(
                 r"create_\w*reward", value.__name__
             ):
-                if value.__module__.startswith("stateset_agents."):
+                if value.__module__.startswith(
+                    "stateset_agents."
+                ) and not value.__module__.startswith(_EXCLUDED_PACKAGE_PREFIX):
                     factories[_qualname(value)] = value
     return classes, factories
 
@@ -171,6 +177,10 @@ SKIPPED: dict[str, str] = {
     ),
     "stateset_agents.rewards.llm_judge_adapter.create_rlaif_reward": (
         "builds a networked LLM judge client from provider credentials"
+    ),
+    "stateset_agents.experimental.bayesian_reward_model.BayesianRewardFunction": (
+        "Monte-Carlo dropout in predict_with_uncertainty is non-deterministic "
+        "by design; covered by its own experimental tests"
     ),
 }
 

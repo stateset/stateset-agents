@@ -29,8 +29,10 @@ MAX_BRANCHES = 40
 #: to 65; moving SingleTurnGRPOTrainer's loop onto the spine (one turn per
 #: method) to 64; splitting the dedicated entry points into setup and run
 #: (one W&B reporter) and the callback dispatchers into one guarded
-#: dispatcher to 62.
-CEILING = 62
+#: dispatcher to 62, and later quality work to 60. Round 6 split the
+#: multi-objective, symbolic-physics and answer-commitment reward bodies and
+#: added none, so the count stays 60.
+CEILING = 60
 
 _BRANCH_NODES = (
     ast.If,
@@ -112,6 +114,10 @@ def test_split_functions_stay_split() -> None:
         ("stateset_agents/tui.py", "refresh"),
         ("stateset_agents/tui.py", "lines"),
         ("stateset_agents/tui_views.py", "run_details_lines"),
+        # Round 6: split out of oversized compute_reward bodies.
+        ("stateset_agents/rewards/multi_objective_reward.py", "compute_reward"),
+        ("stateset_agents/rewards/symbolic_physics_reward.py", "compute_reward"),
+        ("stateset_agents/core/basic_rewards.py", "_has_competing_candidate"),
     ):
         assert key not in oversized, f"{key} is oversized again"
 

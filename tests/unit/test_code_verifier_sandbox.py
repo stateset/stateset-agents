@@ -235,25 +235,32 @@ def test_a_nonce_only_harness_is_forgeable(tmp_path):
 
 
 def test_infinite_loop_is_a_zero_score_not_an_outage(tmp_path):
+    """CPU time, not the wall clock, stops a busy loop: ``cpu_limit``."""
     loop = "def sum_of_squares(n):\n    while True:\n        pass"
     started = time.monotonic()
     result = _score(
-        loop, _verifier(limits=SandboxLimits(timeout_seconds=3, cpu_seconds=1))
+        loop, _verifier(limits=SandboxLimits(timeout_seconds=20, cpu_seconds=1))
     )
     assert result.score == 0.0
-    assert result.metadata["status"] in {"killed", "timeout"}
-    assert time.monotonic() - started < 10
+    assert result.metadata["status"] == "cpu_limit"
+    assert time.monotonic() - started < 15
     with pytest.raises(subprocess.TimeoutExpired):  # the naive verifier hangs
         _naive_passes(loop, tmp_path, timeout=3)
 
 
-def test_wall_clock_timeout_kills_a_sleeping_candidate():
+def test_wall_clock_backstop_kills_a_sleeping_candidate():
+    """A run that stalls without using CPU meets the wall-clock backstop; it
+    reports ``wall_timeout`` and the little CPU it used, so it is told apart
+    from a CPU-limit kill."""
     sleeper = "import time\ndef sum_of_squares(n):\n    time.sleep(30)"
     limits = SandboxLimits(timeout_seconds=1.5, cpu_seconds=5)
     started = time.monotonic()
     result = _score(sleeper, _verifier(limits=limits))
-    assert result.score == 0.0 and result.metadata["status"] == "timeout"
+    assert result.score == 0.0 and result.metadata["status"] == "wall_timeout"
     assert time.monotonic() - started < 8
+    if sys.platform.startswith("linux"):
+        assert result.metadata["cpu_seconds"] is not None
+        assert result.metadata["cpu_seconds"] < 1.0
 
 
 def test_partial_results_before_a_hang_still_count():
@@ -393,6 +400,227 @@ def test_program_tests_compare_stdout():
         "sys.stdin.buffer.read().split()))).encode())"
     )
     assert _score(buffered, verifier).score == 1.0
+
+
+# --- ordinary scripts are not false negatives (round 6) ---------------------
+
+PROGRAM_TESTS = [
+    {"stdin": "10 20\n", "expected_stdout": "30\n"},
+    {"stdin": "-5 5\n", "expected_stdout": "0\n"},
+    {"stdin": "100 1 7\n", "expected_stdout": "108\n"},
+]
+SUM_LINE = "print(sum(map(int, input().split())))"
+
+
+@pytest.mark.parametrize(
+    "code",
+    [
+        "print(sum(map(int, open(0).read().split())))",
+        "import os\nprint(sum(map(int, os.read(0, 1 << 16).split())))",
+        "import os, sys\nprint(sum(map(int, os.fdopen(sys.stdin.fileno()).read().split())))",
+        f"{SUM_LINE}\nexit()",
+        f"{SUM_LINE}\nexit(0)",
+        f"{SUM_LINE}\nquit()",
+        f"import os\nassert os.listdir('.') == []\n{SUM_LINE}",
+    ],
+    ids=["open0", "os_read0", "stdin_fileno", "exit", "exit0", "quit", "empty_cwd"],
+)
+def test_ordinary_program_idioms_pass(code):
+    """stdin is a real file on fd 0 and ``exit()``/``quit()`` exist, as under
+    a plain ``python``; the working directory stays empty."""
+    verifier = _verifier(tests=PROGRAM_TESTS, entry_point=None)
+    result = _score(code, verifier)
+    assert result.score == 1.0, result.metadata
+
+
+def test_a_program_exiting_with_an_error_still_fails():
+    verifier = _verifier(tests=PROGRAM_TESTS, entry_point=None)
+    assert _score(f"{SUM_LINE}\nexit(1)", verifier).score == 0.0
+    assert _score(f"{SUM_LINE}\nquit('error')", verifier).score == 0.0
+
+
+EXAMPLE_BLOCKS = {
+    "prints": "# Example usage\nprint(sum_of_squares(3))",
+    "reads_input": "# Example usage\nn = int(input('n: '))\nprint(sum_of_squares(n))",
+    "undefined_name": "# Example usage:\nprint(sum_of_squares(my_number))",
+    "main_guard_demo": (
+        "if __name__ == '__main__':\n    print(sum_of_squares(int(input())))"
+    ),
+    "exits": "print(sum_of_squares(3))\nexit()",
+    "wrong_example_assert": "assert sum_of_squares(3) == 15",
+}
+
+
+@pytest.mark.parametrize("name", sorted(EXAMPLE_BLOCKS))
+def test_an_example_block_after_the_solution_does_not_fail_it(name):
+    """Code after the entry point that fails at load (an example reading
+    ``input()``, an undefined name) is reported, and the function is tested."""
+    result = _score(f"{REFERENCE}\n\n{EXAMPLE_BLOCKS[name]}")
+    assert result.score == 1.0 and result.metadata["status"] == "ok", result.metadata
+
+
+def test_a_load_error_before_the_entry_point_exists_still_fails():
+    broken = f"print(undefined_name)\n{REFERENCE}"
+    result = _score(broken)
+    assert result.score == 0.0 and result.metadata["status"] == "load_error"
+    assert result.metadata["load_error"] == "NameError"
+    warned = _score(f"{REFERENCE}\nprint(undefined_name)")
+    assert warned.score == 1.0 and warned.metadata["load_warning"] == "NameError"
+
+
+# --- scores do not depend on load (round 6) -----------------------------------
+
+#: About 0.3 s of CPU per run on a laptop core: far below the CPU limit, while
+#: 46 at once need more than the wall clock below when they all run together.
+BUSY = textwrap.dedent("""
+    def sum_of_squares(n):
+        k = 0
+        for i in range(3_000_000):
+            k += i
+        return sum(i * i for i in range(1, n + 1))
+    """)
+
+
+def test_concurrent_identical_solutions_score_identically():
+    """46 identical correct solutions at once all score 1.0: CPU time decides
+    the score and at most ``sandbox_concurrency()`` sandboxes run together, so
+    the others wait (off the clock) instead of being starved past it."""
+    limits = SandboxLimits(timeout_seconds=2.5, cpu_seconds=3)
+    verifier = _verifier(tests=HIDDEN[:2], limits=limits)
+    turns = [ConversationTurn(role="assistant", content=f"```python\n{BUSY}\n```")]
+
+    async def main() -> list[Any]:
+        return await asyncio.gather(
+            *(verifier.compute_reward(turns, {}) for _ in range(46))
+        )
+
+    results = asyncio.run(main())
+    outcomes = sorted({(r.score, r.metadata["status"]) for r in results})
+    assert outcomes == [(1.0, "ok")]
+    assert code_verifier._SLOTS.active() == 0
+
+
+def _intervals(runs: list[Any]) -> list[tuple[float, float]]:
+    import json
+
+    return [tuple(json.loads(run.outcomes[0]["value"])) for run in runs]
+
+
+def _peak_overlap(intervals: list[tuple[float, float]]) -> int:
+    events = sorted(
+        [(start, 1) for start, _ in intervals] + [(end, -1) for _, end in intervals]
+    )
+    peak = running = 0
+    for _, step in events:
+        running += step
+        peak = max(peak, running)
+    return peak
+
+
+SLEEP_AND_REPORT = (
+    "import time\ndef f(n):\n    start = time.time()\n    time.sleep(0.4)\n"
+    "    return [start, time.time()]"
+)
+
+
+def _run_many(count: int, limits: SandboxLimits) -> list[Any]:
+    tests = normalize_tests([{"args": [1], "expected": None}])[1]
+
+    async def main() -> list[Any]:
+        return await asyncio.gather(
+            *(
+                run_sandboxed(
+                    SLEEP_AND_REPORT,
+                    tests,
+                    mode="function",
+                    entry_point="f",
+                    limits=limits,
+                )
+                for _ in range(count)
+            )
+        )
+
+    return asyncio.run(main())
+
+
+def test_at_most_the_configured_number_of_sandboxes_run_at_once():
+    code_verifier.set_sandbox_concurrency(2)
+    try:
+        assert code_verifier.sandbox_concurrency() == 2
+        runs = _run_many(6, SandboxLimits(timeout_seconds=10, cpu_seconds=2))
+    finally:
+        code_verifier.set_sandbox_concurrency(None)
+    assert [run.status for run in runs] == ["ok"] * 6
+    assert _peak_overlap(_intervals(runs)) <= 2
+
+
+def test_waiting_for_a_slot_does_not_count_against_the_wall_clock():
+    """Five 0.4 s runs one at a time take about 2 s, beyond the 1.5 s backstop;
+    each run's clock starts only once it holds a slot."""
+    code_verifier.set_sandbox_concurrency(1)
+    try:
+        runs = _run_many(5, SandboxLimits(timeout_seconds=1.5, cpu_seconds=2))
+    finally:
+        code_verifier.set_sandbox_concurrency(None)
+    assert [run.status for run in runs] == ["ok"] * 5
+    assert _peak_overlap(_intervals(runs)) == 1
+
+
+def test_cancelled_waiters_give_their_slots_back():
+    slots = code_verifier._SandboxSlots()
+    slots.set_limit(1)
+
+    async def main() -> None:
+        await slots.acquire()
+        queued = [asyncio.create_task(slots.acquire()) for _ in range(3)]
+        await asyncio.sleep(0)
+        queued[0].cancel()  # cancelled while waiting
+        slots.release()  # handed to queued[1] ...
+        queued[1].cancel()  # ... which is cancelled before it runs
+        for task in queued[:2]:
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        await queued[2]  # the slot reached the last waiter
+        assert slots.active() == 1
+        slots.release()
+        assert slots.active() == 0
+
+    asyncio.run(main())
+
+
+def test_sandbox_concurrency_configuration(monkeypatch):
+    monkeypatch.setenv(code_verifier.CONCURRENCY_ENV, "3")
+    assert code_verifier._default_concurrency() == 3
+    for bad in ("0", "-2", "many"):
+        monkeypatch.setenv(code_verifier.CONCURRENCY_ENV, bad)
+        with pytest.raises(ConfigurationError):
+            code_verifier._default_concurrency()
+    monkeypatch.delenv(code_verifier.CONCURRENCY_ENV)
+    assert code_verifier._default_concurrency() >= 1
+    for bad in (0, -1, 1.5, True):
+        with pytest.raises(ConfigurationError):
+            code_verifier.set_sandbox_concurrency(bad)
+
+
+# --- known limit: the candidate can read files on disk (round 6) --------------
+
+
+def test_reading_expected_outputs_from_a_dataset_on_disk_is_a_known_limit(tmp_path):
+    """Not defended, pinned so the docs stay honest: only the working directory
+    is empty. The candidate runs as the trainer's user and reads any file that
+    user can, such as the dataset holding the hidden tests."""
+    import json
+
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text(json.dumps(HIDDEN))
+    reader = textwrap.dedent(f"""
+        import json
+        def sum_of_squares(n):
+            with open({str(dataset)!r}) as handle:
+                tests = json.load(handle)
+            return next(t["expected"] for t in tests if t["args"] == [n])
+        """)
+    assert _score(reader).score == 1.0
 
 
 def test_prose_and_oversized_replies_never_start_a_process(monkeypatch):

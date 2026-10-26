@@ -8,8 +8,13 @@ parsed by :func:`stateset_agents.core.tool_calls.parse_tool_calls`:
   ``{"tool": ..., "args": ...}`` JSON action, or structured ``tool_calls``)
   runs each call through the :class:`~stateset_agents.core.tool_registry.ToolRegistry`
   and answers with one ``tool``-role turn per call. A malformed call gets a
-  structured ``malformed_call`` error observation, never a crash;
-* a turn without a tool call is the final answer and ends the episode.
+  structured ``malformed_call`` error observation, never a crash. Each
+  ``tool`` turn carries ``tool_call_id`` (in ``turn.metadata`` and in the
+  history the policy receives) and ``name``: a structured call's own ``id``
+  is kept, and only a call without one is numbered ``call_<n>``;
+* a turn without a tool call is the final answer and ends the episode. A
+  whole-reply JSON object that names no tool (``{"answer": "84"}``) is a
+  final answer too, not a call.
 
 Every attempted call, malformed or not, spends one unit of the
 ``max_tool_calls`` budget. A call attempted once the budget is spent gets a
@@ -60,6 +65,8 @@ from ..environment_base import (
     EnvironmentState,
     EpisodeStatus,
     _context_keys,
+    history_message,
+    turn_from_message,
 )
 from ..errors import ConfigurationError
 from ..reward_base import RewardFunction
@@ -71,6 +78,7 @@ from ..tool_calls import (
 )
 from ..tool_registry import (
     DEFAULT_MAX_OBSERVATION_CHARS,
+    MIN_OBSERVATION_CHARS,
     ToolObservation,
     ToolRegistry,
     ToolSpec,
@@ -108,6 +116,13 @@ def _question(scenario: dict[str, Any]) -> str:
     )
 
 
+def _fresh_call_id(used: set[Any], attempt: int) -> str:
+    """``call_<attempt>``, or the next ``call_<n>`` no call in the episode has."""
+    while f"call_{attempt}" in used:
+        attempt += 1
+    return f"call_{attempt}"
+
+
 def _executed_call(entry: dict[str, Any]) -> dict[str, Any] | None:
     """A tool-log entry as executed evidence, if the call ran and returned.
 
@@ -135,7 +150,9 @@ class ToolUseEnvironment(Environment):
         system_prompt: Overrides the generated tool instructions; a scenario's
             own ``system_prompt`` overrides both.
         json_actions: Also accept a whole-reply ``{"tool", "args"}`` action.
-        max_observation_chars: Truncate longer observations.
+        max_observation_chars: Truncate longer observations: an observation's
+            content never exceeds this many characters and stays valid JSON
+            (at least ``MIN_OBSERVATION_CHARS``, 128).
         seed: Seeds scenario selection when ``reset()`` gets no scenario.
         visible_context_keys: Extra state or scenario keys to show the policy
             (an explicit opt-in; reference data is hidden by default).
@@ -172,6 +189,10 @@ class ToolUseEnvironment(Environment):
         turns = int(max_turns) if max_turns is not None else int(max_tool_calls) + 1
         if turns < 1:
             raise ConfigurationError("max_turns must be at least 1")
+        if int(max_observation_chars) < MIN_OBSERVATION_CHARS:
+            raise ConfigurationError(
+                f"max_observation_chars must be at least {MIN_OBSERVATION_CHARS}"
+            )
         super().__init__(turns, reward_fn, timeout_seconds=timeout_seconds)
         for scenario in scenarios:
             _question(scenario)
@@ -246,10 +267,7 @@ class ToolUseEnvironment(Environment):
         context["executed_tool_calls"] = copy.deepcopy(
             context.get("executed_tool_calls", [])
         )
-        prior = [
-            ConversationTurn(role=m["role"], content=m["content"])
-            for m in context.get("transcript", [])
-        ]
+        prior = [turn_from_message(m) for m in context.get("transcript", [])]
         new_state.turn_count += 1
         parsed = parse_tool_calls(action, json_actions=self.json_actions)
         observations: list[ToolObservation] = []
@@ -260,10 +278,16 @@ class ToolUseEnvironment(Environment):
             self._finish(new_state, "final_answer", EpisodeStatus.COMPLETED)
         if not self._finished(new_state) and new_state.turn_count >= self.max_turns:
             self._finish(new_state, "max_turns", EpisodeStatus.TIMEOUT)
-        # The conversation so far as plain messages (JSON-friendly state).
+        # The conversation so far as plain messages (JSON-friendly state): an
+        # assistant turn keeps its structured tool_calls, and each observation
+        # the id of the call it answers.
         context["transcript"] = [
             *context.get("transcript", []),
-            {"role": "assistant", "content": str(action.content or "")},
+            {
+                **history_message(action),
+                "role": "assistant",
+                "content": str(action.content or ""),
+            },
             *(o.to_message(self.max_observation_chars) for o in observations),
         ]
         step_reward = await self._step_reward(new_state, [*prior, action])
@@ -282,7 +306,17 @@ class ToolUseEnvironment(Environment):
     ) -> list[ToolObservation]:
         observations: list[ToolObservation] = []
         context = state.context
+        used = {entry.get("id") for entry in context["tool_log"]}
         for item in items:
+            # A call keeps its own id (a structured call's "id"): the
+            # observation answering it carries that id. A call without one
+            # gets call_<n>, n its attempt number, unless that id is taken.
+            if not item.has_own_id:
+                item = dataclasses.replace(
+                    item,
+                    call_id=_fresh_call_id(used, int(context["tool_calls_used"])),
+                )
+            used.add(item.call_id)
             if int(context["tool_calls_used"]) >= self.max_tool_calls:
                 observations.append(
                     ToolObservation.failure(
@@ -294,10 +328,6 @@ class ToolUseEnvironment(Environment):
                 )
                 self._finish(state, "budget_exhausted", EpisodeStatus.FAILED)
                 break
-            # Ids are unique within the episode: call_<n> for the n-th attempt.
-            item = dataclasses.replace(
-                item, call_id=f"call_{context['tool_calls_used']}"
-            )
             context["tool_calls_used"] = int(context["tool_calls_used"]) + 1
             observation = (
                 ToolObservation.malformed(item)

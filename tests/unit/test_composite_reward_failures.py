@@ -189,3 +189,69 @@ def test_a_reward_error_from_the_sync_wrapper_has_no_chained_context():
     with pytest.raises(ValueError, match="bad data") as caught:
         Raises()([])
     assert caught.value.__context__ is None
+
+
+# --- a child's score is range-checked even when it declares no range (round 6) --
+
+from stateset_agents.core.reward_context import (  # noqa: E402
+    UNIT_SCORE_RANGE,
+    check_child_score_range,
+    score_response,
+)
+
+
+class _Wide(_Fixed):
+    score_range = (0.0, 10.0)
+
+
+@pytest.mark.parametrize("score", [7.0, -0.5, 1.0 + 1e-6])
+async def test_an_undeclared_child_outside_the_unit_range_raises(score):
+    # Before round 6 the 7.0 was weighted into the total (3.5 + 0.5 = 4.0).
+    composite = CompositeReward([_Fixed(score, name="wild"), _Fixed(1.0)])
+    with pytest.raises(ValueError, match="wild scored .* declares no score_range"):
+        await composite.compute_reward([])
+
+
+@pytest.mark.parametrize("score", [0.0, 0.5, 1.0, 1.0 + 1e-12])
+async def test_an_undeclared_child_inside_the_unit_range_is_summed(score):
+    composite = CompositeReward([_Fixed(score), _Fixed(1.0)])
+    assert (await composite.compute_reward([])).score == pytest.approx(
+        0.5 * score + 0.5
+    )
+
+
+async def test_a_declared_child_is_held_to_its_own_range():
+    composite = CompositeReward([_Wide(7.0, name="wide"), _Fixed(1.0)])
+    assert (await composite.compute_reward([])).score == pytest.approx(4.0)
+    over = CompositeReward([_Wide(11.0, name="wide"), _Fixed(1.0)])
+    with pytest.raises(ValueError, match="outside its declared score_range"):
+        await over.compute_reward([])
+
+
+async def test_a_nested_composite_spans_its_weights():
+    # Weights summing to 2 make the inner composite span [0, 2]; its own
+    # children are checked, so the outer composite accepts its 2.0.
+    inner = CompositeReward([_Fixed(1.0, weight=1.0), _Fixed(1.0, weight=1.0)])
+    outer = CompositeReward([inner])
+    assert (await outer.compute_reward([])).score == pytest.approx(2.0)
+    bad_inner = CompositeReward([_Fixed(7.0, name="wild")])
+    with pytest.raises(ValueError, match="wild scored"):
+        await CompositeReward([bad_inner]).compute_reward([])
+
+
+async def test_the_top_level_still_leaves_undeclared_rewards_unchecked():
+    # The [0, 1] default holds composite children only (docs/REWARD_CONTRACT.md).
+    scenario = {"id": "s", "user_query": "hi"}
+    assert await score_response(_Fixed(7.0), "hi", "x", scenario) == 7.0
+
+
+def test_the_child_check_helper():
+    assert UNIT_SCORE_RANGE == (0.0, 1.0)
+    assert check_child_score_range(_Fixed(0.3), 0.3) == 0.3
+    assert check_child_score_range(_Fixed(7.0), 7.0, default=None) == 7.0
+    assert check_child_score_range(_Wide(7.0), 7.0) == 7.0
+    assert check_child_score_range(_Fixed(1.5), 1.5, default=(0.0, 2.0)) == 1.5
+    with pytest.raises(ValueError):
+        check_child_score_range(_Fixed(7.0), 7.0)
+    with pytest.raises(ValueError, match="declared"):
+        check_child_score_range(_Wide(11.0), 11.0, default=None)

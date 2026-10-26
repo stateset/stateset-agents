@@ -9,6 +9,7 @@ import copy
 import inspect
 import logging
 import math
+import re
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -108,6 +109,103 @@ POLICY_SCENARIO_KEYS = frozenset(
 #: allowlist.
 _SCENARIO_STATE_KEYS = ("scenario", "task")
 
+#: A nested key (inside an allowlisted value, e.g. a scenario's ``"context"``)
+#: is reference or grading data, and never shown to the policy, when one of
+#: the words of its name (split at ``_``, ``-``, spaces, other punctuation and
+#: camelCase) starts with one of these stems: ``expected_refund``,
+#: ``goldAnswer``, ``answers``, ``ground_truth``, ``reference_solution``,
+#: ``labels``, ``correct_facts``, ``target_expression``, ``hidden_tests``,
+#: ``secret_code``, ``success_criteria``...
+REFERENCE_KEY_STEMS: tuple[str, ...] = (
+    "answer",
+    "correct",
+    "criteri",
+    "expect",
+    "gold",
+    "grade",
+    "grading",
+    "hidden",
+    "judg",
+    "label",
+    "oracle",
+    "private",
+    "rationale",
+    "reference",
+    "rubric",
+    "secret",
+    "solution",
+    "target",
+    "truth",
+    "verdict",
+)
+#: Words that mark a nested key as reference data only as a whole word
+#: (``tests``, ``test_cases``, ``gt``, ``ref_answer``), so ``contest`` or
+#: ``refund`` are not caught.
+REFERENCE_KEY_WORDS = frozenset(
+    {"gt", "ref", "test", "tests", "testcase", "testcases", "unittest", "unittests"}
+)
+#: Whole nested key names (normalized to ``snake_case``) that are reference
+#: data although none of their words is.
+REFERENCE_KEY_NAMES = frozenset(
+    {
+        "groundtruth",
+        "required_action",
+        "required_actions",
+        "required_steps",
+        "required_tool_calls",
+        "required_tools",
+    }
+)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_NON_WORD = re.compile(r"[^0-9A-Za-z]+")
+
+
+def _key_words(key: object) -> list[str]:
+    """A key's words, lower-cased: ``"expectedRefund"`` -> ``["expected", "refund"]``."""
+    spaced = _CAMEL_BOUNDARY.sub("_", str(key))
+    return [word.lower() for word in _NON_WORD.split(spaced) if word]
+
+
+def is_reference_key(key: object) -> bool:
+    """Whether a nested key's name marks it as reference or grading data.
+
+    See :data:`REFERENCE_KEY_STEMS`, :data:`REFERENCE_KEY_WORDS` and
+    :data:`REFERENCE_KEY_NAMES`. The rule errs on the side of hiding: a
+    nested key the policy needs whose name matches it (``expected_delivery``)
+    must be renamed or opted in with ``visible_context_keys``.
+    """
+    words = _key_words(key)
+    if "_".join(words) in REFERENCE_KEY_NAMES or "groundtruth" in "".join(words):
+        return True
+    return any(
+        word in REFERENCE_KEY_WORDS or word.startswith(REFERENCE_KEY_STEMS)
+        for word in words
+    )
+
+
+def policy_visible(value: Any, shown: Iterable[str] = ()) -> Any:
+    """``value`` as the policy may see it: every mapping inside it, at any
+    depth and inside lists and tuples, without its reference-like keys
+    (:func:`is_reference_key`).
+
+    ``shown`` names keys a caller explicitly opted in to show
+    (``visible_context_keys``); they stay whatever they are called. Text is
+    returned as written: a reference value spelled out inside a string
+    cannot be filtered.
+    """
+    keep = shown if isinstance(shown, frozenset) else _context_keys(shown)
+    if isinstance(value, Mapping):
+        return {
+            key: policy_visible(item, keep)
+            for key, item in value.items()
+            if str(key) in keep or not is_reference_key(key)
+        }
+    if isinstance(value, list):
+        return [policy_visible(item, keep) for item in value]
+    if isinstance(value, tuple):
+        return tuple(policy_visible(item, keep) for item in value)
+    return value
+
 
 def _context_keys(keys: Iterable[str] | str | None) -> frozenset[str]:
     """A caller's ``visible_context_keys`` as a set (a lone string is one key)."""
@@ -119,17 +217,62 @@ def _context_keys(keys: Iterable[str] | str | None) -> frozenset[str]:
 
 
 def _visible_scenario(
-    scenario: Mapping[str, Any], keys: frozenset[str]
+    scenario: Mapping[str, Any], keys: frozenset[str], shown: frozenset[str]
 ) -> dict[str, Any]:
-    """The allowlisted keys of a scenario, each with its whole value; a nested
-    scenario (``"task"``/``"scenario"`` holding a mapping) is filtered too."""
+    """The allowlisted keys of a scenario; a nested scenario (``"task"``/
+    ``"scenario"`` holding a mapping) is filtered by the same allowlist, and
+    every other value by :func:`policy_visible`."""
     visible: dict[str, Any] = {}
     for key, value in scenario.items():
         if key not in keys:
             continue
-        nested = key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping)
-        visible[key] = _visible_scenario(value, keys) if nested else value
+        if key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping):
+            visible[key] = _visible_scenario(value, keys, shown)
+        else:
+            visible[key] = policy_visible(value, shown)
     return visible
+
+
+#: Keys of a ``tool``-role message that link it to the call it answers.
+TOOL_MESSAGE_KEYS = ("tool_call_id", "name")
+
+
+def history_message(turn: ConversationTurn) -> dict[str, Any]:
+    """A turn as the chat message the policy's history shows.
+
+    ``role`` and ``content``, plus an assistant turn's structured
+    ``tool_calls`` and a tool turn's ``tool_call_id`` and ``name`` (kept in
+    ``turn.metadata``), so a chat template can pair each observation with
+    the call it answers.
+    """
+    message: dict[str, Any] = {"role": turn.role, "content": turn.content}
+    if turn.tool_calls:
+        message["tool_calls"] = copy.deepcopy(turn.tool_calls)
+    metadata = turn.metadata if isinstance(turn.metadata, dict) else {}
+    if turn.role == "tool":
+        for key in TOOL_MESSAGE_KEYS:
+            value = metadata.get(key)
+            if isinstance(value, str) and value:
+                message[key] = value
+    return message
+
+
+def turn_from_message(message: Mapping[str, Any]) -> ConversationTurn:
+    """The turn for a chat message an environment emits: :func:`history_message`
+    in reverse (a ``tool`` message keeps ``tool_call_id`` and ``name``)."""
+    role = str(message.get("role", "user"))
+    metadata = {
+        key: message[key]
+        for key in TOOL_MESSAGE_KEYS
+        if role == "tool" and isinstance(message.get(key), str) and message[key]
+    }
+    tool_calls = message.get("tool_calls")
+    return ConversationTurn(
+        role=role,
+        content=str(message.get("content", "")),
+        metadata=metadata,
+        tool_calls=copy.deepcopy(tool_calls) if tool_calls else None,
+    )
 
 
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
@@ -289,9 +432,7 @@ class Environment(ABC):
         message, so the agent replies to it instead of speaking first.
         """
         return [
-            ConversationTurn(
-                role=message.get("role", "user"), content=message["content"]
-            )
+            turn_from_message(message)
             for message in state.context.get("messages", [])
             if isinstance(message, dict) and isinstance(message.get("content"), str)
         ]
@@ -392,7 +533,10 @@ class Environment(ABC):
         Only :attr:`policy_state_keys` (and, inside ``"scenario"``/``"task"``,
         :attr:`policy_scenario_keys`), plus the caller's explicit
         :attr:`visible_context_keys`, are shown. Every other key, reference and
-        grading data included, stays reward-side only.
+        grading data included, stays reward-side only. The allowlist is
+        recursive: inside a shown value (a scenario's ``"context"`` mapping,
+        say), reference-like keys are dropped at any depth
+        (:func:`policy_visible`).
         """
         extra = _context_keys(self.visible_context_keys)
         state_keys = self.policy_state_keys | extra
@@ -400,9 +544,9 @@ class Environment(ABC):
         context: dict[str, Any] = {}
         for key, value in state.context.items():
             if key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping):
-                context[key] = _visible_scenario(value, scenario_keys)
+                context[key] = _visible_scenario(value, scenario_keys, extra)
             elif key in state_keys:
-                context[key] = value
+                context[key] = policy_visible(value, extra)
         return context
 
     #: Whether ``reset``/``step`` keep all per-episode state in the
@@ -421,7 +565,7 @@ class Environment(ABC):
         max_turns = max_turns or self.max_turns
         episode = await self._start_episode(scenario)
         for _ in range(max_turns):
-            history = [{"role": t.role, "content": t.content} for t in episode.turns]
+            history = [history_message(t) for t in episode.turns]
             policy_context = copy.deepcopy(self.observation_context(episode.state))
             agent_response = await agent_fn(history, policy_context)
             if await self._advance_episode(episode, agent_response):
@@ -460,10 +604,7 @@ class Environment(ABC):
         for _ in range(max_turns):
             if not active:
                 break
-            histories = [
-                [{"role": t.role, "content": t.content} for t in e.turns]
-                for e in active
-            ]
+            histories = [[history_message(t) for t in e.turns] for e in active]
             replies = await _batch_replies(
                 batch_agent_fn,
                 histories,
@@ -535,11 +676,8 @@ class Environment(ABC):
             episode.turns.append(env_response)
         for message in info.get("messages", []):
             if isinstance(message, dict) and isinstance(message.get("content"), str):
-                episode.turns.append(
-                    ConversationTurn(
-                        role=message.get("role", "user"), content=message["content"]
-                    )
-                )
+                # A tool observation keeps the id of the call it answers.
+                episode.turns.append(turn_from_message(message))
         episode.state = new_state
         return bool(done or new_state.status != EpisodeStatus.ONGOING)
 

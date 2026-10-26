@@ -1,0 +1,2814 @@
+{
+  "version": 1,
+  "description": "Hand-labelled precision/recall set for the answer-credit check in CorrectnessReward: given a question, a short reference answer and a model reply, decide whether the reply commits to the reference as its single answer. Written blind to the implementation, from the kinds of replies real models and users produce. Labelling rule: 'credit' when the reply commits to the reference as its one answer; qualifiers, explanations, units, markdown, LaTeX/GSM8K-style final-answer markers, restating the question, intermediate arithmetic, and other entities mentioned as context (not as alternative answers) are fine, and so is rejecting a wrong option while committing to the reference (negation_correct). 'no_credit' when the reply hedges between the reference and any other candidate in any form (separators such as or/vs/&/+/->/em dash/colon/~/x/slash/pipe/semicolon, concessive 'though/although/some say', numeric conditionals such as '42; 43 if you round up', modal 'maybe X, maybe Y', or a list of candidates), gives a wrong answer, negates the reference, refuses, or gives no answer. Every hedge reply is labelled once with each candidate as the reference, and negation replies are mirrored with the rejected option as the reference, so a hedge or negation earns nothing whichever candidate is correct; those mirrored references are deliberately not always factually true. Replies whose only issue is admitted uncertainty about a single answer, and genuinely ambiguous replies, are excluded. Splits alternate dev/heldout within each category, with all items sharing the same question and reply kept in the same split.",
+  "items": [
+    {
+      "id": "a001",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "The capital of Australia is Canberra.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a002",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a003",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "What is the capital of Australia? Canberra.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a004",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Paris.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a005",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "paris",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a006",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen wrote Pride and Prejudice.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a007",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a008",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Au",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a009",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "Mars is known as the Red Planet.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a010",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Portuguese.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a011",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "Leonardo da Vinci painted the Mona Lisa.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a012",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a013",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "Hydrogen has atomic number 1.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a014",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "Jupiter.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a015",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "It was written by George Orwell.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a016",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "Q: Who wrote the novel 1984?\nA: George Orwell",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a017",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Ankara is the capital of Turkey.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a018",
+      "question": "Which gas do plants absorb from the air for photosynthesis?",
+      "answer": "Carbon dioxide",
+      "reply": "Carbon dioxide.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a019",
+      "question": "Who developed the theory of general relativity?",
+      "answer": "Albert Einstein",
+      "reply": "Albert Einstein.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a020",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Bern",
+      "reply": "The capital of Switzerland is Bern.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a021",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Mercury is the closest planet to the Sun.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a022",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "42",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a023",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "6 times 7 is 42.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a024",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "World War II ended in 1945.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a025",
+      "question": "How many legs does a spider have?",
+      "answer": "8",
+      "reply": "A spider has 8 legs.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a026",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "366",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a027",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "1969.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a028",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "The square root of 144 is 12.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a029",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "Sam has 27 pencils left.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "dev"
+    },
+    {
+      "id": "a030",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "The Berlin Wall fell in 1989.",
+      "label": "credit",
+      "category": "committed_plain",
+      "split": "heldout"
+    },
+    {
+      "id": "a031",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra. It was purpose-built as a compromise between Sydney and Melbourne.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a032",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Paris. It has been the French capital for most of the country's history and is home to the national government.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a033",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen. The novel was published in 1813 and is one of the best-known works of English literature.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a034",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "The symbol for gold is Au, which comes from the Latin word aurum.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a035",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "Great question! The Red Planet is Mars. Its reddish color comes from iron oxide, basically rust, in its soil.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a036",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Brazil's official language is Portuguese, a legacy of the Portuguese colonization that began in 1500.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a037",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "The Mona Lisa was painted by Leonardo da Vinci in the early 1500s. He kept working on it for years.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a038",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa is the capital of Canada. Queen Victoria chose it in 1857, partly because it sat between the English- and French-speaking parts of the country.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a039",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "Hydrogen. Its nucleus has a single proton, which is what atomic number 1 means.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a040",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "Jupiter is the largest planet. It is more than 11 times wider than Earth.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a041",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "George Orwell wrote 1984. It was published in 1949, shortly before his death.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a042",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Ankara. Atatürk made it the capital in 1923 when the Republic of Turkey was founded.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a043",
+      "question": "Which gas do plants absorb from the air for photosynthesis?",
+      "answer": "Carbon dioxide",
+      "reply": "Plants absorb carbon dioxide. During photosynthesis they use light energy to turn it and water into glucose, releasing oxygen as a by-product.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a044",
+      "question": "Who developed the theory of general relativity?",
+      "answer": "Albert Einstein",
+      "reply": "Albert Einstein. He published the general theory of relativity in 1915, building on his 1905 special theory.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a045",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Bern",
+      "reply": "Bern. It is the seat of the Swiss federal government and parliament.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a046",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Mercury. It orbits the Sun at an average distance of about 58 million km.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a047",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "6 × 7 = 42.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a048",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "Six sevens: 7 + 7 + 7 + 7 + 7 + 7 = 42. So the answer is 42.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a049",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "35 + 7 = 42, so the total is $42.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a050",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "510 ÷ 12 = 42.5. You can't sell half a box, so 42 full boxes can be packed.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a051",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "Each box holds 12 eggs. 12 × 42 = 504, leaving 6 eggs over, so the answer is 42.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a052",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "42",
+      "reply": "March has 31 days, so March 1 to April 1 is 31 days, and April 1 to April 12 is 11 more. 31 + 11 = 42.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a053",
+      "question": "What is 15% of 200?",
+      "answer": "30",
+      "reply": "15% of 200 is 0.15 × 200 = 30.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a054",
+      "question": "A train travels at 60 miles per hour for 3.5 hours. How far does it travel, in miles?",
+      "answer": "210",
+      "reply": "Distance = speed × time = 60 × 3.5 = 210 miles.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a055",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "He starts with 3 × 12 = 36 pencils. After giving away 9, he has 36 - 9 = 27.\n#### 27",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a056",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "3 nights × $89 = $267. That's the total before any taxes or fees.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a057",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "Apollo 11 landed on July 20, 1969. Neil Armstrong and Buzz Aldrin walked on the surface while Michael Collins stayed in orbit.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "dev"
+    },
+    {
+      "id": "a058",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "1989. The wall came down on November 9, 1989, after weeks of protests in East Germany.",
+      "label": "credit",
+      "category": "committed_with_explanation",
+      "split": "heldout"
+    },
+    {
+      "id": "a059",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra, in the Australian Capital Territory.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a060",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "The capital is Canberra, about 280 km southwest of Sydney.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a061",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra is the capital, while Sydney is the largest city.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a062",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Paris, which sits on the Seine in northern France.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a063",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Paris is the capital. Marseille and Lyon are the next-largest cities.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a064",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen, who also wrote Emma and Sense and Sensibility.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a065",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen wrote it. It's often shelved next to the Brontë sisters' novels, but it predates Jane Eyre by more than thirty years.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a066",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Au. Silver, by contrast, is Ag.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a067",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "Mars. Jupiter is the biggest planet, but Mars is the red one.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a068",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Portuguese, even though most of its South American neighbors speak Spanish.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a069",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "Leonardo da Vinci painted it, and today it hangs in the Louvre in Paris.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a070",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "Leonardo da Vinci. He was a contemporary of Michelangelo and Raphael.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a071",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa, on the Ottawa River across from Gatineau, Quebec.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a072",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa. Toronto is bigger, but the federal government is in Ottawa.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a073",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "Hydrogen, the lightest element; helium comes next at number 2.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a074",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "Jupiter, followed by Saturn as the second-largest.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a075",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "George Orwell, the same author who wrote Animal Farm.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a076",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Ankara has been the capital since 1923, although Istanbul is the largest city.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a077",
+      "question": "Which gas do plants absorb from the air for photosynthesis?",
+      "answer": "Carbon dioxide",
+      "reply": "Carbon dioxide; they give off oxygen in return.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a078",
+      "question": "Who developed the theory of general relativity?",
+      "answer": "Albert Einstein",
+      "reply": "Albert Einstein. His theory replaced Isaac Newton's law of universal gravitation as the best description of gravity.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a079",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Bern",
+      "reply": "Bern. Zurich is the financial center, but the government sits in Bern.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a080",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Mercury, with Venus second.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a081",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "World War II ended in 1945, six years after it began in 1939.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a082",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "Apollo 11 landed in 1969, eight years after Kennedy's 1961 challenge to reach the Moon.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a083",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "A leap year has 366 days, one more than the usual 365.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a084",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "12, since 12 × 12 = 144.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a085",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "The Berlin Wall fell in 1989; Germany reunified the following year, in 1990.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a086",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "The total is $42: the $35 book plus $7 shipping.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "heldout"
+    },
+    {
+      "id": "a087",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "Sam started with 36 pencils, gave away 9, and has 27 left.",
+      "label": "credit",
+      "category": "committed_mentions_other_entity",
+      "split": "dev"
+    },
+    {
+      "id": "a088",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "**Canberra**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a089",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "It's $42.",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a090",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "42 dollars",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a091",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "**Answer:** Paris",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a092",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "The chemical symbol for gold is `Au`.",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a093",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "## Answer\n\nMars",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a094",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "The official language of Brazil is **Portuguese**.",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a095",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "*Leonardo da Vinci*",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a096",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "- Element: **Hydrogen**\n- Symbol: H\n- Atomic number: 1",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a097",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "> Jupiter",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a098",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Answer: **Ankara**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a099",
+      "question": "Who developed the theory of general relativity?",
+      "answer": "Albert Einstein",
+      "reply": "**Albert Einstein** (1915)",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a100",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "- **Mercury**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a101",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "#### 42",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a102",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "The answer is $\\boxed{42}$.",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a103",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "**42** full boxes",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a104",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "42",
+      "reply": "42 days",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a105",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "Final answer: **1945**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a106",
+      "question": "How many legs does a spider have?",
+      "answer": "8",
+      "reply": "8 legs",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a107",
+      "question": "What is 15% of 200?",
+      "answer": "30",
+      "reply": "15% of 200 = **30**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a108",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "**366 days**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a109",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "**Year:** 1969",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a110",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "$\\sqrt{144} = 12$",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a111",
+      "question": "A train travels at 60 miles per hour for 3.5 hours. How far does it travel, in miles?",
+      "answer": "210",
+      "reply": "210 mi",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a112",
+      "question": "A train travels at 60 miles per hour for 3.5 hours. How far does it travel, in miles?",
+      "answer": "210",
+      "reply": "**210 miles**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a113",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "Answer: 27 pencils",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a114",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "$267.00",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a115",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "The 3 nights cost **$267** in total.",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "heldout"
+    },
+    {
+      "id": "a116",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "**1989**",
+      "label": "credit",
+      "category": "committed_markdown_or_units",
+      "split": "dev"
+    },
+    {
+      "id": "a117",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Not Lyon: Paris.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a118",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Lyon is not the capital of France; Paris is.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a119",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "It's Paris, not Lyon.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a120",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "People often guess Sydney, but the capital is Canberra.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a121",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "It's not Sydney. The capital of Australia is Canberra.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a122",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Not Charlotte Brontë: Pride and Prejudice was written by Jane Austen.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a123",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Ag is silver, not gold. The symbol for gold is Au.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a124",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "It isn't Jupiter; it's Mars.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a125",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Not Spanish! Brazil's official language is Portuguese.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a126",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "A lot of people assume Michelangelo, but it was Leonardo da Vinci.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a127",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Sure! The capital of Canada is Ottawa. Many people assume it's Toronto since that's the biggest city, but that's wrong: Ottawa has been the capital since 1857.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a128",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Toronto is the largest city, but it is not the capital. The capital is Ottawa.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a129",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "Helium is element 2, not 1. Element 1 is hydrogen.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a130",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "Not Saturn, despite its rings. Jupiter is the largest planet.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a131",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "That was George Orwell, not Aldous Huxley. Huxley wrote Brave New World.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a132",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Istanbul is a common wrong answer. The capital of Turkey is Ankara.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a133",
+      "question": "Which gas do plants absorb from the air for photosynthesis?",
+      "answer": "Carbon dioxide",
+      "reply": "They take in carbon dioxide, not oxygen.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a134",
+      "question": "Who developed the theory of general relativity?",
+      "answer": "Albert Einstein",
+      "reply": "It wasn't Newton. General relativity was developed by Albert Einstein.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a135",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Bern",
+      "reply": "Bern, not Zurich.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a136",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Venus is the hottest planet, but it isn't the closest. Mercury is closest to the Sun.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a137",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "Not 48 (that's 6 × 8). 6 × 7 = 42.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a138",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "Not 43: the last box would only have 6 eggs, so 42 full boxes.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a139",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "Not 1944. World War II ended in 1945.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a140",
+      "question": "How many legs does a spider have?",
+      "answer": "8",
+      "reply": "Insects have 6 legs, but spiders aren't insects. A spider has 8 legs.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a141",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "The answer isn't 365. A leap year has 366 days.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a142",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "Not 1968; that was Apollo 8's lunar orbit. Apollo 11 landed in 1969.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a143",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "It's 12, not 14.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a144",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "Not 1991. The Berlin Wall fell in 1989.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a145",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "It's not $35, because you have to add shipping. The total is $42.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "dev"
+    },
+    {
+      "id": "a146",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "Not $356; that would be 4 nights. 3 nights cost $267.",
+      "label": "credit",
+      "category": "negation_correct",
+      "split": "heldout"
+    },
+    {
+      "id": "a147",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra or Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a148",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra or Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a149",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra vs Sydney.",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a150",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra vs Sydney.",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a151",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra & Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a152",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra & Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a153",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra + Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a154",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra + Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a155",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra -> Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a156",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra -> Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a157",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra — Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a158",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra — Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a159",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra: Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a160",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra: Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a161",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra ~ Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a162",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra ~ Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a163",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra × Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a164",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra × Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a165",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra/Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a166",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra/Sydney",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a167",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Hmm, good question. I believe it's either Canberra or Sydney; both are major Australian cities.",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a168",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Hmm, good question. I believe it's either Canberra or Sydney; both are major Australian cities.",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a169",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Lyon or Paris",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a170",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "Lyon or Paris",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a171",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen and/or Charlotte Brontë",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a172",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Charlotte Brontë",
+      "reply": "Jane Austen and/or Charlotte Brontë",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a173",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Ag | Au",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a174",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Ag",
+      "reply": "Ag | Au",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a175",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "Mars; Jupiter",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a176",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Jupiter",
+      "reply": "Mars; Jupiter",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a177",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Spanish versus Portuguese",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a178",
+      "question": "What is the official language of Brazil?",
+      "answer": "Spanish",
+      "reply": "Spanish versus Portuguese",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a179",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa vs. Toronto",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a180",
+      "question": "What is the capital of Canada?",
+      "answer": "Toronto",
+      "reply": "Ottawa vs. Toronto",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a181",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "**Jupiter** or **Saturn**",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a182",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Saturn",
+      "reply": "**Jupiter** or **Saturn**",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a183",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Istanbul/Ankara",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a184",
+      "question": "What is the capital of Turkey?",
+      "answer": "Istanbul",
+      "reply": "Istanbul/Ankara",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a185",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Venus — Mercury",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a186",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Venus",
+      "reply": "Venus — Mercury",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a187",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "either 42 or 43",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a188",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "either 42 or 43",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a189",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "The boxes hold 12 each, so 510 / 12 = 42.5.\n#### 42 or 43",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a190",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "The boxes hold 12 each, so 510 / 12 = 42.5.\n#### 42 or 43",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a191",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "**1944** / **1945**",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a192",
+      "question": "In what year did World War II end?",
+      "answer": "1944",
+      "reply": "**1944** / **1945**",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "dev"
+    },
+    {
+      "id": "a193",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "12 vs 14",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a194",
+      "question": "What is the square root of 144?",
+      "answer": "14",
+      "reply": "12 vs 14",
+      "label": "no_credit",
+      "category": "hedge_separator",
+      "split": "heldout"
+    },
+    {
+      "id": "a195",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "It is Canberra — although many maps list Sydney instead.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a196",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "It is Canberra — although many maps list Sydney instead.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a197",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra, though some people say it's Sydney.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a198",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra, though some people say it's Sydney.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a199",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Paris, but some say Lyon.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a200",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "Paris, but some say Lyon.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a201",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Jane Austen wrote it, although others claim it was Charlotte Brontë.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a202",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Charlotte Brontë",
+      "reply": "Jane Austen wrote it, although others claim it was Charlotte Brontë.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a203",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "Most sources say Leonardo da Vinci, but according to some it was Michelangelo.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a204",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Michelangelo",
+      "reply": "Most sources say Leonardo da Vinci, but according to some it was Michelangelo.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a205",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Toronto, though some argue the capital is really Ottawa.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a206",
+      "question": "What is the capital of Canada?",
+      "answer": "Toronto",
+      "reply": "Toronto, though some argue the capital is really Ottawa.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a207",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "1945, although some historians put the end in 1944.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a208",
+      "question": "In what year did World War II end?",
+      "answer": "1944",
+      "reply": "1945, although some historians put the end in 1944.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "dev"
+    },
+    {
+      "id": "a209",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "It was 1969, but some say 1968.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a210",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1968",
+      "reply": "It was 1969, but some say 1968.",
+      "label": "no_credit",
+      "category": "hedge_concessive",
+      "split": "heldout"
+    },
+    {
+      "id": "a211",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "The answer is 42; 43 if you round up.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a212",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "The answer is 42; 43 if you round up.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a213",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "42; 43 if you round up",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a214",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "42; 43 if you round up",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a215",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "42",
+      "reply": "42, or 43 counting the last day",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a216",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "43",
+      "reply": "42, or 43 counting the last day",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a217",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "42",
+      "reply": "43 days if you include both the start and end dates, otherwise 42.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a218",
+      "question": "How many days are there from March 1 to April 12 of the same year?",
+      "answer": "43",
+      "reply": "43 days if you include both the start and end dates, otherwise 42.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a219",
+      "question": "A train travels at 60 miles per hour for 3.5 hours. How far does it travel, in miles?",
+      "answer": "210",
+      "reply": "210 miles, or 180 if you only count full hours.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a220",
+      "question": "A train travels at 60 miles per hour for 3.5 hours. How far does it travel, in miles?",
+      "answer": "180",
+      "reply": "210 miles, or 180 if you only count full hours.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a221",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "$42, or $35 if shipping is free.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a222",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "35",
+      "reply": "$42, or $35 if shipping is free.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a223",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "$267, or $356 if checkout day counts as a fourth night.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a224",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "356",
+      "reply": "$267, or $356 if checkout day counts as a fourth night.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "dev"
+    },
+    {
+      "id": "a225",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "27 pencils left, 36 if he hasn't given any away yet.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a226",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "36",
+      "reply": "27 pencils left, 36 if he hasn't given any away yet.",
+      "label": "no_credit",
+      "category": "hedge_conditional_numeric",
+      "split": "heldout"
+    },
+    {
+      "id": "a227",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "maybe Canberra, maybe Sydney",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a228",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "maybe Canberra, maybe Sydney",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a229",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "probably Canberra, possibly Sydney",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a230",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "probably Canberra, possibly Sydney",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a231",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "It might be Paris, or it could be Lyon.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a232",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "It might be Paris, or it could be Lyon.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a233",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Likely Ag, perhaps Au.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a234",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Ag",
+      "reply": "Likely Ag, perhaps Au.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a235",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "My best guess is Mars, but it may well be Jupiter.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a236",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Jupiter",
+      "reply": "My best guess is Mars, but it may well be Jupiter.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a237",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "Could be 1944, could be 1945.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a238",
+      "question": "In what year did World War II end?",
+      "answer": "1944",
+      "reply": "Could be 1944, could be 1945.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a239",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "Probably 42, but possibly 48.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a240",
+      "question": "What is 6 times 7?",
+      "answer": "48",
+      "reply": "Probably 42, but possibly 48.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a241",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Bern",
+      "reply": "Perhaps Zurich; perhaps Bern.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a242",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Zurich",
+      "reply": "Perhaps Zurich; perhaps Bern.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "heldout"
+    },
+    {
+      "id": "a243",
+      "question": "How many legs does a spider have?",
+      "answer": "8",
+      "reply": "Maybe 8? Maybe 6.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a244",
+      "question": "How many legs does a spider have?",
+      "answer": "6",
+      "reply": "Maybe 8? Maybe 6.",
+      "label": "no_credit",
+      "category": "hedge_modal",
+      "split": "dev"
+    },
+    {
+      "id": "a245",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra, Sydney, Melbourne",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a246",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "Canberra, Sydney, Melbourne",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a247",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "- Paris\n- Lyon\n- Marseille",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a248",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "- Paris\n- Lyon\n- Marseille",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a249",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Possible answers: Venus, Mercury, Mars.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a250",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Venus",
+      "reply": "Possible answers: Venus, Mercury, Mars.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a251",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "1. Toronto\n2. Ottawa\n3. Montreal",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a252",
+      "question": "What is the capital of Canada?",
+      "answer": "Toronto",
+      "reply": "1. Toronto\n2. Ottawa\n3. Montreal",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a253",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "Candidates: 41, 42, 43",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a254",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "Candidates: 41, 42, 43",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a255",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "Here are the gas giants: Jupiter, Saturn, Uranus, Neptune.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a256",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Saturn",
+      "reply": "Here are the gas giants: Jupiter, Saturn, Uranus, Neptune.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a257",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "Key years: 1939, 1941, 1944, 1945.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a258",
+      "question": "In what year did World War II end?",
+      "answer": "1944",
+      "reply": "Key years: 1939, 1941, 1944, 1945.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "dev"
+    },
+    {
+      "id": "a259",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Languages spoken in South America include Spanish, Portuguese, Quechua, and Guarani.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a260",
+      "question": "What is the official language of Brazil?",
+      "answer": "Spanish",
+      "reply": "Languages spoken in South America include Spanish, Portuguese, Quechua, and Guarani.",
+      "label": "no_credit",
+      "category": "list_dump",
+      "split": "heldout"
+    },
+    {
+      "id": "a261",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Sydney.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a262",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "The capital of Australia is Sydney.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a263",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Sydney. Canberra is just where the federal parliament meets.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a264",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "Lyon is the capital of France.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a265",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Charlotte Brontë wrote Pride and Prejudice.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a266",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Ag",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a267",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "Jupiter, because of its Great Red Spot.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a268",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Venus is the closest planet to the Sun.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a269",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "**Toronto**",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a270",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "Aldous Huxley wrote 1984.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a271",
+      "question": "Which element has atomic number 1?",
+      "answer": "Hydrogen",
+      "reply": "Helium, the lightest noble gas.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a272",
+      "question": "What is the capital of Turkey?",
+      "answer": "Ankara",
+      "reply": "Istanbul is the capital of Turkey.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a273",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "6 × 7 = 48",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a274",
+      "question": "A book costs $35 and shipping costs $7. What is the total cost?",
+      "answer": "42",
+      "reply": "It's $43.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a275",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "#### 43",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a276",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "World War II ended in 1944.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a277",
+      "question": "How many legs does a spider have?",
+      "answer": "8",
+      "reply": "Spiders have 6 legs.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a278",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "365 days",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a279",
+      "question": "In what year did Apollo 11 land on the Moon?",
+      "answer": "1969",
+      "reply": "Apollo 11 landed on the Moon in 1968.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a280",
+      "question": "Sam has 3 packs of 12 pencils and gives away 9. How many pencils does he have left?",
+      "answer": "27",
+      "reply": "He has 36 pencils left.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a281",
+      "question": "In what year did the Berlin Wall fall?",
+      "answer": "1989",
+      "reply": "The Berlin Wall fell in 1991, two years after the protests of 1989.",
+      "label": "no_credit",
+      "category": "wrong_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a282",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "It is not Paris.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a283",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "Not Lyon: Paris.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a284",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "It's Paris, not Lyon.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a285",
+      "question": "What is the capital of France?",
+      "answer": "Lyon",
+      "reply": "Lyon is not the capital of France; Paris is.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a286",
+      "question": "What is the capital of Australia?",
+      "answer": "Sydney",
+      "reply": "People often guess Sydney, but the capital is Canberra.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a287",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "Canberra is not the capital of Australia.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a288",
+      "question": "Which planet is known as the Red Planet?",
+      "answer": "Mars",
+      "reply": "It's definitely not Mars.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a289",
+      "question": "Who wrote Pride and Prejudice?",
+      "answer": "Jane Austen",
+      "reply": "Not Jane Austen.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a290",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Au",
+      "reply": "Au is not the symbol for gold.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a291",
+      "question": "What is the chemical symbol for gold?",
+      "answer": "Ag",
+      "reply": "Ag is silver, not gold. The symbol for gold is Au.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a292",
+      "question": "What is the capital of Canada?",
+      "answer": "Ottawa",
+      "reply": "Ottawa isn't the capital of Canada.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a293",
+      "question": "What is the largest planet in our solar system?",
+      "answer": "Jupiter",
+      "reply": "It's not Jupiter, it's Saturn.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a294",
+      "question": "What is the official language of Brazil?",
+      "answer": "Portuguese",
+      "reply": "Definitely not Portuguese.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a295",
+      "question": "Which gas do plants absorb from the air for photosynthesis?",
+      "answer": "Oxygen",
+      "reply": "They take in carbon dioxide, not oxygen.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a296",
+      "question": "What is the capital of Switzerland?",
+      "answer": "Zurich",
+      "reply": "Bern, not Zurich.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a297",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "The answer is not 42.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a298",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "43",
+      "reply": "Not 43: the last box would only have 6 eggs, so 42 full boxes.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a299",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "It wasn't 1945.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a300",
+      "question": "How many days are in a leap year?",
+      "answer": "366",
+      "reply": "No, a leap year does not have 366 days.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "dev"
+    },
+    {
+      "id": "a301",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "It's 14, not 12.",
+      "label": "no_credit",
+      "category": "negated_reference",
+      "split": "heldout"
+    },
+    {
+      "id": "a302",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "I'm sorry, but I can't help with that.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a303",
+      "question": "What is the capital of Australia?",
+      "answer": "Canberra",
+      "reply": "What is the capital of Australia? That's a question many travelers ask.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a304",
+      "question": "What is the capital of France?",
+      "answer": "Paris",
+      "reply": "I don't know.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a305",
+      "question": "Who painted the Mona Lisa?",
+      "answer": "Leonardo da Vinci",
+      "reply": "I'd rather not guess on art history questions. A museum website would be a better source.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a306",
+      "question": "Who wrote the novel 1984?",
+      "answer": "George Orwell",
+      "reply": "I'm not able to answer questions about books.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a307",
+      "question": "Which planet is closest to the Sun?",
+      "answer": "Mercury",
+      "reply": "Could you clarify whether you mean average distance or closest approach?",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a308",
+      "question": "What is 6 times 7?",
+      "answer": "42",
+      "reply": "Let's work through the multiplication step by step.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a309",
+      "question": "How many full boxes of 12 eggs can be packed from 510 eggs?",
+      "answer": "42",
+      "reply": "To solve this, divide the number of eggs by the box size and keep only the whole boxes.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a310",
+      "question": "In what year did World War II end?",
+      "answer": "1945",
+      "reply": "That's a great history question! There are many good books on the war.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    },
+    {
+      "id": "a311",
+      "question": "A hotel charges $89 per night. How much do 3 nights cost?",
+      "answer": "267",
+      "reply": "I can't provide pricing information.",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "heldout"
+    },
+    {
+      "id": "a312",
+      "question": "What is the square root of 144?",
+      "answer": "12",
+      "reply": "N/A",
+      "label": "no_credit",
+      "category": "refusal_or_no_answer",
+      "split": "dev"
+    }
+  ]
+}

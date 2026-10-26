@@ -45,12 +45,15 @@ async def test_bounded_weighted_reward_matches_integer_model(
         (False, True),
         (False, True),
     ):
+        # Lean composedScore models the opted-in renormalizing policy; by
+        # default (outage_policy="raise") any outage raises.
         reward = MultiObjectiveRewardFunction(
             components=[
                 FixedComponent("a", weight_a, score_a, fail_a),
                 FixedComponent("b", weight_b, score_b, fail_b),
             ],
             normalization_method=normalization_method,
+            outage_policy="renormalize",
         )
         if fail_a and fail_b:
             # No survivor: Python raises instead of returning a score.

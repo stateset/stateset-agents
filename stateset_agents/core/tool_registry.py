@@ -9,10 +9,14 @@ turn. Every failure (unknown tool, invalid arguments, a raised exception, a
 timeout, an unserializable result) is an observation with a typed error, never
 an exception in the environment.
 
-The timeout bounds how long the environment *waits*: a synchronous callable
-runs in a worker thread and an async one is cancelled, but Python cannot
-preempt a thread holding the GIL in a long computation, and an abandoned
-thread keeps running. Tools must therefore be deterministic and bounded;
+The timeout bounds the tool's own run time. An async callable is awaited
+and cancelled at the timeout. A synchronous one runs in a thread of its own,
+started for that call (never queued behind other calls in a shared
+executor), and its timeout is measured from the moment it starts running in
+that thread, so concurrent calls and a busy event loop never turn a healthy
+call into a ``timeout``. Python cannot preempt a thread holding the GIL in a
+long computation, and an abandoned thread keeps running (the interpreter
+waits for it at exit). Tools must therefore be deterministic and bounded;
 untrusted code belongs in a process sandbox
 (:mod:`stateset_agents.rewards.code_verifier`).
 """
@@ -20,12 +24,17 @@ untrusted code belongs in a process sandbox
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import copy
+import functools
 import inspect
 import json
 import math
 import re
+import threading
+import time
 from collections.abc import Callable, Iterable, Iterator, Mapping
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from fractions import Fraction
 from typing import Any
@@ -52,6 +61,12 @@ __all__ = [
 _NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")
 #: Observation text beyond this many characters is truncated.
 DEFAULT_MAX_OBSERVATION_CHARS = 2000
+#: The smallest observation bound: room for a truncated observation's JSON
+#: (name, error type, ``"truncated": true``).
+MIN_OBSERVATION_CHARS = 128
+#: A truncated observation keeps at most this much of the tool name (a
+#: registered name is at most 64 characters; a policy-invented one may not be).
+_NAME_LIMIT = 64
 _JSON_TYPES: dict[str, tuple[type, ...]] = {
     "string": (str,),
     "integer": (int,),
@@ -150,19 +165,59 @@ class ToolObservation:
         }
 
     def content(self, max_chars: int = DEFAULT_MAX_OBSERVATION_CHARS) -> str:
-        """The observation as JSON, with an oversized result truncated."""
+        """The observation as JSON, never longer than ``max_chars`` characters.
+
+        An oversized observation is truncated and stays valid JSON, marked
+        ``"truncated": true``: a result becomes the longest prefix of its JSON
+        text that fits, an error keeps its ``type`` and the longest prefix of
+        its message that fits, and the tool name is clipped to what fits
+        (at most 64 characters). The bound holds after JSON escaping
+        (quotes, backslashes, ``\\uXXXX`` for non-ASCII text).
+        ``max_chars`` must be at least :data:`MIN_OBSERVATION_CHARS`.
+        """
+        if isinstance(max_chars, bool) or max_chars < MIN_OBSERVATION_CHARS:
+            raise ValueError(
+                f"max_chars must be at least {MIN_OBSERVATION_CHARS}, got {max_chars}"
+            )
         text = json.dumps(self.payload(), sort_keys=True)
         if len(text) <= max_chars:
             return text
-        clipped = {**self.payload(), "truncated": True}
-        key = "result" if self.ok else "error"
-        clipped[key] = text[: max(0, max_chars - 64)]
-        return json.dumps(clipped, sort_keys=True)
+        body = (
+            json.dumps(self.result, sort_keys=True)
+            if self.ok
+            else str(self.error_message or "")
+        )
+        name = _longest_prefix(
+            str(self.name)[:_NAME_LIMIT], lambda n: self._clipped(n, ""), max_chars
+        )
+        kept = _longest_prefix(body, lambda b: self._clipped(name, b), max_chars)
+        clipped = self._clipped(name, kept)
+        if len(clipped) > max_chars:  # an unusually long custom error type
+            return json.dumps({"truncated": True})
+        return clipped
+
+    def _clipped(self, name: str, body: str) -> str:
+        """The truncated observation with ``name`` and ``body`` as JSON."""
+        payload: dict[str, Any] = {"name": name, "truncated": True}
+        if self.ok:
+            payload["result"] = body
+        else:
+            payload["error"] = {"type": self.error_type, "message": body}
+        return json.dumps(payload, sort_keys=True)
 
     def to_message(
         self, max_chars: int = DEFAULT_MAX_OBSERVATION_CHARS
     ) -> dict[str, str]:
-        return {"role": "tool", "content": self.content(max_chars)}
+        """The ``tool`` chat message: content, the id of the call it answers
+        (``tool_call_id``) and the tool ``name`` (when there is one)."""
+        message = {
+            "role": "tool",
+            "content": self.content(max_chars),
+            "tool_call_id": self.call_id,
+        }
+        if self.name:
+            message["name"] = self.name
+        return message
 
     def to_turn(
         self, max_chars: int = DEFAULT_MAX_OBSERVATION_CHARS
@@ -291,10 +346,7 @@ class ToolRegistry:
                 call.name, call.call_id, "invalid_arguments", problem, call.arguments
             )
         try:
-            result = await asyncio.wait_for(
-                _invoke(spec.function, copy.deepcopy(call.arguments)),
-                timeout=spec.timeout_seconds,
-            )
+            result = await _invoke(spec, copy.deepcopy(call.arguments))
         except asyncio.TimeoutError:
             return ToolObservation.failure(
                 call.name,
@@ -326,13 +378,100 @@ class ToolRegistry:
         )
 
 
-async def _invoke(function: Callable[..., Any], arguments: dict[str, Any]) -> Any:
+def _longest_prefix(text: str, render: Callable[[str], str], limit: int) -> str:
+    """The longest prefix of ``text`` whose rendering is at most ``limit``
+    characters (rendering length never shrinks as the prefix grows, and each
+    character renders to at least one, so no prefix longer than ``limit``
+    fits)."""
+    low, high = 0, min(len(text), limit)
+    while low < high:
+        middle = (low + high + 1) // 2
+        if len(render(text[:middle])) <= limit:
+            low = middle
+        else:
+            high = middle - 1
+    return text[:low]
+
+
+async def _invoke(spec: ToolSpec, arguments: dict[str, Any]) -> Any:
+    """Run ``spec``'s callable under its timeout (``asyncio.TimeoutError``).
+
+    An async callable is awaited and cancelled at the timeout. A synchronous
+    one runs in a thread of its own (:func:`_run_in_own_thread`), its timeout
+    bounding its own run time.
+    """
+    function, timeout = spec.function, float(spec.timeout_seconds)
     if inspect.iscoroutinefunction(function):
-        return await function(**arguments)
-    result = await asyncio.to_thread(function, **arguments)
+        return await asyncio.wait_for(function(**arguments), timeout=timeout)
+    result, elapsed = await _run_in_own_thread(spec.name, function, arguments, timeout)
     if inspect.isawaitable(result):
-        return await result
+        return await asyncio.wait_for(result, timeout=max(timeout - elapsed, 0.0))
     return result
+
+
+@dataclass
+class _ThreadRun:
+    """When one synchronous tool call ran, as its own thread measured it."""
+
+    started: threading.Event = field(default_factory=threading.Event)
+    finished: threading.Event = field(default_factory=threading.Event)
+    start: float = 0.0
+    elapsed: float = 0.0
+
+    def call(self, function: Callable[..., Any], arguments: dict[str, Any]) -> Any:
+        self.start = time.monotonic()
+        self.started.set()
+        try:
+            return function(**arguments)
+        finally:
+            self.elapsed = time.monotonic() - self.start
+            self.finished.set()
+
+    def remaining(self, timeout: float) -> float:
+        """Run time left before the timeout; the whole timeout until the call
+        has started (waiting to start is not run time)."""
+        if not self.started.is_set():
+            return timeout
+        return self.start + timeout - time.monotonic()
+
+
+async def _run_in_own_thread(
+    name: str, function: Callable[..., Any], arguments: dict[str, Any], timeout: float
+) -> tuple[Any, float]:
+    """Run a synchronous tool in a new thread; return its result and run time.
+
+    Each call gets its own thread, so no call ever waits behind others (a
+    shared executor saturated by concurrent episodes, or by stuck tools,
+    used to turn healthy calls into timeouts). The call times out only when
+    its own run time, measured in its thread, exceeds ``timeout``; a call
+    that finished in time counts however long the event loop took to notice.
+    """
+    loop = asyncio.get_running_loop()
+    run = _ThreadRun()
+    executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix=f"tool-{name}")
+    try:
+        future = loop.run_in_executor(
+            executor,
+            functools.partial(
+                contextvars.copy_context().run, run.call, function, arguments
+            ),
+        )
+    finally:
+        executor.shutdown(wait=False)  # the thread exits once the call returns
+    try:
+        while not future.done() and not run.finished.is_set():
+            remaining = run.remaining(timeout)
+            if remaining <= 0:
+                break
+            await asyncio.wait({future}, timeout=remaining)
+        if run.finished.is_set() and run.elapsed <= timeout:
+            return await future, run.elapsed
+        raise asyncio.TimeoutError(f"tool {name!r} ran longer than {timeout}s")
+    finally:
+        # A timed-out or cancelled call's thread keeps running; its outcome
+        # is dropped, also when it arrives after the loop has closed.
+        if not future.done():
+            future.cancel()
 
 
 def _calculate(expression: str) -> int | str:

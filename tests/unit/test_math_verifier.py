@@ -384,3 +384,155 @@ COMMITTED_DESPITE_EXTRA_TEXT = [
 def test_units_restatements_and_checks_keep_their_credit(reply, reference):
     verdict = verify_math_answer(reply, reference, question=QUESTION)
     assert verdict.correct, verdict
+
+
+# --- chain of thought: only the final answer region counts (round 6) ----------
+
+PENS = "A box holds 24 pens. How many pens are in 7 boxes?"
+
+COT_CORRECT = [
+    # Doubt and other numbers in the reasoning, before the final answer.
+    ("We don't know the total yet, so multiply: 7*24=168. \\boxed{168}", "168"),
+    ("Not sure at first. Maybe 150? No: 7 * 24 = 168.\n\n\\boxed{168}", "168"),
+    # An earlier answer the reply corrects is reasoning.
+    ("\\boxed{160}. Wait... 7 * 24 is 168, not 160. \\boxed{168}", "168"),
+    (
+        "The answer is 160. Hmm, I made an error: 7 * 24 = 168. The answer is 168.",
+        "168",
+    ),
+    (
+        "So the answer is 3x^2 + 2x. Hmm, let me double-check: the derivative "
+        "of 2x is 2, not 2x. So f'(x) = 3x^2 + 2.",
+        "3x^2 + 2",
+    ),
+    # Markdown and LaTeX around the answer.
+    ("The answer is **168**.", "168"),
+    ("**Answer:** 168 pens", "168"),
+    ("\\boxed{168\\,\\text{pens}}", "168"),
+    ("\\boxed{\\$1{,}512}", "1512"),
+    ("\\boxed{50\\%}", "50"),
+    ("\\boxed{50\\%}", "0.5"),
+    ("\\boxed{\\frac12}", "1/2"),
+    ("\\boxed{\\tfrac{1}{2}}", "0.5"),
+    ("\\(\\boxed{\\left(\\dfrac{5}{12}\\right)}\\)", "\\frac{5}{12}"),
+    ("\\boxed{90^\\circ}", "90"),
+    ("\\boxed{2^{10}}", "2^{10}"),
+    ("\\boxed{1024}", "2^{10}"),
+    ("Final Answer: The final answer is $168$. I hope it is correct.", "168"),
+    ("7 \\times 24 = 168\n\n#### 168", "168"),
+    # A check after the answer keeps the credit.
+    ("\\boxed{168}\n\nTo verify: 168 / 24 = 7 boxes, and 7 * 24 = 168.", "168"),
+    # Solution sets.
+    ("x^2 = 9, so \\boxed{\\pm 3}.", "\\pm 3"),
+    ("x^2 = 9, so x = \\pm 3.", "\\pm 3"),
+    ("x^2 = 9, so x = 3 or x = -3.", "\\pm 3"),
+    ("The solutions are $x = -3$ and $x = 3$.", "\\pm 3"),
+    ("\\boxed{3, -3}", "\\pm 3"),
+    ("\\boxed{-3 \\text{ or } 3}", "\\pm 3"),
+    # A closing sentence that states the answer.
+    ("7 * 24 = 168 pens in all. So the boxes hold 168 pens.", "168"),
+    # After a <think> block, the text that follows is the answer region.
+    ("<think>7*20 = 140, 7*4 = 28, 140 + 28 = 168</think>\n\n168", "168"),
+    ("<think>Maybe 160? No, 168.</think>\n\n**168 pens**", "168"),
+]
+
+COT_WRONG = [
+    ("\\boxed{84}. On second thought, 83.", "84", "contradicted"),
+    ("\\boxed{84}. Wait, I mean 83.", "84", "contradicted"),
+    (
+        "The answer is 2500. On second thought, the decimal moves four places, "
+        "so 2.5 * 10,000 = 25,000 mL.",
+        "2500",
+        "incorrect",
+    ),
+    (
+        "\\boxed{2500}. Hmm, actually the decimal moves four places, so "
+        "2.5 * 10,000 = 25,000 mL.",
+        "2500",
+        "contradicted",
+    ),
+    ("\\boxed{84}, but I might be wrong.", "84", "hedged"),
+    ("\\boxed{80}. Wait, or is it \\boxed{84}?", "84", "hedged"),
+    ("\\boxed{41} \\boxed{84}", "84", "multiple_answers"),
+    ("\\boxed{41}. So \\boxed{84}.", "84", "multiple_answers"),
+    ("1/3 + 1/6 = 2/6 + 1/6 = 3/6, so", "1/2", "no_answer"),
+    ("\\boxed{\\pm 3}", "3", "hedged"),
+    ("x^2 = 9, so x = 3.", "\\pm 3", "incorrect"),
+    ("\\boxed{3, -3, 9}", "\\pm 3", "incorrect"),
+    ("\\boxed{50\\%}", "5", "incorrect"),
+    ("\\boxed{4^5}", "2^{10}", "incorrect"),
+    ("\\boxed{~168}", "168", "hedged"),
+    ("So the boxes hold about 168 pens.", "168", "hedged"),
+    ("So the boxes hold 168 pens. Or 170?", "168", "no_answer"),
+    ("First, 7 boxes. Then 24 pens each. So the total is", "168", "no_answer"),
+    ("\\boxed{168} (approximately)", "168", "hedged"),
+    ("\\boxed{168}. 170 is also possible.", "168", "hedged"),
+    ("\\boxed{168}. Another possible answer is 170.", "168", "hedged"),
+]
+
+
+@pytest.mark.parametrize("reply,reference", COT_CORRECT)
+def test_chain_of_thought_is_judged_by_its_final_answer(reply, reference):
+    verdict = verify_math_answer(reply, reference, question=PENS)
+    assert verdict.correct, verdict
+
+
+@pytest.mark.parametrize("reply,reference,status", COT_WRONG)
+def test_the_final_answer_must_be_committed_and_kept(reply, reference, status):
+    verdict = verify_math_answer(reply, reference, question=PENS)
+    assert not verdict.correct, verdict
+    assert verdict.status == status, verdict
+
+
+@pytest.mark.parametrize(
+    "latex,plain",
+    [
+        (r"\frac12", "((1)/(2))"),
+        (r"\tfrac1{4}", "((1)/(4))"),
+        (r"168\,\text{pens}", "168 pens"),
+        (r"1\,000", "1000"),
+        (r"1{,}000", "1000"),
+        (r"\left( 3 \right)", "(3)"),
+        (r"50\%", "50%"),
+        (r"90^{\circ}", "90"),
+        (r"2^{10}", "2^(10)"),
+        ("7 \u00d7 24", "7 * 24"),
+    ],
+)
+def test_latex_normalization_reads_chain_of_thought_answers(latex, plain):
+    """Spacing aside, the plain syntax the parser reads."""
+    assert "".join(normalize_answer_text(latex).split()) == "".join(plain.split())
+
+
+# --- probe points are not a fixed public set (round 6) ------------------------
+
+
+def _old_fixed_probe_points() -> list[Fraction]:
+    """The points the verifier used to probe at: seeds 0..7, public."""
+    import random
+
+    points = []
+    for seed in range(8):
+        rng = random.Random(seed)
+        points.append(Fraction(rng.randint(-997, 997), rng.randint(1, 97)))
+    return points
+
+
+def test_a_polynomial_crafted_for_fixed_probe_points_is_rejected():
+    """``reference + (x - p1)...(x - p8)`` equals the reference at every old
+    fixed point; probes seeded from both expressions tell them apart."""
+    factors = "".join(
+        f"(x - ({p.numerator}/{p.denominator}))" for p in _old_fixed_probe_points()
+    )
+    crafted = f"3x^2 + 2 + {factors}"
+    assert equivalent(parse_expression(crafted), parse_expression("3x^2 + 2")) is False
+    assert not verify_math_answer(f"\\boxed{{{crafted}}}", "3x^2 + 2").correct
+
+
+def test_probe_points_are_deterministic_and_order_independent():
+    from stateset_agents.core.math_expressions import _probe_seed
+
+    a, b = parse_expression("(x+1)^2"), parse_expression("x^2 + 2x + 1")
+    assert equivalent(a, b) is True and equivalent(b, a) is True
+    assert _probe_seed(a, b) == _probe_seed(b, a)
+    assert _probe_seed(a, b) != _probe_seed(a, parse_expression("x^2 + 2x + 2"))

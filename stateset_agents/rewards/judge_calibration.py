@@ -18,10 +18,22 @@ and how stable its scores are:
   cache bypassed, and the report gives the mean and largest spread; across
   judge versions or models, :func:`score_drift` compares two reports.
 
+Pairs are judged in both orders: by ``LLMJudge.compare_pairwise_verdicts``
+when the judge has it, otherwise by calling ``compare_pairwise`` twice with
+the responses swapped, so a judge that prefers whichever response it sees
+first is caught whatever its interface.
+
 Judge outages (``RewardUnavailableError``) are counted as failures, never
 scored. The harness needs only an object with ``async evaluate(query,
 response, reference=None)`` (and ``compare_pairwise`` for pairwise rows), so it
-is tested with a mock judge; see ``tests/unit/test_judge_calibration.py``.
+is tested with a mock judge; see ``tests/unit/test_judge_hardening.py`` and
+``tests/unit/test_judge_round6.py``.
+
+:meth:`CalibrationReport.passes` is the gate: a minimum number of scored
+examples, agreement, Spearman correlation, mean absolute error, drift, swap
+consistency and outages, each with a threshold, and it names every check that
+failed. :func:`support_calibration_set_path` is a labelled customer-support
+set shipped with the package (see ``SUPPORT_CALIBRATION_SET``).
 """
 
 from __future__ import annotations
@@ -29,7 +41,7 @@ from __future__ import annotations
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -37,12 +49,54 @@ from stateset_agents.core.reward_base import RewardUnavailableError
 
 __all__ = [
     "CalibrationExample",
+    "CalibrationGate",
     "CalibrationReport",
     "PairwiseExample",
+    "SUPPORT_CALIBRATION_SET",
     "calibrate_judge",
     "load_calibration_set",
     "score_drift",
+    "support_calibration_set_path",
 ]
+
+#: The labelled customer-support calibration set shipped with the package
+#: (JSONL next to this module; pointwise and pairwise rows).
+SUPPORT_CALIBRATION_SET = "judge_calibration_support.jsonl"
+
+
+def support_calibration_set_path() -> Path:
+    """Path of the shipped customer-support calibration set, for
+    ``calibrate_judge(judge, support_calibration_set_path())``.
+
+    Labels are hand-assigned against the support rubric (resolves the request
+    with correct, grounded policy; asks for what it needs; no invented facts,
+    no unsafe or dismissive replies). It is a smoke-level gate for a judge
+    (dozens of rows), not a benchmark: calibrate on your own labelled data
+    before trusting a judge with training.
+    """
+    return Path(__file__).with_name(SUPPORT_CALIBRATION_SET)
+
+
+@dataclass(frozen=True)
+class CalibrationGate:
+    """The outcome of :meth:`CalibrationReport.passes`.
+
+    True when every check passed. ``failed`` names each check that did not,
+    with the measured value and the threshold (for example
+    ``"spearman: undefined (constant scores or labels) < 0.6"``).
+    """
+
+    failed: tuple[str, ...] = ()
+
+    @property
+    def passed(self) -> bool:
+        return not self.failed
+
+    def __bool__(self) -> bool:
+        return self.passed
+
+    def __str__(self) -> str:
+        return "passed" if self.passed else "failed: " + "; ".join(self.failed)
 
 
 @dataclass(frozen=True)
@@ -89,18 +143,87 @@ class CalibrationReport:
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
-    def passes(self, *, min_agreement: float = 0.8, max_drift: float = 0.1) -> bool:
-        """Whether the judge agrees with the labels at least ``min_agreement``
-        of the time (pointwise and pairwise), drifts by at most ``max_drift``
-        and never failed."""
-        checks = [self.failures == 0]
-        if self.agreement is not None:
-            checks.append(self.agreement >= min_agreement)
-        if self.pairwise_agreement is not None:
-            checks.append(self.pairwise_agreement >= min_agreement)
-        if self.drift_max is not None:
-            checks.append(self.drift_max <= max_drift)
-        return all(checks)
+    def passes(
+        self,
+        *,
+        min_agreement: float = 0.8,
+        max_drift: float = 0.1,
+        min_examples: int = 30,
+        min_spearman: float = 0.6,
+        max_mae: float = 0.2,
+        min_swap_consistency: float = 0.8,
+        max_failures: int = 0,
+    ) -> CalibrationGate:
+        """Gate the judge on this report; the result is truthy when it passes
+        and names every failed check (:class:`CalibrationGate`).
+
+        * at least ``min_examples`` pointwise examples were scored (an empty
+          or tiny set proves nothing);
+        * pointwise agreement (within ``tolerance``) of at least
+          ``min_agreement``;
+        * Spearman correlation with the labels of at least ``min_spearman``
+          (undefined, as for a judge that gives every reply the same score,
+          fails);
+        * mean absolute error of at most ``max_mae``;
+        * repeat drift of at most ``max_drift``;
+        * with pairwise rows: pairwise agreement of at least
+          ``min_agreement`` and swap consistency (both orders agree) of at
+          least ``min_swap_consistency``;
+        * at most ``max_failures`` judge outages.
+
+        A metric that could not be measured fails its check.
+        """
+        failed: list[str] = []
+        scored = len(self.scores)
+        if scored < min_examples:
+            failed.append(f"pointwise_examples: {scored} scored < {min_examples}")
+        _at_least(failed, "agreement", self.agreement, min_agreement)
+        _at_least(
+            failed,
+            "spearman",
+            self.spearman,
+            min_spearman,
+            missing=(
+                "undefined (constant scores or labels)"
+                if scored >= 2
+                else "not measured"
+            ),
+        )
+        _at_most(failed, "mean_absolute_error", self.mean_absolute_error, max_mae)
+        _at_most(failed, "drift_max", self.drift_max, max_drift)
+        if self.pairwise:
+            _at_least(
+                failed, "pairwise_agreement", self.pairwise_agreement, min_agreement
+            )
+            _at_least(
+                failed,
+                "swap_consistency",
+                self.pairwise_consistency,
+                min_swap_consistency,
+            )
+        if self.failures > max_failures:
+            failed.append(f"failures: {self.failures} > {max_failures}")
+        return CalibrationGate(tuple(failed))
+
+
+def _at_least(
+    failed: list[str],
+    name: str,
+    value: float | None,
+    bound: float,
+    missing: str = "not measured",
+) -> None:
+    if value is None:
+        failed.append(f"{name}: {missing} < {bound}")
+    elif not value >= bound:
+        failed.append(f"{name}: {value:.3f} < {bound}")
+
+
+def _at_most(failed: list[str], name: str, value: float | None, bound: float) -> None:
+    if value is None:
+        failed.append(f"{name}: not measured > {bound}")
+    elif not value <= bound:
+        failed.append(f"{name}: {value:.3f} > {bound}")
 
 
 def _row_id(row: Mapping[str, Any], index: int) -> str:
@@ -164,7 +287,17 @@ def load_calibration_set(
             pairwise.append(parsed)
         else:
             pointwise.append(parsed)
+    _check_unique_ids(pointwise)
     return pointwise, pairwise
+
+
+def _check_unique_ids(examples: Sequence[CalibrationExample]) -> None:
+    """Pointwise ids key the judge's scores; a repeated id would merge rows."""
+    seen: set[str] = set()
+    for example in examples:
+        if example.id in seen:
+            raise ValueError(f"duplicate calibration example id {example.id!r}")
+        seen.add(example.id)
 
 
 def _ranks(values: Sequence[float]) -> list[float]:
@@ -231,30 +364,44 @@ async def _score_pointwise(
     return runs, failures
 
 
+_SWAPPED = {"A": "B", "B": "A", "TIE": "TIE"}
+
+
+async def _judge_pair(judge: Any, pair: PairwiseExample) -> tuple[str, bool]:
+    """The winner of ``pair`` and whether both orders agreed."""
+    if hasattr(judge, "compare_pairwise_verdicts"):
+        verdict = await judge.compare_pairwise_verdicts(
+            pair.query, pair.response_a, pair.response_b
+        )
+        return str(verdict.winner).upper(), bool(verdict.consistent)
+    # Judge both orders here: a judge without a two-order API is otherwise
+    # never checked for position bias.
+    forward, _, _ = await judge.compare_pairwise(
+        pair.query, pair.response_a, pair.response_b
+    )
+    swapped, _, _ = await judge.compare_pairwise(
+        pair.query, pair.response_b, pair.response_a
+    )
+    first = str(forward).upper()
+    second = _SWAPPED.get(str(swapped).upper(), str(swapped).upper())
+    agrees = first == second
+    return (first if agrees else "TIE"), agrees
+
+
 async def _score_pairwise(
     judge: Any, pairs: Sequence[PairwiseExample]
 ) -> tuple[list[bool], list[bool], int]:
     matches: list[bool] = []
     consistent: list[bool] = []
     failures = 0
-    detailed = hasattr(judge, "compare_pairwise_verdicts")
     for pair in pairs:
         try:
-            if detailed:
-                verdict = await judge.compare_pairwise_verdicts(
-                    pair.query, pair.response_a, pair.response_b
-                )
-                winner, agrees = verdict.winner, verdict.consistent
-            else:
-                winner, _, _ = await judge.compare_pairwise(
-                    pair.query, pair.response_a, pair.response_b
-                )
-                winner, agrees = str(winner).upper(), True
+            winner, agrees = await _judge_pair(judge, pair)
         except RewardUnavailableError:
             failures += 1
             continue
         matches.append(winner == pair.preferred)
-        consistent.append(bool(agrees))
+        consistent.append(agrees)
     return matches, consistent, failures
 
 
@@ -279,8 +426,14 @@ async def calibrate_judge(
     pointwise: list[CalibrationExample]
     pairwise: list[PairwiseExample]
     if items is not None and all(isinstance(i, CalibrationExample) for i in items):
-        pointwise = [i for i in items if isinstance(i, CalibrationExample)]
+        # An example without an id is keyed by its position.
+        pointwise = [
+            i if i.id else replace(i, id=str(index))
+            for index, i in enumerate(items)
+            if isinstance(i, CalibrationExample)
+        ]
         pairwise = list(pairs)
+        _check_unique_ids(pointwise)
     else:
         pointwise, loaded_pairs = load_calibration_set(
             examples if items is None else items  # type: ignore[arg-type]

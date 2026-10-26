@@ -13,20 +13,36 @@ How a run is isolated (POSIX only; elsewhere scoring raises
 ``RewardUnavailableError``):
 
 * ``python -I -S`` (isolated mode, no site-packages) with an empty
-  environment, a fresh temporary directory as the working directory, and its
-  own session, so the whole process group is killed afterwards;
-* a wall-clock timeout, plus rlimits the harness applies to itself before any
-  candidate code runs: CPU seconds, address space, file size, process count
-  (``RLIMIT_NPROC`` 0: no forks or threads), open files, no core dumps;
+  environment, a fresh, empty temporary directory as the working directory,
+  and its own session, so the whole process group is killed afterwards;
+* rlimits the harness applies to itself before any candidate code runs: CPU
+  seconds, address space, file size, process count (``RLIMIT_NPROC`` 0: no
+  forks or threads), open files, no core dumps;
 * capped reads of stdout and stderr (the rest is drained and discarded).
+
+The time limit that decides a score is CPU time
+(``SandboxLimits.cpu_seconds``, ``RLIMIT_CPU``; a run killed by it reports
+``status="cpu_limit"``), not the wall clock, so waiting for a CPU no longer
+fails a run. CPU time itself still varies with contention (about 2x between
+an idle machine and a fully loaded one with hyperthreads and frequency
+scaling), so keep ``cpu_seconds`` several times what a correct solution
+needs. The wall clock (``timeout_seconds``) is only a generous backstop that
+guarantees a stalled run (a sleep, a blocked read) cannot hang the trainer;
+a run it kills reports ``"wall_timeout"`` and, on Linux, the CPU seconds it
+had used, so a stall is told apart from a CPU-limit kill. At most
+:func:`sandbox_concurrency` sandboxes (default: the CPUs this process may
+use; ``STATESET_SANDBOX_CONCURRENCY`` or :func:`set_sandbox_concurrency` to
+change it) run at once across every event loop and thread of the process;
+the others wait for a slot before their clocks start.
 
 How a verdict resists the obvious exploits:
 
 * expected outputs never enter the sandbox: the harness receives test
   *inputs* only and reports each return value as strict JSON (or a program's
   captured stdout); this process compares them. Printing the expected output
-  without computing it needs the hidden tests, reading a tests file finds
-  none, and an object whose ``__eq__`` always returns True cannot be encoded;
+  without computing it needs the hidden tests, the working directory holds no
+  tests file, and an object whose ``__eq__`` always returns True cannot be
+  encoded;
 * the harness frames its records with a per-run random nonce written to a
   private copy of stdout, and points fd 1 at ``/dev/null``: stray output is
   never parsed as a result, and a test with two records (a forged one) fails;
@@ -37,15 +53,18 @@ How a verdict resists the obvious exploits:
 
 **This is resource isolation, not a security boundary.** The candidate runs
 as the trainer's user with normal filesystem and network access; it can read
-anything that user can and, as root, ignores ``RLIMIT_NPROC``. Run untrusted
-or adversarial code in a container or VM sandbox (gVisor, Firecracker, a
-locked-down Docker container without network) and point this verifier at
-trusted policy output only, or run the trainer itself inside such a sandbox.
+anything that user can (including ``/proc`` and any expected outputs stored
+on disk, such as a dataset file: only the working directory is empty) and, as
+root, ignores ``RLIMIT_NPROC``. Run untrusted or adversarial code in a
+container or VM sandbox (gVisor, Firecracker, a locked-down Docker container
+without network) and point this verifier at trusted policy output only, or
+run the trainer itself inside such a sandbox.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import math
 import os
@@ -54,7 +73,9 @@ import secrets
 import signal
 import sys
 import tempfile
-from collections.abc import Mapping, Sequence
+import threading
+from collections import deque
+from collections.abc import AsyncIterator, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,19 +98,31 @@ __all__ = [
     "normalize_tests",
     "run_sandboxed",
     "sandbox_available",
+    "sandbox_concurrency",
     "score_outcomes",
+    "set_sandbox_concurrency",
 ]
 
 _HARNESS = Path(__file__).with_name("_sandbox_harness.py")
 _FENCE = re.compile(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\n(.*?)```", re.S)
 _CODE_LANGUAGES = {"", "python", "py", "python3"}
+#: Environment variable that sets how many sandboxes may run at once.
+CONCURRENCY_ENV = "STATESET_SANDBOX_CONCURRENCY"
 
 
 @dataclass(frozen=True)
 class SandboxLimits:
-    """Per-run limits. ``timeout_seconds`` is wall clock for the whole run."""
+    """Per-run limits.
 
-    timeout_seconds: float = 10.0
+    ``cpu_seconds`` is the time limit that decides scores: CPU time for the
+    whole run (``RLIMIT_CPU``), which waiting for a CPU does not consume
+    (contention still slows each CPU second, about 2x under full load, so
+    leave headroom). ``timeout_seconds`` is a wall-clock backstop for runs
+    that stall without using CPU (sleeping, blocked); keep it several times
+    ``cpu_seconds`` so that load never reaches it.
+    """
+
+    timeout_seconds: float = 30.0
     cpu_seconds: int = 5
     memory_bytes: int = 512 * 1024 * 1024
     file_size_bytes: int = 1024 * 1024
@@ -133,6 +166,12 @@ class SandboxRun:
     duplicate_records: int = 0
     load_error: str | None = None
     timed_out: bool = False
+    #: CPU seconds the run used: reported by the harness when it finished, or
+    #: read when the wall-clock backstop killed it (``None`` when unknown).
+    cpu_seconds: float | None = None
+    #: An error raised by code after the entry point was defined (an example
+    #: block); the tests still ran.
+    load_warning: str | None = None
 
 
 def sandbox_available() -> bool:
@@ -273,6 +312,139 @@ def score_outcomes(
     )
 
 
+# --- how many sandboxes run at once ---------------------------------------------
+
+
+def _default_concurrency() -> int:
+    """``STATESET_SANDBOX_CONCURRENCY``, else the CPUs this process may use."""
+    configured = os.environ.get(CONCURRENCY_ENV, "").strip()
+    if configured:
+        try:
+            value = int(configured)
+        except ValueError as error:
+            raise ConfigurationError(
+                f"{CONCURRENCY_ENV} must be a positive integer, got {configured!r}"
+            ) from error
+        if value < 1:
+            raise ConfigurationError(f"{CONCURRENCY_ENV} must be at least 1")
+        return value
+    try:
+        return max(1, len(os.sched_getaffinity(0)))
+    except (AttributeError, OSError):  # not Linux
+        return max(1, os.cpu_count() or 1)
+
+
+class _SandboxSlots:
+    """A process-wide bound on simultaneous sandboxes.
+
+    One counter shared by every event loop and thread: an ``asyncio``
+    semaphore belongs to a single loop, and trainers may score from several.
+    A released slot passes straight to the oldest waiter (first come, first
+    served); a waiter cancelled while its slot was being handed over passes
+    it on.
+    """
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._limit: int | None = None
+        self._active = 0
+        self._waiters: deque[tuple[asyncio.AbstractEventLoop, asyncio.Future[None]]] = (
+            deque()
+        )
+
+    def limit(self) -> int:
+        with self._lock:
+            return self._limit_locked()
+
+    def _limit_locked(self) -> int:
+        if self._limit is None:
+            self._limit = _default_concurrency()
+        return self._limit
+
+    def set_limit(self, limit: int | None) -> None:
+        if limit is not None and (
+            isinstance(limit, bool) or not isinstance(limit, int) or limit < 1
+        ):
+            raise ConfigurationError("sandbox concurrency must be an integer >= 1")
+        with self._lock:
+            self._limit = limit
+            while self._waiters and self._active < self._limit_locked():
+                self._active += 1
+                self._hand_over_locked()
+
+    def active(self) -> int:
+        with self._lock:
+            return self._active
+
+    async def acquire(self) -> None:
+        loop = asyncio.get_running_loop()
+        with self._lock:
+            if not self._waiters and self._active < self._limit_locked():
+                self._active += 1
+                return
+            waiter: asyncio.Future[None] = loop.create_future()
+            self._waiters.append((loop, waiter))
+        try:
+            await waiter
+        except asyncio.CancelledError:
+            with self._lock:
+                if (loop, waiter) in self._waiters:
+                    self._waiters.remove((loop, waiter))
+                    raise
+            # The slot was handed over: give it back. (When the hand-over has
+            # not run yet, it finds the waiter cancelled and passes it on.)
+            if waiter.done() and not waiter.cancelled():
+                self.release()
+            raise
+
+    def release(self) -> None:
+        with self._lock:
+            self._hand_over_locked()
+
+    def _hand_over_locked(self) -> None:
+        """Pass one held slot to the oldest live waiter, or free it (also
+        when a lowered limit means fewer slots should be held)."""
+        while self._waiters and self._active <= self._limit_locked():
+            loop, waiter = self._waiters.popleft()
+            try:
+                loop.call_soon_threadsafe(self._grant, waiter)
+            except RuntimeError:  # that loop is closed: try the next waiter
+                continue
+            return
+        self._active -= 1
+
+    def _grant(self, waiter: asyncio.Future[None]) -> None:
+        if waiter.done():  # cancelled meanwhile: pass the slot on
+            self.release()
+        else:
+            waiter.set_result(None)
+
+    @contextlib.asynccontextmanager
+    async def hold(self) -> AsyncIterator[None]:
+        await self.acquire()
+        try:
+            yield
+        finally:
+            self.release()
+
+
+_SLOTS = _SandboxSlots()
+
+
+def sandbox_concurrency() -> int:
+    """How many sandboxes may run at once in this process."""
+    return _SLOTS.limit()
+
+
+def set_sandbox_concurrency(limit: int | None) -> None:
+    """Bound the sandboxes that run at once (``None``: back to the default,
+    ``STATESET_SANDBOX_CONCURRENCY`` or the CPUs this process may use).
+
+    Waiting runs start when a slot frees; their clocks start only then.
+    """
+    _SLOTS.set_limit(limit)
+
+
 # --- running the sandbox -----------------------------------------------------
 
 
@@ -299,14 +471,32 @@ def _kill_group(pid: int) -> None:
         pass
 
 
+def _process_cpu_seconds(pid: int) -> float | None:
+    """CPU seconds a live process has used (Linux ``/proc``), else ``None``."""
+    try:
+        with open(f"/proc/{pid}/stat", "rb") as handle:
+            stat = handle.read().decode("ascii", "replace")
+        # Fields after the parenthesized name start at field 3 (state);
+        # utime and stime are fields 14 and 15, in clock ticks.
+        fields = stat[stat.rindex(")") + 2 :].split()
+        ticks = int(fields[11]) + int(fields[12])
+        return ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError):
+        return None
+
+
 async def _exchange(
     process: asyncio.subprocess.Process,
     payload: bytes,
     limits: SandboxLimits,
     out: bytearray,
     err: bytearray,
-) -> bool:
-    """Feed the payload and collect output; True when the run timed out."""
+) -> float | None:
+    """Feed the payload and collect output.
+
+    Returns ``None`` when the run ended by itself, else the CPU seconds it had
+    used when the wall-clock backstop killed it (``-1.0`` when unknown).
+    """
 
     async def feed() -> None:
         assert process.stdin is not None
@@ -330,21 +520,28 @@ async def _exchange(
             timeout=limits.timeout_seconds,
         )
     except asyncio.TimeoutError:
-        # Kill, then read what the run reported before it was stopped.
+        # Measure, kill, then read what the run reported before it stopped.
+        used = _process_cpu_seconds(process.pid)
         _kill_group(process.pid)
         try:
             await asyncio.wait_for(readers(), timeout=2.0)
         except asyncio.TimeoutError:
             pass
-        return True
-    return False
+        return -1.0 if used is None else used
+    return None
 
 
 def _records(raw: bytes, nonce: str, count: int) -> tuple[list[Any], dict[str, Any]]:
     """Per-test records (``None`` when missing or forged twice) and run facts."""
     outcomes: list[Any] = [None] * count
     seen = [0] * count
-    facts: dict[str, Any] = {"done": False, "limits": [], "load_error": None}
+    facts: dict[str, Any] = {
+        "done": False,
+        "limits": [],
+        "load_error": None,
+        "load_warning": None,
+        "cpu_seconds": None,
+    }
     prefix = nonce + " "
     for line in raw.decode("utf-8", "replace").split("\n"):
         if not line.startswith(prefix):
@@ -360,26 +557,72 @@ def _records(raw: bytes, nonce: str, count: int) -> tuple[list[Any], dict[str, A
         if kind == "result" and type(index) is int and 0 <= index < count:
             seen[index] += 1
             outcomes[index] = record
-        elif kind == "start" and isinstance(record.get("limits"), list):
-            facts["limits"] = [str(name) for name in record["limits"]]
-        elif kind == "load_error":
-            facts["load_error"] = str(record.get("error"))
-        elif kind == "done":
-            facts["done"] = True
+        else:
+            _run_fact(kind, record, facts)
     facts["duplicates"] = sum(1 for n in seen if n > 1)
     return [o if n == 1 else None for o, n in zip(outcomes, seen, strict=True)], facts
 
 
+def _run_fact(kind: Any, record: Mapping[str, Any], facts: dict[str, Any]) -> None:
+    if kind == "start" and isinstance(record.get("limits"), list):
+        facts["limits"] = [str(name) for name in record["limits"]]
+    elif kind in ("load_error", "load_warning"):
+        facts[kind] = str(record.get("error"))
+    elif kind == "done":
+        facts["done"] = True
+        cpu = record.get("cpu_seconds")
+        if isinstance(cpu, (int, float)) and not isinstance(cpu, bool):
+            facts["cpu_seconds"] = float(cpu)
+
+
 def _status(timed_out: bool, facts: Mapping[str, Any], returncode: int | None) -> str:
     if timed_out:
-        return "timeout"
+        return "wall_timeout"  # the backstop: the run stalled (little CPU)
     if facts["load_error"]:
         return "load_error"
     if facts["done"]:
         return "ok"
+    if returncode is not None and returncode == -getattr(signal, "SIGXCPU", 0):
+        return "cpu_limit"
     if returncode is not None and returncode < 0:
-        return "killed"  # a limit's signal (SIGXCPU, SIGKILL...)
+        return "killed"  # another signal (the hard CPU limit's SIGKILL...)
     return "exited_early" if returncode == 0 else "crashed"
+
+
+def _payload(
+    code: str,
+    tests: Sequence[Mapping[str, Any]],
+    mode: str,
+    entry_point: str | None,
+    limits: SandboxLimits,
+    stdin_dir: Path,
+) -> tuple[bytes, str]:
+    """The harness's input (test *inputs* only) and the run's nonce.
+
+    A program's stdin goes to one file per test in ``stdin_dir`` (outside the
+    working directory), which the harness puts on fd 0 for that test.
+    """
+    nonce = secrets.token_hex(16)
+    if mode == "program":
+        stdin_dir.mkdir(mode=0o700)
+        for index, test in enumerate(tests):
+            (stdin_dir / str(index)).write_text(str(test["stdin"]), encoding="utf-8")
+        inputs: list[dict[str, Any]] = [{} for _ in tests]
+    else:
+        inputs = [{"args": t["args"], "kwargs": t["kwargs"]} for t in tests]
+    payload = json.dumps(
+        {
+            "nonce": nonce,
+            "mode": mode,
+            "entry_point": entry_point,
+            "code": code,
+            "inputs": inputs,
+            "stdin_dir": str(stdin_dir),
+            "limits": limits.rlimits(),
+            "max_result_chars": limits.max_result_chars,
+        }
+    ).encode()
+    return payload, nonce
 
 
 async def run_sandboxed(
@@ -394,8 +637,9 @@ async def run_sandboxed(
     """Run ``code`` on the inputs of ``tests`` in a fresh sandboxed process.
 
     Returns the per-test records; it never compares expected outputs (see
-    :func:`score_outcomes`). Raises ``RewardUnavailableError`` when the
-    platform cannot sandbox (not POSIX) or the interpreter cannot start.
+    :func:`score_outcomes`). Waits for one of the :func:`sandbox_concurrency`
+    slots first. Raises ``RewardUnavailableError`` when the platform cannot
+    sandbox (not POSIX) or the interpreter cannot start.
     """
     if not sandbox_available():
         raise RewardUnavailableError(
@@ -403,52 +647,53 @@ async def run_sandboxed(
             "resource module (rlimits); run it on Linux or macOS"
         )
     limits = limits or SandboxLimits()
-    nonce = secrets.token_hex(16)
-    inputs = [
-        (
-            {"stdin": t["stdin"]}
-            if mode == "program"
-            else {"args": t["args"], "kwargs": t["kwargs"]}
-        )
-        for t in tests
-    ]
-    payload = json.dumps(
-        {
-            "nonce": nonce,
-            "mode": mode,
-            "entry_point": entry_point,
-            "code": code,
-            "inputs": inputs,
-            "limits": limits.rlimits(),
-            "max_result_chars": limits.max_result_chars,
-        }
-    ).encode()
+    async with _SLOTS.hold():
+        with tempfile.TemporaryDirectory(prefix="stateset-sandbox-") as root:
+            workdir = Path(root) / "work"
+            workdir.mkdir(mode=0o700)
+            payload, nonce = _payload(
+                code, tests, mode, entry_point, limits, Path(root) / "stdin"
+            )
+            return await _run_harness(
+                payload, nonce, len(tests), workdir, limits, site_packages
+            )
+
+
+async def _run_harness(
+    payload: bytes,
+    nonce: str,
+    count: int,
+    workdir: Path,
+    limits: SandboxLimits,
+    site_packages: bool,
+) -> SandboxRun:
     flags = ["-I"] if site_packages else ["-I", "-S"]
     out, err = bytearray(), bytearray()
-    with tempfile.TemporaryDirectory(prefix="stateset-sandbox-") as workdir:
-        try:
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                *flags,
-                "-c",
-                _HARNESS.read_text(encoding="utf-8"),
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=workdir,
-                env={},
-                start_new_session=True,
-            )
-        except OSError as error:
-            raise RewardUnavailableError(
-                f"cannot start the sandbox: {error}"
-            ) from error
-        try:
-            timed_out = await _exchange(process, payload, limits, out, err)
-        finally:
-            _kill_group(process.pid)
-            await process.wait()
-    outcomes, facts = _records(bytes(out), nonce, len(tests))
+    try:
+        process = await asyncio.create_subprocess_exec(
+            sys.executable,
+            *flags,
+            "-c",
+            _HARNESS.read_text(encoding="utf-8"),
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=workdir,
+            env={},
+            start_new_session=True,
+        )
+    except OSError as error:
+        raise RewardUnavailableError(f"cannot start the sandbox: {error}") from error
+    try:
+        stalled_cpu = await _exchange(process, payload, limits, out, err)
+    finally:
+        _kill_group(process.pid)
+        await process.wait()
+    outcomes, facts = _records(bytes(out), nonce, count)
+    timed_out = stalled_cpu is not None
+    cpu = facts["cpu_seconds"]
+    if timed_out:
+        cpu = None if stalled_cpu is None or stalled_cpu < 0 else stalled_cpu
     return SandboxRun(
         outcomes=tuple(outcomes),
         status=_status(timed_out, facts, process.returncode),
@@ -458,6 +703,8 @@ async def run_sandboxed(
         duplicate_records=int(facts["duplicates"]),
         load_error=facts["load_error"],
         timed_out=timed_out,
+        cpu_seconds=cpu,
+        load_warning=facts["load_warning"],
     )
 
 
@@ -569,6 +816,8 @@ class SandboxedCodeVerifier(RewardFunction):
                 "limits_applied": list(run.limits_applied),
                 "duplicate_records": run.duplicate_records,
                 "load_error": run.load_error,
+                "load_warning": run.load_warning,
+                "cpu_seconds": run.cpu_seconds,
             }
         score = passed / len(tests)
         return RewardResult(

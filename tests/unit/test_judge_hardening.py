@@ -207,7 +207,8 @@ async def test_k_samples_are_averaged_and_must_all_be_verdicts():
     judge.backend._call_api = varying
     assert await judge.evaluate("q", "r") == pytest.approx(0.6)
 
-    broken = iter(['{"score": 0.2}', "not json", '{"score": 1.0}'])
+    # The second sample stays invalid after its one structured retry.
+    broken = iter(['{"score": 0.2}', "not json", "still not json", '{"score": 1.0}'])
 
     async def one_bad(messages):
         return next(broken)
@@ -336,7 +337,9 @@ async def test_calibration_measures_agreement_and_drift(tmp_path):
     assert report.agreement == 1.0 and report.decision_agreement == 1.0
     assert report.spearman == pytest.approx(1.0)
     assert report.drift_max == 0.0 and report.pairwise_agreement == 1.0
-    assert report.passes()
+    # Four rows are too few for the default gate (30), however well judged.
+    assert report.passes(min_examples=4)
+    assert report.passes().failed == ("pointwise_examples: 4 scored < 30",)
 
     fooled = dict(honest, **{ROWS[3]["response"]: 1.0, "Bananas.": 0.8})
     bad = await calibrate_judge(_LabelJudge(fooled, noise=0.15, bias_first=True), path)

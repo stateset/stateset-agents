@@ -8,6 +8,7 @@ import math
 from typing import Any
 
 from stateset_agents.core.reward_base import RewardFunction, RewardResult, RewardType
+from stateset_agents.core.reward_context import REWARD_FALLBACK_KEY, reward_fallback
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.evaluation.agent_runs import content_hash
 from stateset_agents.evaluation.support_judge import ALL_CHECKS, JudgeItem, JudgeResult
@@ -62,6 +63,15 @@ class SupportJudgeReward(RewardFunction):
     parse retries. Reaching the budget aborts instead of changing the objective.
     This is a call bound, not a provider dollar cap. Inject a suitably bounded
     judge transport. Synchronous judges execute synchronously.
+
+    With a fraction strictly between zero and one, an episode the hash leaves
+    unsampled is scored by the rules alone, a different objective from the
+    judged blend its group-mates get: its result is flagged
+    ``metadata["reward_fallback"]`` (copied to the trajectory by
+    environments and ``score_episode``), so trainers can keep the two apart.
+    ``judge_fraction=0`` or ``judge_weight=0`` configures a rules-only reward
+    and is not flagged; neither is a hard veto (score 0 whatever the judge
+    would say).
     """
 
     fail_on_error = True
@@ -123,8 +133,19 @@ class SupportJudgeReward(RewardFunction):
         bucket = int(hashlib.sha256(identity.encode()).hexdigest(), 16)
         sampled = self.judge_weight > 0 and bucket < self.judge_fraction * (1 << 256)
         if not sampled:
+            metadata: dict[str, Any] = {}
+            reasons = [f"rules: {reason}"] if (reason := reward_fallback(rule)) else []
+            if self.judge_weight > 0 and 0 < self.judge_fraction < 1:
+                reasons.append(
+                    f"{self.name}: not sampled for judging "
+                    f"(judge_fraction={self.judge_fraction}); scored by rules only"
+                )
+            if reasons:
+                metadata[REWARD_FALLBACK_KEY] = "; ".join(reasons)
             return RewardResult(
-                score=rule.score, breakdown={**breakdown, "judge_sampled": 0.0}
+                score=rule.score,
+                breakdown={**breakdown, "judge_sampled": 0.0},
+                metadata=metadata,
             )
         if self.judged_episodes >= self.max_judged_episodes:
             raise RuntimeError("Whole-conversation judge episode budget exhausted")

@@ -6,8 +6,9 @@ by the package at runtime).
 directory, and writes one JSON payload to its stdin: a per-run random
 ``nonce``, resource ``limits``, the candidate ``code``, the ``mode``
 (``"function"`` or ``"program"``), the ``entry_point`` and the test
-*inputs* only. Expected outputs never enter this process; the parent
-compares results.
+*inputs* only (for programs, the directory holding one stdin file per test,
+outside the working directory). Expected outputs never enter this process;
+the parent compares results.
 
 The harness:
 
@@ -20,22 +21,32 @@ The harness:
    ``<nonce> <json>`` per test as soon as it finishes: the JSON-encoded return
    value (strict JSON: an object with a custom ``__eq__`` cannot pass), or the
    captured stdout, or the exception type;
-4. writes a final ``done`` record and leaves with ``os._exit`` (no atexit or
-   finalizer code of the candidate runs after it).
+4. writes a final ``done`` record (with the CPU seconds the run used) and
+   leaves with ``os._exit`` (no atexit or finalizer code of the candidate runs
+   after it).
 
-A run that exits early (``sys.exit``/``os._exit`` at load or in a test),
-crashes, or is killed for a limit leaves tests without records, and the
-parent scores those tests 0.
+Ordinary scripts run as they would under ``python``: a program's stdin is a
+real file on fd 0 (``open(0).read()``, ``os.read(0, n)`` and
+``sys.stdin.fileno()`` work), and ``exit()``/``quit()`` exist although
+``-S`` skips the ``site`` module that defines them. In function mode, code
+after the entry point that fails at load (an "example usage" block reading
+``input()`` or naming an undefined variable) does not hide the function: the
+tests still call it, and the error is reported as a ``load_warning``.
+
+A run that exits early (``sys.exit``/``os._exit`` at load before the entry
+point exists, or in a test), crashes, or is killed for a limit leaves tests
+without records, and the parent scores those tests 0.
 """
 
 from __future__ import annotations
 
+import builtins
 import io
 import json
 import os
 import signal
 import sys
-from typing import Any
+from typing import Any, NoReturn
 
 #: Bound before any candidate code runs, so patching ``json.dumps`` does
 #: not change how results are encoded.
@@ -87,6 +98,18 @@ class _Records:  # pragma: no cover - child
             view = view[written:]
 
 
+def _exit(code: Any = None) -> NoReturn:  # pragma: no cover - child
+    """``exit``/``quit`` as the ``site`` module defines them (``-S`` skips it)."""
+    raise SystemExit(code)
+
+
+def _cpu_seconds() -> float:  # pragma: no cover - child
+    import resource
+
+    usage = resource.getrusage(resource.RUSAGE_SELF)
+    return float(usage.ru_utime + usage.ru_stime)
+
+
 def _encode(value: Any, limit: int) -> dict[str, Any]:  # pragma: no cover - child
     try:
         encoded = _DUMPS(value, allow_nan=False)
@@ -109,11 +132,15 @@ def run_function_tests(
         # Running the candidate is this child's purpose: it executes only in
         # the rlimited ``python -I -S`` subprocess code_verifier starts.
         exec(code, namespace)  # nosec: B102
-        function = namespace.get(entry_point)
-        if not callable(function):
-            raise NameError(f"no callable named {entry_point}")
     except BaseException as error:  # noqa: BLE001 - SystemExit included
-        records.emit({"kind": "load_error", "error": type(error).__name__})
+        if not callable(namespace.get(entry_point)):
+            records.emit({"kind": "load_error", "error": type(error).__name__})
+            return
+        # An example block after the solution failed: the function stands.
+        records.emit({"kind": "load_warning", "error": type(error).__name__})
+    function = namespace.get(entry_point)
+    if not callable(function):
+        records.emit({"kind": "load_error", "error": "NameError"})
         return
     for index, test in enumerate(inputs):
         try:
@@ -124,16 +151,25 @@ def run_function_tests(
         records.emit({"kind": "result", "index": index, **outcome})
 
 
+def _attach_stdin(path: str) -> Any:  # pragma: no cover - child
+    """Make the file at ``path`` the process's stdin (fd 0 and ``sys.stdin``)."""
+    fd = os.open(path, os.O_RDONLY)
+    if fd != 0:
+        os.dup2(fd, 0)
+        os.close(fd)
+    return open(0, encoding="utf-8", closefd=False)
+
+
 def run_program_tests(
-    code: Any, inputs: list[dict[str, Any]], records: _Records, limit: int
+    code: Any, stdin_dir: str, count: int, records: _Records, limit: int
 ) -> None:  # pragma: no cover - child
-    for index, test in enumerate(inputs):
-        stdin = io.TextIOWrapper(io.BytesIO(str(test["stdin"]).encode()), "utf-8")
+    for index in range(count):
         raw = io.BytesIO()
         sink = io.TextIOWrapper(raw, "utf-8", write_through=True)
-        sys.stdin, sys.stdout = stdin, sink
         status = "ok"
         try:
+            sys.stdin = _attach_stdin(os.path.join(stdin_dir, str(index)))
+            sys.stdout = sink
             exec(code, {"__name__": "__main__"})  # nosec: B102 - sandbox child
         except SystemExit as stop:
             if stop.code not in (None, 0):
@@ -161,6 +197,8 @@ def main() -> None:  # pragma: no cover - child
         signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
     records = _Records(str(payload["nonce"]))
     records.emit({"kind": "start", "limits": applied})
+    for name in ("exit", "quit"):  # what ``site`` would define
+        setattr(builtins, name, _exit)
     limit = int(payload["max_result_chars"])
     try:
         code = compile(payload["code"], "<candidate>", "exec", dont_inherit=True)
@@ -178,8 +216,10 @@ def main() -> None:  # pragma: no cover - child
             code, payload["entry_point"], payload["inputs"], records, limit
         )
     elif code is not None:
-        run_program_tests(code, payload["inputs"], records, limit)
-    records.emit({"kind": "done"})
+        run_program_tests(
+            code, str(payload["stdin_dir"]), len(payload["inputs"]), records, limit
+        )
+    records.emit({"kind": "done", "cpu_seconds": _cpu_seconds()})
     os._exit(0)
 
 
