@@ -98,7 +98,7 @@ fastapi==0.140.7
     # via
     #   -c requirements-dev-lock.txt
     #   stateset-agents (pyproject.toml)
-filelock==3.32.0
+filelock==4.2.4
     # via
     #   -c requirements-dev-lock.txt
     #   datasets
