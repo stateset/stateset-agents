@@ -186,7 +186,12 @@ class TestCustomerServiceE2E:
                 reward_fn=reward_fn,
                 num_episodes=2,
                 profile="balanced",
-                config_overrides={"allow_sequence_fallback": True},
+                # Mocked tokenizer: no chat template, so assistant spans cannot be
+                # located and the multi-turn sequence path must opt in to full labels.
+                config_overrides={
+                    "allow_sequence_fallback": True,
+                    "allow_unmasked_labels": True,
+                },
             )
 
         # Step 5: Test the trained agent with a real conversation

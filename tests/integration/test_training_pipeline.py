@@ -159,7 +159,12 @@ class TestTrainingPipelineIntegration:
                 reward_fn=reward_fn,
                 num_episodes=1,  # Very small for integration test
                 profile="conservative",
-                config_overrides={"allow_sequence_fallback": True},
+                # Mocked tokenizer: no chat template, so assistant spans cannot be
+                # located and the multi-turn sequence path must opt in to full labels.
+                config_overrides={
+                    "allow_sequence_fallback": True,
+                    "allow_unmasked_labels": True,
+                },
             )
 
         # Verify the training completed
