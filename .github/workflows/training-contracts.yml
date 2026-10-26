@@ -30,34 +30,43 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: ${{ matrix.python }}
+      - name: Free runner disk for the torch/CUDA install
+        if: matrix.extra == 'training'
+        # The training extra pulls torch plus multi-GB CUDA wheels; the hosted
+        # runner's /tmp now hits a disk quota (Errno 122) before they unpack.
+        run: |
+          df -h / "$RUNNER_TEMP" /tmp || true
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / "$RUNNER_TEMP" || true
       - run: python -m pip install build
-      - run: python -m build --wheel --outdir /tmp/wheels
+      - run: python -m build --wheel --outdir "$RUNNER_TEMP/wheels"
       - name: Install wheel in a clean environment
         env:
           EXTRA: ${{ matrix.extra }}
           DEPENDENCIES: ${{ matrix.dependencies }}
+          PIP_NO_CACHE_DIR: '1'
         run: |
-          python -m venv /tmp/wheel-env
-          /tmp/wheel-env/bin/pip install --upgrade pip
-          wheel=$(find /tmp/wheels -name '*.whl' -print -quit)
+          python -m venv "$RUNNER_TEMP/wheel-env"
+          "$RUNNER_TEMP/wheel-env/bin/pip" install --upgrade pip
+          wheel=$(find "$RUNNER_TEMP/wheels" -name '*.whl' -print -quit)
           if [ "$DEPENDENCIES" = locked ]; then
-            /tmp/wheel-env/bin/pip install -r requirements-dev-lock.txt
-            /tmp/wheel-env/bin/pip install --no-deps "$wheel"
+            "$RUNNER_TEMP/wheel-env/bin/pip" install -r requirements-dev-lock.txt
+            "$RUNNER_TEMP/wheel-env/bin/pip" install --no-deps "$wheel"
           elif [ "$DEPENDENCIES" = runtime-locked ]; then
-            /tmp/wheel-env/bin/pip install -r requirements-training-lock.txt
-            /tmp/wheel-env/bin/pip install --no-deps "$wheel"
+            "$RUNNER_TEMP/wheel-env/bin/pip" install -r requirements-training-lock.txt
+            "$RUNNER_TEMP/wheel-env/bin/pip" install --no-deps "$wheel"
           elif [ "$DEPENDENCIES" = minimum ]; then
-            /tmp/wheel-env/bin/pip install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
-            /tmp/wheel-env/bin/pip install "${wheel}[$EXTRA]" transformers==4.57.1 peft==0.18.0 trl==0.14.0
+            "$RUNNER_TEMP/wheel-env/bin/pip" install torch==2.6.0 --index-url https://download.pytorch.org/whl/cpu
+            "$RUNNER_TEMP/wheel-env/bin/pip" install "${wheel}[$EXTRA]" transformers==4.57.1 peft==0.18.0 trl==0.14.0
           elif [ "$EXTRA" = minimal ]; then
-            /tmp/wheel-env/bin/pip install "$wheel"
+            "$RUNNER_TEMP/wheel-env/bin/pip" install "$wheel"
           else
-            /tmp/wheel-env/bin/pip install "${wheel}[$EXTRA]"
+            "$RUNNER_TEMP/wheel-env/bin/pip" install "${wheel}[$EXTRA]"
           fi
-          /tmp/wheel-env/bin/pip check
-          cp scripts/verify_installed_wheel.py /tmp/verify_installed_wheel.py
-          cd /tmp
-          /tmp/wheel-env/bin/python verify_installed_wheel.py --extra "$EXTRA"
+          "$RUNNER_TEMP/wheel-env/bin/pip" check
+          cp scripts/verify_installed_wheel.py "$RUNNER_TEMP/verify_installed_wheel.py"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-env/bin/python" verify_installed_wheel.py --extra "$EXTRA"
       - name: Exercise installed wheel policy updates and exact resume
         if: matrix.extra == 'training'
         env:
@@ -65,14 +74,14 @@ jobs:
           HF_HUB_OFFLINE: '1'
           TRANSFORMERS_OFFLINE: '1'
         run: |
-          cp benchmarks/offline_policy_device_contract.py /tmp/offline_policy_device_contract.py
-          cd /tmp
-          /tmp/wheel-env/bin/python offline_policy_device_contract.py --device cpu --output /tmp/wheel-device-contract
+          cp benchmarks/offline_policy_device_contract.py "$RUNNER_TEMP/offline_policy_device_contract.py"
+          cd "$RUNNER_TEMP"
+          "$RUNNER_TEMP/wheel-env/bin/python" offline_policy_device_contract.py --device cpu --output "$RUNNER_TEMP/wheel-device-contract"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always() && matrix.extra == 'training'
         with:
           name: wheel-device-contract-${{ matrix.python }}-${{ matrix.dependencies }}
-          path: /tmp/wheel-device-contract/device_contract.json
+          path: ${{ runner.temp }}/wheel-device-contract/device_contract.json
 
   muse-spark-cpu:
     runs-on: ubuntu-latest
