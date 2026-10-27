@@ -11,6 +11,7 @@
 - The stable surface is `stateset_agents.__all__`, `stateset_agents.api.__all__` and the HTTP routes in `contracts/public_api_v1.json` (see `docs/API_COMPATIBILITY.md`). The old repo-root shim packages (`api/`, `core/`, `training/`, `rewards/`, `environments/`) were removed; import from `stateset_agents.*`.
 - Deprecations go through `stateset_agents._deprecation.warn_deprecated` and must name the removal release; `tests/unit/test_deprecation_schedule.py` fails CI once a removal is due.
 - Errors derive from `stateset_agents.core.errors.StateSetError`; raise typed errors (e.g. `ConfigurationError`, also a `ValueError`) at public boundaries.
+- Layering: every unit sits in one layer of `scripts/layer_graph.py` (`LAYERS`) and imports only lower layers, function-level imports included; product studies that compose trainers and the remote runtime live in `stateset_agents/verticals/`. `tests/unit/test_layering.py` enforces it; regenerate the docs with `python scripts/layer_graph.py --write docs/ARCHITECTURE.md`.
 - `examples/`: Runnable demos and quick starts.
 - `tests/`: Unit (`tests/unit`), API (`tests/api`), integration (`tests/integration`) and end-to-end tests.
 - `scripts/`, `deployment/`, `benchmarks/`: Utilities for training, deployment, and performance.

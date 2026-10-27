@@ -24,6 +24,7 @@ from stateset_agents.data.identity import (
     prompt_identity,
 )
 from stateset_agents.exceptions import SERIALIZATION_EXCEPTIONS
+from stateset_agents.utils.provenance import json_sha256
 
 from .._deprecation import warn_deprecated
 
@@ -887,7 +888,9 @@ def _normalized_text(text: str) -> str:
 
 def _content_digest(trajectory: TrajectoryData) -> str:
     content = [(turn.role, _normalized_text(turn.content)) for turn in trajectory.turns]
-    return hashlib.sha256(json.dumps(content, ensure_ascii=False).encode()).hexdigest()
+    return json_sha256(
+        content, sort_keys=False, compact=False, allow_nan=True, ensure_ascii=False
+    )
 
 
 def _identity_keys(trajectory: TrajectoryData) -> set[str]:
@@ -930,9 +933,12 @@ def _linked_groups(trajectories: list[TrajectoryData]) -> list[list[TrajectoryDa
 
 
 def _group_digest(group: list[TrajectoryData]) -> str:
-    return hashlib.sha256(
-        json.dumps(sorted(_content_digest(t) for t in group)).encode()
-    ).hexdigest()
+    return json_sha256(
+        sorted(_content_digest(t) for t in group),
+        sort_keys=False,
+        compact=False,
+        allow_nan=True,
+    )
 
 
 _ROLE_ALIASES = {

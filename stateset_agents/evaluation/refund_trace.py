@@ -79,7 +79,7 @@ async def select_replayed_validation_checkpoint(
                 ) from exc
     if training_progress is None:
         return selected
-    from stateset_agents.training.river_progress import summarize_training_activity
+    from stateset_agents.evaluation.river_progress import summarize_training_activity
 
     activity = summarize_training_activity(training_progress[: selected["step"]])
     if selected["step"] == 0:

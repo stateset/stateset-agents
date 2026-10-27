@@ -25,7 +25,7 @@ from stateset_agents.data.refund_demonstrations import (
     _sft_row,
     reference_refund_demonstration,
 )
-from stateset_agents.evaluation.agent_runs import content_hash
+from stateset_agents.utils.provenance import content_hash
 
 CURRICULUM_POLICY = "adjacent_boundary_v1"
 PARAMETER_POLICY = "policy_parameter_contrasts_v1"

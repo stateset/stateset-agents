@@ -194,7 +194,7 @@ stateset-agents river-preflight --live \
   --base-model nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16
 
 # Prepare a synthetic policy/task smoke experiment without paid calls.
-python -m stateset_agents.training.river_refund \
+python -m stateset_agents.verticals.river_refund \
   --base-model nvidia/NVIDIA-Nemotron-3.5-Bolt-74B-A9B-BF16 \
   --benchmark refund-policy-v2 --seed 42 --steps 1 \
   --train-count 8 --validation-count 4 --test-count 4 --concurrency 4 \

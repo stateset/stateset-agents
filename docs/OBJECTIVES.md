@@ -654,7 +654,7 @@ Actions are sampled through unmodified Hugging Face generation and executed
 against an isolated ledger. Evidence retains paired held-out outcomes, case
 hashes, optimizer updates, reload checks and a bootstrap interval across seeds.
 This is synthetic mechanics evidence, not representative industry quality.
-Use reviewed cases and `stateset_agents.evaluation.agent_study` for that claim.
+Use reviewed cases and `stateset_agents.verticals.agent_study` for that claim.
 The retained [three-seed CPU regression with accumulation](../benchmark_results/training_contracts/20261015/evaluation-isolation/native_workflow/summary.json)
 includes raw before/after outcomes, training metrics, and exact-weight reload
 checks for this workflow.

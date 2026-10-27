@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
-from stateset_agents.exceptions import ATTRIBUTE_VALUE_EXCEPTIONS
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
 from stateset_agents.utils.clock import utc_isoformat, utc_now
 from stateset_agents.utils.performance_monitor import get_global_monitor
 from stateset_agents.utils.security import SecurityMonitor
@@ -31,7 +31,9 @@ from ..schemas import ErrorResponse
 
 router = APIRouter(tags=["observability"])
 
-METRICS_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
+#: A monitor that fails at runtime yields an empty summary; an AttributeError
+#: or TypeError there is a bug and surfaces as a 500 instead of empty metrics.
+METRICS_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 HEALTH_TIMEOUT_SECONDS = 5.0
 
 # Track service start time for uptime calculation

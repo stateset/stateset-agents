@@ -52,6 +52,90 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     0.19 s at 40 to 120; container start-up (about 0.5 s) dominates.
     docs/TOOL_USE_RL.md tabulates what each backend isolates.
 
+### Changed
+
+- **Every unit has a layer contract, and the import graph is acyclic.**
+  `scripts/layer_graph.py` maps every executable import (module and function
+  level, literal `importlib` strings, `from stateset_agents import Name`
+  through the facade's lazy table, `deprecated_alias_getattr` targets) and
+  holds the contract table: foundation < errors < utils/config < core <
+  data | evaluation < rewards < environments/tools < training < experimental
+  < remote < finetune/flywheel/verticals/scaffolding/testing < api/tui < cli.
+  `tests/unit/test_layering.py` fails on any import against it (naming the
+  `file:line`, the module and what the unit may import), on any new cycle,
+  on a framework layer importing an app layer, on stale or past-due
+  exceptions, on a stale generated Layering section / package layout in
+  `docs/ARCHITECTURE.md`, and on new product-vertical modules in `core`.
+  Before: 13 mutual unit pairs (training<->remote, training<->evaluation,
+  training<->data, data<->evaluation, data<->remote, evaluation<->remote,
+  rewards<->evaluation, core<->utils, ...). After: none outside dated
+  deprecation bridges.
+- **Shared helpers moved down a layer** (old names keep working):
+  `atomic_json`/`exclusive_run` to `utils.atomic_io` (re-exported by
+  `remote.river_rl`); `content_hash`, `package_implementation`,
+  `validate_implementation` to `utils.provenance` (re-exported by
+  `evaluation.agent_runs` / `evaluation.implementation`); RNG
+  `capture_rng`/`restore_rng` to `utils.reproducibility` for evaluation
+  isolation. `utils` no longer imports `core` at runtime.
+- **One JSON-digest implementation**: `utils.provenance.json_sha256` /
+  `canonical_json` replace hand-rolled `hashlib.sha256(json.dumps(...))`
+  copies in core, data, remote and the training adapters/distillation cache.
+  Each call site keeps its exact serialization (sort, separators,
+  `allow_nan`, `ensure_ascii`), so persisted manifests, fingerprints and
+  experiment digests are byte-identical (`tests/unit/test_content_hashing.py`).
+- **Studies moved up into `stateset_agents.verticals`** (above `training` and
+  `remote`): `agent_study`, `study_preflight`, `acceptance`,
+  `industry_evaluation` (was `evaluation.industry`), `industry_synthetic` and
+  `river_refund`; River training-progress validation moved to
+  `evaluation.river_progress`. `python -m stateset_agents.training.river_refund`
+  keeps working through its shim.
+- `remote.chat_repl` no longer imports the private
+  `training.sft._trust_remote_code`; the policy is the public
+  `core.model_presets.trust_remote_code_for`.
+- **Exception hierarchy**: 20 exception classes that sat outside
+  `StateSetError` now derive from it and keep their builtin base and bare
+  `str()` (e.g. `StructuredOutputError` is a `ModelError`,
+  `SyncRewardCallError` a `RuntimeError`, `BudgetExceeded` a `ResourceError`,
+  `NonFiniteLossError` a `TrainingError`; `NemoRLConfigError`,
+  `OpenRLHFConfigError`, `VerlConfigError` and `VocabularyMismatchError` are
+  `ConfigurationError`s). `tests/unit/test_exception_hierarchy.py` walks every
+  class statically; the three studio errors with a string `code`
+  (`FinetuneFailure`, `ValidationComparisonError`, `EvaluationProtocolError`)
+  are allowlisted until v0.71.0.
+- **Bug classes no longer hide in exception tuples**:
+  `tests/unit/test_exception_tuple_ratchet.py` resolves every `*_EXCEPTIONS`
+  tuple and ratchets, per file, the tuples containing
+  `TypeError`/`AttributeError`/`KeyError`/... and the handlers that swallow
+  them (80 tuples / 201 handlers at the start; counts only shrink). Health
+  checks (`api.resilience.HEALTHCHECK_EXCEPTIONS`), the metrics summary
+  (`api.routers.metrics`) and alert notification handlers no longer swallow
+  `TypeError`/`AttributeError`.
+- `MultiTurnAgent.sync_rollout_backend` marks the backend stale only for
+  `RuntimeError`/`OSError` (as the training spine does); any other exception
+  from `sync_weights` is a bug and propagates.
+- `core.advanced_monitoring` imports `psutil` only when it collects system
+  metrics.
+- `docs/ARCHITECTURE.md`: the stale hand-written directory tree and layer
+  diagram are replaced by a generated Layering section (contract table,
+  Mermaid layer DAG, unit dependencies, dated exceptions) and package layout.
+
+### Deprecated
+
+- Old import paths of modules moved for the layering, removed in v0.71.0
+  (each warns and aliases the new module): `evaluation.agent_study`,
+  `evaluation.study_preflight`, `evaluation.acceptance`, `evaluation.industry`,
+  `data.industry_synthetic`, `training.river_refund` (now under
+  `stateset_agents.verticals`) and `training.river_progress` (now
+  `evaluation.river_progress`); `evaluation.reward_audit.audit_support_rewards`
+  and `python -m stateset_agents.evaluation.reward_audit` (now
+  `rewards.support_reward_audit`).
+- `core.type_system.ConfigValidator` and `TypedTrainingConfig` (stable; their
+  rules differ from `TrainingConfig`), removed in v0.72.0. The
+  `core.type_system` Protocols `Agent`, `Environment` and `RewardFunction`
+  are now `AgentProtocol`, `EnvironmentProtocol` and
+  `RewardFunctionProtocol`; the old names, which shadowed the concrete
+  classes, warn until v0.71.0.
+
 ## [0.70.0] - 2026-10-27 — Unified RL spine, tool-use RL, distillation and evidence-gated rewards
 
 ### Added

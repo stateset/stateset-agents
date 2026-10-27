@@ -13,6 +13,8 @@ from typing import Any, Literal
 
 import httpx
 
+from stateset_agents.core.errors import ValidationError
+
 
 def _join_text_parts(parts: Iterable[str]) -> str:
     cleaned = [p for p in parts if isinstance(p, str) and p.strip()]
@@ -414,12 +416,16 @@ def extract_last_user_text(messages: list[dict[str, Any]]) -> str:
 # ---------------------------------------------------------------------------
 
 
-class MessageLimitError(ValueError):
+class MessageLimitError(ValidationError, ValueError):
     """A request exceeded the gateway's message-count or message-length limit.
 
     ``kind`` is ``"count"`` or ``"length"``; ``index`` names the first message
-    that is too long. Routes map it to a 422 response.
+    that is too long. Routes map it to a 422 response. A
+    :class:`~stateset_agents.core.errors.ValidationError` that is still a
+    ``ValueError`` and prints its bare message.
     """
+
+    message_only_str = True
 
     def __init__(
         self,

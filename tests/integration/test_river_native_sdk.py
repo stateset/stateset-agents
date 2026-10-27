@@ -54,6 +54,10 @@ from stateset_agents.evaluation.refund_trace import (
     replay_refund_trace,
     select_replayed_validation_checkpoint,
 )
+from stateset_agents.evaluation.river_progress import (
+    RiverTrainingProgress,
+    summarize_training_activity,
+)
 from stateset_agents.remote.executor import RemoteExecutionError
 from stateset_agents.remote.job import JobStatus, RemoteJobSpec
 from stateset_agents.remote.river import RiverExecutor
@@ -71,11 +75,7 @@ from stateset_agents.remote.rollout_budget import (
     RolloutAdmissionBudget,
     RolloutBudgetExceeded,
 )
-from stateset_agents.training.river_progress import (
-    RiverTrainingProgress,
-    summarize_training_activity,
-)
-from stateset_agents.training.river_refund import (
+from stateset_agents.verticals.river_refund import (
     EVALUATION_SETTINGS,
     TRUNCATION_POLICY,
     campaign,
@@ -1260,7 +1260,7 @@ class NativeRiverIntegration(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(order == "C" for order, _, _ in evaluator.sampled))
 
     async def test_native_campaign_drains_cancelled_validation_write(self):
-        import stateset_agents.training.river_refund as module
+        import stateset_agents.verticals.river_refund as module
 
         rows = [*ROWS, {"order_id": "C", "amount_cents": 750, "eligible": True}]
         splits = {"train": rows[:1], "validation": rows[1:2], "test": rows[2:]}

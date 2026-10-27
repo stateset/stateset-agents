@@ -5,7 +5,7 @@ import json
 import pytest
 
 from stateset_agents.evaluation.checkpoint_selection import require_training_progress
-from stateset_agents.training.river_progress import (
+from stateset_agents.evaluation.river_progress import (
     RiverTrainingProgress,
     summarize_training_activity,
     zero_update_stop_step,
@@ -157,7 +157,7 @@ def test_recovery_removes_uncommitted_observation_suffix(tmp_path):
 
 
 def test_reconciliation_is_idempotent_across_partial_local_write(tmp_path, monkeypatch):
-    import stateset_agents.training.river_progress as module
+    import stateset_agents.evaluation.river_progress as module
 
     progress = ledger(tmp_path)
     original = module.atomic_json
@@ -292,7 +292,7 @@ def test_sdk_dictionary_reuse_cannot_rewrite_prior_observations(tmp_path):
 
 
 def test_failed_metric_write_does_not_advance_in_memory_progress(tmp_path, monkeypatch):
-    import stateset_agents.training.river_progress as module
+    import stateset_agents.evaluation.river_progress as module
 
     progress = ledger(tmp_path)
     progress.observe(1, {"loss": 0.5})

@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from stateset_agents.remote import river_runtime as runtime
-from stateset_agents.training import river_refund as native
+from stateset_agents.verticals import river_refund as native
 
 MODELS = (
     "Qwen/Qwen3.6-35B-A3B-FP8",

@@ -5,10 +5,13 @@ import json
 import pytest
 
 from stateset_agents import tui
-from stateset_agents.data.industry_synthetic import DOMAINS, generate_industry_datasets
 from stateset_agents.data.text_sft import DatasetFormatError, load_text_sft_snapshot
 from stateset_agents.finetune_inspection import inspect_training_data
 from stateset_agents.finetune_workspace import FinetuneConfig, plan_run
+from stateset_agents.verticals.industry_synthetic import (
+    DOMAINS,
+    generate_industry_datasets,
+)
 
 
 @pytest.mark.asyncio

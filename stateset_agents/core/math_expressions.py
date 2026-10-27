@@ -52,6 +52,15 @@ from decimal import Decimal, InvalidOperation
 from fractions import Fraction
 from typing import IO, Any
 
+try:
+    from .errors import ValidationError as _InputError
+except ImportError:  # pragma: no cover - loaded standalone as the sympy worker
+
+    class _InputError(ValueError):  # type: ignore[no-redef]
+        """Stand-in base: the worker process loads this file without the
+        package, so it has no ``core.errors`` to import."""
+
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -102,8 +111,10 @@ _TOKEN = re.compile(
 )
 
 
-class ExpressionError(ValueError):
+class ExpressionError(_InputError, ValueError):
     """Text that is not a supported expression, or exceeds the limits."""
+
+    message_only_str = True
 
 
 def _number(text: str) -> Fraction:

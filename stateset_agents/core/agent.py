@@ -170,6 +170,10 @@ def _load_peft() -> bool:
 
 logger = logging.getLogger(__name__)
 
+#: What a rollout backend's ``sync_weights`` may raise without being a bug --
+#: the same split as ``training.spine.rollouts`` (engine runtime and I/O).
+_ROLLOUT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (RuntimeError, OSError)
+
 TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
@@ -835,7 +839,11 @@ class MultiTurnAgent(Agent):
             return False
         try:
             sync(self.model)
-        except Exception as e:  # noqa: BLE001 - engine failures must not kill training
+        except _ROLLOUT_SYNC_EXCEPTIONS as e:
+            # An engine runtime/I-O failure leaves the backend stale and
+            # training goes on; anything else (TypeError, AttributeError, ...)
+            # is a bug in the sync path and propagates instead of turning
+            # into a silently stale backend.
             self._rollout_backend_stale = True
             self._rollout_backend_error = f"{type(e).__name__}: {e}"
             logger.warning(

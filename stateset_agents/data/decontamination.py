@@ -41,7 +41,6 @@ from __future__ import annotations
 
 import copy
 import hashlib
-import json
 import random
 import re
 import unicodedata
@@ -54,6 +53,7 @@ from typing import Any, Literal
 
 from stateset_agents.data.finetuning import parse_finetuning_json
 from stateset_agents.data.jsonl import jsonl_lines
+from stateset_agents.utils.provenance import json_sha256
 
 __all__ = [
     "BUILTIN_EVAL_SETS",
@@ -449,9 +449,7 @@ def builtin_eval_set(
             f"Unknown built-in eval set {name!r}; choose from {', '.join(loaders)}"
         )
     rows = loaders[name]()
-    digest = hashlib.sha256(
-        json.dumps(rows, sort_keys=True, ensure_ascii=False).encode("utf-8")
-    ).hexdigest()
+    digest = json_sha256(rows, compact=False, allow_nan=True, ensure_ascii=False)
     return text_source_from_rows(
         name, rows, config=config, path=f"builtin:{name}", sha256=digest
     )

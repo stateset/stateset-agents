@@ -25,8 +25,8 @@ from email.parser import Parser
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from stateset_agents.evaluation import acceptance as native_acceptance
 from stateset_agents.evaluation.implementation import package_implementation
+from stateset_agents.verticals import acceptance as native_acceptance
 
 try:
     from . import (

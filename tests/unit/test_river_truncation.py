@@ -12,7 +12,7 @@ from stateset_agents.remote.river_environment import (
     river_environment_factory,
     trajectory_truncation,
 )
-from stateset_agents.training.river_refund import EVALUATION_SETTINGS
+from stateset_agents.verticals.river_refund import EVALUATION_SETTINGS
 
 
 @pytest.mark.parametrize(

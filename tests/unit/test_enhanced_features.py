@@ -230,8 +230,9 @@ class TestTypeSystem:
         assert not validator.validate_type([1, 2, "3"], list[int])
 
     def test_config_validator(self):
-        """Test configuration validation"""
-        validator = ConfigValidator()
+        """Test configuration validation (deprecated until v0.72.0)"""
+        with pytest.warns(DeprecationWarning, match="ConfigValidator"):
+            validator = ConfigValidator()
 
         # Test valid model config
         valid_config = {

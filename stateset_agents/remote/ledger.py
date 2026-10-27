@@ -22,6 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import ErrorCode, ResourceError
+
 #: Where the ledger lives unless overridden. Kept outside the repo: it is
 #: per-user accounting, not project state.
 DEFAULT_LEDGER_PATH = (
@@ -123,8 +125,11 @@ def summarize(entries: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
-class BudgetExceeded(Exception):
+class BudgetExceeded(ResourceError):
     """A run would cost more than the caller's ``max_cost_usd`` ceiling."""
+
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 def check_budget(

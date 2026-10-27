@@ -18,7 +18,7 @@ from stateset_agents.evaluation.checkpoint_selection import (
     require_training_progress,
     select_validation_checkpoint,
 )
-from stateset_agents.training.river_refund import campaign, prepare_run
+from stateset_agents.verticals.river_refund import campaign, prepare_run
 from tests.unit.river_fakes import traced_refund_trajectory
 
 VALIDATION_CASES = {
@@ -302,7 +302,7 @@ def native_run(tmp_path, monkeypatch):
 async def test_zero_update_stop_uses_reconciled_records_and_closes_trainer(
     native_run, monkeypatch, recovered, observed, expected_steps
 ):
-    from stateset_agents.training.river_progress import RiverTrainingProgress
+    from stateset_agents.evaluation.river_progress import RiverTrainingProgress
 
     _, args, splits, run = native_run
     args.output = args.output / "early-stop"
@@ -349,7 +349,7 @@ async def test_zero_update_stop_uses_reconciled_records_and_closes_trainer(
 async def test_validation_writes_serialize_with_callbacks_and_recovery(
     native_run, monkeypatch, recover
 ):
-    import stateset_agents.training.river_refund as module
+    import stateset_agents.verticals.river_refund as module
 
     _, args, splits, run = native_run
     trainer = sys.modules["river_client"].rl.AsyncTrainer
@@ -423,7 +423,7 @@ async def test_validation_writes_serialize_with_callbacks_and_recovery(
 async def test_training_record_failure_drains_iterator_before_campaign_returns(
     native_run, monkeypatch, cancel_cleanup
 ):
-    import stateset_agents.training.river_refund as module
+    import stateset_agents.verticals.river_refund as module
 
     state, args, _, run = native_run
     trainer = sys.modules["river_client"].rl.AsyncTrainer
@@ -502,7 +502,7 @@ async def test_source_drift_stops_before_sdk_import_or_sampling(
 ):
     import sys
 
-    from stateset_agents.training.river_refund import execute_run
+    from stateset_agents.verticals.river_refund import execute_run
 
     state, args, splits, run = native_run
     path = args.output / "run_manifest.json"
@@ -539,7 +539,7 @@ async def test_source_drift_stops_before_sdk_import_or_sampling(
 async def test_execution_rejects_configuration_drift_before_sdk(
     native_run, monkeypatch, field, value
 ):
-    from stateset_agents.training.river_refund import execute_run
+    from stateset_agents.verticals.river_refund import execute_run
 
     state, args, splits, run = native_run
     setattr(args, field, value)
@@ -559,7 +559,7 @@ async def test_execution_rejects_configuration_drift_before_sdk(
 async def test_execution_requires_unchanged_prepared_cases(
     native_run, monkeypatch, split, source
 ):
-    from stateset_agents.training.river_refund import execute_run
+    from stateset_agents.verticals.river_refund import execute_run
 
     state, args, splits, run = native_run
     path = args.output / f"{split}.json"
@@ -593,7 +593,7 @@ async def test_execution_requires_unchanged_prepared_cases(
 async def test_direct_execution_honors_existing_evidence_seals(
     native_run, monkeypatch, artifact, reason
 ):
-    from stateset_agents.training.river_refund import execute_run
+    from stateset_agents.verticals.river_refund import execute_run
 
     state, args, splits, run = native_run
     (args.output / artifact).write_text("{}")
@@ -789,7 +789,7 @@ async def test_recovery_discards_validation_and_metric_suffix(native_run):
 @pytest.mark.asyncio
 async def test_failed_seal_write_prevents_test_engine(native_run, monkeypatch):
     state, args, _, run = native_run
-    from stateset_agents.training import river_refund
+    from stateset_agents.verticals import river_refund
 
     original = river_refund.atomic_json
 
@@ -811,7 +811,7 @@ def test_hard_process_exit_cannot_reopen_test(tmp_path):
         from dataclasses import dataclass
         from pathlib import Path
         from types import SimpleNamespace
-        from stateset_agents.training.river_refund import campaign, prepare_run
+        from stateset_agents.verticals.river_refund import campaign, prepare_run
         @dataclass
         class Checkpoint:
             path: str

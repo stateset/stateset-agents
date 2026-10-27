@@ -39,6 +39,9 @@ from typing import Any, TypeVar, Union, cast, get_args, get_origin
 
 from pydantic import BaseModel, ValidationError
 
+from .errors import ErrorCode, ModelError
+from .errors import ValidationError as InputValidationError
+
 logger = logging.getLogger(__name__)
 
 # Type variable for generic structured output
@@ -67,18 +70,26 @@ class StructuredOutputConfig:
     repair_json: bool = True
 
 
-class SchemaValidationError(ValueError):
+class SchemaValidationError(InputValidationError, ValueError):
     """Raised when parsed JSON does not match a plain JSON schema."""
 
+    message_only_str = True
 
-class StructuredOutputError(Exception):
+
+class StructuredOutputError(ModelError):
     """Raised when structured output generation fails.
+
+    A :class:`~stateset_agents.core.errors.ModelError` that prints its bare
+    message.
 
     Attributes:
         attempts: Number of generation attempts made
         last_error: The final validation error
         raw_outputs: List of raw model outputs that failed validation
     """
+
+    message_only_str = True
+    default_code = ErrorCode.MDL_INFERENCE_FAILED
 
     def __init__(
         self,

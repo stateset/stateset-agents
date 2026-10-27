@@ -9,7 +9,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from stateset_agents.training.river_refund import BENCHMARKS, campaign, prepare_run
+from stateset_agents.verticals.river_refund import BENCHMARKS, campaign, prepare_run
 from tests.unit.river_fakes import traced_refund_trajectory
 
 # Liveness guards only: they bound a hang, they do not measure timing. Slow
@@ -119,7 +119,7 @@ def native_save(tmp_path, monkeypatch, request):
 async def test_rollout_consumer_failure_closes_iterator_before_provider(
     native_save, monkeypatch, cancel_cleanup
 ):
-    import stateset_agents.training.river_refund as module
+    import stateset_agents.verticals.river_refund as module
 
     mode, path, _, run = native_save
     model = BlockedSave()

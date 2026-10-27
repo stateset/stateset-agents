@@ -28,6 +28,8 @@ import math
 from dataclasses import dataclass
 from typing import Any
 
+from stateset_agents.core.errors import ConfigurationError
+
 from ..preference.losses import NonFiniteLossError, _log1mexp
 from ..trainer_utils import get_torch, require_torch
 
@@ -47,7 +49,7 @@ __all__ = [
 ]
 
 
-class VocabularyMismatchError(ValueError):
+class VocabularyMismatchError(ConfigurationError):
     """Teacher and student distributions are over different vocabularies."""
 
 

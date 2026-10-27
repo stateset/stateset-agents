@@ -22,7 +22,6 @@ from stateset_agents.core.environments.refund_policy_environment import (
     refund_policy_benchmark,
 )
 from stateset_agents.core.trajectory import ConversationTurn
-from stateset_agents.evaluation import acceptance
 from stateset_agents.evaluation.agent_runs import (
     compare_runs,
     content_hash,
@@ -32,6 +31,7 @@ from stateset_agents.evaluation.isolation import (
     EVALUATION_RNG_PROTOCOL,
     paired_evaluation_seed,
 )
+from stateset_agents.verticals import acceptance
 
 IDENTITY = {
     "schema_version": 1,

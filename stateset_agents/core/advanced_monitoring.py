@@ -11,14 +11,13 @@ import asyncio
 import json
 import logging
 import statistics
+import sys
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
 from typing import Any
-
-import psutil
 
 try:
     from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Summary
@@ -57,9 +56,17 @@ ADV_MONITORING_EXCEPTIONS = (
     KeyError,
     AttributeError,
     OSError,
-    psutil.Error,
     asyncio.TimeoutError,
 )
+
+
+def _system_metric_errors() -> tuple[type[BaseException], ...]:
+    """``psutil.Error`` once :meth:`MetricsCollector.collect_system_metrics`
+    has imported psutil (it is imported lazily, so ``core`` stays light);
+    nothing can raise it before that."""
+    psutil = sys.modules.get("psutil")
+    return (psutil.Error,) if psutil is not None else ()
+
 
 PROMETHEUS_METRIC_ALIASES = {
     "grpo.requests.total": "requests_total",
@@ -226,6 +233,8 @@ class TimeSeriesMetricsCollector:
 
     async def collect_system_metrics(self):
         """Collect system metrics"""
+        import psutil
+
         # CPU metrics
         cpu_percent = psutil.cpu_percent(interval=0.1)
         self.record_metric("system.cpu.utilization", cpu_percent, {"unit": "percent"})
@@ -639,7 +648,7 @@ class AdvancedMonitoringService:
                 if self.metrics_collector:
                     await self.metrics_collector.collect_system_metrics()
                 await asyncio.sleep(30)  # Collect every 30 seconds
-            except ADV_MONITORING_EXCEPTIONS as e:
+            except ADV_MONITORING_EXCEPTIONS + _system_metric_errors() as e:
                 logger.error(f"Monitoring loop failed: {e}")
                 await asyncio.sleep(60)
 
