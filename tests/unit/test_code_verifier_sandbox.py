@@ -971,9 +971,12 @@ def test_docker_status_says_why_docker_is_unusable(monkeypatch):
 
 def test_container_exit_statuses_map_to_signals():
     """The supervisor reports a signal N as 128 + N, which is mapped back to
-    -N as for a local subprocess (so SIGXCPU is ``cpu_limit`` on both)."""
-    assert _sandbox_docker._signal_returncode(128 + signal.SIGXCPU) == -signal.SIGXCPU
-    assert _sandbox_docker._signal_returncode(137) == -signal.SIGKILL
+    -N as for a local subprocess (so SIGXCPU is ``cpu_limit`` on both).
+    Containers are Linux, so these are Linux signal numbers on any host (the
+    host's ``signal`` module has neither on Windows)."""
+    linux_sigkill, linux_sigxcpu = 9, 24
+    assert _sandbox_docker._signal_returncode(128 + linux_sigxcpu) == -linux_sigxcpu
+    assert _sandbox_docker._signal_returncode(137) == -linux_sigkill
     for code in (None, 0, 1, 125, 128):
         assert _sandbox_docker._signal_returncode(code) == code
 
