@@ -91,6 +91,10 @@ jobs:
       run: |
         make release-governance
 
+    - name: Verify layer contracts (acyclic, every executable import)
+      run: |
+        make layering
+
     - name: Verify standard-agent benchmark contract
       run: |
         make benchmark-agent-quality-contract

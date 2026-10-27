@@ -25,13 +25,18 @@ from typing import Any, TypeVar, cast
 
 from stateset_agents._deprecation import deprecated_alias_getattr
 from stateset_agents.core.errors import ErrorCode, StateSetError
-from stateset_agents.exceptions import INFERENCE_EXCEPTIONS
+from stateset_agents.exceptions import (
+    INFERENCE_EXCEPTIONS,
+    RUNTIME_FAILURE_EXCEPTIONS,
+)
 from stateset_agents.utils.clock import utc_now
 
 logger = logging.getLogger(__name__)
 
 CIRCUIT_EXCEPTIONS = INFERENCE_EXCEPTIONS
-HEALTHCHECK_EXCEPTIONS = INFERENCE_EXCEPTIONS
+#: A failing dependency (outage, bad value, I/O) marks the check unhealthy; a
+#: TypeError/AttributeError in the check itself is a bug and propagates.
+HEALTHCHECK_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 T = TypeVar("T")
 F = TypeVar("F", bound=Callable[..., Any])

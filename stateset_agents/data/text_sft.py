@@ -10,12 +10,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import DataError, ErrorCode
 from stateset_agents.data.finetuning import _identity_keys
 from stateset_agents.utils.provenance import json_sha256
 
 
-class DatasetFormatError(ValueError):
+class DatasetFormatError(DataError, ValueError):
     """A content-free dataset diagnostic with one-based source locations."""
+
+    message_only_str = True
+    default_code = ErrorCode.DAT_FORMAT_INVALID
 
     def __init__(self, code: str, message: str, **location: int | str) -> None:
         self.diagnostic: dict[str, Any] = {

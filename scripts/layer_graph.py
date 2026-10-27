@@ -353,6 +353,18 @@ def facade_exports(package_dir: Path = PACKAGE_DIR) -> dict[str, str]:
     return exports
 
 
+def clear_caches() -> None:
+    """Forget every cached scan (for callers that edit a tree and rescan)."""
+    for cached in (
+        known_modules,
+        facade_exports,
+        _collect_imports,
+        check_contracts,
+        build_graph,
+    ):
+        cached.cache_clear()
+
+
 def _longest_module(target: str, modules: Iterable[str]) -> str | None:
     known = set(modules)
     parts = target.split(".")
@@ -464,6 +476,11 @@ def unit_of_path(path: Path, package_dir: Path = PACKAGE_DIR) -> str:
 
 def collect_imports(package_dir: Path = PACKAGE_DIR) -> list[Import]:
     """Every executable intra-package import, resolved to the module it loads."""
+    return list(_collect_imports(package_dir))
+
+
+@lru_cache(maxsize=8)
+def _collect_imports(package_dir: Path) -> tuple[Import, ...]:
     package = package_dir.name
     imports: list[Import] = []
     for path in package_files(package_dir):
@@ -477,7 +494,7 @@ def collect_imports(package_dir: Path = PACKAGE_DIR) -> list[Import]:
                 continue
             seen.add((lineno, target))
             imports.append(Import(rel, lineno, source, target))
-    return imports
+    return tuple(imports)
 
 
 # --- contracts ---------------------------------------------------------------
@@ -539,6 +556,7 @@ class ContractReport:
     excused: list[Import]  # upward imports excused by LAYERING_ALLOWLIST
 
 
+@lru_cache(maxsize=8)
 def check_contracts(package_dir: Path = PACKAGE_DIR) -> ContractReport:
     """Check every executable import in ``package_dir`` against ``LAYERS``."""
     package = package_dir.name
@@ -696,6 +714,7 @@ class Graph:
         return result
 
 
+@lru_cache(maxsize=8)
 def build_graph(package_dir: Path = PACKAGE_DIR) -> Graph:
     imports = collect_imports(package_dir)
     edges = unit_edges(imports, package_dir.name)
@@ -738,6 +757,13 @@ def render_section(package_dir: Path = PACKAGE_DIR) -> str:
         "one layer never import each other. Every unit may read the facade's "
         "own metadata (`stateset_agents.__version__`); a lazy facade name "
         "counts as an import of the module that defines it.",
+        "",
+        "**Contract per unit** (the facade's own metadata, "
+        "`stateset_agents.__version__`, is readable from every unit):",
+        "",
+        "| Unit | Layer | May import | Must not import |",
+        "|------|-------|------------|-----------------|",
+        *render_contracts(),
         "",
         "**Layer DAG** (who imports whom, transitively reduced; arrows point "
         "at the layer imported):",
@@ -794,6 +820,24 @@ def render_section(package_dir: Path = PACKAGE_DIR) -> str:
     )
     lines.append(END)
     return "\n".join(lines) + "\n"
+
+
+def render_contracts() -> list[str]:
+    """One Markdown row per unit: what it may and must not import."""
+    every = [u for layer in LAYERS for u in layer.units]
+    rows = []
+    for index, layer in reversed(list(enumerate(LAYERS))):
+        for unit in layer.units:
+            allowed = allowed_units(unit)
+            forbidden = [u for u in every if u != unit and u not in allowed]
+            rows.append(
+                f"| `{unit}` | {index} {layer.name} | "
+                + (", ".join(f"`{u}`" for u in allowed) or "nothing")
+                + " | "
+                + (", ".join(f"`{u}`" for u in forbidden) or "nothing")
+                + " |"
+            )
+    return rows
 
 
 def _layer_index() -> dict[str, int]:

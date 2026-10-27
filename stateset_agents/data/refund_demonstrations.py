@@ -20,6 +20,7 @@ from stateset_agents.core.environments.refund_policy_environment import (
     RefundPolicyEnvironment,
     refund_policy_benchmark,
 )
+from stateset_agents.core.errors import DataError
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.utils.atomic_io import atomic_json, exclusive_run
 from stateset_agents.utils.provenance import content_hash
@@ -27,8 +28,10 @@ from stateset_agents.utils.provenance import content_hash
 ENVIRONMENT = "refund-policy-v2"
 
 
-class RejectedTrajectory(ValueError):
+class RejectedTrajectory(DataError, ValueError):
     """A candidate cannot be admitted to verified SFT data."""
+
+    message_only_str = True
 
 
 def _message(tool: str, **args: Any) -> dict[str, str]:

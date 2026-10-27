@@ -7,11 +7,15 @@ import threading
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import ErrorCode, ResourceError
 from stateset_agents.utils.atomic_io import atomic_json
 
 
-class RolloutBudgetExceeded(ValueError):
+class RolloutBudgetExceeded(ResourceError, ValueError):
     """A trajectory would exceed the reserved output-token allowance."""
+
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 class RolloutAdmissionBudget:

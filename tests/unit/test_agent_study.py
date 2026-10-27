@@ -317,7 +317,7 @@ def study_template(tmp_path_factory):
     root = tmp_path_factory.mktemp("study-template")
     # These fixtures test provenance, not filesystem crash durability. Dedicated
     # budget/data tests exercise durable writes; avoid hundreds of fixture fsyncs.
-    with patch("stateset_agents.remote.river_rl.os.fsync"):
+    with patch("stateset_agents.utils.atomic_io.os.fsync"):
         asyncio.run(synthetic_study(root))
     return root
 
@@ -325,7 +325,7 @@ def study_template(tmp_path_factory):
 @pytest.fixture(scope="module")
 def capped_study_template(tmp_path_factory):
     root = tmp_path_factory.mktemp("capped-study-template")
-    with patch("stateset_agents.remote.river_rl.os.fsync"):
+    with patch("stateset_agents.utils.atomic_io.os.fsync"):
         asyncio.run(
             synthetic_study(root, replace(small_config(), rollout_token_budget=200000))
         )
@@ -798,7 +798,7 @@ def test_audit_enforces_planned_early_stop_even_if_later_batches_update(
     tmp_path, patience
 ):
     config = replace(small_config(), zero_update_patience=patience)
-    with patch("stateset_agents.remote.river_rl.os.fsync"):
+    with patch("stateset_agents.utils.atomic_io.os.fsync"):
         asyncio.run(synthetic_study(tmp_path, config))
     root = tmp_path / "seed-42/rl"
     progress = read(root / "training_metrics.json")

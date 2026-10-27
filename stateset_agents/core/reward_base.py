@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from .errors import StateSetError
 from .reward_context import (
     COMPONENT_FAILURES_KEY,
     REWARD_FALLBACK_KEY,
@@ -28,9 +29,11 @@ from .trajectory import ConversationTurn
 logger = logging.getLogger(__name__)
 
 
-class SyncRewardCallError(RuntimeError):
+class SyncRewardCallError(StateSetError, RuntimeError):
     """A reward was called synchronously (``reward(...)``) inside a running
     event loop; await ``reward.compute_reward(...)`` there instead."""
+
+    message_only_str = True
 
 
 #: ``CompositeReward.outage_policy`` values.

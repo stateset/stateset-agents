@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.utils.provenance import json_sha256
 
 from ..backends import (
@@ -97,7 +98,7 @@ _MATH_REWARD = {
 }
 
 
-class NemoRLConfigError(ValueError):
+class NemoRLConfigError(ConfigurationError):
     """Raised when NeMo RL cannot preserve an experiment's semantics."""
 
 

@@ -34,6 +34,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import StateSetError
 from stateset_agents.evaluation.agent_runs import content_hash
 
 __all__ = [
@@ -72,8 +73,10 @@ LOWER_IS_BETTER = frozenset(
 )
 
 
-class CapabilityEvalUnavailable(ImportError):
+class CapabilityEvalUnavailable(StateSetError, ImportError):
     """lm-evaluation-harness is not installed (or failed to import)."""
+
+    message_only_str = True
 
 
 @dataclass(frozen=True)

@@ -679,8 +679,7 @@ def _probe(tmp_path: Path, rel: str, source: str) -> list[str]:
             break
         (parent / "__init__.py").touch()
     path.write_text(source, encoding="utf-8")
-    layer_graph.known_modules.cache_clear()
-    layer_graph.facade_exports.cache_clear()
+    layer_graph.clear_caches()
     violations, _ = layering_violations(root)
     return violations
 

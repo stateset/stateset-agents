@@ -164,7 +164,7 @@ def test_only_one_orchestrator_can_own_journal(build):
 
 
 def test_interrupted_atomic_replace_preserves_previous_record(build, monkeypatch):
-    from stateset_agents.remote import river_rl
+    from stateset_agents.utils import atomic_io
 
     orchestrator = build()
     record = job()
@@ -175,7 +175,7 @@ def test_interrupted_atomic_replace_preserves_previous_record(build, monkeypatch
         raise OSError("interrupted replacement")
 
     with monkeypatch.context() as patcher:
-        patcher.setattr(river_rl.os, "replace", fail_replace)
+        patcher.setattr(atomic_io.os, "replace", fail_replace)
         with pytest.raises(OSError, match="interrupted replacement"):
             orchestrator.journal.save(serialize_training_job(record))
     assert orchestrator.journal.get(record.job_id)["status"] == "queued"

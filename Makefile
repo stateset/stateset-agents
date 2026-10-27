@@ -86,6 +86,10 @@ api-compatibility: ## Verify the frozen v1 Python and HTTP contracts
 release-governance: ## Verify maturity evidence and security response commitments
 	python scripts/check_release_governance.py
 
+.PHONY: layering
+layering: ## Verify the layer contracts, the acyclic unit graph and docs/ARCHITECTURE.md
+	python scripts/layer_graph.py --check docs/ARCHITECTURE.md
+
 # Documentation
 docs: ## Build documentation
 	$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html

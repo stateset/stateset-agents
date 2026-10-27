@@ -27,6 +27,7 @@ import typer
 
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
+from stateset_agents.core.errors import ConfigurationError, DataError
 
 _echo = _cli._echo
 
@@ -337,12 +338,14 @@ def _build_reward(
     return LLMJudgeRewardWithFallback(judge=judge, heuristic=reward_fn)
 
 
-class ImproveUsageError(ValueError):
+class ImproveUsageError(ConfigurationError):
     """Raised by :func:`run_improve` for bad arguments (CLI exit code 2)."""
 
 
-class ImproveDataError(ValueError):
+class ImproveDataError(DataError, ValueError):
     """Raised by :func:`run_improve` for data problems (CLI exit code 1)."""
+
+    message_only_str = True
 
 
 async def run_improve_async(

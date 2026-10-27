@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from stateset_agents.core.errors import ConfigurationError
 from stateset_agents.utils.provenance import json_sha256
 
 from ..backends import (
@@ -87,7 +88,7 @@ _SEMANTIC_KEYS = (
 )
 
 
-class VerlConfigError(ValueError):
+class VerlConfigError(ConfigurationError):
     """Raised when verl cannot preserve an experiment's semantics."""
 
 

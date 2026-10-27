@@ -39,9 +39,9 @@ TYPE_SYSTEM_EXCEPTIONS = (
 
 # Type variables
 T = TypeVar("T")
-AgentType = TypeVar("AgentType", bound="Agent")
-EnvironmentType = TypeVar("EnvironmentType", bound="Environment")
-RewardType = TypeVar("RewardType", bound="RewardFunction")
+AgentType = TypeVar("AgentType", bound="AgentProtocol")
+EnvironmentType = TypeVar("EnvironmentType", bound="EnvironmentProtocol")
+RewardType = TypeVar("RewardType", bound="RewardFunctionProtocol")
 
 # Basic types
 UserId = str
@@ -217,9 +217,6 @@ class TrainingConfigDict(TypedDict, total=False):
     gradient_checkpointing: NotRequired[bool]
 
 
-TypedTrainingConfig = TrainingConfigDict
-
-
 class ConversationTurnDict(TypedDict):
     """Type-safe conversation turn (a plain dict).
 
@@ -323,8 +320,13 @@ class TypedComponent(Generic[T], ABC):
         self._validate_config()
 
 
-class Agent(Protocol):
-    """Type-safe agent interface"""
+class AgentProtocol(Protocol):
+    """Structural agent interface.
+
+    Named ``AgentProtocol`` so it no longer shadows the concrete
+    ``stateset_agents.Agent``; the old ``type_system.Agent`` name is a
+    deprecated alias until v0.71.0.
+    """
 
     async def generate_response(
         self,
@@ -341,8 +343,8 @@ class Agent(Protocol):
         ...
 
 
-class Environment(Protocol):
-    """Type-safe environment interface"""
+class EnvironmentProtocol(Protocol):
+    """Structural environment interface (was ``type_system.Environment``)."""
 
     async def reset(self) -> dict[str, Any]:
         """Reset environment state"""
@@ -355,8 +357,8 @@ class Environment(Protocol):
         ...
 
 
-class RewardFunction(Protocol):
-    """Type-safe reward function interface"""
+class RewardFunctionProtocol(Protocol):
+    """Structural reward interface (was ``type_system.RewardFunction``)."""
 
     async def compute_reward(
         self, trajectory: TrajectoryData, context: dict[str, Any] | None = None
@@ -483,10 +485,10 @@ class TypeValidator:
             return False
 
 
-class ConfigValidator:
+class _TypedDictConfigValidator:
     """Configuration validation with detailed error reporting"""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.errors: list[str] = []
         self.warnings: list[str] = []
 
@@ -561,13 +563,35 @@ class ConfigValidator:
         }
 
 
+class ConfigValidator(_TypedDictConfigValidator):
+    """Deprecated: TypedDict-based configuration checks.
+
+    Its rules differ from the ones ``stateset_agents.TrainingConfig`` enforces
+    (``TrainingConfig.validate_for_training``), so a config it accepts can still
+    fail at training time. Deprecated in v0.70.0 and removed in v0.72.0;
+    validate with ``TrainingConfig`` (or ``stateset_agents.config.validation``
+    for YAML/JSON configs) instead.
+    """
+
+    def __init__(self) -> None:
+        warn_deprecated(
+            f"{__name__}.ConfigValidator",
+            removal="0.72.0",
+            replacement=(
+                "stateset_agents.TrainingConfig(...).validate_for_training() "
+                "or stateset_agents.config.validation.ConfigValidator"
+            ),
+        )
+        super().__init__()
+
+
 # Type-safe factory functions
 def create_typed_config(config_type: type, **kwargs) -> dict[str, Any]:
     """Create type-safe configuration"""
     config = kwargs.copy()
 
     # Validate configuration
-    validator = ConfigValidator()
+    validator = _TypedDictConfigValidator()
     if config_type == ModelConfig:
         if not validator.validate_model_config(config):
             raise ValueError(f"Invalid model config: {validator.errors}")
@@ -716,7 +740,6 @@ __all__ = [
     # TypedDicts
     "ModelConfig",
     "TrainingConfigDict",
-    "TypedTrainingConfig",
     "ConversationTurnDict",
     "TrajectoryData",
     "RewardMetrics",
@@ -727,9 +750,9 @@ __all__ = [
     "Serializable",
     # Classes
     "TypedComponent",
-    "Agent",
-    "Environment",
-    "RewardFunction",
+    "AgentProtocol",
+    "EnvironmentProtocol",
+    "RewardFunctionProtocol",
     "TypeValidator",
     "ConfigValidator",
     "TypeSafeSerializer",
@@ -740,8 +763,16 @@ __all__ = [
 ]
 
 
+#: Protocols renamed in v0.70.0 so they stop shadowing the concrete classes.
+_RENAMED_PROTOCOLS = {
+    "Agent": "AgentProtocol",
+    "Environment": "EnvironmentProtocol",
+    "RewardFunction": "RewardFunctionProtocol",
+}
+
+
 def __getattr__(name: str) -> Any:
-    """Serve renamed TypedDicts under their old names (with a warning)."""
+    """Serve renamed types under their old names (with a warning)."""
     if name == "ConversationTurn":
         warn_deprecated(
             f"{__name__}.ConversationTurn",
@@ -759,4 +790,25 @@ def __getattr__(name: str) -> Any:
             replacement=f"{__name__}.TrainingConfigDict",
         )
         return TrainingConfigDict
+    if name == "TypedTrainingConfig":
+        # A second validation vocabulary beside the runtime TrainingConfig;
+        # stable, so it stays one more minor release.
+        warn_deprecated(
+            f"{__name__}.TypedTrainingConfig",
+            removal="0.72.0",
+            replacement=(
+                "stateset_agents.TrainingConfig (runtime) or "
+                f"{__name__}.TrainingConfigDict (the TypedDict)"
+            ),
+        )
+        return TrainingConfigDict
+    protocol = _RENAMED_PROTOCOLS.get(name)
+    if protocol is not None:
+        warn_deprecated(
+            f"{__name__}.{name}",
+            removal="0.71.0",
+            replacement=f"{__name__}.{protocol} (the Protocol; the concrete "
+            f"class is stateset_agents.{name})",
+        )
+        return globals()[protocol]
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

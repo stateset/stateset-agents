@@ -20,6 +20,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from stateset_agents.core.errors import ErrorCode, TrainingError
+
 from ..rl_losses import gather_token_logprobs
 from ..trainer_utils import get_torch, require_torch
 
@@ -43,8 +45,11 @@ __all__ = [
 ]
 
 
-class NonFiniteLossError(ValueError):
+class NonFiniteLossError(TrainingError, ValueError):
     """A loss input or result is NaN or infinite."""
+
+    message_only_str = True
+    default_code = ErrorCode.TRN_DIVERGED
 
 
 @dataclass(frozen=True)

@@ -72,9 +72,10 @@ NOTIFICATION_EXCEPTIONS: tuple[type[BaseException], ...] = (
         asyncio.TimeoutError,
         OSError,
         ValueError,
-        TypeError,
     )
 )
+# TypeError is deliberately absent: a handler that raises it has a bug, which
+# must surface rather than be counted as a failed delivery.
 
 
 async def _run_blocking(func: Callable[..., Any], *args, **kwargs) -> Any:

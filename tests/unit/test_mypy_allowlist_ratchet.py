@@ -19,7 +19,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # and their registry, the spine LR schedule plus the dedicated entry points'
 # shared dependency loader and W&B reporter, and round 6's self-contained math
 # final-answer reader.
-ALLOWLIST_FLOOR = 526
+ALLOWLIST_FLOOR = 537
 
 
 def _allowlisted_files() -> list[str]:

@@ -20,22 +20,35 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import (
+    ErrorCode,
+    ResourceError,
+    TrainingError,
+    ValidationError,
+)
 from stateset_agents.utils.clock import as_utc, utc_now
 
 TERMINAL = {"completed", "failed", "cancelled"}
 MAX_PENDING_JOBS = 1000
 
 
-class TrainingLeaseLostError(RuntimeError):
+class TrainingLeaseLostError(TrainingError, RuntimeError):
     """The worker no longer owns a live lease and must stop publishing results."""
 
+    message_only_str = True
 
-class TrainingIdempotencyConflictError(ValueError):
+
+class TrainingIdempotencyConflictError(ValidationError, ValueError):
     """An idempotency key already identifies a different accepted request."""
 
+    message_only_str = True
 
-class TrainingQueueFullError(ValueError):
+
+class TrainingQueueFullError(ResourceError, ValueError):
     """The durable queue has reached its global pending-job capacity."""
+
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 class _PostgresRow(dict):
