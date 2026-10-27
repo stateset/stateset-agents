@@ -416,14 +416,24 @@ verifier semantics:
   constructor). Missing or malformed reference data raises
   `ConfigurationError`, never a neutral score.
 - A wrong, hedged, crashing or timed-out candidate is a **score** (0, or the
-  code pass rate), not an outage. Only a platform that cannot run the sandbox
-  (not POSIX) raises `RewardUnavailableError`. The code verifier's scoring
-  limit is CPU time (`cpu_seconds`, `RLIMIT_CPU`); the wall clock
+  code pass rate), not an outage. Only a sandbox that cannot run raises
+  `RewardUnavailableError`: no isolation backend here (neither Docker nor
+  POSIX rlimits), `isolation="docker"` without a usable daemon, a missing
+  image, or a container that never started. Once the harness runs, every
+  outcome is a score, so a candidate cannot turn its own failure into an
+  outage. The rlimit backend as root without the opt-in is a
+  `ConfigurationError`. The code verifier's scoring limit is CPU time
+  (`cpu_seconds`, `RLIMIT_CPU`) on both backends; the wall clock
   (`timeout_seconds`) is only a backstop for a stalled run (`wall_timeout`,
   still a score, not an outage).
 - Model output is never evaluated as Python in the trainer: the math verifier
   parses answers with its own grammar, and candidate code runs only in the
-  sandboxed subprocess (resource isolation, not a security boundary).
+  sandbox: a locked-down container (`isolation="docker"`; no network,
+  read-only root, non-root, no capabilities, no host mounts) or a local
+  rlimited subprocess (`"rlimit"`; Landlock-confined to its own files on
+  Linux 5.13+, but with network access and the trainer's user). `"auto"`
+  (the default) prefers docker; see [TOOL_USE_RL.md](TOOL_USE_RL.md) for
+  exactly what each isolates.
 
 The exploit search covers both (cases of kind `"math"` and `"code"`,
 `stateset_agents.evaluation.verifier_exploits`): the generic families that do
@@ -440,13 +450,15 @@ storms, threads, memory and recursion bombs, and plausible wrong programs),
 plus a symbolic-physics case (`"symbolic"`: constants and near misses of a
 target relation). **Verified guarantee:** on `MATH_CASES`, `CODE_CASES` and
 `SYMBOLIC_CASES`, for seeds 0 and 1 and both paths, every adversary except the
-named `KNOWN_VERIFIER_LIMITS` family scores at least 0.01 below the reference.
-**Known limit, not defended:** a candidate that reads the expected outputs
-from a dataset file on disk scores like the reference (`read_dataset_on_disk`,
-excluded from the gate by name and pinned at 1.0): the sandbox is resource
-isolation, not a filesystem boundary (see
-[TOOL_USE_RL.md](TOOL_USE_RL.md) for the `/proc` and filesystem limits plainly
-stated). Padding and other mutations that keep a correct answer intact are not
+named `KNOWN_VERIFIER_LIMITS` family scores at least 0.01 below the reference;
+the code cases run on both isolation backends. A candidate that reads the
+expected outputs from a dataset file on disk (`read_dataset_on_disk`) fails
+in a container and under Landlock, so there it is gated like any other
+adversary. **Known limit of the rlimit backend without Landlock** (macOS,
+Linux before 5.13): there it scores like the reference (excluded from the
+gate by name and pinned at 1.0), because the candidate runs as the trainer's
+user (see [TOOL_USE_RL.md](TOOL_USE_RL.md) for what each backend isolates).
+Padding and other mutations that keep a correct answer intact are not
 adversaries for a verifier. The math verifier's final-answer reading is
 measured on a blind-labelled set
 (`tests/fixtures/reward_labelled/math_cot.json`, 210 chain-of-thought

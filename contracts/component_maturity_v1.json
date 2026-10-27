@@ -577,13 +577,13 @@
       ],
       "graduation_criteria": [
         "Retain a three-seed tool-use GRPO run on a >=0.5B instruct model with held-out verifier pass rates and tool-call accuracy",
-        "Run the code verifier inside a container or microVM sandbox (no network, read-only root) with a retained isolation test suite",
+        "Run the docker-backend isolation suite (tests/unit/test_code_verifier_sandbox.py, which skips without the pinned image) in CI with the image pre-pulled, and retain its results",
         "Promote the provisional ToolUseEnvironment, ToolRegistry, MathAnswerVerifier and SandboxedCodeVerifier names into the reviewed v1 contract"
       ],
       "id": "tool-use-rl",
       "limitations": [
         "Provisional API (stateset_agents.environments.ToolUseEnvironment and the stateset_agents.rewards verifiers): not in the v1 stable manifest and may change in minor releases",
-        "The code sandbox is resource isolation (python -I, empty environment, temporary working directory, rlimits, process-group kill), not a security boundary: candidate code keeps the trainer user's filesystem and network access, root ignores RLIMIT_NPROC, and it needs POSIX",
+        "The code sandbox's docker backend (no network, read-only root, non-root, no capabilities, no host mounts) shares the host kernel and adds container start-up (about 0.5 to 1.7 s per verification measured); its rlimit fallback isolates resources and, on Linux 5.13+, confines files with Landlock, but not the network or signals to the trainer's user, and without Landlock (macOS, older Linux) the candidate reads the trainer user's files and /proc; it needs POSIX and an explicit opt-in as root",
         "Tool timeouts bound waiting only: a synchronous tool holding the GIL is not preempted",
         "Math equivalence is exact for numbers and rational functions; other functions need sympy, and equivalent forms (expanded vs factored) are not told apart unless symbolic=False",
         "Learning evidence is a CPU toy model with a supervised warm start and a KL anchor; no retained large-model runs yet"

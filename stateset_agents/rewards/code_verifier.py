@@ -9,16 +9,33 @@ They come from the reward context (``tests``/``entry_point``, i.e. the
 scenario) or the constructor, and should be *hidden*: different from any
 examples shown in the prompt.
 
-How a run is isolated (POSIX only; elsewhere scoring raises
-``RewardUnavailableError``):
+Two isolation backends run the same harness with the same limits, framing and
+scoring (``isolation=``; ``"auto"`` is the default):
 
-* ``python -I -S`` (isolated mode, no site-packages) with an empty
-  environment, a fresh, empty temporary directory as the working directory,
-  and its own session, so the whole process group is killed afterwards;
-* rlimits the harness applies to itself before any candidate code runs: CPU
-  seconds, address space, file size, process count (``RLIMIT_NPROC`` 0: no
-  forks or threads), open files, no core dumps;
-* capped reads of stdout and stderr (the rest is drained and discarded).
+* ``"docker"``: one fresh container per verification, with no network, a
+  read-only root and a small tmpfs, a non-root user, all capabilities
+  dropped, ``no-new-privileges``, the default seccomp and AppArmor profiles,
+  pids/memory/CPU cgroup limits, no host mounts and an empty environment
+  (:class:`DockerSandboxConfig`, ``_sandbox_docker``). The image is pinned by
+  digest and must be pre-pulled (``docker pull`` it; a missing image raises
+  ``RewardUnavailableError`` unless ``allow_pull=True``).
+* ``"rlimit"``: a local ``python -I -S`` subprocess (POSIX only) with an
+  empty environment, a fresh, empty temporary working directory, its own
+  session (the whole process group is killed afterwards) and, on Linux 5.13+,
+  Landlock filesystem confinement (it reads only the standard library and
+  system libraries and writes only its working directory; no ``/proc`` of
+  other processes, home directory or dataset files). It does not isolate the
+  network or signals to this user's processes. As root it needs an explicit
+  opt-in (``allow_root_rlimit=True`` or ``STATESET_SANDBOX_ALLOW_ROOT=1``),
+  because root ignores ``RLIMIT_NPROC``.
+* ``"auto"`` uses docker when a daemon is reachable and the image is present,
+  else rlimit with a one-time warning naming what is not isolated. It decides
+  once per process and never falls back after choosing docker.
+
+In both, the harness applies rlimits to itself before any candidate code
+runs: CPU seconds, address space, file size, process count (``RLIMIT_NPROC``
+0: no forks or threads), open files, no core dumps; stdout and stderr are
+read with caps (the rest is drained and discarded).
 
 The time limit that decides a score is CPU time
 (``SandboxLimits.cpu_seconds``, ``RLIMIT_CPU``; a run killed by it reports
@@ -29,11 +46,13 @@ scaling), so keep ``cpu_seconds`` several times what a correct solution
 needs. The wall clock (``timeout_seconds``) is only a generous backstop that
 guarantees a stalled run (a sleep, a blocked read) cannot hang the trainer;
 a run it kills reports ``"wall_timeout"`` and, on Linux, the CPU seconds it
-had used, so a stall is told apart from a CPU-limit kill. At most
-:func:`sandbox_concurrency` sandboxes (default: the CPUs this process may
-use; ``STATESET_SANDBOX_CONCURRENCY`` or :func:`set_sandbox_concurrency` to
-change it) run at once across every event loop and thread of the process;
-the others wait for a slot before their clocks start.
+had used, so a stall is told apart from a CPU-limit kill. In a container the
+backstop starts when the harness is running, so container start-up never
+counts against it. At most :func:`sandbox_concurrency` sandboxes (default:
+the CPUs this process may use; ``STATESET_SANDBOX_CONCURRENCY`` or
+:func:`set_sandbox_concurrency` to change it) run at once across every event
+loop and thread of the process, whichever backend runs them; the others
+wait for a slot before their clocks start.
 
 How a verdict resists the obvious exploits:
 
@@ -51,27 +70,32 @@ How a verdict resists the obvious exploits:
   remaining tests failed. A timeout scores 0 for those tests; it is not an
   outage.
 
-**This is resource isolation, not a security boundary.** The candidate runs
-as the trainer's user with normal filesystem and network access; it can read
-anything that user can (including ``/proc`` and any expected outputs stored
-on disk, such as a dataset file: only the working directory is empty) and, as
-root, ignores ``RLIMIT_NPROC``. Run untrusted or adversarial code in a
-container or VM sandbox (gVisor, Firecracker, a locked-down Docker container
-without network) and point this verifier at trusted policy output only, or
-run the trainer itself inside such a sandbox.
+What each backend does *not* isolate: the candidate always sees the test
+inputs (they are in its own process); under ``rlimit`` it runs as the
+trainer's user, can open network connections, can signal (kill) that user's
+processes and, without Landlock (macOS, Linux before 5.13), reads anything
+that user can (``/proc/<pid>/environ``, credential files, a dataset holding
+the expected outputs) and writes outside its directory. A container shares
+the host kernel, so a kernel exploit escapes it. **For untrusted or
+adversarial workloads use the docker backend, or a stronger runtime (gVisor
+via ``--runtime=runsc``, a Firecracker microVM) around the trainer.**
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import functools
 import json
+import logging
 import math
 import os
+import platform
 import re
 import secrets
 import signal
 import sys
+import sysconfig
 import tempfile
 import threading
 from collections import deque
@@ -90,12 +114,32 @@ from stateset_agents.core.reward_context import (
 )
 from stateset_agents.core.tool_calls import strip_tool_calls
 
+from ._sandbox_docker import (
+    DEFAULT_DOCKER_IMAGE,
+    STDIN_DIR,
+    WORKDIR,
+    DockerRunSpec,
+    DockerSandboxConfig,
+    DockerStatus,
+    HarnessOutput,
+    cached_docker_status,
+    docker_sandbox_status,
+    run_harness_in_docker,
+)
+
 __all__ = [
+    "DEFAULT_DOCKER_IMAGE",
+    "ISOLATION_MODES",
+    "DockerSandboxConfig",
+    "DockerStatus",
     "SandboxLimits",
     "SandboxRun",
     "SandboxedCodeVerifier",
+    "docker_sandbox_status",
     "extract_code",
+    "landlock_available",
     "normalize_tests",
+    "resolve_isolation",
     "run_sandboxed",
     "sandbox_available",
     "sandbox_concurrency",
@@ -103,11 +147,17 @@ __all__ = [
     "set_sandbox_concurrency",
 ]
 
+logger = logging.getLogger(__name__)
+
 _HARNESS = Path(__file__).with_name("_sandbox_harness.py")
 _FENCE = re.compile(r"```[ \t]*([A-Za-z0-9_+-]*)[ \t]*\n(.*?)```", re.S)
 _CODE_LANGUAGES = {"", "python", "py", "python3"}
 #: Environment variable that sets how many sandboxes may run at once.
 CONCURRENCY_ENV = "STATESET_SANDBOX_CONCURRENCY"
+#: Environment variable that opts in to the rlimit backend as root.
+ALLOW_ROOT_ENV = "STATESET_SANDBOX_ALLOW_ROOT"
+#: The ``isolation=`` values: pick a backend, or let ``"auto"`` pick.
+ISOLATION_MODES = ("auto", "docker", "rlimit")
 
 
 @dataclass(frozen=True)
@@ -172,10 +222,13 @@ class SandboxRun:
     #: An error raised by code after the entry point was defined (an example
     #: block); the tests still ran.
     load_warning: str | None = None
+    #: The backend that ran it: ``"docker"`` or ``"rlimit"``.
+    isolation: str = "rlimit"
 
 
 def sandbox_available() -> bool:
-    """Whether this platform can run the sandbox (POSIX with ``resource``)."""
+    """Whether this platform can run the rlimit backend (POSIX with
+    ``resource``). The docker backend needs only a reachable daemon."""
     if os.name != "posix" or not sys.executable:
         return False
     try:
@@ -445,6 +498,210 @@ def set_sandbox_concurrency(limit: int | None) -> None:
     _SLOTS.set_limit(limit)
 
 
+# --- which backend runs a candidate ---------------------------------------------
+
+_DEFAULT_DOCKER = DockerSandboxConfig()
+#: Machines whose Landlock syscalls are 444-446 (the shared syscall table).
+_LANDLOCK_MACHINES = frozenset(
+    {
+        "x86_64",
+        "amd64",
+        "i386",
+        "i686",
+        "aarch64",
+        "arm64",
+        "armv7l",
+        "armv8l",
+        "riscv64",
+        "ppc64le",
+        "s390x",
+        "loongarch64",
+    }
+)
+#: Read-only for a Landlock-confined candidate, besides the standard library:
+#: shared libraries, the linker cache, the time zone and random devices.
+_SYSTEM_READ_PATHS = (
+    "/usr",
+    "/lib",
+    "/lib32",
+    "/lib64",
+    "/etc/ld.so.cache",
+    "/etc/localtime",
+    "/dev/zero",
+    "/dev/random",
+    "/dev/urandom",
+)
+_WARNED: set[str] = set()
+_WARNED_LOCK = threading.Lock()
+
+
+@functools.lru_cache(maxsize=1)
+def landlock_available() -> int:
+    """The Landlock ABI version the rlimit backend can use (0: none).
+
+    Landlock (Linux 5.13+, enabled in the kernel's LSM list) lets the
+    unprivileged harness confine its own filesystem access; it needs no
+    namespaces and changes nothing in this process (this only queries it).
+    """
+    if not sys.platform.startswith("linux"):
+        return 0
+    if platform.machine().lower() not in _LANDLOCK_MACHINES:
+        return 0
+    try:
+        import ctypes
+
+        libc = ctypes.CDLL(None, use_errno=True)
+        syscall = libc.syscall
+        syscall.restype = ctypes.c_long
+        word = ctypes.c_long
+        # landlock_create_ruleset(NULL, 0, LANDLOCK_CREATE_RULESET_VERSION)
+        abi = syscall(word(444), None, word(0), word(1))
+    except (ImportError, OSError, AttributeError):
+        return 0
+    return max(0, int(abi))
+
+
+@functools.lru_cache(maxsize=2)
+def _landlock_read_paths(site_packages: bool) -> tuple[str, ...]:
+    """What a Landlock-confined candidate may read (no user data)."""
+    names = ["stdlib", "platstdlib"]
+    if site_packages:
+        names += ["purelib", "platlib"]
+    paths = {sysconfig.get_path(name) for name in names}
+    paths.add(os.path.join(sys.base_prefix, "lib"))
+    paths.update(_SYSTEM_READ_PATHS)
+    return tuple(sorted(path for path in paths if path and os.path.exists(path)))
+
+
+def _warn_once(key: str, message: str) -> None:
+    with _WARNED_LOCK:
+        if key in _WARNED:
+            return
+        _WARNED.add(key)
+    logger.warning(message)
+
+
+def _check_isolation(isolation: Any) -> str:
+    if isolation not in ISOLATION_MODES:
+        raise ConfigurationError(
+            f"isolation must be one of {', '.join(ISOLATION_MODES)}; got {isolation!r}"
+        )
+    return str(isolation)
+
+
+def _check_root(allow_root_rlimit: bool) -> None:
+    """Refuse the rlimit backend as root unless explicitly allowed."""
+    if allow_root_rlimit or not (hasattr(os, "geteuid") and os.geteuid() == 0):
+        return
+    if os.environ.get(ALLOW_ROOT_ENV, "").strip().lower() in {"1", "true", "yes"}:
+        return
+    raise ConfigurationError(
+        "the rlimit sandbox backend would run candidate code as root, where "
+        "RLIMIT_NPROC does not hold (a candidate can fork without limit); use "
+        "isolation='docker', run the trainer as a non-root user, or opt in with "
+        f"allow_root_rlimit=True or {ALLOW_ROOT_ENV}=1"
+    )
+
+
+def _rlimit_gaps() -> str:
+    """What the rlimit backend does not isolate here, in words."""
+    gaps = [
+        "the network (it can open sockets and connect out)",
+        "signals to this user's processes (it can kill the trainer)",
+        "the test inputs (they are in its own process)",
+    ]
+    if not landlock_available():
+        gaps.insert(
+            0,
+            "the filesystem and /proc (without Landlock it runs as this user: it "
+            "reads /proc/<pid>/environ of this user's processes, credential files "
+            "and any dataset holding expected outputs, and writes outside its "
+            "directory)",
+        )
+    return "; ".join(gaps)
+
+
+def resolve_isolation(
+    isolation: str = "auto",
+    *,
+    docker: DockerSandboxConfig | None = None,
+    allow_root_rlimit: bool = False,
+) -> str:
+    """The backend that runs candidates for these settings: ``"docker"`` or
+    ``"rlimit"``.
+
+    ``"auto"`` picks docker when :func:`docker_sandbox_status` finds a usable
+    daemon and image (probed once per process), else rlimit with a one-time
+    warning naming what is not isolated. Raises ``RewardUnavailableError``
+    when the requested backend cannot run here and ``ConfigurationError`` for
+    the rlimit backend as root without the opt-in. May block on the first call
+    while Docker is probed.
+    """
+    isolation = _check_isolation(isolation)
+    config = docker or _DEFAULT_DOCKER
+    status: DockerStatus | None = None
+    if isolation != "rlimit":
+        status = docker_sandbox_status(config)
+        if isolation == "docker" and not status.usable:
+            status = docker_sandbox_status(config, refresh=True)
+        if status.usable:
+            if not any(o.startswith("name=seccomp") for o in status.security_options):
+                _warn_once(
+                    "no-seccomp",
+                    "the docker daemon reports no seccomp profile: sandbox "
+                    "containers run without a system-call filter",
+                )
+            return "docker"
+        if isolation == "docker":
+            raise RewardUnavailableError(f"isolation='docker' but {status.reason}")
+    if not sandbox_available():
+        why = f" (Docker: {status.reason})" if status is not None else ""
+        raise RewardUnavailableError(
+            "the sandboxed code verifier needs Docker or a POSIX platform with the "
+            f"resource module (rlimits){why}; run it on Linux or macOS, or with Docker"
+        )
+    _check_root(allow_root_rlimit)
+    if status is not None:
+        _warn_once(
+            "auto-rlimit",
+            f"SandboxedCodeVerifier(isolation='auto'): Docker is not usable "
+            f"({status.reason}), so candidate code runs in the rlimit backend "
+            f"(a local subprocess as this user). Not isolated: {_rlimit_gaps()}. "
+            "For untrusted "
+            f"code start Docker and pre-pull {config.image}, or pass "
+            "isolation='rlimit' to choose this backend knowingly.",
+        )
+    elif sys.platform.startswith("linux") and not landlock_available():
+        _warn_once(
+            "no-landlock",
+            "the rlimit sandbox backend runs without Landlock (it needs Linux "
+            "5.13+ with landlock in the LSM list); not isolated: "
+            f"{_rlimit_gaps()}",
+        )
+    return "rlimit"
+
+
+async def _resolve(
+    isolation: str, docker: DockerSandboxConfig | None, allow_root_rlimit: bool
+) -> str:
+    """:func:`resolve_isolation`, off the event loop when Docker needs probing
+    (``"auto"`` reuses its first probe; ``"docker"`` re-probes a failure)."""
+    cached = cached_docker_status(docker or _DEFAULT_DOCKER)
+    settled = cached is not None and (cached.usable or isolation == "auto")
+    if isolation == "rlimit" or settled:
+        return resolve_isolation(
+            isolation, docker=docker, allow_root_rlimit=allow_root_rlimit
+        )
+    return await asyncio.to_thread(
+        functools.partial(
+            resolve_isolation,
+            isolation,
+            docker=docker,
+            allow_root_rlimit=allow_root_rlimit,
+        )
+    )
+
+
 # --- running the sandbox -----------------------------------------------------
 
 
@@ -536,6 +793,7 @@ def _records(raw: bytes, nonce: str, count: int) -> tuple[list[Any], dict[str, A
     outcomes: list[Any] = [None] * count
     seen = [0] * count
     facts: dict[str, Any] = {
+        "started": False,
         "done": False,
         "limits": [],
         "load_error": None,
@@ -565,6 +823,7 @@ def _records(raw: bytes, nonce: str, count: int) -> tuple[list[Any], dict[str, A
 
 def _run_fact(kind: Any, record: Mapping[str, Any], facts: dict[str, Any]) -> None:
     if kind == "start" and isinstance(record.get("limits"), list):
+        facts["started"] = True
         facts["limits"] = [str(name) for name in record["limits"]]
     elif kind in ("load_error", "load_warning"):
         facts[kind] = str(record.get("error"))
@@ -595,18 +854,17 @@ def _payload(
     mode: str,
     entry_point: str | None,
     limits: SandboxLimits,
-    stdin_dir: Path,
+    extra: Mapping[str, Any],
 ) -> tuple[bytes, str]:
     """The harness's input (test *inputs* only) and the run's nonce.
 
-    A program's stdin goes to one file per test in ``stdin_dir`` (outside the
-    working directory), which the harness puts on fd 0 for that test.
+    ``extra`` says where a program's stdin files are (``stdin_dir``, outside
+    the working directory; the harness puts one on fd 0 per test) and, per
+    backend, the stdin texts to write there, the working directory or the
+    Landlock rules.
     """
     nonce = secrets.token_hex(16)
     if mode == "program":
-        stdin_dir.mkdir(mode=0o700)
-        for index, test in enumerate(tests):
-            (stdin_dir / str(index)).write_text(str(test["stdin"]), encoding="utf-8")
         inputs: list[dict[str, Any]] = [{} for _ in tests]
     else:
         inputs = [{"args": t["args"], "kwargs": t["kwargs"]} for t in tests]
@@ -617,12 +875,45 @@ def _payload(
             "entry_point": entry_point,
             "code": code,
             "inputs": inputs,
-            "stdin_dir": str(stdin_dir),
             "limits": limits.rlimits(),
             "max_result_chars": limits.max_result_chars,
+            **extra,
         }
     ).encode()
     return payload, nonce
+
+
+def _sandbox_run(
+    output: HarnessOutput, nonce: str, count: int, isolation: str
+) -> SandboxRun:
+    """What the harness reported, as a :class:`SandboxRun`."""
+    outcomes, facts = _records(output.stdout, nonce, count)
+    timed_out = output.stalled_cpu is not None
+    cpu = facts["cpu_seconds"]
+    if output.stalled_cpu is not None:
+        cpu = None if output.stalled_cpu < 0 else output.stalled_cpu
+    return SandboxRun(
+        outcomes=tuple(outcomes),
+        status=_status(timed_out, facts, output.returncode),
+        returncode=output.returncode,
+        stderr=output.stderr.decode("utf-8", "replace")[-2000:],
+        limits_applied=tuple(facts["limits"]),
+        duplicate_records=int(facts["duplicates"]),
+        load_error=facts["load_error"],
+        timed_out=timed_out,
+        cpu_seconds=cpu,
+        load_warning=facts["load_warning"],
+        isolation=isolation,
+    )
+
+
+@functools.lru_cache(maxsize=1)
+def _harness_source() -> str:
+    return _HARNESS.read_text(encoding="utf-8")
+
+
+def _python_flags(site_packages: bool) -> tuple[str, ...]:
+    return ("-I",) if site_packages else ("-I", "-S")
 
 
 async def run_sandboxed(
@@ -633,48 +924,127 @@ async def run_sandboxed(
     entry_point: str | None = None,
     limits: SandboxLimits | None = None,
     site_packages: bool = False,
+    isolation: str = "auto",
+    docker: DockerSandboxConfig | None = None,
+    allow_root_rlimit: bool = False,
 ) -> SandboxRun:
-    """Run ``code`` on the inputs of ``tests`` in a fresh sandboxed process.
+    """Run ``code`` on the inputs of ``tests`` in a fresh sandbox.
 
-    Returns the per-test records; it never compares expected outputs (see
+    ``isolation`` picks the backend (:func:`resolve_isolation`). Returns the
+    per-test records; it never compares expected outputs (see
     :func:`score_outcomes`). Waits for one of the :func:`sandbox_concurrency`
-    slots first. Raises ``RewardUnavailableError`` when the platform cannot
-    sandbox (not POSIX) or the interpreter cannot start.
+    slots first. Raises ``RewardUnavailableError`` when no backend can run
+    here, the docker image is missing, or the sandbox does not start (no
+    candidate code has run then); once the harness runs, every outcome is a
+    record, never an outage.
     """
-    if not sandbox_available():
-        raise RewardUnavailableError(
-            "the sandboxed code verifier needs a POSIX platform with the "
-            "resource module (rlimits); run it on Linux or macOS"
-        )
     limits = limits or SandboxLimits()
+    backend = await _resolve(_check_isolation(isolation), docker, allow_root_rlimit)
     async with _SLOTS.hold():
-        with tempfile.TemporaryDirectory(prefix="stateset-sandbox-") as root:
-            workdir = Path(root) / "work"
-            workdir.mkdir(mode=0o700)
-            payload, nonce = _payload(
-                code, tests, mode, entry_point, limits, Path(root) / "stdin"
+        if backend == "docker":
+            return await _run_in_docker(
+                code, tests, mode, entry_point, limits, site_packages, docker
             )
-            return await _run_harness(
-                payload, nonce, len(tests), workdir, limits, site_packages
-            )
+        return await _run_with_rlimits(
+            code, tests, mode, entry_point, limits, site_packages
+        )
+
+
+async def _run_in_docker(
+    code: str,
+    tests: Sequence[Mapping[str, Any]],
+    mode: str,
+    entry_point: str | None,
+    limits: SandboxLimits,
+    site_packages: bool,
+    docker: DockerSandboxConfig | None,
+) -> SandboxRun:
+    config = docker or _DEFAULT_DOCKER
+    extra: dict[str, Any] = {"stdin_dir": STDIN_DIR, "workdir": WORKDIR}
+    stdin_bytes = 0
+    if mode == "program":
+        extra["stdins"] = [str(test["stdin"]) for test in tests]
+        stdin_bytes = sum(len(text.encode()) + 4096 for text in extra["stdins"])
+    payload, nonce = _payload(code, tests, mode, entry_point, limits, extra)
+    spec = DockerRunSpec(
+        source=_harness_source(),
+        payload=payload,
+        python_flags=_python_flags(site_packages),
+        memory_bytes=int(limits.memory_bytes),
+        max_processes=int(limits.max_processes),
+        timeout_seconds=float(limits.timeout_seconds),
+        max_stdout_bytes=int(limits.max_output_bytes),
+        max_stderr_bytes=int(limits.max_stderr_bytes),
+        extra_tmpfs_bytes=stdin_bytes,
+    )
+    output = await run_harness_in_docker(config, spec)
+    if not _records(output.stdout, nonce, len(tests))[1]["started"]:
+        # No candidate code ran: the container did not start. An outage.
+        detail = " ".join(output.stderr.decode("utf-8", "replace").split())[-500:]
+        hint = ""
+        if "No such image" in detail:
+            hint = f"; pre-pull it with `docker pull {config.image}`"
+        raise RewardUnavailableError(
+            f"the docker sandbox did not start (exit status {output.returncode}): "
+            f"{detail or 'no output'}{hint}"
+        )
+    return _sandbox_run(output, nonce, len(tests), "docker")
+
+
+async def _run_with_rlimits(
+    code: str,
+    tests: Sequence[Mapping[str, Any]],
+    mode: str,
+    entry_point: str | None,
+    limits: SandboxLimits,
+    site_packages: bool,
+) -> SandboxRun:
+    with tempfile.TemporaryDirectory(prefix="stateset-sandbox-") as root:
+        workdir = Path(root) / "work"
+        workdir.mkdir(mode=0o700)
+        stdin_dir = Path(root) / "stdin"
+        if mode == "program":
+            stdin_dir.mkdir(mode=0o700)
+            for index, test in enumerate(tests):
+                (stdin_dir / str(index)).write_text(
+                    str(test["stdin"]), encoding="utf-8"
+                )
+        extra: dict[str, Any] = {"stdin_dir": str(stdin_dir)}
+        if landlock_available():
+            extra["landlock"] = {
+                "read": [*_landlock_read_paths(site_packages), str(stdin_dir)],
+                "write": [str(workdir), os.devnull],
+            }
+        payload, nonce = _payload(code, tests, mode, entry_point, limits, extra)
+        output = await _run_harness(payload, workdir, limits, site_packages)
+    run = _sandbox_run(output, nonce, len(tests), "rlimit")
+    if (
+        "landlock" in extra
+        and run.limits_applied
+        and "LANDLOCK" not in run.limits_applied
+    ):
+        _warn_once(
+            "landlock-failed",
+            "the kernel offers Landlock but the rlimit sandbox could not apply it: "
+            "candidates can read this user's files and /proc/<pid>/environ and "
+            "write outside their directory",
+        )
+    return run
 
 
 async def _run_harness(
     payload: bytes,
-    nonce: str,
-    count: int,
     workdir: Path,
     limits: SandboxLimits,
     site_packages: bool,
-) -> SandboxRun:
-    flags = ["-I"] if site_packages else ["-I", "-S"]
+) -> HarnessOutput:
     out, err = bytearray(), bytearray()
     try:
         process = await asyncio.create_subprocess_exec(
             sys.executable,
-            *flags,
+            *_python_flags(site_packages),
             "-c",
-            _HARNESS.read_text(encoding="utf-8"),
+            _harness_source(),
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
@@ -689,23 +1059,7 @@ async def _run_harness(
     finally:
         _kill_group(process.pid)
         await process.wait()
-    outcomes, facts = _records(bytes(out), nonce, count)
-    timed_out = stalled_cpu is not None
-    cpu = facts["cpu_seconds"]
-    if timed_out:
-        cpu = None if stalled_cpu is None or stalled_cpu < 0 else stalled_cpu
-    return SandboxRun(
-        outcomes=tuple(outcomes),
-        status=_status(timed_out, facts, process.returncode),
-        returncode=process.returncode,
-        stderr=err.decode("utf-8", "replace")[-2000:],
-        limits_applied=tuple(facts["limits"]),
-        duplicate_records=int(facts["duplicates"]),
-        load_error=facts["load_error"],
-        timed_out=timed_out,
-        cpu_seconds=cpu,
-        load_warning=facts["load_warning"],
-    )
+    return HarnessOutput(bytes(out), bytes(err), process.returncode, stalled_cpu)
 
 
 def _compiles(code: str) -> bool:
@@ -724,17 +1078,24 @@ class SandboxedCodeVerifier(RewardFunction):
     newest assistant turn's code (``turns[-1]`` for a single reply). Tests and
     ``entry_point`` come from the context (the scenario's ``tests`` and
     ``entry_point``) or the constructor. Missing or malformed tests raise
-    ``ConfigurationError``; a platform without the sandbox raises
-    ``RewardUnavailableError``. Code that fails to compile, exits early,
-    crashes, exceeds a limit or times out fails the tests it did not finish;
-    that is a score, not an outage.
+    ``ConfigurationError``; a platform where the chosen backend cannot run
+    (no usable Docker for ``isolation="docker"``, a missing image, neither
+    Docker nor POSIX rlimits) raises ``RewardUnavailableError``. Code that
+    fails to compile, exits early, crashes, exceeds a limit or times out fails
+    the tests it did not finish; that is a score, not an outage.
+
+    ``isolation`` (``"auto"``, ``"docker"`` or ``"rlimit"``; see the module
+    docs) picks the backend, ``docker`` configures the container
+    (:class:`DockerSandboxConfig`), and ``allow_root_rlimit`` opts in to the
+    rlimit backend as root. ``metadata["isolation"]`` records the backend
+    that ran.
 
     An episode whose context records that it ended without a final answer
     (``termination`` other than ``"final_answer"``, e.g. a spent tool budget)
     scores 0 without running anything.
 
-    Resource isolation only: see the module docs before running untrusted
-    code, and prefer a container sandbox for it.
+    Only the docker backend isolates the filesystem, network and processes;
+    see the module docs before running untrusted code.
     """
 
     score_range = (0.0, 1.0)
@@ -748,6 +1109,9 @@ class SandboxedCodeVerifier(RewardFunction):
         limits: SandboxLimits | None = None,
         float_tolerance: float = 0.0,
         site_packages: bool = False,
+        isolation: str = "auto",
+        docker: DockerSandboxConfig | None = None,
+        allow_root_rlimit: bool = False,
         name: str = "SandboxedCodeVerifier",
     ) -> None:
         super().__init__(weight, RewardType.SPARSE, name)
@@ -756,6 +1120,13 @@ class SandboxedCodeVerifier(RewardFunction):
         self.limits = limits or SandboxLimits()
         self.float_tolerance = float(float_tolerance)
         self.site_packages = bool(site_packages)
+        self.isolation = _check_isolation(isolation)
+        if docker is not None and not isinstance(docker, DockerSandboxConfig):
+            raise ConfigurationError("docker must be a DockerSandboxConfig")
+        self.docker = docker
+        self.allow_root_rlimit = bool(allow_root_rlimit)
+        if self.isolation == "rlimit":
+            _check_root(self.allow_root_rlimit)
         if self.tests is not None:
             normalize_tests(self.tests)
 
@@ -809,10 +1180,14 @@ class SandboxedCodeVerifier(RewardFunction):
                 entry_point=entry_point,
                 limits=self.limits,
                 site_packages=self.site_packages,
+                isolation=self.isolation,
+                docker=self.docker,
+                allow_root_rlimit=self.allow_root_rlimit,
             )
             passed = score_outcomes(run, tests, self.float_tolerance)
             status = run.status
             details = {
+                "isolation": run.isolation,
                 "limits_applied": list(run.limits_applied),
                 "duplicate_records": run.duplicate_records,
                 "load_error": run.load_error,
