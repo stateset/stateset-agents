@@ -132,7 +132,7 @@ timeouts even when the process's shared executor is saturated; an async tool
 is cancelled at its timeout. Python cannot preempt a thread holding the GIL,
 and an abandoned thread keeps running (the interpreter waits for it at exit).
 Tools must be deterministic and bounded; put untrusted computation in the code
-sandbox, or better a container.
+sandbox (its docker backend: see the code verifier below).
 
 ## The masking guarantee
 
@@ -270,26 +270,121 @@ solution never fails it.
 
 Keep the tests **hidden**: different from any examples in the prompt.
 
-**Isolation** (POSIX only; elsewhere scoring raises `RewardUnavailableError`,
-the outage the trainers already handle):
+**Isolation backends** (`isolation=` on `SandboxedCodeVerifier` and
+`run_sandboxed`; default `"auto"`). Both run the same harness with the same
+limits, record framing and parent-side comparison, so a candidate scores the
+same on either; they differ in what they keep the candidate away from.
 
-- `python -I -S` (isolated mode, no site-packages unless
-  `site_packages=True`), an empty environment, a fresh temporary directory
-  as the working directory, deleted afterwards (the stdin files live in a
-  sibling directory, so the cwd stays empty), and a new session whose whole
-  process group is killed after the run;
+- `"docker"`: one fresh container per verification (`docker run --rm`; no
+  container is reused, so nothing carries over between candidates) with
+  `--network none` and `--ipc none`, a `--read-only` root and one small
+  `--tmpfs` at `/sandbox` (`nosuid,nodev,noexec`, 64 MiB plus the stdin files)
+  holding the empty working directory, a non-root numeric `--user`
+  (`65534:65534`), `--cap-drop ALL`, `--security-opt no-new-privileges`, the
+  daemon's default seccomp and AppArmor profiles (never overridden),
+  `--pids-limit` (2 plus `max_processes`), `--memory` = `--memory-swap` (the
+  `memory_bytes` limit plus the tmpfs plus 64 MiB, so `RLIMIT_AS` still fails
+  an allocation first, as in the rlimit backend) and `--cpus 1`, no host
+  mounts (the harness is a command-line argument, the payload arrives on
+  stdin), an empty environment (`/usr/bin/env -i`), `--log-driver none` and
+  `--pull never`. Configure it with `DockerSandboxConfig` (image, user, cpus,
+  tmpfs, labels, `allow_pull`). The harness runs under a tiny PID 1
+  supervisor so a `RLIMIT_CPU` kill still reports `cpu_limit` (PID 1 ignores
+  `SIGXCPU`) and so a container kills its candidate at its own deadline even
+  if the trainer dies. A container that never starts, an unreachable daemon or
+  a missing image raise `RewardUnavailableError` (no candidate code ran);
+  once the harness runs, every outcome is a score, so a candidate cannot
+  forge an outage.
+- `"rlimit"`: a local `python -I -S` subprocess (POSIX only): an empty
+  environment, a fresh temporary working directory deleted afterwards (the
+  stdin files live in a sibling directory, so the cwd stays empty), a new
+  session whose whole process group is killed after the run and, on Linux
+  5.13+ with Landlock in the kernel's LSM list (`landlock_available()`),
+  Landlock filesystem rules the unprivileged harness applies to itself
+  before any candidate code runs: it may read the interpreter's standard
+  library, `/usr` and the system library directories, its own stdin files
+  and its working directory, and nothing else (no `/proc`, home directory,
+  credential or dataset files; no writes elsewhere). A Landlock-confined
+  process also cannot read the `/proc/<pid>/environ` or memory of processes
+  outside its domain, such as the trainer. `metadata["limits_applied"]`
+  lists `LANDLOCK` when it was applied. As root this backend needs an
+  explicit opt-in (`allow_root_rlimit=True` or `STATESET_SANDBOX_ALLOW_ROOT=1`):
+  root ignores `RLIMIT_NPROC`.
+- `"auto"` uses docker when the daemon is reachable and the image is present
+  (`docker_sandbox_status()`), else rlimit with a one-time warning that names
+  what is not isolated. It decides once per process; after choosing docker it
+  never falls back (a broken daemon is an outage, not a silent downgrade).
+  `resolve_isolation()` tells a training script which backend it will get,
+  and `metadata["isolation"]` records the backend that scored each reply.
+
+**Pre-pull the image.** The default is `python:3.12-slim` pinned by digest
+(`DEFAULT_DOCKER_IMAGE`); a custom image must be pinned by digest too
+(`name@sha256:...` or an image ID) and provide `/usr/bin/env` and the
+interpreter at `DockerSandboxConfig.python`. Pull it before training:
+
+```bash
+docker pull "$(python -c 'from stateset_agents.rewards.code_verifier import DEFAULT_DOCKER_IMAGE as i; print(i)')"
+```
+
+Without it, `isolation="docker"` raises `RewardUnavailableError` naming the
+`docker pull` command, and `"auto"` falls back to rlimit with the warning;
+nothing is downloaded during training unless `allow_pull=True`. The image's
+Python (3.12 for the default) runs the candidate, so pick an image whose
+version and packages match what the tasks assume (`site_packages=True`
+exposes the image's site-packages, not the trainer's). Requires Docker 20.10+
+with a Linux daemon. Every container carries the label
+`stateset-agents.sandbox=code-verifier` (plus `DockerSandboxConfig.labels`).
+
+**What each backend isolates**, measured with the harmless probes in
+`tests/unit/test_code_verifier_sandbox.py` (Docker 27.4 on Linux 5.15, which
+has Landlock ABI 1):
+
+| A candidate tries to | `docker` | `rlimit` + Landlock | `rlimit` without Landlock (macOS, Linux < 5.13) |
+| --- | --- | --- | --- |
+| read the trainer's environment (`os.environ`) | empty | empty | empty |
+| read `/proc/<ppid>/environ` | its parent is the in-container supervisor (empty environment) | denied | **readable** (the trainer's variables, API keys included) |
+| list `/proc`, see the trainer's pid | only its own 2 processes | denied | **596 processes, trainer included** |
+| read a dataset file holding expected outputs | not visible | denied | **read** |
+| write outside its working directory | read-only root | denied | **written** |
+| connect to a listener on the host's localhost | refused (own loopback only) | **connected** | **connected** |
+| signal (kill) the trainer | no (own pid namespace) | **yes** (same user) | **yes** |
+| run as | uid 65534, no capabilities | the trainer's user | the trainer's user |
+| see the test *inputs* (not the expected outputs) | yes (they are in its own process) | yes | yes |
+
+The candidate always sees the test inputs: the harness holding them runs in
+its process, and frame inspection finds them. Expected outputs never enter
+the sandbox, and in a container (no network, nothing persistent) the inputs
+cannot leave it. **For untrusted or adversarial workloads use the docker
+backend, or a stronger runtime:** a container shares the host kernel, so a
+kernel exploit escapes it; gVisor (`runsc`) or a Firecracker microVM around
+the trainer, or a dedicated host, closes that.
+
+**Latency.** A container per verification adds container start-up (a bare
+`docker run --rm` of the interpreter takes about 0.5 s). Median time per
+verification (three hidden tests) on an 8-CPU Linux host with Docker 27.4:
+0.60 to 0.75 s for docker against 0.05 s for rlimit at load average 11, and
+0.8 to 1.7 s against 0.15 to 0.19 s at load average 40 to 120.
+`test_median_verification_latency` prints the medians. A warm container pool
+is not used: a reused container would carry one candidate's files and
+processes into the next.
+
+**Limits common to both backends:**
+
 - **CPU time decides** (`cpu_seconds`, `RLIMIT_CPU`, `status="cpu_limit"`);
   the wall clock (`timeout_seconds`, default 30 s) is only a backstop for a
   stalled run (`status="wall_timeout"`, plus `metadata["cpu_seconds"]` on
-  Linux). At most `sandbox_concurrency()` sandboxes run at once per process
-  (default: usable CPUs; `STATESET_SANDBOX_CONCURRENCY` /
+  Linux). In a container the backstop starts when the harness reports that it
+  is running, so a slow daemon delays a run without failing it (start-up has
+  its own `startup_timeout_seconds`, an outage when exceeded). At most
+  `sandbox_concurrency()` sandboxes run at once per process, whichever
+  backend (default: usable CPUs; `STATESET_SANDBOX_CONCURRENCY` /
   `set_sandbox_concurrency(n)`); others wait before their clocks start, so 46
   identical correct solutions scored at once all score 1.0. CPU time still
-  varies about 2x under full contention, so keep `cpu_seconds` several times a
-  correct solution's need. Other rlimits the harness applies to itself (soft =
-  hard) before any candidate code runs: address space, file size (writes past
-  it raise instead of killing), `RLIMIT_NPROC = 0` (no forks or threads), open
-  files, no core dumps (`SandboxLimits`);
+  varies about 2x under full contention, so keep `cpu_seconds` several times
+  a correct solution's need. Other rlimits the harness applies to itself
+  (soft = hard) before any candidate code runs: address space, file size
+  (writes past it raise instead of killing), `RLIMIT_NPROC = 0` (no forks or
+  threads), open files, no core dumps (`SandboxLimits`);
 - stdout and stderr are read with size caps; the rest is drained and
   discarded.
 
@@ -311,23 +406,24 @@ score 0 without starting a process.
 | infinite loop | CPU limit kills it (`cpu_limit`); a sleeper meets the backstop (`wall_timeout`); both are a score of 0, not an outage | `test_infinite_loop_is_a_zero_score_not_an_outage`, `test_wall_clock_backstop_kills_a_sleeping_candidate` |
 | fork bomb | `RLIMIT_NPROC = 0`; the process group is killed | `test_fork_storm_leaves_no_processes_behind` |
 | memory / file / thread / recursion abuse, output floods | rlimits and capped reads | `test_resource_abuse_*`, `test_output_floods_*` |
-| **Not defended:** read expected outputs from a dataset file on disk | runs as the trainer's user and can read any file that user can, including `/proc` | pinned at 1.0 by `test_reading_expected_outputs_from_a_dataset_on_disk_is_a_known_limit`; excluded from the gate by name (`KNOWN_VERIFIER_LIMITS`) |
+| read expected outputs from a dataset file on disk | docker: the file is not in the container; rlimit: Landlock denies it. **Not defended by rlimit without Landlock** (it runs as the trainer's user) | `test_reading_expected_outputs_from_a_dataset_on_disk` (0 where files are confined, pinned at 1.0 otherwise); the gate excludes it by name only there (`KNOWN_VERIFIER_LIMITS`) |
+| read `/proc/<ppid>/environ`, list `/proc`, write outside the working directory, reach a host socket | see the table above | `test_docker_candidates_find_no_way_out`, `test_rlimit_candidates_are_confined_to_their_files`, `test_candidates_cannot_read_the_trainers_environment` |
 
 All are in `tests/unit/test_code_verifier_sandbox.py`; each exploit test also
 runs the candidate through a naive verifier (candidate and asserts in one
 file, pass on exit status 0) and asserts the naive verifier is fooled.
 
-**Limits. This is resource isolation, not a security boundary against hostile
-code.** The candidate runs as the trainer's user with that user's filesystem
-and network access: it can read files the user can read, including `/proc` and
-expected outputs stored on disk, open network connections and write outside
-its working directory (within the file-size limit); only the working directory
-is empty. As root, `RLIMIT_NPROC` is not enforced, and a process that calls
-`setsid` escapes the group kill. macOS does not enforce `RLIMIT_AS`. A
-program that writes to fd 1 directly, or calls `os._exit` after printing,
-loses its output. **For untrusted or adversarial workloads run the candidate
-in a container or microVM** (gVisor, Firecracker, a Docker container without
-network and with a read-only root), or run the whole trainer inside one.
+Every sandbox test runs on both backends (skipped cleanly where one is
+unavailable: no POSIX rlimits, no reachable daemon, or the image not pulled),
+and the exploit gate below runs the code families on both.
+
+**Other limits.** As root, `RLIMIT_NPROC` is not enforced (hence the opt-in),
+and in the rlimit backend a process that calls `setsid` escapes the group
+kill. macOS does not enforce `RLIMIT_AS`. A program that writes to fd 1
+directly, or calls `os._exit` after printing, loses its output. Landlock ABI 1
+also denies renaming or linking a file into another directory inside the
+working directory. The rlimit backend never restricts the network or signals
+(Landlock ABI 4 and 6 could, on newer kernels; they are not used).
 
 ## Exploit search
 

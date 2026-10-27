@@ -1386,6 +1386,51 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `global_step` still counts `train_step` calls. Finite updates are
   numerically unchanged (step goldens).
 
+### Security
+
+- **Docker isolation backend for the code verifier**
+  (`SandboxedCodeVerifier(isolation=...)`, `run_sandboxed(isolation=...)`,
+  `DockerSandboxConfig`, `docker_sandbox_status`, `resolve_isolation`,
+  `landlock_available` in `stateset_agents.rewards.code_verifier`). A
+  reviewer showed with harmless probes that candidate code in the rlimited
+  subprocess could read the trainer's environment via `/proc/<ppid>/environ`
+  (API keys included), open sockets and write outside its directory.
+  - `isolation="docker"` runs the harness in one fresh container per
+    verification: `--network none`, `--ipc none`, a read-only root with a
+    small `noexec` tmpfs, a non-root uid, `--cap-drop ALL`,
+    `no-new-privileges`, the default seccomp and AppArmor profiles,
+    pids/memory/CPU cgroup limits from `SandboxLimits`, no host mounts, an
+    empty environment, `--log-driver none`, `--rm`. The image
+    (`python:3.12-slim`, pinned by digest, configurable) must be pre-pulled:
+    a missing image is a `RewardUnavailableError` naming `docker pull`,
+    never a silent download (`allow_pull=True` opts in). Nonce framing and
+    parent-side comparison are unchanged, so expected outputs never enter
+    the container. A PID 1 supervisor keeps `RLIMIT_CPU` kills reported as
+    `cpu_limit` and kills a candidate at its own deadline if the trainer
+    dies; the wall-clock backstop starts once the harness runs, so container
+    start-up never costs a score; cancellation removes the container.
+  - `isolation="rlimit"` is the existing subprocess, now also confined by
+    Landlock on Linux 5.13+ (no namespaces, no privileges, nothing changed in
+    the trainer): the candidate reads only the standard library and system
+    libraries and writes only its working directory, so `/proc/<pid>/environ`
+    of the trainer, credential files and a dataset on disk are denied
+    (`read_dataset_on_disk` is now gated there instead of pinned). It still
+    has network access and can signal the trainer's processes.
+  - **Changed default:** `isolation="auto"` uses docker when a daemon is
+    reachable and the image present, else rlimit with a one-time warning
+    naming what is not isolated; it decides once per process and never falls
+    back after choosing docker. The rlimit backend as root now needs
+    `allow_root_rlimit=True` or `STATESET_SANDBOX_ALLOW_ROOT=1` (root ignores
+    `RLIMIT_NPROC`). `metadata["isolation"]` records the backend.
+  - Every sandbox test, the exploit families and the concurrency tests run on
+    both backends (docker ones skip cleanly without a daemon or the image);
+    new probes assert the parent's environment, the host's `/proc`, the host
+    network, writes outside the work dir and the dataset are unreachable.
+    Median verification time on an 8-CPU host: 0.60 to 0.75 s (docker)
+    against 0.05 s (rlimit) at load average 11, 0.8 to 1.7 s against 0.15 to
+    0.19 s at 40 to 120; container start-up (about 0.5 s) dominates.
+    docs/TOOL_USE_RL.md tabulates what each backend isolates.
+
 ## [0.69.0] - 2026-10-22 — One reward scoring path, leak-free data and an overspend-proof studio
 
 ### Added
