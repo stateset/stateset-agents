@@ -1,18 +1,21 @@
 """
 Layering meta-tests.
 
-The layer contracts (``LAYER_CONTRACTS``) hold for *every* import a module
-can execute -- module level, inside functions and methods, and string
-imports through ``importlib.import_module`` -- not only module-level ones:
+The layer contracts live in ``scripts/layer_graph.py`` (``LAYERS``): every
+unit of ``stateset_agents`` -- each subpackage, the ``cli``/``tui``/
+``finetune`` module families and the ``errors`` root -- sits in one layer and
+may import only itself and units in *lower* layers. They hold for *every*
+import a module can execute -- module level, inside functions and methods,
+literal ``importlib.import_module`` strings, ``from stateset_agents import
+Name`` (resolved through the root lazy-export table) and the targets of
+``deprecated_alias_getattr`` tables. ``if TYPE_CHECKING:`` blocks never run
+and are exempt.
 
-* ``stateset_agents.core`` imports neither ``training``, ``api`` nor
-  ``experimental``;
-* ``stateset_agents.training`` (home of the stable ``train()`` and trainers)
-  does not import ``experimental``.
-
-``if TYPE_CHECKING:`` blocks never run and are exempt. The few edges that
-cannot move yet are in ``LAYERING_ALLOWLIST`` with a reason and, where they
-are deprecation bridges, the release that removes them.
+The only upward edges are dated: pure deprecation shims at old import paths
+(``DEPRECATION_SHIMS``) and ``LAYERING_ALLOWLIST`` entries. Without them the
+unit graph is a DAG, and the cycle check fails on any new edge that closes a
+cycle. ``docs/ARCHITECTURE.md``'s Layering section and package layout are
+rendered from the same table and must stay current.
 
 Structured so later layering rules can be appended: helpers first, then the
 individual rule tests.
@@ -21,32 +24,35 @@ individual rule tests.
 from __future__ import annotations
 
 import ast
+import importlib.util
+import re
+import sys
 import warnings
 from pathlib import Path
 
 import pytest
 
-CORE_DIR = Path(__file__).resolve().parents[2] / "stateset_agents" / "core"
+ROOT = Path(__file__).resolve().parents[2]
+PACKAGE_DIR = ROOT / "stateset_agents"
+CORE_DIR = PACKAGE_DIR / "core"
 
-# These ``core/<name>.py`` modules ARE the old public import paths; they exist
-# only to re-export ``stateset_agents.experimental.<name>`` with a
-# DeprecationWarning, so their module-level experimental import is by design.
-# The size assertion below keeps the exemption from ever hiding real code.
+_spec = importlib.util.spec_from_file_location(
+    "layer_graph", ROOT / "scripts" / "layer_graph.py"
+)
+assert _spec is not None and _spec.loader is not None
+layer_graph = importlib.util.module_from_spec(_spec)
+# Registered first: the script's dataclasses resolve their module by name.
+sys.modules[_spec.name] = layer_graph
+_spec.loader.exec_module(layer_graph)
+
+#: Every pure deprecation shim, any package (paths relative to the package).
+#: They may re-export a module that moved up a layer; the shape test below
+#: keeps them from hiding real code.
 DEPRECATION_SHIMS = frozenset(
-    {
-        "adaptive_learning_controller.py",
-        "few_shot_adaptation.py",
-        "intelligent_orchestrator.py",
-        "intelligent_orchestrator_logic.py",
-        "intelligent_orchestrator_models.py",
-        "long_term_planning.py",
-        "multi_agent_coordination.py",
-        "multimodal_processing.py",
-        "neural_architecture_search.py",
-    }
+    path.removeprefix("stateset_agents/") for path in layer_graph.DEPRECATION_SHIMS
 )
 
-MAX_SHIM_LINES = 30
+MAX_SHIM_LINES = 35
 
 # Deprecated in v0.38.0 ("one release"); removed from both lazy-export tables.
 REMOVED_PLANNING_NAMES = (
@@ -62,6 +68,10 @@ REMOVED_PLANNING_NAMES = (
 
 def _core_modules() -> list[Path]:
     return sorted(p for p in CORE_DIR.rglob("*.py"))
+
+
+def _is_shim(path: Path) -> bool:
+    return path.relative_to(PACKAGE_DIR).as_posix() in DEPRECATION_SHIMS
 
 
 def _experimental_module_level_imports(path: Path) -> list[str]:
@@ -102,12 +112,34 @@ def _is_warnings_warn_call(node: ast.stmt) -> bool:
     )
 
 
+def _is_main_guard(node: ast.stmt) -> bool:
+    """``if __name__ == "__main__":`` -- a shim may keep ``python -m`` working."""
+    if not isinstance(node, ast.If) or not isinstance(node.test, ast.Compare):
+        return False
+    test = node.test
+    return (
+        isinstance(test.left, ast.Name)
+        and test.left.id == "__name__"
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Constant)
+        and test.comparators[0].value == "__main__"
+    )
+
+
+def _is_plain_statement(node: ast.stmt) -> bool:
+    if isinstance(node, ast.Import | ast.ImportFrom | ast.Assign | ast.AnnAssign):
+        return True
+    return isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)
+
+
 def _non_shim_statements(path: Path) -> list[str]:
     """Return descriptions of statements a deprecation shim may not contain.
 
     A shim may only hold: a module docstring, imports, plain assignments
-    (re-exports, ``__all__``), and a ``warnings.warn(...)`` /
-    ``warn_deprecated(...)`` call.
+    (re-exports, ``__all__``, the ``sys.modules`` alias), a
+    ``warnings.warn(...)`` / ``warn_deprecated(...)`` call, and one
+    ``if __name__ == "__main__":`` block of imports, assignments and calls
+    that forwards ``python -m`` to the new module.
     """
     tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
     bad: list[str] = []
@@ -123,6 +155,12 @@ def _non_shim_statements(path: Path) -> list[str]:
             continue  # module docstring
         if _is_warnings_warn_call(node):
             continue
+        if (
+            isinstance(node, ast.If)
+            and _is_main_guard(node)
+            and all(_is_plain_statement(child) for child in [*node.body, *node.orelse])
+        ):
+            continue
         bad.append(f"{path.name}:{node.lineno} {type(node).__name__}")
     return bad
 
@@ -130,7 +168,7 @@ def _non_shim_statements(path: Path) -> list[str]:
 def test_core_does_not_import_experimental_at_module_level() -> None:
     offenders: list[str] = []
     for path in _core_modules():
-        if path.name in DEPRECATION_SHIMS:
+        if _is_shim(path):
             continue
         offenders.extend(_experimental_module_level_imports(path))
     assert offenders == [], (
@@ -140,23 +178,32 @@ def test_core_does_not_import_experimental_at_module_level() -> None:
     )
 
 
-def test_deprecation_shims_stay_tiny() -> None:
-    for name in sorted(DEPRECATION_SHIMS):
-        path = CORE_DIR / name
-        assert path.exists(), f"exempted shim {name} no longer exists"
-        line_count = len(path.read_text(encoding="utf-8").splitlines())
-        assert line_count <= MAX_SHIM_LINES, (
-            f"{name} is {line_count} lines; exempted shims must stay "
-            f"<= {MAX_SHIM_LINES} lines so the layering exemption cannot hide "
-            "real code"
-        )
-        bad = _non_shim_statements(path)
-        assert bad == [], (
-            f"{name} is exempted from the layering rule because it is a pure "
-            "deprecation shim, but it contains statements a shim may not have "
-            "(only a docstring, imports, assignments and a deprecation warning "
-            "call are allowed): " + ", ".join(bad)
-        )
+@pytest.mark.parametrize("name", sorted(DEPRECATION_SHIMS))
+def test_deprecation_shims_stay_tiny(name: str) -> None:
+    from tests.unit.test_deprecation_schedule import (
+        _searchable_text,
+        scheduled_removals,
+    )
+
+    path = PACKAGE_DIR / name
+    assert path.exists(), f"exempted shim {name} no longer exists"
+    text = path.read_text(encoding="utf-8")
+    line_count = len(text.splitlines())
+    assert line_count <= MAX_SHIM_LINES, (
+        f"{name} is {line_count} lines; exempted shims must stay "
+        f"<= {MAX_SHIM_LINES} lines so the layering exemption cannot hide "
+        "real code"
+    )
+    bad = _non_shim_statements(path)
+    assert bad == [], (
+        f"{name} is exempted from the layer contracts because it is a pure "
+        "deprecation shim, but it contains statements a shim may not have "
+        "(only a docstring, imports, assignments, a deprecation warning call "
+        "and a `python -m` forwarder are allowed): " + ", ".join(bad)
+    )
+    assert scheduled_removals(
+        _searchable_text(text, ast.parse(text))
+    ), f"{name} must state the release that removes it"
 
 
 @pytest.mark.parametrize("name", REMOVED_PLANNING_NAMES)
@@ -179,8 +226,6 @@ def test_experimental_import_path_does_not_warn() -> None:
 
 
 # --- Task 5.3/5.4: core must not depend on training; one TrainingConfig -----
-
-PACKAGE_DIR = CORE_DIR.parent
 
 
 def _training_module_level_imports(path: Path) -> list[str]:
@@ -255,11 +300,7 @@ def test_enhanced_gspo_config_is_the_canonical_one(
 
 def _is_type_checking_guard(test: ast.expr) -> bool:
     """True for ``if TYPE_CHECKING:`` / ``if typing.TYPE_CHECKING:``."""
-    if isinstance(test, ast.Name):
-        return test.id == "TYPE_CHECKING"
-    if isinstance(test, ast.Attribute):
-        return test.attr == "TYPE_CHECKING"
-    return False
+    return bool(layer_graph.is_type_checking_guard(test))
 
 
 def _record(path: Path, node: ast.stmt, offenders: list[str]) -> None:
@@ -388,213 +429,249 @@ def test_detector_ignores_imports_above_the_first_definition(tmp_path: Path) -> 
 
 # --- Layer contracts over every executable import ---------------------------
 
-#: (layer, layers it must never import).
-LAYER_CONTRACTS: tuple[tuple[str, frozenset[str]], ...] = (
-    ("core", frozenset({"training", "api", "experimental"})),
-    ("training", frozenset({"experimental"})),
-)
-
-#: (importing file, imported module prefix) -> (reason, removal release or "").
-#: An entry with a removal release must be a deprecation bridge whose module
-#: states that release; ``test_deprecation_schedule.py`` then fails the build
-#: once it is due, so the edge cannot outlive its deprecation.
-LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str]] = {
-    (
-        "stateset_agents/core/agent.py",
-        "stateset_agents.experimental.long_term_planning",
-    ): (
-        "AgentConfig(enable_planning=True) without planning_manager= builds the "
-        "experimental planner implicitly; deprecated, inject planning_manager",
-        "0.72.0",
-    ),
-    (
-        "stateset_agents/training/train.py",
-        "stateset_agents.experimental.offline_rl",
-    ): (
-        "train(training_mode='offline'|'hybrid') loads the experimental offline "
-        "trainer when nothing registered one (training.offline_backend); "
-        "deprecated, import stateset_agents.experimental.offline_rl",
-        "0.72.0",
-    ),
-    (
-        "stateset_agents/core/multiturn_agent.py",
-        "stateset_agents.experimental.long_term_planning",
-    ): ("the whole module is deprecated (DialogueSessionAgent)", "0.71.0"),
-    ("stateset_agents/core/types.py", "stateset_agents.training.config"): (
-        "deprecated core.types.TrainingConfig alias, served lazily; the module "
-        "is deprecated",
-        "0.71.0",
-    ),
-    (
-        "stateset_agents/core/enhanced/advanced_rl_algorithms.py",
-        "stateset_agents.training.gspo_config",
-    ): (
-        "deprecated core.enhanced GSPOConfig alias, served lazily; the module "
-        "is deprecated",
-        "0.71.0",
-    ),
-}
-
-_PACKAGE_NAME = "stateset_agents"
-
-
-def _module_name(path: Path, root: Path) -> str:
-    parts = list(path.relative_to(root.parent).with_suffix("").parts)
-    if parts[-1] == "__init__":
-        parts.pop()
-    return ".".join(parts)
-
-
-def _resolve(node: ast.ImportFrom, module: str, is_package: bool) -> str:
-    if node.level == 0:
-        return node.module or ""
-    package = module.split(".") if is_package else module.split(".")[:-1]
-    base = package[: len(package) - (node.level - 1)]
-    return ".".join(base + ([node.module] if node.module else []))
-
-
-def _string_import(node: ast.Call) -> str | None:
-    """``importlib.import_module("x")`` / ``import_module("x")`` / ``__import__``."""
-    func = node.func
-    name = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
-    if name not in {"import_module", "__import__"} or not node.args:
-        return None
-    first = node.args[0]
-    if isinstance(first, ast.Constant) and isinstance(first.value, str):
-        return first.value
-    return None
-
-
-def executable_imports(path: Path, root: Path) -> list[tuple[int, str]]:
-    """``(line, module)`` for every import ``path`` can execute.
-
-    Walks the whole tree (functions, methods, nested blocks) but skips
-    ``if TYPE_CHECKING:`` bodies. ``from pkg import name`` yields both ``pkg``
-    and ``pkg.name`` (``name`` may be a submodule).
-    """
-    tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-    module = _module_name(path, root)
-    is_package = path.name == "__init__.py"
-    found: list[tuple[int, str]] = []
-
-    def visit(node: ast.AST) -> None:
-        if isinstance(node, ast.If) and _is_type_checking_guard(node.test):
-            for child in node.orelse:
-                visit(child)
-            return
-        if isinstance(node, ast.Import):
-            found.extend((node.lineno, alias.name) for alias in node.names)
-        elif isinstance(node, ast.ImportFrom):
-            base = _resolve(node, module, is_package)
-            found.append((node.lineno, base))
-            found.extend((node.lineno, f"{base}.{alias.name}") for alias in node.names)
-        elif isinstance(node, ast.Call):
-            target = _string_import(node)
-            if target is not None:
-                found.append((node.lineno, target))
-        for child in ast.iter_child_nodes(node):
-            visit(child)
-
-    visit(tree)
-    return found
-
-
-def _layer_of(module: str) -> str | None:
-    parts = module.split(".")
-    if len(parts) < 2 or parts[0] != _PACKAGE_NAME:
-        return None
-    return parts[1]
-
-
-def _allowlisted(rel: str, target: str) -> tuple[str, str] | None:
-    for path, prefix in LAYERING_ALLOWLIST:
-        if rel == path and (target == prefix or target.startswith(prefix + ".")):
-            return path, prefix
-    return None
+#: Re-exported for readers of this file: the contract table, the dated
+#: exceptions, and the unit assignment all live in scripts/layer_graph.py.
+LAYERS = layer_graph.LAYERS
+LAYERING_ALLOWLIST = layer_graph.LAYERING_ALLOWLIST
 
 
 def layering_violations(
     root: Path = PACKAGE_DIR,
 ) -> tuple[list[str], set[tuple[str, str]]]:
-    """Return ``(violations, allowlist entries in use)`` for ``root``."""
-    violations: list[str] = []
-    used: set[tuple[str, str]] = set()
-    for layer, forbidden in LAYER_CONTRACTS:
-        layer_dir = root / layer
-        if not layer_dir.is_dir():
-            continue
-        for path in sorted(layer_dir.rglob("*.py")):
-            if "__pycache__" in path.parts:
-                continue
-            rel = path.relative_to(root.parent).as_posix()
-            if (
-                layer == "core"
-                and path.parent == CORE_DIR
-                and path.name in (DEPRECATION_SHIMS)
-            ):
-                continue  # pure re-export shims, policed by the tests above
-            seen: set[tuple[int, str]] = set()
-            for lineno, target in executable_imports(path, root):
-                if _layer_of(target) not in forbidden:
-                    continue
-                key = _allowlisted(rel, target)
-                if key is not None:
-                    used.add(key)
-                    continue
-                top = ".".join(target.split(".")[:2])
-                if (lineno, top) in seen:
-                    continue
-                seen.add((lineno, top))
-                violations.append(f"{rel}:{lineno} -> {target}")
-    return violations, used
+    """Return ``(violation keys, allowlist entries in use)`` for ``root``."""
+    report = layer_graph.check_contracts(root)
+    return [v.key for v in report.violations], report.used_allowlist
 
 
-def test_layer_contracts_hold_for_every_executable_import() -> None:
-    violations, _ = layering_violations()
+@pytest.fixture(scope="module")
+def contract_report():
+    return layer_graph.check_contracts(PACKAGE_DIR)
+
+
+@pytest.fixture(scope="module")
+def graph():
+    return layer_graph.build_graph(PACKAGE_DIR)
+
+
+def test_every_unit_has_exactly_one_layer(graph) -> None:
+    placements = [unit for layer in LAYERS for unit in layer.units]
+    duplicates = sorted({u for u in placements if placements.count(u) > 1})
+    assert duplicates == [], f"units placed in more than one layer: {duplicates}"
+    placed = set(placements)
+    unplaced = sorted(set(graph.units) - placed - {layer_graph.FACADE})
+    assert unplaced == [], (
+        f"new units {unplaced} have no layer: add them to LAYERS in "
+        "scripts/layer_graph.py (and regenerate docs/ARCHITECTURE.md)"
+    )
+    assert placed <= set(graph.units), "LAYERS names a unit that no longer exists"
+
+
+def test_layer_contracts_hold_for_every_executable_import(contract_report) -> None:
+    violations = [v.explain() for v in contract_report.violations]
     assert violations == [], (
-        "Layer contract broken (core must not import training/api/experimental; "
-        "training must not import experimental), including imports inside "
+        "Layer contract broken (docs/ARCHITECTURE.md, Layering): each unit may "
+        "import only units in lower layers, including imports inside "
         "functions. Move the shared code down a layer, inject it, or invert "
-        "the dependency (see training.offline_backend); only a reasoned, dated "
-        "LAYERING_ALLOWLIST entry may excuse an edge:\n  " + "\n  ".join(violations)
+        "the dependency (see training.offline_backend); only a pure dated "
+        "deprecation shim or a reasoned, dated LAYERING_ALLOWLIST entry in "
+        "scripts/layer_graph.py may excuse an edge:\n  " + "\n  ".join(violations)
     )
 
 
-def test_layering_allowlist_has_no_stale_entries() -> None:
-    _, used = layering_violations()
-    stale = sorted(set(LAYERING_ALLOWLIST) - used)
+def test_framework_layers_never_import_app_layers(contract_report) -> None:
+    """``core``/``data``/``evaluation``/``rewards``/``training`` (and the
+    layers under them) never reach into ``remote``, the studio, ``api``,
+    ``tui``, ``cli`` or ``mcp_server`` -- function-level imports included,
+    and no allowlist entry may excuse such an edge."""
+    apps = {
+        unit
+        for layer in LAYERS
+        if layer.name in layer_graph.APP_LAYERS
+        for unit in layer.units
+    }
+    framework = {
+        unit
+        for layer in LAYERS
+        if layer.name in layer_graph.FRAMEWORK_LAYERS
+        for unit in layer.units
+    }
+    assert apps.isdisjoint(framework)
+    assert apps | framework == {u for layer in LAYERS for u in layer.units}
+    assert {"cli", "tui", "finetune", "api", "remote"} <= apps
+    assert {"core", "rewards", "data", "training", "evaluation"} <= framework
+    offenders = [
+        v.explain()
+        for v in contract_report.violations
+        if v.source_unit in framework and v.target_unit in apps
+    ]
+    excused = [
+        item.key
+        for item in contract_report.excused
+        if layer_graph.unit_of(item.source) in framework
+        and layer_graph.unit_of(item.target) in apps
+    ]
+    assert (
+        offenders == [] and excused == []
+    ), "a framework layer imports an app layer:\n  " + "\n  ".join(offenders + excused)
+
+
+def test_unit_graph_has_no_cycles(graph) -> None:
+    cycles = layer_graph.strongly_connected_components(graph.units, graph.enforced)
+    detail = []
+    for component in cycles:
+        members = set(component)
+        for (src, dst), items in sorted(graph.enforced.items()):
+            if src in members and dst in members:
+                detail += [f"{src} -> {dst}: {item.key}" for item in items[:3]]
+    assert cycles == [], (
+        "import cycle between units (ignoring dated deprecation bridges): "
+        + "; ".join(" <-> ".join(c) for c in cycles)
+        + "\n  "
+        + "\n  ".join(detail)
+    )
+
+
+def test_cycles_left_run_only_through_dated_bridges(graph) -> None:
+    """Every cycle in the full graph needs a sanctioned (dated) edge to close."""
+    sanctioned_only = {key for key in graph.edges if key not in graph.enforced}
+    for cycle in layer_graph.elementary_cycles(graph.edges):
+        hops = list(zip(cycle, cycle[1:] + cycle[:1], strict=True))
+        assert any(
+            hop in sanctioned_only for hop in hops
+        ), "cycle with no dated bridge: " + " -> ".join(cycle + cycle[:1])
+
+
+def test_layering_allowlist_has_no_stale_entries(contract_report) -> None:
+    stale = sorted(set(LAYERING_ALLOWLIST) - contract_report.used_allowlist)
     assert stale == [], f"remove LAYERING_ALLOWLIST entries no longer needed: {stale}"
 
 
 @pytest.mark.parametrize(
     "key", sorted(LAYERING_ALLOWLIST), ids=lambda key: f"{key[0]}->{key[1]}"
 )
-def test_dated_allowlist_entries_are_deprecation_bridges(key: tuple[str, str]) -> None:
+def test_allowlist_entries_are_dated(key: tuple[str, str]) -> None:
     from tests.unit.test_deprecation_schedule import (
+        _package_version,
         _searchable_text,
+        _version_tuple,
         alias_table_removals,
         scheduled_removals,
     )
 
-    reason, removal = LAYERING_ALLOWLIST[key]
+    kind, reason, removal = LAYERING_ALLOWLIST[key]
     assert reason.strip(), "every allowlist entry needs a reason"
-    assert removal, "every edge left in the allowlist must have a removal date"
-    path = PACKAGE_DIR.parent / key[0]
-    text = path.read_text(encoding="utf-8")
-    tree = ast.parse(text)
-    stated = set(scheduled_removals(_searchable_text(text, tree)))
-    stated |= set(alias_table_removals(tree))
-    assert removal in stated, (
-        f"{key[0]} is allowlisted until v{removal} but does not state that "
-        f"removal release (states {sorted(stated)})"
+    assert re.fullmatch(r"\d+\.\d+\.\d+", removal), "removal must be X.Y.Z"
+    assert kind in {"bridge", "debt"}
+    assert _version_tuple(removal) > _package_version(), (
+        f"{key[0]} -> {key[1]} was allowed until v{removal}; that release is "
+        "due, so remove the edge"
     )
+    if kind == "bridge":
+        text = (ROOT / key[0]).read_text(encoding="utf-8")
+        tree = ast.parse(text)
+        stated = set(scheduled_removals(_searchable_text(text, tree)))
+        stated |= set(alias_table_removals(tree))
+        assert removal in stated, (
+            f"{key[0]} is allowlisted until v{removal} but does not state that "
+            f"removal release (states {sorted(stated)})"
+        )
+
+
+def test_documented_layering_is_current() -> None:
+    doc = ROOT / "docs" / "ARCHITECTURE.md"
+    assert layer_graph.documented_section(doc) == layer_graph.render_section(), (
+        "docs/ARCHITECTURE.md's generated Layering section is stale (a unit "
+        "gained or lost a dependency, or the contract table changed); "
+        "regenerate with `python scripts/layer_graph.py --write "
+        "docs/ARCHITECTURE.md`"
+    )
+
+
+def test_documented_package_layout_is_current() -> None:
+    doc = ROOT / "docs" / "ARCHITECTURE.md"
+    problems = layer_graph.layout_drift(layer_graph.documented_layout(doc))
+    assert problems == [], (
+        "docs/ARCHITECTURE.md's generated package layout is stale ("
+        + "; ".join(problems)
+        + "); regenerate with `python scripts/layer_graph.py --write "
+        "docs/ARCHITECTURE.md`"
+    )
+
+
+def test_layout_drift_tolerates_small_line_changes() -> None:
+    actual = layer_graph.render_layout()
+    assert layer_graph.layout_drift(actual) == []
+    assert layer_graph.layout_drift(None)
+    first_row = next(line for line in actual.splitlines() if line.startswith("| `"))
+    unit = first_row.split("|")[1]
+    renamed = actual.replace(first_row, first_row.replace(unit, " `renamed` "))
+    assert layer_graph.layout_drift(renamed)
+
+
+# --- product verticals stay out of core -------------------------------------
+
+#: Product-vertical modules that predate the rule. ``core`` holds framework
+#: primitives; verticals belong in ``stateset_agents.verticals``. These stay
+#: this pass because data/evaluation/remote/training still import them
+#: (docs/ARCHITECTURE.md, Layering); the set only shrinks.
+CORE_VERTICAL_MODULES = frozenset(
+    {
+        "core/environments/industry_admin_policies.py",
+        "core/environments/industry_operations_policies.py",
+        "core/environments/industry_support_environment.py",
+        "core/environments/refund_delegation_environment.py",
+        "core/environments/refund_environment.py",
+        "core/environments/refund_policy_environment.py",
+        "core/environments/refund_recovery_environment.py",
+        "core/model_presets.py",
+        "core/refund_tools.py",
+    }
+)
+
+#: Generic environments that may live in core/environments. A new module
+#: there must be generic (add it here) or go to stateset_agents.verticals.
+CORE_GENERIC_ENVIRONMENTS = frozenset(
+    {
+        "core/environments/json_action.py",
+        "core/environments/multimodal_environment.py",
+        "core/environments/tool_use.py",
+    }
+)
+
+_VERTICAL_NAME = re.compile(
+    r"refund|industry|insurance|ecommerce|retail|logistics|healthcare|"
+    r"manufactur|customer|support_|banking|telecom|model_preset|model_catalog",
+    re.IGNORECASE,
+)
+
+
+def test_core_holds_no_new_product_verticals() -> None:
+    core = {p.relative_to(PACKAGE_DIR).as_posix() for p in _core_modules()}
+    named = {
+        rel
+        for rel in core
+        if _VERTICAL_NAME.search(rel.rsplit("/", 1)[-1])
+        and not rel.endswith("__init__.py")
+    }
+    environments = {rel for rel in core if rel.startswith("core/environments/")}
+    new = sorted(
+        (named - CORE_VERTICAL_MODULES)
+        | (environments - CORE_VERTICAL_MODULES - CORE_GENERIC_ENVIRONMENTS)
+    )
+    assert new == [], (
+        "core holds framework primitives; put product verticals (refund, "
+        "industry, support, model catalogs, ...) in stateset_agents.verticals, "
+        "or list a generic environment in CORE_GENERIC_ENVIRONMENTS: " + ", ".join(new)
+    )
+    stale = sorted((CORE_VERTICAL_MODULES | CORE_GENERIC_ENVIRONMENTS) - core)
+    assert stale == [], f"remove moved modules from the core vertical ratchet: {stale}"
 
 
 # --- the executable-import detector itself ----------------------------------
 
 
 def _probe(tmp_path: Path, rel: str, source: str) -> list[str]:
-    root = tmp_path / _PACKAGE_NAME
+    root = tmp_path / "stateset_agents"
     path = root / rel
     path.parent.mkdir(parents=True, exist_ok=True)
     for parent in path.parents:
@@ -602,6 +679,8 @@ def _probe(tmp_path: Path, rel: str, source: str) -> list[str]:
             break
         (parent / "__init__.py").touch()
     path.write_text(source, encoding="utf-8")
+    layer_graph.known_modules.cache_clear()
+    layer_graph.facade_exports.cache_clear()
     violations, _ = layering_violations(root)
     return violations
 
@@ -651,6 +730,63 @@ def test_detector_ignores_type_checking_and_allowed_directions(tmp_path: Path) -
         "def f():\n    from ..core.errors import StateSetError\n"
     )
     assert _probe(tmp_path, "training/mod.py", source) == []
+
+
+def test_detector_follows_the_facade_lazy_exports(tmp_path: Path) -> None:
+    """``from stateset_agents import train`` loads training.train; reading the
+    facade's own ``__version__`` is allowed everywhere."""
+    root = tmp_path / "stateset_agents"
+    root.mkdir()
+    (root / "__init__.py").write_text(
+        "_LAZY_EXPORTS = {}\n"
+        "_LAZY_EXPORTS.update(_export_group('stateset_agents.training.train',"
+        " ['train']))\n",
+        encoding="utf-8",
+    )
+    source = "def f():\n    from stateset_agents import __version__, train\n"
+    assert _probe(tmp_path, "core/mod3.py", source) == [
+        "stateset_agents/core/mod3.py:2 -> stateset_agents.training.train"
+    ]
+
+
+def test_detector_counts_deprecated_alias_tables(tmp_path: Path) -> None:
+    source = (
+        "from stateset_agents._deprecation import deprecated_alias_getattr\n"
+        "__getattr__ = deprecated_alias_getattr(\n"
+        "    __name__, {'Old': ('stateset_agents.training.config', 'New', '9.0.0')}\n"
+        ")\n"
+    )
+    assert _probe(tmp_path, "core/mod4.py", source) == [
+        "stateset_agents/core/mod4.py:2 -> stateset_agents.training.config"
+    ]
+
+
+def test_detector_flags_sibling_units_in_one_layer(tmp_path: Path) -> None:
+    """``data`` and ``evaluation`` share a layer, so neither imports the other."""
+    source = "from stateset_agents.data.jsonl import read_jsonl_lines\n"
+    assert _probe(tmp_path, "evaluation/mod.py", source) == [
+        "stateset_agents/evaluation/mod.py:1 -> stateset_agents.data.jsonl"
+    ]
+
+
+def test_violation_message_names_the_contract(tmp_path: Path) -> None:
+    _probe(tmp_path, "utils/mod.py", "from stateset_agents.core import agent\n")
+    report = layer_graph.check_contracts(tmp_path / "stateset_agents")
+    (violation,) = report.violations
+    message = violation.explain()
+    assert message.startswith("stateset_agents/utils/mod.py:1 -> ")
+    assert "utils (utilities) must not import core (core)" in message
+
+
+def test_cycle_detection_finds_every_component() -> None:
+    edges = [("a", "b"), ("b", "c"), ("c", "a"), ("c", "d"), ("e", "f"), ("f", "e")]
+    assert layer_graph.strongly_connected_components("abcdef", edges) == [
+        ["a", "b", "c"],
+        ["e", "f"],
+    ]
+    assert layer_graph.elementary_cycles(edges) == [["e", "f"], ["a", "b", "c"]]
+    assert layer_graph.strongly_connected_components("ab", [("a", "b")]) == []
+    assert layer_graph.mutual_pairs(edges) == [("e", "f")]
 
 
 def test_core_whiten_matches_the_training_loss_primitive() -> None:

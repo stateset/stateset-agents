@@ -1,12 +1,12 @@
 """Compatibility entrypoint for the packaged River refund benchmark.
 
 Run offline: python examples/river_refund_rl.py --dry-run --output outputs/refund
-Installed package: python -m stateset_agents.training.river_refund --help
+Installed package: python -m stateset_agents.verticals.river_refund --help
 """
 
 import logging
 
-from stateset_agents.training.river_refund import (
+from stateset_agents.verticals.river_refund import (
     BENCHMARKS,
     EVALUATION_SETTINGS,
     campaign,

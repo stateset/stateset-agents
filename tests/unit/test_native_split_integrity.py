@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from stateset_agents.training import river_refund as native
+from stateset_agents.verticals import river_refund as native
 
 
 def inputs(path, benchmark="refund-v1", mode="train"):

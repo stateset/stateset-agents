@@ -180,7 +180,7 @@ def test_pointer_is_resolved_once_for_both_sampling_and_run_identity(
 def test_native_cli_rejects_incompatible_pointer_before_preparing_run(
     tmp_path, monkeypatch, metadata
 ):
-    from stateset_agents.training import river_refund
+    from stateset_agents.verticals import river_refund
 
     reference = write_pointer(
         tmp_path / "pointer", {"checkpoint": "river://original", **metadata}
@@ -209,7 +209,7 @@ def test_native_cli_rejects_incompatible_pointer_before_preparing_run(
 
 
 def test_programmatic_native_run_binds_prepared_pointer_uri(tmp_path, monkeypatch):
-    from stateset_agents.training import river_refund as native
+    from stateset_agents.verticals import river_refund as native
 
     reference = write_pointer(tmp_path / "pointer", {"checkpoint": "river://original"})
     output = tmp_path / "run"

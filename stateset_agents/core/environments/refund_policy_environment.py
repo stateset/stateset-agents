@@ -19,6 +19,7 @@ from stateset_agents.core.environment_base import (
 )
 from stateset_agents.core.environments.json_action import parse_json_action
 from stateset_agents.core.trajectory import ConversationTurn
+from stateset_agents.utils.provenance import json_sha256
 
 FAMILIES = (
     "eligible",
@@ -98,10 +99,7 @@ class RefundPolicyEnvironment(Environment):
         """Identify observable order facts independently of IDs and annotations."""
         RefundPolicyEnvironment.validate_scenario(row)
         facts = {key: row[key] for key in _ORDER_FIELDS if key != "order_id"}
-        serialized = json.dumps(
-            facts, sort_keys=True, separators=(",", ":"), allow_nan=False
-        )
-        return hashlib.sha256(serialized.encode()).hexdigest()
+        return json_sha256(facts)
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
         """Expose facts through executed lookup observations only."""

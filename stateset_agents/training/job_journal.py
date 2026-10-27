@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.remote.river_rl import atomic_json, exclusive_run
+from stateset_agents.utils.atomic_io import atomic_json, exclusive_run
 
 from .advanced_training_models import (
     TrainingJob,

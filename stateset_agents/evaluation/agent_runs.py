@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import math
 import statistics
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from stateset_agents.evaluation.implementation import validate_implementation
-
-
-def content_hash(value: Any) -> str:
-    """Hash canonical JSON, rejecting nonfinite numbers."""
-    data = json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
-    return hashlib.sha256(data.encode()).hexdigest()
+from stateset_agents.utils.provenance import content_hash as content_hash
+from stateset_agents.utils.provenance import validate_implementation
 
 
 def _number(value: Any, name: str) -> float:

@@ -54,7 +54,7 @@ BLE_BASELINE: dict[str, int] = {
     "stateset_agents/cli_chat.py": 1,
     "stateset_agents/cli_finetune.py": 1,
     "stateset_agents/cli_research.py": 1,
-    "stateset_agents/evaluation/industry.py": 1,
+    "stateset_agents/verticals/industry_evaluation.py": 1,
     "stateset_agents/evaluation/reward_audit.py": 1,
     "stateset_agents/experimental/ppo_online.py": 1,
     "stateset_agents/finetune_evaluation_tui.py": 1,

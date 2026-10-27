@@ -1389,6 +1389,21 @@ def get_preset(name: str) -> ModelPreset:
         ) from exc
 
 
+def trust_remote_code_for(model_name: str) -> bool:
+    """Whether loading ``model_name`` may run repository-shipped model code.
+
+    Only curated presets that require it (``ModelPreset.trust_remote_code``)
+    opt in; any other model id loads with the native ``transformers``
+    implementation. Every layer that loads a checkpoint by model id (SFT, the
+    remote chat REPL) asks here, so the policy has one home below them.
+    """
+
+    return next(
+        (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
+        False,
+    )
+
+
 __all__ = [
     "DEPRECATED_PRESET_ALIASES",
     "ModelPreset",
@@ -1396,4 +1411,5 @@ __all__ = [
     "get_preset",
     "list_preset_names",
     "resolve_preset_name",
+    "trust_remote_code_for",
 ]

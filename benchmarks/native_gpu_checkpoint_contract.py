@@ -21,12 +21,12 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from stateset_agents.evaluation.acceptance import (  # noqa: E402
-    _digest,
-    native_gpu_harness_identity,
-)
 from stateset_agents.evaluation.implementation import (  # noqa: E402
     package_implementation,
+)
+from stateset_agents.verticals.acceptance import (  # noqa: E402
+    _digest,
+    native_gpu_harness_identity,
 )
 
 

@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from stateset_agents.utils.provenance import json_sha256
+
 from ..backends import (
     BACKEND_PROTOCOL_VERSION,
     BackendCapabilities,
@@ -383,9 +385,7 @@ def run_adapter(
             "request output_dir does not match adapter output_dir"
         )
     semantic_payload = {key: request.get(key) for key in _SEMANTIC_KEYS}
-    digest = hashlib.sha256(
-        json.dumps(semantic_payload, sort_keys=True, separators=(",", ":")).encode()
-    ).hexdigest()
+    digest = json_sha256(semantic_payload, allow_nan=True)
     if request.get("experiment_sha256") != digest:
         raise OpenRLHFConfigError("request experiment digest does not match payload")
 

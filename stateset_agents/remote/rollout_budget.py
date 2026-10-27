@@ -7,7 +7,7 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from stateset_agents.remote.river_rl import atomic_json
+from stateset_agents.utils.atomic_io import atomic_json
 
 
 class RolloutBudgetExceeded(ValueError):

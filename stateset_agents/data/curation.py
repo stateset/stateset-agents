@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from stateset_agents.data.jsonl import read_jsonl_lines
+from stateset_agents.utils.provenance import json_sha256
 
 if TYPE_CHECKING:
     from stateset_agents.data.decontamination import (
@@ -74,9 +75,7 @@ def _time(value: Any) -> datetime:
 
 
 def _digest(value: Any) -> str:
-    return hashlib.sha256(
-        json.dumps(value, sort_keys=True, allow_nan=False, ensure_ascii=False).encode()
-    ).hexdigest()
+    return json_sha256(value, compact=False, ensure_ascii=False)
 
 
 def curate_conversations(

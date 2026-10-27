@@ -19,7 +19,12 @@ from stateset_agents.data.refund_demonstrations import (
     reference_refund_demonstration,
 )
 from stateset_agents.evaluation.agent_runs import content_hash, evaluation_report
-from stateset_agents.evaluation.agent_study import (
+from stateset_agents.evaluation.refund_trace import (
+    select_replayed_validation_checkpoint,
+)
+from stateset_agents.evaluation.river_progress import summarize_training_activity
+from stateset_agents.remote.rollout_budget import RolloutAdmissionBudget
+from stateset_agents.verticals.agent_study import (
     ARMS,
     StudyConfig,
     _native_manifest,
@@ -28,12 +33,7 @@ from stateset_agents.evaluation.agent_study import (
     build_plan,
     prepare_study,
 )
-from stateset_agents.evaluation.refund_trace import (
-    select_replayed_validation_checkpoint,
-)
-from stateset_agents.remote.rollout_budget import RolloutAdmissionBudget
-from stateset_agents.training.river_progress import summarize_training_activity
-from stateset_agents.training.river_refund import EVALUATION_SETTINGS
+from stateset_agents.verticals.river_refund import EVALUATION_SETTINGS
 from tests.unit.river_fakes import traced_refund_outcome
 
 
@@ -48,8 +48,8 @@ def stable_source_identity():
     real identity is computed once and served as fresh copies; drift detection
     itself is covered by ``test_implementation_provenance.py``.
     """
-    from stateset_agents.evaluation import agent_study, implementation, refund_trace
-    from stateset_agents.training import river_refund
+    from stateset_agents.evaluation import implementation, refund_trace
+    from stateset_agents.verticals import agent_study, river_refund
 
     identity = implementation.package_implementation()
 
@@ -358,7 +358,7 @@ def test_capped_plan_applies_allowance_to_all_native_phases():
     native = [
         s
         for s in plan["stages"]
-        if s["argv"][2] == "stateset_agents.training.river_refund"
+        if s["argv"][2] == "stateset_agents.verticals.river_refund"
     ]
     assert len(native) == 30
     assert all(
@@ -377,7 +377,7 @@ def test_plan_binds_zero_update_patience(patience):
     plan = build_plan(config)
     assert plan["config"]["zero_update_patience"] == patience
     for stage in plan["stages"]:
-        if stage["argv"][2] == "stateset_agents.training.river_refund":
+        if stage["argv"][2] == "stateset_agents.verticals.river_refund":
             argv = stage["argv"]
             assert argv[argv.index("--zero-update-patience") + 1] == str(patience)
 
@@ -750,7 +750,7 @@ def test_audit_requires_consistent_test_attempt(study, mutation):
 
 
 def test_audit_accepts_recovered_commits_only_with_matching_receipts(study):
-    from stateset_agents.training.river_progress import RiverTrainingProgress
+    from stateset_agents.evaluation.river_progress import RiverTrainingProgress
 
     root = study / "seed-42/rl"
     write_json(root / "training_metrics.json", read(root / "training_metrics.json")[:1])
@@ -876,7 +876,7 @@ def test_audit_derives_training_activity_instead_of_trusting_summaries(study, mu
 
 @pytest.mark.parametrize("recovered", [False, True])
 def test_audit_preserves_mixed_and_unknown_training_activity(study, recovered):
-    from stateset_agents.training.river_progress import RiverTrainingProgress
+    from stateset_agents.evaluation.river_progress import RiverTrainingProgress
 
     root = study / "seed-42/rl"
     if recovered:
@@ -982,7 +982,7 @@ def test_packaged_entrypoint_prepares_offline_without_examples_import(tmp_path):
         [
             sys.executable,
             "-m",
-            "stateset_agents.training.river_refund",
+            "stateset_agents.verticals.river_refund",
             "--benchmark",
             "refund-policy-v2",
             "--dry-run",

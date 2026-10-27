@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.data.finetuning import _identity_keys
+from stateset_agents.utils.provenance import json_sha256
 
 
 class DatasetFormatError(ValueError):
@@ -248,9 +249,7 @@ def load_text_sft_snapshot(
             name: hashlib.sha256(raw).hexdigest() for name, raw in contents.items()
         },
         content_sha256={
-            name: hashlib.sha256(
-                json.dumps(rows, sort_keys=True, ensure_ascii=False).encode("utf-8")
-            ).hexdigest()
+            name: json_sha256(rows, compact=False, allow_nan=True, ensure_ascii=False)
             for name, rows in (("train", train), ("validation", validation))
             if rows is not None
         },

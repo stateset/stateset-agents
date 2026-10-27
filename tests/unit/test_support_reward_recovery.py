@@ -11,13 +11,13 @@ import pytest
 import torch
 
 from stateset_agents.core.trajectory import ConversationTurn
-from stateset_agents.evaluation.reward_audit import audit_support_rewards
 from stateset_agents.evaluation.support_judge import (
     ALL_CHECKS,
     JudgeResult,
     rubric_revision,
 )
 from stateset_agents.rewards.support_judge_reward import SupportJudgeReward
+from stateset_agents.rewards.support_reward_audit import audit_support_rewards
 from stateset_agents.training.callbacks import (
     notify_optimizer_step,
     notify_training_end,

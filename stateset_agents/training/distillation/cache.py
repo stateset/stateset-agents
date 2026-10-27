@@ -15,7 +15,6 @@ through ``core.checkpoint_io`` (weights-only unless ``trusted=True``).
 
 from __future__ import annotations
 
-import hashlib
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass, field
@@ -23,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from stateset_agents.core.checkpoint_io import load_checkpoint_file
+from stateset_agents.utils.provenance import json_sha256
 
 from ..preference import _loop
 from ..preference.encoding import EncodedSequence, PreferenceEncoder
@@ -37,8 +37,12 @@ CACHE_SCHEMA = "stateset-teacher-topk-cache-v1"
 
 def sequence_key(sequence: EncodedSequence) -> str:
     """A content key for an encoded sequence (prompt and response ids)."""
-    payload = json.dumps([list(sequence.prompt_ids), list(sequence.response_ids)])
-    return hashlib.sha256(payload.encode()).hexdigest()
+    return json_sha256(
+        [list(sequence.prompt_ids), list(sequence.response_ids)],
+        sort_keys=False,
+        compact=False,
+        allow_nan=True,
+    )
 
 
 @dataclass

@@ -21,8 +21,11 @@ from stateset_agents.core.environments.refund_recovery_environment import (
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.data.jsonl import read_jsonl_lines
-from stateset_agents.evaluation.agent_runs import content_hash
-from stateset_agents.evaluation.implementation import package_implementation
+from stateset_agents.utils.provenance import (
+    content_hash,
+    json_sha256,
+    package_implementation,
+)
 
 
 def refund_recovery_cases(
@@ -171,9 +174,7 @@ async def replay_recovery_candidate(
         "passed": True,
         "case_id": row["order_id"],
         "turns": state.turn_count,
-        "transcript_hash": hashlib.sha256(
-            json.dumps(messages, sort_keys=True).encode()
-        ).hexdigest(),
+        "transcript_hash": json_sha256(messages, compact=False, allow_nan=True),
     }
 
 

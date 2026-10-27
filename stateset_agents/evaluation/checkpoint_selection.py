@@ -124,7 +124,7 @@ def require_training_progress(
         or [p["step"] for p in progress] != list(range(1, steps + 1))
     ):
         raise ValueError("Incomplete RL training progress; test split remains sealed")
-    from stateset_agents.training.river_progress import (
+    from stateset_agents.evaluation.river_progress import (
         validate_recovery_receipt,
         validate_training_metrics,
     )

@@ -286,7 +286,7 @@ adapter callbacks. Each callback must apply the declared generation settings.
 import json
 from pathlib import Path
 
-from stateset_agents.evaluation.industry import (
+from stateset_agents.verticals.industry_evaluation import (
     IndustryEvaluationPolicy,
     collect_industry_predictions,
     evaluate_industry_project,

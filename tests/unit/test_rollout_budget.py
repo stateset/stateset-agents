@@ -15,7 +15,7 @@ from stateset_agents.remote.rollout_budget import (
     RolloutAdmissionBudget,
     RolloutBudgetExceeded,
 )
-from stateset_agents.training.river_refund import (
+from stateset_agents.verticals.river_refund import (
     campaign,
     execute_run,
     prepare_run,

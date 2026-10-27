@@ -294,7 +294,7 @@ refund ledger, selects checkpoints on validation, and records per-case held-out
 test evidence. Prepare cases offline with
 `python examples/river_refund_rl.py --dry-run --output outputs/refund-42`.
 Training and evaluation-only runs require the River extra and credentials.
-The same runner ships in wheels as `python -m stateset_agents.training.river_refund`.
+The same runner ships in wheels as `python -m stateset_agents.verticals.river_refund`.
 Use `benchmark plan-agent-study` to freeze a six-seed, four-arm campaign and
 `benchmark audit-agent-study --strict` to check its provenance and learning gates.
 Compare matched runs using `stateset-agents benchmark compare-agents`; see the
