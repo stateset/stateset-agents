@@ -22,6 +22,7 @@ import typer
 
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
+from stateset_agents.data.jsonl import read_jsonl_lines
 
 _echo = _cli._echo
 CLI_IMPORT_EXCEPTIONS = _cli.CLI_IMPORT_EXCEPTIONS
@@ -95,11 +96,7 @@ def _load_scenario_rows(scenarios: str) -> list[dict[str, Any]]:
         print(f"Scenarios file not found: {scenarios}", file=sys.stderr)
         raise typer.Exit(code=2)
 
-    rows = [
-        json.loads(line)
-        for line in scenarios_path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    rows = [json.loads(line) for _, line in read_jsonl_lines(scenarios_path)]
     if not rows:
         print("No scenarios loaded.", file=sys.stderr)
         raise typer.Exit(code=2)

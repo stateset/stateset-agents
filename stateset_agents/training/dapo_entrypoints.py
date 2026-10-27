@@ -7,13 +7,18 @@ from __future__ import annotations
 import logging
 import os
 from collections.abc import Awaitable, Callable
-from datetime import datetime
 from typing import Any
 
-import numpy as np
-
+from .config import config_value
 from .dapo_config import DAPOConfig
+from .dedicated_reporting import WandbRun
 from .runtime_state import _reject_unsupported_resume
+from .spine.loop import (
+    dedicated_run_config,
+    run_dedicated_loop,
+    sample_prompts,
+    seed_dedicated_run,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +29,31 @@ async def train_with_dapo(
     train_prompts: list[str],
     config: DAPOConfig | None = None,
     verifier_fn: Callable[[str, str], bool] | None = None,
-    output_dir: str = "./outputs/dapo",
+    output_dir: str | None = None,
     use_wandb: bool = False,
     wandb_project: str | None = None,
+    callbacks: list[Any] | None = None,
 ) -> tuple[Any, Any, dict[str, list[float]]]:
     """
     Train a model using the DAPO algorithm.
 
     DAPO is optimized for long chain-of-thought reasoning tasks like math.
+    ``model_name`` and an explicit ``output_dir`` override the config's fields;
+    without ``output_dir``, ``config.output_dir`` is used (``./outputs/dapo``
+    when no config is given). See :func:`spine.dedicated_run_config`.
+    ``callbacks`` get ``on_step_end`` after each iteration (after its
+    checkpoint); one setting ``should_abort`` stops training after the final
+    save.
     """
-    if config is None:
-        config = DAPOConfig(model_name=model_name, output_dir=output_dir)
+    config = dedicated_run_config(
+        config,
+        DAPOConfig,
+        model_name=model_name,
+        output_dir=output_dir,
+        default_output_dir="./outputs/dapo",
+        entrypoint="train_with_dapo",
+    )
     _reject_unsupported_resume(config, "train_with_dapo")
-
-    from .dapo_trainer import DAPOModelManager, DAPOTrainer, _require_wandb, wandb
 
     logger.info("=" * 60)
     logger.info("DAPO Training - Decoupled Clip and Dynamic Sampling")
@@ -46,23 +62,32 @@ async def train_with_dapo(
         "Key techniques: Clip-Higher, Dynamic Sampling, Token-Level Loss, Overlong Shaping"
     )
 
-    wandb_enabled = use_wandb and wandb_project is not None
-    if use_wandb and not wandb_enabled:
-        logger.warning(
-            "use_wandb=True but no wandb_project was provided; disabling wandb logging."
+    with WandbRun(
+        "dapo",
+        enabled=use_wandb,
+        project=wandb_project,
+        config=config,
+        tags=["dapo", "rl-training", "reasoning"],
+    ) as reporter:
+        return await _run_dapo(
+            config, reward_fn, train_prompts, verifier_fn, callbacks or [], reporter
         )
 
-    if wandb_enabled:
-        _require_wandb()
-        wandb.init(
-            project=wandb_project,
-            name=f"dapo-{datetime.now().strftime('%Y%m%d-%H%M%S')}",
-            config=config.to_dict(),
-            tags=["dapo", "rl-training", "reasoning"],
-        )
 
-    logger.info("Loading model: %s", model_name)
-    _is_stub = model_name.startswith("stub://") or getattr(
+async def _run_dapo(
+    config: DAPOConfig,
+    reward_fn: Callable[[str, str], float | Awaitable[float]],
+    train_prompts: list[str],
+    verifier_fn: Callable[[str, str], bool] | None,
+    callbacks: list[Any],
+    reporter: WandbRun,
+) -> tuple[Any, Any, dict[str, list[float]]]:
+    """:func:`train_with_dapo` after its config and W&B run are set up."""
+    from .dapo_trainer import DAPOModelManager, DAPOTrainer
+
+    seed_dedicated_run(config.seed)
+    logger.info("Loading model: %s", config.model_name)
+    _is_stub = config.model_name.startswith("stub://") or getattr(
         config, "use_stub_model", False
     )
     if _is_stub:
@@ -99,17 +124,9 @@ async def train_with_dapo(
     )
     logger.info("Dynamic sampling: %s", config.use_dynamic_sampling)
 
-    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(config.output_dir, exist_ok=True)
 
-    for iteration in range(config.num_episodes):
-        batch_size = min(config.per_device_train_batch_size, len(train_prompts))
-        if batch_size <= 0:
-            break
-        batch_indices = np.random.choice(len(train_prompts), batch_size, replace=False)
-        batch_prompts = [train_prompts[i] for i in batch_indices]
-
-        metrics = await trainer.train_step(batch_prompts)
-
+    def report(iteration: int, metrics: dict[str, Any]) -> None:
         if iteration % config.logging_steps == 0:
             logger.info(
                 "Iter %s/%s | Loss: %.4f | Reward: %.4f | Acc: %.2f%% | Filtered: %.1f%%",
@@ -121,21 +138,25 @@ async def train_with_dapo(
                 metrics.get("filtered_ratio", 0.0) * 100,
             )
 
-            if wandb_enabled:
-                wandb.log(metrics, step=iteration)
+            reporter.log(metrics, step=iteration)
 
-        if (iteration + 1) % config.save_steps == 0:
-            checkpoint_dir = os.path.join(output_dir, f"checkpoint-{iteration + 1}")
-            trainer.save_checkpoint(checkpoint_dir)
-
-    final_dir = os.path.join(output_dir, "final")
-    trainer.save_checkpoint(final_dir)
+    # The spine's dedicated outer loop (periodic and final saves included).
+    await run_dedicated_loop(
+        iterations=config.num_episodes,
+        batch=sample_prompts(train_prompts, config.per_device_train_batch_size),
+        step=trainer.train_step,
+        save=trainer.save_checkpoint,
+        output_dir=config.output_dir,
+        save_steps=config.save_steps,
+        final_name="final",
+        report=report,
+        callbacks=callbacks,
+        seed=config.seed,
+        strict_callbacks=bool(config_value(config, "strict_callbacks")),
+    )
     trainer.metrics_history["rollout_samples_total"] = [
         float(trainer.rollout_samples_total)
     ]
-
-    if wandb_enabled:
-        wandb.finish()
 
     logger.info("=" * 60)
     logger.info("DAPO Training Complete!")
@@ -165,8 +186,13 @@ async def train_reasoning_with_dapo(
     answers = {problem["problem"]: problem["answer"] for problem in math_problems}
 
     def verifier(prompt: str, response: str) -> bool:
-        expected = answers.get(prompt, "")
-        return expected.lower() in response.lower()
+        # CorrectnessReward's answer check: the answer must be a whole token
+        # ("42" is not in "142"), committed to (not one of several listed
+        # candidates) and not negated.
+        from stateset_agents.core.basic_rewards import _answer_credit
+
+        expected = str(answers.get(prompt, "")).strip()
+        return bool(expected) and _answer_credit(response, expected, prompt) >= 1.0
 
     def reward_fn(prompt: str, response: str) -> float:
         if verifier(prompt, response):

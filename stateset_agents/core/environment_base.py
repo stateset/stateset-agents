@@ -8,17 +8,272 @@ import asyncio
 import copy
 import inspect
 import logging
+import math
+import re
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
 from .reward import RewardFunction
-from .reward_base import RewardType
+from .reward_base import RewardType, RewardUnavailableError
+from .reward_context import (
+    FAILED_COMPONENTS_KEY,
+    REWARD_FALLBACK_KEY,
+    build_reward_context,
+    note_fallback,
+    reward_score,
+    score_trajectory,
+)
 from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
+
+#: ``EnvironmentState.metadata`` key a step uses to report the reward
+#: function's (or default heuristic's) share of its step reward.
+STEP_REWARD_FN_SCORE = "_step_reward_fn_score"
+#: ``EnvironmentState.metadata`` key a step may use to report the
+#: environment's own share of its step reward exactly.
+STEP_ENVIRONMENT_REWARD = "_step_environment_reward"
+#: ``EnvironmentState.metadata`` key a step uses to record the state a
+#: per-step reward is scored against (see :meth:`Environment._snapshot_step_state`).
+STEP_REWARD_STATE = "_step_reward_state"
+#: ``EnvironmentState.metadata`` key holding the episode's system prompt, so
+#: per-step rewards see the same turns as the finished trajectory.
+EPISODE_SYSTEM_PROMPT = "_episode_system_prompt"
+
+#: Episode-state keys every environment shows the policy: identifiers, the
+#: conversation so far, the problem statement and what the environment
+#: presents as an observation. The policy's context is built from this
+#: allowlist (plus an environment's own additions and the caller's explicit
+#: ``visible_context_keys``), so reference and grading data (``ground_truth``,
+#: ``expected_answer``, ``tests``, ``required_actions``...) never reach it,
+#: whatever they are called.
+POLICY_STATE_KEYS = frozenset(
+    {
+        "conversation_id",
+        "scenario_id",
+        "task_id",
+        "messages",
+        "history",
+        "observation",
+        "observation_text",
+        "prompt",
+        "question",
+        "user_query",
+        "description",
+        "instructions",
+        "goal",
+        "persona",
+        "conversation_topic",
+        "user_goal",
+        "task_goal",
+        "task_type",
+        "plan_goal",
+        "plan_update",
+        "user_hint",
+    }
+)
+#: Scenario keys every environment shows the policy (inside the state's
+#: ``"scenario"`` or ``"task"`` mapping): the problem statement and its labels
+#: of kind, never its answer.
+POLICY_SCENARIO_KEYS = frozenset(
+    {
+        "id",
+        "conversation_id",
+        "scenario_id",
+        "task_id",
+        "title",
+        "topic",
+        "category",
+        "domain",
+        "type",
+        "user_query",
+        "question",
+        "prompt",
+        "query",
+        "task",
+        "description",
+        "instructions",
+        "context",
+        "goal",
+        "user_goal",
+        "persona",
+        "system_prompt",
+        "plan_goal",
+        "user_hint",
+    }
+)
+#: State keys holding the episode's scenario: shown filtered by the scenario
+#: allowlist.
+_SCENARIO_STATE_KEYS = ("scenario", "task")
+
+#: A nested key (inside an allowlisted value, e.g. a scenario's ``"context"``)
+#: is reference or grading data, and never shown to the policy, when one of
+#: the words of its name (split at ``_``, ``-``, spaces, other punctuation and
+#: camelCase) starts with one of these stems: ``expected_refund``,
+#: ``goldAnswer``, ``answers``, ``ground_truth``, ``reference_solution``,
+#: ``labels``, ``correct_facts``, ``target_expression``, ``hidden_tests``,
+#: ``secret_code``, ``success_criteria``...
+REFERENCE_KEY_STEMS: tuple[str, ...] = (
+    "answer",
+    "correct",
+    "criteri",
+    "expect",
+    "gold",
+    "grade",
+    "grading",
+    "hidden",
+    "judg",
+    "label",
+    "oracle",
+    "private",
+    "rationale",
+    "reference",
+    "rubric",
+    "secret",
+    "solution",
+    "target",
+    "truth",
+    "verdict",
+)
+#: Words that mark a nested key as reference data only as a whole word
+#: (``tests``, ``test_cases``, ``gt``, ``ref_answer``), so ``contest`` or
+#: ``refund`` are not caught.
+REFERENCE_KEY_WORDS = frozenset(
+    {"gt", "ref", "test", "tests", "testcase", "testcases", "unittest", "unittests"}
+)
+#: Whole nested key names (normalized to ``snake_case``) that are reference
+#: data although none of their words is.
+REFERENCE_KEY_NAMES = frozenset(
+    {
+        "groundtruth",
+        "required_action",
+        "required_actions",
+        "required_steps",
+        "required_tool_calls",
+        "required_tools",
+    }
+)
+_CAMEL_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
+_NON_WORD = re.compile(r"[^0-9A-Za-z]+")
+
+
+def _key_words(key: object) -> list[str]:
+    """A key's words, lower-cased: ``"expectedRefund"`` -> ``["expected", "refund"]``."""
+    spaced = _CAMEL_BOUNDARY.sub("_", str(key))
+    return [word.lower() for word in _NON_WORD.split(spaced) if word]
+
+
+def is_reference_key(key: object) -> bool:
+    """Whether a nested key's name marks it as reference or grading data.
+
+    See :data:`REFERENCE_KEY_STEMS`, :data:`REFERENCE_KEY_WORDS` and
+    :data:`REFERENCE_KEY_NAMES`. The rule errs on the side of hiding: a
+    nested key the policy needs whose name matches it (``expected_delivery``)
+    must be renamed or opted in with ``visible_context_keys``.
+    """
+    words = _key_words(key)
+    if "_".join(words) in REFERENCE_KEY_NAMES or "groundtruth" in "".join(words):
+        return True
+    return any(
+        word in REFERENCE_KEY_WORDS or word.startswith(REFERENCE_KEY_STEMS)
+        for word in words
+    )
+
+
+def policy_visible(value: Any, shown: Iterable[str] = ()) -> Any:
+    """``value`` as the policy may see it: every mapping inside it, at any
+    depth and inside lists and tuples, without its reference-like keys
+    (:func:`is_reference_key`).
+
+    ``shown`` names keys a caller explicitly opted in to show
+    (``visible_context_keys``); they stay whatever they are called. Text is
+    returned as written: a reference value spelled out inside a string
+    cannot be filtered.
+    """
+    keep = shown if isinstance(shown, frozenset) else _context_keys(shown)
+    if isinstance(value, Mapping):
+        return {
+            key: policy_visible(item, keep)
+            for key, item in value.items()
+            if str(key) in keep or not is_reference_key(key)
+        }
+    if isinstance(value, list):
+        return [policy_visible(item, keep) for item in value]
+    if isinstance(value, tuple):
+        return tuple(policy_visible(item, keep) for item in value)
+    return value
+
+
+def _context_keys(keys: Iterable[str] | str | None) -> frozenset[str]:
+    """A caller's ``visible_context_keys`` as a set (a lone string is one key)."""
+    if keys is None:
+        return frozenset()
+    if isinstance(keys, str):
+        return frozenset({keys})
+    return frozenset(str(key) for key in keys)
+
+
+def _visible_scenario(
+    scenario: Mapping[str, Any], keys: frozenset[str], shown: frozenset[str]
+) -> dict[str, Any]:
+    """The allowlisted keys of a scenario; a nested scenario (``"task"``/
+    ``"scenario"`` holding a mapping) is filtered by the same allowlist, and
+    every other value by :func:`policy_visible`."""
+    visible: dict[str, Any] = {}
+    for key, value in scenario.items():
+        if key not in keys:
+            continue
+        if key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping):
+            visible[key] = _visible_scenario(value, keys, shown)
+        else:
+            visible[key] = policy_visible(value, shown)
+    return visible
+
+
+#: Keys of a ``tool``-role message that link it to the call it answers.
+TOOL_MESSAGE_KEYS = ("tool_call_id", "name")
+
+
+def history_message(turn: ConversationTurn) -> dict[str, Any]:
+    """A turn as the chat message the policy's history shows.
+
+    ``role`` and ``content``, plus an assistant turn's structured
+    ``tool_calls`` and a tool turn's ``tool_call_id`` and ``name`` (kept in
+    ``turn.metadata``), so a chat template can pair each observation with
+    the call it answers.
+    """
+    message: dict[str, Any] = {"role": turn.role, "content": turn.content}
+    if turn.tool_calls:
+        message["tool_calls"] = copy.deepcopy(turn.tool_calls)
+    metadata = turn.metadata if isinstance(turn.metadata, dict) else {}
+    if turn.role == "tool":
+        for key in TOOL_MESSAGE_KEYS:
+            value = metadata.get(key)
+            if isinstance(value, str) and value:
+                message[key] = value
+    return message
+
+
+def turn_from_message(message: Mapping[str, Any]) -> ConversationTurn:
+    """The turn for a chat message an environment emits: :func:`history_message`
+    in reverse (a ``tool`` message keeps ``tool_call_id`` and ``name``)."""
+    role = str(message.get("role", "user"))
+    metadata = {
+        key: message[key]
+        for key in TOOL_MESSAGE_KEYS
+        if role == "tool" and isinstance(message.get(key), str) and message[key]
+    }
+    tool_calls = message.get("tool_calls")
+    return ConversationTurn(
+        role=role,
+        content=str(message.get("content", "")),
+        metadata=metadata,
+        tool_calls=copy.deepcopy(tool_calls) if tool_calls else None,
+    )
+
 
 # Narrowed to transient/runtime failures only. TypeError, KeyError, and
 # AttributeError typically indicate programming bugs and should propagate
@@ -110,7 +365,20 @@ class Environment(ABC):
     def reward_function(self, value: RewardFunction | None) -> None:
         self.reward_fn = value
 
-    # Whether step() applies IMMEDIATE/DENSE (and untyped) reward functions.
+    #: State keys this environment shows the policy (see POLICY_STATE_KEYS);
+    #: subclasses extend it with their own observation keys.
+    policy_state_keys: frozenset[str] = POLICY_STATE_KEYS
+    #: Scenario keys this environment shows the policy.
+    policy_scenario_keys: frozenset[str] = POLICY_SCENARIO_KEYS
+    #: Extra state or scenario keys a caller explicitly opted in to show the
+    #: policy (``visible_context_keys=`` where a constructor accepts it).
+    visible_context_keys: frozenset[str] = frozenset()
+
+    #: Whether step() applies untyped reward functions (no ``reward_type``)
+    #: per step. Environments that score steps always apply IMMEDIATE/DENSE
+    #: rewards per step; an untyped one is applied per step only when a
+    #: subclass sets this, and otherwise once at episode end (the default for
+    #: every built-in environment, matching how a trainer applies it).
     scores_steps: bool = False
 
     def _get_reward_type(self) -> RewardType | None:
@@ -125,7 +393,7 @@ class Environment(ABC):
             return False
         reward_type = self._get_reward_type()
         if reward_type is None:
-            return True
+            return self.scores_steps
         return reward_type in (RewardType.IMMEDIATE, RewardType.DENSE)
 
     def _should_compute_final_reward(self) -> bool:
@@ -164,9 +432,7 @@ class Environment(ABC):
         message, so the agent replies to it instead of speaking first.
         """
         return [
-            ConversationTurn(
-                role=message.get("role", "user"), content=message["content"]
-            )
+            turn_from_message(message)
             for message in state.context.get("messages", [])
             if isinstance(message, dict) and isinstance(message.get("content"), str)
         ]
@@ -179,47 +445,108 @@ class Environment(ABC):
         )
 
     async def get_reward(self, trajectory: Any) -> float:
-        """Compute reward for a trajectory."""
-        if self.reward_fn is not None:
-            try:
-                turns = getattr(trajectory, "turns", [])
-                if not turns and hasattr(trajectory, "__iter__"):
-                    turns = list(trajectory)
+        """Score a finished trajectory with this environment's ``reward_fn``.
 
-                if getattr(self.reward_fn, "requires_environment_context", False):
-                    result = await self.reward_fn.compute_reward(
-                        turns, getattr(trajectory, "final_state", None)
-                    )
-                else:
-                    result = await self.reward_fn.compute_reward(turns)
-                if hasattr(result, "score"):
-                    return float(result.score)
-                if isinstance(result, dict) and "score" in result:
-                    return float(result["score"])
-                if isinstance(result, (int, float)):
-                    return float(result)
-                logger.warning("Unexpected reward result type: %s", type(result))
-                return 0.5
-            except ENVIRONMENT_EXCEPTIONS as e:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                logger.warning("Failed to compute reward from reward_fn: %s", e)
-                return 0.5
+        There is no stand-in score: an environment without a ``reward_fn``
+        raises ``ValueError`` (its own episode reward is
+        ``trajectory.total_reward``), and a reward that fails, returns a
+        non-finite score or an unknown result type raises too.
+        """
+        reward_fn = self.reward_fn
+        if reward_fn is None:
+            raise ValueError(
+                f"{type(self).__name__} has no reward_fn to score the trajectory "
+                "with; use trajectory.total_reward for the environment's own reward"
+            )
+        # The shared trajectory path: the recorded final state and scenario
+        # (trajectory_reward_context), the context score_episode gives the
+        # same reward, also for rewards that judge environment evidence.
+        return await score_trajectory(reward_fn, trajectory)
 
-        return 0.5
+    async def _apply_step_reward(
+        self, state: EnvironmentState, turns: list[ConversationTurn]
+    ) -> float:
+        """Score the newest assistant turn of ``turns`` with ``reward_fn``.
+
+        The whole conversation so far is passed for context, marked so rewards
+        that aggregate over assistant turns score only the newest one. The
+        call is counted in ``state.metadata["reward_fn_calls"]``; a failure is
+        logged, recorded in ``state.metadata["reward_error"]`` and scores 0.0
+        unless the reward sets ``fail_on_error``. The score is also recorded
+        under :data:`STEP_REWARD_FN_SCORE`, so the episode can average the
+        reward function's step scores separately from the environment's own
+        step rewards.
+        """
+        reward_fn = self.reward_fn
+        if reward_fn is None:
+            return 0.0
+        context = build_reward_context(
+            state.context, reward_fn=reward_fn, latest_turn_only=True
+        )
+        state.metadata["reward_fn_calls"] = (
+            int(state.metadata.get("reward_fn_calls", 0) or 0) + 1
+        )
+        # An unknown result type (None, a string) raises TypeError from
+        # reward_score and propagates: it is a bug, not an outage.
+        score = 0.0
+        try:
+            result = await reward_fn.compute_reward(turns, context)
+            score = reward_score(result, reward_fn)
+        except RewardUnavailableError as error:
+            # Only an outage is recorded and skipped; any other exception is a
+            # bug or bad data and propagates.
+            if getattr(reward_fn, "fail_on_error", False):
+                raise
+            _record_reward_failure(state.metadata, reward_fn, error, "step")
+        else:
+            breakdown = getattr(result, "breakdown", None)
+            if isinstance(breakdown, dict):
+                state.metadata["reward_breakdown"] = dict(breakdown)
+            note_fallback(state.metadata, result)
+        state.metadata[STEP_REWARD_FN_SCORE] = score
+        return score
+
+    def _snapshot_step_state(self, state: EnvironmentState) -> None:
+        """Record the state this step's reward is scored against.
+
+        Call it where the step scores (or would score) its reward, so a
+        per-step reward applied later by a trainer replays on the same state.
+        """
+        state.metadata[STEP_REWARD_STATE] = _snapshot(state.context)
+
+    def _step_reward_turns(
+        self, state: EnvironmentState, turns: list[ConversationTurn]
+    ) -> list[ConversationTurn]:
+        """The episode's turns up to this reply, system prompt included.
+
+        These are exactly the finished trajectory's turns up to the reply, so
+        a per-step reward sees the same conversation whoever applies it.
+        """
+        prompt = state.metadata.get(EPISODE_SYSTEM_PROMPT)
+        if isinstance(prompt, str) and prompt:
+            return [ConversationTurn(role="system", content=prompt), *turns]
+        return list(turns)
 
     def observation_context(self, state: EnvironmentState) -> dict[str, Any]:
-        """Expose public context while retaining evaluator references privately."""
-        context = dict(state.context)
-        private = {"expected_response", "expected_tool_calls"}
-        for key in private:
-            context.pop(key, None)
-        if isinstance(context.get("scenario"), dict):
-            context["scenario"] = {
-                key: value
-                for key, value in context["scenario"].items()
-                if key not in private
-            }
+        """The context the policy sees: an allowlist of the episode state.
+
+        Only :attr:`policy_state_keys` (and, inside ``"scenario"``/``"task"``,
+        :attr:`policy_scenario_keys`), plus the caller's explicit
+        :attr:`visible_context_keys`, are shown. Every other key, reference and
+        grading data included, stays reward-side only. The allowlist is
+        recursive: inside a shown value (a scenario's ``"context"`` mapping,
+        say), reference-like keys are dropped at any depth
+        (:func:`policy_visible`).
+        """
+        extra = _context_keys(self.visible_context_keys)
+        state_keys = self.policy_state_keys | extra
+        scenario_keys = self.policy_scenario_keys | extra
+        context: dict[str, Any] = {}
+        for key, value in state.context.items():
+            if key in _SCENARIO_STATE_KEYS and isinstance(value, Mapping):
+                context[key] = _visible_scenario(value, scenario_keys, extra)
+            elif key in state_keys:
+                context[key] = policy_visible(value, extra)
         return context
 
     #: Whether ``reset``/``step`` keep all per-episode state in the
@@ -238,7 +565,7 @@ class Environment(ABC):
         max_turns = max_turns or self.max_turns
         episode = await self._start_episode(scenario)
         for _ in range(max_turns):
-            history = [{"role": t.role, "content": t.content} for t in episode.turns]
+            history = [history_message(t) for t in episode.turns]
             policy_context = copy.deepcopy(self.observation_context(episode.state))
             agent_response = await agent_fn(history, policy_context)
             if await self._advance_episode(episode, agent_response):
@@ -277,10 +604,7 @@ class Environment(ABC):
         for _ in range(max_turns):
             if not active:
                 break
-            histories = [
-                [{"role": t.role, "content": t.content} for t in e.turns]
-                for e in active
-            ]
+            histories = [[history_message(t) for t in e.turns] for e in active]
             replies = await _batch_replies(
                 batch_agent_fn,
                 histories,
@@ -316,6 +640,7 @@ class Environment(ABC):
                     metadata={"scenario": scenario},
                 )
             )
+            state.metadata[EPISODE_SYSTEM_PROMPT] = initial_prompt
         episode.turns.extend(await self.get_initial_turns(state))
         return episode
 
@@ -331,55 +656,109 @@ class Environment(ABC):
         new_state, step_reward, done, env_response, info = _parse_step_result(
             raw_step_result
         )
+        # Split the step reward into the reward function's score (averaged
+        # over the episode at the end) and the environment's own reward.
+        reward_fn_part = float(new_state.metadata.pop(STEP_REWARD_FN_SCORE, 0.0))
+        intrinsic = new_state.metadata.pop(STEP_ENVIRONMENT_REWARD, None)
+        # The state this step's reward is scored against, kept so a reward
+        # applied later (by a trainer) sees what it would have seen here.
+        step_state = new_state.metadata.pop(STEP_REWARD_STATE, None)
+        episode.step_states.append(
+            step_state if step_state is not None else _snapshot(new_state.context)
+        )
+        episode.reward_fn_scores.append(reward_fn_part)
+        episode.environment_rewards.append(
+            float(step_reward) - reward_fn_part if intrinsic is None else intrinsic
+        )
         episode.total_reward += float(step_reward)
         episode.turn_rewards.append(float(step_reward))
         if isinstance(env_response, ConversationTurn):
             episode.turns.append(env_response)
         for message in info.get("messages", []):
             if isinstance(message, dict) and isinstance(message.get("content"), str):
-                episode.turns.append(
-                    ConversationTurn(
-                        role=message.get("role", "user"), content=message["content"]
-                    )
-                )
+                # A tool observation keeps the id of the call it answers.
+                episode.turns.append(turn_from_message(message))
         episode.state = new_state
         return bool(done or new_state.status != EpisodeStatus.ONGOING)
 
     async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
-        turns, state, scenario = episode.turns, episode.state, episode.scenario
-        turn_rewards = episode.turn_rewards
-        total_reward = episode.total_reward
-        if self.reward_fn and self._should_compute_final_reward():
-            try:
-                final_reward = await self.reward_fn.compute_reward(turns, state.context)
-                if hasattr(final_reward, "score"):
-                    final_value = float(final_reward.score)
-                elif isinstance(final_reward, dict) and "score" in final_reward:
-                    final_value = float(final_reward["score"])
-                else:
-                    final_value = None
-                if final_value is not None:
-                    total_reward += final_value
-                    if turn_rewards:
-                        turn_rewards[-1] += final_value
-                    else:
-                        turn_rewards.append(final_value)
-            except ENVIRONMENT_EXCEPTIONS:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                pass
+        """Total the episode: environment rewards plus one reward-function score.
 
+        Each step keeps the environment's own reward; a per-step reward
+        function (or the built-in default heuristic) contributes the mean of
+        its step scores, spread as ``score / steps`` over the steps, so it
+        never grows with episode length; an episode-end reward is added to
+        the last step. ``total_reward == fsum(turn_rewards)``.
+        """
+        turns, state, scenario = episode.turns, episode.state, episode.scenario
+        steps = len(episode.environment_rewards)
+        turn_rewards = [
+            intrinsic + score / steps
+            for intrinsic, score in zip(
+                episode.environment_rewards, episode.reward_fn_scores, strict=True
+            )
+        ]
+        reward_metadata = {
+            key: state.metadata[key]
+            for key in (
+                "reward_fn_calls",
+                "reward_error",
+                "reward_breakdown",
+                REWARD_FALLBACK_KEY,
+                FAILED_COMPONENTS_KEY,
+            )
+            if state.metadata.get(key)
+        }
+        reward_fn = self.reward_fn
+        if reward_fn and self._should_compute_final_reward():
+            context = build_reward_context(
+                state.context,
+                scenario if isinstance(scenario, dict) else None,
+                reward_fn=reward_fn,
+            )
+            reward_metadata["reward_fn_calls"] = (
+                int(reward_metadata.get("reward_fn_calls", 0)) + 1
+            )
+            try:
+                final_reward = await reward_fn.compute_reward(turns, context)
+                final_value = reward_score(final_reward, reward_fn)
+            except RewardUnavailableError as error:
+                if getattr(reward_fn, "fail_on_error", False):
+                    raise
+                _record_reward_failure(reward_metadata, reward_fn, error, "episode")
+            else:
+                if turn_rewards:
+                    turn_rewards[-1] += final_value
+                else:
+                    turn_rewards.append(final_value)
+                breakdown = getattr(final_reward, "breakdown", None)
+                if isinstance(breakdown, dict):
+                    reward_metadata["reward_breakdown"] = dict(breakdown)
+                note_fallback(reward_metadata, final_reward)
+
+        metadata: dict[str, Any] = {
+            "episode_id": state.episode_id,
+            "status": state.status.value,
+            "scenario": scenario,
+            # The environment's own step rewards, without any reward function:
+            # a trainer scoring with another reward adds its score to these.
+            "environment_rewards": list(episode.environment_rewards),
+        }
+        if reward_metadata.get("reward_fn_calls"):
+            # Lets a trainer holding the same reward_fn reuse this reward
+            # instead of scoring the episode a second time.
+            metadata["reward_fn_applied"] = True
+        metadata.update(reward_metadata)
         return MultiTurnTrajectory(
             turns=turns,
-            total_reward=total_reward,
+            total_reward=math.fsum(turn_rewards),
             turn_rewards=turn_rewards,
             initial_state={"scenario": scenario} if scenario else None,
             final_state=state.context,
-            metadata={
-                "episode_id": state.episode_id,
-                "status": state.status.value,
-                "scenario": scenario,
-            },
+            # One entry per step: the state that step's reward was (or would
+            # be) scored against; score_episode replays per-step rewards on it.
+            state_history=list(episode.step_states),
+            metadata=metadata,
         )
 
 
@@ -392,6 +771,36 @@ class _Episode:
     turns: list[ConversationTurn] = field(default_factory=list)
     turn_rewards: list[float] = field(default_factory=list)
     total_reward: float = 0.0
+    #: Per step: the reward function's (or default heuristic's) raw score.
+    reward_fn_scores: list[float] = field(default_factory=list)
+    #: Per step: the environment's own reward, without the reward function.
+    environment_rewards: list[float] = field(default_factory=list)
+    #: Per step: a snapshot of the state the step's reward is scored against.
+    step_states: list[dict[str, Any]] = field(default_factory=list)
+
+
+def _snapshot(context: dict[str, Any]) -> dict[str, Any]:
+    """A copy of ``context`` that later in-place changes cannot alter."""
+    try:
+        return copy.deepcopy(context)
+    except (TypeError, copy.Error, RecursionError):
+        # TypeError is how deepcopy reports an uncopyable value (a lock, a
+        # generator, a socket); a shallow copy is the documented fallback.
+        return dict(context)
+
+
+def _record_reward_failure(
+    metadata: dict[str, Any], reward_fn: Any, error: BaseException, where: str
+) -> None:
+    """Log a swallowed reward failure and mark it on the episode."""
+    name = getattr(reward_fn, "name", None) or type(reward_fn).__name__
+    logger.warning(
+        "Reward function %s failed scoring the %s; it contributes 0.0: %s",
+        name,
+        where,
+        error,
+    )
+    metadata["reward_error"] = f"{type(error).__name__}: {error}"
 
 
 def _is_reward(value: Any) -> bool:

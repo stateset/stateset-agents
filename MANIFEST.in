@@ -3,6 +3,7 @@ include README.md
 include requirements-training-lock.txt
 recursive-include stateset_agents/config/presets *.yaml
 recursive-include stateset_agents/evaluation/rubrics *.md
+include stateset_agents/rewards/*.jsonl
 
 prune htmlcov
 prune outputs

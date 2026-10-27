@@ -190,11 +190,11 @@ class TestMultiTurnGRPOTrainer:
 
         with (
             patch(
-                "stateset_agents.training.multi_turn_trainer.notify_training_start",
+                "stateset_agents.training.spine.loop.notify_training_start",
                 new=AsyncMock(),
             ),
             patch(
-                "stateset_agents.training.multi_turn_trainer.notify_training_end",
+                "stateset_agents.training.spine.loop.notify_training_end",
                 new=AsyncMock(),
             ),
         ):

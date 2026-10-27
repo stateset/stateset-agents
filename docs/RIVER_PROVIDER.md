@@ -788,7 +788,7 @@ quality, RL gains, live optimizer recovery, or A+ production readiness.
 The benchmark now ships in the Python package:
 
 ```bash
-python -m stateset_agents.training.river_refund --help
+python -m stateset_agents.verticals.river_refund --help
 stateset-agents benchmark plan-agent-study --output outputs/refund-study
 stateset-agents benchmark prepare-agent-study-data --study-dir outputs/refund-study
 stateset-agents benchmark preflight-agent-study --study-dir outputs/refund-study --strict
@@ -831,7 +831,7 @@ client, load a tokenizer, or execute a stage. Authentication, model availability
 funding, tokenizer downloads, and provider pricing remain unverified even when
 the local checks pass. Neither command authorizes spending or reads test outcomes.
 Programmatic async callers can await `preflight_study_async(directory)` from
-`stateset_agents.evaluation.study_preflight`; the synchronous `preflight_study`
+`stateset_agents.verticals.study_preflight`; the synchronous `preflight_study`
 wrapper is intended for callers outside an active event loop.
 
 The direct native runner applies the same runtime checks before loading a tokenizer

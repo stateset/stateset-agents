@@ -972,6 +972,107 @@ class TestEvaluateChecks:
     def test_no_assertions_trivially_passes(self):
         assert sft.evaluate_checks("anything", expect=[], forbid=[])["passed"]
 
+    #: Pinned adversarial corpus for forbid=["rebook"]: (reply, rebooks?).
+    #: The same check filters harvested samples, so every "rebooks" reply
+    #: here must fail a refusal prompt.
+    NEGATION_CORPUS = [
+        ("Done. I won't rebook you, as you asked.", False),
+        ("I will not rebook you.", False),
+        ("Understood: I will not be able to rebook that flight.", False),
+        ("I won't be rebooking you.", False),
+        ("I'm not going to rebook you.", False),
+        ("There's no need to rebook anything.", False),
+        ("Refund issued, and no rebooking was made.", False),
+        ("I've left the booking as is and did NOT rebook anything.", False),
+        ("I cannot rebook you, as you asked.", False),
+        ("Refund issued without rebooking.", False),
+        ("I won\u2019t rebook you.", False),
+        ("I won't hesitate to rebook you on the 6pm flight.", True),
+        ("Not only will I rebook you, I'll add a voucher.", True),
+        ("Don't worry, I will rebook you now.", True),
+        ("No problem \u2014 rebooking you now.", True),
+        ("I can't wait to rebook you!", True),
+        ("I can't not rebook you.", True),
+        ("I've rebooked you on the 9am flight.", True),
+        ("No problem! I rebooked you.", True),
+        ("I'm not sure why it failed, but I will rebook you now.", True),
+        ("I did not only refund the fare but also rebook the trip.", True),
+        ("I won't refund it, but I will rebook you.", True),
+        ("Rebook confirmed.", True),
+        ("Nothing to worry about, I'll rebook you.", True),
+    ]
+
+    @pytest.mark.parametrize("completion,rebooks", NEGATION_CORPUS)
+    def test_negation_must_govern_the_forbidden_phrase(self, completion, rebooks):
+        """A loose window passed "I won't hesitate to rebook you", "Not only
+        will I rebook you" and "I can't wait to rebook you!"."""
+        checks = sft.evaluate_checks(completion, expect=[], forbid=["rebook"])
+        assert checks["passed"] is (not rebooks)
+        assert checks["forbid_hits"] == (["rebook"] if rebooks else [])
+
+    @pytest.mark.parametrize("completion,rebooks", NEGATION_CORPUS)
+    def test_expect_uses_the_same_negation_rule(self, completion, rebooks):
+        """``expect`` was a plain substring: a reply that refused every
+        remedy still passed (and was harvested)."""
+        checks = sft.evaluate_checks(completion, expect=["rebook"], forbid=[])
+        assert checks["passed"] is rebooks
+
+    #: Pinned corpus for expect: (reply, phrase, delivered?).
+    EXPECT_CORPUS = [
+        ("I can't open a baggage trace for you.", "baggage trace", False),
+        ("I won't issue a refund.", "refund", False),
+        ("I won't issue you a refund today.", "refund", False),
+        ("I'm not able to start a baggage trace.", "baggage trace", False),
+        ("There is no refund available.", "refund", False),
+        ("I cannot process the refund.", "refund", False),
+        ("I've opened a baggage trace.", "baggage trace", True),
+        ("Your refund has been issued.", "refund", True),
+        ("I won't hesitate to issue a refund.", "refund", True),
+        ("Not only did I refund you, I also rebooked you.", "refund", True),
+        ("I didn't just open a baggage trace, I escalated it.", "baggage trace", True),
+        ("Don't worry, I issued the refund.", "refund", True),
+        ("I can't not refund you.", "refund", True),
+    ]
+
+    @pytest.mark.parametrize("completion,phrase,delivered", EXPECT_CORPUS)
+    def test_negated_expect_phrase_is_not_a_hit(self, completion, phrase, delivered):
+        checks = sft.evaluate_checks(completion, expect=[phrase], forbid=[])
+        assert checks["passed"] is delivered
+
+    def test_refusing_every_remedy_fails_and_is_not_harvested(self):
+        from stateset_agents.training.harvest import sample_passes
+
+        spec = {
+            "prompt": "Booking 7701 — bag lost, double charged, do NOT rebook me",
+            "expect": ["baggage trace", "refund", "7701"],
+            "forbid": ["rebook"],
+        }
+        reply = (
+            "Booking 7701: I can't open a baggage trace, I won't issue a refund, "
+            "and I won't rebook you."
+        )
+        checks = sft.evaluate_checks(reply, spec["expect"], spec["forbid"])
+        assert checks["expect_hits"] == ["7701"] and checks["passed"] is False
+        assert sample_passes(spec, reply) is False
+
+    @pytest.mark.parametrize(
+        "completion,hit",
+        [
+            ("Case 77015: refund issued", False),
+            ("Case 177015 noted", False),
+            ("Case 7701: refund issued", True),
+            ("Case #7701.", True),
+            ("ref:7701", True),
+        ],
+    )
+    def test_reference_numbers_match_whole_numbers_only(self, completion, hit):
+        checks = sft.evaluate_checks(completion, expect=["7701"], forbid=[])
+        assert checks["passed"] is hit
+
+    def test_forbidden_phrase_must_start_at_a_word_boundary(self):
+        checks = sft.evaluate_checks("Your prebooking is fine.", [], ["rebook"])
+        assert checks["passed"] is True
+
 
 class FakeJudge:
     """Stands in for a domain reward: async compute_reward -> .score."""
@@ -1063,7 +1164,53 @@ class TestBuildEvalExtras:
         )
 
         assert "judge_score" not in extras[0]
+        assert extras[0]["judge_unavailable"] is True
         assert extras[0]["checks"]["passed"] is True
+
+
+class TestSkippedJudgeGates:
+    """A min_judge_score gate whose judge could not run was skipped with no
+    trace in eval_results.json, the run output or the manifest."""
+
+    SPECS = [
+        {"prompt": "gated", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "scored", "judge": "cs", "min_judge_score": 0.8},
+        {"prompt": "ungated", "judge": "cs"},
+    ]
+
+    def test_skips_name_every_unchecked_gate(self):
+        rows = [{"judge_unavailable": True}, {"judge_score": 0.9}, {}]
+        (skip,) = sft.eval_gate_skips(self.SPECS, rows)
+        assert "'gated'" in skip and "not checked" in skip
+
+    def test_job_output_reports_the_skipped_gate(self, dataset, tmp_path, monkeypatch):
+        out = tmp_path / "adapter"
+
+        def fake_run_sft(rows, base_model, output_dir, eval_prompts, **kwargs):
+            from tests.sft_fixtures import write_sft_export
+
+            write_sft_export(output_dir, base_model=base_model, **kwargs)
+            sft.write_eval_results(
+                output_dir,
+                ["gated"],
+                ["b"],
+                ["f"],
+                extras=[{"judge_unavailable": True}],
+            )
+            return output_dir
+
+        monkeypatch.setattr(sft, "gpu_available", lambda: True)
+        monkeypatch.setattr(sft, "run_sft", fake_run_sft)
+        outcome = sft.run_sft_job(
+            payload(
+                dataset,
+                output_dir=str(out),
+                dry_run=False,
+                eval_prompts=[self.SPECS[0]],
+            )
+        )
+        assert outcome["returncode"] == 0  # judge failures still degrade
+        assert any("Eval judge gate skipped" in line for line in outcome["logs"])
 
 
 class TestEvalGateFailures:

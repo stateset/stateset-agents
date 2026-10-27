@@ -127,9 +127,9 @@ class TestVAPOModelManager:
         assert model_manager.tokenizer is None
         assert model_manager.device is not None
 
-    @patch("stateset_agents.training.vapo_trainer.AutoTokenizer")
-    @patch("stateset_agents.training.vapo_trainer.AutoModelForCausalLM")
-    @patch("stateset_agents.training.vapo_trainer.get_peft_model")
+    @patch("stateset_agents.training.dedicated_deps.AutoTokenizer")
+    @patch("stateset_agents.training.dedicated_deps.AutoModelForCausalLM")
+    @patch("stateset_agents.training.dedicated_deps.get_peft_model")
     def test_load_model_and_tokenizer(
         self, mock_peft, mock_model_class, mock_tokenizer_class, model_manager
     ):
@@ -149,8 +149,8 @@ class TestVAPOModelManager:
         mock_model_class.from_pretrained.assert_called_once()
         assert tokenizer.pad_token == tokenizer.eos_token
 
-    @patch("stateset_agents.training.vapo_trainer.AutoTokenizer")
-    @patch("stateset_agents.training.vapo_trainer.AutoModelForCausalLM")
+    @patch("stateset_agents.training.dedicated_deps.AutoTokenizer")
+    @patch("stateset_agents.training.dedicated_deps.AutoModelForCausalLM")
     def test_load_model_without_lora(
         self, mock_model_class, mock_tokenizer_class, vapo_config
     ):
@@ -453,7 +453,7 @@ class TestVAPOTrainer:
 
         return VAPOConfig(
             model_name="gpt2",
-            num_iterations=2,
+            num_gradient_updates=2,
             group_size=4,
         )
 

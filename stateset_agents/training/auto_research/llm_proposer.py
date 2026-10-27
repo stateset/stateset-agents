@@ -347,9 +347,17 @@ class LLMProposer(ExperimentProposer):
 
         try:
             response_text = self._call_llm(user_prompt)
-            result = _extract_json(response_text)
-        except Exception as exc:
+        # Network boundary: the anthropic/openai SDKs raise their own APIError
+        # hierarchy (plain Exception subclasses); any API failure falls back.
+        except Exception as exc:  # noqa: BLE001
             logger.warning("LLM proposer failed, falling back to perturbation: %s", exc)
+            return self._fallback_propose(current_best)
+        try:
+            result = _extract_json(response_text)
+        except ValueError as exc:  # json.JSONDecodeError: no usable JSON reply
+            logger.warning(
+                "LLM proposer returned no JSON, falling back to perturbation: %s", exc
+            )
             return self._fallback_propose(current_best)
 
         params = result.get("params", {})

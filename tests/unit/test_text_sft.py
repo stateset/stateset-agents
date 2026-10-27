@@ -89,6 +89,34 @@ def test_snapshot_checks_overlap_on_captured_data(tmp_path):
 
 
 @pytest.mark.parametrize(
+    "validation_question",
+    [
+        "where is my  ORDER 42?",
+        " Where is my order 42?\n",
+        "Where is my order\u00a042?",
+        "\uff37here is my order 42?",  # full-width W
+    ],
+)
+def test_overlap_check_normalizes_the_initial_request(tmp_path, validation_question):
+    """Only byte-identical conversations were caught; a whitespace, case or
+    Unicode-compatibility variant of a training request leaked into validation."""
+    train, validation = tmp_path / "train.jsonl", tmp_path / "validation.jsonl"
+    train.write_text(json.dumps(_row("Where is my order 42?", "It shipped.")) + "\n")
+    validation.write_text(
+        json.dumps(_row(validation_question, "It shipped today. ")) + "\n"
+    )
+    with pytest.raises(ValueError, match="overlap"):
+        load_text_sft_snapshot(str(train), str(validation))
+
+
+def test_distinct_requests_do_not_overlap(tmp_path):
+    train, validation = tmp_path / "train.jsonl", tmp_path / "validation.jsonl"
+    train.write_text(json.dumps(_row("Where is my order 42?")) + "\n")
+    validation.write_text(json.dumps(_row("Where is my order 43?")) + "\n")
+    assert load_text_sft_snapshot(str(train), str(validation)).validation
+
+
+@pytest.mark.parametrize(
     "raw,reason",
     [
         (b"\n", "empty"),

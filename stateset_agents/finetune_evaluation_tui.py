@@ -2,12 +2,10 @@
 
 from __future__ import annotations
 
-import threading
 import time
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
-from queue import Empty, SimpleQueue
 from typing import Any
 
 from stateset_agents.evaluation.agent_runs import content_hash
@@ -39,6 +37,7 @@ from stateset_agents.finetune_validation import (
     submit_comparison,
 )
 from stateset_agents.finetune_workspace import read_json
+from stateset_agents.tui_tasks import BackgroundTask
 
 
 class EvaluationPanel:
@@ -71,7 +70,7 @@ class EvaluationPanel:
         self.nominations: list[dict[str, Any]] = []
         self.nomination_index = 0
         self.nomination_origin = "list"
-        self._results: SimpleQueue[tuple[str, str, Any]] = SimpleQueue()
+        self._task: BackgroundTask[tuple[str, str, Any]] = BackgroundTask()
         self._last_poll = 0.0
         try:
             self.comparison_path = latest_comparison(run)
@@ -81,11 +80,9 @@ class EvaluationPanel:
 
     def refresh(self) -> None:
         """Poll small metadata and collect owned background work without blocking."""
-        try:
-            operation, origin, result = self._results.get_nowait()
-        except Empty:
-            pass
-        else:
+        finished = self._task.poll()
+        if finished is not None and finished.value is not None:
+            operation, origin, result = finished.value
             self.busy = False
             if isinstance(result, dict) and "error" in result:
                 self.message = result["error"]
@@ -204,7 +201,8 @@ class EvaluationPanel:
         self.busy = True
         self.message = "Working in the background. Esc leaves the view; authorized submission/stop finishes before exit."
 
-        def work() -> None:
+        def work() -> tuple[str, str, Any]:
+            result: Any
             try:
                 result = action()
             except (EvaluationProtocolError, ValidationComparisonError) as error:
@@ -234,11 +232,12 @@ class EvaluationPanel:
                 result = {
                     "error": "Evaluation operation failed; inspect retained state and logs before retrying."
                 }
-            self._results.put((operation, origin, result))
+            return operation, origin, result
 
-        threading.Thread(
-            target=work, daemon=not owned, name="stateset-evaluation-" + operation
-        ).start()
+        # Owned (authorized) work runs on a non-daemon thread: exiting waits.
+        self._task.start(
+            work, daemon=not owned, name="stateset-evaluation-" + operation
+        )
 
     def _config(self) -> EvaluationConfig:
         values = dict(self.values)
@@ -277,12 +276,17 @@ class EvaluationPanel:
     def _compare(self) -> None:
         if self.busy:
             return
+        resubmit = False
         if (
             self.mode == "comparison"
             and self.comparison
             and self.comparison.get("anchor_id")
         ):
             anchor = self.comparison["anchor_id"]
+            # b on an uncertain submission is the explicit request to retry.
+            resubmit = (
+                self.comparison.get("state", {}).get("status") == "submission_uncertain"
+            )
         else:
             selected = (
                 self.selected
@@ -299,7 +303,9 @@ class EvaluationPanel:
                 return
             anchor = selected["evaluation_id"]
         self._background(
-            "comparison", lambda: submit_comparison(self.run, anchor), owned=True
+            "comparison",
+            lambda: submit_comparison(self.run, anchor, resubmit=resubmit),
+            owned=True,
         )
 
     def _use_recommendation(self) -> None:
@@ -597,7 +603,7 @@ class EvaluationPanel:
                 key == "s"
                 and not self.busy
                 and self.selected["state"].get("status")
-                in {"prepared", "queued", "running"}
+                in {"prepared", "queued", "running", "interrupted"}
             ):
                 self.mode = "stop"
             elif key == "l":
@@ -803,6 +809,10 @@ class EvaluationPanel:
             ]
             if selected["state"].get("error"):
                 rows += ["Error: " + selected["state"]["error"]]
+            if selected["state"].get("execution_unconfirmed"):
+                rows += [
+                    "Supervisor lost; detached queue work may still be running. s requests a cooperative stop."
+                ]
             queue = selected.get("queue", {})
             if queue:
                 rows += [

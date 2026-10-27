@@ -23,8 +23,11 @@ and `make release-governance` validates it on every pull request and release.
 |---|---|
 | `api-serving` | Stable |
 | `bayesian-reward-model` | Experimental |
+| `capability-regression-eval` | Experimental |
 | `core-agents` | Stable |
+| `data-decontamination` | Beta |
 | `deployment-assets` | Beta |
+| `distillation` | Beta |
 | `distributed-rollouts` | Beta |
 | `environments-rewards` | Stable |
 | `external-training-backends` | Beta |
@@ -33,11 +36,14 @@ and `make release-governance` validates it on every pull request and release.
 | `memory` | Beta |
 | `offline-rl` | Experimental |
 | `ppo-rlaif-trainers` | Experimental |
+| `preference-optimization` | Beta |
 | `provider-control-plane` | Beta |
+| `qlora-sft` | Experimental |
 | `research-modules` | Experimental |
 | `reward-learning-rlaif` | Beta |
 | `rust-acceleration` | Beta |
 | `sim-to-real` | Experimental |
+| `tool-use-rl` | Beta |
 | `vapo` | Experimental |
 
 Since v0.64.0 the code for the `offline-rl`, `ppo-rlaif-trainers`,
@@ -48,8 +54,8 @@ that no stability guarantee applies. The previous `stateset_agents.training`,
 `stateset_agents.rewards` paths were deprecated in v0.64.0 and removed in
 v0.65.0. The four root sim-to-real exports (`stateset_agents.SimToRealMetrics`,
 `SimToRealEvaluator`, `ConversationSimulator`, `ConversationSimulatorConfig`)
-are stable v1-contract names, so they stay deprecated through v0.65.x and are
-removed in v0.66.0.
+were deprecated in v0.64.0 and, after their v0.66.0 deadline, removed from the
+v1 contract; import them from `stateset_agents.experimental.sim_to_real`.
 
 The JSON manifest supplies each component's owner, documentation, tests,
 retained evidence, limitations, graduation criteria, and stable-contract

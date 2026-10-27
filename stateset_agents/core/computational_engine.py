@@ -1,18 +1,25 @@
 """
-Computational GRPO Engine - Embodying the Bitter Lesson
+Parallel trajectory generation and scoring (deprecated; it does not train).
 
-This module provides a computation-first GRPO training engine that:
-1. Leverages massive computation through parallel trajectory generation
-2. Uses general learning methods rather than domain-specific heuristics
-3. Scales arbitrarily with computational resources
-4. Learns from data rather than hand-crafted features
-5. Continuously improves through self-play and exploration
+:class:`ComputationalGRPOEngine` generates responses for a batch of prompts
+in parallel, scores them through the shared reward path
+(:func:`~stateset_agents.core.reward_context.score_response`) and computes
+group-relative advantages. It does **not** update the policy: its
+``_update_policy`` runs a forward pass per trajectory, reports the mean
+advantage-weighted NLL as ``policy_loss`` and never calls ``backward()`` or
+an optimizer step (without torch, a model or a tokenizer the reported value
+is ``-mean(advantages)``). The only parameter changes come from an agent's own
+``update_policy`` / ``update_from_feedback`` hooks, if it defines them.
 
-"We want AI agents that can discover like we can, not which contain what we have discovered."
+Deprecated in v0.70.0 and removed in v0.71.0. To train, use the trainers in
+:mod:`stateset_agents.training` -- ``stateset_agents.train(...)`` or
+``MultiTurnGRPOTrainer`` / ``SingleTurnGRPOTrainer`` -- which run real GRPO
+updates.
 """
 
 import asyncio
 import logging
+import math
 import os
 import time
 import uuid
@@ -24,19 +31,20 @@ from typing import Any
 import numpy as np
 from numpy.typing import NDArray
 
+from .._deprecation import warn_deprecated
+from ..exceptions import LOSS_EXCEPTIONS
 from .agent import Agent
 from .environment import Environment
 from .reward import RewardFunction
-from .trajectory import ConversationTurn, Trajectory
+from .reward_context import RewardUnavailableError, score_response
+from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
-ENGINE_EXCEPTIONS = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    KeyError,
-    AttributeError,
+_REMOVAL = "0.71.0"
+_REPLACEMENT = (
+    "stateset_agents.train() or stateset_agents.training.MultiTurnGRPOTrainer "
+    "(this engine never applies a gradient update)"
 )
 
 
@@ -47,7 +55,7 @@ class ComputationalTrajectory:
     id: str
     prompt: str
     response: str
-    raw_reward_signal: float  # Direct signal from environment
+    raw_reward_signal: float | None  # Environment signal (None: no reward_fn)
     learned_reward: float  # Reward from learned reward model
     computational_cost: float  # Tracks computation used
     timestamp: datetime
@@ -67,8 +75,11 @@ class ComputationalTrajectory:
 
 
 class ComputationalGRPOEngine:
-    """
-    The core GRPO engine that embodies the Bitter Lesson principles
+    """Parallel rollout-and-score loop that does not train the policy.
+
+    Deprecated (removed in v0.71.0): see the module docstring. Use
+    ``stateset_agents.train()`` or the trainers in
+    :mod:`stateset_agents.training`.
     """
 
     def __init__(
@@ -80,6 +91,11 @@ class ComputationalGRPOEngine:
         trajectory_batch_size: int = 32,
         use_learned_rewards: bool = True,
     ):
+        warn_deprecated(
+            "stateset_agents.core.computational_engine.ComputationalGRPOEngine",
+            removal=_REMOVAL,
+            replacement=_REPLACEMENT,
+        )
         self.agent = agent
         self.environment = environment
         self.reward_function = reward_function
@@ -115,8 +131,23 @@ class ComputationalGRPOEngine:
             task = asyncio.create_task(self._generate_single_trajectory(prompt))
             tasks.append(task)
 
-        # Collect results
-        trajectories = await asyncio.gather(*tasks)
+        # Collect results; a trajectory whose reward is unavailable (an
+        # outage) is dropped and counted, never kept with a stand-in reward.
+        # Any other error (a bug, bad data, a non-finite reward) propagates.
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        trajectories: list[ComputationalTrajectory] = []
+        failed = 0
+        for result in results:
+            if isinstance(result, RewardUnavailableError):
+                failed += 1
+                logger.warning(
+                    "Dropping trajectory: its reward is unavailable: %s", result
+                )
+            elif isinstance(result, BaseException):
+                raise result
+            else:
+                trajectories.append(result)
+        self.metrics["failed_trajectories"] = float(failed)
 
         # Update metrics
         # Windows clocks can report zero elapsed time for fast batches.
@@ -132,24 +163,24 @@ class ComputationalGRPOEngine:
             # Generate response using agent
             response = await self.agent.generate_response(prompt)
 
-            # Get raw reward signal from environment
+            # Raw reward signal from the environment, when it has one.
             raw_reward = await self._get_environmental_reward(prompt, response)
 
-            # Get learned reward if enabled
-            learned_reward = raw_reward
+            # The learned reward is the training signal. A failure propagates
+            # (the batch drops this trajectory); no other value stands in.
             if self.use_learned_rewards:
-                try:
-                    # Use reward function to compute learned reward
-                    reward_result = await self.reward_function.compute_reward(
-                        [
-                            ConversationTurn(role="user", content=prompt),
-                            ConversationTurn(role="assistant", content=response),
-                        ]
-                    )
-                    learned_reward = reward_result.score
-                except ENGINE_EXCEPTIONS as e:
-                    logger.warning(f"Failed to compute learned reward: {e}")
-                    learned_reward = raw_reward
+                # The shared single-response path (score_response).
+                learned_reward = await score_response(
+                    self.reward_function, prompt, response
+                )
+            elif raw_reward is None:
+                raise ValueError(
+                    "use_learned_rewards=False needs an environment reward_fn"
+                )
+            else:
+                learned_reward = raw_reward
+            if not math.isfinite(learned_reward):
+                raise ValueError(f"reward must be finite, got {learned_reward}")
 
             # Track computational cost
             computational_cost = len(prompt) + len(response)  # Simplified
@@ -170,7 +201,9 @@ class ComputationalGRPOEngine:
 
             return trajectory
 
-    async def _get_environmental_reward(self, prompt: str, response: str) -> float:
+    async def _get_environmental_reward(
+        self, prompt: str, response: str
+    ) -> float | None:
         """Get reward signal from environment (not hand-crafted features)"""
         # In practice, this would come from:
         # - User feedback
@@ -178,31 +211,35 @@ class ComputationalGRPOEngine:
         # - Environmental outcomes
         # NOT from hand-crafted heuristics
 
-        # Use environment to get reward
-        try:
-            # Create a simple trajectory for environment evaluation
-            trajectory = Trajectory()
-            trajectory.add_turn({"role": "user", "content": prompt})
-            trajectory.add_turn({"role": "assistant", "content": response})
+        # An environment without a reward function has no raw signal; that is
+        # recorded as None rather than a fabricated neutral score.
+        if (
+            getattr(self.environment, "reward_fn", None) is None
+            and type(self.environment).get_reward is Environment.get_reward
+        ):
+            return None
 
-            # Get reward from environment
-            reward = await self.environment.get_reward(trajectory)
-            reward_value = float(reward)
-            return reward_value
-        except ENGINE_EXCEPTIONS as e:
-            logger.warning(f"Failed to get environmental reward: {e}")
-            # Return a neutral reward instead of random noise
-            # Random rewards would corrupt training and make results non-reproducible
-            return 0.5
+        trajectory = Trajectory()
+        trajectory.add_turn({"role": "user", "content": prompt})
+        trajectory.add_turn({"role": "assistant", "content": response})
+        # Failures propagate: the batch drops this trajectory.
+        return float(await self.environment.get_reward(trajectory))
 
     async def train_iteration(self, prompts: list[str]) -> dict[str, Any]:
-        """
-        Run a complete GRPO training iteration
+        """Generate, score and compute advantages for one batch of prompts.
+
+        Despite the name no policy update happens here (see
+        :meth:`_update_policy`); ``policy_loss`` in the result is a diagnostic.
         """
         iteration_start = time.time()
 
         # Generate trajectory batch in parallel
         trajectories = await self.generate_trajectory_batch(prompts)
+        if prompts and not trajectories:
+            raise RuntimeError(
+                "No trajectory in the batch has a reward: all "
+                f"{len(prompts)} reward computations failed"
+            )
 
         # Add to buffer
         self.trajectory_buffer.extend(trajectories)
@@ -219,11 +256,16 @@ class ComputationalGRPOEngine:
 
         # Calculate metrics
         iteration_time = time.time() - iteration_start
-        avg_reward = np.mean([t.learned_reward for t in trajectories])
+        avg_reward = (
+            float(np.mean([t.learned_reward for t in trajectories]))
+            if trajectories
+            else 0.0
+        )
 
         results = {
             "iteration_time": iteration_time,
             "trajectories_generated": len(trajectories),
+            "trajectories_failed": int(self.metrics.get("failed_trajectories", 0)),
             "average_reward": avg_reward,
             "policy_loss": policy_loss,
             "total_computation_used": self.total_computation,
@@ -254,7 +296,9 @@ class ComputationalGRPOEngine:
         self, trajectories: list[ComputationalTrajectory]
     ) -> NDArray[np.float64]:
         """Compute advantages for GRPO"""
-        rewards = np.array([t.learned_reward for t in trajectories])
+        rewards = np.array([t.learned_reward for t in trajectories], dtype=float)
+        if rewards.size == 0:
+            return np.zeros(0, dtype=float)
         baseline = np.mean(rewards)
         advantages = rewards - baseline
 
@@ -275,7 +319,19 @@ class ComputationalGRPOEngine:
     async def _update_policy(
         self, trajectories: list[ComputationalTrajectory], advantages: np.ndarray
     ) -> float:
-        """Update policy using GRPO with actual gradient computation"""
+        """Report an advantage-weighted NLL; this does **not** update the policy.
+
+        Each trajectory gets one forward pass and ``advantage * loss`` is
+        averaged into the returned value with ``.item()``: no ``backward()``,
+        no optimizer step, so the model's weights never change here. Without
+        torch, a model or a tokenizer the return value is ``-mean(advantages)``
+        (not a loss). An agent's own ``update_policy(trajectories,
+        advantages)`` hook, if it has one, is called either way.
+
+        A forward pass that fails at runtime (``LOSS_EXCEPTIONS``: OOM, shape
+        or numeric errors) skips that trajectory; a ``TypeError`` /
+        ``KeyError`` / ``AttributeError`` is a bug and propagates.
+        """
         try:
             # Lazy import torch for optional dependency
             import torch
@@ -346,10 +402,10 @@ class ComputationalGRPOEngine:
                 total_loss += policy_loss.item()
                 num_updates += 1
 
-                # Note: Gradients are accumulated but not applied here
-                # The actual backward pass happens in the training loop
+                # No backward pass and no optimizer step: this value is a
+                # diagnostic only (see the docstring).
 
-            except ENGINE_EXCEPTIONS as e:
+            except LOSS_EXCEPTIONS as e:
                 logger.warning(f"Failed to compute policy loss for trajectory: {e}")
                 continue
 
@@ -409,7 +465,7 @@ def create_computational_engine(
     num_workers: int | None = None,
     **kwargs,
 ) -> ComputationalGRPOEngine:
-    """Create a computational GRPO engine with optimal configuration"""
+    """Create a :class:`ComputationalGRPOEngine` (deprecated, removed in v0.71.0)."""
     return ComputationalGRPOEngine(
         agent=agent,
         environment=environment,

@@ -864,7 +864,7 @@ class MonitoringService:
         )
 
         # Could also send to external systems like Elasticsearch
-        print(f"Event logged: {event_type} - {metadata}")
+        self._logger.info("Event logged: %s - %s", event_type, metadata)
 
     async def get_metrics(self) -> dict[str, Any]:
         """Get all metrics"""

@@ -6,8 +6,9 @@ Unified metrics collection for the GRPO service.
 
 from collections import defaultdict, deque
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
+
+from stateset_agents.utils.clock import utc_isoformat
 
 from ..constants import (
     PERCENTILE_P50,
@@ -139,7 +140,7 @@ class GRPOMetrics:
     def get_summary(self) -> dict[str, Any]:
         """Get comprehensive metrics summary."""
         return {
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": utc_isoformat(),
             "requests": {
                 "total": sum(self.request_counts.values()),
                 "by_endpoint": dict(self.request_counts),

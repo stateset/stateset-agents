@@ -43,13 +43,13 @@ def _tiny_model():
 
 
 class _StubRewardModel:
-    """Reward function whose compute_turn_reward varies by response content so
-    group advantages are nonzero (a single-response group always normalizes
-    to advantage 0, which would trivially zero the loss regardless of the
+    """Reward function whose score varies by response content so group
+    advantages are nonzero (a single-response group always normalizes to
+    advantage 0, which would trivially zero the loss regardless of the
     gradient-path bug)."""
 
-    async def compute_turn_reward(self, turn, context=None, conversation_history=None):
-        score = 1.0 if turn.content == "ok" else 0.0
+    async def compute_reward(self, turns, context=None):
+        score = 1.0 if turns[-1].content == "ok" else 0.0
         return RewardResult(score=score, breakdown={}, components={})
 
 
@@ -197,29 +197,27 @@ async def test_distinct_prompt_groups_average_their_individual_gradients(
 
 
 @pytest.mark.asyncio
-async def test_reward_computed_via_compute_turn_reward(gspo_token_trainer_tiny):
-    """The reward call must use the documented compute_turn_reward signature."""
+async def test_reward_computed_on_the_shared_response_path(gspo_token_trainer_tiny):
+    """Each response is scored as a one-turn episode: [user, assistant] turns
+    and the standard reward context (reward_context.score_response)."""
     trainer = gspo_token_trainer_tiny
 
     calls = []
 
     class _SpyRewardModel(_StubRewardModel):
-        async def compute_turn_reward(
-            self, turn, context=None, conversation_history=None
-        ):
-            calls.append((turn, context, conversation_history))
-            return await super().compute_turn_reward(
-                turn, context, conversation_history
-            )
+        async def compute_reward(self, turns, context=None):
+            calls.append((turns, context))
+            return await super().compute_reward(turns, context)
 
     trainer.reward_model = _SpyRewardModel()
     await trainer.train_step_token_level(["hello"], num_groups=1)
 
     assert len(calls) == 2
-    contents = {turn.content for turn, _context, _history in calls}
-    assert contents == {"ok", "nope"}
-    for _turn, context, _history in calls:
-        assert context == {"user_query": "hello"}
+    assert {turns[-1].content for turns, _context in calls} == {"ok", "nope"}
+    for turns, context in calls:
+        assert [(t.role, t.content) for t in turns[:-1]] == [("user", "hello")]
+        # The standard reward context: scenario keys lifted plus "scenario".
+        assert context == {"user_query": "hello", "scenario": {"user_query": "hello"}}
 
 
 def _set_old_log_probs(trainer, monkeypatch, log_ratios):
@@ -414,9 +412,7 @@ async def test_constant_reward_group_with_overflowing_ratio_is_finite(
     trainer = gspo_token_trainer_tiny
 
     class _ConstantRewardModel:
-        async def compute_turn_reward(
-            self, turn, context=None, conversation_history=None
-        ):
+        async def compute_reward(self, turns, context=None):
             return RewardResult(score=1.0, breakdown={}, components={})
 
     trainer.reward_model = _ConstantRewardModel()
@@ -429,3 +425,16 @@ async def test_constant_reward_group_with_overflowing_ratio_is_finite(
     grads = [p.grad for p in trainer.model.parameters() if p.grad is not None]
     assert grads
     assert all(torch.isfinite(g).all() for g in grads)
+
+
+@pytest.mark.asyncio
+async def test_token_metrics_are_builtin_floats_with_tensor_lr(
+    gspo_token_trainer_tiny, monkeypatch
+):
+    """Metrics are ``dict[str, float]``: numpy means and a tensor-valued
+    scheduler LR must not leak into logged metrics."""
+    trainer = gspo_token_trainer_tiny
+    monkeypatch.setattr(trainer.scheduler, "get_last_lr", lambda: [torch.tensor(2e-5)])
+    metrics = await trainer.train_step_token_level(["hello"], num_groups=1)
+    assert {k: type(v) for k, v in metrics.items() if type(v) is not float} == {}
+    assert metrics["learning_rate"] == pytest.approx(2e-5)

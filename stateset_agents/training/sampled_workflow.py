@@ -206,7 +206,10 @@ async def run_seed(
             embd_pdrop=0.0,
             attn_pdrop=0.0,
         )
-    ).to(device)
+    )
+    # PreTrainedModel.to is ``@wraps(nn.Module.to)``; typeshed's ``_Wrapped``
+    # drops the bound ``self``. Module.to moves parameters in place.
+    model.to(device)  # type: ignore[arg-type, unused-ignore]
     # Establish tool syntax with supervised warmup shared by both policies.
     # Decision examples are deliberately balanced for each observation, so
     # only subsequent environment rewards teach the eligibility decision.
@@ -414,7 +417,7 @@ def main() -> None:
         "results": [str(Path(f"seed-{seed}") / "result.json") for seed in args.seeds],
     }
     (args.output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
-    print(json.dumps(summary))
+    print(json.dumps(summary))  # noqa: T201 - CLI result line
     raise SystemExit(0 if summary["passed"] else 1)
 
 

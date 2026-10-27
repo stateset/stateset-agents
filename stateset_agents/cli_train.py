@@ -132,6 +132,7 @@ def train(
     try:
         from stateset_agents.core.agent import AgentConfig, MultiTurnAgent
         from stateset_agents.core.environment import ConversationEnvironment
+        from stateset_agents.core.grounding import ground_shaping_rewards
         from stateset_agents.core.reward import (
             CompositeReward,
             HelpfulnessReward,
@@ -144,10 +145,10 @@ def train(
         _echo(f"Details: {e}")
         raise typer.Exit(code=2) from e
 
-    train_fn = None
+    train_fn: t.Callable[..., t.Awaitable[t.Any]] | None = None
     if not stub:
         try:
-            from stateset_agents.training.train import train as train_fn  # type: ignore
+            from stateset_agents.training.train import train as train_fn
         except CLI_IMPORT_EXCEPTIONS as e:
             _echo("Training components unavailable. Falling back to stub mode.")
             _echo(f"Details: {e}")
@@ -214,11 +215,15 @@ def train(
         ),
     )
 
+    # A heuristic demo reward: the helpfulness heuristic is gated on task
+    # grounding so canned replies cannot game it.
     reward_fn = CompositeReward(
-        [
-            HelpfulnessReward(weight=0.6),
-            SafetyReward(weight=0.4),
-        ]
+        ground_shaping_rewards(
+            [
+                HelpfulnessReward(weight=0.6),
+                SafetyReward(weight=0.4),
+            ]
+        )
     )
 
     num_episodes = _coerce_positive_int(
@@ -229,9 +234,16 @@ def train(
 
     import asyncio
 
+    # Non-stub runs reach here only after ``train_fn`` imported successfully
+    # (an import failure flips ``stub`` and exits above); narrow it explicitly.
+    run_training = train_fn
+    if run_training is None:  # pragma: no cover - defensive
+        _echo("Training components unavailable.")
+        raise typer.Exit(code=2)
+
     async def _run():
         await agent.initialize()
-        await train_fn(
+        await run_training(
             agent=agent,
             environment=environment,
             reward_fn=reward_fn,
@@ -573,15 +585,18 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
                 _echo(f"Warning: {warning}")
             _echo("Run with:")
             _echo(
-                f"  stateset-agents {command_name} --no-dry-run --task customer_service"
+                f"  stateset-agents model {command_name} --no-dry-run "
+                "--task customer_service"
             )
             _echo("Or try the low-memory preset:")
             _echo(
-                f"  stateset-agents {command_name} --starter-profile memory --json-output"
+                f"  stateset-agents model {command_name} --starter-profile memory "
+                "--json-output"
             )
             _echo("Or save a reusable config:")
             _echo(
-                f"  stateset-agents {command_name} --write-config ./{preset.cli_config_stem}.json"
+                f"  stateset-agents model {command_name} --write-config "
+                f"./{preset.cli_config_stem}.json"
             )
             return
 
@@ -617,10 +632,20 @@ def _register_model_command(app: typer.Typer, preset: ModelPreset) -> None:
     app.command(command_name)(model_command)
 
 
+# One command group for every preset keeps the top-level help readable. The
+# pre-0.68 top-level spellings were removed after their v0.69.0 deadline.
+model_app = typer.Typer(
+    help="Preview or run a packaged per-model GSPO starter "
+    "(`stateset-agents model --help` lists every preset).",
+    no_args_is_help=True,
+)
+app.add_typer(model_app, name="model")
+
+
 GENERATED_MODEL_COMMANDS: tuple[str, ...] = tuple(
     preset.cli_command for preset in PRESETS.values() if preset.cli_command is not None
 )
 
 for _preset in PRESETS.values():
     if _preset.cli_command is not None:
-        _register_model_command(app, _preset)
+        _register_model_command(model_app, _preset)

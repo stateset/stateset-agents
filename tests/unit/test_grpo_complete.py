@@ -496,8 +496,12 @@ class TestIntegration:
         reward_fn = create_customer_service_reward()
 
         # Create training config
+        # The stub tokenizer has neither a chat template nor offsets, so the
+        # sequence path supervises the full multi-turn stream (user turns
+        # included): both compatibility paths must be opted into.
         train_config = TrainingConfig(
             allow_sequence_fallback=True,
+            allow_unmasked_labels=True,
             num_episodes=2,  # Small for testing
             num_generations=2,
             learning_rate=1e-5,

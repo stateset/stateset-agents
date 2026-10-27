@@ -183,7 +183,10 @@ committed update before cancellation. Stops may wait for loading or an active
 update; they never kill PIDs or cancel queue jobs. Runs show pending requests;
 agent status includes a recovery checkpoint when recorded. Changed package
 implementations reject new requests rather than promising control of older code.
-Remote stop needs provider-specific cleanup controls. Quitting the TUI
+RunPod runs can also be stopped (POSIX hosts): `k` saves the same plan-bound
+receipt and signals the run's worker only after verifying its process identity;
+the worker terminates its pod and records the run as cancelled. Other remote
+providers still need provider-specific cleanup controls. Quitting the TUI
 continues to leave launched workers running.
 
 ## Run a paired evaluation
@@ -789,8 +792,9 @@ process has exited; recovery checks process ownership separately. An unfinished
 run with an unconfirmed supervisor or direct worker is shown as interrupted;
 inspect logs and any retained provider handle before starting another paid job.
 Reconnection is monitoring, not recovery of a crashed provider executor. This
-studio supports reviewed cooperative local stop requests; remote cancellation
-needs provider-specific cleanup, and quitting never cancels work.
+studio supports reviewed cooperative local stop requests and signalled RunPod
+stops; other remote cancellation needs provider-specific cleanup, and quitting
+never cancels work.
 
 An interrupted supervisor leaves detached execution unconfirmed: its worker may
 still be queued or running. Such runs remain visible in the Active filter, and

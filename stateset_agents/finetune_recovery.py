@@ -26,7 +26,7 @@ from stateset_agents.finetune_workspace import (
     FinetuneConfig,
     RunPlan,
     create_run,
-    process_token,
+    owner_evidence,
     read_json,
     read_run_plan,
     read_training_data,
@@ -34,7 +34,6 @@ from stateset_agents.finetune_workspace import (
     verified_run_settings,
     write_json,
 )
-from stateset_agents.utils.process_probe import probe_process
 
 MAX_CHECKPOINT_FILES = 4096
 MAX_CHECKPOINT_BYTES = 1024**4
@@ -55,13 +54,23 @@ _RESUME_FIELDS = {
 }
 
 
-def _single_process() -> None:
+def recovery_unavailable_reason() -> str | None:
+    """Why studio checkpoint recovery cannot be offered here, or ``None``.
+
+    Training itself does not need recovery: a worker that cannot publish
+    recovery receipts records this reason and keeps training.
+    """
     if not sys.platform.startswith("linux"):
-        raise ValueError("Studio recovery currently verifies worker ownership on Linux")
+        return "Studio recovery currently verifies worker ownership on Linux"
     if os.environ.get("WORLD_SIZE", "1") != "1":
-        raise ValueError(
-            "Studio checkpoint recovery requires a single training process"
-        )
+        return "Studio checkpoint recovery requires a single training process"
+    return None
+
+
+def _single_process() -> None:
+    reason = recovery_unavailable_reason()
+    if reason is not None:
+        raise ValueError(reason)
 
 
 def _directory(path: Path) -> None:
@@ -266,19 +275,13 @@ def _parent(
             pid, token = owner.get("pid"), owner.get("process_token")
             if type(pid) is not int or pid < 1 or not isinstance(token, str):
                 raise ValueError("Cannot verify the parent worker's lifecycle")
-            current = process_token(pid)
-            if current is None:
-                try:
-                    probe_process(pid)
-                except ProcessLookupError:
-                    continue
-                except PermissionError:
-                    raise ValueError(
-                        "Cannot verify the parent worker's lifecycle"
-                    ) from None
-                raise ValueError("Cannot verify whether the parent worker has exited")
-            if current == token:
+            evidence = owner_evidence(run / filename)
+            if evidence == "alive":
                 raise ValueError("Wait for the parent worker and supervisor to exit")
+            if evidence == "running":
+                raise ValueError("Cannot verify whether the parent worker has exited")
+            if evidence not in {"gone", "reused"}:
+                raise ValueError("Cannot verify the parent worker's lifecycle")
     if not owner_present and (
         state.get("status") == "interrupted"
         or state.get("execution_unconfirmed") is True

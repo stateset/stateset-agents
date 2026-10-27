@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 
+from stateset_agents._deprecation import warn_deprecated
 from stateset_agents.core.frontier_models import FRONTIER_MODELS
 
 
@@ -1041,7 +1042,7 @@ PRESETS: dict[str, ModelPreset] = {
             "native image/video inference uses AutoProcessor or vLLM/SGLang."
         ),
     ),
-    "qwen3": ModelPreset(
+    "qwen2.5-7b": ModelPreset(
         model_id="Qwen/Qwen2.5-7B",
         tokenizer_id="Qwen/Qwen2.5-7B",
         lora_target_modules=(
@@ -1066,7 +1067,9 @@ PRESETS: dict[str, ModelPreset] = {
             "This preset captures its 7B-14B branch (representative "
             "'larger model with LoRA' example from the script's docstring, "
             "Qwen/Qwen2.5-7B). The 0.8B and 27B branches are captured "
-            "separately as the qwen3.5-0.8b and qwen3.5-27b presets."
+            "separately as the qwen3.5-0.8b and qwen3.5-27b presets. Named "
+            "'qwen3' until v0.70.0 although it loads Qwen2.5; that name is a "
+            "deprecated alias."
         ),
     ),
     "qwen3.5-0.8b": ModelPreset(
@@ -1126,7 +1129,7 @@ PRESETS: dict[str, ModelPreset] = {
             "per-model identity)."
         ),
     ),
-    "gemma3": ModelPreset(
+    "gemma2-9b": ModelPreset(
         model_id="google/gemma-2-9b-it",
         tokenizer_id="google/gemma-2-9b-it",
         lora_target_modules=(
@@ -1148,7 +1151,9 @@ PRESETS: dict[str, ModelPreset] = {
         notes=(
             "examples/finetune_gemma3_gspo.py branches on size "
             "(2b/9b/27b). This preset captures the 9b branch "
-            "(google/gemma-2-9b-it), the script's middle example."
+            "(google/gemma-2-9b-it), the script's middle example. Named "
+            "'gemma3' until v0.70.0 although it loads Gemma 2; that name is a "
+            "deprecated alias."
         ),
     ),
     "gemma4-e2b": ModelPreset(
@@ -1330,17 +1335,53 @@ for _frontier in FRONTIER_MODELS:
 del _frontier
 
 
+#: Old preset names whose model belonged to another generation than the name
+#: claimed ("qwen3" loaded Qwen2.5-7B, "gemma3" loaded Gemma 2 9B). Each still
+#: resolves, with a DeprecationWarning, until the removal release. Preset names
+#: are not part of the v1 public contract, so they follow the provisional
+#: schedule (removed after the next minor release).
+DEPRECATED_PRESET_ALIASES: dict[str, str] = {
+    "qwen3": "qwen2.5-7b",
+    "gemma3": "gemma2-9b",
+}
+
+
+def _resolve(name: str, stacklevel: int) -> str:
+    canonical = DEPRECATED_PRESET_ALIASES.get(name)
+    if canonical is None:
+        return name
+    warn_deprecated(
+        f"Model preset {name!r} (which loads {PRESETS[canonical].model_id})",
+        removal="0.71.0",
+        replacement=f"preset {canonical!r}",
+        stacklevel=stacklevel + 1,
+    )
+    return canonical
+
+
+def resolve_preset_name(name: str) -> str:
+    """Return the canonical preset name, warning when ``name`` is deprecated."""
+
+    return _resolve(name, stacklevel=2)
+
+
 def list_preset_names() -> list[str]:
-    """Return preset names in a stable, deterministic order."""
+    """Return canonical preset names in a stable, deterministic order.
+
+    Deprecated aliases (:data:`DEPRECATED_PRESET_ALIASES`) are not listed.
+    """
 
     return list(PRESETS.keys())
 
 
 def get_preset(name: str) -> ModelPreset:
-    """Look up a preset by name, raising a clear error for typos."""
+    """Look up a preset by name, raising a clear error for typos.
+
+    A deprecated alias resolves to its replacement with a DeprecationWarning.
+    """
 
     try:
-        return PRESETS[name]
+        return PRESETS[_resolve(name, stacklevel=2)]
     except KeyError as exc:
         available = ", ".join(sorted(PRESETS))
         raise KeyError(
@@ -1348,4 +1389,27 @@ def get_preset(name: str) -> ModelPreset:
         ) from exc
 
 
-__all__ = ["ModelPreset", "PRESETS", "get_preset", "list_preset_names"]
+def trust_remote_code_for(model_name: str) -> bool:
+    """Whether loading ``model_name`` may run repository-shipped model code.
+
+    Only curated presets that require it (``ModelPreset.trust_remote_code``)
+    opt in; any other model id loads with the native ``transformers``
+    implementation. Every layer that loads a checkpoint by model id (SFT, the
+    remote chat REPL) asks here, so the policy has one home below them.
+    """
+
+    return next(
+        (p.trust_remote_code for p in PRESETS.values() if p.model_id == model_name),
+        False,
+    )
+
+
+__all__ = [
+    "DEPRECATED_PRESET_ALIASES",
+    "ModelPreset",
+    "PRESETS",
+    "get_preset",
+    "list_preset_names",
+    "resolve_preset_name",
+    "trust_remote_code_for",
+]

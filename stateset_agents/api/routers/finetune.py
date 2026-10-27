@@ -26,11 +26,13 @@ from stateset_agents.finetune_quality import (
 from stateset_agents.finetune_recovery import inspect_checkpoints
 from stateset_agents.finetune_workspace import (
     BACKENDS,
+    REMOTE_STOP_PROVIDERS,
     check_config_values,
     finetune_schema,
     list_runs,
     read_run_plan,
     redact_finetune_secrets,
+    remote_stop_supported,
     request_stop,
     run_status,
     run_terminal_status,
@@ -191,7 +193,10 @@ async def capabilities() -> dict[str, Any]:
                 "candidates": "paired held-out reports; exactly one matches this run's artifact",
             },
             "launch_supported": False,
-            "remote_stop_supported": False,
+            "remote_stop_supported": remote_stop_supported("runpod"),
+            "remote_stop_providers": (
+                sorted(REMOTE_STOP_PROVIDERS) if remote_stop_supported("runpod") else []
+            ),
             "checkpoint_resume_supported": True,
             "checkpoint_recovery": finetune_schema()["checkpoint_recovery"],
             "http_recovery_prepare_supported": False,
@@ -202,7 +207,7 @@ async def capabilities() -> dict[str, Any]:
                 "workflow": "local_inspection",
                 "quality_get": "reads_artifact_and_evidence",
                 "quality_post": "retains_private_evidence",
-                "stop": "cooperative_local_stop",
+                "stop": "cooperative_local_stop_or_signalled_runpod_worker",
                 "checkpoints": "reads_local_recovery_artifacts",
             },
         },

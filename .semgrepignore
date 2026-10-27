@@ -9,6 +9,10 @@ examples/
 # Ignore documentation
 docs/
 
+# Ignore retained run evidence: frozen, hash-recorded one-off scripts and
+# outputs that are never packaged or executed by the product.
+benchmark_results/
+
 # Ignore build artifacts
 __pycache__/
 *.pyc

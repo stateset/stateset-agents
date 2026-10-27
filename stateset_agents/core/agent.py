@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any, cast
 
 from stateset_agents.core.generation_mode import inference_mode
 
+from .._deprecation import warn_deprecated
 from .agent_backends import ModelBackend, StubModel, create_stub_backend
 from .agent_config import LEGACY_STOP_SEQUENCES, AgentConfig, ConfigValidationError
 from .muse_protocol import is_muse_spark, muse_spark_final_response
@@ -26,12 +27,16 @@ if TYPE_CHECKING:
     from ..experimental.long_term_planning import PlanningManager
 
 try:
-    import torch
+    import torch as _torch
+
+    torch: Any = _torch
 except ImportError:  # pragma: no cover - allow stub mode without PyTorch
     torch = None
 
 try:
-    from jinja2.exceptions import TemplateError as _Jinja2TemplateError
+    from jinja2.exceptions import TemplateError as _ImportedTemplateError
+
+    _Jinja2TemplateError: type[Exception] = _ImportedTemplateError
 except ImportError:  # pragma: no cover
     _Jinja2TemplateError = ValueError
 # Lazy imports for transformers to avoid torch/torchvision compatibility issues
@@ -71,24 +76,22 @@ def _adopt_shim_mocks() -> bool:
     """Adopt test-injected mocks from the ``stateset_agents.core.agent`` shim.
 
     Returns True when both ``AutoModelForCausalLM`` and ``AutoTokenizer`` were
-    replaced with shim values. Any exception typical of missing attributes is
-    swallowed since this path is a best-effort hook for test injection.
+    replaced with shim values; a best-effort hook for test injection.
     """
     global AutoModelForCausalLM, AutoTokenizer
-    try:
-        import sys as _sys
+    import sys as _sys
 
-        shim = _sys.modules.get("stateset_agents.core.agent")
-        if shim is None:
-            return False
-        shim_model = getattr(shim, "AutoModelForCausalLM", None)
-        shim_tokenizer = getattr(shim, "AutoTokenizer", None)
-        if shim_model is not None and shim_tokenizer is not None:
-            AutoModelForCausalLM = shim_model
-            AutoTokenizer = shim_tokenizer
-            return True
-    except AGENT_SHIM_EXCEPTIONS:
-        pass
+    # ``sys.modules.get`` and ``getattr`` with a default cannot raise, so no
+    # handler is needed (the old one could only hide a bug).
+    shim = _sys.modules.get("stateset_agents.core.agent")
+    if shim is None:
+        return False
+    shim_model = getattr(shim, "AutoModelForCausalLM", None)
+    shim_tokenizer = getattr(shim, "AutoTokenizer", None)
+    if shim_model is not None and shim_tokenizer is not None:
+        AutoModelForCausalLM = shim_model
+        AutoTokenizer = shim_tokenizer
+        return True
     return False
 
 
@@ -167,20 +170,19 @@ def _load_peft() -> bool:
 
 logger = logging.getLogger(__name__)
 
-AGENT_SHIM_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    AttributeError,
-    KeyError,
-    TypeError,
-)
+#: What a rollout backend's ``sync_weights`` may raise without being a bug --
+#: the same split as ``training.spine.rollouts`` (engine runtime and I/O).
+_ROLLOUT_SYNC_EXCEPTIONS: tuple[type[BaseException], ...] = (RuntimeError, OSError)
+
 TOKENIZER_ATTR_EXCEPTIONS: tuple[type[BaseException], ...] = (
     AttributeError,
     TypeError,
     ValueError,
 )
+#: Building the experimental planner from ``AgentConfig.planning_config``:
+#: bad keys surface as ``ConfigurationError`` (a ``ValueError``).
 PLANNING_EXCEPTIONS: tuple[type[BaseException], ...] = (
-    TypeError,
     ValueError,
-    KeyError,
     RuntimeError,
 )
 CHAT_TEMPLATE_EXCEPTIONS: tuple[type[BaseException], ...] = (
@@ -545,11 +547,9 @@ class Agent:
         Stores history as a list of dict messages `{role, content}` for
         compatibility with tests and simple consumers.
         """
-        msg: Any
-        try:
+        msg: Any = turn
+        if hasattr(turn, "role") and hasattr(turn, "content"):
             msg = {"role": turn.role, "content": turn.content}
-        except (AttributeError, TypeError):
-            msg = turn
         self.conversation_history.append(msg)
 
     def get_history(self) -> list[ConversationTurn]:
@@ -575,7 +575,8 @@ class Agent:
             if isinstance(value, (int, float, str)):
                 try:
                     return int(value)
-                except (TypeError, ValueError):
+                # int("x") / int(nan) raise ValueError, int(inf) OverflowError.
+                except (ValueError, OverflowError):
                     return None
             return None
 
@@ -638,6 +639,39 @@ def _validated_backend_result(result: Any, prompt: str) -> dict[str, Any]:
     }
 
 
+#: ``AgentConfig(enable_planning=True)`` without an injected manager makes
+#: core build the experimental planner itself; that implicit path is the one
+#: core -> experimental edge left (tests/unit/test_layering.py allowlist).
+_IMPLICIT_PLANNING_REMOVAL = "0.72.0"
+
+
+def _implicit_planning_manager(config: Any) -> Any:
+    """Deprecated bridge: build the experimental planner from ``config``.
+
+    Pass ``planning_manager=`` instead (see
+    ``stateset_agents.experimental.long_term_planning.planning_manager_from_config``);
+    this bridge will be removed in v0.72.0. A bad ``planning_config`` logs a
+    warning and leaves planning off, as before.
+    """
+    warn_deprecated(
+        "AgentConfig(enable_planning=True) without planning_manager=",
+        removal=_IMPLICIT_PLANNING_REMOVAL,
+        replacement=(
+            "MultiTurnAgent(config, planning_manager=stateset_agents.experimental."
+            "long_term_planning.planning_manager_from_config(config.planning_config))"
+        ),
+        stacklevel=3,
+    )
+    # Layering allowlist entry (dated): see the warning above.
+    from ..experimental.long_term_planning import planning_manager_from_config
+
+    try:
+        return planning_manager_from_config(getattr(config, "planning_config", None))
+    except PLANNING_EXCEPTIONS as exc:
+        logger.warning("Failed to init PlanningManager: %s", exc)
+        return None
+
+
 class MultiTurnAgent(Agent):
     """
     Agent designed for multi-turn conversations
@@ -672,20 +706,7 @@ class MultiTurnAgent(Agent):
         self._rollout_sync_warned: bool = False
         self.turn_count = 0
         if planning_manager is None and getattr(config, "enable_planning", False):
-            planning_kwargs = getattr(config, "planning_config", None) or {}
-            try:
-                from ..experimental.long_term_planning import (
-                    PlanningConfig,
-                    PlanningManager,
-                )
-
-                if isinstance(planning_kwargs, dict):
-                    planning_kwargs = dict(planning_kwargs)
-                    planning_kwargs.pop("enabled", None)
-                planning_cfg = PlanningConfig(enabled=True, **planning_kwargs)
-                planning_manager = PlanningManager(planning_cfg)
-            except PLANNING_EXCEPTIONS as exc:
-                logger.warning("Failed to init PlanningManager: %s", exc)
+            planning_manager = _implicit_planning_manager(config)
         self.planning_manager = planning_manager
 
         # Arbitrary caller-attached metadata (e.g. the API layer records the
@@ -818,7 +839,11 @@ class MultiTurnAgent(Agent):
             return False
         try:
             sync(self.model)
-        except Exception as e:  # noqa: BLE001 - engine failures must not kill training
+        except _ROLLOUT_SYNC_EXCEPTIONS as e:
+            # An engine runtime/I-O failure leaves the backend stale and
+            # training goes on; anything else (TypeError, AttributeError, ...)
+            # is a bug in the sync path and propagates instead of turning
+            # into a silently stale backend.
             self._rollout_backend_stale = True
             self._rollout_backend_error = f"{type(e).__name__}: {e}"
             logger.warning(
@@ -1405,6 +1430,10 @@ class MultiTurnAgent(Agent):
                 formatted += f"User: {content}\n"
             elif role == "assistant":
                 formatted += f"Assistant: {content}\n"
+            elif role == "tool":
+                # Tool results are observations the policy must see; the
+                # loss never supervises them (see core/chat_masking.py).
+                formatted += f"Tool: {content}\n"
 
         formatted += "Assistant: "
         return formatted

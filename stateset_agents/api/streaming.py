@@ -92,11 +92,13 @@ class StreamingRequest(BaseModel):
     """Request for streaming chat."""
 
     message: str = Field(..., description="User message")
-    conversation_id: str | None = Field(None, description="Conversation ID")
-    system_prompt: str | None = Field(None, description="System prompt override")
-    temperature: float | None = Field(0.7, ge=0.0, le=2.0)
-    max_tokens: int | None = Field(512, ge=1, le=4096)
-    stream_tokens: bool = Field(True, description="Stream individual tokens")
+    conversation_id: str | None = Field(default=None, description="Conversation ID")
+    system_prompt: str | None = Field(
+        default=None, description="System prompt override"
+    )
+    temperature: float | None = Field(default=0.7, ge=0.0, le=2.0)
+    max_tokens: int | None = Field(default=512, ge=1, le=4096)
+    stream_tokens: bool = Field(default=True, description="Stream individual tokens")
 
     class Config:
         json_schema_extra = {
@@ -121,8 +123,8 @@ class BatchRequest(BaseModel):
     """Batch processing request."""
 
     items: list[BatchItem] = Field(..., min_length=1, max_length=100)
-    parallel: int = Field(4, ge=1, le=10, description="Parallel processing")
-    stream_progress: bool = Field(True, description="Stream progress updates")
+    parallel: int = Field(default=4, ge=1, le=10, description="Parallel processing")
+    stream_progress: bool = Field(default=True, description="Stream progress updates")
 
     class Config:
         json_schema_extra = {

@@ -159,6 +159,7 @@ def _result(manifest: dict[str, Any], **updates: Any) -> dict[str, Any]:
             "baseline_score": 0.51,
             "final_score": 0.58,
             "judge_self_disagreement": 0.03,
+            "judge_parse_failure_rate": 0.0,
             "train_examples": 500,
             "eval_examples": 200,
             "peak_vram_mb": 61234.0,

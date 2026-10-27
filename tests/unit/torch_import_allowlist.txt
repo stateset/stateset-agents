@@ -23,6 +23,7 @@ stateset_agents/training/gepo_trainer.py  # GEPO trainer; torch tensors througho
 stateset_agents/training/gspo_generation.py  # torch generation/log-prob helpers
 stateset_agents/training/gspo_token_trainer.py  # token-level GSPO trainer; torch tensors throughout
 stateset_agents/training/gspo_trainer.py  # GSPO trainer; torch tensors throughout
+stateset_agents/training/preference/reward_model.py  # pairwise reward model (nn.Module subclass); reached only via a lazy import
 stateset_agents/training/trainer_runtime.py  # shared trainer runtime spine (device/dtype/optimizer plumbing)
 stateset_agents/training/trl_grpo_trainer.py  # TRL GRPO wrapper; TRL itself requires torch
 stateset_agents/training/vapo_trainer.py  # VAPO trainer and value head (nn.Module)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from types import SimpleNamespace
 
@@ -43,6 +44,9 @@ def interrupted_run(tmp_path, monkeypatch):
     monkeypatch.setattr(
         workspace, "sys", SimpleNamespace(platform="linux", executable=sys.executable)
     )
+    # Faking Linux for owner checks must not make state locking import POSIX
+    # modules: Windows has no fcntl, so no call-time import may need it.
+    monkeypatch.setitem(sys.modules, "fcntl", None)
     monkeypatch.setattr(workspace, "process_token", lambda _pid: None)
     monkeypatch.setattr(
         workspace.os, "kill", lambda *_: pytest.fail("Stop must not signal processes")
@@ -88,7 +92,8 @@ def test_interrupted_work_can_be_stopped_without_inferring_worker_exit(
     repeated = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
     assert repeated["stop_requested"] is True
     assert (fixture.run / "stop.json").read_bytes() == raw
-    assert (fixture.run / "stop.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (fixture.run / "stop.json").stat().st_mode & 0o077 == 0
     # An already running learner consumes the same receipt at its next boundary.
     with pytest.raises(workspace.FinetuneFailure) as stopped:
         worker._check_stop(fixture.run)
@@ -127,7 +132,9 @@ def test_detached_queued_worker_honors_stop_before_model_or_queue_access(
     assert not (fixture.run / "completion.json").exists()
 
 
-@pytest.mark.parametrize("invalid", ["checksum", "package", "remote"])
+@pytest.mark.parametrize(
+    "invalid", ["checksum", "legacy-package", "unknown-protocol", "remote"]
+)
 def test_interrupted_stop_keeps_reviewed_plan_code_and_local_scope_guards(
     interrupted_run, invalid
 ):
@@ -137,8 +144,13 @@ def test_interrupted_stop_keeps_reviewed_plan_code_and_local_scope_guards(
         digest = "0" * 64
     else:
         plan, _ = workspace.read_run_plan(fixture.run)
-        if invalid == "package":
+        if invalid == "legacy-package":
+            # Before plans recorded a stop protocol, only identical code could
+            # vouch that the worker reads this receipt.
+            del plan["stop_protocol"]
             plan["package_implementation_sha256"] = "0" * 64
+        elif invalid == "unknown-protocol":
+            plan["stop_protocol"] = workspace.STOP_PROTOCOL_VERSION + 1
         else:
             plan["config"]["provider"] = "river"
         workspace.write_json(fixture.run / "plan.json", plan)
@@ -178,7 +190,9 @@ def test_unknown_execution_never_claims_terminal_completion(status):
     assert workspace.run_terminal_status({"status": status}) is None
 
 
-def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(interrupted_run):
+def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(
+    interrupted_run, settle_preview
+):
     fixture = interrupted_run
     studio = Studio(fixture.run.parent)
     studio.tab, studio.run_filter = "runs", "active"
@@ -192,6 +206,7 @@ def test_tui_keeps_interrupted_work_visible_and_records_explicit_stop(interrupte
     assert not (fixture.run / "stop.json").exists()
     studio.handle("k")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert workspace.stop_requested(fixture.run)
     assert "worker exit remains unconfirmed" in studio.message
     assert "already terminal" not in studio.message
@@ -269,3 +284,101 @@ async def test_http_stop_and_metadata_keep_supervisor_loss_explicit(
         assert rows[0]["terminal"] is None
         assert rows[0]["execution_unconfirmed"] is True
         assert rows[0]["stop_requested"] is True
+
+
+@pytest.fixture
+def submitted_run(interrupted_run):
+    """A launch receipt exists, but no supervisor or worker has claimed it yet."""
+    fixture = interrupted_run
+    (fixture.run / "supervisor.json").unlink()
+    workspace.write_json(fixture.run / "state.json", {"status": "prepared"})
+    return fixture
+
+
+def _age_launch(run, seconds):
+    submitted = os.stat(run / "launch.lock").st_mtime - seconds
+    os.utime(run / "launch.lock", (submitted, submitted))
+
+
+def test_unclaimed_launch_is_interrupted_after_its_grace_and_stop_cancels_it(
+    submitted_run, monkeypatch
+):
+    """A supervisor lost before admission must not leave a run "prepared" forever."""
+    fixture = submitted_run
+    # Within the startup grace window the launch is still in flight.
+    assert workspace.run_status(fixture.run)["status"] == "prepared"
+    _age_launch(fixture.run, workspace.LAUNCH_CLAIM_GRACE_SECONDS + 1)
+    status = workspace.run_status(fixture.run)
+    assert status["status"] == "interrupted"
+    assert status["execution_unconfirmed"] is True
+    assert workspace.read_json(fixture.run / "state.json")["status"] == "prepared"
+
+    # Nobody claimed admission, and any later claimant checks the stop receipt
+    # before doing work, so the stop is definitive.
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
+    assert result["status"] == "cancelled" and result["terminal"] is True
+    monkeypatch.setattr(worker.os, "umask", lambda _value: 0)
+    assert worker.supervise(fixture.run) == 1
+    assert not (fixture.run / "admission.json").exists()
+    assert workspace.run_status(fixture.run)["status"] == "cancelled"
+
+
+def test_stop_never_cancels_a_launch_that_a_process_already_claimed(submitted_run):
+    fixture = submitted_run
+    workspace.write_json(
+        fixture.run / "admission.json",
+        {"pid": 100001, "process_token": "admitting-supervisor"},
+    )
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=fixture.digest)
+    assert result["status"] == "interrupted" and result["terminal"] is None
+    assert workspace.read_json(fixture.run / "state.json")["status"] == "prepared"
+
+
+@pytest.mark.parametrize("alive", [True, False])
+def test_admitting_process_owns_a_prepared_launch(submitted_run, monkeypatch, alive):
+    fixture = submitted_run
+    workspace.write_json(
+        fixture.run / "admission.json",
+        {"pid": 100001, "process_token": "admitting-supervisor"},
+    )
+    monkeypatch.setattr(
+        workspace,
+        "process_token",
+        lambda _pid: "admitting-supervisor" if alive else None,
+    )
+    status = workspace.run_status(fixture.run)
+    assert status["status"] == ("prepared" if alive else "interrupted")
+    assert status["execution_unconfirmed"] is not alive
+
+
+def test_supervisor_records_failure_when_it_cannot_claim_supervision(
+    submitted_run, monkeypatch
+):
+    fixture = submitted_run
+    monkeypatch.setattr(worker.os, "umask", lambda _value: 0)
+    monkeypatch.setattr(worker, "_claim_owner", lambda *_: False)
+    monkeypatch.setattr(
+        worker, "_supervise", lambda *_a, **_k: pytest.fail("No work may start")
+    )
+    assert worker.supervise(fixture.run) == 1
+    state = workspace.read_json(fixture.run / "state.json")
+    assert state["status"] == "failed"
+    assert workspace.read_json(fixture.run / "failure.json")["stage"] == "supervisor"
+
+
+def test_stop_survives_package_source_changes_after_launch(interrupted_run):
+    """The running worker keeps its own code and honors v1 stop receipts."""
+    fixture = interrupted_run
+    plan, _ = workspace.read_run_plan(fixture.run)
+    assert plan["stop_protocol"] == workspace.STOP_PROTOCOL_VERSION
+    plan["package_implementation_sha256"] = "0" * 64  # any later source edit
+    workspace.write_json(fixture.run / "plan.json", plan)
+    _, digest = workspace.read_run_plan(fixture.run)
+    result = workspace.request_stop(fixture.run, expected_plan_sha256=digest)
+    assert result["stop_requested"] is True
+    assert workspace.read_json(fixture.run / "stop.json") == {
+        "schema_version": 1,
+        "plan_sha256": digest,
+    }
+    with pytest.raises(workspace.FinetuneFailure):
+        worker._check_stop(fixture.run)

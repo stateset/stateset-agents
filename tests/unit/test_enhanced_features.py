@@ -230,8 +230,9 @@ class TestTypeSystem:
         assert not validator.validate_type([1, 2, "3"], list[int])
 
     def test_config_validator(self):
-        """Test configuration validation"""
-        validator = ConfigValidator()
+        """Test configuration validation (deprecated until v0.72.0)"""
+        with pytest.warns(DeprecationWarning, match="ConfigValidator"):
+            validator = ConfigValidator()
 
         # Test valid model config
         valid_config = {
@@ -457,13 +458,14 @@ class TestIntegration:
     def test_comprehensive_framework_integration(self):
         """Test overall framework integration"""
 
-        # Test that all new components can be imported together
-        from stateset_agents import (
-            ErrorHandler,
+        # The root re-exports are deprecated (removed in v0.72.0); the
+        # provisional modules keep serving the components.
+        from stateset_agents.core.error_handling import ErrorHandler
+        from stateset_agents.core.performance_optimizer import (
             OptimizationLevel,
             PerformanceOptimizer,
-            TypeValidator,
         )
+        from stateset_agents.core.type_system import TypeValidator
 
         # Test basic initialization
         optimizer = PerformanceOptimizer(OptimizationLevel.BALANCED)

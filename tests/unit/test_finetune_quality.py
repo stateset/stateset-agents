@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import sys
 import threading
 import time
 from dataclasses import asdict
@@ -109,11 +110,14 @@ def write_evidence(tmp_path, value):
 
 
 def wait_for(studio, attribute):
+    from operator import attrgetter
+
+    busy = attrgetter(attribute)
     until = time.monotonic() + 10
-    while getattr(studio, attribute) and time.monotonic() < until:
+    while busy(studio) and time.monotonic() < until:
         studio.refresh()
         time.sleep(0.005)
-    assert not getattr(studio, attribute)
+    assert not busy(studio)
 
 
 @pytest.mark.parametrize("seeds", [1, 6])
@@ -132,7 +136,8 @@ def test_quality_recomputes_paired_evidence_and_keeps_stronger_gate_separate(
     assert summary["mean_success_gain"] == 1
     assert inspect_quality(run) == summary
     assert "PRIVATE-ID" not in json.dumps(summary)
-    assert (run / "quality.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+        assert (run / "quality.json").stat().st_mode & 0o077 == 0
     assert all((run / name).read_bytes() == raw for name, raw in before.items())
 
 
@@ -234,6 +239,8 @@ def test_quality_sources_are_bounded_regular_files(
     if kind == "symlink":
         path.symlink_to(run / "dataset")
     elif kind == "fifo":
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFO unavailable")
         os.mkfifo(path)
     elif kind == "directory":
         path.mkdir()
@@ -423,6 +430,8 @@ def test_stop_receipts_are_bounded_and_bound_to_plan(completed, bad):
     if bad == "symlink":
         path.symlink_to(run / "dataset")
     elif bad == "fifo":
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFO unavailable")
         os.mkfifo(path)
     else:
         ws.write_json(
@@ -468,7 +477,7 @@ def test_queued_stop_preserves_child_cancellation_through_supervisor(
 
 @pytest.mark.parametrize("size", [(72, 22), (74, 44), (110, 32)])
 def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
-    completed, tmp_path, size
+    completed, tmp_path, size, settle_preview
 ):
     run, config = completed
     source = write_evidence(tmp_path, evidence_for(run, config, regression=True))
@@ -476,14 +485,14 @@ def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
     before = dict(studio.values)
     studio.handle("TAB")
     studio.handle("e")
-    wait_for(studio, "quality_busy")
+    wait_for(studio, "quality_panel.busy")
     assert "No verifiable" in "\n".join(studio.lines(*size))
     studio.handle("f")
     for character in str(source):
         studio.handle(character)
     studio.handle("ENTER")
-    wait_for(studio, "quality_busy")
-    assert studio.quality_report["regressions_total"] == 32
+    wait_for(studio, "quality_panel.busy")
+    assert studio.quality_panel.report["regressions_total"] == 32
     assert "PRIVATE-ID" not in "\n".join(studio.lines(*size))
     studio.handle("ESC")
     ws.write_json(run / "state.json", {"status": "prepared"})
@@ -494,6 +503,7 @@ def test_tui_quality_import_and_local_stop_are_explicit_and_preserve_draft(
     assert not (run / "stop.json").exists()
     studio.handle("k")
     studio.handle("ENTER")
+    settle_preview(studio)
     assert ws.stop_requested(run) and studio.values == before
 
 
@@ -536,17 +546,17 @@ def test_guided_setup_runs_in_background_and_requires_explicit_launch_review(
     studio = Studio(run.parent, config)
     before = dict(studio.values)
     studio.handle("w")
-    wait_for(studio, "workflow_busy")
-    assert studio.workflow_report["steps"][1]["status"] == "ready"
+    wait_for(studio, "workflow_panel.busy")
+    assert studio.workflow_panel.report["steps"][1]["status"] == "ready"
     assert "GUIDED SETUP" in "\n".join(studio.lines(72, 22))
-    studio.workflow_index = 3
+    studio.workflow_panel.index = 3
     studio.handle("ENTER")
     settle_preview(studio)
     assert studio.overlay == "review" and not (run / "launch.lock").exists()
     studio.handle("ESC")
     assert studio.values == before
     studio.handle("w")
-    wait_for(studio, "workflow_busy")
+    wait_for(studio, "workflow_panel.busy")
     studio.values["epochs"] += 1
     studio.handle("ENTER")
     assert studio.overlay == "workflow" and "current setup snapshot" in studio.message
@@ -571,14 +581,14 @@ def test_quality_hashing_does_not_block_escaping_or_change_target_run(
     try:
         assert entered.wait(2)
         studio.handle("ESC")
-        assert studio.overlay is None and studio.quality_busy
+        assert studio.overlay is None and studio.quality_panel.busy
         studio.run_query = "no matches"
         studio.refresh()
     finally:
         release.set()
-    wait_for(studio, "quality_busy")
-    assert "PRIVATE" not in json.dumps(studio.quality_report)
-    assert studio.quality_run == run
+    wait_for(studio, "quality_panel.busy")
+    assert "PRIVATE" not in json.dumps(studio.quality_panel.report)
+    assert studio.quality_panel.run == run
 
 
 def test_workflow_agent_command_accepts_incomplete_drafts_without_preparing(tmp_path):
@@ -613,6 +623,10 @@ def test_sft_stop_requests_checkpoint_save_at_step_boundary(completed, monkeypat
     assert worker._train_sft(run, config) == run / "artifacts"
 
 
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"),
+    reason="studio checkpoint recovery verifies worker ownership on Linux only",
+)
 @pytest.mark.asyncio
 async def test_native_rl_stop_saves_checkpoint_at_committed_update(
     completed, tmp_path, monkeypatch

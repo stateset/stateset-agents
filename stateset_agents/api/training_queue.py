@@ -20,20 +20,35 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import (
+    ErrorCode,
+    ResourceError,
+    TrainingError,
+    ValidationError,
+)
+from stateset_agents.utils.clock import as_utc, utc_now
+
 TERMINAL = {"completed", "failed", "cancelled"}
 MAX_PENDING_JOBS = 1000
 
 
-class TrainingLeaseLostError(RuntimeError):
+class TrainingLeaseLostError(TrainingError, RuntimeError):
     """The worker no longer owns a live lease and must stop publishing results."""
 
+    message_only_str = True
 
-class TrainingIdempotencyConflictError(ValueError):
+
+class TrainingIdempotencyConflictError(ValidationError, ValueError):
     """An idempotency key already identifies a different accepted request."""
 
+    message_only_str = True
 
-class TrainingQueueFullError(ValueError):
+
+class TrainingQueueFullError(ResourceError, ValueError):
     """The durable queue has reached its global pending-job capacity."""
+
+    message_only_str = True
+    default_code = ErrorCode.RES_EXHAUSTED
 
 
 class _PostgresRow(dict):
@@ -211,7 +226,7 @@ class TrainingQueue:
         snapshot: dict[str, Any] = json.loads(value)
         for name in ("created_at", "started_at", "completed_at"):
             if snapshot.get(name) is not None:
-                snapshot[name] = datetime.fromisoformat(snapshot[name])
+                snapshot[name] = as_utc(datetime.fromisoformat(snapshot[name]))
         return snapshot
 
     def submit(
@@ -236,7 +251,7 @@ class TrainingQueue:
             else "idem_"
             + hashlib.sha256(self._encode([owner, key]).encode()).hexdigest()
         )
-        now = datetime.utcnow()
+        now = utc_now()
         snapshot = {
             "status": "queued",
             "user_id": owner,
@@ -404,7 +419,7 @@ class TrainingQueue:
                 snapshot = self._decode(row["snapshot"])
                 snapshot.update(
                     status="failed",
-                    completed_at=datetime.utcnow(),
+                    completed_at=utc_now(),
                     error="Worker lease expired; resume explicitly from a verified checkpoint",
                 )
                 connection.execute(
@@ -423,7 +438,7 @@ class TrainingQueue:
                 return None
             token = uuid.uuid4().hex
             snapshot = self._decode(row["snapshot"])
-            snapshot.update(status="running", started_at=datetime.utcnow())
+            snapshot.update(status="running", started_at=utc_now())
             connection.execute(
                 "UPDATE stateset_training_jobs SET status='running',snapshot=?,lease_token=?,lease_until=? WHERE id=?",
                 (self._encode(snapshot), token, now + lease_seconds, row["id"]),
@@ -513,7 +528,7 @@ class TrainingQueue:
                 "cancelled" if row["status"] == "queued" else "cancelling"
             )
             if snapshot["status"] == "cancelled":
-                snapshot["completed_at"] = datetime.utcnow()
+                snapshot["completed_at"] = utc_now()
             connection.execute(
                 "UPDATE stateset_training_jobs SET cancel=1,status=?,snapshot=? WHERE id=?",
                 (snapshot["status"], self._encode(snapshot), job_id),

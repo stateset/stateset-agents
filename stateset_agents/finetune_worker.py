@@ -9,25 +9,26 @@ import json
 import logging
 import os
 import secrets
-import stat
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import Callable, Collection
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.finetune_recovery import recovery_unavailable_reason
 from stateset_agents.finetune_workspace import (
     FAILURE_GUIDANCE,
     FinetuneConfig,
     FinetuneFailure,
+    detached_process_options,
     failure_info,
     process_token,
     queue_executable,
     read_json,
     read_scenarios,
     stop_requested,
+    transition_run,
     verified_run_settings,
     write_json,
 )
@@ -37,80 +38,21 @@ def _settings(run: Path) -> tuple[dict[str, Any], FinetuneConfig]:
     return verified_run_settings(run)
 
 
-_STATE_LOCK_TIMEOUT = 1.0
+def _state(
+    run: Path,
+    *,
+    allowed_from: Collection[str] | None = None,
+    before_write: Callable[[dict[str, Any]], None] | None = None,
+    **changes: Any,
+) -> bool:
+    """Merge progress without promoting a failed/cancelled run or demoting success.
 
-
-def _state_lock_operation(descriptor: int, *, release: bool = False) -> None:
-    if sys.platform == "win32":
-        import msvcrt
-
-        os.lseek(descriptor, 0, os.SEEK_SET)
-        msvcrt.locking(descriptor, msvcrt.LK_UNLCK if release else msvcrt.LK_NBLCK, 1)
-    else:
-        import fcntl
-
-        fcntl.flock(
-            descriptor, fcntl.LOCK_UN if release else fcntl.LOCK_EX | fcntl.LOCK_NB
-        )
-
-
-@contextmanager
-def _state_lock(run: Path) -> Iterator[None]:
-    """Serialize bounded state transitions through a stable private descriptor."""
-    path = run / ".state.lock"
-    if path.is_symlink():
-        raise ValueError("Fine-tuning state lock is unavailable")
-    descriptor = os.open(
-        path,
-        os.O_RDWR
-        | os.O_CREAT
-        | getattr(os, "O_NOFOLLOW", 0)
-        | getattr(os, "O_NONBLOCK", 0),
-        0o600,
+    A success the worker committed (``completion.json`` whose artifact still
+    verifies) is authoritative: a later failure cannot replace it.
+    """
+    return transition_run(
+        run, allowed_from=allowed_from, before_write=before_write, **changes
     )
-    try:
-        info = os.fstat(descriptor)
-        if not stat.S_ISREG(info.st_mode) or (
-            os.name != "nt" and stat.S_IMODE(info.st_mode) & 0o077
-        ):
-            raise ValueError("Fine-tuning state lock is unavailable")
-        if os.name == "nt" and info.st_size == 0:
-            os.write(descriptor, b"\0")
-        deadline = time.monotonic() + _STATE_LOCK_TIMEOUT
-        while True:
-            try:
-                _state_lock_operation(descriptor)
-                break
-            except OSError as error:
-                if error.errno not in {errno.EACCES, errno.EAGAIN, errno.EWOULDBLOCK}:
-                    raise
-                if time.monotonic() >= deadline:
-                    raise ValueError("Fine-tuning state is busy") from None
-                time.sleep(0.01)
-        try:
-            yield
-        finally:
-            _state_lock_operation(descriptor, release=True)
-    finally:
-        os.close(descriptor)
-
-
-def _state(run: Path, **changes: Any) -> bool:
-    """Merge progress without promoting an already failed or cancelled run."""
-    with _state_lock(run):
-        try:
-            state = read_json(run / "state.json")
-        except (OSError, ValueError):
-            state = {"previous_state_unreadable": True}
-        status = changes.get("status")
-        if (
-            state.get("status") in {"failed", "cancelled"}
-            and status is not None
-            and status not in {"failed", "cancelled"}
-        ):
-            return False
-        write_json(run / "state.json", {**state, **changes, "updated_at": time.time()})
-        return True
 
 
 def _record_failure(
@@ -145,7 +87,10 @@ def _record_failure(
         code = "out_of_memory"
     else:
         code = "review_invalid" if stage == "review" else "unknown"
-    try:
+
+    def receipt(_state: dict[str, Any]) -> None:
+        # Written under the state lock, and only for a legal transition, so a
+        # refused failure never leaves a diagnosis behind.
         if not (previous and previous["recorded"]):
             write_json(
                 run / "failure.json",
@@ -156,14 +101,30 @@ def _record_failure(
                     "recorded_at": time.time(),
                 },
             )
-        changes: dict[str, Any] = {
-            "status": "cancelled" if code == "cancelled" else "failed",
-            "finished_at": time.time(),
-            "error": FAILURE_GUIDANCE[code][0] + "; open run details for next steps.",
-        }
+
+    changes: dict[str, Any] = {
+        "status": "cancelled" if code == "cancelled" else "failed",
+        "finished_at": time.time(),
+        "error": FAILURE_GUIDANCE[code][0] + "; open run details for next steps.",
+    }
+    if exit_code is not None:
+        changes["exit_code"] = exit_code
+    try:
+        if _state(run, before_write=receipt, **changes):
+            return
+        # Refused: either an earlier outcome stands, or the worker committed a
+        # verified success. A teardown crash or queue timeout after that commit
+        # is kept as a non-fatal observation instead of a demotion.
+        teardown: dict[str, Any] = {"teardown_error": code}
         if exit_code is not None:
-            changes["exit_code"] = exit_code
-        _state(run, **changes)
+            teardown["teardown_exit_code"] = exit_code
+        if _state(run, allowed_from={"succeeded"}, **teardown):
+            logging.error(
+                "Fine-tuning %s failure (%s) after the worker committed success; "
+                "the committed result stands",
+                stage,
+                code,
+            )
     except (OSError, ValueError):
         # Full or inaccessible storage must not replace the original failure
         # with a new exception or a successful exit. Logs remain the fallback.
@@ -307,6 +268,11 @@ def supervise(run: Path) -> int:
     if not _claim_admission(run, "supervised", supervisor_token):
         return 1
     if not _claim_owner(run, "supervisor.json"):
+        # This process holds admission, so no other supervisor or worker can
+        # start this run. Record the outcome rather than leave it "prepared".
+        _record_failure(
+            run, FinetuneFailure("unknown"), stage="supervisor", preserve=True
+        )
         return 1
     stage = "review"
     try:
@@ -318,6 +284,34 @@ def supervise(run: Path) -> int:
         _record_failure(run, error, stage=stage, preserve=True)
         logging.exception("Fine-tuning supervisor could not start")
         return 1
+
+
+def _stop_worker_group(process: subprocess.Popen[bytes], *, force: bool) -> None:
+    """Stop a timed-out worker together with the children it started.
+
+    POSIX signals the worker's own session. Windows has neither process groups
+    for ``os.killpg`` nor SIGKILL, so ``taskkill /T /F`` stops the worker tree
+    immediately, falling back to the direct child if taskkill is unavailable.
+    """
+    if os.name == "nt":
+        # Absolute path: a taskkill.exe earlier on PATH must not be run instead.
+        taskkill = os.path.join(
+            os.environ.get("SystemRoot", r"C:\Windows"), "System32", "taskkill.exe"
+        )
+        try:
+            subprocess.run(
+                [taskkill, "/T", "/F", "/PID", str(process.pid)],
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                check=False,
+            )
+        except OSError:
+            process.kill()
+        return
+    import signal
+
+    os.killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
 
 
 def _supervise(
@@ -378,6 +372,8 @@ def _supervise(
         MKL_NUM_THREADS=str(config.cpu_slots),
         TOKENIZERS_PARALLELISM="false",
         PYTHONUNBUFFERED="1",
+        # Log readers decode run.log as UTF-8; Windows would default to cp1252.
+        PYTHONIOENCODING="utf-8",
     )
     environment[SUPERVISOR_TOKEN_ENV] = supervisor_token
     try:
@@ -388,10 +384,11 @@ def _supervise(
                 stdout=log,
                 stderr=subprocess.STDOUT,
                 env=environment,
-                start_new_session=True,
+                **detached_process_options(),
             )
             # Buildr owns the timeout and its child cleanup. Without Buildr,
             # this supervisor owns the process group and bounds its lifetime.
+            exited = False
             try:
                 code = process.wait(
                     timeout=(
@@ -400,16 +397,40 @@ def _supervise(
                         else config.timeout_seconds
                     )
                 )
+                exited = True
             except subprocess.TimeoutExpired:
-                import signal
-
-                os.killpg(process.pid, signal.SIGTERM)
+                _stop_worker_group(process, force=False)
                 try:
                     process.wait(timeout=10)
                 except subprocess.TimeoutExpired:
-                    os.killpg(process.pid, signal.SIGKILL)
+                    _stop_worker_group(process, force=True)
                     process.wait()
+                exited = True
                 raise FinetuneFailure("timeout") from None
+            except BaseException:
+                # Ctrl+C, SystemExit or a closed console reached the
+                # supervisor itself. It owns the worker: stop it and record
+                # why, so the run never sits "running" with nobody watching.
+                if process.poll() is None:
+                    _stop_worker_group(process, force=False)
+                    try:
+                        process.wait(timeout=10)
+                    except subprocess.TimeoutExpired:
+                        _stop_worker_group(process, force=True)
+                        process.wait()
+                exited = True
+                _record_failure(
+                    run,
+                    FinetuneFailure("supervisor_stopped"),
+                    stage="supervisor",
+                    preserve=True,
+                )
+                raise
+            finally:
+                # Only once the worker is known to have exited: reclaiming
+                # under a live worker would end its running pod.
+                if exited:
+                    _reclaim_remote_allocations(run, config)
         completed = (run / "completion.json").is_file()
         success = code == 0 and completed
         if success:
@@ -433,6 +454,64 @@ def _supervise(
         _record_failure(run, error, stage="supervisor", preserve=True)
         logging.exception("Fine-tuning supervisor failed")
         return 1
+
+
+def _reclaim_remote_allocations(run: Path, config: FinetuneConfig) -> None:
+    """After the worker exits, end any pod it allocated but never cleaned up.
+
+    A worker killed outright (SIGKILL, OOM, crash) skips its own cleanup and
+    a RunPod pod would keep billing. Never raises: the run's outcome stands.
+    """
+    if config.provider != "runpod":
+        return
+    try:
+        from stateset_agents.finetune_provider_submission import (
+            reclaim_abandoned_pods,
+        )
+
+        result = reclaim_abandoned_pods(run)
+    except Exception as error:  # noqa: BLE001 - outcome recording must continue
+        logging.error(
+            "Could not reclaim RunPod pods after the worker exited (%s); "
+            "run `stateset-agents runpod-orphans` to inspect leases",
+            type(error).__name__,
+        )
+        return
+    for pod_id in result["reclaimed"]:
+        logging.warning("Terminated pod %s left by the exited worker", pod_id)
+    for pod_id, reason in result["failed"].items():
+        logging.error(
+            "Could not confirm termination of pod %s (%s); its lease is kept",
+            pod_id,
+            reason,
+        )
+
+
+def _install_termination_handlers() -> None:
+    """Make SIGTERM/SIGHUP raise ``SystemExit`` so ``finally`` cleanup runs.
+
+    The default action ends the process immediately, skipping the cleanup
+    that terminates provider resources. Later signals are ignored so that
+    cleanup can finish; SIGKILL still ends the process.
+    """
+    import signal
+
+    numbers = [
+        number
+        for number in (
+            getattr(signal, "SIGTERM", None),
+            getattr(signal, "SIGHUP", None),
+        )
+        if number is not None
+    ]
+
+    def stop(signum: int, _frame: Any) -> None:
+        for number in numbers:
+            signal.signal(number, signal.SIG_IGN)
+        raise SystemExit(128 + signum)
+
+    for number in numbers:
+        signal.signal(number, stop)
 
 
 def _check_stop(run: Path) -> None:
@@ -462,6 +541,24 @@ def _metrics(run: Path, step: int, metrics: dict[str, Any]) -> None:
     write_json(run / "metrics.json", event)
 
 
+def _publish_recovery(run: Path, checkpoint: Path, *, step: int) -> None:
+    """Publish a recovery receipt, or record why recovery is unavailable.
+
+    Recovery needs Linux ownership checks and a single training process. When
+    those are missing (Windows, an inherited ``WORLD_SIZE``) training must
+    still finish; the run records ``recovery_unavailable`` instead of failing
+    at its first checkpoint save.
+    """
+    from stateset_agents.finetune_recovery import publish_checkpoint
+
+    reason = recovery_unavailable_reason()
+    if reason is not None:
+        _state(run, recovery_unavailable=reason)
+        return
+    publish_checkpoint(run, checkpoint, step=step)
+    _state(run, recovery_checkpoint=str(checkpoint))
+
+
 def _train_sft(run: Path, config: FinetuneConfig) -> Path:
     from stateset_agents.training.sft import load_sft_dataset, run_sft
 
@@ -473,11 +570,8 @@ def _train_sft(run: Path, config: FinetuneConfig) -> Path:
 
     class Progress(TrainerCallback):
         def on_save(self, args: Any, state: Any, control: Any, **kwargs: Any) -> Any:
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
             path = run / "artifacts" / f"checkpoint-{state.global_step}"
-            publish_checkpoint(run, path, step=state.global_step)
-            _state(run, recovery_checkpoint=str(path))
+            _publish_recovery(run, path, step=state.global_step)
             return control
 
         def on_step_end(
@@ -571,10 +665,7 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
         ) -> None:
             if is_best:
                 return
-            from stateset_agents.finetune_recovery import publish_checkpoint
-
-            publish_checkpoint(run, Path(path), step=step)
-            _state(run, recovery_checkpoint=path)
+            _publish_recovery(run, Path(path), step=step)
 
         def on_step_end(self, step: int, metrics: dict[str, Any]) -> None:
             _metrics(run, step, metrics)
@@ -584,7 +675,8 @@ async def _train_rl(run: Path, config: FinetuneConfig) -> tuple[Path, int]:
             if stop_requested(run):
                 name = f"stopped-step-{step}"
                 await trainer.save_checkpoint(checkpoint_name=name)
-                _state(run, recovery_checkpoint=str(run / "artifacts" / name))
+                if recovery_unavailable_reason() is None:
+                    _state(run, recovery_checkpoint=str(run / "artifacts" / name))
                 raise FinetuneFailure("cancelled")
 
     training = TrainingConfig(
@@ -814,6 +906,16 @@ def execute(run: Path, *, supervisor_token: str | None = None) -> int:
             logging.error("Fine-tuning outcome already recorded; success not committed")
             return 1
         return 0
+    except SystemExit:
+        # A remote stop signals this worker (SIGTERM becomes SystemExit). Its
+        # executor has already terminated the pod on the way out; record the
+        # requested stop as the outcome before exiting.
+        try:
+            if stop_requested(run):
+                _record_failure(run, FinetuneFailure("cancelled"), stage=stage)
+        except (OSError, ValueError):
+            pass
+        raise
     except Exception as error:
         _record_failure(run, error, stage=stage)
         logging.exception("Fine-tuning failed")
@@ -840,6 +942,7 @@ def main() -> int:
     try:
         if args.supervise:
             return supervise(run)
+        _install_termination_handlers()
         return execute(run, supervisor_token=child_token if args.supervised else None)
     except Exception:
         # Public entrypoints retain their own owned failures. An unexpected

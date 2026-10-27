@@ -94,7 +94,7 @@ def isolated_evaluation(*, seed: int, model: Any = None) -> Iterator[None]:
         import numpy as np
         import torch
 
-        from stateset_agents.training.runtime_state import capture_rng, restore_rng
+        from stateset_agents.utils.reproducibility import capture_rng, restore_rng
 
         state = capture_rng(torch)
         modes = []

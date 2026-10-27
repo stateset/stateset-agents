@@ -37,6 +37,7 @@ from stateset_agents.core.generation_mode import inference_mode
 from stateset_agents.core.lora_targets import text_lora_targets
 from stateset_agents.core.transformers_compat import load_generation_model
 
+from .config import config_value
 from .trainer_utils import apply_dropout_setting
 
 logger = logging.getLogger(__name__)
@@ -50,11 +51,13 @@ class SharedModelManager:
     small hooks instead of re-implementing the whole flow.
 
     Hooks:
-    - ``_get_transformers()``: return ``(AutoTokenizer, AutoModelForCausalLM)``
-      after performing the module-specific availability checks. Must read the
-      subclass module's globals so test patching keeps working.
-    - ``_peft_components()``: return ``(LoraConfig, TaskType, get_peft_model)``
-      after module-specific PEFT availability checks.
+    - ``_get_transformers()``: return ``(AutoTokenizer, AutoModelForCausalLM)``.
+      The default resolves them through
+      :func:`~stateset_agents.training.dedicated_deps.transformers_components`
+      (``ImportError`` naming :attr:`algorithm`).
+    - ``_peft_components()``: return ``(LoraConfig, TaskType, get_peft_model)``;
+      the default uses :func:`~stateset_agents.training.dedicated_deps.
+      peft_components`.
     - ``_lora_target_modules()``: LoRA target modules (default q/v projections).
     - ``_prepare_model_kwargs(model_kwargs)``: mutate model-loading kwargs
       (e.g. quantization flags).
@@ -65,6 +68,8 @@ class SharedModelManager:
     """
 
     _loaded_message = "Model loaded on {device}"
+    #: Algorithm named in missing-dependency errors (``"GEPO"``, ...).
+    algorithm = "training"
 
     def __init__(self, config: Any) -> None:
         from .config import TrainingConfig
@@ -80,12 +85,16 @@ class SharedModelManager:
     # ------------------------------------------------------------------ hooks
 
     def _get_transformers(self) -> tuple[Any, Any]:
-        """Return (AutoTokenizer, AutoModelForCausalLM) or raise."""
-        raise NotImplementedError
+        """Return (AutoTokenizer, AutoModelForCausalLM) or raise ImportError."""
+        from . import dedicated_deps
+
+        return dedicated_deps.transformers_components(self.algorithm)
 
     def _peft_components(self) -> tuple[Any, Any, Any]:
-        """Return (LoraConfig, TaskType, get_peft_model) or raise."""
-        raise NotImplementedError
+        """Return (LoraConfig, TaskType, get_peft_model) or raise ImportError."""
+        from . import dedicated_deps
+
+        return dedicated_deps.peft_components(self.algorithm)
 
     def _lora_target_modules(self) -> list[str]:
         return ["q_proj", "v_proj"]
@@ -113,9 +122,9 @@ class SharedModelManager:
         # Load tokenizer
         self.tokenizer = tokenizer_cls.from_pretrained(
             self.config.model_name,
-            trust_remote_code=getattr(self.config, "trust_remote_code", False),
+            trust_remote_code=config_value(self.config, "trust_remote_code"),
             padding_side="left",
-            revision=getattr(self.config, "model_revision", None),
+            revision=config_value(self.config, "model_revision"),
         )
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
@@ -128,8 +137,8 @@ class SharedModelManager:
                 else (torch.bfloat16 if self.config.bf16 else torch.float32)
             ),
             "device_map": "auto" if torch.cuda.is_available() else None,
-            "trust_remote_code": getattr(self.config, "trust_remote_code", False),
-            "revision": getattr(self.config, "model_revision", None),
+            "trust_remote_code": config_value(self.config, "trust_remote_code"),
+            "revision": config_value(self.config, "model_revision"),
         }
         self._prepare_model_kwargs(model_kwargs)
 

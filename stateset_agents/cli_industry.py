@@ -65,7 +65,7 @@ def generate_datasets(
     """Generate replay-checked fictional support datasets offline, without training."""
     import asyncio
 
-    from stateset_agents.data.industry_synthetic import (
+    from stateset_agents.verticals.industry_synthetic import (
         DOMAINS,
         generate_industry_datasets,
     )
@@ -101,7 +101,7 @@ def audit_datasets(output: Path = typer.Argument(...)) -> None:
     """Reconstruct generated datasets and verify their split/provenance boundaries."""
     import asyncio
 
-    from stateset_agents.data.industry_synthetic import audit_industry_datasets
+    from stateset_agents.verticals.industry_synthetic import audit_industry_datasets
 
     try:
         _emit(asyncio.run(audit_industry_datasets(output)))
@@ -206,7 +206,7 @@ def export_evaluation(
     project: Path = typer.Argument(...), output: Path = typer.Argument(...)
 ) -> None:
     """Export held-out assistant prefixes for paired model inference."""
-    from stateset_agents.evaluation.industry import export_industry_evaluation
+    from stateset_agents.verticals.industry_evaluation import export_industry_evaluation
 
     try:
         requests = export_industry_evaluation(project)
@@ -243,7 +243,7 @@ def evaluate_project(
     max_mean_cost_usd: float | None = typer.Option(None, min=0),
 ) -> None:
     """Compare reference agreement; exit 1 for failed gates, 2 for invalid input."""
-    from stateset_agents.evaluation.industry import (
+    from stateset_agents.verticals.industry_evaluation import (
         IndustryEvaluationPolicy,
         evaluate_industry_project,
     )

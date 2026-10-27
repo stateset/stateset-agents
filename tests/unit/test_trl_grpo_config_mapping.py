@@ -94,6 +94,9 @@ def test_train_without_checkpoint_starts_fresh(tmp_path):
     wrapper.trainer.train.assert_called_once_with(resume_from_checkpoint=None)
 
 
+# The child cold-imports torch/transformers/trl: seconds on Linux, but it has
+# exceeded 30 s on loaded Windows runners (and locally under heavy load).
+@pytest.mark.timeout(150)
 def test_config_preview_survives_unavailable_optional_trainer(tmp_path):
     script = """
 import builtins
@@ -122,5 +125,5 @@ else:
         cwd=tmp_path,
         env={**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[2])},
         check=True,
-        timeout=30,
+        timeout=120,
     )

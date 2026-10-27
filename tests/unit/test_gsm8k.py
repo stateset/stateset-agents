@@ -125,6 +125,49 @@ class TestExtractPredictedAnswer:
     def test_empty(self) -> None:
         assert extract_predicted_answer("") is None
 
+    def test_self_correction_is_graded_on_the_final_answer(self) -> None:
+        """The FIRST "answer is" used to win, so self-corrections scored 0."""
+        text = "The answer is 5. Wait, I dropped a term: the answer is 7."
+        assert extract_predicted_answer(text) == 7.0
+        assert extract_predicted_answer("Answer: 3 ... corrected answer: 4") == 4.0
+
+    def test_explicit_markers_win_over_answer_phrases(self) -> None:
+        assert extract_predicted_answer("#### 12\nso the answer is 5") == 12.0
+        assert extract_predicted_answer("The answer is 5, i.e. \\boxed{6}") == 6.0
+
+    #: Realistic instruct / chat model outputs and the answer they give.
+    INSTRUCT_CORPUS = [
+        ("The answer is **18**, which is 2 more than 16.", 18.0),
+        ("**Answer:** 18 (she started with 16)", 18.0),
+        ("The answer is __42__.", 42.0),
+        ("The answer is $\\boxed{18}$", 18.0),
+        ("\\[\\boxed{70000}\\]", 70000.0),
+        ("So the answer is 18 dollars, 2 more than 16.", 18.0),
+        ("The final answer is: $18. That is 2 more than 16", 18.0),
+        (
+            "Janet sells 16 - 3 - 4 = 9 eggs.\nShe makes 9 * 2 = $18.\n"
+            "**Final Answer: 18**",
+            18.0,
+        ),
+        ("Step 1: add the weekly totals.\n\n**Answer: $1,200**", 1200.0),
+        ("So, she earns **$18** every day at the farmers' market.", 18.0),
+        ("The total is 16 + 2 = 18.\n\n**18**", 18.0),
+        ("Final answer: 3.5 hours", 3.5),
+        ("#### 18\n\nQuestion: Tom has 5 apples ... #### 7", 18.0),
+        ("The answer is 5. Wait, I made an error: the answer is 7.", 7.0),
+    ]
+
+    @pytest.mark.parametrize("response,expected", INSTRUCT_CORPUS)
+    def test_realistic_instruct_outputs(self, response: str, expected: float) -> None:
+        """Markdown-bold answers fell through to the last number in the
+        sentence ("**18**, which is 2 more than 16" graded 16), and a model
+        that went on to write the next few-shot question was graded on it."""
+        assert extract_predicted_answer(response) == pytest.approx(expected)
+
+    def test_last_explicit_marker_wins(self) -> None:
+        assert extract_predicted_answer("\\boxed{1} no wait \\boxed{2}") == 2.0
+        assert extract_predicted_answer("#### 3\n#### 4") == 4.0
+
 
 class TestGSM8KReward:
     @pytest.fixture

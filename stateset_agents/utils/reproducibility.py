@@ -26,7 +26,7 @@ from __future__ import annotations
 import os
 import random
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 
@@ -113,9 +113,52 @@ def get_seed() -> int | None:
     return REPRODUCIBILITY_STATE.seed
 
 
+def capture_rng(torch: Any) -> dict[str, Any]:
+    """Capture generators using only tensors and weights-only-safe Python data.
+
+    Python, NumPy, CPU Torch and every available CUDA generator. ``torch`` is
+    passed in so this module never imports it. Matches
+    ``training.runtime_state.capture_rng`` (pinned by
+    ``tests/unit/test_layering_bridges.py``); evaluation isolation uses this
+    copy so ``evaluation`` never imports ``training``.
+    """
+    numpy_state = cast(tuple[Any, ...], np.random.get_state())
+    return {
+        "python": random.getstate(),
+        "numpy": [numpy_state[0], numpy_state[1].tolist(), *numpy_state[2:]],
+        "torch": torch.get_rng_state(),
+        "cuda": torch.cuda.get_rng_state_all() if torch.cuda.is_available() else [],
+    }
+
+
+def restore_rng(state: dict[str, Any], torch: Any) -> None:
+    """Restore RNGs captured by :func:`capture_rng`.
+
+    Raises ``ValueError`` when the CUDA generator topology differs from the
+    one captured.
+    """
+    random.setstate(state["python"])
+    values = state["numpy"]
+    np.random.set_state(
+        (values[0], np.asarray(values[1], dtype=np.uint32), *values[2:])
+    )
+    torch.set_rng_state(state["torch"].cpu())
+    if state["cuda"]:
+        if (
+            not torch.cuda.is_available()
+            or len(state["cuda"]) != torch.cuda.device_count()
+        ):
+            raise ValueError("Checkpoint CUDA RNG topology differs from this runtime")
+        # A CUDA map_location also moves serialized generator states onto the
+        # GPU. PyTorch requires CPU ByteTensors even for CUDA generators.
+        torch.cuda.set_rng_state_all([value.cpu() for value in state["cuda"]])
+
+
 __all__ = [
     "REPRODUCIBILITY_STATE",
     "ReproducibilityState",
+    "capture_rng",
     "get_seed",
+    "restore_rng",
     "set_all_seeds",
 ]

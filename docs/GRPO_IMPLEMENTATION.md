@@ -176,40 +176,21 @@ Where:
 
 ---
 
-### 3. Computational Engine (core/computational_engine.py)
+### 3. Computational Engine (core/computational_engine.py) -- deprecated, does not train
 
-**Purpose:** Parallel trajectory generation and policy updates.
+**Purpose:** Parallel trajectory generation and reward scoring. It is **not**
+a training engine and is deprecated (removed in v0.71.0).
 
-#### Updated `_update_policy()` Method:
+`ComputationalGRPOEngine._update_policy()` runs one forward pass per
+trajectory and returns the mean of `advantage * outputs.loss` read with
+`.item()`. It never calls `backward()` or an optimizer step, so the model's
+weights do not change; without torch, a model or a tokenizer it returns
+`-mean(advantages)`. The `policy_loss` it reports is a diagnostic.
 
-Now performs **real gradient computation**:
-
-```python
-async def _update_policy(trajectories, advantages):
-    """
-    Real policy gradient update (not simulated!)
-
-    For each trajectory:
-    1. Tokenize prompt + response
-    2. Forward pass through model
-    3. Compute NLL (negative log likelihood)
-    4. Weight by advantage: loss = advantage * NLL
-    5. Accumulate gradients
-
-    Returns: Average policy loss
-    """
-```
-
-**Before (Simulated):**
-```python
-policy_loss = -np.mean(advantages)  # ❌ Fake
-```
-
-**After (Real):**
-```python
-outputs = model(**inputs, labels=inputs["input_ids"])
-policy_loss = advantage * outputs.loss  # ✅ Real gradient
-```
+To train, use `stateset_agents.train(...)` or the trainers in
+`stateset_agents.training` (`MultiTurnGRPOTrainer`, `SingleTurnGRPOTrainer`,
+GSPO/DAPO/GEPO/VAPO), which compute the GRPO loss, backpropagate and commit
+an optimizer step through `training.spine.OptimizerStep`.
 
 ---
 
@@ -399,7 +380,7 @@ pytest tests/unit/test_grpo_complete.py -v
 - ✅ KL divergence penalty
 - ✅ Training step integration
 - ✅ Full training loop
-- ✅ Computational engine updates
+- Computational engine: deprecated, reports a diagnostic loss and does not update weights
 
 **Current Results:** 9/17 tests passing (53% pass rate)
 

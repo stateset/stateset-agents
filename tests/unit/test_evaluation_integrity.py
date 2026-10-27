@@ -125,7 +125,9 @@ async def test_diagnostic_optional_reward_failure_is_counted_and_never_falls_bac
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("environmental", [False, True])
-async def test_override_reward_receives_scenario_or_final_executed_state(environmental):
+async def test_override_reward_receives_the_standard_reward_context(environmental):
+    """Evaluation scores on the training path, so rewards see the same context:
+    scenario keys (not for evidence rewards), final state, and "scenario"."""
     state = {"executed_tool_calls": [{"tool": "finish"}], "policy_violations": 0}
     scenario = {"reward": 0.0, "final_state": state, "id": "reviewed-case"}
     seen = []
@@ -139,7 +141,8 @@ async def test_override_reward_receives_scenario_or_final_executed_state(environ
         requires_environment_context=environmental,
     )
     metrics = await evaluate([scenario], reward_fn=reward)
-    assert seen == [state if environmental else scenario]
+    lifted = {} if environmental else scenario
+    assert seen == [{**lifted, **state, "scenario": scenario}]
     assert metrics["eval_reward"] == metrics["eval_complete"] == 1
 
 

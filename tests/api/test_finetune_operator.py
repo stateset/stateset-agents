@@ -1,6 +1,7 @@
 """Authenticated, bounded HTTP access to the operator's fine-tuning workspace."""
 
 import asyncio
+import os
 import threading
 from types import SimpleNamespace
 
@@ -96,7 +97,8 @@ def test_api_quality_upload_rechecks_artifact_and_never_echoes_case_ids(app, com
             response.json()["result"]["regressions_total"] == 32
             and "PRIVATE-ID" not in response.text
         )
-        assert (run / "quality.json").stat().st_mode & 0o077 == 0
+        if os.name != "nt":  # Windows st_mode carries no POSIX group/other bits.
+            assert (run / "quality.json").stat().st_mode & 0o077 == 0
         assert client.get(f"/finetune/runs/{run.name}/quality").status_code == 200
         (run / "artifacts/adapter_model.bin").write_bytes(b"changed")
         assert client.get(f"/finetune/runs/{run.name}/quality").status_code == 400
@@ -332,12 +334,12 @@ def test_openapi_and_capabilities_expose_shared_config_and_payload_contracts(app
 
 @pytest.mark.parametrize("kind", ["fifo", "oversize", "symlink"])
 def test_bad_workspace_metadata_cannot_hang_or_escape_listing(app, completed, kind):
-    import os
-
     run, _ = completed
     state = run / "state.json"
     state.unlink()
     if kind == "fifo":
+        if not hasattr(os, "mkfifo"):
+            pytest.skip("FIFO unavailable")
         os.mkfifo(state)
     elif kind == "oversize":
         state.write_bytes(b"x" * (128 * 1024 + 1))

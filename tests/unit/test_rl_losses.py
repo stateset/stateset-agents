@@ -182,3 +182,38 @@ def test_resolve_logprob_dtype(name, expected):
 def test_resolve_logprob_dtype_rejects_unknown_names():
     with pytest.raises(ValueError, match="logprob_dtype"):
         L.resolve_logprob_dtype("int8")
+
+
+# --- whiten: shared batch advantage normalisation ---------------------------
+
+
+def test_whiten_matches_sample_std_formula():
+    x = torch.tensor([1.0, 2.0, 4.0, 7.0])
+    expected = (x - x.mean()) / (x.std() + 1e-8)
+    assert torch.allclose(L.whiten(x), expected)
+
+
+def test_whiten_uses_masked_statistics_but_returns_full_shape():
+    x = torch.tensor([[1.0, 3.0, 100.0], [5.0, 7.0, -100.0]])
+    mask = torch.tensor([[1, 1, 0], [1, 1, 0]])
+    out = L.whiten(x, mask)
+    valid = x[mask > 0]
+    assert out.shape == x.shape
+    assert torch.allclose(out[mask > 0], (valid - valid.mean()) / (valid.std() + 1e-8))
+
+
+def test_whiten_population_correction():
+    x = torch.tensor([0.0, 2.0])
+    assert torch.allclose(L.whiten(x, correction=0), torch.tensor([-1.0, 1.0]))
+
+
+def test_whiten_constant_input_is_centred_not_amplified():
+    x = torch.full((5,), 3.0) + torch.tensor([0, 0, 0, 0, 1e-12])
+    out = L.whiten(x)
+    assert torch.isfinite(out).all()
+    assert out.abs().max() < 1e-6
+
+
+def test_whiten_single_value_is_unchanged():
+    x = torch.tensor([2.5])
+    assert torch.equal(L.whiten(x), x)

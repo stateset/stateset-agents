@@ -1,7 +1,10 @@
-"""
-API Request/Response Models
+"""Deprecated duplicate of :mod:`stateset_agents.api.schemas`.
 
-Unified Pydantic models for all API services with comprehensive validation.
+No gateway route uses these models: the served request/response schemas live
+in ``stateset_agents.api.schemas`` (and ``messages_models`` /
+``openai_models``). ``APIResponse`` and ``PaginatedResponse`` are re-exported
+from ``schemas``; the remaining classes are unreferenced duplicates. Importing
+this module is deprecated and will be removed in v0.71.0.
 """
 
 import re
@@ -13,12 +16,19 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    field_serializer,
     field_validator,
     model_validator,
 )
 
+from .._deprecation import warn_deprecated
 from .config import get_config
+from .schemas import APIResponse, PaginatedResponse  # noqa: F401 - re-exported
+
+warn_deprecated(
+    "stateset_agents.api.models",
+    removal="0.71.0",
+    replacement="stateset_agents.api.schemas",
+)
 
 # ============================================================================
 # Enums
@@ -54,37 +64,6 @@ class MessageRole(str, Enum):
 
 
 # ============================================================================
-# Base Models
-# ============================================================================
-
-
-class APIResponse(BaseModel):
-    """Base response model with common fields."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    request_id: str | None = Field(None, description="Request tracking ID")
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="Response timestamp"
-    )
-
-    @field_serializer("timestamp")
-    def _serialize_timestamp(self, timestamp: datetime) -> str:
-        # Consistent 'Z' suffix for naive UTC datetimes.
-        return timestamp.isoformat() + "Z"
-
-
-class PaginatedResponse(APIResponse):
-    """Base model for paginated responses."""
-
-    total: int = Field(..., description="Total number of items")
-    page: int = Field(1, description="Current page number")
-    page_size: int = Field(20, description="Items per page")
-    has_next: bool = Field(False, description="Whether there are more pages")
-    has_prev: bool = Field(False, description="Whether there are previous pages")
-
-
-# ============================================================================
 # Message Models
 # ============================================================================
 
@@ -94,8 +73,12 @@ class Message(BaseModel):
 
     role: MessageRole = Field(..., description="Message role")
     content: str = Field(..., description="Message content")
-    name: str | None = Field(None, description="Optional name for the message author")
-    metadata: dict[str, Any] | None = Field(None, description="Additional metadata")
+    name: str | None = Field(
+        default=None, description="Optional name for the message author"
+    )
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Additional metadata"
+    )
 
     @field_validator("content")
     @classmethod
@@ -152,16 +135,26 @@ class AgentConfig(BaseModel):
 
     model_name: str = Field(..., description="Model name or path")
     max_new_tokens: int = Field(
-        512, ge=1, le=4096, description="Maximum tokens to generate"
+        default=512, ge=1, le=4096, description="Maximum tokens to generate"
     )
-    temperature: float = Field(0.8, ge=0.0, le=2.0, description="Sampling temperature")
-    top_p: float = Field(0.9, ge=0.0, le=1.0, description="Top-p (nucleus) sampling")
-    top_k: int = Field(50, ge=1, le=1000, description="Top-k sampling")
-    system_prompt: str | None = Field(None, description="System prompt for the agent")
-    use_chat_template: bool = Field(True, description="Whether to use chat template")
-    enable_planning: bool = Field(False, description="Enable long-term planning")
+    temperature: float = Field(
+        default=0.8, ge=0.0, le=2.0, description="Sampling temperature"
+    )
+    top_p: float = Field(
+        default=0.9, ge=0.0, le=1.0, description="Top-p (nucleus) sampling"
+    )
+    top_k: int = Field(default=50, ge=1, le=1000, description="Top-k sampling")
+    system_prompt: str | None = Field(
+        default=None, description="System prompt for the agent"
+    )
+    use_chat_template: bool = Field(
+        default=True, description="Whether to use chat template"
+    )
+    enable_planning: bool = Field(
+        default=False, description="Enable long-term planning"
+    )
     planning_config: dict[str, Any] | None = Field(
-        None, description="Planning configuration overrides"
+        default=None, description="Planning configuration overrides"
     )
 
     @field_validator("model_name")
@@ -220,22 +213,28 @@ class TrainingRequest(BaseModel):
 
     prompts: list[str] = Field(..., min_length=1, description="Training prompts")
     strategy: TrainingStrategy = Field(
-        TrainingStrategy.COMPUTATIONAL, description="Training strategy to use"
+        default=TrainingStrategy.COMPUTATIONAL, description="Training strategy to use"
     )
-    num_iterations: int = Field(1, ge=1, description="Number of training iterations")
+    num_iterations: int = Field(
+        default=1, ge=1, description="Number of training iterations"
+    )
     parallel_batch_size: int | None = Field(
-        None, ge=1, description="Batch size for parallel training"
+        default=None, ge=1, description="Batch size for parallel training"
     )
-    use_neural_rewards: bool = Field(True, description="Enable neural reward models")
-    use_ruler_rewards: bool = Field(False, description="Enable RULER LLM judges")
+    use_neural_rewards: bool = Field(
+        default=True, description="Enable neural reward models"
+    )
+    use_ruler_rewards: bool = Field(
+        default=False, description="Enable RULER LLM judges"
+    )
     distributed_config: dict[str, Any] | None = Field(
-        None, description="Distributed training configuration"
+        default=None, description="Distributed training configuration"
     )
     agent_config: AgentConfig | None = Field(
-        None, description="Agent configuration override"
+        default=None, description="Agent configuration override"
     )
     idempotency_key: str | None = Field(
-        None, description="Idempotency key for request deduplication"
+        default=None, description="Idempotency key for request deduplication"
     )
 
     @field_validator("prompts")
@@ -291,12 +290,20 @@ class TrainingRequest(BaseModel):
 class TrainingMetrics(BaseModel):
     """Training metrics."""
 
-    iterations_completed: int = Field(0, description="Number of completed iterations")
-    total_trajectories: int = Field(0, description="Total trajectories generated")
-    average_reward: float = Field(0.0, description="Average reward across iterations")
-    computation_used: float = Field(0.0, description="Total computation used")
-    loss: float | None = Field(None, description="Current loss value")
-    learning_rate: float | None = Field(None, description="Current learning rate")
+    iterations_completed: int = Field(
+        default=0, description="Number of completed iterations"
+    )
+    total_trajectories: int = Field(
+        default=0, description="Total trajectories generated"
+    )
+    average_reward: float = Field(
+        default=0.0, description="Average reward across iterations"
+    )
+    computation_used: float = Field(default=0.0, description="Total computation used")
+    loss: float | None = Field(default=None, description="Current loss value")
+    learning_rate: float | None = Field(
+        default=None, description="Current learning rate"
+    )
 
 
 class TrainingResponse(APIResponse):
@@ -325,11 +332,13 @@ class TrainingResponse(APIResponse):
     metrics: TrainingMetrics = Field(
         default_factory=TrainingMetrics, description="Training metrics"
     )
-    error: str | None = Field(None, description="Error message if failed")
-    started_at: datetime | None = Field(None, description="Job start time")
-    completed_at: datetime | None = Field(None, description="Job completion time")
+    error: str | None = Field(default=None, description="Error message if failed")
+    started_at: datetime | None = Field(default=None, description="Job start time")
+    completed_at: datetime | None = Field(
+        default=None, description="Job completion time"
+    )
     estimated_completion: datetime | None = Field(
-        None, description="Estimated completion time"
+        default=None, description="Estimated completion time"
     )
 
 
@@ -358,16 +367,24 @@ class ConversationRequest(BaseModel):
         },
     )
 
-    message: str | None = Field(None, description="User message (single-turn)")
+    message: str | None = Field(default=None, description="User message (single-turn)")
     messages: list[Message] | None = Field(
-        None, description="Full message history (multi-turn)"
+        default=None, description="Full message history (multi-turn)"
     )
-    conversation_id: str | None = Field(None, description="Existing conversation ID")
-    strategy: str = Field("default", description="Response generation strategy")
-    max_tokens: int = Field(512, ge=1, le=4096, description="Maximum response tokens")
-    temperature: float = Field(0.8, ge=0.0, le=2.0, description="Sampling temperature")
-    stream: bool = Field(False, description="Enable streaming response")
-    context: dict[str, Any] | None = Field(None, description="Additional context")
+    conversation_id: str | None = Field(
+        default=None, description="Existing conversation ID"
+    )
+    strategy: str = Field(default="default", description="Response generation strategy")
+    max_tokens: int = Field(
+        default=512, ge=1, le=4096, description="Maximum response tokens"
+    )
+    temperature: float = Field(
+        default=0.8, ge=0.0, le=2.0, description="Sampling temperature"
+    )
+    stream: bool = Field(default=False, description="Enable streaming response")
+    context: dict[str, Any] | None = Field(
+        default=None, description="Additional context"
+    )
 
     @model_validator(mode="after")
     def validate_message_input(self):
@@ -434,9 +451,9 @@ class ConversationResponse(APIResponse):
 
     conversation_id: str = Field(..., description="Conversation identifier")
     response: str = Field(..., description="Agent's response")
-    tokens_used: int = Field(0, description="Number of tokens used")
+    tokens_used: int = Field(default=0, description="Number of tokens used")
     processing_time_ms: float = Field(
-        0.0, description="Processing time in milliseconds"
+        default=0.0, description="Processing time in milliseconds"
     )
     context: dict[str, Any] = Field(
         default_factory=dict, description="Conversation context"
@@ -455,9 +472,9 @@ class ScaleRequest(BaseModel):
     """Resource scaling request."""
 
     scale_factor: float = Field(..., gt=0, le=10, description="Scaling factor")
-    apply_to_all: bool = Field(False, description="Apply to all engines")
+    apply_to_all: bool = Field(default=False, description="Apply to all engines")
     target_engines: list[str] | None = Field(
-        None, description="Specific engines to scale"
+        default=None, description="Specific engines to scale"
     )
 
     @field_validator("target_engines")
@@ -492,8 +509,12 @@ class ComponentHealth(BaseModel):
 
     name: str = Field(..., description="Component name")
     status: str = Field(..., description="Health status")
-    latency_ms: float | None = Field(None, description="Component response latency")
-    details: dict[str, Any] | None = Field(None, description="Additional details")
+    latency_ms: float | None = Field(
+        default=None, description="Component response latency"
+    )
+    details: dict[str, Any] | None = Field(
+        default=None, description="Additional details"
+    )
 
 
 class HealthResponse(APIResponse):

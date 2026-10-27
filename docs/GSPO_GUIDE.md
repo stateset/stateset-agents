@@ -392,17 +392,10 @@ Based on the original GSPO paper (Qwen Team):
 
 ## Integration with Existing Code
 
-### Adding GSPO to RL Orchestrator
-
-```python
-from stateset_agents.core.enhanced.advanced_rl_algorithms import create_advanced_rl_orchestrator
-
-# Create orchestrator with all algorithms including GSPO
-orchestrator = create_advanced_rl_orchestrator(agent)
-
-# GSPO is now available alongside PPO, DPO, A2C
-# Note: Use training.gspo_trainer for full implementation
-```
+GSPO runs through `stateset_agents.training.gspo_trainer` (`GSPOTrainer`,
+`train_with_gspo`). The `core.enhanced` `AdvancedRLOrchestrator` never ran GSPO
+(it held a stub, removed in v0.70.0) and is itself deprecated and removed in
+v0.71.0.
 
 ## References
 

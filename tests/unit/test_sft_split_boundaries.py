@@ -13,7 +13,6 @@ from stateset_agents.data.finetuning import (
     load_finetuning_data,
     validate_finetuning_split,
 )
-from stateset_agents.data.industry_synthetic import generate_industry_datasets
 from stateset_agents.remote.executor import RemoteExecutionError
 from stateset_agents.remote.job import RemoteJobSpec
 from stateset_agents.training import sft
@@ -22,6 +21,7 @@ from stateset_agents.training.industry import (
     prepare_industry_training,
     train_industry_project,
 )
+from stateset_agents.verticals.industry_synthetic import generate_industry_datasets
 
 
 def chat(split=None, number=0):

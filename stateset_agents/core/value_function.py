@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from .checkpoint_io import load_checkpoint_file
+from .numerics import whiten
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +78,7 @@ if TORCH_AVAILABLE:
             self.dropout = nn.Dropout(dropout)
 
             # Value head layers
+            self.norm: nn.Module
             if use_layer_norm:
                 self.norm = nn.LayerNorm(hidden_size)
             else:
@@ -104,7 +106,8 @@ if TORCH_AVAILABLE:
             hidden_states = self.dropout(hidden_states)
 
             # Compute value
-            return self.value_head(hidden_states)
+            values: torch.Tensor = self.value_head(hidden_states)
+            return values
 
 else:
 
@@ -247,7 +250,7 @@ class ValueFunction:
                 )
 
         # Compute values
-        values = self.value_head(hidden_states).squeeze(-1)
+        values: torch.Tensor = self.value_head(hidden_states).squeeze(-1)
 
         return values
 
@@ -283,9 +286,10 @@ class ValueFunction:
 
         # Compute advantages using GAE
         advantages = torch.zeros_like(rewards_tensor)
-        last_advantage = 0
+        last_advantage: float | torch.Tensor = 0.0
 
         for t in reversed(range(len(rewards))):
+            next_value: float | torch.Tensor
             if t == len(rewards) - 1:
                 next_value = 0.0
             else:
@@ -309,8 +313,8 @@ class ValueFunction:
         unnormalized_advantages = advantages.clone()
 
         # Normalize advantages if requested
-        if self.normalize_advantages and len(advantages) > 1:
-            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        if self.normalize_advantages:
+            advantages = whiten(advantages)
 
         # Compute returns using unnormalized advantages: R_t = A_t + V(s_t)
         returns = unnormalized_advantages + values
@@ -351,17 +355,15 @@ class ValueFunction:
         advantages = rewards - baseline
 
         # Normalize
-        if self.normalize_advantages and len(advantages) > 1:
-            std = advantages.std()
-            if std > 0:
-                advantages = (advantages - advantages.mean()) / (std + 1e-8)
+        if self.normalize_advantages:
+            advantages = whiten(advantages)
 
         return advantages
 
     def update_value_function(
         self,
         input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
+        attention_mask: torch.Tensor | None,
         returns: torch.Tensor,
         num_epochs: int = 5,
     ) -> float:
@@ -370,7 +372,7 @@ class ValueFunction:
 
         Args:
             input_ids: Input token IDs [batch_size, seq_len]
-            attention_mask: Attention mask [batch_size, seq_len]
+            attention_mask: Attention mask [batch_size, seq_len], or None for no padding
             returns: Target returns [batch_size, seq_len]
             num_epochs: Number of update epochs
 

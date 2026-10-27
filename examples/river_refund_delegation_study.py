@@ -49,8 +49,8 @@ from stateset_agents.remote.river_refund_delegation import (
 )
 from stateset_agents.remote.river_rl import atomic_json, exclusive_run
 from stateset_agents.remote.rollout_budget import RolloutAdmissionBudget
-from stateset_agents.training.river_refund import EVALUATION_SETTINGS
 from stateset_agents.utils.async_calls import closing_async_generator
+from stateset_agents.verticals.river_refund import EVALUATION_SETTINGS
 
 ARMS = ("raw", "delegated")
 MODEL = "Qwen/Qwen3.5-9B"

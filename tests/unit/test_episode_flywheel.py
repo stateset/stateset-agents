@@ -344,6 +344,7 @@ class TestToolCalls:
                     tool={"tool": "reprovision_vpn", "args": {"ticket": "{ref}"}},
                 ),
                 "disk": Issue("disk full", "Cleared the update cache.", "update cache"),
+                "wifi": Issue("wifi drops", "Reset your wifi lease.", "wifi lease"),
             },
         )
         kit = build_ladder(spec, depth=2, train_count=4, seed=1)
@@ -357,7 +358,7 @@ class TestToolCalls:
         assert '"ticket": "3000"' in kit["train"][0]["messages"][1]["content"] or True
 
         episodes = build_episode_ladder(spec, turns=2, eval_count=6, seed=1)
-        tooled = [s for s in episodes["eval"] if "turn_tool" in s]
+        tooled = [s for s in episodes["eval"] + episodes["harvest"] if "turn_tool" in s]
         assert tooled, "no episode carried a tool spec"
         for script in tooled:
             for tool, expects in zip(
@@ -432,6 +433,7 @@ class TestJunkToolGuardrail:
             issues={
                 "a": Issue("p1", "r1 t1", "t1", tool={"tool": "do_a", "args": {}}),
                 "b": Issue("p2", "r2 t2", "t2"),
+                "c": Issue("p3", "r3 t3", "t3"),
             },
         )
         kit = build_episode_ladder(spec, turns=2, eval_count=4, seed=1)

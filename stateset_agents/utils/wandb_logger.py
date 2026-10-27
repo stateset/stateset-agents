@@ -5,12 +5,13 @@ from __future__ import annotations
 import logging
 import os
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from stateset_agents.core.agent_config import AgentConfig
-from stateset_agents.core.trajectory import MultiTurnTrajectory, TrajectoryGroup
+if TYPE_CHECKING:  # annotations only: utils sits below core in the layering
+    from stateset_agents.core.agent_config import AgentConfig
+    from stateset_agents.core.trajectory import MultiTurnTrajectory, TrajectoryGroup
 
 logger = logging.getLogger(__name__)
 

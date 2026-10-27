@@ -242,7 +242,8 @@ def test_builtin_executor_shares_one_timeout_across_setup_and_training(
                 dry_run=True,
             )
         )
-    assert timeouts == [10, 58, 56, 54]
+    # readiness probe, bounded pod-deadline arming, upload, install, training
+    assert timeouts == [10, 30, 56, 54, 52]
     assert clock.value == 60
     assert len(api.created) == 1 and api.terminated == ["pod-abc"]
     assert transport._host is None and transport._deadline is None
@@ -273,3 +274,204 @@ def test_invalid_scoped_transport_still_cleans_up_its_known_allocation(tmp_path)
             )
         )
     assert len(api.created) == 1 and api.terminated == ["pod-abc"]
+
+
+def _run_budget_fixture(tmp_path):
+    from stateset_agents.remote.job import RemoteJobSpec
+
+    data = tmp_path / "train.jsonl"
+    data.write_text(
+        '{"messages":[{"role":"user","content":"q"},{"role":"assistant","content":"a"}]}\n'
+    )
+    return RemoteJobSpec(
+        dataset=data,
+        base_model="example/model",
+        output_dir=tmp_path / "out",
+        timeout_s=3600,
+        max_cost_usd=1.0,
+    )
+
+
+class PricedPods:
+    """Pods that become reachable at once, each quoted from ``prices``."""
+
+    def __init__(self, *prices):
+        self.prices, self.created, self.terminated, self.polls = list(prices), [], [], 0
+
+    def create_pod(self, **kwargs):
+        self.created.append(f"pod-{len(self.created) + 1}")
+        return {"id": self.created[-1], "costPerHr": self.prices[len(self.created) - 1]}
+
+    def get_pod(self, pod_id):
+        self.polls += 1
+        return {
+            "desiredStatus": "RUNNING",
+            "publicIp": "1.2.3.4",
+            "portMappings": {"22": 40022},
+        }
+
+    def terminate_pod(self, pod_id):
+        self.terminated.append(pod_id)
+
+
+def test_replacement_pod_shares_the_run_deadline_and_max_cost(monkeypatch, tmp_path):
+    """A pod dying mid-job must not buy its replacement a fresh ``timeout_s``.
+
+    Training needs 3500s; the first pod dies (ssh 255) after 1800s. Before the
+    run-level deadline, the replacement got a full new hour and the run spent
+    ~$1.47 against a $1.00 ceiling.
+    """
+    from stateset_agents.remote.ledger import read_entries
+
+    clock, training_limits = Clock(), []
+    monkeypatch.setattr(runpod, "time", clock)
+
+    def execute(argv, **kwargs):
+        if "training.sft" in argv[-1]:
+            training_limits.append(kwargs["timeout"])
+            if len(training_limits) == 1:
+                clock.value += 1800
+                return SimpleNamespace(returncode=255, stdout="", stderr="")
+            if kwargs["timeout"] < 3500:
+                clock.value += kwargs["timeout"]
+                raise subprocess.TimeoutExpired(argv, kwargs["timeout"])
+            clock.value += 3500
+            return SimpleNamespace(returncode=0, stdout="", stderr="")
+        clock.value += 1
+        return SimpleNamespace(returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(runpod.subprocess, "run", execute)
+    api = PricedPods(1.0, 1.0)
+    executor = runpod.RunPodExecutor(
+        api=api,
+        ssh=runpod.SshTransport(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+    )
+    spec = _run_budget_fixture(tmp_path)
+    with pytest.raises(runpod.RemoteExecutionError, match="remote outcome is unknown"):
+        executor.submit(spec)
+
+    assert api.created == api.terminated == ["pod-1", "pod-2"]
+    # The replacement only gets what is left of the single run deadline.
+    assert training_limits[1] <= 3600 - 1800
+    assert clock.value <= 3600
+    spent = sum(row["cost_usd"] for row in read_entries(tmp_path / "ledger.jsonl"))
+    assert spent <= spec.max_cost_usd
+
+
+def test_endpoint_wait_is_bounded_by_the_remaining_run_deadline(monkeypatch, tmp_path):
+    """``ready_timeout_s`` must not extend a replacement past the run deadline."""
+    clock = Clock()
+    monkeypatch.setattr(runpod, "time", clock)
+    api = PricedPods(1.0, 1.0)
+    pending = {"desiredStatus": "PENDING", "publicIp": None}
+    reachable = api.get_pod
+
+    def get_pod(pod_id):
+        return reachable(pod_id) if pod_id == "pod-1" else pending
+
+    api.get_pod = get_pod
+
+    class DyingTransport:
+        def wait_until_reachable(self, host, port, timeout_s):
+            pass
+
+        def upload(self, local, remote):
+            pass
+
+        def run(self, command):
+            if "training.sft" in command:
+                clock.value += 3500
+                return 255, "client_loop: send disconnect: Broken pipe"
+            return 0, ""
+
+    executor = runpod.RunPodExecutor(
+        api=api,
+        ssh=DyingTransport(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=7,
+        ready_timeout_s=600,
+    )
+    spec = _run_budget_fixture(tmp_path)
+    spec.max_cost_usd = None  # isolate the deadline from the spending ceiling
+    with pytest.raises(runpod.RemoteExecutionError, match="never became reachable"):
+        executor.submit(spec)
+    assert api.created == api.terminated == ["pod-1", "pod-2"]
+    # 100s of the run were left; the old per-pod wait ran 600s past them.
+    assert clock.value <= 3600
+
+
+def test_no_replacement_once_the_run_deadline_has_passed(monkeypatch, tmp_path):
+    clock = Clock()
+    monkeypatch.setattr(runpod, "time", clock)
+    api = PricedPods(1.0, 1.0)
+
+    class OverrunTransport:
+        def wait_until_reachable(self, host, port, timeout_s):
+            pass
+
+        def upload(self, local, remote):
+            pass
+
+        def run(self, command):
+            if "training.sft" in command:
+                clock.value += 3700
+                return 255, ""
+            return 0, ""
+
+    executor = runpod.RunPodExecutor(
+        api=api,
+        ssh=OverrunTransport(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+    )
+    with pytest.raises(runpod.RemoteExecutionError, match="time limit") as caught:
+        executor.submit(_run_budget_fixture(tmp_path))
+    assert caught.value.context.details["stage"] == "deadline"
+    assert api.created == api.terminated == ["pod-1"]
+
+
+def test_replacement_budget_counts_what_earlier_pods_already_spent(
+    monkeypatch, tmp_path
+):
+    """Spend so far plus the replacement's worst case must fit ``max_cost_usd``."""
+    clock = Clock()
+    monkeypatch.setattr(runpod, "time", clock)
+    api = PricedPods(0.5, 2.0)
+
+    trainings = []
+
+    class DyingTransport:
+        def wait_until_reachable(self, host, port, timeout_s):
+            pass
+
+        def upload(self, local, remote):
+            pass
+
+        def run(self, command):
+            if "training.sft" in command:
+                trainings.append(command)
+                clock.value += 1800
+                return 255, ""
+            return 0, ""
+
+    executor = runpod.RunPodExecutor(
+        api=api,
+        ssh=DyingTransport(),
+        public_key="ssh-rsa TEST",
+        lease_dir=tmp_path / "leases",
+        ledger_path=tmp_path / "ledger.jsonl",
+        poll_interval_s=0,
+    )
+    with pytest.raises(runpod.RemoteExecutionError, match=r"\$0\.25 already spent"):
+        executor.submit(_run_budget_fixture(tmp_path))
+    # The pricier replacement is terminated before any work runs on it.
+    assert api.created == api.terminated == ["pod-1", "pod-2"]
+    assert len(trainings) == 1

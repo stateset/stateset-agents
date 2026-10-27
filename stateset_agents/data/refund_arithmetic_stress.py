@@ -10,7 +10,7 @@ from stateset_agents.core.environments.refund_policy_environment import (
     RefundPolicyEnvironment,
     refund_policy_benchmark,
 )
-from stateset_agents.evaluation.agent_runs import content_hash
+from stateset_agents.utils.provenance import content_hash
 
 ARITHMETIC_STRESS_POLICY = "refund_arithmetic_grid_v1"
 

@@ -21,14 +21,14 @@ class MessageInput(BaseModel):
     # `content: null` (or omit content entirely). We keep this optional and
     # validate downstream when building the backend payload.
     content: str | list[dict[str, Any]] | None = Field(
-        None, description="Message content (string or structured blocks)"
+        default=None, description="Message content (string or structured blocks)"
     )
-    name: str | None = Field(None, description="Optional name for the author")
+    name: str | None = Field(default=None, description="Optional name for the author")
     tool_call_id: str | None = Field(
-        None, description="Tool call identifier for tool responses"
+        default=None, description="Tool call identifier for tool responses"
     )
     tool_calls: list[dict[str, Any]] | None = Field(
-        None, description="OpenAI-style tool call metadata"
+        default=None, description="OpenAI-style tool call metadata"
     )
 
 
@@ -40,27 +40,31 @@ class MessagesRequest(BaseModel):
     model: str = Field(..., description="Model identifier")
     messages: list[MessageInput] = Field(..., description="Conversation messages")
     system: str | list[dict[str, Any]] | None = Field(
-        None, description="System prompt (string or content blocks)"
+        default=None, description="System prompt (string or content blocks)"
     )
-    max_tokens: int | None = Field(None, ge=1, description="Maximum tokens to generate")
+    max_tokens: int | None = Field(
+        default=None, ge=1, description="Maximum tokens to generate"
+    )
     temperature: float | None = Field(
-        None, ge=0.0, le=2.0, description="Sampling temperature"
+        default=None, ge=0.0, le=2.0, description="Sampling temperature"
     )
-    top_p: float | None = Field(None, ge=0.0, le=1.0, description="Top-p")
-    top_k: int | None = Field(None, ge=0, description="Top-k")
+    top_p: float | None = Field(default=None, ge=0.0, le=1.0, description="Top-p")
+    top_k: int | None = Field(default=None, ge=0, description="Top-k")
     stop_sequences: list[str] | None = Field(
-        None, description="Stop sequences (Anthropic style)"
+        default=None, description="Stop sequences (Anthropic style)"
     )
-    stream: bool = Field(False, description="Stream response tokens")
+    stream: bool = Field(default=False, description="Stream response tokens")
     tools: list[dict[str, Any]] | None = Field(
-        None, description="Tool definitions (Anthropic or OpenAI format)"
+        default=None, description="Tool definitions (Anthropic or OpenAI format)"
     )
     tool_choice: str | dict[str, Any] | None = Field(
-        None, description="Tool choice configuration"
+        default=None, description="Tool choice configuration"
     )
-    metadata: dict[str, Any] | None = Field(None, description="Arbitrary metadata")
+    metadata: dict[str, Any] | None = Field(
+        default=None, description="Arbitrary metadata"
+    )
     response_format: Literal["anthropic", "openai"] | None = Field(
-        None, description="Response format preference"
+        default=None, description="Response format preference"
     )
 
 
@@ -75,10 +79,12 @@ class MessagesResponse(BaseModel):
     """Anthropic-style response model for /v1/messages."""
 
     id: str = Field(..., description="Message identifier")
-    type: Literal["message"] = Field("message", description="Response type")
-    role: Literal["assistant"] = Field("assistant", description="Assistant role")
+    type: Literal["message"] = Field(default="message", description="Response type")
+    role: Literal["assistant"] = Field(
+        default="assistant", description="Assistant role"
+    )
     model: str = Field(..., description="Model identifier")
     content: list[dict[str, Any]] = Field(..., description="Response content blocks")
-    stop_reason: str | None = Field(None, description="Stop reason")
-    stop_sequence: str | None = Field(None, description="Stop sequence")
+    stop_reason: str | None = Field(default=None, description="Stop reason")
+    stop_sequence: str | None = Field(default=None, description="Stop sequence")
     usage: UsageInfo = Field(..., description="Token usage")

@@ -709,7 +709,7 @@ class TestGSPOKLPenaltyEstimator:
 
         class _Reward:
             async def compute_reward(self, turns, context=None):
-                score = 1.0 if turns[0].content == "ok" else 0.0
+                score = 1.0 if turns[-1].content == "ok" else 0.0
                 return SimpleNamespace(total_reward=score)
 
         trainer = GSPOTrainer(

@@ -31,6 +31,8 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
+from stateset_agents.exceptions import RUNTIME_FAILURE_EXCEPTIONS
+
 from .evaluation_metrics import (
     METRIC_REGISTRY,
     CoherenceMetric,
@@ -53,14 +55,11 @@ from .evaluation_models import (
 
 logger = logging.getLogger(__name__)
 
-EVALUATION_EXCEPTIONS = (
-    RuntimeError,
-    ValueError,
-    TypeError,
-    AttributeError,
-    KeyError,
-    OSError,
-)
+#: A sample or metric that fails for an expected reason (model or judge
+#: outage, bad data, I/O) is recorded as an error and evaluation continues. A
+#: TypeError/AttributeError/KeyError is a bug in the agent or metric: it
+#: propagates instead of being averaged in as a 0.0 score.
+EVALUATION_EXCEPTIONS = RUNTIME_FAILURE_EXCEPTIONS
 
 
 def _percentile(values: list[float], percentile: float) -> float:

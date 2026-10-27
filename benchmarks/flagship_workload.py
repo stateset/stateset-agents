@@ -1120,6 +1120,12 @@ def run_workload(args: argparse.Namespace, deps: WorkloadDeps) -> dict[str, Any]
             _summary_number(baseline_summary, "self_disagreement", "baseline"),
             _summary_number(final_summary, "self_disagreement", "final"),
         ),
+        # Gated separately: a failed pass is not a disagreement, but it
+        # scores 0.0 and biases the group mean.
+        "judge_parse_failure_rate": max(
+            _summary_number(baseline_summary, "parse_failure_rate", "baseline"),
+            _summary_number(final_summary, "parse_failure_rate", "final"),
+        ),
         "train_examples": len(train_records),
         "eval_examples": len(eval_records),
         "peak_vram_mb": max(peaks) if peaks else 0.0,

@@ -1,4 +1,5 @@
 import math
+import sys
 
 import pytest
 import torch
@@ -8,9 +9,13 @@ from stateset_agents.training.gepo_trainer import GEPOTrainer
 
 
 def test_wandb_is_required_only_when_logging_is_requested(monkeypatch):
-    monkeypatch.setattr(gepo_trainer, "wandb", None)
+    from stateset_agents.training.dedicated_reporting import WandbRun
+
+    monkeypatch.setitem(sys.modules, "wandb", None)
+    assert gepo_trainer.GEPOModelManager.algorithm == "GEPO"
+    WandbRun("gepo", enabled=False, project="p", config={}).start()  # no import
     with pytest.raises(ImportError, match="GEPO logging"):
-        gepo_trainer._require_wandb()
+        WandbRun("gepo", enabled=True, project="p", config={}).start()
 
 
 def test_gepo_coefficient_no_underflow_long_sequences():
@@ -281,3 +286,75 @@ def test_gepo_rejects_a_kl_penalty_it_cannot_apply():
 
     with pytest.raises(ValueError, match="beta must be 0"):
         GEPOTrainer(GEPOConfig(beta=0.1), torch.nn.Linear(1, 1), None, None)
+
+
+@pytest.mark.asyncio
+async def test_group_generation_batches_through_hf_generate_group():
+    """GEPO samples with the shared batched HF path (``generation_batch_size``
+    rows per ``generate``) and keeps its ``response_start_idx`` key."""
+    pytest.importorskip("transformers")
+    from transformers import GPT2Config, GPT2LMHeadModel
+
+    from stateset_agents.training.gepo_trainer import GEPOConfig
+    from tests._tiny_tokenizer import tiny_tokenizer
+
+    torch.manual_seed(0)
+    model = GPT2LMHeadModel(
+        GPT2Config(n_embd=16, n_layer=1, n_head=2, vocab_size=128, n_positions=64)
+    )
+    tokenizer = tiny_tokenizer(128)
+    trainer = GEPOTrainer(
+        config=GEPOConfig(
+            model_name="gpt2",
+            group_size=3,
+            generation_batch_size=2,
+            max_prompt_length=16,
+            max_completion_length=4,
+            report_to="none",
+        ),
+        model=model,
+        tokenizer=tokenizer,
+        reward_fn=lambda prompt, response: 0.0,
+    )
+    calls = []
+    original = model.generate
+
+    def counting_generate(*args, **kwargs):
+        calls.append(kwargs["num_return_sequences"])
+        return original(*args, **kwargs)
+
+    model.generate = counting_generate
+    model.train()
+    responses = await trainer.generate_group_responses("hello", 3)
+
+    prompt_length = len(tokenizer("hello")["input_ids"])
+    assert calls == [2, 1]
+    assert len(responses) == 3 and trainer.rollout_samples_total == 3
+    assert all(r["response_start_idx"] == prompt_length for r in responses)
+    assert all(r["prompt_length"] == prompt_length for r in responses)
+    assert model.training  # restored after sampling
+
+
+@pytest.mark.asyncio
+async def test_train_step_accepts_an_async_reward_function(monkeypatch):
+    """GEPO scores rewards through the spine's async-aware scorer like DAPO and
+    VAPO: an ``async def`` reward gives the same step as its sync twin."""
+    results = []
+    for asynchronous in (False, True):
+        trainer, fixed = _tiny_gepo_trainer(), _fixed_group_responses()
+
+        def sync_reward(prompt, response):
+            return 1.0 if response == "ok" else 0.0
+
+        async def async_reward(prompt, response):
+            return sync_reward(prompt, response)
+
+        trainer.reward_fn = async_reward if asynchronous else sync_reward
+
+        async def fake_generate(prompt, group_size, _fixed=fixed):
+            return _fixed
+
+        monkeypatch.setattr(trainer, "generate_group_responses", fake_generate)
+        results.append(await trainer.train_step(["p"]))
+    assert results[0]["average_reward"] == results[1]["average_reward"] == 0.5
+    assert results[0]["policy_loss"] == pytest.approx(results[1]["policy_loss"])

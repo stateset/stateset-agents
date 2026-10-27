@@ -17,6 +17,7 @@ from stateset_agents.exceptions import MODEL_DEVICE_EXCEPTIONS
 
 from . import rl_losses
 from .gspo_config import GSPOConfig
+from .spine.rollouts import VLLMEngineMixin
 
 logger = logging.getLogger(__name__)
 
@@ -129,7 +130,7 @@ def _get_model_device(model: Any) -> torch.device | None:
     if model is None:
         return None
     try:
-        first_param = next(model.parameters())
+        first_param: torch.Tensor = next(model.parameters())
         return first_param.device
     except StopIteration:
         return getattr(model, "device", None)
@@ -137,7 +138,7 @@ def _get_model_device(model: Any) -> torch.device | None:
         return getattr(model, "device", None)
 
 
-class GSPOTrajectoryGenerator:
+class GSPOTrajectoryGenerator(VLLMEngineMixin):
     """
     Handles efficient trajectory generation for GSPO training.
 
@@ -152,87 +153,24 @@ class GSPOTrajectoryGenerator:
         self.config = config
         self.agent = agent
         self.environment = environment
-        self.vllm_generator: Any | None = None
+        self._reset_vllm_state()
         self.sampling_params: Any | None = None
-        self._vllm_initialized = False
         self._temperature_bias_warned = False
         self._post_processing_warned = False
 
         if self.config.use_vllm and _load_vllm_backend():
             self._setup_vllm_generator()
 
-    def _setup_vllm_generator(self) -> None:
-        """Setup vLLM generator with config parameters."""
-        logger.info("Setting up vLLM generator for fast generation...")
+    _vllm_label = "GSPO"
+    _vllm_init_exceptions = VLLM_EXCEPTIONS
 
+    def _setup_vllm_generator(self) -> None:
+        """Create the vLLM engine (started by ``initialize_vllm``)."""
+        logger.info("Setting up vLLM generator for fast generation...")
         if not _load_vllm_backend():
             logger.warning("vLLM backend failed to load, will use HuggingFace fallback")
             return
-        vllm_config_cls = VLLMConfig
-        vllm_generator_cls = VLLMGenerator
-        if vllm_config_cls is None or vllm_generator_cls is None:
-            logger.warning(
-                "vLLM backend symbols unavailable, using HuggingFace fallback"
-            )
-            return
-
-        vllm_config = vllm_config_cls(
-            model_name=self.config.model_name,
-            revision=getattr(self.config, "model_revision", None),
-            gpu_memory_utilization=getattr(
-                self.config, "vllm_gpu_memory_utilization", 0.85
-            ),
-            tensor_parallel_size=getattr(self.config, "vllm_tensor_parallel_size", 1),
-            enable_prefix_caching=getattr(
-                self.config, "vllm_enable_prefix_caching", True
-            ),
-            max_model_len=getattr(self.config, "vllm_max_model_len", None),
-            quantization=getattr(self.config, "vllm_quantization", None),
-            enable_chunked_prefill=getattr(
-                self.config, "vllm_enable_chunked_prefill", True
-            ),
-            max_tokens=self.config.max_completion_length,
-            temperature=self.config.temperature,
-            top_p=self.config.top_p,
-            dtype=(
-                "float16"
-                if self.config.fp16
-                else ("bfloat16" if self.config.bf16 else "auto")
-            ),
-        )
-
-        self.vllm_generator = vllm_generator_cls(vllm_config)
-
-    async def initialize_vllm(self) -> bool:
-        """Initialize the vLLM engine before generation."""
-        if self.vllm_generator is None:
-            return False
-
-        if self._vllm_initialized:
-            return True
-
-        try:
-            generator = self.vllm_generator
-            if generator is None:
-                return False
-            success = await generator.initialize()
-            self._vllm_initialized = success
-            if success:
-                logger.info(
-                    "vLLM generator initialized - 5-20x faster generation enabled!"
-                )
-            return bool(success)
-        except VLLM_EXCEPTIONS as e:
-            logger.warning(
-                f"Failed to initialize vLLM: {e}. Using HuggingFace fallback."
-            )
-            self._vllm_initialized = False
-            return False
-
-    @property
-    def using_vllm(self) -> bool:
-        """Check if vLLM is being used for generation."""
-        return bool(self._vllm_initialized and self.vllm_generator is not None)
+        self._install_vllm_generator(VLLMConfig, VLLMGenerator)
 
     async def generate_group_responses(
         self, prompt: str, num_responses: int

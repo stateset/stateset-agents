@@ -10,6 +10,7 @@ from stateset_agents.core.reward_base import (
     RewardFunction,
     RewardResult,
     RewardType,
+    RewardUnavailableError,
 )
 from stateset_agents.core.trajectory import ConversationTurn
 from stateset_agents.rewards.task_outcome import TaskOutcomeReward
@@ -74,7 +75,9 @@ async def test_mixed_composition_routes_context_to_each_child_and_preserves_evid
     result = await composite.compute_reward(
         [ConversationTurn(role="assistant", content="done")], context
     )
-    assert ordinary.contexts == [scenario]
+    # The ordinary child gets the standard context: scenario keys lifted,
+    # environment state over them, and the scenario itself.
+    assert ordinary.contexts == [{**scenario, **context}]
     assert result.score == 1.5
     assert result.metadata["component_breakdowns"][1]["task_success"] == 1.0
     assert result.metadata["component_metadata"][1]["reward_semantics"] == (
@@ -83,9 +86,14 @@ async def test_mixed_composition_routes_context_to_each_child_and_preserves_evid
 
 
 async def test_optional_reward_failures_remain_optional_and_capabilities_are_dynamic():
-    optional = RecordedReward(failure=ValueError("optional unavailable"))
+    optional = RecordedReward(failure=RewardUnavailableError("optional unavailable"))
     composite = CompositeReward([optional, RecordedReward()])
     assert not composite.fail_on_error and not composite.requires_environment_context
+    # By default an outage drops the episode; optional components need the
+    # explicit renormalizing policy.
+    with pytest.raises(RewardUnavailableError, match="optional unavailable"):
+        await composite.compute_reward([])
+    composite.outage_policy = "renormalize"
     result = await composite.compute_reward([])
     # Optional failure redistributes its weight over successful components;
     # required evidence failures below must still propagate.
@@ -237,7 +245,11 @@ async def test_nested_outcome_runs_through_real_trainer_with_executed_tools():
     groups = await trainer.generate_trajectories([scenario])
     assert len(groups) == 1 and len(groups[0].trajectories) == 1
     assert groups[0].trajectories[0].total_reward == 1.5
-    assert ordinary.contexts == [scenario, scenario]
+    # The environment scored the episode; the trainer reuses it, not re-scores.
+    [ordinary_context] = ordinary.contexts
+    assert ordinary_context["scenario"] == scenario
+    assert ordinary_context["expected_response"] == "done"
+    assert ordinary_context["executed_tool_calls"] == [{"tool": "finish"}]
     assert all("expected_tool_calls" not in context["scenario"] for context in contexts)
 
 
@@ -260,11 +272,40 @@ async def test_policy_cannot_forge_tool_evidence_by_mutating_observation(kind):
     )
 
     async def forge(history, context):
-        context["executed_tool_calls"].append(expected)
-        context["scenario"]["public"]["cart"][0]["amount_cents"] = 0
+        # The evidence and the scenario's extra keys are not even shown to the
+        # policy (an allowlist); mutating whatever it gets changes nothing.
+        assert "executed_tool_calls" not in context
+        context.setdefault("executed_tool_calls", []).append(expected)
+        scenario_view = context.setdefault("scenario", {})
+        scenario_view.setdefault("public", {"cart": [{}]})["cart"][0][
+            "amount_cents"
+        ] = 0
         return "done"
 
     trajectory = await environment.run_episode(forge, scenario)
     assert trajectory.total_reward == 0
     assert trajectory.final_state["executed_tool_calls"] == []
     assert scenario["public"]["cart"][0]["amount_cents"] == 100
+
+
+async def test_ordinary_children_keep_environment_state_beside_evidence_children():
+    from stateset_agents.core.basic_rewards import TaskCompletionReward
+    from stateset_agents.core.reward_context import build_reward_context
+
+    completion = TaskCompletionReward(
+        task_criteria={"required_actions": ["load_data", "visualize"]}
+    )
+    evidence = RecordedReward(environmental=True)
+    composite = CompositeReward([completion, evidence])
+    state = {
+        "task": {"id": "t"},
+        "completed_actions": [{"name": "load_data"}, {"name": "visualize"}],
+    }
+    turns = [ConversationTurn(role="assistant", content="done")]
+    alone = await completion.compute_reward(turns, build_reward_context(state))
+    mixed = await composite.compute_reward(
+        turns, build_reward_context(state, reward_fn=composite)
+    )
+    assert alone.score == 1.0
+    assert mixed.components["taskcompletion"] == 1.0
+    assert evidence.contexts == [{**state, "scenario": state["task"]}]

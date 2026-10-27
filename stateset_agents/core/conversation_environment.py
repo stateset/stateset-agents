@@ -11,13 +11,17 @@ import uuid
 from typing import Any, cast
 
 from .environment_base import (
-    ENVIRONMENT_EXCEPTIONS,
+    STEP_ENVIRONMENT_REWARD,
+    STEP_REWARD_FN_SCORE,
     Environment,
     EnvironmentState,
     EpisodeStatus,
+    _context_keys,
+    _Episode,
+    policy_visible,
 )
 from .reward import RewardFunction
-from .trajectory import ConversationTurn
+from .trajectory import ConversationTurn, MultiTurnTrajectory
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +33,14 @@ def _scripted_user_turns(scenario: Any) -> list[str] | None:
     turns = scenario.get("user_turns")
     if not isinstance(turns, (list, tuple)) or not turns:
         return None
-    return [str(turn) for turn in turns]
+    return [_user_text(turn) for turn in turns]
+
+
+def _user_text(message: Any) -> str:
+    """A scripted user message as text; a structured one (a mapping) is
+    rendered without its reference-like keys, like everything the policy
+    reads."""
+    return message if isinstance(message, str) else str(policy_visible(message))
 
 
 def _opening_user_message(scenario: Any) -> str | None:
@@ -58,7 +69,9 @@ class ConversationEnvironment(Environment):
     System prompt: the episode opens with a system turn only when one is
     explicitly provided — the ``system_prompt`` argument, a scenario's
     ``"system_prompt"``, or a scenario's ``"context"`` (rendered as
-    ``"Context: ..."``). ``persona`` is appended to that turn when one is
+    ``"Context: ..."`` without its reference-like keys, see
+    :func:`~stateset_agents.core.environment_base.policy_visible`).
+    ``persona`` is appended to that turn when one is
     emitted. Otherwise :meth:`get_initial_prompt` returns ``""`` and the
     agent's own ``AgentConfig.system_prompt`` applies; when both exist, the
     environment's system turn takes precedence (``MultiTurnAgent`` does not
@@ -69,9 +82,18 @@ class ConversationEnvironment(Environment):
     (default ``True``) — an assistant reply containing a farewell
     (:data:`FAREWELL_PHRASES`, matched as whole words). Scripted scenarios
     never end early on a farewell: the script defines the episode length.
+
+    Randomness (the scenario when ``reset()`` gets none, and unscripted user
+    replies) comes from the environment's own ``random.Random(seed)``
+    (``seed=`` keyword), never the global ``random`` module. The policy's
+    context is an allowlist (the conversation, its topic, goal and persona,
+    and the scenario's descriptive keys); reference data never reaches it,
+    and ``visible_context_keys=`` opts extra keys in explicitly.
     """
 
-    scores_steps = True
+    # An untyped reward function (no ``reward_type``) judges the whole
+    # episode once at the end, as it does when a trainer holds it.
+    scores_steps = False
     supports_concurrent_episodes = True
 
     def __init__(
@@ -84,7 +106,12 @@ class ConversationEnvironment(Environment):
         end_on_farewell: bool = True,
         **kwargs: Any,
     ) -> None:
+        self.seed: int | None = kwargs.pop("seed", None)
+        self.visible_context_keys = _context_keys(
+            kwargs.pop("visible_context_keys", None)
+        )
         super().__init__(max_turns, reward_fn, **kwargs)
+        self._rng = random.Random(self.seed)
         self.scenarios = scenarios
         self.persona = persona
         self.system_prompt = system_prompt
@@ -107,7 +134,7 @@ class ConversationEnvironment(Environment):
                 raise ValueError(f"Unknown scenario_id: {scenario_id}")
 
         if scenario is None:
-            scenario = random.choice(self.scenarios) if self.scenarios else {}
+            scenario = self._rng.choice(self.scenarios) if self.scenarios else {}
         self.current_scenario = scenario
         episode_id = str(uuid.uuid4())
         scenario_conv_id = None
@@ -203,31 +230,32 @@ class ConversationEnvironment(Environment):
         new_state.context["history"] = history
 
         # Score the reply against the conversation it answers, before the
-        # simulated user's next message exists.
-        step_reward = 0.0
+        # simulated user's next message exists. Only the newest reply is
+        # scored, so an episode's step rewards weight every turn once.
+        self._snapshot_step_state(new_state)
+        # A subclass's _calculate_step_reward is the environment's own reward
+        # and always counts, whether or not a reward function is attached.
+        own_reward = 0.0
+        if self._overrides_step_reward():
+            own_reward = float(await self._calculate_step_reward(agent_turn, state))
+        new_state.metadata[STEP_ENVIRONMENT_REWARD] = own_reward
+        step_reward = own_reward
         if self.reward_fn is not None and self._should_compute_step_reward():
-            reward_turns = [
-                ConversationTurn(role=str(m["role"]), content=str(m["content"]))
-                for m in prior_history
-            ] + [agent_turn]
-            try:
-                reward_result = await self.reward_fn.compute_reward(
-                    reward_turns,
-                    new_state.context,
-                )
-                if hasattr(reward_result, "score"):
-                    step_reward = float(reward_result.score)
-                elif isinstance(reward_result, dict) and "score" in reward_result:
-                    step_reward = float(reward_result["score"])
-                elif isinstance(reward_result, (int, float)):
-                    step_reward = float(reward_result)
-            except ENVIRONMENT_EXCEPTIONS as reward_err:
-                if getattr(self.reward_fn, "fail_on_error", False):
-                    raise
-                logger.debug("Reward computation failed: %s", reward_err)
-                step_reward = 0.0
-        elif self.reward_fn is None:
-            step_reward = float(await self._calculate_step_reward(agent_turn, state))
+            reward_turns = self._step_reward_turns(
+                new_state,
+                [
+                    ConversationTurn(role=str(m["role"]), content=str(m["content"]))
+                    for m in prior_history
+                ]
+                + [agent_turn],
+            )
+            step_reward += await self._apply_step_reward(new_state, reward_turns)
+        elif self._uses_default_step_reward():
+            # A stand-in reward function: averaged over the episode, and
+            # dropped when a trainer supplies its own reward.
+            default = float(await self._calculate_step_reward(agent_turn, state))
+            new_state.metadata[STEP_REWARD_FN_SCORE] = default
+            step_reward += default
 
         scripted = _scripted_user_turns(new_state.context.get("scenario"))
         user_response: ConversationTurn | None
@@ -242,7 +270,10 @@ class ConversationEnvironment(Environment):
         else:
             user_response = None
         if user_response is not None:
-            history.append({"role": "user", "content": user_response.content})
+            # A new list: the snapshot taken above must not change under it.
+            new_state.context["history"] = history + [
+                {"role": "user", "content": user_response.content}
+            ]
 
         done = (
             new_state.turn_count >= self.max_turns
@@ -282,8 +313,11 @@ class ConversationEnvironment(Environment):
         explicit = self.system_prompt or scenario.get("system_prompt")
         if isinstance(explicit, str) and explicit.strip():
             parts.append(explicit.strip())
-        if scenario.get("context"):
-            parts.append(f"Context: {scenario['context']}")
+        # The context is shown as the policy may see it: reference-like keys
+        # (expected_*, gold*, answer...) are dropped at any depth.
+        context = policy_visible(scenario.get("context"), self.visible_context_keys)
+        if context:
+            parts.append(f"Context: {context}")
         if not parts:
             return ""
         if self.persona:
@@ -303,16 +337,50 @@ class ConversationEnvironment(Environment):
                 "Thank you, that's helpful.",
             ],
         )
-        response_content = random.choice(user_responses)
+        response_content = _user_text(self._rng.choice(user_responses))
         return ConversationTurn(
             role="user",
             content=response_content,
             metadata={"generated": True, "turn_number": state.turn_count},
         )
 
+    def _overrides_step_reward(self) -> bool:
+        """Whether a subclass defines its own step reward."""
+        return (
+            type(self)._calculate_step_reward
+            is not ConversationEnvironment._calculate_step_reward
+        )
+
+    def _uses_default_step_reward(self) -> bool:
+        """Whether episodes are scored by the built-in length heuristic."""
+        return (
+            self.reward_fn is None
+            and type(self)._calculate_step_reward
+            is ConversationEnvironment._calculate_step_reward
+        )
+
+    async def _finish_episode(self, episode: _Episode) -> MultiTurnTrajectory:
+        """Tag episodes scored by the built-in length heuristic.
+
+        Like a per-step reward function, the heuristic is averaged over the
+        episode's steps (see :meth:`Environment._finish_episode`), so an
+        agent gains nothing by stalling. Subclasses that override
+        ``_calculate_step_reward`` keep their step rewards as the
+        environment's own, summed.
+        """
+        trajectory = await super()._finish_episode(episode)
+        if self._uses_default_step_reward():
+            trajectory.metadata["reward_source"] = "default_length_heuristic"
+        return trajectory
+
     async def _calculate_step_reward(
         self, agent_turn: ConversationTurn, state: EnvironmentState
     ) -> float:
+        """Built-in step heuristic used when no ``reward_fn`` is configured.
+
+        It rewards reply length only; pass a ``reward_fn`` for a meaningful
+        training signal.
+        """
         base_reward = 0.1
         if len(agent_turn.content or "") > 50:
             base_reward += 0.1
@@ -340,4 +408,6 @@ class ConversationEnvironment(Environment):
             system_prompt=self.system_prompt,
             end_on_farewell=self.end_on_farewell,
             timeout_seconds=self.timeout_seconds,
+            seed=self.seed,
+            visible_context_keys=self.visible_context_keys,
         )

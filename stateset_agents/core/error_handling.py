@@ -1,8 +1,28 @@
 """
-Enhanced Error Handling for GRPO Agent Framework
+Error handling helpers for the GRPO family of exceptions.
 
-This module provides comprehensive error handling, retry mechanisms,
-and recovery strategies for production-ready agent training and deployment.
+The exception hierarchy itself lives in :mod:`stateset_agents.core.errors`
+(``StateSetError`` and its categories). This module keeps:
+
+* ``GRPOException`` and its ``ValidationException`` / ``ResourceException``
+  members, which the framework still raises. Each is also the matching
+  :mod:`~stateset_agents.core.errors` category (``ValidationException`` is a
+  ``ValidationError``) and its ``code`` is a canonical
+  :class:`~stateset_agents.core.errors.ErrorCode`; the legacy ``GRPO_E###``
+  code stays on ``error_code`` (a :class:`GRPOErrorCode`).
+* ``ErrorHandler``, an in-memory error log returning :class:`ErrorRecord`.
+
+Deprecated here (each access or call warns and names its replacement):
+
+* ``ErrorCode`` (now :class:`GRPOErrorCode`; use ``core.errors.ErrorCode``)
+  and ``TrainingException`` / ``ModelException`` / ``DataException`` /
+  ``NetworkException`` (unused; use the ``core.errors`` categories) are
+  removed in v0.72.0 with the stable root names that point at them;
+* ``ErrorContext`` (now :class:`ErrorRecord`) is removed in v0.71.0;
+* the retry and circuit-breaker helpers (``RetryConfig``, ``retry_async``,
+  ``CircuitBreakerConfig``, ``CircuitBreaker``, ``circuit_breaker``) are
+  removed in v0.72.0; :mod:`stateset_agents.api.resilience` is the one
+  implementation.
 """
 
 import asyncio
@@ -14,7 +34,23 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .errors import StateSetError
+from .._deprecation import warn_deprecated
+from . import errors as _core_errors
+from .errors import (
+    DataError,
+    ModelError,
+    NetworkError,
+    ResourceError,
+    StateSetError,
+    TrainingError,
+    ValidationError,
+)
+
+#: Stable (root ``__all__``) names deprecated here are removed in this release.
+_STABLE_REMOVAL = "0.72.0"
+#: Provisional names deprecated here are removed in this release.
+_PROVISIONAL_REMOVAL = "0.71.0"
+_RESILIENCE = "stateset_agents.api.resilience"
 
 
 class ErrorSeverity(Enum):
@@ -38,8 +74,12 @@ class ErrorCategory(Enum):
     SYSTEM = "system"
 
 
-class ErrorCode(Enum):
-    """Structured error codes for consistent tracking."""
+class GRPOErrorCode(Enum):
+    """Legacy ``GRPO_E###`` codes carried on ``GRPOException.error_code``.
+
+    The canonical code of every framework error is
+    :class:`stateset_agents.core.errors.ErrorCode` (``exc.code``).
+    """
 
     UNKNOWN = "GRPO_E000"
     VALIDATION_FAILED = "GRPO_E001"
@@ -52,22 +92,38 @@ class ErrorCode(Enum):
 
 
 DEFAULT_ERROR_CODES = {
-    ErrorCategory.TRAINING: ErrorCode.TRAINING_FAILED,
-    ErrorCategory.MODEL: ErrorCode.MODEL_FAILED,
-    ErrorCategory.DATA: ErrorCode.DATA_FAILED,
-    ErrorCategory.NETWORK: ErrorCode.NETWORK_FAILED,
-    ErrorCategory.RESOURCE: ErrorCode.RESOURCE_FAILED,
-    ErrorCategory.VALIDATION: ErrorCode.VALIDATION_FAILED,
-    ErrorCategory.SYSTEM: ErrorCode.SYSTEM_FAILED,
+    ErrorCategory.TRAINING: GRPOErrorCode.TRAINING_FAILED,
+    ErrorCategory.MODEL: GRPOErrorCode.MODEL_FAILED,
+    ErrorCategory.DATA: GRPOErrorCode.DATA_FAILED,
+    ErrorCategory.NETWORK: GRPOErrorCode.NETWORK_FAILED,
+    ErrorCategory.RESOURCE: GRPOErrorCode.RESOURCE_FAILED,
+    ErrorCategory.VALIDATION: GRPOErrorCode.VALIDATION_FAILED,
+    ErrorCategory.SYSTEM: GRPOErrorCode.SYSTEM_FAILED,
+}
+
+#: The canonical :class:`~stateset_agents.core.errors.ErrorCode` of each
+#: category, used for ``GRPOException.code``.
+CATEGORY_ERROR_CODES: dict[ErrorCategory, _core_errors.ErrorCode] = {
+    ErrorCategory.TRAINING: TrainingError.default_code,
+    ErrorCategory.MODEL: ModelError.default_code,
+    ErrorCategory.DATA: DataError.default_code,
+    ErrorCategory.NETWORK: NetworkError.default_code,
+    ErrorCategory.RESOURCE: _core_errors.ErrorCode.RES_EXHAUSTED,
+    ErrorCategory.VALIDATION: ValidationError.default_code,
+    ErrorCategory.SYSTEM: _core_errors.ErrorCode.UNKNOWN,
 }
 
 
 @dataclass
-class ErrorContext:
-    """Rich error context for debugging"""
+class ErrorRecord:
+    """One handled error as :class:`ErrorHandler` records it.
+
+    Formerly ``ErrorContext``, a name it shared with the exception context in
+    :mod:`stateset_agents.core.errors`.
+    """
 
     error_id: str
-    error_code: ErrorCode
+    error_code: GRPOErrorCode
     category: ErrorCategory
     severity: ErrorSeverity
     timestamp: float
@@ -81,9 +137,11 @@ class ErrorContext:
 class GRPOException(StateSetError):
     """Base exception for GRPO framework.
 
-    Inherits from :class:`~stateset_agents.core.errors.StateSetError` so that
-    ``except StateSetError`` catches GRPO errors too, unifying the two error
-    hierarchies.
+    A :class:`~stateset_agents.core.errors.StateSetError` whose ``code`` is the
+    canonical :class:`~stateset_agents.core.errors.ErrorCode` of its category;
+    the legacy ``GRPO_E###`` code is ``error_code`` and still heads
+    ``str(exc)``. Each subclass also derives from the matching category error
+    (``ValidationException`` is a ``ValidationError``, ...): one hierarchy.
     """
 
     def __init__(
@@ -91,7 +149,7 @@ class GRPOException(StateSetError):
         message: str,
         category: ErrorCategory = ErrorCategory.SYSTEM,
         severity: ErrorSeverity = ErrorSeverity.MEDIUM,
-        error_code: ErrorCode | None = None,
+        error_code: GRPOErrorCode | None = None,
         details: dict[str, Any] | None = None,
         recovery_actions: list[str] | None = None,
     ):
@@ -102,12 +160,18 @@ class GRPOException(StateSetError):
         self.category = category
         self.severity = severity
         self.error_code = error_code or DEFAULT_ERROR_CODES.get(
-            category, ErrorCode.UNKNOWN
+            category, GRPOErrorCode.UNKNOWN
         )
         self.details = details or {}
         self.recovery_actions = recovery_actions or []
         self.timestamp = time.time()
-        # StateSetError compatibility attributes
+        # StateSetError attributes, so ``except StateSetError as e`` reads the
+        # same canonical ``e.code`` / ``e.context`` / ``e.to_dict()`` for every
+        # framework error.
+        self.code = CATEGORY_ERROR_CODES[category]
+        self.context = _core_errors.ErrorContext(
+            operation="unknown", component=category.value, details=self.details
+        )
         self.cause: BaseException | None = None
 
     def __str__(self) -> str:
@@ -116,11 +180,23 @@ class GRPOException(StateSetError):
             parts.append(f"Details: {self.details}")
         return " | ".join(parts)
 
+    def to_dict(self) -> dict[str, Any]:
+        """``StateSetError.to_dict()`` plus the GRPO fields."""
+        payload = super().to_dict()
+        payload.update(
+            {
+                "grpo_error_code": self.error_code.value,
+                "category": self.category.value,
+                "severity": self.severity.value,
+            }
+        )
+        return payload
+
     def to_context(
         self, component: str = "unknown", operation: str = "unknown"
-    ) -> ErrorContext:
-        """Convert to rich error context"""
-        return ErrorContext(
+    ) -> ErrorRecord:
+        """Convert to the record :class:`ErrorHandler` keeps."""
+        return ErrorRecord(
             error_id=f"{self.category.value}_{int(self.timestamp)}",
             error_code=self.error_code,
             category=self.category,
@@ -134,39 +210,7 @@ class GRPOException(StateSetError):
         )
 
 
-class TrainingException(GRPOException):
-    """Training-related errors"""
-
-    def __init__(self, message: str, **kwargs):
-        kwargs["category"] = ErrorCategory.TRAINING
-        super().__init__(message, **kwargs)
-
-
-class ModelException(GRPOException):
-    """Model-related errors"""
-
-    def __init__(self, message: str, **kwargs):
-        kwargs["category"] = ErrorCategory.MODEL
-        super().__init__(message, **kwargs)
-
-
-class DataException(GRPOException):
-    """Data processing errors"""
-
-    def __init__(self, message: str, **kwargs):
-        kwargs["category"] = ErrorCategory.DATA
-        super().__init__(message, **kwargs)
-
-
-class NetworkException(GRPOException):
-    """Network and API errors"""
-
-    def __init__(self, message: str, **kwargs):
-        kwargs["category"] = ErrorCategory.NETWORK
-        super().__init__(message, **kwargs)
-
-
-class ResourceException(GRPOException):
+class ResourceException(GRPOException, ResourceError):
     """Resource allocation errors (GPU, memory, etc.)"""
 
     def __init__(self, message: str, **kwargs):
@@ -174,7 +218,7 @@ class ResourceException(GRPOException):
         super().__init__(message, **kwargs)
 
 
-class ValidationException(GRPOException):
+class ValidationException(GRPOException, ValidationError):
     """Input validation errors"""
 
     def __init__(self, message: str, **kwargs):
@@ -182,8 +226,103 @@ class ValidationException(GRPOException):
         super().__init__(message, **kwargs)
 
 
+# The framework never raises these four; they are served (with a warning) by
+# the module ``__getattr__`` below until v0.72.0.
+class _TrainingException(GRPOException, TrainingError):
+    """Training-related errors"""
+
+    def __init__(self, message: str, **kwargs):
+        kwargs["category"] = ErrorCategory.TRAINING
+        super().__init__(message, **kwargs)
+
+
+class _ModelException(GRPOException, ModelError):
+    """Model-related errors"""
+
+    def __init__(self, message: str, **kwargs):
+        kwargs["category"] = ErrorCategory.MODEL
+        super().__init__(message, **kwargs)
+
+
+class _DataException(GRPOException, DataError):
+    """Data processing errors"""
+
+    def __init__(self, message: str, **kwargs):
+        kwargs["category"] = ErrorCategory.DATA
+        super().__init__(message, **kwargs)
+
+
+class _NetworkException(GRPOException, NetworkError):
+    """Network and API errors"""
+
+    def __init__(self, message: str, **kwargs):
+        kwargs["category"] = ErrorCategory.NETWORK
+        super().__init__(message, **kwargs)
+
+
+# Keep the public names on the classes (pickling, reprs and tracebacks).
+for _cls, _public in (
+    (_TrainingException, "TrainingException"),
+    (_ModelException, "ModelException"),
+    (_DataException, "DataException"),
+    (_NetworkException, "NetworkException"),
+):
+    _cls.__name__ = _cls.__qualname__ = _public
+del _cls, _public
+
+#: name -> (object, removal release, replacement)
+_DEPRECATED_NAMES: dict[str, tuple[Any, str, str]] = {
+    "ErrorCode": (
+        GRPOErrorCode,
+        _STABLE_REMOVAL,
+        "stateset_agents.core.errors.ErrorCode (exc.code) or "
+        "stateset_agents.core.error_handling.GRPOErrorCode (exc.error_code)",
+    ),
+    "ErrorContext": (
+        ErrorRecord,
+        _PROVISIONAL_REMOVAL,
+        "stateset_agents.core.error_handling.ErrorRecord",
+    ),
+    "TrainingException": (
+        _TrainingException,
+        _STABLE_REMOVAL,
+        "stateset_agents.core.errors.TrainingError",
+    ),
+    "ModelException": (
+        _ModelException,
+        _STABLE_REMOVAL,
+        "stateset_agents.core.errors.ModelError",
+    ),
+    "DataException": (
+        _DataException,
+        _STABLE_REMOVAL,
+        "stateset_agents.core.errors.DataError",
+    ),
+    "NetworkException": (
+        _NetworkException,
+        _STABLE_REMOVAL,
+        "stateset_agents.core.errors.NetworkError",
+    ),
+}
+
+
+def __getattr__(name: str) -> Any:
+    """Serve the deprecated names with a dated warning."""
+    entry = _DEPRECATED_NAMES.get(name)
+    if entry is None:
+        raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+    value, removal, replacement = entry
+    warn_deprecated(f"{__name__}.{name}", removal=removal, replacement=replacement)
+    return value
+
+
 class RetryConfig:
-    """Configuration for retry mechanisms"""
+    """Configuration for :func:`retry_async`.
+
+    Deprecated: :class:`stateset_agents.api.resilience.RetryConfig` with
+    ``RetryStrategy`` / ``retry`` is the one retry implementation; this one
+    will be removed in v0.72.0.
+    """
 
     def __init__(
         self,
@@ -194,16 +333,27 @@ class RetryConfig:
         jitter: bool = True,
         retry_on: list[type[Exception]] | None = None,
     ):
+        warn_deprecated(
+            f"{__name__}.RetryConfig",
+            removal=_STABLE_REMOVAL,
+            replacement=f"{_RESILIENCE}.RetryConfig",
+        )
+        if max_attempts < 1:
+            raise ValueError(f"max_attempts must be >= 1, got {max_attempts}")
         self.max_attempts = max_attempts
         self.base_delay = base_delay
         self.max_delay = max_delay
         self.exponential_base = exponential_base
         self.jitter = jitter
-        self.retry_on = retry_on or [NetworkException, ResourceException]
+        self.retry_on = retry_on or [_NetworkException, ResourceException]
 
 
 class CircuitBreakerConfig:
-    """Configuration for circuit breaker pattern"""
+    """Configuration for :class:`CircuitBreaker`.
+
+    Deprecated: :class:`stateset_agents.api.resilience.CircuitBreakerConfig`
+    is the one circuit breaker; this one will be removed in v0.72.0.
+    """
 
     def __init__(
         self,
@@ -211,6 +361,11 @@ class CircuitBreakerConfig:
         recovery_timeout: float = 60.0,
         expected_exception: type[Exception] = Exception,
     ):
+        warn_deprecated(
+            f"{__name__}.CircuitBreakerConfig",
+            removal=_STABLE_REMOVAL,
+            replacement=f"{_RESILIENCE}.CircuitBreakerConfig",
+        )
         self.failure_threshold = failure_threshold
         self.recovery_timeout = recovery_timeout
         self.expected_exception = expected_exception
@@ -225,7 +380,12 @@ class CircuitBreakerState(Enum):
 
 
 class CircuitBreaker:
-    """Circuit breaker for fault tolerance"""
+    """Synchronous circuit breaker.
+
+    Deprecated: :class:`stateset_agents.api.resilience.CircuitBreaker` (async,
+    with half-open success counting, fallbacks and the ``/metrics`` registry)
+    is the one implementation; this one will be removed in v0.72.0.
+    """
 
     def __init__(
         self,
@@ -235,6 +395,11 @@ class CircuitBreaker:
         recovery_timeout: float = 60.0,
         expected_exception: type[Exception] = Exception,
     ):
+        warn_deprecated(
+            f"{__name__}.CircuitBreaker",
+            removal=_STABLE_REMOVAL,
+            replacement=f"{_RESILIENCE}.CircuitBreaker",
+        )
         # Backward/interop support: allow constructing directly from thresholds.
         self.config = config or CircuitBreakerConfig(
             failure_threshold=failure_threshold,
@@ -279,6 +444,20 @@ class CircuitBreaker:
             raise
 
 
+def _readable_error_id(error: BaseException) -> str:
+    """A readable id from the exception message, falling back to a timestamp."""
+    try:
+        text = str(error)
+    # Process boundary: this runs while reporting an arbitrary (possibly
+    # user-defined) exception; a broken ``__str__`` must not turn error
+    # reporting into a second, unrelated crash.
+    except Exception:  # noqa: BLE001
+        text = ""
+    slug = text.strip().lower().replace(" ", "_")
+    slug = "".join(ch for ch in slug if ch.isalnum() or ch in ("_", "-"))
+    return slug or f"generic_{int(time.time())}"
+
+
 class ErrorHandler:
     """Centralized error handling and recovery"""
 
@@ -288,7 +467,7 @@ class ErrorHandler:
         max_error_history: int = 10000,
     ):
         self.logger = logger or logging.getLogger(__name__)
-        self.error_history: list[ErrorContext] = []
+        self.error_history: list[ErrorRecord] = []
         self._max_error_history = max_error_history
         self.circuit_breakers: dict[str, CircuitBreaker] = {}
 
@@ -298,23 +477,16 @@ class ErrorHandler:
         component: str,
         operation: str,
         context: dict[str, Any] | None = None,
-    ) -> ErrorContext:
+    ) -> ErrorRecord:
         """Handle and log error with rich context"""
 
         if isinstance(error, GRPOException):
             error_context = error.to_context(component, operation)
         else:
-            # Derive a readable error_id from the exception message, falling back to timestamp
-            try:
-                _msg = str(error).strip().lower().replace(" ", "_")
-                _msg = "".join(ch for ch in _msg if ch.isalnum() or ch in ("_", "-"))
-                _err_id = _msg if _msg else f"generic_{int(time.time())}"
-            except (AttributeError, TypeError, ValueError):
-                _err_id = f"generic_{int(time.time())}"
-            error_context = ErrorContext(
-                error_id=_err_id,
+            error_context = ErrorRecord(
+                error_id=_readable_error_id(error),
                 error_code=DEFAULT_ERROR_CODES.get(
-                    ErrorCategory.SYSTEM, ErrorCode.UNKNOWN
+                    ErrorCategory.SYSTEM, GRPOErrorCode.UNKNOWN
                 ),
                 category=ErrorCategory.SYSTEM,
                 severity=ErrorSeverity.MEDIUM,
@@ -337,7 +509,7 @@ class ErrorHandler:
 
         return error_context
 
-    def _log_error(self, error_context: ErrorContext):
+    def _log_error(self, error_context: ErrorRecord):
         """Log error with appropriate level"""
         log_data = {
             "error_id": error_context.error_id,
@@ -359,7 +531,7 @@ class ErrorHandler:
             self.logger.info(f"LOW SEVERITY ERROR: {log_data}")
 
     def register_circuit_breaker(self, name: str, config: CircuitBreakerConfig):
-        """Register a circuit breaker"""
+        """Register a circuit breaker (deprecated with :class:`CircuitBreaker`)."""
         self.circuit_breakers[name] = CircuitBreaker(config)
 
     def get_circuit_breaker(self, name: str) -> CircuitBreaker | None:
@@ -399,11 +571,20 @@ class ErrorHandler:
 
 
 def retry_async(config: RetryConfig):
-    """Async retry decorator with exponential backoff"""
+    """Async retry decorator with exponential backoff.
+
+    Deprecated: use :func:`stateset_agents.api.resilience.retry`; this will be
+    removed in v0.72.0.
+    """
+    warn_deprecated(
+        f"{__name__}.retry_async",
+        removal=_STABLE_REMOVAL,
+        replacement=f"{_RESILIENCE}.retry",
+    )
 
     def decorator(func: Callable):
         async def wrapper(*args, **kwargs):
-            last_exception = None
+            last_exception: BaseException | None = None
 
             for attempt in range(config.max_attempts):
                 try:
@@ -430,6 +611,12 @@ def retry_async(config: RetryConfig):
                     await asyncio.sleep(delay)
 
             # If we get here, all retries failed
+            if last_exception is None:
+                # Only reachable when max_attempts was mutated below 1 after
+                # construction; never ``raise None`` (a confusing TypeError).
+                raise ValueError(
+                    f"max_attempts must be >= 1, got {config.max_attempts}"
+                )
             raise last_exception
 
         return wrapper
@@ -440,13 +627,27 @@ def retry_async(config: RetryConfig):
 def circuit_breaker(
     name: str, config: CircuitBreakerConfig, error_handler: ErrorHandler
 ):
-    """Circuit breaker decorator"""
+    """Circuit breaker decorator.
+
+    Deprecated: use :func:`stateset_agents.api.resilience.get_circuit_breaker`
+    (the breaker is itself a decorator); this will be removed in v0.72.0.
+    """
+    warn_deprecated(
+        f"{__name__}.circuit_breaker",
+        removal=_STABLE_REMOVAL,
+        replacement=f"{_RESILIENCE}.get_circuit_breaker",
+    )
 
     error_handler.register_circuit_breaker(name, config)
 
     def decorator(func: Callable):
         def wrapper(*args, **kwargs):
             cb = error_handler.get_circuit_breaker(name)
+            if cb is None:
+                # The registry was cleared after decoration; re-register so the
+                # decorated function keeps its breaker instead of crashing.
+                cb = CircuitBreaker(config)
+                error_handler.circuit_breakers[name] = cb
             return cb.call(func, *args, **kwargs)
 
         return wrapper
@@ -475,7 +676,7 @@ def handle_error(
     component: str,
     operation: str,
     context: dict[str, Any] | None = None,
-) -> ErrorContext:
+) -> ErrorRecord:
     """Handle error using global handler"""
     return _global_error_handler.handle_error(error, component, operation, context)
 

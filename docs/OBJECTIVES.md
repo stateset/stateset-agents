@@ -33,12 +33,19 @@ Uncertainty weighting preserves the original evidence and explanation, validates
 finite nonnegative estimates and coefficients, and rejects nonfinite base scores.
 
 Exact prompt and sampled token IDs are required by default. Legacy text-only
-trajectories require `allow_sequence_fallback=True`. Requesting sampler
+trajectories require `allow_sequence_fallback=True`; if the sequence path
+would then have to supervise every token (prompt included), it also needs
+`allow_unmasked_labels=True`. Requesting sampler
 importance correction without sampler probabilities raises unless
 `allow_missing_sampler_logprobs=True`; this opt-in is reported as
 `old_logprobs_source="recompute_fallback"`. Metadata is validated without
 coercing malformed IDs or probabilities. Sequence compatibility reports its
-effective objective and fallback explicitly.
+effective objective and fallback explicitly. On that path, a tokenizer without
+a chat template that cannot map assistant text to tokens (no offset mapping)
+would supervise every token, user and system included; that raises
+`RolloutContractError` unless `allow_unmasked_labels=True`. A trajectory whose
+sequence-path loss fails raises `TrajectoryLossError` rather than being dropped
+from its group's mean.
 
 Sequence objectives sum assistant-turn losses within each trajectory before
 averaging trajectories, so early termination cannot reweight other episodes.
@@ -647,7 +654,7 @@ Actions are sampled through unmodified Hugging Face generation and executed
 against an isolated ledger. Evidence retains paired held-out outcomes, case
 hashes, optimizer updates, reload checks and a bootstrap interval across seeds.
 This is synthetic mechanics evidence, not representative industry quality.
-Use reviewed cases and `stateset_agents.evaluation.agent_study` for that claim.
+Use reviewed cases and `stateset_agents.verticals.agent_study` for that claim.
 The retained [three-seed CPU regression with accumulation](../benchmark_results/training_contracts/20261015/evaluation-isolation/native_workflow/summary.json)
 includes raw before/after outcomes, training metrics, and exact-weight reload
 checks for this workflow.
@@ -904,7 +911,7 @@ config = DAPOConfig(objective="dr_grpo")  # max_completion_length is filled in
 ```bash
 stateset-agents train --list-objectives
 stateset-agents train --objective rloo --no-dry-run
-stateset-agents qwen3-5-0-8b --objective gspo_token --write-config run.json
+stateset-agents model qwen3-5-0-8b --objective gspo_token --write-config run.json
 ```
 
 Rules, implemented by `objectives.resolve_objective`:
@@ -1200,6 +1207,19 @@ Known differences, on purpose:
 VAPO's value loss and positive-example LM loss, PPO's value loss, and
 enhanced GRPO's exact full-vocabulary KL remain in their trainers; the
 objective owns the policy term only.
+
+## Preference optimization (offline)
+
+The policy objectives above are on-policy: they score sampled rollouts.
+Offline preference optimization trains directly on chosen/rejected (or
+desirable/undesirable) responses with no sampling: DPO, conservative DPO,
+IPO, SimPO, KTO and ORPO in `stateset_agents.training.preference`
+(`PreferenceTrainer`, `train_preference`, `stateset-agents preference`). The
+same package trains Bradley-Terry reward models whose
+`PairwiseRewardFunction` can supply the reward for the trainers above. Those
+losses use response-token log-probs gathered by the same
+`rl_losses.gather_token_logprobs` and are pinned to TRL 1.12. See
+[PREFERENCE_TRAINING.md](PREFERENCE_TRAINING.md).
 
 ## PPO reference update limits
 

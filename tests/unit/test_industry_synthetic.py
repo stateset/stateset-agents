@@ -16,13 +16,13 @@ from stateset_agents.core.environments.industry_support_environment import (
     support_resolution,
 )
 from stateset_agents.core.trajectory import ConversationTurn
-from stateset_agents.data.industry_synthetic import (
+from stateset_agents.training.industry import train_industry_project
+from stateset_agents.verticals.industry_synthetic import (
     DOMAINS,
     _select_cases,
     audit_industry_datasets,
     generate_industry_datasets,
 )
-from stateset_agents.training.industry import train_industry_project
 
 
 def action(tool, **args):
@@ -419,7 +419,7 @@ def test_generation_imports_do_not_load_optional_training_stack():
         [
             sys.executable,
             "-c",
-            "import sys; import stateset_agents.data.industry_synthetic; assert not any(x in sys.modules for x in ('torch', 'transformers', 'river_client'))",
+            "import sys; import stateset_agents.verticals.industry_synthetic; assert not any(x in sys.modules for x in ('torch', 'transformers', 'river_client'))",
         ],
         check=True,
     )
@@ -452,7 +452,7 @@ def test_duplicate_fact_candidates_are_replaced_without_changing_family_counts()
 async def test_failed_publication_never_exposes_partial_training_data_and_is_retryable(
     tmp_path, monkeypatch
 ):
-    from stateset_agents.data import industry_synthetic as module
+    from stateset_agents.verticals import industry_synthetic as module
 
     output = tmp_path / "bundle"
     original = module.os.fsync

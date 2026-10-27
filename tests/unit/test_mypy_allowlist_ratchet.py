@@ -12,8 +12,14 @@ from pathlib import Path
 
 MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 
-# Floor = the full packaged source, including native studies and durable workers.
-ALLOWLIST_FLOOR = 465
+# Floor = the full packaged source, including native studies, durable workers,
+# the tool-use environment and verifiers, decontamination, the capability
+# regression hook, the shared QLoRA helper, the RL numerics' typing Protocols,
+# the studio's key-dispatch and screen modules, the spine's algorithm specs
+# and their registry, the spine LR schedule plus the dedicated entry points'
+# shared dependency loader and W&B reporter, round 6's self-contained math
+# final-answer reader, and the code verifier's docker isolation backend.
+ALLOWLIST_FLOOR = 538
 
 
 def _allowlisted_files() -> list[str]:
@@ -65,3 +71,40 @@ def test_ratchet_floor_matches_reality() -> None:
             f"{ALLOWLIST_FLOOR}. Raise the floor to {len(files)} to lock in "
             "the gain."
         )
+
+
+def test_mypy_follows_imports_and_never_skips_them() -> None:
+    """`follow_imports = skip` makes every imported name Any, hiding
+    cross-module type errors; the gate must keep following imports."""
+    parser = configparser.ConfigParser()
+    parser.read(MYPY_INI)
+    for section in parser.sections():
+        if section == "mypy" or section.startswith("mypy-stateset_agents"):
+            value = parser.get(section, "follow_imports", fallback=None)
+            assert value in (None, "silent", "normal"), (
+                f"[{section}] sets follow_imports = {value}; imported types would "
+                "become Any. Fix the type errors instead."
+            )
+    assert parser.get("mypy", "follow_imports") in ("silent", "normal")
+    for section in parser.sections():
+        assert not parser.getboolean(
+            section, "ignore_errors", fallback=False
+        ), f"[{section}] sets ignore_errors; fix the module's type errors instead."
+
+
+def test_mypy_checks_untyped_function_bodies_globally() -> None:
+    """Without `check_untyped_defs`, mypy skips the bodies of unannotated
+    functions entirely; it already caught calls on None, wrong attributes and
+    wrong arguments there. The global flag must stay on."""
+    parser = configparser.ConfigParser()
+    parser.read(MYPY_INI)
+    assert parser.getboolean("mypy", "check_untyped_defs", fallback=False), (
+        "mypy.ini's [mypy] section must keep `check_untyped_defs = true`; "
+        "fix the newly reported errors instead of turning it off."
+    )
+    for section in parser.sections():
+        if section.startswith("mypy-stateset_agents"):
+            assert parser.getboolean(section, "check_untyped_defs", fallback=True), (
+                f"[{section}] disables check_untyped_defs; fix its type errors "
+                "instead."
+            )

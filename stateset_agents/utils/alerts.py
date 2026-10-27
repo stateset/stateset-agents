@@ -18,14 +18,15 @@ from datetime import datetime, timedelta
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from enum import Enum
-from typing import Any, cast
+from typing import Any, TypedDict
 
 import requests
 
 # Optional imports
 try:
-    import aiohttp
+    import aiohttp as _aiohttp
 
+    aiohttp: Any = _aiohttp
     HAS_AIOHTTP = True
 except ImportError:
     aiohttp = None
@@ -38,6 +39,14 @@ try:
 except ImportError:
     slack_sdk = None
     HAS_SLACK = False
+
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.alerts",
+    removal="0.71.0",
+    replacement="stateset_agents.utils.monitoring.AlertManager",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +72,10 @@ NOTIFICATION_EXCEPTIONS: tuple[type[BaseException], ...] = (
         asyncio.TimeoutError,
         OSError,
         ValueError,
-        TypeError,
     )
 )
+# TypeError is deliberately absent: a handler that raises it has a bug, which
+# must surface rather than be counted as a failed delivery.
 
 
 async def _run_blocking(func: Callable[..., Any], *args, **kwargs) -> Any:
@@ -360,7 +370,8 @@ class WebhookNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return cast(int, response.status) < 400
+                        status: int = response.status
+                        return status < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10
@@ -416,7 +427,8 @@ class PagerDutyNotificationHandler(NotificationHandler):
                     async with session.post(
                         url, json=payload, headers=headers
                     ) as response:
-                        return cast(int, response.status) < 400
+                        status: int = response.status
+                        return status < 400
             else:
                 response = await _run_blocking(
                     requests.post, url, json=payload, headers=headers, timeout=10
@@ -431,6 +443,16 @@ class PagerDutyNotificationHandler(NotificationHandler):
             return False
 
 
+class _AlertStatistics(TypedDict):
+    """Running counters kept by :class:`AlertManager`."""
+
+    total_alerts: int
+    alerts_by_severity: defaultdict[str, int]
+    alerts_by_rule: defaultdict[str, int]
+    notifications_sent: int
+    notifications_failed: int
+
+
 class AlertManager:
     """Advanced alert manager"""
 
@@ -440,7 +462,7 @@ class AlertManager:
         self.alert_history: deque[Alert] = deque(maxlen=1000)
         self.notification_handlers: list[NotificationHandler] = []
         self.silenced_rules: dict[str, datetime] = {}
-        self.statistics = {
+        self.statistics: _AlertStatistics = {
             "total_alerts": 0,
             "alerts_by_severity": defaultdict(int),
             "alerts_by_rule": defaultdict(int),

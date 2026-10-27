@@ -12,7 +12,7 @@ api:
   image:
     # Python API gateway image built from `deployment/docker/Dockerfile`.
     repository: stateset/stateset-agents-api
-    tag: "0.67.0"
+    tag: "0.70.0"
     digest: ""
     pullPolicy: IfNotPresent
   service:
@@ -107,6 +107,10 @@ vllm:
   - "--gpu-memory-utilization=0.90"
   - "--enable-chunked-prefill"
   - "--enable-prefix-caching"
+  # Trust decision: required because the served model repos ship custom
+  # modeling/tokenizer code. This executes Python from the model repo, so pin
+  # reviewed model sources (modelId/modelPath) and keep vLLM behind the
+  # NetworkPolicy below.
   - "--trust-remote-code"
   - "--host=0.0.0.0"
   - "--port=8000"
@@ -118,6 +122,18 @@ vllm:
     capabilities:
       drop:
       - ALL
+
+# Restrict ingress to vLLM pods (served without --api-key) to the API gateway
+# pods. Requires a CNI that enforces NetworkPolicy (GKE Dataplane V2, Calico, ...).
+networkPolicy:
+  enabled: true
+  vllm:
+    # Additional NetworkPolicyPeer entries allowed to reach vLLM on 8000,
+    # e.g. a metrics collector namespace:
+    # - namespaceSelector:
+    #     matchLabels:
+    #       kubernetes.io/metadata.name: gmp-system
+    extraIngressFrom: []
 
 pvc:
   enabled: true
@@ -140,7 +156,7 @@ trainingJob:
     # Trainer image should include the `training` extras and any example/scripts
     # you plan to run in the Job.
     repository: stateset/stateset-agents-trainer
-    tag: "0.67.0"
+    tag: "0.70.0"
     digest: ""
     pullPolicy: IfNotPresent
   hfSecretName: "hf-secret"

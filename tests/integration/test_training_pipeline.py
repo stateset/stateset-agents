@@ -149,10 +149,9 @@ class TestTrainingPipelineIntegration:
             [HelpfulnessReward(weight=0.7), SafetyReward(weight=0.3)]
         )
 
-        # Mock the reward computation
-        with patch.object(
-            reward_fn, "compute_reward", return_value=AsyncMock(return_value=0.8)
-        ):
+        # Mock the reward computation (a real score: a mock object as the
+        # reward is a bug that training now reports instead of dropping)
+        with patch.object(reward_fn, "compute_reward", new=AsyncMock(return_value=0.8)):
             # Run training
             trained_agent = await train(
                 agent=agent,
@@ -160,7 +159,12 @@ class TestTrainingPipelineIntegration:
                 reward_fn=reward_fn,
                 num_episodes=1,  # Very small for integration test
                 profile="conservative",
-                config_overrides={"allow_sequence_fallback": True},
+                # Mocked tokenizer: no chat template, so assistant spans cannot be
+                # located and the multi-turn sequence path must opt in to full labels.
+                config_overrides={
+                    "allow_sequence_fallback": True,
+                    "allow_unmasked_labels": True,
+                },
             )
 
         # Verify the training completed

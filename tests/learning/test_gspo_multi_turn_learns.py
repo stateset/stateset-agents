@@ -81,6 +81,10 @@ def _train(seed: int, *, sign: float) -> tuple[float, float, list[Any], list[Any
         # Thresholds were calibrated at a constant learning rate; initialize()
         # now builds the configured (default cosine + warmup) schedule.
         lr_scheduler_type="constant",
+        # Under the negated reward success is a policy that emits no digits,
+        # so every group scores 0 and the zero-advantage guard would stop the
+        # run for doing what the test asks; keep the guard for the positive case.
+        zero_signal_patience=0 if sign < 0 else 5,
     )
     config.objective = "gspo"
     trainer = MultiTurnGRPOTrainer(

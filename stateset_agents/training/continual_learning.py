@@ -33,6 +33,11 @@ logger = logging.getLogger(__name__)
 CONTINUAL_EXCEPTIONS = ATTRIBUTE_VALUE_EXCEPTIONS
 
 
+def _torch_available() -> bool:
+    """Whether the optional torch import succeeded (checked at call time)."""
+    return torch is not None
+
+
 def _finite_number(value: Any) -> bool:
     try:
         return type(value) in (int, float) and math.isfinite(value)
@@ -374,7 +379,7 @@ class ContinualLearningManager:
         self._task_boundary: dict[str, Any] | None = None
         self._ddp_restore_failed = False
 
-        if self.config.uses_ewc() and torch is None:
+        if self.config.uses_ewc() and not _torch_available():
             logger.warning("EWC requested but PyTorch is unavailable; disabling EWC.")
             self.config.ewc_lambda = 0.0
 
@@ -472,7 +477,7 @@ class ContinualLearningManager:
         task_id: str | None = None,
         recent_groups: Sequence[TrajectoryGroup] | None = None,
     ) -> None:
-        if torch is not None:
+        if _torch_available():
             from torch.nn.parallel import DistributedDataParallel
 
             if isinstance(agent.model, DistributedDataParallel):
@@ -488,7 +493,7 @@ class ContinualLearningManager:
 
     def _snapshot_reference_model(self, agent: Any) -> None:
         model = agent.model
-        if torch is not None:
+        if _torch_available():
             from torch.nn.parallel import DistributedDataParallel
 
             if isinstance(model, DistributedDataParallel):
@@ -504,7 +509,7 @@ class ContinualLearningManager:
         task_id: str | None = None,
         recent_groups: Sequence[TrajectoryGroup] | None = None,
     ) -> None:
-        if torch is None:
+        if not _torch_available():
             return
 
         groups = list(recent_groups) if recent_groups else []
@@ -568,7 +573,7 @@ class ContinualLearningManager:
             0,
         )
         self.last_fisher_estimate = report
-        if torch is None:
+        if not _torch_available():
             return {}, {}
 
         model = agent.model
@@ -614,7 +619,8 @@ class ContinualLearningManager:
                             trajectory, agent, self.training_config or {}
                         )
                         if (
-                            not torch.is_tensor(labels)
+                            labels is None
+                            or not torch.is_tensor(labels)
                             or labels.ndim < 1
                             or not bool(labels[..., 1:].ne(-100).any())
                         ):
@@ -688,7 +694,7 @@ class ContinualLearningManager:
     def compute_ewc_penalty(self, agent: Any) -> Any | None:
         if not self.config.uses_ewc() or not self._ewc_fisher:
             return None
-        if torch is None:
+        if not _torch_available():
             return None
 
         loss = None
@@ -802,7 +808,7 @@ class ContinualLearningManager:
         reference_state = state.get("reference_state")
         reference = None
         if reference_state is not None:
-            if template is None or torch is None:
+            if template is None or not _torch_available():
                 raise ValueError("A model template is required to restore LwF weights")
             _validate_tensor_state(reference_state, template.state_dict())
             reference = deepcopy(template).eval()
@@ -850,7 +856,7 @@ def _validate_tensor_state(saved: Any, expected: dict[str, Any]) -> None:
     for name, value in saved.items():
         other = expected[name]
         if (
-            torch is None
+            not _torch_available()
             or not torch.is_tensor(value)
             or not torch.is_tensor(other)
             or value.layout != torch.strided

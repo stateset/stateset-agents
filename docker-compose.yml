@@ -1,5 +1,8 @@
 version: '3.8'
 
+# Local development stack. Published ports bind to 127.0.0.1 only, and
+# credentials come from the environment (see `.env.example`):
+# STATESET_POSTGRES_PASSWORD and STATESET_REDIS_PASSWORD are required.
 services:
   # StateSet Agents - AI Commerce Automation
   stateset-agents:
@@ -18,7 +21,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - OPENAI_MODEL=gpt-4o-mini
       # Redis
-      - REDIS_URL=redis://redis:6379
+      - REDIS_URL=redis://:${STATESET_REDIS_PASSWORD:?set STATESET_REDIS_PASSWORD (see .env.example)}@redis:6379
       # Logging
       - LOG_LEVEL=info
       - LOG_JSON=true
@@ -33,11 +36,11 @@ services:
     container_name: stateset-api
     restart: unless-stopped
     ports:
-      - "8080:8080"
-      - "8081:8081"
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8081:8081"
     environment:
-      - APP__DATABASE_URL=postgres://stateset:stateset@postgres:5432/stateset
-      - APP__REDIS_URL=redis://redis:6379
+      - APP__DATABASE_URL=postgres://stateset:${STATESET_POSTGRES_PASSWORD:?set STATESET_POSTGRES_PASSWORD (see .env.example)}@postgres:5432/stateset
+      - APP__REDIS_URL=redis://:${STATESET_REDIS_PASSWORD:?set STATESET_REDIS_PASSWORD (see .env.example)}@redis:6379
       - APP__HOST=0.0.0.0
       - APP__PORT=8080
       - APP__GRPC_PORT=8081
@@ -54,7 +57,7 @@ services:
     restart: unless-stopped
     environment:
       - POSTGRES_USER=stateset
-      - POSTGRES_PASSWORD=stateset
+      - POSTGRES_PASSWORD=${STATESET_POSTGRES_PASSWORD:?set STATESET_POSTGRES_PASSWORD (see .env.example)}
       - POSTGRES_DB=stateset
     volumes:
       - postgres_data:/var/lib/postgresql/data
@@ -66,7 +69,7 @@ services:
     image: redis:7-alpine
     container_name: stateset-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${STATESET_REDIS_PASSWORD:?set STATESET_REDIS_PASSWORD (see .env.example)}"]
     volumes:
       - redis_data:/data
     networks:

@@ -26,6 +26,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.data.jsonl import count_jsonl_records
+
 #: Filename written into every adapter directory.
 MANIFEST_NAME = "stateset_manifest.json"
 logger = logging.getLogger(__name__)
@@ -54,6 +56,9 @@ class AdapterManifest:
     )
     model_revision: str | None = None
     reward_sha256: str | None = None
+    #: ``min_judge_score`` gates the eval could not check (judge unavailable);
+    #: None when no eval prompt set one.
+    eval_judge_gates_skipped: int | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -70,9 +75,7 @@ def hash_dataset(path: Path) -> tuple[str | None, int | None]:
     except OSError:
         return (None, None)
     digest = hashlib.sha256(data).hexdigest()
-    rows = sum(
-        1 for line in data.decode("utf-8", "replace").splitlines() if line.strip()
-    )
+    rows = count_jsonl_records(data.decode("utf-8", "replace"))
     return (digest, rows)
 
 

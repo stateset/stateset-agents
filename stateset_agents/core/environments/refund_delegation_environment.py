@@ -162,7 +162,7 @@ class RefundDelegationEnvironment(Environment):
                 finish = True
             else:
                 raise ValueError("Unknown delegation tool")
-        except (ValueError, TypeError) as exc:
+        except ValueError as exc:
             ctx["intent_violations"] += 1
             observation: Any = {"error": str(exc)}
         else:

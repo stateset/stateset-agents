@@ -17,6 +17,8 @@ from types import SimpleNamespace
 
 import pytest
 
+from tests.integration._spawn_budget import spawn_budget
+
 pytestmark = pytest.mark.integration
 SHARDS = 4
 
@@ -473,7 +475,7 @@ def _worker(rank, directory, shard):
         dist.destroy_process_group()
 
 
-@pytest.mark.timeout(120)
+@pytest.mark.timeout(spawn_budget(120))
 @pytest.mark.parametrize("shard", range(SHARDS), ids=lambda value: f"shard-{value}")
 def test_two_rank_uneven_updates_match_combined_reference(tmp_path, shard):
     torch = pytest.importorskip("torch")
@@ -484,10 +486,12 @@ def test_two_rank_uneven_updates_match_combined_reference(tmp_path, shard):
         _worker, args=(str(tmp_path.resolve()), shard), nprocs=2, join=False
     )
     try:
-        deadline = time.monotonic() + 90
+        deadline = time.monotonic() + spawn_budget(90)
         while not context.join(timeout=1):
             if time.monotonic() > deadline:
-                pytest.fail(f"two-rank RL weighting shard {shard} exceeded 90 seconds")
+                pytest.fail(
+                    f"two-rank RL weighting shard {shard} exceeded {spawn_budget(90):.0f} seconds"
+                )
     finally:
         for process in context.processes:
             if process.is_alive():

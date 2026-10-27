@@ -484,18 +484,25 @@ async def test_lab_websocket_ignores_query_credentials_by_default(
 ):
     from stateset_agents.api.routers.training_lab import experiment_ws
 
+    async with _client(_app()) as client:
+        exp_id = (
+            await client.post(
+                "/api/lab/experiments", json={"name": "x"}, headers=_h(ALICE)
+            )
+        ).json()["id"]
+
     query = _FakeWebSocket(query={"api_key": ALICE})
-    await experiment_ws(query, "missing")  # type: ignore[arg-type]
+    await experiment_ws(query, exp_id)  # type: ignore[arg-type]
     assert query.close_code == 4401
 
     header = _FakeWebSocket(headers={"x-api-key": ALICE})
-    await experiment_ws(header, "missing")  # type: ignore[arg-type]
+    await experiment_ws(header, exp_id)  # type: ignore[arg-type]
     assert header.close_code is None
 
     monkeypatch.setenv("API_LAB_WS_QUERY_TOKEN", "true")
     _reload()
     opted_in = _FakeWebSocket(query={"api_key": ALICE})
-    await experiment_ws(opted_in, "missing")  # type: ignore[arg-type]
+    await experiment_ws(opted_in, exp_id)  # type: ignore[arg-type]
     assert opted_in.close_code is None
 
 

@@ -179,6 +179,9 @@ benchmark_results/*
 !benchmark_results/training_contracts/**/*.json
 !benchmark_results/industry_pilot/
 !benchmark_results/industry_pilot/**
+!benchmark_results/decontamination/
+!benchmark_results/decontamination/**/
+!benchmark_results/decontamination/**/*.json
 benchmark_results/industry_pilot/**/*.safetensors
 benchmark_results/industry_pilot/**/*.pt
 benchmark_results/industry_pilot/**/*.pth
@@ -305,6 +308,8 @@ id_ed25519.pub
 # Allow checked-in sample/eval datasets — these are tiny + documented
 !examples/sample_eval_set.jsonl
 !examples/data/functiongemma_commerce.jsonl
+# Shipped labelled judge-calibration set (package data)
+!stateset_agents/rewards/*.jsonl
 *.npz
 *.npy
 *.pkl

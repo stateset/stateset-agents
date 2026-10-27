@@ -11,14 +11,13 @@ import asyncio
 import json
 import logging
 import statistics
+import sys
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager, contextmanager
 from functools import wraps
 from typing import Any
-
-import psutil
 
 try:
     from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram, Summary
@@ -40,6 +39,7 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+from .._deprecation import deprecated_alias_getattr
 from .advanced_monitoring_models import (
     Alert,
     AlertSeverity,
@@ -56,9 +56,17 @@ ADV_MONITORING_EXCEPTIONS = (
     KeyError,
     AttributeError,
     OSError,
-    psutil.Error,
     asyncio.TimeoutError,
 )
+
+
+def _system_metric_errors() -> tuple[type[BaseException], ...]:
+    """``psutil.Error`` once :meth:`MetricsCollector.collect_system_metrics`
+    has imported psutil (it is imported lazily, so ``core`` stays light);
+    nothing can raise it before that."""
+    psutil = sys.modules.get("psutil")
+    return (psutil.Error,) if psutil is not None else ()
+
 
 PROMETHEUS_METRIC_ALIASES = {
     "grpo.requests.total": "requests_total",
@@ -72,8 +80,14 @@ PROMETHEUS_METRIC_ALIASES = {
 }
 
 
-class MetricsCollector:
-    """Advanced metrics collection and aggregation"""
+class TimeSeriesMetricsCollector:
+    """Time-series metric store with windowed aggregation for
+    :class:`AdvancedMonitoringService`.
+
+    The general-purpose collector is
+    :class:`stateset_agents.utils.monitoring.MetricsCollector`; this one keeps
+    retention-bounded points so threshold alerts can aggregate over a window.
+    """
 
     def __init__(self, retention_period: int = 86400):  # 24 hours
         self.metrics: dict[str, deque] = defaultdict(lambda: deque())
@@ -219,6 +233,8 @@ class MetricsCollector:
 
     async def collect_system_metrics(self):
         """Collect system metrics"""
+        import psutil
+
         # CPU metrics
         cpu_percent = psutil.cpu_percent(interval=0.1)
         self.record_metric("system.cpu.utilization", cpu_percent, {"unit": "percent"})
@@ -381,10 +397,15 @@ class MetricsCollector:
                 await asyncio.sleep(60)
 
 
-class AlertManager:
-    """Advanced alerting system"""
+class ThresholdAlertManager:
+    """Evaluates ``"metric > threshold"`` alert definitions over a
+    :class:`TimeSeriesMetricsCollector` window.
 
-    def __init__(self, metrics_collector: MetricsCollector):
+    The general-purpose alert manager is
+    :class:`stateset_agents.utils.monitoring.AlertManager`.
+    """
+
+    def __init__(self, metrics_collector: TimeSeriesMetricsCollector):
         self.metrics_collector = metrics_collector
         self.alerts: dict[str, Alert] = {}
         self.active_alerts: dict[str, Alert] = {}
@@ -520,10 +541,10 @@ class AdvancedMonitoringService:
         retention_period: int = 86400,
     ):
         self.metrics_collector = (
-            MetricsCollector(retention_period) if enable_metrics else None
+            TimeSeriesMetricsCollector(retention_period) if enable_metrics else None
         )
         self.alert_manager = (
-            AlertManager(self.metrics_collector)
+            ThresholdAlertManager(self.metrics_collector)
             if enable_alerts and self.metrics_collector
             else None
         )
@@ -627,7 +648,7 @@ class AdvancedMonitoringService:
                 if self.metrics_collector:
                     await self.metrics_collector.collect_system_metrics()
                 await asyncio.sleep(30)  # Collect every 30 seconds
-            except ADV_MONITORING_EXCEPTIONS as e:
+            except ADV_MONITORING_EXCEPTIONS + _system_metric_errors() as e:
                 logger.error(f"Monitoring loop failed: {e}")
                 await asyncio.sleep(60)
 
@@ -897,7 +918,7 @@ if __name__ == "__main__":
             "example_operation", component="test"
         ) as span:
             await asyncio.sleep(0.1)
-            if span:
+            if span and monitoring.tracer is not None:
                 monitoring.tracer.add_span_log(
                     span.span_id, "info", "Operation completed"
                 )
@@ -913,18 +934,29 @@ if __name__ == "__main__":
     asyncio.run(main())
 
 
+# The old names collided with the canonical classes in
+# ``stateset_agents.utils.monitoring``; they are served with a warning and
+# will be removed in v0.71.0.
+__getattr__ = deprecated_alias_getattr(
+    __name__,
+    {
+        "AlertManager": (__name__, "ThresholdAlertManager", "0.71.0"),
+        "MetricsCollector": (__name__, "TimeSeriesMetricsCollector", "0.71.0"),
+    },
+)
+
 __all__ = [
     "ADV_MONITORING_EXCEPTIONS",
     "Alert",
-    "AlertManager",
     "AlertSeverity",
     "AdvancedMonitoringService",
     "DistributedTracer",
     "MetricPoint",
     "MetricType",
-    "MetricsCollector",
     "OPENTELEMETRY_AVAILABLE",
     "PROMETHEUS_AVAILABLE",
+    "ThresholdAlertManager",
+    "TimeSeriesMetricsCollector",
     "TraceSpan",
     "get_monitoring_service",
     "monitor_async_function",

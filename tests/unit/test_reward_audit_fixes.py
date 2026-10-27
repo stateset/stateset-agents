@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import types
 
 import pytest
@@ -40,7 +41,7 @@ def _ruler(monkeypatch):
 
     async def fake_completion(messages):
         prompts.append(messages[1]["content"])
-        n = messages[1]["content"].count("<trajectory id=")
+        n = len(re.findall(r"<trajectory-[0-9a-f]+ id=", messages[1]["content"]))
         scores = [
             {"trajectory_id": str(i + 1), "explanation": "ok", "score": 0.1 * (i + 1)}
             for i in range(n)
@@ -65,7 +66,7 @@ async def test_ruler_scores_single_trajectory_with_judge(monkeypatch):
     assert "fallback_used" not in result.breakdown
     assert result.score == pytest.approx(0.1)
     assert len(prompts) == 1
-    assert prompts[0].count("<trajectory id=") == 1
+    assert len(re.findall(r"<trajectory-[0-9a-f]+ id=", prompts[0])) == 1
     assert "It ships tomorrow." in prompts[0]
 
 
@@ -83,7 +84,7 @@ async def test_ruler_batch_returns_one_result_per_trajectory(monkeypatch):
     results = await reward.compute_batch_rewards([a, b])
 
     assert [r.score for r in results] == pytest.approx([0.1, 0.2])
-    assert prompts[0].count("<trajectory id=") == 2
+    assert len(re.findall(r"<trajectory-[0-9a-f]+ id=", prompts[0])) == 2
 
 
 # --- Symbolic physics reward is deterministic --------------------------------

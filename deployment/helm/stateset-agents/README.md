@@ -13,7 +13,7 @@ Gateway image (FastAPI, `/v1/messages`):
 
 ```bash
 docker build -f deployment/docker/Dockerfile \
-  -t stateset/stateset-agents-api:0.67.0 \
+  -t stateset/stateset-agents-api:0.70.0 \
   .
 ```
 
@@ -21,7 +21,7 @@ Trainer image (Kubernetes Jobs):
 
 ```bash
 docker build -f deployment/docker/Dockerfile.trainer \
-  -t stateset/stateset-agents-trainer:0.67.0 \
+  -t stateset/stateset-agents-trainer:0.70.0 \
   .
 ```
 
@@ -208,6 +208,27 @@ helm upgrade --install stateset-agents deployment/helm/stateset-agents \
   --namespace stateset-agents \
   --set vllm.image.digest=sha256:YOUR_DIGEST
 ```
+
+## Network Policy
+
+vLLM is served without `--api-key`, so the chart ships a NetworkPolicy
+(`networkPolicy.enabled: true` by default) that only admits the API gateway
+pods to vLLM on port 8000. Your cluster CNI must enforce NetworkPolicy
+(e.g. GKE Dataplane V2 or Calico). To allow extra peers such as a metrics
+collector:
+
+```yaml
+networkPolicy:
+  vllm:
+    extraIngressFrom:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: gmp-system
+```
+
+`--trust-remote-code` stays in the default vLLM args because the supported
+model repos ship custom modeling/tokenizer code; only serve pinned, reviewed
+model sources.
 
 ## Enable Ingress
 

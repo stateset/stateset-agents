@@ -30,7 +30,7 @@ def muse_spark_open(
         settings = (
             MuseSparkSFTConfig.model_validate_json(config.read_text(encoding="utf-8"))
             if config
-            else MuseSparkSFTConfig()
+            else MuseSparkSFTConfig.model_validate({})
         )
         changes = {
             name: str(value)

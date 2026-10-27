@@ -27,6 +27,7 @@ import typer
 
 from stateset_agents import cli as _cli
 from stateset_agents.cli import app
+from stateset_agents.core.errors import ConfigurationError, DataError
 
 _echo = _cli._echo
 
@@ -114,7 +115,10 @@ async def _grade_all(transcript_files: list[Path], reward: Any) -> list[dict[str
 
     per_transcript: list[dict[str, Any]] = []
     for path in transcript_files:
-        turns = gt.load_transcript(path)
+        try:
+            turns = gt.load_transcript(path)
+        except ValueError as exc:  # a skipped line would misalign every turn
+            raise ImproveDataError(str(exc)) from exc
         rows = await gt.grade_transcript(turns, [], reward)
         per_transcript.append({"path": path, "turns": turns, "rows": rows})
     return per_transcript
@@ -334,12 +338,14 @@ def _build_reward(
     return LLMJudgeRewardWithFallback(judge=judge, heuristic=reward_fn)
 
 
-class ImproveUsageError(ValueError):
+class ImproveUsageError(ConfigurationError):
     """Raised by :func:`run_improve` for bad arguments (CLI exit code 2)."""
 
 
-class ImproveDataError(ValueError):
+class ImproveDataError(DataError, ValueError):
     """Raised by :func:`run_improve` for data problems (CLI exit code 1)."""
+
+    message_only_str = True
 
 
 async def run_improve_async(

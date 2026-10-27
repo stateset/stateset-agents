@@ -86,6 +86,10 @@ api-compatibility: ## Verify the frozen v1 Python and HTTP contracts
 release-governance: ## Verify maturity evidence and security response commitments
 	python scripts/check_release_governance.py
 
+.PHONY: layering
+layering: ## Verify the layer contracts, the acyclic unit graph and docs/ARCHITECTURE.md
+	python scripts/layer_graph.py --check docs/ARCHITECTURE.md
+
 # Documentation
 docs: ## Build documentation
 	$(SPHINX_DOCS_ENV) sphinx-build docs docs/_build/html
@@ -822,7 +826,8 @@ security-scan: ## Run basic security scanning tools
 	bandit -c pyproject.toml -r stateset_agents || true
 	grep -v '^cuda-toolkit\[' requirements-dev-lock.txt > /tmp/stateset-audit-requirements.txt
 	pip-audit -r /tmp/stateset-audit-requirements.txt --no-deps --disable-pip || true
-	semgrep --config=auto . || true
+	# Semgrep is not in [dev] (its mcp pin is vulnerable); run it isolated.
+	pipx run semgrep --config=auto . || true
 
 security-scan-strict: ## Run stricter security scanning (exit on high severity findings)
 	bandit -c pyproject.toml -r stateset_agents -f json -o bandit-report.json || true

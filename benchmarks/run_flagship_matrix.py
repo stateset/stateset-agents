@@ -39,6 +39,12 @@ REQUIRED_PLACEHOLDERS = {
 }
 SECRET_FRAGMENTS = ("api_key", "token", "password", "credential", "secret")
 T_CRITICAL_95_DF2 = 4.303
+#: Publication ceilings on the cross-family judge, per seed. A pass that
+#: fails to parse scores 0.0, so parse failures bias a group mean by up to
+#: their rate; capping it below the +0.03 improvement gate keeps a judge
+#: that fails more on one arm from manufacturing (or hiding) the effect.
+MAX_JUDGE_SELF_DISAGREEMENT = 0.05
+MAX_JUDGE_PARSE_FAILURE_RATE = 0.02
 
 
 def canonical_json(value: Mapping[str, Any]) -> str:
@@ -418,13 +424,19 @@ def validate_adapter(
         "baseline_score",
         "final_score",
         "judge_self_disagreement",
+        "judge_parse_failure_rate",
         "train_examples",
         "eval_examples",
         "peak_vram_mb",
         "cost_usd",
     ):
         _number(metrics, key, f"{source}.metrics")
-    for key in ("baseline_score", "final_score", "judge_self_disagreement"):
+    for key in (
+        "baseline_score",
+        "final_score",
+        "judge_self_disagreement",
+        "judge_parse_failure_rate",
+    ):
         value = float(metrics[key])
         if not 0 <= value <= 1:
             raise FlagshipError(f"{source}: metrics.{key} must be in [0, 1]")
@@ -483,8 +495,20 @@ def validate_matrix(
         raise FlagshipError(
             f"final-score standard deviation {final_std:.4f} exceeds 0.10"
         )
-    if any(float(run["metrics"]["judge_self_disagreement"]) > 0.05 for run in runs):
-        raise FlagshipError("judge self-disagreement exceeded 0.05")
+    if any(
+        float(run["metrics"]["judge_self_disagreement"]) > MAX_JUDGE_SELF_DISAGREEMENT
+        for run in runs
+    ):
+        raise FlagshipError(
+            f"judge self-disagreement exceeded {MAX_JUDGE_SELF_DISAGREEMENT}"
+        )
+    if any(
+        float(run["metrics"]["judge_parse_failure_rate"]) > MAX_JUDGE_PARSE_FAILURE_RATE
+        for run in runs
+    ):
+        raise FlagshipError(
+            f"judge parse-failure rate exceeded {MAX_JUDGE_PARSE_FAILURE_RATE}"
+        )
     return {
         "passed": True,
         "seed_count": len(runs),

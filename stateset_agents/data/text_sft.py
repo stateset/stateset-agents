@@ -10,9 +10,16 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from stateset_agents.core.errors import DataError, ErrorCode
+from stateset_agents.data.finetuning import _identity_keys
+from stateset_agents.utils.provenance import json_sha256
 
-class DatasetFormatError(ValueError):
+
+class DatasetFormatError(DataError, ValueError):
     """A content-free dataset diagnostic with one-based source locations."""
+
+    message_only_str = True
+    default_code = ErrorCode.DAT_FORMAT_INVALID
 
     def __init__(self, code: str, message: str, **location: int | str) -> None:
         self.diagnostic: dict[str, Any] = {
@@ -230,9 +237,15 @@ def load_text_sft_snapshot(
         )
         provenance["validation"] = validation_provenance
     if validation is not None:
-        train_keys = {json.dumps(row, sort_keys=True) for row in train}
-        if any(json.dumps(row, sort_keys=True) in train_keys for row in validation):
-            raise ValueError("training and validation conversations overlap")
+        # Same identity as split_finetuning_data: a validation conversation
+        # whose initial request matches a training one after NFKC, case and
+        # whitespace normalization is leakage, whatever the replies say.
+        train_keys = set().union(*(_identity_keys(row) for row in train))
+        if any(_identity_keys(row) & train_keys for row in validation):
+            raise ValueError(
+                "training and validation conversations overlap (same initial "
+                "request after normalization)"
+            )
     return TextSFTSnapshot(
         train=train,
         validation=validation,
@@ -240,9 +253,7 @@ def load_text_sft_snapshot(
             name: hashlib.sha256(raw).hexdigest() for name, raw in contents.items()
         },
         content_sha256={
-            name: hashlib.sha256(
-                json.dumps(rows, sort_keys=True, ensure_ascii=False).encode("utf-8")
-            ).hexdigest()
+            name: json_sha256(rows, compact=False, allow_nan=True, ensure_ascii=False)
             for name, rows in (("train", train), ("validation", validation))
             if rows is not None
         },

@@ -394,6 +394,10 @@ capabilities inferred from the scheduler configuration.
 
 ### **New Component: `api/enhanced_ultimate_grpo_service.py`**
 
+> This module was removed; its successor, the secondary `api/grpo` app, is
+> deprecated (removed in v0.71.0). The supported service is
+> `stateset_agents.api.main`.
+
 **Next-Generation API Platform:**
 - **Unified Service Manager**: Centralized management of all services
 - **Enhanced Endpoints**: Comprehensive API with advanced features
@@ -443,71 +447,58 @@ WS   /ws/v2            - Real-time WebSocket updates
 ### **Quick Start:**
 
 ```python
-# 1. Enhanced Training
-from stateset_agents.api.enhanced_ultimate_grpo_service import main
+# 1. Start the API gateway (the enhanced_ultimate_grpo_service module this
+#    guide used to import no longer exists; the gateway is
+#    stateset_agents.api.main). Equivalent shell command:
+#    python -m stateset_agents.api.main
+import uvicorn
 
-# Start the enhanced service
-main()  # Runs on http://localhost:8002
+from stateset_agents.api.main import create_app
 
-# 2. Submit Advanced Training Job
+uvicorn.run(create_app(), host="0.0.0.0", port=8000)
+
+# 2. Submit a training job (stable v1 contract: POST /api/v1/training)
 import requests
 
-training_request = {
-    "experiment_name": "production_agent",
-    "agent_type": "MultiTurnAgent",
-    "model_config": {"model_type": "llama2", "size": "7b"},
-    "training_data": "/path/to/data",
-    "num_epochs": 50,
-    "cpu_cores": 8,
-    "memory_gb": 32,
-    "gpu_count": 4,
-    "enable_wandb": True,
-    "priority": 1
-}
-
-response = requests.post("http://localhost:8002/api/v2/train", 
-                        json=training_request)
+response = requests.post(
+    "http://localhost:8000/api/v1/training",
+    json={
+        "prompts": ["How do I reset my password?"],
+        "strategy": "computational",
+        "num_iterations": 1,
+    },
+)
 job_id = response.json()["job_id"]
 
-# 3. Monitor Training Progress
-status = requests.get(f"http://localhost:8002/api/v2/jobs/{job_id}")
-print(f"Training Progress: {status.json()['progress']['progress_percent']:.1f}%")
+# 3. Monitor it (GET /api/v1/training/{job_id})
+status = requests.get(f"http://localhost:8000/api/v1/training/{job_id}")
+print(status.json()["status"], status.json()["metrics"])
 
-# 4. Enhanced Chat Interface
-chat_request = {
-    "message": "Hello, I need help with AI training",
-    "strategy": "advanced",
-    "temperature": 0.7
-}
-
-response = requests.post("http://localhost:8002/api/v2/chat", 
-                        json=chat_request)
+# 4. Chat (POST /api/v1/conversations)
+response = requests.post(
+    "http://localhost:8000/api/v1/conversations",
+    json={"message": "Hello, I need help with AI training", "temperature": 0.7},
+)
 print(response.json()["response"])
 ```
 
+> The `/api/v2/*` endpoints and port 8002 described in earlier drafts of this
+> document were never part of the supported gateway; the routes above are the
+> stable v1 contract (`contracts/public_api_v1.json`).
+
 ### **Real-time Monitoring:**
 
-```javascript
-// WebSocket for real-time updates
-const ws = new WebSocket('ws://localhost:8002/ws/v2');
-
-// Get real-time metrics
-ws.send(JSON.stringify({type: "metrics"}));
-
-// Monitor training job
-ws.send(JSON.stringify({
-    type: "job_status",
-    job_id: "your-job-id"
-}));
-```
+The `ws://localhost:8002/ws/v2` socket from earlier drafts does not exist.
+Poll `GET /api/v1/training/{job_id}` (above) or scrape the gateway's
+Prometheus metrics; see `docs/ARCHITECTURE.md` for the observability path.
 
 ---
 
 ## 📚 Documentation & Resources
 
 ### **Enhanced Documentation:**
-- **Interactive API Docs**: http://localhost:8002/docs
-- **ReDoc Documentation**: http://localhost:8002/redoc
+- **Interactive API Docs**: http://localhost:8000/docs
+- **ReDoc Documentation**: http://localhost:8000/redoc
 - **Architecture Overview**: Complete system architecture diagrams
 - **Performance Benchmarks**: Detailed performance analysis
 - **Security Guide**: Comprehensive security best practices

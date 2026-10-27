@@ -1,8 +1,13 @@
-"""A judge that returns no verdict must not become a cached low reward."""
+"""A judge that returns no verdict fails closed and is never cached."""
 
 import pytest
 
-from stateset_agents.rewards.llm_judge import JudgeConfig, JudgeProvider, LLMJudge
+from stateset_agents.rewards.llm_judge import (
+    JudgeConfig,
+    JudgeProvider,
+    JudgeUnavailableError,
+    LLMJudge,
+)
 
 
 def _judge(**kwargs):
@@ -10,9 +15,13 @@ def _judge(**kwargs):
 
 
 @pytest.mark.asyncio
-async def test_failed_judgement_is_neutral_on_a_one_to_ten_scale():
-    judge = _judge(score_min=1.0, score_max=10.0)
-    assert await judge.evaluate("q", "r") == pytest.approx(0.5)
+@pytest.mark.parametrize("normalize_scores", [True, False])
+async def test_failed_judgement_raises_instead_of_scoring_the_midpoint(
+    normalize_scores,
+):
+    judge = _judge(score_min=1.0, score_max=10.0, normalize_scores=normalize_scores)
+    with pytest.raises(JudgeUnavailableError, match="Local model not configured"):
+        await judge.evaluate("q", "r")
 
 
 @pytest.mark.asyncio
@@ -26,12 +35,7 @@ async def test_failed_judgement_is_not_cached():
         return await original(messages)
 
     judge.backend._call_api = counting
-    await judge.evaluate("q", "r")
-    await judge.evaluate("q", "r")
+    for _ in range(2):
+        with pytest.raises(JudgeUnavailableError):
+            await judge.evaluate("q", "r")
     assert len(calls) == 2
-
-
-@pytest.mark.asyncio
-async def test_raw_scale_failure_uses_scale_midpoint():
-    judge = _judge(score_min=1.0, score_max=10.0, normalize_scores=False)
-    assert await judge.evaluate("q", "r") == pytest.approx(5.5)

@@ -12,6 +12,9 @@ import logging
 from stateset_agents import ConversationEnvironment, MultiTurnAgent, train
 from stateset_agents.core.agent import AgentConfig
 from stateset_agents.core.reward import CompositeReward, HelpfulnessReward, SafetyReward
+from stateset_agents.experimental.long_term_planning import (
+    planning_manager_from_config,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -21,10 +24,14 @@ async def main() -> None:
     config = AgentConfig(
         model_name="gpt2",
         system_prompt="You are a helpful assistant.",
-        enable_planning=True,
-        planning_config={"max_steps": 4, "update_interval": 1},
     )
-    agent = MultiTurnAgent(config)
+    # The planner is experimental: build it explicitly and inject it.
+    agent = MultiTurnAgent(
+        config,
+        planning_manager=planning_manager_from_config(
+            {"max_steps": 4, "update_interval": 1}
+        ),
+    )
     await agent.initialize()
 
     scenarios = [

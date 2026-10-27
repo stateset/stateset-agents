@@ -11,15 +11,16 @@ import importlib.util
 import logging
 import tempfile
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from stateset_agents.core.reward import RewardResult
-from stateset_agents.core.trajectory import Trajectory
-
 from .monitoring import MonitoringService
 from .wandb_config import WandBConfig, create_wandb_config, setup_wandb_from_env
+
+if TYPE_CHECKING:  # annotations only: utils sits below core in the layering
+    from stateset_agents.core.reward import RewardResult
+    from stateset_agents.core.trajectory import Trajectory
 
 plt: Any | None = None
 sns: Any | None = None
@@ -759,7 +760,7 @@ class WandBIntegration:
             self.create_summary_report()
 
             # Finish run
-            wandb.finish()
+            _require_wandb().finish()
 
             self.is_initialized = False
             logger.info("Finished W&B run")

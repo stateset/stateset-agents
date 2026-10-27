@@ -116,6 +116,11 @@ async def test_completed_resume_flush_matches_direct_partial_mean(
     for values in batches:
         accumulate(original, values)
     original.current_epoch = 0
+    if hasattr(original, "_next_episode"):
+        # The episodes are done; only the partial window is pending. Without
+        # the cursor a resumed multi-turn run would roll out its episode again
+        # (here against a bare ``object()`` environment, which now raises).
+        original._next_episode = original.config.num_episodes
     await original.save_checkpoint(checkpoint_name="pending")
     restored = make_trainer(
         tmp_path / "restored", trainer_type, amp=amp, max_norm=max_norm

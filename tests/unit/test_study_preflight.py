@@ -10,9 +10,9 @@ import pytest
 from typer.testing import CliRunner
 
 from stateset_agents.cli import app
-from stateset_agents.evaluation import study_preflight as module
-from stateset_agents.evaluation.agent_study import StudyConfig, prepare_study
 from stateset_agents.remote import river_runtime as runtime
+from stateset_agents.verticals import study_preflight as module
+from stateset_agents.verticals.agent_study import StudyConfig, prepare_study
 
 
 @pytest.fixture

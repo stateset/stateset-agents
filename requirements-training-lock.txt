@@ -98,7 +98,7 @@ fastapi==0.140.7
     # via
     #   -c requirements-dev-lock.txt
     #   stateset-agents (pyproject.toml)
-filelock==3.32.0
+filelock==4.2.4
     # via
     #   -c requirements-dev-lock.txt
     #   datasets
@@ -274,7 +274,7 @@ nvidia-nvtx==13.0.85
     # via
     #   -c requirements-dev-lock.txt
     #   cuda-toolkit
-packaging==26.2
+packaging==26.3
     # via
     #   -c requirements-dev-lock.txt
     #   accelerate

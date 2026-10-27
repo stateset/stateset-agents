@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import hashlib
-import json
 import re
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from stateset_agents.data.jsonl import count_jsonl_records
+from stateset_agents.utils.provenance import json_sha256
 
 
 @dataclass(frozen=True)
@@ -40,7 +42,7 @@ class DatasetSourceIdentity:
         return cls(
             path=str(path),
             sha256=hashlib.sha256(data).hexdigest(),
-            rows=sum(bool(line.strip()) for line in data.decode("utf-8").splitlines()),
+            rows=count_jsonl_records(data.decode("utf-8")),
         )
 
     @classmethod
@@ -89,12 +91,10 @@ class SFTDatasetIdentity:
     ) -> SFTDatasetIdentity:
         """Fingerprint finite JSON rows after any explicit normalization."""
         try:
-            content = json.dumps(
-                rows, sort_keys=True, ensure_ascii=False, allow_nan=False
-            ).encode("utf-8")
+            digest = json_sha256(rows, compact=False, ensure_ascii=False)
         except (TypeError, ValueError) as exc:
             raise ValueError("SFT rows must be finite JSON records") from exc
-        return cls(source, hashlib.sha256(content).hexdigest(), len(rows))
+        return cls(source, digest, len(rows))
 
     def verify_rows(self, rows: list[dict[str, Any]]) -> None:
         """Reject changes to parsed input before model loading or training."""

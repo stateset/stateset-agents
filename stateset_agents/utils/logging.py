@@ -36,6 +36,14 @@ try:
 except ImportError:
     HAS_OPENTELEMETRY = False
 
+from stateset_agents._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.utils.logging",
+    removal="0.71.0",
+    replacement="the standard library's logging.getLogger",
+)
+
 LOGGING_EXCEPTIONS: tuple[type[BaseException], ...] = (
     RuntimeError,
     ValueError,
@@ -216,7 +224,11 @@ class GRPOLogger:
 
     def _setup_tracing(self):
         """Setup OpenTelemetry tracing"""
-        trace.set_tracer_provider(TracerProvider())
+        # Keep a handle on the SDK provider: ``trace.get_tracer_provider()`` is
+        # typed as (and may return) the API provider, which has no
+        # ``add_span_processor`` when a provider was already installed.
+        provider = TracerProvider()
+        trace.set_tracer_provider(provider)
 
         # Setup Jaeger exporter
         jaeger_exporter = JaegerExporter(
@@ -225,7 +237,7 @@ class GRPOLogger:
         )
 
         span_processor = BatchSpanProcessor(jaeger_exporter)
-        trace.get_tracer_provider().add_span_processor(span_processor)
+        provider.add_span_processor(span_processor)
 
         self.tracer = trace.get_tracer(self.name)
 

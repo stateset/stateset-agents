@@ -1,10 +1,22 @@
-"""Conversation types and context helpers for multi-turn agents."""
+"""Conversation types and context helpers for multi-turn agents.
+
+Deprecated with :mod:`stateset_agents.core.multiturn_agent`; it will be
+removed in v0.71.0.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
+
+from .._deprecation import warn_deprecated
+
+warn_deprecated(
+    "stateset_agents.core.multiturn_context",
+    removal="0.71.0",
+    replacement="stateset_agents.core.agent.MultiTurnAgent",
+)
 
 
 @dataclass

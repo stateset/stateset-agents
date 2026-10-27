@@ -340,6 +340,7 @@ class ImageProcessor(ModalityProcessor):
 
         try:
             # Handle different image input formats
+            image: Image.Image
             if isinstance(input_data.data, str):
                 if input_data.encoding == "base64":
                     image_bytes = base64.b64decode(input_data.data)
@@ -639,6 +640,7 @@ class MultimodalFusion(nn.Module):
             }
         )
 
+        self.fusion_layer: nn.Module
         if fusion_strategy == FusionStrategy.ATTENTION_FUSION:
             self.attention = nn.MultiheadAttention(
                 output_dim, num_heads=8, batch_first=True
@@ -690,12 +692,14 @@ class MultimodalFusion(nn.Module):
                 feature_stack, feature_stack, feature_stack
             )
             fused = attended_features.mean(dim=1)
-            return self.fusion_layer(fused)
+            attention_output: torch.Tensor = self.fusion_layer(fused)
+            return attention_output
 
         elif self.fusion_strategy == FusionStrategy.EARLY_FUSION:
             # Concatenate raw features
             concatenated = torch.cat(list(projected_features.values()), dim=-1)
-            return self.fusion_layer(concatenated)
+            early_output: torch.Tensor = self.fusion_layer(concatenated)
+            return early_output
 
         elif self.fusion_strategy == FusionStrategy.LATE_FUSION:
             # Average projected features
@@ -704,7 +708,8 @@ class MultimodalFusion(nn.Module):
         else:
             # Default: concatenation + MLP
             concatenated = torch.cat(list(projected_features.values()), dim=-1)
-            return self.fusion_layer(concatenated)
+            default_output: torch.Tensor = self.fusion_layer(concatenated)
+            return default_output
 
 
 class MultimodalProcessor:

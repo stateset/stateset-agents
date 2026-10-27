@@ -50,7 +50,9 @@ def test_cli_profiles_config_and_dispatch(name, tmp_path, monkeypatch):
 
     preset = PRESETS[name]
     runner = CliRunner()
-    result = runner.invoke(app, [preset.cli_command, "--list-profiles", "--json"])
+    result = runner.invoke(
+        app, ["model", preset.cli_command, "--list-profiles", "--json"]
+    )
     assert result.exit_code == 0, result.output
     profiles = json.loads(result.output)["profiles"]
     assert set(profiles) == {"balanced", "memory", "quality"}
@@ -60,6 +62,7 @@ def test_cli_profiles_config_and_dispatch(name, tmp_path, monkeypatch):
     result = runner.invoke(
         app,
         [
+            "model",
             preset.cli_command,
             "--starter-profile",
             "memory",
@@ -81,7 +84,7 @@ def test_cli_profiles_config_and_dispatch(name, tmp_path, monkeypatch):
     train = AsyncMock(return_value="trained")
     monkeypatch.setattr(module, f"run_{preset.cli_symbol_infix}_config", train)
     result = runner.invoke(
-        app, [preset.cli_command, "--config", str(path), "--no-dry-run"]
+        app, ["model", preset.cli_command, "--config", str(path), "--no-dry-run"]
     )
     assert result.exit_code == 0, result.output
     train.assert_awaited_once()
@@ -246,7 +249,7 @@ async def test_native_architecture_gspo_update_and_adapter_reload(
 
     class Reward:
         async def compute_reward(self, turns, context):
-            return SimpleNamespace(total_reward=float(turns[0].content == "ok"))
+            return SimpleNamespace(total_reward=float(turns[-1].content == "ok"))
 
     trainer = GSPOTrainer(
         config=training,
