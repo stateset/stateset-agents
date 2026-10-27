@@ -20,3 +20,12 @@ ConversationEnvironment system prompt and episode end
   ``"see you"``, ``"talk to you later"`` as whole words) unless
   ``end_on_farewell=False``. Scenarios with scripted ``user_turns`` never end
   early on a farewell: the script (and ``max_turns``) define their length.
+
+Tool use
+--------
+
+``stateset_agents.environments.ToolUseEnvironment`` (provisional) runs
+multi-turn tool-use episodes: typed tools (``ToolSpec``/``ToolRegistry``),
+``<tool_call>`` and JSON-action calls, ``tool``-role observations that never
+receive policy gradient, a tool-call budget, and scoring by a verifier. See
+``docs/TOOL_USE_RL.md``.
