@@ -35,3 +35,32 @@ jobs:
           path: slow-e2e-junit.xml
           if-no-files-found: warn
           retention-days: 30
+
+  learning-seeds:
+    # Default CI runs the learning tests at seed 0 only (tests/learning/_toy.py
+    # reads LEARNING_SEEDS, default "0"). The weekly run reproduces the
+    # three-seed evidence the component maturity entries and docs cite.
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      LEARNING_SEEDS: "0,1,2"
+      OMP_NUM_THREADS: "2"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: pip install -e ".[dev,api]"
+      - name: Run learning tests on three seeds
+        run: >-
+          pytest tests/learning -m learning -n 2 --timeout=900
+          --durations=30 --junitxml=learning-seeds-junit.xml
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: learning-seeds-results
+          path: learning-seeds-junit.xml
+          if-no-files-found: warn
+          retention-days: 30
