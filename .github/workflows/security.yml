@@ -126,7 +126,7 @@ jobs:
         fetch-depth: 0
 
     - name: Secret Detection
-      uses: trufflesecurity/trufflehog@v3.96.0
+      uses: trufflesecurity/trufflehog@v3.99.7
       with:
         path: ./
         base: main
