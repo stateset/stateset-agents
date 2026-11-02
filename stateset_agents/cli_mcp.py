@@ -27,6 +27,14 @@ def mcp(
         "--transport",
         help="MCP transport to serve over (default: stdio).",
     ),
+    weight_space: bool = typer.Option(
+        False,
+        "--weight-space",
+        help=(
+            "Also expose the experimental ws_* weight-space programming tools "
+            "(loads models into the server process)."
+        ),
+    ),
 ) -> None:
     """Run the StateSet Agents MCP server (stdio transport by default).
 
@@ -51,5 +59,5 @@ def mcp(
         _echo(str(exc), err=True)
         raise typer.Exit(code=1) from exc
 
-    server = create_server()
+    server = create_server(weight_space=weight_space)
     server.run(transport="stdio")

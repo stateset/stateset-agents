@@ -1451,6 +1451,7 @@ stateset-agents mcp
 #### Options
 
 - `--transport TEXT`: MCP transport to serve over (default: stdio).
+- `--weight-space`: Also expose the experimental ws_* weight-space programming tools (loads models into the server process).
 
 ### `stateset-agents auto-research`
 

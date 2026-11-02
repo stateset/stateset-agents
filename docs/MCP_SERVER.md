@@ -78,6 +78,28 @@ Every tool validates its inputs and returns a structured dict — on failure
 that's `{"error": "..."}` rather than a raised traceback, so MCP clients get
 an actionable message instead of a stack trace.
 
+### Experimental: weight-space programming tools (`--weight-space`)
+
+`stateset-agents mcp --weight-space` also registers eight `ws_*` tools from
+`stateset_agents.experimental.weight_space.mcp_tools`, so an MCP client such
+as Claude Code can edit a model's weights directly instead of training it.
+They are off by default because `ws_open` loads a model into the server
+process.
+
+| Tool | Cost | Purpose |
+|---|---|---|
+| `ws_open(model_id, budget, splits_path, dtype="float32")` | load | Open a session on a Hugging Face causal LM with a fixed forward-pass budget. `splits_path` is JSON `{split: [{"prompt", "continuation"}]}` of **practice** data; keep held-out data out of the session. |
+| `ws_modules(session_id, contains=None)` | free | List editable `Linear` modules as `name -> [out, in]`. |
+| `ws_capture_direction(session_id, module, positive_prompts, negative_prompts, name)` | 1 forward pass | Store `mean(out | positive) - mean(out | negative)` at `module` as a named direction; reports its norm, cosine with stored directions, and the input columns writing most along it. |
+| `ws_ablate(session_id, module, direction, k, alpha=1.0)` | free | Remove a stored direction from the `k` columns of `module` that write most along it (rank-1 edit). |
+| `ws_evaluate(session_id)` | 1 forward pass | Mean per-token log-prob of each practice split's continuations, with deltas against the first edit-free evaluation. |
+| `ws_revert(session_id)` | free | Undo the most recent edit bit-exactly. |
+| `ws_export(session_id, output_dir)` | free | Write the active edits as a PEFT LoRA adapter plus `weight_space_manifest.json` (edits, budget ledger, evaluations). Serve it through the existing adapter merge path. |
+| `ws_close(session_id)` | free | Drop the session and free its model. |
+
+The budget is enforced inside the session: every way of running the network
+goes through it, and an exhausted budget returns `{"error": ...}`.
+
 ## Resources
 
 v1 ships tools only, not MCP resources. The tool surface (in particular

@@ -283,8 +283,22 @@ def _ensure_scripts_on_path() -> None:
 # ---------------------------------------------------------------------------
 
 
-def create_server() -> Any:
+_WEIGHT_SPACE_INSTRUCTIONS = (
+    " Experimental weight-space tools (ws_*) are enabled: open a model with "
+    "ws_open, capture contrastive directions (costs one forward pass), "
+    "ablate them from Linear weights, ws_evaluate the practice splits (costs "
+    "one forward pass), ws_revert what does not help, and ws_export the kept "
+    "edits as a LoRA adapter. The forward-pass budget is fixed per session; "
+    "spend it deliberately and keep held-out data out of the session."
+)
+
+
+def create_server(*, weight_space: bool = False) -> Any:
     """Build and return a configured ``FastMCP`` server instance.
+
+    ``weight_space=True`` also registers the experimental ``ws_*`` tools
+    (:mod:`stateset_agents.experimental.weight_space.mcp_tools`), which load
+    models into this process; they are off by default.
 
     Raises ``ImportError`` with an install hint if the ``mcp`` package is
     not installed.
@@ -292,16 +306,16 @@ def create_server() -> Any:
     FastMCP = _require_mcp()  # noqa: N806
     _ensure_scripts_on_path()
 
-    mcp = FastMCP(
-        "stateset-agents",
-        instructions=(
-            "Drives the StateSet Agents framework's improvement loop: "
-            "ingest third-party conversation logs, grade transcripts with "
-            "rule-based reward functions, curate high-scoring examples, and "
-            "preview (dry-run only) fine-tuning configs. No tool starts "
-            "real GPU training in this version."
-        ),
+    instructions = (
+        "Drives the StateSet Agents framework's improvement loop: "
+        "ingest third-party conversation logs, grade transcripts with "
+        "rule-based reward functions, curate high-scoring examples, and "
+        "preview (dry-run only) fine-tuning configs. No tool starts "
+        "real GPU training in this version."
     )
+    if weight_space:
+        instructions += _WEIGHT_SPACE_INSTRUCTIONS
+    mcp = FastMCP("stateset-agents", instructions=instructions)
 
     mcp.tool()(list_rewards)
     mcp.tool()(ingest_transcripts)
@@ -310,6 +324,12 @@ def create_server() -> Any:
     mcp.tool()(improve_status)
     mcp.tool()(list_model_presets)
     mcp.tool()(dry_run_finetune)
+
+    if weight_space:
+        from stateset_agents.experimental.weight_space.mcp_tools import TOOLS
+
+        for tool in TOOLS:
+            mcp.tool()(tool)
 
     return mcp
 

@@ -75,6 +75,26 @@ class TestCreateServer:
         server = create_server()
         assert server.name == "stateset-agents"
 
+    async def test_weight_space_tools_are_opt_in(self) -> None:
+        from stateset_agents.mcp_server import create_server
+
+        default = {tool.name for tool in await create_server().list_tools()}
+        assert not any(name.startswith("ws_") for name in default)
+
+        opted_in = {
+            tool.name for tool in await create_server(weight_space=True).list_tools()
+        }
+        assert opted_in - default == {
+            "ws_open",
+            "ws_modules",
+            "ws_capture_direction",
+            "ws_ablate",
+            "ws_evaluate",
+            "ws_revert",
+            "ws_export",
+            "ws_close",
+        }
+
 
 class TestListRewards:
     def test_returns_known_rewards(self) -> None:
@@ -358,6 +378,29 @@ class TestCliRegistration:
         result = runner.invoke(app, ["mcp", "--transport", "sse"])
         assert result.exit_code == 2
         assert "stdio" in result.output.lower()
+
+    @pytest.mark.parametrize(
+        ("args", "expected"), [([], False), (["--weight-space"], True)]
+    )
+    def test_weight_space_flag_reaches_create_server(
+        self, monkeypatch: pytest.MonkeyPatch, args: list[str], expected: bool
+    ) -> None:
+        import stateset_agents.mcp_server as mcp_server
+
+        calls: list[dict] = []
+
+        class _Server:
+            def run(self, transport: str) -> None:
+                calls.append({"transport": transport})
+
+        def fake_create_server(**kwargs):
+            calls.append(kwargs)
+            return _Server()
+
+        monkeypatch.setattr(mcp_server, "create_server", fake_create_server)
+        result = runner.invoke(app, ["mcp", *args])
+        assert result.exit_code == 0, result.output
+        assert calls == [{"weight_space": expected}, {"transport": "stdio"}]
 
 
 @pytest.mark.slow
