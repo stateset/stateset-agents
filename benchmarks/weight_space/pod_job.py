@@ -100,8 +100,9 @@ def _norm(s: str) -> str:
     return s.rstrip(".").removesuffix(".0")
 
 
-def grade(rec: dict) -> dict:
-    ans = post_think(rec["text"])
+def grade(rec: dict, thinking: bool = True) -> dict:
+    """Grade the answer: the text after </think> (thinking on) or the whole reply."""
+    ans = post_think(rec["text"]) if thinking else rec["text"]
     if ans is None:
         return {"answer": None, "correct": False}
     boxed = last_boxed(ans)
@@ -190,7 +191,7 @@ def cmd_generate(a: argparse.Namespace) -> None:
             [{"role": "user", "content": r["question"] + SUFFIX}],
             tokenize=False,
             add_generation_prompt=True,
-            enable_thinking=True,
+            enable_thinking=not a.no_thinking,
         )
         for r in rows
     ]
@@ -241,7 +242,7 @@ def cmd_generate(a: argparse.Namespace) -> None:
             "finish": c.finish_reason,
             "tokens": len(c.token_ids),
         }
-        rec.update(grade(rec))
+        rec.update(grade(rec, thinking=not a.no_thinking))
         rec["loop"] = loop_info(rec["gen_ids"])
         recs.append(rec)
     write_jsonl(Path(a.out), recs)
@@ -295,7 +296,12 @@ class Budget:
 
 
 def generate(
-    label: str, model_dir: str, rows: list[dict], max_tokens: int, out: Path
+    label: str,
+    model_dir: str,
+    rows: list[dict],
+    max_tokens: int,
+    out: Path,
+    thinking: bool = True,
 ) -> list[dict]:
     data = WORK / "data" / f"{label}.jsonl"
     write_jsonl(data, rows)
@@ -314,8 +320,14 @@ def generate(
         str(max_tokens),
         "--label",
         label,
-    ]
-    log(event="generate_start", label=label, n=len(rows), model=model_dir)
+    ] + ([] if thinking else ["--no-thinking"])
+    log(
+        event="generate_start",
+        label=label,
+        n=len(rows),
+        model=model_dir,
+        thinking=thinking,
+    )
     subprocess.run(cmd, check=True)
     return read_jsonl(dest)
 
@@ -916,6 +928,9 @@ def main() -> None:
     g.add_argument("--out", required=True)
     g.add_argument("--max-tokens", type=int, required=True)
     g.add_argument("--label", required=True)
+    g.add_argument(
+        "--no-thinking", action="store_true", help="chat template with thinking off"
+    )
     a = ap.parse_args()
     (cmd_main if a.cmd == "main" else cmd_generate)(a)
 
