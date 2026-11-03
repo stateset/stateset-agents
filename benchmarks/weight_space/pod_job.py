@@ -256,10 +256,30 @@ def cmd_generate(a: argparse.Namespace) -> None:
     # Results are on disk. Skip interpreter/vLLM teardown: on vLLM 0.33 the
     # EngineCore child sometimes never exits after a 1,000-prompt run, and the
     # orchestrator (subprocess.run(check=True)) then waits forever. Observed on
-    # three L40S pods at once (2026-11-02), ~30 idle GPU-minutes each.
+    # three L40S pods at once (2026-11-02), ~30 idle GPU-minutes each. Kill our
+    # own children first: a bare os._exit orphans EngineCore, which keeps its
+    # GPU memory and makes the next vLLM construction fail.
+    _kill_children()
     sys.stdout.flush()
     sys.stderr.flush()
     os._exit(0)
+
+
+def _kill_children() -> None:
+    """SIGKILL every direct child of this process (vLLM EngineCore, trackers)."""
+    import signal
+
+    me = str(os.getpid())
+    for stat in Path("/proc").glob("[0-9]*/stat"):
+        try:
+            fields = stat.read_text().rsplit(")", 1)[1].split()
+        except OSError:
+            continue
+        if fields[1] == me:  # field 4 of /proc/PID/stat: ppid
+            try:
+                os.kill(int(stat.parent.name), signal.SIGKILL)
+            except OSError:
+                pass
 
 
 # --------------------------------------------------------------- orchestrator
