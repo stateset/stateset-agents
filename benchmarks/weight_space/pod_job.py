@@ -253,6 +253,13 @@ def cmd_generate(a: argparse.Namespace) -> None:
         tok_per_s=round(gen_tokens / max(1e-9, time.time() - started)),
         **summarize(recs)["all"],
     )
+    # Results are on disk. Skip interpreter/vLLM teardown: on vLLM 0.33 the
+    # EngineCore child sometimes never exits after a 1,000-prompt run, and the
+    # orchestrator (subprocess.run(check=True)) then waits forever. Observed on
+    # three L40S pods at once (2026-11-02), ~30 idle GPU-minutes each.
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
 
 
 # --------------------------------------------------------------- orchestrator
