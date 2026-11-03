@@ -366,6 +366,40 @@ replies. Base and v3t reproduce across pods (base 47.9% on both; v3t 45.9%,
 (9.2%) and **144 of 500 MATH-500 replies (28.8%)**. The 6.8% on record was
 GSM8K only, at a 2,048-token cap.
 
+## Practice-gated, on-policy redesign (negative result, 2026-11-03)
+
+`onpolicy_job.py` (A40, $1.10, `summaries/onpolicy_summary.json`) judged
+every design by generation on training problems and mined contexts from the
+edited model's own replies (`misfires.py`: line breaks before extra closes,
+before early closes in replies that then closed again or ran to the cap, and
+before stray closes with thinking off as negatives; before clean correct
+closes and after unclosed answers as positives). Each round refit on v3t's
+contexts plus everything mined so far. Practice: MINE and SELECT, each 100
+GSM8K-train + 100 MATH-train problems, cap 4,096; held-out never used.
+
+| Round | SELECT thinking on, strict (lenient) | two+ `</think>` | never closed | thinking off, strict | stray `</think>` | gate cosine to v3t |
+|---|---|---|---|---|---|---|
+| 0 (v3t) | **44.5%** (52.0%) | 15.0% | 20.0% | 44.0% | 15.0% | 1.00 |
+| 1 | 35.5% (45.0%) | 17.5% | 30.0% | 48.5% | 10.0% | 0.64 |
+| 2 | 31.5% (45.5%) | 25.0% | 27.0% | 42.5% | 21.5% | 0.59 |
+| 3 | 30.0% (44.5%) | 28.0% | 22.5% | 38.0% | 31.0% | 0.52 |
+
+The selection rule kept round 0 (v3t), so no held-out run was spent. The
+first refit, with 134 mined contexts added to about 1,300, already turned the
+detector to cosine 0.64 from v3t's and enlarged it (gate norm 1.94 -> 2.43).
+
+**Why designs swing.** The detector is a ridge fit of 3,584 features on about
+800 contexts at `lam` = 100. Fit on random halves of v3t's own contexts, the
+two detectors' scores correlate 0.909 (0.971 at `lam` = 1,000, 0.988 at
+10,000, held-out AUC 0.98 throughout). The neuron has no bias, so where it
+starts firing is set by how much the fit shrinks the score, which moves
+whenever the contexts change; in generation that threshold sits where small
+shifts matter. v3t is one draw from this procedure, and v4, v5 and these
+rounds were partly variance, not only their extra data. A stable redesign
+needs a stronger prior (larger `lam`) and an explicit threshold (an offset
+read through a near-constant unit, the way `up_proj` reads unit 44),
+calibrated by practice generation with the detector held fixed.
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd
@@ -421,6 +455,8 @@ negatives mined from the edited model's own replies to them.
 - **v5 / v5b, MATH positives + post-close negatives**: 26.9% / 28.0% strict vs
   v3t 46.3% (-19.4, p = 2e-35); fires at most line breaks in generation
   (see "v5").
+- **On-policy, practice-gated refits**: three rounds scored 35.5%, 31.5%,
+  30.0% on practice vs v3t 44.5%; v3t kept (see "Practice-gated").
 
 ## Side effects
 
@@ -478,8 +514,9 @@ non-thinking accuracy.
 | v4 design | intermediate-result negatives, design only (one start lost its SSH, $0.41) | H100 | 1.63 |
 | v5 design | MATH positives + post-close negatives, captures saved (one superseded start, $0.10) | H100 / A100 | 1.31 |
 | v5 test | base thinking off vs v3t / v5 / v5b thinking on and off | RTX 4090 | 1.06 |
+| on-policy | practice-gated redesign, 3 rounds (kept v3t; no held-out run) | A40 | 1.10 |
 | failed start | dependency install hung 26 min on one H100 host | H100 | 2.03 |
-| **total** | all pods terminated | | **35.15** |
+| **total** | all pods terminated | | **36.25** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -529,6 +566,8 @@ bare HTTP 500 (the client now says "no capacity").
   `summaries/neuron_v5b_offline_design.json` (in-sample rates);
   `summaries/thinking_budget_summary_v5.json` and `per_problem/tb5_tb_*` —
   v5 / v5b / v3t / base thinking off on one pod. Negative results.
+- `summaries/onpolicy_summary.json`, `specs/onpolicy_r{1,2,3}_spec.json` — the
+  practice-gated, on-policy rounds (round 0 is v3t). Negative result.
 - `specs/conclude_neuron_spec.json` / `conclude_neuron_control_spec.json` —
   the v2 designed neuron and its control as portable `EditSpec`s (the kernel
   session's own weights were not retained; these were regenerated with the

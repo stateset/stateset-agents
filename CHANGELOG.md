@@ -54,6 +54,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   non-closing on MATH but fire at most line breaks in generation. Offline fire
   rates predicted neither; the even/odd design split trained on the first line
   break after each answer and reported the second (`offline_design.py --split`).
+- `onpolicy_job.py` + `misfires.py`: practice-gated redesign that mines
+  labelled contexts from the edited model's own replies to training problems
+  and keeps a round only if it beats the start on a disjoint practice set.
+  Three rounds scored 35.5% / 31.5% / 30.0% vs v3t 44.5% on practice, so v3t
+  was kept: the ridge detector is unstable at `lam` = 100 (half-data fits
+  correlate 0.909) and the neuron's threshold is set implicitly by shrinkage.
 - Correction: with thinking off at an 8,192-token cap, v3t leaves a stray
   `</think>` in 28.8% of MATH-500 replies (9.2% of GSM8K); the 6.8% reported
   for v0.71.x was GSM8K at a 2,048-token cap.

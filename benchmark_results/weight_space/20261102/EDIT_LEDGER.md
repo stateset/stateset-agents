@@ -396,3 +396,21 @@ was GSM8K at a 2,048 cap).
 Diagnostics note: the even/odd split trained every design on the first line
 break after the answer and reported the second; offline fire rates (any
 split) did not predict generation for v4 or v5.
+
+## On-policy, practice-gated redesign (2026-11-03) — negative
+
+`onpolicy_job.py`, one A40 pod ($1.10). Rounds refit v3t's contexts plus
+contexts mined from the edited model's own replies to MINE practice problems
+(`misfires.py`); scored on SELECT (100 GSM8K-train + 100 MATH-train, cap
+4,096). Held-out untouched.
+
+| Round | SELECT thinking on strict | two+ close | never closed | thinking off stray | gate cos to v3t |
+|---|---|---|---|---|---|
+| 0 (v3t) | 44.5% | 15.0% | 20.0% | 15.0% | 1.00 |
+| 1 | 35.5% | 17.5% | 30.0% | 10.0% | 0.64 |
+| 2 | 31.5% | 25.0% | 27.0% | 21.5% | 0.59 |
+| 3 | 30.0% | 28.0% | 22.5% | 31.0% | 0.52 |
+
+Kept v3t; no held-out run. Cause: the ridge detector (3,584 features, ~800
+contexts, lam 100) is unstable (half-data fits correlate 0.909; 0.971 at lam
+1,000) and the neuron's firing threshold is set implicitly by shrinkage.
