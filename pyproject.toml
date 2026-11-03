@@ -545,3 +545,5 @@ ignore = [
 "stateset_agents/remote/worker.py" = ["T20"]
 "tests/unit/test_trl_grpo_trainer.py" = ["E402"]
 "tests/unit/test_rl_losses.py" = ["E402"]
+# Programs executed inside the weights kernel's namespace (injected globals).
+"benchmarks/weight_space/kernel/*.py" = ["F821", "E402"]
