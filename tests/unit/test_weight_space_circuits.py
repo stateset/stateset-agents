@@ -161,3 +161,30 @@ def test_report_measures_the_detector_score_not_the_squashed_activation() -> Non
         auc(score[pos], score[neg]), abs=1e-3
     )
     assert "heldout_activation_auc" in design.report
+
+
+def test_design_exposes_the_detector_and_its_scores() -> None:
+    d = synthetic()
+    design = design_conditional_neuron(
+        layer=0,
+        gate_weight=d["gate_weight"],
+        up_weight=d["up_weight"],
+        down_weight=d["down_weight"],
+        gate_acts=d["gate_acts"],
+        up_acts=d["up_acts"],
+        labels=d["labels"],
+        write_direction=torch.ones(HIDDEN),
+        write_norm=1.0,
+        lam=1.0,
+    )
+    assert design.detector is not None and design.detector.shape == (INTER,)
+    # The new neuron's pre-activation is gain x (captured gate outputs . detector).
+    gate_row = torch.tensor(design.rewrite.gate)
+    assert torch.allclose(
+        d["x"] @ gate_row,
+        design.report["gain"] * (d["gate_acts"] @ design.detector),
+        atol=1e-3,
+    )
+    acts = design.activation(d["gate_acts"], d["up_acts"])
+    assert acts.shape == (N,)
+    assert float(acts[d["labels"] > 0].mean()) > float(acts[d["labels"] < 0].mean())

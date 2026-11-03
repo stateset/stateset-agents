@@ -104,10 +104,33 @@ def least_used_neuron(
 
 @dataclass(frozen=True)
 class ConditionalNeuron:
-    """A designed neuron and how it behaved on the captured contexts."""
+    """A designed neuron and how it behaved on the captured contexts.
+
+    ``detector`` is the ridge readout over the layer's gate pre-activations;
+    with ``up_unit`` / ``up_scale`` it lets :meth:`activation` compute what the
+    new neuron would do at any captured context, before writing a weight.
+    """
 
     rewrite: NeuronRewrite
     report: dict[str, Any] = field(default_factory=dict)
+    detector: torch.Tensor | None = None
+    up_unit: int = 0
+    up_scale: float = 1.0
+    gain: float = 1.0
+    act_fn: Callable[[torch.Tensor], torch.Tensor] | None = None
+
+    def activation(
+        self, gate_acts: torch.Tensor, up_acts: torch.Tensor
+    ) -> torch.Tensor:
+        """The designed neuron's activation at contexts with these captures."""
+        import torch
+
+        if self.detector is None:
+            raise ValueError("this design carries no detector")
+        fn = self.act_fn or torch.nn.functional.silu
+        return fn(self.gain * (gate_acts.float() @ self.detector)) * (
+            self.up_scale * up_acts.float()[:, self.up_unit]
+        )
 
 
 def design_conditional_neuron(
@@ -205,4 +228,12 @@ def design_conditional_neuron(
             "negative": round(float(act[hn].mean()), 4),
         },
     }
-    return ConditionalNeuron(rewrite=rewrite, report=report)
+    return ConditionalNeuron(
+        rewrite=rewrite,
+        report=report,
+        detector=c,
+        up_unit=up_unit,
+        up_scale=up_scale,
+        gain=gain,
+        act_fn=act_fn,
+    )

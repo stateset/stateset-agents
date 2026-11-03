@@ -46,8 +46,49 @@ def read_jsonl(path: Path) -> list[dict]:
         return [json.loads(line) for line in f]
 
 
-def contrast_sets(tok, contrast: dict, traces: list[dict]) -> tuple[list, list[float]]:
-    """Prefixes and +1/-1 labels, in the kernel's order (newline set, then answer tokens)."""
+def newline_ids(tok) -> set[int]:
+    return {i for i in range(len(tok)) if "\n" in tok.decode([i])}
+
+
+def nothink_negatives(newline: set[int], path: Path, limit: int, seed: int = 2) -> list:
+    """Line breaks in the answer part of thinking-off replies (prompt + reply prefix).
+
+    These are contexts where an answer has just been written but the model is
+    *not* thinking, so a conclude neuron must stay quiet there.
+    """
+    rng = random.Random(seed)
+    candidates = []
+    for r in read_jsonl(path):
+        p, g = r["prompt_ids"], r["gen_ids"]
+        lines = [j for j in range(int(0.3 * len(g)), len(g)) if g[j] in newline]
+        for j in rng.sample(lines, k=min(2, len(lines))):
+            if len(p) + j + 1 <= MAXLEN:
+                candidates.append(p + g[: j + 1])
+    return rng.sample(candidates, k=min(limit, len(candidates)))
+
+
+def prose_negatives(tok, newline: set[int], n: int, seed: int = 3) -> list:
+    """Line breaks in plain prose (WikiText-2 *train*; the side-effect check uses test)."""
+    from datasets import load_dataset
+    from side_effect_job import WIKITEXT_REVISION
+
+    ds = load_dataset(
+        "Salesforce/wikitext",
+        "wikitext-2-raw-v1",
+        split="train",
+        revision=WIKITEXT_REVISION,
+    )  # nosec B615 - pinned
+    ids = tok("\n\n".join(ds["text"][:4000]), add_special_tokens=False).input_ids
+    rng = random.Random(seed)
+    lines = [j for j in range(512, len(ids)) if ids[j] in newline]
+    return [ids[j - 511 : j + 1] for j in rng.sample(lines, k=min(n, len(lines)))]
+
+
+def contrast_sets(
+    tok, contrast: dict, traces: list[dict]
+) -> tuple[list, list[float], list[str]]:
+    """Prefixes, +1/-1 labels and group names, in the kernel's order
+    (newline set, then answer tokens)."""
     by_id = {r["id"]: r for r in traces}
     newline = {i for i in range(len(tok)) if "\n" in tok.decode([i])}
     rng = random.Random(1)
@@ -70,6 +111,12 @@ def contrast_sets(tok, contrast: dict, traces: list[dict]) -> tuple[list, list[f
     answer_tokens = [x for x in contrast["answer"] if len(x) <= MAXLEN]
     prefixes = pos + work + post + answer_tokens
     labels = [1.0] * len(pos) + [-1.0] * (len(work) + len(post) + len(answer_tokens))
+    groups = (
+        ["answer_newline"] * len(pos)
+        + ["working_newline"] * len(work)
+        + ["post_think"] * len(post)
+        + ["answer_token"] * len(answer_tokens)
+    )
     print(
         json.dumps(
             {
@@ -82,7 +129,7 @@ def contrast_sets(tok, contrast: dict, traces: list[dict]) -> tuple[list, list[f
         ),
         flush=True,
     )
-    return prefixes, labels
+    return prefixes, labels, groups
 
 
 def capture_last(
@@ -175,7 +222,31 @@ def main() -> None:
     ap.add_argument("--write-norm", type=float, default=3.0)
     ap.add_argument("--lam", type=float, default=100.0)
     ap.add_argument("--gain", type=float, default=4.0)
+    ap.add_argument(
+        "--nothink-negatives",
+        default=None,
+        help="thinking-off replies (gen_*.jsonl.gz) whose line breaks become negatives",
+    )
+    ap.add_argument("--nothink-limit", type=int, default=300)
+    ap.add_argument(
+        "--prose-negatives", type=int, default=0, help="WikiText-train line breaks"
+    )
+    ap.add_argument("--tag", default="", help="suffix for spec/output names, e.g. _v3")
+    ap.add_argument(
+        "--skip-baseline",
+        action="store_true",
+        help="skip base and control held-out (compare to --compare-spec instead)",
+    )
+    ap.add_argument(
+        "--compare-spec", default=None, help="another spec to run on held-out, paired"
+    )
+    ap.add_argument(
+        "--side-effects",
+        action="store_true",
+        help="then run side_effect_job for base and this neuron",
+    )
     a = ap.parse_args()
+    tag = a.tag
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(
@@ -188,8 +259,35 @@ def main() -> None:
         MODEL, revision=REVISION, dtype=torch.bfloat16
     )  # nosec B615
     model = model.to("cuda").eval()
-    prefixes, labels = contrast_sets(
+    prefixes, labels, groups = contrast_sets(
         tok, json.load(open(a.contrast)), read_jsonl(Path(a.trace))
+    )
+    newline = newline_ids(tok)
+    extra: list[tuple[str, list]] = []
+    if a.nothink_negatives:
+        extra += [
+            ("nothink_newline", p)
+            for p in nothink_negatives(
+                newline, Path(a.nothink_negatives), a.nothink_limit
+            )
+        ]
+    if a.prose_negatives:
+        extra += [
+            ("prose_newline", p)
+            for p in prose_negatives(tok, newline, a.prose_negatives)
+        ]
+    for group, p in extra:
+        prefixes.append(p)
+        labels.append(-1.0)
+        groups.append(group)
+    print(
+        json.dumps(
+            {
+                "event": "contrast_total",
+                **{g: groups.count(g) for g in dict.fromkeys(groups)},
+            }
+        ),
+        flush=True,
     )
     mlp = f"model.layers.{LAYER}.mlp"
     caps = capture_last(model, [f"{mlp}.gate_proj", f"{mlp}.up_proj"], prefixes)
@@ -218,24 +316,42 @@ def main() -> None:
         neuron=a.neuron,
         up_unit=a.up_unit,
     )
+    act = design.activation(caps[f"{mlp}.gate_proj"], caps[f"{mlp}.up_proj"])
+    held_idx = [i for i in range(len(groups)) if i % 2 == 1]
+    fire_by_group = {
+        g: round(
+            sum(float(act[i]) > 0.5 for i in held_idx if groups[i] == g)
+            / max(1, sum(1 for i in held_idx if groups[i] == g)),
+            4,
+        )
+        for g in dict.fromkeys(groups)
+    }
+    design.report["heldout_fire_rate_by_group"] = fire_by_group
     print(json.dumps({"event": "designed", **design.report}), flush=True)
     wait = TokenRowScale(ids=WAIT_IDS, scale=0.5)
-    spec = EditSpec(name="conclude-neuron-L23", edits=(wait, design.rewrite))
+    name = f"conclude-neuron-L23{tag}"
+    spec = EditSpec(name=name, edits=(wait, design.rewrite))
     ctrl_rw = matched_control(
-        EditSpec(name="conclude-neuron-L23", edits=(design.rewrite,)),
+        EditSpec(name=name, edits=(design.rewrite,)),
         rng=random.Random(0),
         vocab_size=embed.shape[0],
         n_neurons=w["down_proj"].shape[1],
     ).edits[0]
     assert isinstance(ctrl_rw, NeuronRewrite)
-    control = EditSpec(name="control:conclude-neuron-L23", edits=(wait, ctrl_rw))
-    (out / "conclude_neuron_spec.json").write_text(spec.to_json())
-    (out / "conclude_neuron_control_spec.json").write_text(control.to_json())
+    control = EditSpec(name=f"control:{name}", edits=(wait, ctrl_rw))
+    spec_path = out / f"conclude_neuron{tag}_spec.json"
+    spec_path.write_text(spec.to_json())
+    (out / f"conclude_neuron{tag}_control_spec.json").write_text(control.to_json())
 
     base = resolve_checkpoint(MODEL, REVISION)
     ckpts = {}
-    for name, s in (("neuron", spec), ("control", control)):
-        dst = pj.WORK / "ckpt" / f"spec_{name}"
+    to_build = [("neuron", spec), ("control", control)]
+    if a.compare_spec:
+        to_build.append(
+            ("compare", EditSpec.from_json(Path(a.compare_spec).read_text()))
+        )
+    for name, s in to_build:
+        dst = pj.WORK / "ckpt" / f"spec_{name}{tag}"
         manifest = apply_spec_to_checkpoint(s, base, dst)
         verify_checkpoint(s, base, dst)
         ckpts[name] = str(dst)
@@ -258,31 +374,55 @@ def main() -> None:
         "control_hash": control.content_hash(),
     }
     practice = pj.generate(
-        "spec_neuron_select", ckpts["neuron"], probs["select"][:200], 8192, out
+        f"spec_neuron{tag}_select", ckpts["neuron"], probs["select"][:200], 8192, out
     )
     result["practice"] = stats(practice)
     print(json.dumps({"event": "practice", **result["practice"]}), flush=True)
-    held = {
-        "base": pj.generate("spec_base_heldout", pj.MODEL, probs["heldout"], 8192, out),
-        "neuron": pj.generate(
-            "spec_neuron_heldout", ckpts["neuron"], probs["heldout"], 8192, out
-        ),
-        "control": pj.generate(
-            "spec_control_heldout", ckpts["control"], probs["heldout"], 8192, out
-        ),
-    }
+    runs = ["neuron"] + ([] if a.skip_baseline else ["base", "control"])
+    if a.compare_spec:
+        runs.append("compare")
+    held = {}
+    for name in runs:
+        model_dir = pj.MODEL if name == "base" else ckpts[name]
+        held[name] = pj.generate(
+            f"spec_{name}{tag}_heldout", model_dir, probs["heldout"], 8192, out
+        )
+        print(
+            json.dumps({"event": "heldout", "model": name, **stats(held[name])}),
+            flush=True,
+        )
     result["heldout"] = {k: stats(v) for k, v in held.items()}
     strict = {k: strict_rows(v) for k, v in held.items()}
+    pairs = [
+        ("neuron_vs_base", "base"),
+        ("neuron_vs_control", "control"),
+        ("neuron_vs_compare", "compare"),
+    ]
     result["paired_strict"] = {
-        "neuron_vs_base": paired_compare(strict["base"], strict["neuron"]),
-        "neuron_vs_control": paired_compare(strict["control"], strict["neuron"]),
-        "control_vs_base": paired_compare(strict["base"], strict["control"]),
+        label: paired_compare(strict[other], strict["neuron"])
+        for label, other in pairs
+        if other in strict
     }
-    (out / "neuron_summary.json").write_text(json.dumps(result, indent=2))
+    (out / f"neuron{tag}_summary.json").write_text(json.dumps(result, indent=2))
     print(
         json.dumps({"event": "neuron_job_done", "heldout": result["heldout"]}),
         flush=True,
     )
+    if a.side_effects:
+        import side_effect_job
+
+        side_effect_job.main(
+            [
+                "--out",
+                str(out),
+                "--neuron-spec",
+                str(spec_path),
+                "--models",
+                "base,neuron",
+                "--tag",
+                tag,
+            ]
+        )
 
 
 if __name__ == "__main__":

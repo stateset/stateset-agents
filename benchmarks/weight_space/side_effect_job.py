@@ -145,7 +145,7 @@ def summarize_gsm(rows: list[dict]) -> dict:
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -165,21 +165,31 @@ def main() -> None:
     ap.add_argument("--neuron-spec", default="/workspace/conclude_neuron_spec.json")
     ap.add_argument("--mmlu", type=int, default=1000)
     ap.add_argument("--gsm", type=int, default=500)
-    a = ap.parse_args()
+    ap.add_argument(
+        "--models",
+        default="base,W5T13,W5T15,neuron",
+        help="comma list from base, W5T13, W5T15, neuron (base is always included)",
+    )
+    ap.add_argument(
+        "--tag", default="", help="suffix for checkpoint dirs and output files"
+    )
+    a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(parents=True, exist_ok=True)
 
     wait = TokenRowScale(ids=WAIT_IDS, scale=0.5)
-    specs = {
+    every = {
         "W5T13": EditSpec("W5T13", (wait, TokenRowScale((THINK_END,), 1.3))),
         "W5T15": EditSpec("W5T15", (wait, TokenRowScale((THINK_END,), 1.5))),
         "neuron": EditSpec.from_json(Path(a.neuron_spec).read_text()),
     }
+    wanted = {m.strip() for m in a.models.split(",")}
+    specs = {k: v for k, v in every.items() if k in wanted}
     base = resolve_checkpoint(MODEL, REVISION)
     dirs = {"base": str(base)}
     for name, spec in specs.items():
-        dst = pj.WORK / "ckpt" / f"side_{name}"
+        dst = pj.WORK / "ckpt" / f"side_{name}{a.tag}"
         manifest = apply_spec_to_checkpoint(spec, base, dst)
         verify_checkpoint(spec, base, dst)
         dirs[name] = str(dst)
@@ -230,7 +240,7 @@ def main() -> None:
         del model
         torch.cuda.empty_cache()
     pj.write_jsonl(
-        out / "mmlu_rows.jsonl",
+        out / f"mmlu_rows{a.tag}.jsonl",
         [{"model": m, **r} for m, rs in mmlu_rows_by_model.items() for r in rs],
     )
 
@@ -240,7 +250,12 @@ def main() -> None:
     for name, d in dirs.items():
         model_dir = pj.MODEL if name == "base" else d
         gens[name] = pj.generate(
-            f"side_{name}_gsm_nothink", model_dir, gsm_rows, 2048, out, thinking=False
+            f"side_{name}{a.tag}_gsm_nothink",
+            model_dir,
+            gsm_rows,
+            2048,
+            out,
+            thinking=False,
         )
         result["gsm8k_no_thinking"][name] = summarize_gsm(gens[name])
         print(
@@ -276,7 +291,7 @@ def main() -> None:
         }
         for name in specs
     }
-    (out / "side_effects_summary.json").write_text(json.dumps(result, indent=2))
+    (out / f"side_effects_summary{a.tag}.json").write_text(json.dumps(result, indent=2))
     print(json.dumps({"event": "side_effects_done"}), flush=True)
 
 
