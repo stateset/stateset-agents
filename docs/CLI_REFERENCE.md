@@ -1453,6 +1453,51 @@ stateset-agents mcp
 - `--transport TEXT`: MCP transport to serve over (default: stdio).
 - `--weight-space`: Also expose the experimental ws_* weight-space programming tools (loads models into the server process).
 
+### `stateset-agents weight-edit`
+
+Apply, verify, control and compare direct weight edits (experimental; see
+`stateset_agents.experimental.weight_space`). An edit spec is JSON:
+
+```json
+{"name": "w5t15", "edits": [
+  {"kind": "token_rows", "ids": [13784, 13428], "scale": 0.5},
+  {"kind": "token_rows", "ids": [248069], "scale": 1.5},
+  {"kind": "down_cols", "layer": 23, "neurons": [742], "scale": 1.3}
+]}
+```
+
+`token_rows` scales those rows of every token matrix (the embedding, and
+`lm_head` when the checkpoint stores one); `down_cols` scales MLP neuron
+columns of one layer's `down_proj`.
+
+```bash
+stateset-agents weight-edit apply spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --out ./edited
+stateset-agents weight-edit verify spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --edited ./edited
+stateset-agents weight-edit control spec.json --base ./edited --seed 0 > control.json
+stateset-agents weight-edit compare base_results.jsonl edited_results.jsonl
+```
+
+#### Subcommands
+
+- `apply SPEC --base DIR|HUB_ID --out DIR [--revision SHA]`: copy the base
+  checkpoint with the spec applied and write `weight_space_spec.json`
+  (spec, content hash, weights changed). Refuses to overwrite `--out`.
+- `verify SPEC --base DIR|HUB_ID --edited DIR [--revision SHA] [--tolerance F]`:
+  exit 0 only if every tensor of the edited checkpoint equals base + spec;
+  prints `MISMATCH: ...` and exits 1 otherwise.
+- `control SPEC --base DIR|HUB_ID [--seed N]`: print a structure-matched
+  control spec (same kinds, layers and scales on random targets).
+- `compare BASE.jsonl OTHER.jsonl [--seed N]`: paired statistics on shared
+  problem ids (rows need `id` and `correct`): gained, lost, delta, bootstrap
+  95% CI, exact McNemar p.
+- `atlas --base DIR|HUB_ID --token-id ID [--token-id ID ...] [--top N] [--against]
+  [--norm auto|zero-centered|plain]`: weight-only (no forward passes) list of
+  the MLP neurons whose `down_proj` columns write most directly toward (or,
+  with `--against`, away from) the tokens' logit direction, each with the
+  token ids it promotes. `auto` reads the final-norm convention from
+  `config.json` (Qwen3.5 / Gemma use `x * (1 + w)`). Atlas neurons are
+  candidates to test, not causes.
+
 ### `stateset-agents auto-research`
 
 Run the autonomous research loop to optimize agent training.
