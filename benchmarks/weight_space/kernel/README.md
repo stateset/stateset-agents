@@ -18,6 +18,14 @@ Templates contain placeholders that are substituted before sending
 | 3 | `circuit_write.py` (`__LAYER__`, `__BETA__`) | free | Linear rank-1 circuit: `down_proj[L] += beta * B (x) A` (A = detector, B = unit `</think>` logit direction), on top of Wait x0.5. |
 | 4 | `nc_analyze.py` | free | Designs a thresholded neuron from the stored captures: ridge detector over gate pre-activations, a near-constant up neuron as multiplier, and the least-used neuron to repurpose. |
 | 5 | `nc_write.py` (`__WRITE__`, `__THINK__`) | free | Rewrites that neuron's gate row, up row and down column; reads the rows back to confirm. |
+| 6 | `nl_read.py` | 1 forward pass | Newline-anchored contrast: captures layer-23 gate/up at the first two line breaks after the answer (positives), working line breaks and post-`</think>` prefixes (negatives); fits ridge detectors. |
+| 7 | `nl_write_eval.py` | 1 forward pass | Newline-anchored conclude neuron v1 on Wait x0.5; evaluates with lenient and strict scoring. |
+| 8 | `nl2_write_eval.py` | 1 forward pass | v2: refits with the answer token itself as an extra negative (from step 1's capture), rewrites the neuron, evaluates. This is the version submitted for held-out. |
 | — | `circuit_eval.py` | 1 forward pass | Samples the current edited model on the 200 practice problems. |
+| — | `nc_strict.py` | free | Lenient vs strict accuracy for every kernel evaluation so far. |
+
+Strict scoring (correct, finished, exactly one `</think>`) is the measure that
+counts: the number-anchored neuron (`nc_write.py`) scored 24–36% lenient but
+1.5–9.5% strict, because it emits `</think>` inline after a number.
 
 Results are in `benchmark_results/weight_space/20261102/`.
