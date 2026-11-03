@@ -3,7 +3,7 @@ Advanced RL Algorithms for StateSet Agents
 
 Research scaffolding: an Advantage Actor-Critic (A2C) trainer, a DPO trainer
 and an ``AdvancedRLOrchestrator`` that picks between them. Not the supported
-training path; everything here is deprecated and removed in v0.71.0. Use the
+training path; everything here is deprecated and removed in v0.72.0. Use the
 ``training/`` trainers (GRPO, GSPO, DAPO, GEPO, VAPO),
 ``stateset_agents.experimental.ppo`` for PPO and
 ``stateset_agents.training.preference`` for DPO and its relatives. The older
@@ -31,7 +31,7 @@ from .enhanced_agent import EnhancedMultiTurnAgent
 
 logger = logging.getLogger(__name__)
 
-_REMOVAL_RELEASE = "0.71.0"
+_REMOVAL_RELEASE = "0.72.0"
 
 
 def _warn_deprecated(name: str, replacement: str) -> None:
@@ -163,7 +163,7 @@ class DPOTrainer:
     .. deprecated:: 0.70.0
         Research scaffolding. Use the maintained
         :class:`stateset_agents.training.preference.PreferenceTrainer`
-        (DPO, IPO, SimPO, KTO, ORPO). Removed in v0.71.0.
+        (DPO, IPO, SimPO, KTO, ORPO). Removed in v0.72.0.
     """
 
     def __init__(
@@ -171,7 +171,7 @@ class DPOTrainer:
     ):
         warn_deprecated(
             "stateset_agents.core.enhanced.DPOTrainer",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement="stateset_agents.training.preference.PreferenceTrainer",
         )
         self.agent = agent
@@ -298,7 +298,7 @@ class A2CTrainer:
 
     .. deprecated:: 0.70.0
         Research scaffolding with no maintained counterpart. Use the
-        ``training/`` trainers. Removed in v0.71.0.
+        ``training/`` trainers. Removed in v0.72.0.
     """
 
     def __init__(
@@ -482,7 +482,7 @@ class AdvancedRLOrchestrator:
 
     .. deprecated:: 0.70.0
         Selects between this module's research trainers only. Use the
-        ``training/`` trainers directly. Removed in v0.71.0.
+        ``training/`` trainers directly. Removed in v0.72.0.
     """
 
     def __init__(self, agent: EnhancedMultiTurnAgent):
@@ -628,7 +628,7 @@ def __getattr__(name: str) -> Any:
     if name == "GSPOConfig":
         warn_deprecated(
             f"{__name__}.GSPOConfig",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement="stateset_agents.training.gspo_config.GSPOConfig",
         )
         from ...training.gspo_config import GSPOConfig

@@ -325,7 +325,7 @@ class AgentProtocol(Protocol):
 
     Named ``AgentProtocol`` so it no longer shadows the concrete
     ``stateset_agents.Agent``; the old ``type_system.Agent`` name is a
-    deprecated alias until v0.71.0.
+    deprecated alias until v0.72.0.
     """
 
     async def generate_response(
@@ -776,7 +776,7 @@ def __getattr__(name: str) -> Any:
     if name == "ConversationTurn":
         warn_deprecated(
             f"{__name__}.ConversationTurn",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=(
                 "ConversationTurnDict (or the canonical "
                 "stateset_agents.core.trajectory.ConversationTurn)"
@@ -786,7 +786,7 @@ def __getattr__(name: str) -> Any:
     if name == "TrainingConfig":
         warn_deprecated(
             f"{__name__}.TrainingConfig",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=f"{__name__}.TrainingConfigDict",
         )
         return TrainingConfigDict
@@ -806,7 +806,7 @@ def __getattr__(name: str) -> Any:
     if protocol is not None:
         warn_deprecated(
             f"{__name__}.{name}",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=f"{__name__}.{protocol} (the Protocol; the concrete "
             f"class is stateset_agents.{name})",
         )

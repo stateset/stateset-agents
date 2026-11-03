@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Hand-designed neurons as edits.** `NeuronRewrite` (spec kind
+  `neuron_rewrite`) replaces one MLP neuron's `gate_proj` row, `up_proj` row
+  and `down_proj` column; it serializes in `EditSpec`, applies to sharded
+  checkpoints, verifies exactly with `weight-edit verify`, and
+  `weight-edit control` keeps its read vectors while drawing a random write
+  direction of the same norm.
+- **`weight_space.circuits`** — `design_conditional_neuron` packages the recipe
+  behind v0.71.0's best edit ("when X, write Y"): a ridge detector over captured
+  gate pre-activations as the gate, a near-constant up unit as the multiplier,
+  the least-used neuron as the slot, and a target direction as the write,
+  returned as a `NeuronRewrite` with held-out AUC and fire rates. Plus `auc`,
+  `ridge_detector`, `near_constant_unit`, `least_used_neuron`.
+- `benchmarks/weight_space/neuron_job.py` regenerates the Qwen3.5-0.8B conclude
+  neuron with the packaged recipe and saves it as a portable spec.
+
+### Changed
+
+- **Scheduled removals move from 0.71.0 to 0.72.0.** v0.71.0 shipped the
+  weight-space work without the deprecated-surface removals that were
+  scheduled for it, so its own expiry guards failed. Every 0.71.0 removal
+  marker (52 deprecated modules and aliases), the four dated layering
+  exceptions and the three dated exception-hierarchy exceptions now name
+  0.72.0; nothing is removed in 0.71.x.
+- RunPod weight-space launchers install this checkout's wheel on the pod
+  instead of a standalone copy of `weight_space`, which no longer imports on
+  its own.
+
+### Fixed
+
+- Checkpoint patching now loads every shard a neuron rewrite touches (it only
+  looked for `down_proj`, so `gate_proj` / `up_proj` rows in another shard were
+  skipped).
+
 ## [0.71.0] - 2026-11-02 — Weight-space programming: direct weight edits with matched controls
 
 ### Added

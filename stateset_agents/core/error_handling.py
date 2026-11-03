@@ -18,7 +18,7 @@ Deprecated here (each access or call warns and names its replacement):
   and ``TrainingException`` / ``ModelException`` / ``DataException`` /
   ``NetworkException`` (unused; use the ``core.errors`` categories) are
   removed in v0.72.0 with the stable root names that point at them;
-* ``ErrorContext`` (now :class:`ErrorRecord`) is removed in v0.71.0;
+* ``ErrorContext`` (now :class:`ErrorRecord`) is removed in v0.72.0;
 * the retry and circuit-breaker helpers (``RetryConfig``, ``retry_async``,
   ``CircuitBreakerConfig``, ``CircuitBreaker``, ``circuit_breaker``) are
   removed in v0.72.0; :mod:`stateset_agents.api.resilience` is the one
@@ -49,7 +49,7 @@ from .errors import (
 #: Stable (root ``__all__``) names deprecated here are removed in this release.
 _STABLE_REMOVAL = "0.72.0"
 #: Provisional names deprecated here are removed in this release.
-_PROVISIONAL_REMOVAL = "0.71.0"
+_PROVISIONAL_REMOVAL = "0.72.0"
 _RESILIENCE = "stateset_agents.api.resilience"
 
 

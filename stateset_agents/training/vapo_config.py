@@ -25,7 +25,7 @@ class VAPOConfig(TrainingConfig):
     """
 
     model_name: str = "gpt2"
-    # Deprecated (removed in v0.71.0): never read; inner update passes are
+    # Deprecated (removed in v0.72.0): never read; inner update passes are
     # num_gradient_updates. A non-default value is rejected.
     num_iterations: int = 1
 
@@ -66,7 +66,7 @@ class VAPOConfig(TrainingConfig):
     positive_lm_weight: float = 0.1
 
     group_size: int = 16
-    # Deprecated (removed in v0.71.0): never read; prompts per iteration are
+    # Deprecated (removed in v0.72.0): never read; prompts per iteration are
     # per_device_train_batch_size. A non-default value is rejected.
     num_prompts_per_batch: int = 512
 

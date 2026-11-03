@@ -13,7 +13,7 @@ import them (docs/ARCHITECTURE.md, Layering):
   evaluation and synthetic datasets.
 
 Each moved here in v0.70.0; the old ``evaluation``/``data``/``training`` paths
-are deprecated shims removed in v0.71.0. Import the submodules directly; this
+are deprecated shims removed in v0.72.0. Import the submodules directly; this
 package re-exports nothing so importing it stays free.
 """
 

@@ -186,12 +186,12 @@ LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str, str]] = {
     (
         f"{PACKAGE}/core/multiturn_agent.py",
         f"{PACKAGE}.experimental.long_term_planning",
-    ): ("bridge", "the whole module is deprecated (DialogueSessionAgent)", "0.71.0"),
+    ): ("bridge", "the whole module is deprecated (DialogueSessionAgent)", "0.72.0"),
     (f"{PACKAGE}/core/types.py", f"{PACKAGE}.training.config"): (
         "bridge",
         "deprecated core.types.TrainingConfig alias, served lazily; the module "
         "is deprecated",
-        "0.71.0",
+        "0.72.0",
     ),
     (
         f"{PACKAGE}/core/enhanced/advanced_rl_algorithms.py",
@@ -200,7 +200,7 @@ LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str, str]] = {
         "bridge",
         "deprecated core.enhanced GSPOConfig alias, served lazily; the module "
         "is deprecated",
-        "0.71.0",
+        "0.72.0",
     ),
     (
         f"{PACKAGE}/evaluation/reward_audit.py",
@@ -209,7 +209,7 @@ LAYERING_ALLOWLIST: dict[tuple[str, str], tuple[str, str, str]] = {
         "bridge",
         "audit_support_rewards and `python -m ...evaluation.reward_audit` moved "
         "up to rewards.support_reward_audit; served lazily with a warning",
-        "0.71.0",
+        "0.72.0",
     ),
 }
 

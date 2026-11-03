@@ -267,7 +267,7 @@ def __getattr__(name: str) -> Any:
         # TrainingConfig now refers only to training.config.TrainingConfig.
         warn_deprecated(
             f"{__name__}.TrainingConfig",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=f"{__name__}.TrainingJobSpec",
         )
         return TrainingJobSpec

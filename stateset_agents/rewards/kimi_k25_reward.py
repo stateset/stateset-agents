@@ -252,7 +252,7 @@ class CodeFormattingHeuristic(BaseRewardComponent):
     ("def ", "return ", "class"...) and an explanation phrase. It cannot tell
     working code from broken code; to reward code that passes tests use
     :class:`stateset_agents.rewards.code_verifier.SandboxedCodeVerifier`.
-    Formerly ``CodeExecutionReward`` (a deprecated alias until v0.71.0).
+    Formerly ``CodeExecutionReward`` (a deprecated alias until v0.72.0).
     """
 
     def __init__(
@@ -587,7 +587,7 @@ def __getattr__(name: str) -> Any:
     if name == "CodeExecutionReward":
         warn_deprecated(
             f"{__name__}.CodeExecutionReward",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=_CODE_EXECUTION_REPLACEMENT,
         )
         return CodeFormattingHeuristic

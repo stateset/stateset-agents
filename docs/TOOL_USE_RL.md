@@ -513,5 +513,5 @@ is caught (`test_the_verifier_search_detects_a_naive_verifier`).
 `stateset_agents.rewards.kimi_k25_reward.CodeExecutionReward` never executed
 code: it scored code-block markers and keywords. It is now
 `CodeFormattingHeuristic` (component name `code_formatting`); the old name
-is a deprecated alias removed in v0.71.0. To reward code that works, use
+is a deprecated alias removed in v0.72.0. To reward code that works, use
 `SandboxedCodeVerifier`.

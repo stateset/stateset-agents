@@ -11,7 +11,7 @@ an optimizer step (without torch, a model or a tokenizer the reported value
 is ``-mean(advantages)``). The only parameter changes come from an agent's own
 ``update_policy`` / ``update_from_feedback`` hooks, if it defines them.
 
-Deprecated in v0.70.0 and removed in v0.71.0. To train, use the trainers in
+Deprecated in v0.70.0 and removed in v0.72.0. To train, use the trainers in
 :mod:`stateset_agents.training` -- ``stateset_agents.train(...)`` or
 ``MultiTurnGRPOTrainer`` / ``SingleTurnGRPOTrainer`` -- which run real GRPO
 updates.
@@ -41,7 +41,7 @@ from .trajectory import Trajectory
 
 logger = logging.getLogger(__name__)
 
-_REMOVAL = "0.71.0"
+_REMOVAL = "0.72.0"
 _REPLACEMENT = (
     "stateset_agents.train() or stateset_agents.training.MultiTurnGRPOTrainer "
     "(this engine never applies a gradient update)"
@@ -77,7 +77,7 @@ class ComputationalTrajectory:
 class ComputationalGRPOEngine:
     """Parallel rollout-and-score loop that does not train the policy.
 
-    Deprecated (removed in v0.71.0): see the module docstring. Use
+    Deprecated (removed in v0.72.0): see the module docstring. Use
     ``stateset_agents.train()`` or the trainers in
     :mod:`stateset_agents.training`.
     """
@@ -465,7 +465,7 @@ def create_computational_engine(
     num_workers: int | None = None,
     **kwargs,
 ) -> ComputationalGRPOEngine:
-    """Create a :class:`ComputationalGRPOEngine` (deprecated, removed in v0.71.0)."""
+    """Create a :class:`ComputationalGRPOEngine` (deprecated, removed in v0.72.0)."""
     return ComputationalGRPOEngine(
         agent=agent,
         environment=environment,

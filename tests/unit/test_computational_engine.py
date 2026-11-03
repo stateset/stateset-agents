@@ -77,7 +77,7 @@ def _engine(agent: Any) -> ComputationalGRPOEngine:
 
 
 def test_engine_is_deprecated_with_a_date_and_points_at_the_trainers() -> None:
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0") as caught:
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0") as caught:
         ComputationalGRPOEngine(
             agent=object(),  # type: ignore[arg-type]
             environment=StubEnvironment(),
@@ -167,7 +167,7 @@ def test_subclassing_base_trainer_is_deprecated() -> None:
     pytest.importorskip("torch")
     from stateset_agents.training.base_trainer import BaseTrainer
 
-    with pytest.warns(DeprecationWarning, match=r"BaseTrainer.*removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"BaseTrainer.*removed in v0\.72\.0"):
 
         class _Legacy(BaseTrainer):  # type: ignore[type-arg]
             async def train_step(self, batch: Any) -> dict[str, float]:

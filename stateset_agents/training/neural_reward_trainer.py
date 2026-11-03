@@ -588,7 +588,7 @@ class NeuralRewardFunction(RewardFunction):
         if fallback_reward is not None:
             warn_deprecated(
                 "NeuralRewardFunction(fallback_reward=...)",
-                removal="0.71.0",
+                removal="0.72.0",
                 replacement=(
                     "nothing: an outage raises RewardUnavailableError and any "
                     "other failure propagates"

@@ -72,6 +72,6 @@ def test_dpo_trainer_is_deprecated_in_favour_of_preference_trainer():
     agent = SimpleNamespace(model=_TinyLM(), tokenizer=_ByteTokenizer())
     with pytest.warns(
         DeprecationWarning,
-        match=r"removed in v0\.71\.0; use stateset_agents\.training\.preference\.PreferenceTrainer",
+        match=r"removed in v0\.72\.0; use stateset_agents\.training\.preference\.PreferenceTrainer",
     ):
         DPOTrainer(agent, DPOConfig(), device="cpu")

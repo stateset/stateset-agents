@@ -741,7 +741,7 @@ def setup_exception_handlers(app: FastAPI) -> None:
 __getattr__ = deprecated_alias_getattr(
     __name__,
     {
-        "ValidationError": (__name__, "UnprocessableEntityError", "0.71.0"),
-        "TrainingError": (__name__, "TrainingFailedError", "0.71.0"),
+        "ValidationError": (__name__, "UnprocessableEntityError", "0.72.0"),
+        "TrainingError": (__name__, "TrainingFailedError", "0.72.0"),
     },
 )

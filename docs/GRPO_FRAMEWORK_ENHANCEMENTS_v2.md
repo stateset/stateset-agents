@@ -395,7 +395,7 @@ capabilities inferred from the scheduler configuration.
 ### **New Component: `api/enhanced_ultimate_grpo_service.py`**
 
 > This module was removed; its successor, the secondary `api/grpo` app, is
-> deprecated (removed in v0.71.0). The supported service is
+> deprecated (removed in v0.72.0). The supported service is
 > `stateset_agents.api.main`.
 
 **Next-Generation API Platform:**

@@ -97,11 +97,11 @@ def test_misnamed_presets_resolve_through_deprecated_aliases(
     alias, canonical, model_id
 ):
     """``qwen3`` loaded Qwen2.5 and ``gemma3`` loaded Gemma 2; the honest
-    names replace them and the old ones warn until v0.71.0."""
+    names replace them and the old ones warn until v0.72.0."""
     assert DEPRECATED_PRESET_ALIASES[alias] == canonical
     assert alias not in PRESETS and alias not in list_preset_names()
     assert get_preset(canonical).model_id == model_id
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0.*" + canonical):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0.*" + canonical):
         assert get_preset(alias) is get_preset(canonical)
     with pytest.warns(DeprecationWarning, match=alias):
         assert resolve_preset_name(alias) == canonical

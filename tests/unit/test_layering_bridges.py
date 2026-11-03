@@ -226,7 +226,7 @@ def test_old_module_path_warns_and_aliases_the_new_module(
 ) -> None:
     target = importlib.import_module(new)
     monkeypatch.delitem(sys.modules, old, raising=False)
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0") as caught:
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0") as caught:
         module = importlib.import_module(old)
     assert new in str(caught[0].message)
     assert module is target
@@ -280,7 +280,7 @@ def test_support_reward_audit_moved_with_a_dated_alias(
     from stateset_agents.evaluation import reward_audit
     from stateset_agents.rewards import support_reward_audit
 
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         alias = reward_audit.audit_support_rewards
     assert alias is support_reward_audit.audit_support_rewards
 

@@ -936,12 +936,12 @@ if __name__ == "__main__":
 
 # The old names collided with the canonical classes in
 # ``stateset_agents.utils.monitoring``; they are served with a warning and
-# will be removed in v0.71.0.
+# will be removed in v0.72.0.
 __getattr__ = deprecated_alias_getattr(
     __name__,
     {
-        "AlertManager": (__name__, "ThresholdAlertManager", "0.71.0"),
-        "MetricsCollector": (__name__, "TimeSeriesMetricsCollector", "0.71.0"),
+        "AlertManager": (__name__, "ThresholdAlertManager", "0.72.0"),
+        "MetricsCollector": (__name__, "TimeSeriesMetricsCollector", "0.72.0"),
     },
 )
 

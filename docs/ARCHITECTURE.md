@@ -220,10 +220,10 @@ flowchart TD
 | Importing module | Imports | Kind | Removed in | Reason |
 |------------------|---------|------|------------|--------|
 | `core/agent.py` | `experimental.long_term_planning` | bridge | v0.72.0 | AgentConfig(enable_planning=True) without planning_manager= builds the experimental planner implicitly; deprecated, inject planning_manager |
-| `core/enhanced/advanced_rl_algorithms.py` | `training.gspo_config` | bridge | v0.71.0 | deprecated core.enhanced GSPOConfig alias, served lazily; the module is deprecated |
-| `core/multiturn_agent.py` | `experimental.long_term_planning` | bridge | v0.71.0 | the whole module is deprecated (DialogueSessionAgent) |
-| `core/types.py` | `training.config` | bridge | v0.71.0 | deprecated core.types.TrainingConfig alias, served lazily; the module is deprecated |
-| `evaluation/reward_audit.py` | `rewards.support_reward_audit` | bridge | v0.71.0 | audit_support_rewards and `python -m ...evaluation.reward_audit` moved up to rewards.support_reward_audit; served lazily with a warning |
+| `core/enhanced/advanced_rl_algorithms.py` | `training.gspo_config` | bridge | v0.72.0 | deprecated core.enhanced GSPOConfig alias, served lazily; the module is deprecated |
+| `core/multiturn_agent.py` | `experimental.long_term_planning` | bridge | v0.72.0 | the whole module is deprecated (DialogueSessionAgent) |
+| `core/types.py` | `training.config` | bridge | v0.72.0 | deprecated core.types.TrainingConfig alias, served lazily; the module is deprecated |
+| `evaluation/reward_audit.py` | `rewards.support_reward_audit` | bridge | v0.72.0 | audit_support_rewards and `python -m ...evaluation.reward_audit` moved up to rewards.support_reward_audit; served lazily with a warning |
 | `training/train.py` | `experimental.offline_rl` | bridge | v0.72.0 | train(training_mode='offline'\|'hybrid') loads the experimental offline trainer when nothing registered one (training.offline_backend); deprecated, import stateset_agents.experimental.offline_rl |
 | `core/adaptive_learning_controller.py`, `core/few_shot_adaptation.py`, `core/intelligent_orchestrator.py`, `core/intelligent_orchestrator_logic.py`, `core/intelligent_orchestrator_models.py`, `core/long_term_planning.py`, `core/multi_agent_coordination.py`, `core/multimodal_processing.py`, `core/neural_architecture_search.py`, `data/industry_synthetic.py`, `evaluation/acceptance.py`, `evaluation/agent_study.py`, `evaluation/industry.py`, `evaluation/study_preflight.py`, `training/river_progress.py`, `training/river_refund.py` | the module they alias | shim | as stated in each shim | pure deprecation shims at old import paths |
 <!-- layer-graph:end -->
@@ -602,7 +602,7 @@ A_t = δ_t + γλ * A_{t+1}                [GAE]
 ### 6. Computational Engine (`core/computational_engine.py`) -- deprecated
 
 **Purpose**: Parallel trajectory generation and reward scoring for demos. It
-does **not** train and is deprecated (removed in v0.71.0); it is not the GRPO
+does **not** train and is deprecated (removed in v0.72.0); it is not the GRPO
 engine. The GRPO update lives in `stateset_agents.training`
 (`MultiTurnGRPOTrainer` and the other native trainers, driven by
 `stateset_agents.train()`).
@@ -1094,7 +1094,7 @@ a no-op, so the inference service never has to guard its call sites.
   `stateset_agents.utils.monitoring` (`MonitoringService`, `MetricsCollector`,
   `AlertManager`). `utils/alerts.py`, `utils/observability.py`,
   `utils/logging.py` and `utils/profiler.py` are deprecated (removed in
-  v0.71.0).
+  v0.72.0).
 * **Nightly benchmark workflow** posts a regression PR comment when a known
   benchmark exceeds 150% of its baseline (see `.github/workflows/
   benchmark-nightly.yml`).

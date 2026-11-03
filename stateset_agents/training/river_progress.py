@@ -4,7 +4,7 @@ River training-progress records are validated by evaluation's checkpoint
 selection and trace audits, so they live in ``evaluation``, below the studies
 that write them (docs/ARCHITECTURE.md, Layering). Importing them from
 `stateset_agents.training.river_progress` is deprecated since v0.70.0 and is
-removed in v0.71.0.
+removed in v0.72.0.
 """
 
 import sys
@@ -14,7 +14,7 @@ from stateset_agents.evaluation import river_progress as _new
 
 warn_deprecated(
     "stateset_agents.training.river_progress",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.evaluation.river_progress",
 )
 

@@ -1352,7 +1352,7 @@ def _resolve(name: str, stacklevel: int) -> str:
         return name
     warn_deprecated(
         f"Model preset {name!r} (which loads {PRESETS[canonical].model_id})",
-        removal="0.71.0",
+        removal="0.72.0",
         replacement=f"preset {canonical!r}",
         stacklevel=stacklevel + 1,
     )

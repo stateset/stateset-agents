@@ -100,7 +100,7 @@ class GEPOConfig(TrainingConfig):
     lora_alpha: int = 32
     lora_dropout: float = 0.05
 
-    # Advantage computation. Deprecated (removed in v0.71.0): GEPO always
+    # Advantage computation. Deprecated (removed in v0.72.0): GEPO always
     # normalises within the group; a non-default value is rejected.
     use_group_baseline: bool = True
 

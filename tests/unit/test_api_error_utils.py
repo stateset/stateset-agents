@@ -101,7 +101,7 @@ def test_api_models_is_a_deprecated_duplicate_of_schemas(
     from stateset_agents.api import schemas
 
     monkeypatch.delitem(sys.modules, "stateset_agents.api.models", raising=False)
-    with pytest.warns(DeprecationWarning, match=r"api\.models.*removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"api\.models.*removed in v0\.72\.0"):
         models = importlib.import_module("stateset_agents.api.models")
     assert models.PaginatedResponse is schemas.PaginatedResponse
     assert models.APIResponse is schemas.APIResponse

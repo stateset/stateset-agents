@@ -95,7 +95,7 @@ def test_one_conversation_turn_class() -> None:
 def test_type_system_conversation_turn_is_a_deprecated_alias() -> None:
     from stateset_agents.core import type_system
 
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         alias = type_system.ConversationTurn
     assert alias is type_system.ConversationTurnDict
     with pytest.warns(DeprecationWarning):
@@ -108,7 +108,7 @@ def test_core_types_is_deprecated_and_aliases_the_canonical_turn(
     from stateset_agents.core.trajectory import ConversationTurn
 
     monkeypatch.delitem(sys.modules, "stateset_agents.core.types", raising=False)
-    with pytest.warns(DeprecationWarning, match=r"core\.types.*removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"core\.types.*removed in v0\.72\.0"):
         legacy = importlib.import_module("stateset_agents.core.types")
     assert legacy.ConversationTurn is ConversationTurn
     turn = legacy.ConversationTurn("hi", "hello", 0.5)

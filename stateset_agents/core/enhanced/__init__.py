@@ -5,7 +5,7 @@ This module contains advanced enhancements to the core framework including:
 
 - Enhanced Agent Architecture with memory, reasoning, and dynamic personas
 - Research RL trainers (DPO, A2C) with algorithm selection (deprecated;
-  removed in v0.71.0)
+  removed in v0.72.0)
 - Comprehensive Evaluation Framework with automated testing
 - Production-ready features and monitoring capabilities
 

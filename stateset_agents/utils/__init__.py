@@ -35,7 +35,7 @@ _DEPRECATED_EXPORTS: dict[str, tuple[str, str]] = {
     "get_logger": (".logging", "logging.getLogger"),
     "PerformanceReport": (".profiler", "stateset_agents.utils.performance_monitor"),
 }
-_DEPRECATED_EXPORTS_REMOVAL = "v0.71.0"
+_DEPRECATED_EXPORTS_REMOVAL = "v0.72.0"
 
 
 def __getattr__(name: str) -> Any:

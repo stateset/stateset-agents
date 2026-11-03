@@ -2,7 +2,7 @@
 
 This module was relocated to the experimental namespace. Importing it from
 `stateset_agents.core` has been deprecated since v0.22.0 and is removed in
-v0.71.0.
+v0.72.0.
 """
 
 import sys
@@ -12,7 +12,7 @@ from stateset_agents.experimental import multimodal_processing as _new
 
 warn_deprecated(
     "stateset_agents.core.multimodal_processing",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.experimental.multimodal_processing",
 )
 

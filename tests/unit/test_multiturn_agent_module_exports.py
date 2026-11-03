@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-# Deprecated with the api.grpo app (removed in v0.71.0); the warnings are
+# Deprecated with the api.grpo app (removed in v0.72.0); the warnings are
 # asserted in test_dialogue_session_agent_is_deprecated below.
 with warnings.catch_warnings():
     warnings.simplefilter("ignore", DeprecationWarning)
@@ -60,7 +60,7 @@ def test_dialogue_session_agent_is_deprecated(monkeypatch: pytest.MonkeyPatch) -
     from stateset_agents.core.agent import MultiTurnAgent as StableMultiTurnAgent
 
     assert "MultiTurnAgent" not in multiturn_agent.__all__
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         alias = multiturn_agent.MultiTurnAgent
     assert alias is DialogueSessionAgent
     assert alias is not StableMultiTurnAgent

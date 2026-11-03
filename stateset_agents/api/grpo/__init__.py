@@ -1,4 +1,4 @@
-"""Deprecated secondary GRPO service app (removed in v0.71.0).
+"""Deprecated secondary GRPO service app (removed in v0.72.0).
 
 This package is a second FastAPI app (``service.create_app``) with its own
 config, handlers, metrics, models, state and auth. Nothing outside the package
@@ -6,7 +6,7 @@ uses it: the supported gateway is :mod:`stateset_agents.api.main`, which has
 its own rate limiter (:mod:`stateset_agents.api.rate_limiter`). The app
 surface (``service``, ``service_routes``, ``router_v1``, ``auth``) has been
 deprecated since v0.16.0; since v0.70.0 importing any part of the package
-warns, and the whole package will be removed in v0.71.0.
+warns, and the whole package will be removed in v0.72.0.
 """
 
 import importlib
@@ -44,7 +44,7 @@ from .state import (
 
 warn_deprecated(
     "stateset_agents.api.grpo (the secondary GRPO service app)",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.api.main",
 )
 

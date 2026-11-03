@@ -28,7 +28,7 @@ from .performance_monitor import (
 
 warn_deprecated(
     "stateset_agents.utils.profiler",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.utils.performance_monitor",
 )
 

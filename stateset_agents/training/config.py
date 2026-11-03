@@ -108,7 +108,7 @@ def require_finite(
 
 
 #: Release that removes the dead algorithm-config fields deprecated in 0.70.
-DEAD_FIELD_REMOVAL = "v0.71.0"
+DEAD_FIELD_REMOVAL = "v0.72.0"
 
 
 def reject_dead_fields(config: Any, fields: dict[str, str | None]) -> None:
@@ -132,7 +132,7 @@ def reject_dead_fields(config: Any, fields: dict[str, str | None]) -> None:
         if value != defaults[name]:
             message = deprecation_message(
                 f"{type(config).__name__}.{name}",
-                removal="0.71.0",
+                removal="0.72.0",
                 replacement=replacement,
             )
             raise ConfigurationError(

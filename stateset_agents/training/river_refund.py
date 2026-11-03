@@ -4,7 +4,7 @@ The River-native refund experiment drives the remote River runtime, so it
 cannot live in ``training``, a layer below ``remote`` (docs/ARCHITECTURE.md,
 Layering). Importing it, or running ``python -m`` on it, from
 `stateset_agents.training.river_refund` is deprecated since v0.70.0 and is
-removed in v0.71.0.
+removed in v0.72.0.
 """
 
 import sys
@@ -13,7 +13,7 @@ from stateset_agents._deprecation import warn_deprecated
 
 warn_deprecated(
     "stateset_agents.training.river_refund",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.verticals.river_refund",
 )
 

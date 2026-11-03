@@ -87,7 +87,7 @@ class ConversationDatasetConfig:
     ``min_trajectory_length`` / ``max_trajectory_length`` (turns, inclusive)
     are enforced when a :class:`ConversationDataset` is built: trajectories
     outside the range are dropped and counted in a warning. ``max_turns`` is
-    deprecated and ignored (it will be removed in v0.71.0); use
+    deprecated and ignored (it will be removed in v0.72.0); use
     ``max_trajectory_length``.
     """
 
@@ -107,7 +107,7 @@ class ConversationDatasetConfig:
             # Ignored since v0.69.0.
             warn_deprecated(
                 "ConversationDatasetConfig.max_turns (ignored)",
-                removal="0.71.0",
+                removal="0.72.0",
                 replacement="max_trajectory_length to drop longer trajectories",
                 stacklevel=3,
             )

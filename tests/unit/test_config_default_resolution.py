@@ -99,7 +99,7 @@ def test_dead_fields_are_rejected_with_a_dated_deprecation(
     with pytest.raises(ConfigurationError, match=field) as caught:
         factory(**{field: value}).validate_for_training()
     message = str(caught.value)
-    assert "removed in v0.71.0" in message
+    assert "removed in v0.72.0" in message
     if replacement != "nothing":
         assert replacement in message
 

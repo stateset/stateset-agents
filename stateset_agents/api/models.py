@@ -4,7 +4,7 @@ No gateway route uses these models: the served request/response schemas live
 in ``stateset_agents.api.schemas`` (and ``messages_models`` /
 ``openai_models``). ``APIResponse`` and ``PaginatedResponse`` are re-exported
 from ``schemas``; the remaining classes are unreferenced duplicates. Importing
-this module is deprecated and will be removed in v0.71.0.
+this module is deprecated and will be removed in v0.72.0.
 """
 
 import re
@@ -26,7 +26,7 @@ from .schemas import APIResponse, PaginatedResponse  # noqa: F401 - re-exported
 
 warn_deprecated(
     "stateset_agents.api.models",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.api.schemas",
 )
 

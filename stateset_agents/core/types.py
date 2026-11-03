@@ -1,4 +1,4 @@
-"""Deprecated type definitions and protocols (removed in v0.71.0).
+"""Deprecated type definitions and protocols (removed in v0.72.0).
 
 Nothing in the framework imports this module, and several of its classes
 duplicated canonical ones: ``ConversationTurn`` is now
@@ -20,7 +20,7 @@ if TYPE_CHECKING:  # pragma: no cover - annotations only
 
 warn_deprecated(
     "stateset_agents.core.types",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.core.trajectory / core.errors / core.type_system",
 )
 
@@ -197,7 +197,7 @@ AsyncRewardFactory = Callable[[float], Awaitable[BaseReward]]
 
 
 #: The FrameworkError family duplicated :mod:`stateset_agents.core.errors`;
-#: the old names are served from there and will be removed in v0.71.0.
+#: the old names are served from there and will be removed in v0.72.0.
 _DEPRECATED_ERROR_ALIASES: dict[str, str] = {
     "FrameworkError": "StateSetError",
     "AgentError": "StateSetError",
@@ -205,7 +205,7 @@ _DEPRECATED_ERROR_ALIASES: dict[str, str] = {
     "TrainingError": "TrainingError",
     "ConfigurationError": "ConfigurationError",
 }
-_ERROR_ALIASES_REMOVAL = "0.71.0"
+_ERROR_ALIASES_REMOVAL = "0.72.0"
 
 
 def __getattr__(name: str) -> Any:

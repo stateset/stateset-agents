@@ -179,7 +179,7 @@ Where:
 ### 3. Computational Engine (core/computational_engine.py) -- deprecated, does not train
 
 **Purpose:** Parallel trajectory generation and reward scoring. It is **not**
-a training engine and is deprecated (removed in v0.71.0).
+a training engine and is deprecated (removed in v0.72.0).
 
 `ComputationalGRPOEngine._update_policy()` runs one forward pass per
 trajectory and returns the mean of `advantage * outputs.loss` read with

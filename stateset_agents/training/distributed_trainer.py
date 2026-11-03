@@ -142,7 +142,7 @@ class DistributedGRPOTrainer:
         # Non-functional for real training.
         warn_deprecated(
             "DistributedGRPOTrainer",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement="stateset_agents.training.distributed.DistributedTrainer",
         )
 

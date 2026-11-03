@@ -644,5 +644,5 @@ def get_all_circuit_stats() -> dict[str, dict[str, Any]]:
 #: ``TimeoutError`` shadowed the builtin; renamed in v0.70.0.
 __getattr__ = deprecated_alias_getattr(
     __name__,
-    {"TimeoutError": (__name__, "OperationTimeoutError", "0.71.0")},
+    {"TimeoutError": (__name__, "OperationTimeoutError", "0.72.0")},
 )

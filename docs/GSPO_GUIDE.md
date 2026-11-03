@@ -395,7 +395,7 @@ Based on the original GSPO paper (Qwen Team):
 GSPO runs through `stateset_agents.training.gspo_trainer` (`GSPOTrainer`,
 `train_with_gspo`). The `core.enhanced` `AdvancedRLOrchestrator` never ran GSPO
 (it held a stub, removed in v0.70.0) and is itself deprecated and removed in
-v0.71.0.
+v0.72.0.
 
 ## References
 

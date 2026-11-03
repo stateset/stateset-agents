@@ -42,7 +42,7 @@ class DAPOConfig(TrainingConfig):
     clip_eps_high: float = 0.28
 
     group_size: int = 16
-    # Deprecated (removed in v0.71.0): never read. Prompts per iteration are
+    # Deprecated (removed in v0.72.0): never read. Prompts per iteration are
     # per_device_train_batch_size; a non-default value is rejected.
     prompt_batch_size: int = 512
     mini_batch_size: int = 512
@@ -81,7 +81,7 @@ class DAPOConfig(TrainingConfig):
     vllm_tensor_parallel_size: int = 1
     vllm_enable_prefix_caching: bool = True
 
-    # Deprecated (removed in v0.71.0): DAPO has no evaluation loop to repeat;
+    # Deprecated (removed in v0.72.0): DAPO has no evaluation loop to repeat;
     # a non-default value is rejected.
     eval_repeats: int = 32
 

@@ -4,7 +4,7 @@ Its class was also named ``MultiTurnAgent``, colliding with the stable
 :class:`stateset_agents.core.agent.MultiTurnAgent`. It is now
 ``DialogueSessionAgent``; the old name is a deprecated alias. The module (with
 ``multiturn_context`` and ``multiturn_analysis``) is deprecated together with
-``stateset_agents.api.grpo`` and will be removed in v0.71.0.
+``stateset_agents.api.grpo`` and will be removed in v0.72.0.
 """
 
 from __future__ import annotations
@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 
 warn_deprecated(
     "stateset_agents.core.multiturn_agent",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.core.agent.MultiTurnAgent",
 )
 
@@ -784,7 +784,7 @@ class DialogueSessionAgent(Agent):
 
 __getattr__ = deprecated_alias_getattr(
     __name__,
-    {"MultiTurnAgent": (__name__, "DialogueSessionAgent", "0.71.0")},
+    {"MultiTurnAgent": (__name__, "DialogueSessionAgent", "0.72.0")},
 )
 
 __all__ = [

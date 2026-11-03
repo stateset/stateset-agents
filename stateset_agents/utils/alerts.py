@@ -44,7 +44,7 @@ from stateset_agents._deprecation import warn_deprecated
 
 warn_deprecated(
     "stateset_agents.utils.alerts",
-    removal="0.71.0",
+    removal="0.72.0",
     replacement="stateset_agents.utils.monitoring.AlertManager",
 )
 

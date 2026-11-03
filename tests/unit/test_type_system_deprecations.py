@@ -42,7 +42,7 @@ def test_typed_training_config_warns_and_is_the_typed_dict() -> None:
 @pytest.mark.parametrize("old", ["Agent", "Environment", "RewardFunction"])
 def test_renamed_protocols_keep_a_dated_alias(old: str) -> None:
     new = getattr(type_system, f"{old}Protocol")
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         assert getattr(type_system, old) is new
     assert old not in type_system.__all__
     assert f"{old}Protocol" in type_system.__all__

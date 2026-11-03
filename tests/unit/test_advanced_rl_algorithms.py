@@ -225,7 +225,7 @@ class TestA2CTrainer:
         config = A2CConfig()
         agent = SimpleNamespace(tokenizer=list(range(10)))
 
-        with pytest.warns(DeprecationWarning, match="removed in v0.71.0"):
+        with pytest.warns(DeprecationWarning, match="removed in v0.72.0"):
             trainer = A2CTrainer(agent=agent, config=config, device="cpu")
 
         assert trainer.config is config
@@ -348,13 +348,13 @@ def test_ppo_duplicate_and_gspo_stub_were_removed_in_v0_70_0():
 
 
 def test_remaining_research_trainers_warn_with_removal_release():
-    """A2C, DPO and the orchestrator name v0.71.0 and their replacements."""
+    """A2C, DPO and the orchestrator name v0.72.0 and their replacements."""
     import stateset_agents.core.enhanced.advanced_rl_algorithms as legacy
 
     agent = SimpleNamespace(tokenizer=list(range(4)))
-    with pytest.warns(DeprecationWarning, match="removed in v0.71.0"):
+    with pytest.warns(DeprecationWarning, match="removed in v0.72.0"):
         orchestrator = legacy.AdvancedRLOrchestrator(agent)
     assert orchestrator.select_algorithm("general", {}) == "a2c"
     assert orchestrator.select_algorithm("preference_learning", {}) == "dpo"
     for cls in (legacy.A2CTrainer, legacy.DPOTrainer, legacy.AdvancedRLOrchestrator):
-        assert "Removed in v0.71.0" in (cls.__doc__ or ""), cls.__name__
+        assert "Removed in v0.72.0" in (cls.__doc__ or ""), cls.__name__

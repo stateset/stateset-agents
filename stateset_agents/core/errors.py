@@ -414,5 +414,5 @@ def raise_from(new_exc: StateSetError, cause: BaseException) -> None:
 #: changed what ``except EnvironmentError`` caught. Renamed in v0.70.0.
 __getattr__ = deprecated_alias_getattr(
     __name__,
-    {"EnvironmentError": (__name__, "EnvironmentOperationError", "0.71.0")},
+    {"EnvironmentError": (__name__, "EnvironmentOperationError", "0.72.0")},
 )

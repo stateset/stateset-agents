@@ -58,7 +58,7 @@ def __getattr__(name: str):
         canonical = _DEPRECATED_ALIASES[name]
         warn_deprecated(
             f"Importing {name} from stateset_agents.training.trainer",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=f"'from {canonical} import {name}'",
         )
         import importlib

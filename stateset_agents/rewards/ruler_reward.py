@@ -44,7 +44,7 @@ class RulerRewardFunction(_LLMRulerRewardFunction):
         if config is not None:
             warn_deprecated(
                 "Passing RulerConfig to RulerRewardFunction",
-                removal="0.71.0",
+                removal="0.72.0",
                 replacement="RulerRewardFunction keyword arguments",
                 stacklevel=2,
             )

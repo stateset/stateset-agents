@@ -36,12 +36,12 @@ _STRING_CODE = (
 #: outside ``StateSetError`` until the stated release; the build fails once it
 #: is due. Only shrinks.
 OUTSIDE_HIERARCHY: dict[str, tuple[str, str]] = {
-    f"{PACKAGE}.finetune_evaluation.EvaluationProtocolError": (_STRING_CODE, "0.71.0"),
+    f"{PACKAGE}.finetune_evaluation.EvaluationProtocolError": (_STRING_CODE, "0.72.0"),
     f"{PACKAGE}.finetune_validation.ValidationComparisonError": (
         _STRING_CODE,
-        "0.71.0",
+        "0.72.0",
     ),
-    f"{PACKAGE}.finetune_workspace.FinetuneFailure": (_STRING_CODE, "0.71.0"),
+    f"{PACKAGE}.finetune_workspace.FinetuneFailure": (_STRING_CODE, "0.72.0"),
 }
 
 

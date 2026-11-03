@@ -10,7 +10,7 @@ Stability: **provisional / beta** (`preference-optimization` in
 from `stateset_agents.training` and `stateset_agents.training.preference`
 but are not part of the v1 stable contract
 ([API_COMPATIBILITY.md](API_COMPATIBILITY.md)). It replaces the deprecated
-research `stateset_agents.core.enhanced.DPOTrainer` (removed in v0.71.0).
+research `stateset_agents.core.enhanced.DPOTrainer` (removed in v0.72.0).
 
 ## When to use which
 

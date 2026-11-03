@@ -86,7 +86,7 @@ def test_unreferenced_utils_modules_warn_with_removal_version(
     module_name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.delitem(sys.modules, module_name, raising=False)
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         importlib.import_module(module_name)
 
 
@@ -97,7 +97,7 @@ def test_utils_package_serves_deprecated_names_with_a_warning(name: str) -> None
     import stateset_agents.utils as utils
 
     assert name not in utils.__all__
-    with pytest.warns(DeprecationWarning, match=rf"utils\.{name}.*v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=rf"utils\.{name}.*v0\.72\.0"):
         assert getattr(utils, name) is not None
 
 
@@ -124,7 +124,7 @@ def test_advanced_monitoring_old_names_are_deprecated_aliases(
     from stateset_agents.core import advanced_monitoring
 
     assert old not in advanced_monitoring.__all__
-    with pytest.warns(DeprecationWarning, match=rf"{old}.*removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=rf"{old}.*removed in v0\.72\.0"):
         alias = getattr(advanced_monitoring, old)
     assert alias is getattr(advanced_monitoring, new)
     assert alias.__module__ == "stateset_agents.core.advanced_monitoring"

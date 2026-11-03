@@ -8,7 +8,7 @@ Key abstractions:
 - BaseConfig: Common configuration fields
 - BaseModelManager: Unified model/tokenizer loading with LoRA/quantization
 - BaseTrainer: abstract trainer base, deprecated (no maintained trainer
-  subclasses it; subclassing warns and it will be removed in v0.71.0)
+  subclasses it; subclassing warns and it will be removed in v0.72.0)
 - BaseTrajectoryGenerator: Common generation patterns
 """
 
@@ -436,7 +436,7 @@ class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
     No maintained trainer subclasses it: GSPO, DAPO, GEPO, VAPO and the GRPO
     trainers build on :mod:`stateset_agents.training.spine`
     (``OptimizerStep``, ``UpdateLoop``) and ``TrainingRuntime`` instead.
-    Defining a subclass warns; it will be removed in v0.71.0.
+    Defining a subclass warns; it will be removed in v0.72.0.
     ``BaseTrainerConfig`` and ``BaseModelManager`` stay.
 
     Provides common functionality:
@@ -451,7 +451,7 @@ class BaseTrainer(TrainingRuntime, ABC, Generic[ConfigT]):
         super().__init_subclass__(**kwargs)
         warn_deprecated(
             "subclassing stateset_agents.training.base_trainer.BaseTrainer",
-            removal="0.71.0",
+            removal="0.72.0",
             replacement=(
                 "stateset_agents.training.spine.OptimizerStep / UpdateLoop with "
                 "TrainingRuntime, or an existing trainer"

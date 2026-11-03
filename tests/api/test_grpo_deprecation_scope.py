@@ -1,4 +1,4 @@
-"""The secondary GRPO app is deprecated as a whole (removed in v0.71.0).
+"""The secondary GRPO app is deprecated as a whole (removed in v0.72.0).
 
 Nothing outside ``stateset_agents.api.grpo`` imports it: the supported gateway
 (``stateset_agents.api.main``) has its own middleware and rate limiter. The app
@@ -72,7 +72,7 @@ def test_importing_grpo_package_warns_with_removal_version():
 
     messages = _grpo_warnings(caught)
     assert len(messages) == 1
-    assert "removed in v0.71.0" in messages[0]
+    assert "removed in v0.72.0" in messages[0]
     assert "stateset_agents.api.main" in messages[0]
 
 
@@ -83,7 +83,7 @@ def test_importing_an_app_module_directly_warns():
         _fresh_import("stateset_agents.api.grpo")
         importlib.import_module("stateset_agents.api.grpo.service")
 
-    assert any("removed in v0.71.0" in message for message in _grpo_warnings(caught))
+    assert any("removed in v0.72.0" in message for message in _grpo_warnings(caught))
 
 
 def test_app_submodules_load_lazily_without_a_second_warning():

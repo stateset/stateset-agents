@@ -151,7 +151,7 @@ def test_core_types_error_family_is_a_deprecated_alias(
 ) -> None:
     from stateset_agents.core import types as legacy_types
 
-    with pytest.warns(DeprecationWarning, match=r"removed in v0\.71\.0"):
+    with pytest.warns(DeprecationWarning, match=r"removed in v0\.72\.0"):
         alias = getattr(legacy_types, old)
     assert alias is vars(errors)[canonical]
 
@@ -270,32 +270,32 @@ def test_resilience_errors_join_the_hierarchy() -> None:
             "stateset_agents.core.errors",
             "EnvironmentError",
             "EnvironmentOperationError",
-            "0.71.0",
+            "0.72.0",
         ),
         ("stateset_agents.core.error_handling", "ErrorCode", "GRPOErrorCode", "0.72.0"),
         (
             "stateset_agents.core.error_handling",
             "ErrorContext",
             "ErrorRecord",
-            "0.71.0",
+            "0.72.0",
         ),
         (
             "stateset_agents.api.errors",
             "ValidationError",
             "UnprocessableEntityError",
-            "0.71.0",
+            "0.72.0",
         ),
         (
             "stateset_agents.api.errors",
             "TrainingError",
             "TrainingFailedError",
-            "0.71.0",
+            "0.72.0",
         ),
         (
             "stateset_agents.api.resilience",
             "TimeoutError",
             "OperationTimeoutError",
-            "0.71.0",
+            "0.72.0",
         ),
     ],
 )
