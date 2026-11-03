@@ -290,3 +290,12 @@ control `9f6a5c5a17754e4d`). Held-out, strict, same pod:
 | **v3** | **45.2%** (first pod: 45.1%) | |
 
 Practice strict on this pod: 61.5% (first pod 57.0%; identical weights).
+
+**Caveat (found 2026-11-03, after the runs above).** v3's thinking-off
+negatives were line breaks from base replies to GSM8K-test[:500] with thinking
+off — the same questions as the GSM8K half of the held-out set and as the
+thinking-off side-effect check. No labels were used, but held-out questions
+shaped the edit, and the 3.4% stray-`</think>` figure was measured on the same
+replies v3 was trained to stay quiet on. v3's numbers above are therefore not
+clean held-out results; v3t (below) rebuilds it with negatives from GSM8K-train
+only.

@@ -17,7 +17,7 @@ direction-ablation edit, which was null here (see Negative results).
 | W5T13: "Wait" rows x0.5, `</think>` row x1.3 | 3,072 | 33.6% | +334 / -0 |
 | W5T15: "Wait" rows x0.5, `</think>` row x1.5 | 3,072 | 39.1% (37.9% on a second pod) | +378 / -0 |
 | One designed neuron (v2) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | 42.1% (41.2% from its spec) | +373 / -11 |
-| **Designed neuron v3** (thinking-gated) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | **45.1%** | +418 / -9 (45.2% on a second pod) |
+| Designed neuron v3 (thinking-gated; negatives touched held-out questions, see caveat) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | **45.1%** | +418 / -9 (45.2% on a second pod) |
 
 The designed neuron is a single MLP unit rewritten by hand into an "answer
 computed -> conclude" circuit that fires at the line break after the model has
@@ -208,6 +208,14 @@ control `9f6a5c5a17754e4d`). Held-out, strict, same pod:
 | **v3** | **45.2%** (first pod: 45.1%) | |
 
 Practice strict on this pod: 61.5% (first pod 57.0%; identical weights).
+
+**Caveat.** v3's thinking-off negatives were line breaks from base replies to
+GSM8K-test[:500] with thinking off — the same questions as the GSM8K half of
+the held-out set and as the thinking-off side-effect check. No labels were
+used, but held-out questions shaped the edit, and the 3.4% stray-`</think>`
+figure was measured on the replies v3 was trained to stay quiet on. Treat v3's
+numbers as optimistic; v3t (below) rebuilds it with negatives from GSM8K-train
+only.
 
 ## Mechanism
 
