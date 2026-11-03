@@ -333,3 +333,66 @@ as observed; this study was not designed to test it.
 The clean rebuild confirms the thinking-mode result (v3t 45.9% vs v3 45.1-45.2%)
 and shows v3's stray-`</think>` figure was optimistic: the true thinking-off
 leak is 6.8% (v2 21.8%, W5T15 6.4%, W5T13 0.4%).
+
+## Thinking on vs off at an equal budget (2026-11-03)
+
+One A100 pod ($1.17): held-out 1,000, same sampling / seed / 8,192-token cap
+for every condition. `summaries/thinking_budget_summary_v3t_v4.json`.
+
+| Strict (lenient) | GSM8K 500 | MATH-500 | all |
+|---|---|---|---|
+| base, thinking off | 55.6% (57.8%) | 40.2% (42.0%) | 47.9% (49.9%) |
+| v3t, thinking on | 57.0% (65.2%) | 33.8% (45.6%) | 45.4% (55.4%) |
+| v3t, thinking off | 53.2% (56.4%) | 37.2% (42.8%) | 45.2% (49.6%) |
+| v4, thinking on | 53.4% (61.8%) | 28.0% (43.8%) | 40.7% (52.8%) |
+| v4, thinking off | 51.8% (55.6%) | 32.2% (41.0%) | 42.0% (48.3%) |
+
+v3t thinking on vs base thinking off, paired strict: GSM8K +1.4 (p = 0.59),
+MATH -6.4 (p = 0.006), all -2.5 (p = 0.13); lenient all +5.5 (p = 0.0009).
+The edits reach parity with thinking off on GSM8K, not beyond; v3t's lead
+over a 2,048-token thinking-off run (54.0%) came from the shorter cap.
+
+## v4: intermediate-result negatives (2026-11-03) — negative
+
+v3t's stored neuron, scored on captured base activations, fires at 12.7% of
+line breaks after an intermediate "= number" result (4.1% at other working
+line breaks). v4 adds 300 of those (base GSM8K-train traces, before the gold
+answer) as negatives: offline 5.3% on them, target 14.5% (v3t 20.0%). Spec
+`conclude_neuron_v4_spec.json`, hash `7664695121410597`; design pod $1.22
+(plus $0.41 for a start whose SSH dropped).
+
+Held-out, thinking on, strict: 40.7% vs v3t 45.4% on the same pod (-4.7
+[-7.4, -2.0], +69 / -116, p = 0.0007). Early closes unchanged (GSM8K closes
+before the gold: 34.7% vs 34.5%); replies with two or more `</think>` rose
+GSM8K 67 -> 98, MATH 105 -> 179. The neuron fires again in answer sections
+where the model keeps reasoning after an early close, which the `post`
+negatives (clean answers) never covered.
+
+## v5 / v5b: MATH positives + post-close negatives (2026-11-03) — negative
+
+Design-only H100 pod ($1.21; captures saved): adds 354 MATH-*train* positive
+line breaks (177 of 600 base traces write the gold as a result in thinking;
+0 MATH-500 overlaps), 354 MATH working negatives, 151 post-close negatives
+(v3t's run-on replies to GSM8K-train practice problems) and the v4
+intermediate negatives. v5 = pod design (`76a7e4686dce6348`); v5b = the same
+contexts fit on all of them offline (`a9929a6009bafbcd`).
+
+Generation, one RTX 4090 pod ($1.06), held-out 1,000, 8,192-token cap:
+
+| strict | GSM8K | MATH | all | two+ `</think>` | never closed |
+|---|---|---|---|---|---|
+| base, thinking off | 55.0% | 40.8% | 47.9% | | |
+| v3t, thinking on | 57.0% | 35.6% | 46.3% | 186 | 155 |
+| v5, thinking on | 43.2% | 10.6% | 26.9% | 622 | 21 |
+| v5b, thinking on | 41.0% | 15.0% | 28.0% | 535 | 13 |
+
+v5 vs v3t -19.4 (+37 / -231, p = 2e-35). The MATH positives fixed
+non-closing but the neuron now fires at most line breaks of the edited
+model's own generations (v5b at the first). v5 thinking off: stray
+`</think>` in 379 / 500 MATH replies. v3t thinking off on this pod: stray
+`</think>` in 9.2% of GSM8K and 28.8% of MATH-500 replies (the 6.8% on record
+was GSM8K at a 2,048 cap).
+
+Diagnostics note: the even/odd split trained every design on the first line
+break after the answer and reported the second; offline fire rates (any
+split) did not predict generation for v4 or v5.

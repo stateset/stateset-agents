@@ -41,6 +41,7 @@ __all__ = [
     "design_conditional_neuron",
     "least_used_neuron",
     "near_constant_unit",
+    "rewrite_activation",
     "ridge_detector",
 ]
 
@@ -131,6 +132,53 @@ class ConditionalNeuron:
         return fn(self.gain * (gate_acts.float() @ self.detector)) * (
             self.up_scale * up_acts.float()[:, self.up_unit]
         )
+
+
+def _read_through(
+    row: torch.Tensor, weight: torch.Tensor, acts: torch.Tensor, what: str
+) -> torch.Tensor:
+    """``x . row`` at each captured context, from ``acts = x @ weight.T``.
+
+    Solves ``weight.T @ c = row`` (minimum norm) so ``acts @ c == x . row``.
+    """
+    import torch
+
+    w = weight.float().T  # [hidden, intermediate]
+    c = torch.linalg.lstsq(w, row.float().unsqueeze(1)).solution.squeeze(1)
+    miss = float((w @ c - row.float()).norm() / row.float().norm().clamp_min(1e-12))
+    if miss > 1e-3:
+        raise ValueError(
+            f"the {what} row is not in the span of the layer's {what} rows "
+            f"(relative residual {miss:.2e}); capture the MLP input instead"
+        )
+    read: torch.Tensor = acts.float() @ c
+    return read
+
+
+def rewrite_activation(
+    rewrite: NeuronRewrite,
+    *,
+    gate_weight: torch.Tensor,
+    up_weight: torch.Tensor,
+    gate_acts: torch.Tensor,
+    up_acts: torch.Tensor,
+    activation: Callable[[torch.Tensor], torch.Tensor] | None = None,
+) -> torch.Tensor:
+    """What a stored :class:`NeuronRewrite` would output at captured contexts.
+
+    ``gate_acts`` / ``up_acts`` are the *base* layer's ``gate_proj`` /
+    ``up_proj`` outputs at N contexts and ``gate_weight`` / ``up_weight`` its
+    ``[intermediate, hidden]`` weights. The rewrite's rows are read through
+    those captures, so an earlier spec (e.g. a previous design) can be scored
+    on new contexts without loading the edited model. Raises ``ValueError``
+    when a row is outside the span the captures can express.
+    """
+    import torch
+
+    act_fn = activation or torch.nn.functional.silu
+    gate = _read_through(torch.tensor(rewrite.gate), gate_weight, gate_acts, "gate")
+    up = _read_through(torch.tensor(rewrite.up), up_weight, up_acts, "up")
+    return act_fn(gate) * up
 
 
 def design_conditional_neuron(

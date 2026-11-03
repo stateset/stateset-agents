@@ -25,6 +25,7 @@ import argparse
 import gzip
 import json
 import random
+import re
 import sys
 from pathlib import Path
 
@@ -38,6 +39,9 @@ LAYER = 23
 THINK_END = 248069
 WAIT_IDS = (13784, 13428)
 MAXLEN = 3000
+MATH_TRAIN = "DigitalLearningGmbH/MATH-lighteval"
+MATH_TRAIN_FILE = "data/train-00000-of-00001.parquet"
+MATH_TRAIN_REVISION = "0530c78699ea5e8eb5530600900e1f328b48acad"
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -67,6 +71,42 @@ def nothink_negatives(newline: set[int], path: Path, limit: int, seed: int = 2) 
     return rng.sample(candidates, k=min(limit, len(candidates)))
 
 
+def post_close_negatives(
+    newline: set[int], path: Path, limit: int, per_reply: int = 6, seed: int = 8
+) -> list:
+    """Line breaks after the first ``</think>`` in an edited model's run-on replies.
+
+    v4 showed the conclude neuron firing again inside answer sections where the
+    model kept reasoning after an early close (a second ``</think>``). The
+    ``post`` negatives come from clean, formatted answers; these come from
+    run-on ones (two or more closes, or one close and then the token cap),
+    starting with the line break right before each extra ``</think>`` (where
+    the neuron fired), then other line breaks after the first close. ``path``
+    must hold replies to *training* problems.
+    """
+    rng = random.Random(seed)
+    out = []
+    for r in read_jsonl(path):
+        p, g = r["prompt_ids"], r["gen_ids"]
+        if THINK_END not in g:
+            continue
+        first = g.index(THINK_END)
+        extra = [j for j in range(first + 1, len(g)) if g[j] == THINK_END]
+        if not extra and r["finish"] != "length":
+            continue
+        before_extra = [j - 1 for j in extra if g[j - 1] in newline]
+        others = [
+            j
+            for j in range(first + 1, len(g))
+            if g[j] in newline and j not in before_extra
+        ]
+        picks = before_extra + rng.sample(others, k=min(per_reply, len(others)))
+        for j in picks[:per_reply]:
+            if len(p) + j + 1 <= MAXLEN:
+                out.append(p + g[: j + 1])
+    return rng.sample(out, k=min(limit, len(out)))
+
+
 def prose_negatives(tok, newline: set[int], n: int, seed: int = 3) -> list:
     """Line breaks in plain prose (WikiText-2 *train*; the side-effect check uses test)."""
     from datasets import load_dataset
@@ -82,6 +122,134 @@ def prose_negatives(tok, newline: set[int], n: int, seed: int = 3) -> list:
     rng = random.Random(seed)
     lines = [j for j in range(512, len(ids)) if ids[j] in newline]
     return [ids[j - 511 : j + 1] for j in rng.sample(lines, k=min(n, len(lines)))]
+
+
+RESULT_LINE = re.compile(
+    r"=\s*\\?\$?\s*-?\d[\d,]*(?:\.\d+)?(?:\s*\\?%)?\s*\\?\$?"
+    r"(?:\s*(?:\\text\{[^}]*\}|[A-Za-z][A-Za-z/ ]{0,24}))?\s*\$?\s*\.?\**\s*$"
+)
+
+
+def intermediate_negatives(
+    tok,
+    contrast: dict,
+    traces: list[dict],
+    newline: set[int],
+    per_trace: int = 3,
+    seed: int = 4,
+) -> list:
+    """Line breaks right after an intermediate result, before the gold answer.
+
+    v3t's premature closes (the conclude neuron firing on "Total = 126 x 6 =
+    756" when the question asks for something further) come from lines that
+    end in a computed number. The ``working`` negatives are random line breaks
+    mid-trace, mostly not after a result; these are the hard ones: a line that
+    ends "= <number> [units]" strictly before the model first writes the gold
+    answer as a result (``answer_token``), so the number is not the answer.
+    """
+    by_id = {r["id"]: r for r in traces}
+    rng = random.Random(seed)
+    out = []
+    for m in contrast["meta"]:
+        r = by_id.get(m["id"])
+        if r is None:
+            continue
+        p, g, k = r["prompt_ids"], r["gen_ids"], m["answer_token"]
+        breaks = [j for j in range(k) if g[j] in newline]
+        hits = []
+        starts = [-1, *breaks][: len(breaks)]  # the break before each break
+        for prev, j in zip(starts, breaks, strict=True):
+            line = tok.decode(g[prev + 1 : j]).strip()
+            if RESULT_LINE.search(line) and len(p) + j + 1 <= MAXLEN:
+                hits.append(j)
+        for j in rng.sample(hits, k=min(per_trace, len(hits))):
+            out.append(p + g[: j + 1])
+    return out
+
+
+def math_train_rows(n: int, heldout: list[dict], seed: int = 0) -> list[dict]:
+    """``n`` MATH *train* problems (pinned), none matching a MATH-500 question.
+
+    Problems whose question already states the answer are skipped, as for GSM8K.
+    """
+    import pyarrow.parquet as pq
+    from answer_positions import gold_in_question
+    from huggingface_hub import hf_hub_download
+
+    path = hf_hub_download(
+        MATH_TRAIN, MATH_TRAIN_FILE, repo_type="dataset", revision=MATH_TRAIN_REVISION
+    )  # nosec B615 - pinned revision
+    held = {" ".join(r["question"].split()) for r in heldout if r["kind"] == "math"}
+    rows, overlap = [], 0
+    for i, r in enumerate(pq.read_table(path).to_pylist()):
+        gold = pj.last_boxed(r["solution"])
+        if gold is None or gold_in_question(r["problem"], gold):
+            continue
+        if " ".join(r["problem"].split()) in held:
+            overlap += 1
+            continue
+        rows.append(
+            {
+                "id": f"mathtrain-{i}",
+                "kind": "math",
+                "question": r["problem"],
+                "gold": gold,
+            }
+        )
+    print(
+        json.dumps(
+            {
+                "event": "math_train",
+                "usable": len(rows),
+                "dropped_heldout_overlap": overlap,
+            }
+        ),
+        flush=True,
+    )
+    return random.Random(seed).sample(rows, k=min(n, len(rows)))
+
+
+def token_index_for_char(tok, gen_ids: list[int], char_end: int) -> int:
+    """Fewest generated tokens whose decoded text reaches ``char_end`` characters."""
+    lo, hi = 1, len(gen_ids)
+    while lo < hi:
+        mid = (lo + hi) // 2
+        if len(tok.decode(gen_ids[:mid])) >= char_end:
+            hi = mid
+        else:
+            lo = mid + 1
+    return lo
+
+
+def math_contrast(
+    tok, traces: list[dict], newline: set[int], seed: int = 6
+) -> tuple[list, list, list[dict]]:
+    """Positives (line breaks right after the answer is first written as a result
+    in thinking) and mid-trace working negatives from base MATH-train traces."""
+    from answer_positions import answer_end
+
+    rng = random.Random(seed)
+    pos, work, meta = [], [], []
+    for r in traces:
+        if len(r["gold"].strip().strip("$")) < 2:
+            continue  # "x = 2" mid-solution would read as the answer
+        end = answer_end(r["text"], r["gold"])
+        if end is None:
+            continue
+        p, g = r["prompt_ids"], r["gen_ids"]
+        k = token_index_for_char(tok, g, end)
+        if k < 24:
+            continue
+        after = [j for j in range(k, len(g)) if g[j] in newline][:2]
+        before = [j for j in range(int(0.1 * k), int(0.9 * k)) if g[j] in newline]
+        for j in after:
+            if len(p) + j + 1 <= MAXLEN:
+                pos.append(p + g[: j + 1])
+        for j in rng.sample(before, k=min(2, len(before))):
+            if len(p) + j + 1 <= MAXLEN:
+                work.append(p + g[: j + 1])
+        meta.append({"id": r["id"], "answer_token": k})
+    return pos, work, meta
 
 
 def contrast_sets(
@@ -201,10 +369,12 @@ def main() -> None:
         EditSpec,
         NeuronRewrite,
         TokenRowScale,
+        auc,
         design_conditional_neuron,
         logit_direction,
         matched_control,
         paired_compare,
+        rewrite_activation,
         strict_rows,
     )
     from stateset_agents.experimental.weight_space.checkpoints import (
@@ -238,6 +408,13 @@ def main() -> None:
     ap.add_argument(
         "--prose-negatives", type=int, default=0, help="WikiText-train line breaks"
     )
+    ap.add_argument(
+        "--intermediate-negatives",
+        type=int,
+        default=0,
+        help="up to this many line breaks right after an intermediate '= number' "
+        "result in the base traces (before the gold answer) as negatives",
+    )
     ap.add_argument("--tag", default="", help="suffix for spec/output names, e.g. _v3")
     ap.add_argument(
         "--skip-baseline",
@@ -246,6 +423,38 @@ def main() -> None:
     )
     ap.add_argument(
         "--compare-spec", default=None, help="another spec to run on held-out, paired"
+    )
+    ap.add_argument(
+        "--math-traces",
+        type=int,
+        default=0,
+        help="generate base thinking-on traces for this many MATH-train problems "
+        "and add their answer line breaks as positives (MATH-500 never used)",
+    )
+    ap.add_argument("--math-trace-tokens", type=int, default=3072)
+    ap.add_argument(
+        "--post-close-negatives",
+        default=None,
+        help="an edited model's replies to TRAINING problems (gen_*.jsonl.gz); "
+        "line breaks after the first </think> in run-on replies become negatives",
+    )
+    ap.add_argument("--post-close-limit", type=int, default=300)
+    ap.add_argument(
+        "--reference-spec",
+        default=None,
+        help="an earlier spec whose layer-23 neuron is scored on these contexts "
+        "(fire rate per group), for comparison with the new design",
+    )
+    ap.add_argument(
+        "--save-captures",
+        action="store_true",
+        help="save the layer's gate/up captures, labels and groups (captures.pt) "
+        "so detector settings can be swept offline",
+    )
+    ap.add_argument(
+        "--design-only",
+        action="store_true",
+        help="stop after the design and its diagnostics (no generation)",
     )
     ap.add_argument(
         "--side-effects",
@@ -275,6 +484,15 @@ def main() -> None:
             thinking=False,
         )
         nothink_path = out / f"gen_nothink_train{tag}.jsonl.gz"
+    math_traces: list[dict] = []
+    if a.math_traces:
+        math_traces = pj.generate(
+            f"math_trace{tag}",
+            pj.MODEL,
+            math_train_rows(a.math_traces, probs["heldout"]),
+            a.math_trace_tokens,
+            out,
+        )
 
     tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)  # nosec B615 - pinned
     model = AutoModelForCausalLM.from_pretrained(
@@ -286,10 +504,50 @@ def main() -> None:
     )
     newline = newline_ids(tok)
     extra: list[tuple[str, list]] = []
+    if a.intermediate_negatives:
+        hard = intermediate_negatives(
+            tok, json.load(open(a.contrast)), read_jsonl(Path(a.trace)), newline
+        )
+        hard = random.Random(5).sample(hard, k=min(a.intermediate_negatives, len(hard)))
+        extra += [("intermediate_newline", p) for p in hard]
+    if math_traces:
+        mpos, mwork, mmeta = math_contrast(tok, math_traces, newline)
+        for group, label, ps in (
+            ("math_answer_newline", 1.0, mpos),
+            ("math_working_newline", -1.0, mwork),
+        ):
+            prefixes.extend(ps)
+            labels.extend([label] * len(ps))
+            groups.extend([group] * len(ps))
+        if a.intermediate_negatives:
+            mhard = intermediate_negatives(tok, {"meta": mmeta}, math_traces, newline)
+            mhard = random.Random(7).sample(
+                mhard, k=min(a.intermediate_negatives, len(mhard))
+            )
+            extra += [("math_intermediate_newline", p) for p in mhard]
+        print(
+            json.dumps(
+                {
+                    "event": "math_contrast",
+                    "traces": len(math_traces),
+                    "with_answer": len(mmeta),
+                    "positives": len(mpos),
+                    "working": len(mwork),
+                }
+            ),
+            flush=True,
+        )
     if nothink_path is not None:
         extra += [
             ("nothink_newline", p)
             for p in nothink_negatives(newline, nothink_path, a.nothink_limit)
+        ]
+    if a.post_close_negatives:
+        extra += [
+            ("post_close_newline", p)
+            for p in post_close_negatives(
+                newline, Path(a.post_close_negatives), a.post_close_limit
+            )
         ]
     if a.prose_negatives:
         extra += [
@@ -315,6 +573,17 @@ def main() -> None:
         n: model.get_submodule(f"{mlp}.{n}").weight.detach().float().cpu()
         for n in ("gate_proj", "up_proj", "down_proj")
     }
+    if a.save_captures:
+        torch.save(
+            {
+                "gate_acts": caps[f"{mlp}.gate_proj"].to(torch.bfloat16),
+                "up_acts": caps[f"{mlp}.up_proj"].to(torch.bfloat16),
+                "labels": labels,
+                "groups": groups,
+                "layer": LAYER,
+            },
+            out / f"captures{tag}.pt",
+        )
     embed = model.get_input_embeddings().weight.detach().float().cpu()
     norm_w = model.get_submodule("model.norm").weight.detach().float().cpu()
     direction = logit_direction(embed, [THINK_END], norm_w, zero_centered=True)
@@ -347,6 +616,42 @@ def main() -> None:
         for g in dict.fromkeys(groups)
     }
     design.report["heldout_fire_rate_by_group"] = fire_by_group
+    gate_acts, up_acts = caps[f"{mlp}.gate_proj"], caps[f"{mlp}.up_proj"]
+    held = torch.arange(len(groups)) % 2 == 1
+    in_group = {
+        g: torch.tensor([x == g for x in groups]) for g in dict.fromkeys(groups)
+    }
+    score = gate_acts.float() @ design.detector
+    positive = torch.tensor(labels) > 0
+    target = held & positive
+    # Held-out separation of the target from each negative group on its own.
+    design.report["heldout_detector_auc_by_group"] = {
+        g: round(auc(score[target], score[held & m]), 4)
+        for g, m in in_group.items()
+        if not bool((m & positive).any()) and bool((held & m).any())
+    }
+    if a.reference_spec:
+        ref = EditSpec.from_json(Path(a.reference_spec).read_text())
+        rws = [
+            e for e in ref.edits if isinstance(e, NeuronRewrite) and e.layer == LAYER
+        ]
+        if rws:
+            ref_act = rewrite_activation(
+                rws[0],
+                gate_weight=w["gate_proj"],
+                up_weight=w["up_proj"],
+                gate_acts=gate_acts,
+                up_acts=up_acts,
+            )
+            # Same held-out contexts as the new design's fire rates.
+            design.report["reference"] = {
+                "spec": ref.name,
+                "heldout_fire_rate_by_group": {
+                    g: round(float((ref_act[held & m] > 0.5).float().mean()), 4)
+                    for g, m in in_group.items()
+                    if bool((held & m).any())
+                },
+            }
     print(json.dumps({"event": "designed", **design.report}), flush=True)
     wait = TokenRowScale(ids=WAIT_IDS, scale=0.5)
     name = f"conclude-neuron-L23{tag}"
@@ -362,6 +667,20 @@ def main() -> None:
     spec_path = out / f"conclude_neuron{tag}_spec.json"
     spec_path.write_text(spec.to_json())
     (out / f"conclude_neuron{tag}_control_spec.json").write_text(control.to_json())
+    if a.design_only:
+        (out / f"neuron{tag}_summary.json").write_text(
+            json.dumps(
+                {
+                    "design": design.report,
+                    "spec_hash": spec.content_hash(),
+                    "control_hash": control.content_hash(),
+                    "design_only": True,
+                },
+                indent=2,
+            )
+        )
+        print(json.dumps({"event": "neuron_job_done", "design_only": True}), flush=True)
+        return
 
     base = resolve_checkpoint(MODEL, REVISION)
     ckpts = {}

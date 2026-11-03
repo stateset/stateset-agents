@@ -188,3 +188,54 @@ def test_design_exposes_the_detector_and_its_scores() -> None:
     acts = design.activation(d["gate_acts"], d["up_acts"])
     assert acts.shape == (N,)
     assert float(acts[d["labels"] > 0].mean()) > float(acts[d["labels"] < 0].mean())
+
+
+def test_rewrite_activation_scores_any_stored_rewrite_from_the_captures() -> None:
+    from stateset_agents.experimental.weight_space.circuits import rewrite_activation
+
+    d = synthetic()
+    g = torch.Generator().manual_seed(7)
+    rw = NeuronRewrite(
+        layer=0,
+        neuron=2,
+        gate=tuple(float(v) for v in torch.randn(HIDDEN, generator=g)),
+        up=tuple(float(v) for v in torch.randn(HIDDEN, generator=g)),
+        down=tuple(0.0 for _ in range(HIDDEN)),
+    )
+    x = d["x"]
+    want = torch.nn.functional.silu(x @ torch.tensor(rw.gate)) * (
+        x @ torch.tensor(rw.up)
+    )
+    got = rewrite_activation(
+        rw,
+        gate_weight=d["gate_weight"],
+        up_weight=d["up_weight"],
+        gate_acts=d["gate_acts"],
+        up_acts=d["up_acts"],
+    )
+    assert torch.allclose(got, want, atol=1e-3)
+
+
+def test_rewrite_activation_refuses_a_row_the_captures_cannot_express() -> None:
+    from stateset_agents.experimental.weight_space.circuits import rewrite_activation
+
+    d = synthetic()
+    wg = d["gate_weight"].clone()
+    wg[:, 2] = 0.0  # no gate row reads residual dim 2
+    gate = [0.0] * HIDDEN
+    gate[2] = 1.0
+    rw = NeuronRewrite(
+        layer=0,
+        neuron=0,
+        gate=tuple(gate),
+        up=tuple(float(v) for v in d["up_weight"][5]),
+        down=tuple(0.0 for _ in range(HIDDEN)),
+    )
+    with pytest.raises(ValueError, match="span"):
+        rewrite_activation(
+            rw,
+            gate_weight=wg,
+            up_weight=d["up_weight"],
+            gate_acts=d["x"] @ wg.T,
+            up_acts=d["up_acts"],
+        )

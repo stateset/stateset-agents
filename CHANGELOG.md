@@ -29,6 +29,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   any captured contexts before a weight is written; `neuron_job.py` reports
   fire rates per contrast group and takes extra negative sources.
 - `pod_job.generate(..., thinking=False)` for thinking-off generation.
+- **Thinking on vs off at an equal budget** (`benchmarks/weight_space/thinking_budget_job.py`,
+  several edits per pod): at the same 8,192-token cap the unedited
+  Qwen3.5-0.8B with thinking off scores 47.9% strict on the held-out 1,000
+  (GSM8K 55.6%, MATH 40.2%). v3t with thinking on ties it on GSM8K (57.0%,
+  p = 0.59), trails on MATH (33.8%, p = 0.006) and leads only under lenient
+  scoring (+5.5, p = 0.0009). The earlier GSM8K lead over thinking off came
+  from a 2,048-token thinking-off cap.
+- `weight_space.protocol.at_budget` / `budget_curve`: strict accuracy at every
+  token budget from one fixed-seed run (refuses budgets above the run's cap);
+  `clean_finish` / `strict_rows` take `thinking=False` (no `</think>` allowed)
+  and read compact `think_close` rows.
+- `weight_space.circuits.rewrite_activation`: score a stored `NeuronRewrite`
+  (e.g. an earlier spec) on new captured contexts without loading the edited
+  model.
+- `neuron_job.py`: `--intermediate-negatives`, `--post-close-negatives`,
+  `--math-traces` (MATH-*train* positives, MATH-500 overlap dropped),
+  `--reference-spec`, `--design-only`, `--save-captures`;
+  `offline_design.py` refits designs from saved captures on CPU.
+- v4 (intermediate-result negatives) is a recorded negative result: 40.7%
+  strict vs v3t 45.4% on the same pod; it doubled replies with a second
+  `</think>`. v5 / v5b (MATH-train positives + post-close negatives) are
+  negative too: 26.9% / 28.0% vs v3t 46.3% (p = 2e-35); they fixed
+  non-closing on MATH but fire at most line breaks in generation. Offline fire
+  rates predicted neither; the even/odd design split trained on the first line
+  break after each answer and reported the second (`offline_design.py --split`).
+- Correction: with thinking off at an 8,192-token cap, v3t leaves a stray
+  `</think>` in 28.8% of MATH-500 replies (9.2% of GSM8K); the 6.8% reported
+  for v0.71.x was GSM8K at a 2,048-token cap.
+
+### Fixed
+
+- RunPod pod creation now says "no capacity for the requested GPU type" (and
+  sets `no_capacity` in the error context) when RunPod answers "no instances
+  currently available" as a bare HTTP 500; provider text is still never echoed.
+- Weight-edit pod launches put a 15-minute timeout on dependency installs; a
+  host with bad PyPI connectivity had idled a pod for 26 billed minutes.
 
 ## [0.71.1] - 2026-11-02 — Designed neurons as portable edits; scheduled removals move to 0.72.0
 

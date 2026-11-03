@@ -26,7 +26,8 @@ This package is the harness, not the programmer:
   unit as the multiplier, the least-used neuron as the slot; emitted as a
   :class:`NeuronRewrite` edit.
 - :mod:`.protocol` — paired statistics (exact McNemar, bootstrap CI) for
-  judging an edit against the base on identical problems.
+  judging an edit against the base on identical problems, strict scoring,
+  and token-budget curves from one fixed-seed run.
 
 Everything here imports ``torch`` lazily.
 """
@@ -46,6 +47,7 @@ from .circuits import (
     design_conditional_neuron,
     least_used_neuron,
     near_constant_unit,
+    rewrite_activation,
     ridge_detector,
 )
 from .deltas import LowRankDelta, direction_ablation
@@ -61,7 +63,9 @@ from .edits import (
     verify_spec,
 )
 from .protocol import (
+    at_budget,
     bootstrap_ci,
+    budget_curve,
     clean_finish,
     mcnemar_exact,
     paired_compare,
@@ -90,8 +94,10 @@ __all__ = [
     "TokenRowScale",
     "WeightSpaceSession",
     "apply_spec",
+    "at_budget",
     "auc",
     "bootstrap_ci",
+    "budget_curve",
     "clean_finish",
     "design_conditional_neuron",
     "direction_ablation",
@@ -103,6 +109,7 @@ __all__ = [
     "near_constant_unit",
     "neuron_readout",
     "paired_compare",
+    "rewrite_activation",
     "ridge_detector",
     "strict_rows",
     "token_neighbours",

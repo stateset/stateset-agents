@@ -1,0 +1,32 @@
+{
+  "lam": 100.0,
+  "gain": 4.0,
+  "dropped_groups": [],
+  "train_all": true,
+  "heldout_detector_auc": 0.9919,
+  "heldout_fire_rate_by_group": {
+    "answer_newline": 0.7793,
+    "working_newline": 0.0,
+    "post_think": 0.0,
+    "answer_token": 0.0,
+    "math_answer_newline": 0.8701,
+    "math_working_newline": 0.0113,
+    "intermediate_newline": 0.02,
+    "math_intermediate_newline": 0.0133,
+    "nothink_newline": 0.0,
+    "post_close_newline": 0.0,
+    "prose_newline": 0.0
+  },
+  "heldout_detector_auc_by_group": {
+    "working_newline": 0.9893,
+    "post_think": 0.9998,
+    "answer_token": 0.9998,
+    "math_working_newline": 0.9868,
+    "intermediate_newline": 0.9849,
+    "math_intermediate_newline": 0.9873,
+    "nothink_newline": 0.9993,
+    "post_close_newline": 0.9936,
+    "prose_newline": 0.9999
+  },
+  "spec_hash": "a9929a6009bafbcd"
+}

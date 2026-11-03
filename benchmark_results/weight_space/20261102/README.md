@@ -28,10 +28,18 @@ stray `</think>` into 22% of thinking-off replies and raised general-text
 perplexity 5.9%. v3t adds thinking-off line breaks (from GSM8K-train replies)
 and prose line breaks as negatives: 45.9% held-out (+450 / -1 vs base,
 +398 / -9 vs its control), and outside thinking a stray `</think>` in 6.8% of
-thinking-off replies (thinking-off GSM8K -2.6 vs base, p = 0.17), perplexity
+thinking-off GSM8K replies (but 28.8% of thinking-off MATH-500 replies at an
+8,192-token cap; see "v5") (thinking-off GSM8K -2.6 vs base, p = 0.17), perplexity
 +0.3%, MMLU unchanged or slightly up. (v3, the same idea with negatives drawn
 from held-out questions, reported an optimistic 3.4%.) W5T13 remains the
 cleanest edit outside thinking (0.4%; see Side effects).
+
+The bar these edits do **not** clear: the unedited model with thinking
+switched off scores 47.9% strict at the same 8,192-token cap (GSM8K 55.6%,
+MATH 40.2%). v3t with thinking on ties it on GSM8K (57.0%, p = 0.59), trails
+on MATH (33.8%, p = 0.006), and leads only under lenient scoring (+5.5 overall,
+p = 0.0009): it reasons better but a quarter of its replies are malformed. See
+"Thinking on vs thinking off at an equal budget".
 
 ## The failure being edited
 
@@ -254,6 +262,127 @@ The clean rebuild confirms the thinking-mode result (v3t 45.9% vs v3 45.1-45.2%)
 and shows v3's stray-`</think>` figure was optimistic: the true thinking-off
 leak is 6.8% (v2 21.8%, W5T15 6.4%, W5T13 0.4%).
 
+## Thinking on vs thinking off at an equal budget (2026-11-03)
+
+The fair bar for a thinking-mode repair is the same model with thinking
+switched off. One A100 pod ($1.17,
+`summaries/thinking_budget_summary_v3t_v4.json`,
+`per_problem/tb_tb_*.jsonl`) generated the held-out 1,000 under every
+condition with the same sampling, seed and 8,192-token cap, and scored each
+strictly (thinking on: one `</think>` and a clean stop; thinking off: none).
+v3t with thinking on reproduces across GPUs (45.4% here, 45.9% on L40S).
+
+| Strict (lenient) | Base, thinking off | v3t, thinking on | v3t vs base-off, paired strict |
+|---|---|---|---|
+| GSM8K-test 500 | 55.6% (57.8%) | 57.0% (65.2%) | +1.4 [-3.2, +6.0], +67 / -60, p = 0.59 |
+| MATH-500 | 40.2% (42.0%) | 33.8% (45.6%) | **-6.4 [-10.8, -2.0], +48 / -80, p = 0.006** |
+| all 1,000 | 47.9% (49.9%) | 45.4% (55.4%) | -2.5 [-5.6, +0.6], +115 / -140, p = 0.13 |
+
+Lenient (grade the text after the first `</think>`), v3t with thinking on is
+ahead: +5.5 [+2.3, +8.7] overall (p = 0.0009), +7.4 on GSM8K (p = 0.002).
+So the edited model reasons better with thinking on than the base does with
+it off, but a quarter of its replies are malformed (early close, then more
+reasoning and a second `</think>`, or the cap), and strict scoring counts
+those as wrong. **Strictly, the edits repair thinking mode to parity with
+thinking off on GSM8K and short of it on MATH; they do not exceed it.** An
+earlier comparison against a 2,048-token thinking-off run (54.0%) overstated
+v3t's GSM8K lead; at equal caps thinking-off reaches 55.6%. With one budget
+curve per run (`protocol.budget_curve`, valid because each reply is a fixed
+function of its prompt under a per-request seed), thinking-off leads at 512
+and 1,024 tokens on both subsets; from 2,048 tokens v3t leads on GSM8K
+(56.4% vs 54.8% at 2,048) and trails on MATH at every budget.
+
+Failure profile of v3t with thinking on (same pod): GSM8K 285 clean right,
+78 clean wrong, 67 two or more `</think>`, 39 closed then ran to the cap,
+31 never closed; MATH 169 / 25 / 105 / 75 / 126. In 34.5% of GSM8K replies
+that closed, the gold answer had not yet appeared in the thinking.
+
+## v4: hard negatives after intermediate results (negative result, 2026-11-03)
+
+Diagnosis: v3t's neuron fires at 12.7% of line breaks right after an
+intermediate result ("Total = 126 x 6 = 756"), three times its rate at other
+working line breaks (4.1%), measured by scoring the stored v3t rewrite on
+captured base activations (`circuits.rewrite_activation`). v4 adds 300 such
+line breaks (base GSM8K-train traces, before the gold answer is first
+written) as negatives. Offline (design-only pod, $1.22,
+`summaries/neuron_v4_design_summary.json`) it cut that rate to 5.3% at a
+cost of target recall (20.0% -> 14.5%).
+
+In generation it was worse on every axis (same pod as above):
+
+| | v3t | v4 | v4 vs v3t, paired strict |
+|---|---|---|---|
+| thinking on, strict | 45.4% | 40.7% | -4.7 [-7.4, -2.0], +69 / -116, p = 0.0007 |
+| — two or more `</think>` (GSM8K / MATH) | 67 / 105 | 98 / 179 | |
+| — GSM8K closes before the gold appeared | 34.5% | 34.7% | |
+| thinking off, strict | 45.2% | 42.0% | |
+
+It did not reduce early closes; it doubled second closes. The neuron fires
+again inside answer sections where the model keeps reasoning after an early
+close, contexts the `post` negatives (clean, formatted answers) never covered.
+Offline fire rates on curated contexts did not predict behaviour in
+generation. Spec kept as evidence: `specs/conclude_neuron_v4_spec.json`
+(`7664695121410597`).
+
+## v5: MATH positives and post-close negatives (negative result, 2026-11-03)
+
+v3t never closes thinking on a quarter of MATH-500 (its positives came from
+GSM8K only), and it closes a second time inside run-on answers. v5 adds
+(design-only H100 pod, $1.21, `summaries/neuron_v5_design_summary.json`):
+
+- **MATH positives**: base thinking-on traces on 600 MATH-*train* problems
+  (`DigitalLearningGmbH/MATH-lighteval` @ `0530c786`; 0 of 6,798 usable
+  problems match a MATH-500 question; single-character answers skipped).
+  177 traces write the gold as a result in thinking (`answer_positions.py`
+  matches `\dfrac` / `\frac` / `a/b`, `\boxed{}`, `= ...`, `is ...`): 354
+  positive and 354 working line breaks.
+- **Post-close negatives**: 151 line breaks after the first `</think>` in v3t's
+  run-on replies to the GSM8K-*train* practice problems, starting with the line
+  break before each extra `</think>`.
+- the v4 intermediate-result negatives for GSM8K and MATH (300 each).
+
+Offline it looked better than v3t on every group. One generation pod (RTX
+4090, $1.06, `summaries/thinking_budget_summary_v5.json`,
+`per_problem/tb5_tb_*`) tested v5 and v5b (the same contexts, fit on all of
+them, see the next section) against v3t and base thinking off:
+
+| Same pod, strict (lenient) | GSM8K 500 | MATH-500 | all | two+ `</think>` | never closed | median line breaks before first close |
+|---|---|---|---|---|---|---|
+| base, thinking off | 55.0% (55.8%) | 40.8% (42.8%) | 47.9% | | | |
+| v3t, thinking on | 57.0% (62.8%) | 35.6% (48.2%) | **46.3%** | 186 | 155 | 41 |
+| v5, thinking on | 43.2% (60.4%) | 10.6% (42.4%) | 26.9% | **622** | 21 | 23 |
+| v5b, thinking on | 41.0% (53.2%) | 15.0% (36.6%) | 28.0% | 535 | 13 | **0** |
+
+v5 vs v3t, paired strict: -19.4, +37 / -231, p = 2e-35 (v5b: -18.3, p = 6e-29).
+The MATH positives did what they were for (never-closed 155 -> 21), but the
+broadened detector fires at most line breaks of the edited model's own
+generations: it closes early, closes again, and (v5b) closes at the first line
+break. With thinking off, v5 leaves a stray `</think>` in 379 of 500 MATH
+replies. Base and v3t reproduce across pods (base 47.9% on both; v3t 45.9%,
+45.4%, 46.3% on L40S, A100 and RTX 4090).
+
+**Correction to v3t's side effects.** On this pod, with thinking off and an
+8,192-token cap, v3t leaves a stray `</think>` in 46 of 500 GSM8K replies
+(9.2%) and **144 of 500 MATH-500 replies (28.8%)**. The 6.8% on record was
+GSM8K only, at a 2,048-token cap.
+
+## Design diagnostics: what the held-out fire rates measured
+
+`design_conditional_neuron` fits on even-indexed contexts and reports on odd
+ones. Every contrast builder adds a trace's two positives (the first and
+second line break after the answer) at consecutive indices, so the fit only
+ever saw the *first* line break and the "held-out target fire rate" measured
+only the *second*. That is why v3t's target rate reads 20%: refit on
+trace-disjoint halves (`offline_design.py --split halves`), detectors built
+from v3t's groups fire at 87% of held-out answer line breaks. The rates
+reported for v3t, v4 and v5 are internally consistent (an offline refit
+reproduces each pod's numbers to four decimals) but measure that one context.
+More important, none of the offline rates predicted generation: v4 and v5
+improved them and lost 5 and 19 points. Contexts curated from base traces do
+not cover the edited model's own trajectories, which is where the neuron
+misfires. Designs should be judged by generation on practice problems, and
+negatives mined from the edited model's own replies to them.
+
 ## Mechanism
 
 - Two levers: conclusion pressure (`</think>` up) raises how often the model
@@ -287,6 +416,11 @@ leak is 6.8% (v2 21.8%, W5T15 6.4%, W5T13 0.4%).
 - **Stacking**: the designed neuron on top of W5T15 collapsed (8.0% strict).
 - **Stronger global pressure**: `</think>` x1.7 / x2.0 score 9.5% / 0.0%
   strict (inline and post-answer `</think>` spam).
+- **v4, intermediate-result negatives**: 40.7% strict vs v3t 45.4% (paired
+  -4.7, p = 0.0007); twice the second-`</think>` replies (see "v4").
+- **v5 / v5b, MATH positives + post-close negatives**: 26.9% / 28.0% strict vs
+  v3t 46.3% (-19.4, p = 2e-35); fires at most line breaks in generation
+  (see "v5").
 
 ## Side effects
 
@@ -340,7 +474,12 @@ non-thinking accuracy.
 | v3 | thinking-gated neuron: design, held-out vs v2, side effects | L40S | 0.83 |
 | v3 control | v3 rebuilt, held-out vs base and its random-write control | L40S | 1.40 |
 | v3t | clean-negative rebuild: held-out vs base and control, side effects | L40S | 1.42 |
-| **total** | all pods terminated | | **27.95** |
+| thinking budget | base thinking off vs v3t / v4 thinking on and off | A100 | 1.17 |
+| v4 design | intermediate-result negatives, design only (one start lost its SSH, $0.41) | H100 | 1.63 |
+| v5 design | MATH positives + post-close negatives, captures saved (one superseded start, $0.10) | H100 / A100 | 1.31 |
+| v5 test | base thinking off vs v3t / v5 / v5b thinking on and off | RTX 4090 | 1.06 |
+| failed start | dependency install hung 26 min on one H100 host | H100 | 2.03 |
+| **total** | all pods terminated | | **35.15** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -352,6 +491,10 @@ next vLLM start fail: it cost runs 7 and 9 their optional Qwen3-0.6B
 side-effect repeat and the kernel's first held-out attempt, which was then
 completed from the pod shell (`finish_heldout.py`; see
 `summaries/kernel_summary.json`). Final fix: kill EngineCore, then exit.
+On 2026-11-03 one H100 host never finished `pip install` (26 idle, billed
+minutes; installs now time out after 15 minutes), and RunPod reported "no
+instances currently available" for L40S, L40, A40 and RTX 4090 at times as a
+bare HTTP 500 (the client now says "no capacity").
 
 ## Files
 
@@ -373,6 +516,19 @@ completed from the pod shell (`finish_heldout.py`; see
 - `specs/conclude_neuron_v3t_spec.json` / `conclude_neuron_v3t_control_spec.json`
   — **v3t**, the recommended designed neuron (thinking-gated, clean negatives),
   and its control.
+- `specs/conclude_neuron_v4_spec.json` / `conclude_neuron_v4_control_spec.json`
+  — v4 (intermediate-result negatives; negative result, kept as evidence).
+- `summaries/thinking_budget_summary_v3t_v4.json` and `per_problem/tb_tb_*` —
+  base thinking off vs v3t / v4 thinking on and off, one pod, equal caps,
+  strict and lenient, per subset and per token budget, paired.
+- `summaries/neuron_v4_design_summary.json` — v4's design report, with v3t's
+  stored neuron scored on the same contexts.
+- `specs/conclude_neuron_v5_spec.json` (pod design, `76a7e4686dce6348`) and
+  `specs/conclude_neuron_v5b_spec.json` (offline, fit on all contexts,
+  `a9929a6009bafbcd`), each with its control; `summaries/neuron_v5_design_summary.json`,
+  `summaries/neuron_v5b_offline_design.json` (in-sample rates);
+  `summaries/thinking_budget_summary_v5.json` and `per_problem/tb5_tb_*` —
+  v5 / v5b / v3t / base thinking off on one pod. Negative results.
 - `specs/conclude_neuron_spec.json` / `conclude_neuron_control_spec.json` —
   the v2 designed neuron and its control as portable `EditSpec`s (the kernel
   session's own weights were not retained; these were regenerated with the

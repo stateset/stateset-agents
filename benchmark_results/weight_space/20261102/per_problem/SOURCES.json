@@ -109,6 +109,66 @@
     "source": "spec/gen_spec_neuron_heldout.jsonl.gz",
     "source_sha256": "12dba33c4a2fdb2f8a175ef00de602a06befac5c7a2f11f18e4da06f0c14f7da"
   },
+  "tb5_tb_base_nothink_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_base_nothink_v5.jsonl.gz",
+    "source_sha256": "b2fbc4b496f11af3d6a714f153092ad574cae3fb4420d99988acb4ae6e579944"
+  },
+  "tb5_tb_v3t_nothink_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v3t_nothink_v5.jsonl.gz",
+    "source_sha256": "140881b3fbcf51d11158df72fa7f02f950abd35c8580408542a9b05c63bf7b60"
+  },
+  "tb5_tb_v3t_think_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v3t_think_v5.jsonl.gz",
+    "source_sha256": "795a789ebb12f3e4a46f0a77739ad86cda9e4b66704aa7b6a6c462b49e0e332f"
+  },
+  "tb5_tb_v5_nothink_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v5_nothink_v5.jsonl.gz",
+    "source_sha256": "9cb47a5de87035ca052563ea8ef93c287371070c5e36b1a168012f59512c571c"
+  },
+  "tb5_tb_v5_think_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v5_think_v5.jsonl.gz",
+    "source_sha256": "bd9bca321eb88012600d4b643f9beca54f020d8ec817fdb7d97bd41d8db34801"
+  },
+  "tb5_tb_v5b_nothink_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v5b_nothink_v5.jsonl.gz",
+    "source_sha256": "b0fd206607aa73c286e488b5c273c934e63634527b8ec1fc8cc5abe7dc04776d"
+  },
+  "tb5_tb_v5b_think_v5.jsonl": {
+    "n": 1000,
+    "source": "tb5/gen_tb_v5b_think_v5.jsonl.gz",
+    "source_sha256": "4d9de7e4a10e46855ce34aadc9041b8490d6320668f5b04ef3345d7cc6658fe8"
+  },
+  "tb_tb_base_nothink.jsonl": {
+    "n": 1000,
+    "source": "tb/gen_tb_base_nothink.jsonl.gz",
+    "source_sha256": "eb2cf17fbfd8681cd2a4769c4e4745c240c4d12f6a886f4dc1f218f96d74388c"
+  },
+  "tb_tb_v3t_nothink.jsonl": {
+    "n": 1000,
+    "source": "tb/gen_tb_v3t_nothink.jsonl.gz",
+    "source_sha256": "3490f52a1484fb56adac580db685f56a84be9f203b75ad4fae453ea016e87413"
+  },
+  "tb_tb_v3t_think.jsonl": {
+    "n": 1000,
+    "source": "tb/gen_tb_v3t_think.jsonl.gz",
+    "source_sha256": "6135426cfe0bd1031ef226b01e96a9d78dc84528ed4e995e96cfb4512a0b2d38"
+  },
+  "tb_tb_v4_nothink.jsonl": {
+    "n": 1000,
+    "source": "tb/gen_tb_v4_nothink.jsonl.gz",
+    "source_sha256": "44a3cdebc8567dfaa1607dd28656cc977d2fff4aa8c55462331c2671ca7e3fa4"
+  },
+  "tb_tb_v4_think.jsonl": {
+    "n": 1000,
+    "source": "tb/gen_tb_v4_think.jsonl.gz",
+    "source_sha256": "0054a45969b8ca43da20a68c6762ddbb11ad4b2579006b7ce82a3e710bbc4f73"
+  },
   "v3_side_base_v3_gsm_nothink.jsonl": {
     "n": 500,
     "source": "v3/gen_side_base_v3_gsm_nothink.jsonl.gz",

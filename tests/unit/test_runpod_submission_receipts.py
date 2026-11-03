@@ -681,3 +681,41 @@ def test_ambiguous_allocation_failure_never_repeats_post_or_fabricates_cost(
     assert events[0]["resource_id"] is None
     assert ssh.uploaded == [] and executor._jobs == {}
     assert executor._last_duration_s is None and not executor.ledger_path.exists()
+
+
+@pytest.mark.parametrize(
+    ("body", "no_capacity"),
+    [
+        (
+            b'{"error":"create pod: There are no instances currently available",'
+            b'"status":500}',
+            True,
+        ),
+        (b'{"error":"PRIVATE provider detail","status":500}', False),
+        (b"PRIVATE not json", False),
+    ],
+)
+def test_create_pod_names_a_capacity_shortage_without_echoing_the_provider(
+    monkeypatch, body, no_capacity
+):
+    """RunPod reports "no instances available" as a bare HTTP 500.
+
+    The error says so in its own fixed words; provider text is never echoed.
+    """
+    import requests
+
+    def post(*_args, **_kwargs):
+        response = requests.Response()
+        response.status_code = 500
+        response._content = body
+        return response
+
+    monkeypatch.setattr(requests, "post", post)
+    with pytest.raises(RemoteExecutionError, match="allocation may exist") as caught:
+        RunPodApi("synthetic-test-key").create_pod(
+            name="n", image="img", gpu_type_id="g", ports=["22/tcp"], env={}
+        )
+    message = str(caught.value)
+    assert ("no capacity for the requested GPU type" in message) is no_capacity
+    assert caught.value.context.details.get("no_capacity", False) is no_capacity
+    assert "PRIVATE" not in message

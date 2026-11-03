@@ -266,6 +266,18 @@ def lease_owner_state(lease: dict[str, Any]) -> str:
     return "alive" if token is None and current is None else "unknown"
 
 
+def _reports_no_capacity(response: Any) -> bool:
+    """RunPod's "no instances currently available" reply (sent as HTTP 500).
+
+    Only classifies the reply; the provider's text is never echoed into errors.
+    """
+    try:
+        text = str(response.json().get("error", ""))
+    except Exception:  # noqa: BLE001 - absent, non-JSON or non-dict body
+        return False
+    return "no instances currently available" in text.lower()
+
+
 def _pod_already_gone(exc: BaseException) -> bool:
     """A termination refused with 404: the pod no longer exists, so nothing bills."""
     response = getattr(exc, "response", None)
@@ -442,16 +454,21 @@ class RunPodApi:
             )
         except requests.RequestException as exc:
             status = exc.response.status_code if exc.response is not None else None
+            no_capacity = _reports_no_capacity(exc.response)
             detail = f" (HTTP {status})" if status is not None else ""
+            if no_capacity:
+                detail = f" (HTTP {status}; no capacity for the requested GPU type)"
             request_id = None
             if exc.response is not None:
                 request_id = exc.response.headers.get("x-request-id")
+            extra: dict[str, Any] = {"no_capacity": True} if no_capacity else {}
             raise RemoteExecutionError(
                 "RunPod pod creation failed; allocation may exist, so inspect provider records before retrying"
                 + detail,
                 provider="runpod",
                 attempts=1,
                 request_id=request_id,
+                **extra,
             ) from exc
         return dict(response.json())
 

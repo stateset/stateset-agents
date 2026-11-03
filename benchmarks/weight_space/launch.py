@@ -71,8 +71,12 @@ trap 'rc=$?; cp /workspace/phase1.log /workspace/out/ 2>/dev/null; echo $rc > /w
 set -e
 cd /workspace
 export HF_HOME=/workspace/hf PIP_DISABLE_PIP_VERSION_CHECK=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-python -m pip install --quiet vllm datasets "math-verify[antlr4_13_2]" peft
-python -m pip install --quiet /workspace/stateset_agents-*.whl
+# A host with bad PyPI connectivity once hung this install for 26 idle,
+# billed minutes; fail fast (exit 124) so the launcher terminates the pod.
+echo '{{"event": "install_start"}}'
+timeout 900 python -m pip install --quiet --timeout 30 --retries 5 vllm datasets "math-verify[antlr4_13_2]" peft
+timeout 300 python -m pip install --quiet --timeout 30 --retries 5 /workspace/stateset_agents-*.whl
+echo '{{"event": "installed"}}'
 {_FLASHINFER_PATCH_COMMAND}
 python -c "import torch, transformers, vllm; print('versions', torch.__version__, transformers.__version__, vllm.__version__, torch.cuda.get_device_name(0))"
 PYTHONPATH=/workspace python -u {command}
