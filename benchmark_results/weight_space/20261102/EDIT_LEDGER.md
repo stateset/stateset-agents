@@ -299,3 +299,37 @@ shaped the edit, and the 3.4% stray-`</think>` figure was measured on the same
 replies v3 was trained to stay quiet on. v3's numbers above are therefore not
 clean held-out results; v3t (below) rebuilds it with negatives from GSM8K-train
 only.
+
+## v3t: the thinking-gated neuron with clean negatives (recommended; 2026-11-03)
+
+Same construction as v3, but the thinking-off negatives are line breaks from
+base replies to **GSM8K-train** (the trace split, generated on the pod), so no
+held-out question shapes the edit. Prose negatives: WikiText-2 train. Spec
+`conclude_neuron_v3t_spec.json`, hash `f221470a088d0860`. One L40S pod ($1.42).
+
+Held-out firing by group: target (answer line break in thinking) 20.0%,
+working 4.1%, after `</think>` 0%, answer token 0%, thinking-off line break
+(train replies) 0.7%, prose 0%. Detector AUC 0.882.
+
+| Held-out (1,000, strict), same pod | Accuracy | v3t vs it, paired |
+|---|---|---|
+| base | 1.0% | **+44.9 [+41.8, +48.0], +450 / -1, p = 2e-133** |
+| v3t random-write control (+ Wait x0.5) | 7.0% | **+38.9 [+35.8, +42.0], +398 / -9, p = 5e-105** |
+| **v3t** | **45.9%** (lenient 53.7%, multi-`</think>` 16.1%) | |
+
+Side effects (paired against base, same pod; thinking-off check on held-out
+questions v3t never saw):
+
+| | Base | v3t |
+|---|---|---|
+| GSM8K-test 500, thinking off, strict | 54.0% | 51.4% (-2.6 [-6.0, +1.0], p = 0.17) |
+| — stray `</think>` in replies | 0.0% | **6.8%** |
+| MMLU 1,000 | 45.0% | 46.3% (+1.3 [+0.5, +2.2], p = 0.004)* |
+| WikiText-2 perplexity | 17.378 | 17.431 (+0.3%) |
+
+\* v3 showed the same small MMLU rise (+1.1, p = 0.03) on another pod. Reported
+as observed; this study was not designed to test it.
+
+The clean rebuild confirms the thinking-mode result (v3t 45.9% vs v3 45.1-45.2%)
+and shows v3's stray-`</think>` figure was optimistic: the true thinking-off
+leak is 6.8% (v2 21.8%, W5T15 6.4%, W5T13 0.4%).

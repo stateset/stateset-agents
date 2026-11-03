@@ -9,18 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **v3 conclude neuron** (`benchmark_results/weight_space/20261102/specs/conclude_neuron_v3_spec.json`,
-  hash `7bac7db23edf6b2c`, identical on two pods): the designed Qwen3.5-0.8B
-  neuron retrained with line breaks from thinking-off replies and WikiText
-  prose as negatives, so it fires inside thinking and almost nowhere else.
-  Held-out GSM8K-test + MATH-500 (strict) 45.1% / 45.2% on two pods; vs base
-  +440 / -0 and vs its random-write control +418 / -9 (p < 1e-110); vs v2 on
-  the same pod +4.8 (p = 5e-4).
+- **v3t conclude neuron** (`benchmark_results/weight_space/20261102/specs/conclude_neuron_v3t_spec.json`,
+  hash `f221470a088d0860`; recommended): the designed Qwen3.5-0.8B neuron
+  retrained with line breaks from thinking-off GSM8K-*train* replies and
+  WikiText-train prose as negatives, so it fires inside thinking and rarely
+  elsewhere. Held-out GSM8K-test + MATH-500 (strict) 45.9%; vs base
+  +450 / -1 and vs its random-write control +398 / -9 (p < 1e-100). Outside
+  thinking: a stray `</think>` in 6.8% of thinking-off replies (v2: 21.8%),
+  thinking-off GSM8K -2.6 vs base (p = 0.17), WikiText perplexity +0.3%
+  (v2: +5.9%). An earlier v3 drew its thinking-off negatives from held-out
+  questions and reported an optimistic 3.4%; it is kept, flagged, as evidence.
 - **Side-effect evidence** (`benchmarks/weight_space/side_effect_job.py`):
   thinking-off GSM8K, zero-shot MMLU and WikiText-2 perplexity, paired against
   base. No edit changes MMLU; v2 put a stray `</think>` into 22% of
-  thinking-off replies and raised perplexity 5.9%; v3 cuts that to 3.4% and
-  +0.3% (thinking-off GSM8K -2.0 vs base, p = 0.27). With thinking off, the
+  thinking-off replies and raised perplexity 5.9%; v3t cuts that to 6.8% and
+  +0.3% (thinking-off GSM8K -2.6 vs base, p = 0.17). With thinking off, the
   unedited model scores 54.8% on GSM8K-test: the edits repair thinking mode.
 - `ConditionalNeuron.detector` / `.activation(...)`: a design can be checked on
   any captured contexts before a weight is written; `neuron_job.py` reports

@@ -143,5 +143,35 @@
     "n": 1000,
     "source": "v3c/gen_spec_neuron_v3_heldout.jsonl.gz",
     "source_sha256": "1ec046352d1affa48bfbed9208e45b3a7e821193200d1a0a08fa62fb6fae287a"
+  },
+  "v3t_nothink_train_v3t.jsonl": {
+    "n": 256,
+    "source": "v3t/gen_nothink_train_v3t.jsonl.gz",
+    "source_sha256": "9c538b431973fc364f039091ff87047e1154e3c7f770951d11d76b2b556d7299"
+  },
+  "v3t_side_base_v3t_gsm_nothink.jsonl": {
+    "n": 500,
+    "source": "v3t/gen_side_base_v3t_gsm_nothink.jsonl.gz",
+    "source_sha256": "18faa8e34779e882156a09f8e17d24df619ab9b481141f874d1f2e4b032f65c7"
+  },
+  "v3t_side_neuron_v3t_gsm_nothink.jsonl": {
+    "n": 500,
+    "source": "v3t/gen_side_neuron_v3t_gsm_nothink.jsonl.gz",
+    "source_sha256": "a36a63024658512c7466776b3c53e916fe807a3bc0ba9e4a8abb357d45fbdeeb"
+  },
+  "v3t_spec_base_v3t_heldout.jsonl": {
+    "n": 1000,
+    "source": "v3t/gen_spec_base_v3t_heldout.jsonl.gz",
+    "source_sha256": "2ebb8cf8bf52cd55db96c86f2443ef1b11569dbad4e4a6c08b63326726ef59e1"
+  },
+  "v3t_spec_control_v3t_heldout.jsonl": {
+    "n": 1000,
+    "source": "v3t/gen_spec_control_v3t_heldout.jsonl.gz",
+    "source_sha256": "2cf167b87faf54d9be6a2d2aa2d51fadf6f221960cb11ddbbb59c30ffa9ecc89"
+  },
+  "v3t_spec_neuron_v3t_heldout.jsonl": {
+    "n": 1000,
+    "source": "v3t/gen_spec_neuron_v3t_heldout.jsonl.gz",
+    "source_sha256": "9a3df0d63e2ce3b566bbeaa2f91141483044bee8052722c3da751c6bd83ccb9e"
   }
 }
