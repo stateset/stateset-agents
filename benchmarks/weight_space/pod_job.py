@@ -364,7 +364,8 @@ def find_directions(trace: list[dict], budget: Budget, out: Path) -> dict:
     """Read: per-layer mean(MLP out | in-loop) - mean(MLP out | healthy)."""
     import torch
     from transformers import AutoModelForCausalLM
-    from weight_space import WeightSpaceSession
+
+    from stateset_agents.experimental.weight_space import WeightSpaceSession
 
     rng = random.Random(0)
     prefixes: dict[str, list[int]] = {}
@@ -460,7 +461,7 @@ def find_directions(trace: list[dict], budget: Budget, out: Path) -> dict:
             out / "directions.pt",
         )
 
-    from weight_space import direction_ablation
+    from stateset_agents.experimental.weight_space import direction_ablation
 
     g = torch.Generator().manual_seed(1)
     random_dirs = {L: torch.randn(directions[L].shape[0], generator=g) for L in LAYERS}
@@ -506,7 +507,11 @@ def find_wait_directions_and_deltas(
     import torch
     from transformers import AutoModelForCausalLM
     from wait_direction import find_wait_directions
-    from weight_space import WeightSpaceSession, direction_ablation
+
+    from stateset_agents.experimental.weight_space import (
+        WeightSpaceSession,
+        direction_ablation,
+    )
 
     model = (
         AutoModelForCausalLM.from_pretrained(
@@ -856,7 +861,8 @@ def small_model_check(
         save()
         return
     import torch
-    from weight_space import LowRankDelta
+
+    from stateset_agents.experimental.weight_space import LowRankDelta
 
     blob = torch.load(a.small_edit, weights_only=True)
     rows = [r for r in probs["heldout"] if r["kind"] == "gsm8k"]

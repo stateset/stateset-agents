@@ -124,6 +124,7 @@ def design_conditional_neuron(
     gain: float = 4.0,
     lam: float = 100.0,
     neuron: int | None = None,
+    up_unit: int | None = None,
     train: torch.Tensor | None = None,
     fire_threshold: float = 0.5,
     activation: Callable[[torch.Tensor], torch.Tensor] | None = None,
@@ -135,6 +136,8 @@ def design_conditional_neuron(
     context. ``gate_weight`` / ``up_weight`` are ``[intermediate, hidden]`` and
     ``down_weight`` ``[hidden, intermediate]``. By default the detector is fit
     on even-indexed contexts and the report measures it on the odd ones.
+    ``neuron`` / ``up_unit`` pin the slot and the multiplier unit instead of
+    choosing them from the captures (e.g. to reproduce an earlier design).
     """
     import torch
 
@@ -146,7 +149,10 @@ def design_conditional_neuron(
     labels = labels.float()
 
     c = ridge_detector(gate_acts, labels, lam=lam, train=train)
-    up_unit, up_scale = near_constant_unit(up_acts)
+    if up_unit is None:
+        up_unit, up_scale = near_constant_unit(up_acts)
+    else:
+        up_scale = float(1.0 / up_acts.float()[:, up_unit].mean())
     current = act_fn(gate_acts.float()) * up_acts.float()
     v = (
         neuron

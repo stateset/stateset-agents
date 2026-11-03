@@ -8,10 +8,9 @@ the pod is terminated in ``finally``; spend is appended to the repo ledger.
 from __future__ import annotations
 
 import argparse
-import io
 import json
+import subprocess
 import sys
-import tarfile
 import time
 import tomllib
 import uuid
@@ -63,38 +62,47 @@ def api_call(fh, what: str, fn, attempts: int = 8):
             time.sleep(min(60, 10 * (attempt + 1)))
 
 
-def run_sh(job_args: str) -> str:
+def run_sh(job_args: str, entry: str | None = None) -> str:
+    command = entry or f"pod_job.py main --out /workspace/out {job_args}"
     return f"""#!/bin/bash
 set -uo pipefail
 mkdir -p /workspace/out
 trap 'rc=$?; cp /workspace/phase1.log /workspace/out/ 2>/dev/null; echo $rc > /workspace/EXIT' EXIT
 set -e
 cd /workspace
-mkdir -p wslib && tar --no-same-owner -xzf wslib.tgz -C wslib
 export HF_HOME=/workspace/hf PIP_DISABLE_PIP_VERSION_CHECK=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 python -m pip install --quiet vllm datasets "math-verify[antlr4_13_2]" peft
+python -m pip install --quiet /workspace/stateset_agents-*.whl
 {_FLASHINFER_PATCH_COMMAND}
 python -c "import torch, transformers, vllm; print('versions', torch.__version__, transformers.__version__, vllm.__version__, torch.cuda.get_device_name(0))"
-PYTHONPATH=/workspace/wslib:/workspace python -u pod_job.py main --out /workspace/out {job_args}
+PYTHONPATH=/workspace python -u {command}
 """
 
 
-def ws_tarball() -> bytes:
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for path in sorted(WS_PKG.glob("*.py")):
-            tar.add(
-                path,
-                arcname=f"weight_space/{path.name}",
-                filter=lambda ti: (
-                    setattr(ti, "uid", 0),
-                    setattr(ti, "gid", 0),
-                    setattr(ti, "uname", "root"),
-                    setattr(ti, "gname", "root"),
-                    ti,
-                )[-1],
-            )
-    return buf.getvalue()
+WHEEL_GLOB = "stateset_agents-*.whl"
+
+
+def build_wheel(dest: Path) -> Path:
+    """This checkout's stateset-agents wheel; pods pip-install it.
+
+    (A standalone copy of ``weight_space`` no longer imports on its own: its
+    exceptions derive from ``stateset_agents.core.errors.StateSetError``.)
+    """
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "wheel",
+            "--no-deps",
+            "--quiet",
+            "-w",
+            str(dest),
+            str(REPO),
+        ],
+        check=True,
+    )
+    return max(dest.glob(WHEEL_GLOB), key=lambda p: p.stat().st_mtime)
 
 
 def main() -> int:
@@ -105,6 +113,11 @@ def main() -> int:
     ap.add_argument("--lifetime-h", type=float, default=3.0)
     ap.add_argument("--disk-gb", type=int, default=100)
     ap.add_argument("--job-args", default="")
+    ap.add_argument(
+        "--entry",
+        default=None,
+        help="command run with python -u on the pod instead of 'pod_job.py main ...'",
+    )
     ap.add_argument(
         "--resume-from",
         default=None,
@@ -132,8 +145,8 @@ def main() -> int:
 
     staging = out / "upload"
     staging.mkdir()
-    (staging / "wslib.tgz").write_bytes(ws_tarball())
-    (staging / "run.sh").write_text(run_sh(a.job_args))
+    wheel = build_wheel(staging)
+    (staging / "run.sh").write_text(run_sh(a.job_args, a.entry))
     (staging / "pod_job.py").write_text((HERE / "pod_job.py").read_text())
     (staging / "wait_direction.py").write_text((HERE / "wait_direction.py").read_text())
     small = HERE / "small_edit.pt"
@@ -237,7 +250,7 @@ def main() -> int:
             return 6
         log(fh, event="self_destruct_armed", hours=a.lifetime_h)
 
-        for name in ("wslib.tgz", "run.sh", "pod_job.py", "wait_direction.py"):
+        for name in (wheel.name, "run.sh", "pod_job.py", "wait_direction.py"):
             with_retry(
                 fh,
                 f"upload {name}",

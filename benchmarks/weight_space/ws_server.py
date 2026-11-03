@@ -45,7 +45,11 @@ class BudgetExhausted(RuntimeError):
 def setup(budget: int, n_trace: int, n_eval: int, max_tokens: int) -> None:
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
-    from weight_space import WeightSpaceSession, direction_ablation
+
+    from stateset_agents.experimental.weight_space import (
+        WeightSpaceSession,
+        direction_ablation,
+    )
 
     OUT.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(parents=True, exist_ok=True)
@@ -152,7 +156,7 @@ def setup(budget: int, n_trace: int, n_eval: int, max_tokens: int) -> None:
 
     def apply_edit(module: str, B, A, note: str = "") -> str:
         """Add B @ A (B: out x r, A: r x in, any float tensors) to `module`.weight. Free."""
-        from weight_space import LowRankDelta
+        from stateset_agents.experimental.weight_space import LowRankDelta
 
         return session.apply(
             module,
@@ -189,7 +193,8 @@ def setup(budget: int, n_trace: int, n_eval: int, max_tokens: int) -> None:
 
     def _deltas_by_module() -> dict:
         import torch as _t
-        from weight_space import LowRankDelta
+
+        from stateset_agents.experimental.weight_space import LowRankDelta
 
         per: dict = {}
         for e in session.edits:
@@ -372,7 +377,8 @@ def run_python(code: str) -> dict:
 def heldout(note: str) -> None:
     """Evaluator side: base / submitted edits / structure-matched random control."""
     import torch
-    from weight_space import LowRankDelta
+
+    from stateset_agents.experimental.weight_space import LowRankDelta
 
     summary: dict = {
         "note": note,

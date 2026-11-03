@@ -56,18 +56,18 @@ def main() -> int:
 
     staging = out / "upload"
     staging.mkdir()
-    (staging / "wslib.tgz").write_bytes(L.ws_tarball())
+    wheel = L.build_wheel(staging)
     (staging / "run_i.sh").write_text(f"""#!/bin/bash
 set -uo pipefail
 mkdir -p /workspace/out
 trap 'rc=$?; cp /workspace/interactive_server.log /workspace/out/ 2>/dev/null; echo $rc > /workspace/EXIT' EXIT
 set -e
 cd /workspace
-mkdir -p wslib && tar --no-same-owner -xzf wslib.tgz -C wslib
 export HF_HOME=/workspace/hf PIP_DISABLE_PIP_VERSION_CHECK=1 PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True WS_CAPTURE_BATCH=4
 python -m pip install --quiet vllm datasets "math-verify[antlr4_13_2]" peft
+python -m pip install --quiet /workspace/stateset_agents-*.whl
 {L._FLASHINFER_PATCH_COMMAND}
-PYTHONPATH=/workspace/wslib:/workspace python -u ws_server.py --budget {a.budget}
+PYTHONPATH=/workspace python -u ws_server.py --budget {a.budget}
 """)
     if a.seed_trace:
         shutil.copy(a.seed_trace, staging / "gen_b_base_trace.jsonl.gz")
@@ -136,7 +136,7 @@ PYTHONPATH=/workspace/wslib:/workspace python -u ws_server.py --budget {a.budget
         L.log(fh, event="self_destruct_armed", hours=a.lifetime_h, host=ip, port=port)
         ssh.run("mkdir -p /workspace/out")
         uploads = [
-            ("wslib.tgz", "/workspace/wslib.tgz"),
+            (wheel.name, f"/workspace/{wheel.name}"),
             ("run_i.sh", "/workspace/run_i.sh"),
         ]
         if a.seed_trace:

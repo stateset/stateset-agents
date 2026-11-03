@@ -304,37 +304,21 @@ def main() -> int:
 
     staging = out / "upload"
     staging.mkdir()
-    import io
-    import tarfile
+    sys.path.insert(0, str(HERE))
+    from launch import build_wheel
 
-    buf = io.BytesIO()
-    with tarfile.open(fileobj=buf, mode="w:gz") as tar:
-        for p in sorted(
-            (REPO / "stateset_agents" / "experimental" / "weight_space").glob("*.py")
-        ):
-            tar.add(
-                p,
-                arcname=f"weight_space/{p.name}",
-                filter=lambda ti: (
-                    setattr(ti, "uid", 0),
-                    setattr(ti, "gid", 0),
-                    setattr(ti, "uname", "root"),
-                    setattr(ti, "gname", "root"),
-                    ti,
-                )[-1],
-            )
-    (staging / "wslib.tgz").write_bytes(buf.getvalue())
+    wheel = build_wheel(staging)
     (staging / "run_b.sh").write_text(f"""#!/bin/bash
 set -uo pipefail
 mkdir -p /workspace/out
 trap 'rc=$?; cp /workspace/armb.log /workspace/out/ 2>/dev/null; echo $rc > /workspace/EXIT' EXIT
 set -e
 cd /workspace
-mkdir -p wslib && tar --no-same-owner -xzf wslib.tgz -C wslib
 export HF_HOME=/workspace/hf PIP_DISABLE_PIP_VERSION_CHECK=1
 python -m pip install --quiet vllm datasets "math-verify[antlr4_13_2]" peft
+python -m pip install --quiet /workspace/stateset_agents-*.whl
 {_FLASHINFER_PATCH_COMMAND}
-PYTHONPATH=/workspace/wslib:/workspace python -u ws_server.py --budget {a.budget}
+PYTHONPATH=/workspace python -u ws_server.py --budget {a.budget}
 """)
     pod = api.create_pod(
         name=run_id,
@@ -386,7 +370,7 @@ PYTHONPATH=/workspace/wslib:/workspace python -u ws_server.py --budget {a.budget
             )
             return 6
         log(fh, event="self_destruct_armed", hours=a.lifetime_h)
-        for name in ("wslib.tgz", "run_b.sh"):
+        for name in (wheel.name, "run_b.sh"):
             ssh.upload(staging / name, f"/workspace/{name}")
         for name in ("pod_job.py", "ws_server.py"):
             ssh.upload(HERE / name, f"/workspace/{name}")

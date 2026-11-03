@@ -115,3 +115,26 @@ def test_designed_neuron_fires_on_the_concept_and_writes_the_direction() -> None
     assert report["heldout_auc"] > 0.97
     assert report["up_unit"] == 5
     assert report["neuron"] == 11
+
+
+def test_design_can_pin_the_neuron_and_the_multiplier_unit() -> None:
+    d = synthetic()
+    design = design_conditional_neuron(
+        layer=0,
+        gate_weight=d["gate_weight"],
+        up_weight=d["up_weight"],
+        down_weight=d["down_weight"],
+        gate_acts=d["gate_acts"],
+        up_acts=d["up_acts"],
+        labels=d["labels"],
+        write_direction=torch.ones(HIDDEN),
+        write_norm=1.0,
+        lam=1.0,
+        neuron=3,
+        up_unit=5,
+    )
+    assert (design.rewrite.neuron, design.report["up_unit"]) == (3, 5)
+    scale = 1.0 / float(d["up_acts"][:, 5].mean())
+    assert design.rewrite.up == pytest.approx(
+        tuple(float(v) * scale for v in d["up_weight"][5]), rel=1e-5
+    )
