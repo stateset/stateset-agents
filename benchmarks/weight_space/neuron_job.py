@@ -229,6 +229,13 @@ def main() -> None:
     )
     ap.add_argument("--nothink-limit", type=int, default=300)
     ap.add_argument(
+        "--nothink-train",
+        type=int,
+        default=0,
+        help="generate thinking-off base replies to this many GSM8K-train (trace) "
+        "problems and use their line breaks as negatives (never held-out questions)",
+    )
+    ap.add_argument(
         "--prose-negatives", type=int, default=0, help="WikiText-train line breaks"
     )
     ap.add_argument("--tag", default="", help="suffix for spec/output names, e.g. _v3")
@@ -254,6 +261,21 @@ def main() -> None:
     )  # pj.generate writes rows here
     (pj.WORK / "ckpt").mkdir(parents=True, exist_ok=True)
 
+    probs = pj.load_problems(256, 200, 500)
+    nothink_path = Path(a.nothink_negatives) if a.nothink_negatives else None
+    if a.nothink_train:
+        # Thinking-off base replies to GSM8K-*train* problems (the trace split,
+        # which never overlaps held-out), generated before the HF model loads.
+        pj.generate(
+            f"nothink_train{tag}",
+            pj.MODEL,
+            probs["trace"][: a.nothink_train],
+            2048,
+            out,
+            thinking=False,
+        )
+        nothink_path = out / f"gen_nothink_train{tag}.jsonl.gz"
+
     tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)  # nosec B615 - pinned
     model = AutoModelForCausalLM.from_pretrained(
         MODEL, revision=REVISION, dtype=torch.bfloat16
@@ -264,12 +286,10 @@ def main() -> None:
     )
     newline = newline_ids(tok)
     extra: list[tuple[str, list]] = []
-    if a.nothink_negatives:
+    if nothink_path is not None:
         extra += [
             ("nothink_newline", p)
-            for p in nothink_negatives(
-                newline, Path(a.nothink_negatives), a.nothink_limit
-            )
+            for p in nothink_negatives(newline, nothink_path, a.nothink_limit)
         ]
     if a.prose_negatives:
         extra += [
@@ -367,7 +387,6 @@ def main() -> None:
             flush=True,
         )
 
-    probs = pj.load_problems(256, 200, 500)
     result: dict = {
         "design": design.report,
         "spec_hash": spec.content_hash(),
