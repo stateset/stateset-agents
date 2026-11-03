@@ -239,3 +239,108 @@ def test_rewrite_activation_refuses_a_row_the_captures_cannot_express() -> None:
             gate_acts=d["x"] @ wg.T,
             up_acts=d["up_acts"],
         )
+
+
+def _designed(d: dict):
+    direction = torch.zeros(HIDDEN)
+    direction[3] = 2.0
+    return design_conditional_neuron(
+        layer=4,
+        gate_weight=d["gate_weight"],
+        up_weight=d["up_weight"],
+        down_weight=d["down_weight"],
+        gate_acts=d["gate_acts"],
+        up_acts=d["up_acts"],
+        labels=d["labels"],
+        write_direction=direction,
+        write_norm=2.5,
+        lam=1.0,
+    ).rewrite
+
+
+def test_shift_threshold_lowers_the_pre_activation_by_bias_times_the_up_read() -> None:
+    from stateset_agents.experimental.weight_space.circuits import shift_threshold
+
+    d = synthetic()
+    rw = _designed(d)
+    shifted = shift_threshold(rw, 1.5, write_scale=0.5)
+    x = d["x"]
+    gate, up = x @ torch.tensor(rw.gate), x @ torch.tensor(rw.up)
+    assert torch.allclose(x @ torch.tensor(shifted.gate), gate - 1.5 * up, atol=1e-4)
+    # The designer's up row reads ~1.0 everywhere, so the shift is ~-bias.
+    assert float((gate - x @ torch.tensor(shifted.gate)).mean()) == pytest.approx(
+        1.5, rel=0.02
+    )
+    assert shifted.up == rw.up
+    assert torch.allclose(torch.tensor(shifted.down), 0.5 * torch.tensor(rw.down))
+    assert (shifted.layer, shifted.neuron) == (rw.layer, rw.neuron)
+
+
+def test_a_higher_threshold_fires_less_on_both_classes() -> None:
+    from stateset_agents.experimental.weight_space.circuits import shift_threshold
+
+    d = synthetic()
+    rw = _designed(d)
+    x, pos = d["x"], d["labels"] > 0
+
+    def fire(r: NeuronRewrite) -> tuple[float, float]:
+        act = torch.nn.functional.silu(x @ torch.tensor(r.gate)) * (
+            x @ torch.tensor(r.up)
+        )
+        on = act > 0.5
+        return float(on[pos].float().mean()), float(on[~pos].float().mean())
+
+    low, mid, high = (fire(shift_threshold(rw, b)) for b in (-2.0, 0.0, 4.0))
+    assert low[0] >= mid[0] >= high[0] and low[1] >= mid[1] >= high[1]
+    assert high[0] < mid[0]
+    assert shift_threshold(rw, 0.0) == rw
+
+
+@pytest.mark.parametrize(
+    ("bias", "write_scale"),
+    [
+        (float("nan"), 1.0),
+        (float("inf"), 1.0),
+        (0.0, 0.0),
+        (0.0, -1.0),
+        (0.0, float("nan")),
+    ],
+)
+def test_shift_threshold_refuses_non_finite_bias_and_non_positive_write(
+    bias: float, write_scale: float
+) -> None:
+    from stateset_agents.experimental.weight_space.circuits import shift_threshold
+
+    with pytest.raises(ValueError):
+        shift_threshold(_designed(synthetic()), bias, write_scale=write_scale)
+
+
+def test_rewrite_activation_reads_a_weakly_read_direction_exactly() -> None:
+    """The read-through solve is float64: float32 least squares truncates weak
+    directions (and on some CPU builds returns run-to-run different residuals)."""
+    from stateset_agents.experimental.weight_space.circuits import rewrite_activation
+
+    g = torch.Generator().manual_seed(3)
+    u, _ = torch.linalg.qr(torch.randn(INTER, HIDDEN, generator=g))
+    v, _ = torch.linalg.qr(torch.randn(HIDDEN, HIDDEN, generator=g))
+    s = torch.logspace(0, -6, HIDDEN)  # the weakest read is 1e-6 of the strongest
+    wg = (u * s) @ v.T
+    wu = torch.randn(INTER, HIDDEN, generator=g)
+    gate_row = v[:, -1].clone()  # exactly the weakest-read direction
+    x = torch.randn(N, HIDDEN, generator=g)
+    rw = NeuronRewrite(
+        layer=0,
+        neuron=0,
+        gate=tuple(float(t) for t in gate_row),
+        up=tuple(float(t) for t in wu[0]),
+        down=tuple(0.0 for _ in range(HIDDEN)),
+    )
+    got = rewrite_activation(
+        rw,
+        gate_weight=wg,
+        up_weight=wu,
+        gate_acts=(x.double() @ wg.double().T),
+        up_acts=x @ wu.T,
+    )
+    want = torch.nn.functional.silu(x @ gate_row) * (x @ wu[0])
+    assert torch.allclose(got.float(), want, atol=1e-3)

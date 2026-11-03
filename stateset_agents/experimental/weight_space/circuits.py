@@ -43,6 +43,7 @@ __all__ = [
     "near_constant_unit",
     "rewrite_activation",
     "ridge_detector",
+    "shift_threshold",
 ]
 
 
@@ -140,18 +141,22 @@ def _read_through(
     """``x . row`` at each captured context, from ``acts = x @ weight.T``.
 
     Solves ``weight.T @ c = row`` (minimum norm) so ``acts @ c == x . row``.
+    The solve runs in float64: float32 least squares truncates weakly read
+    directions, and on some CPU builds returns residuals that differ from run
+    to run on identical inputs (1e-6 to 2.5e-2 on Qwen3.5-0.8B layer 23).
     """
     import torch
 
-    w = weight.float().T  # [hidden, intermediate]
-    c = torch.linalg.lstsq(w, row.float().unsqueeze(1)).solution.squeeze(1)
-    miss = float((w @ c - row.float()).norm() / row.float().norm().clamp_min(1e-12))
+    w = weight.double().T  # [hidden, intermediate]
+    r = row.double()
+    c = torch.linalg.lstsq(w, r.unsqueeze(1)).solution.squeeze(1)
+    miss = float((w @ c - r).norm() / r.norm().clamp_min(1e-12))
     if miss > 1e-3:
         raise ValueError(
             f"the {what} row is not in the span of the layer's {what} rows "
             f"(relative residual {miss:.2e}); capture the MLP input instead"
         )
-    read: torch.Tensor = acts.float() @ c
+    read: torch.Tensor = (acts.double() @ c).float()
     return read
 
 
@@ -179,6 +184,38 @@ def rewrite_activation(
     gate = _read_through(torch.tensor(rewrite.gate), gate_weight, gate_acts, "gate")
     up = _read_through(torch.tensor(rewrite.up), up_weight, up_acts, "up")
     return act_fn(gate) * up
+
+
+def shift_threshold(
+    rewrite: NeuronRewrite, bias: float, *, write_scale: float = 1.0
+) -> NeuronRewrite:
+    """Give a designed neuron an explicit firing threshold and write strength.
+
+    The ridge detector has no intercept, so a designed neuron's threshold is
+    whatever the fit's shrinkage left. This returns the same neuron with gate
+    row ``gate - bias * up``: its pre-activation becomes
+    ``gate . x - bias * (up . x)``. For an up row that reads ~1.0 in every
+    context (as :func:`design_conditional_neuron` builds it) that is
+    ``gate . x - bias``, so a positive ``bias`` needs that much more detector
+    evidence to fire. ``write_scale`` multiplies the down column.
+    """
+    import math
+
+    if not math.isfinite(bias):
+        raise ValueError(f"bias must be finite, got {bias}")
+    if not (math.isfinite(write_scale) and write_scale > 0):
+        raise ValueError(
+            f"write_scale must be a positive finite number, got {write_scale}"
+        )
+    if bias == 0.0 and write_scale == 1.0:
+        return rewrite
+    return NeuronRewrite(
+        layer=rewrite.layer,
+        neuron=rewrite.neuron,
+        gate=tuple(g - bias * u for g, u in zip(rewrite.gate, rewrite.up, strict=True)),
+        up=rewrite.up,
+        down=tuple(write_scale * v for v in rewrite.down),
+    )
 
 
 def design_conditional_neuron(

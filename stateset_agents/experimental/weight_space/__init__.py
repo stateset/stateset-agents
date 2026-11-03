@@ -49,6 +49,7 @@ from .circuits import (
     near_constant_unit,
     rewrite_activation,
     ridge_detector,
+    shift_threshold,
 )
 from .deltas import LowRankDelta, direction_ablation
 from .edits import (
@@ -111,6 +112,7 @@ __all__ = [
     "paired_compare",
     "rewrite_activation",
     "ridge_detector",
+    "shift_threshold",
     "strict_rows",
     "token_neighbours",
     "top_writers",

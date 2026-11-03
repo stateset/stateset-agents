@@ -268,32 +268,18 @@ def main(argv: list[str] | None = None) -> None:
     if a.heldout and keep > 0:
         import thinking_budget_job as tb
 
-        rows = probs["heldout"]
-        runs = {
-            "base_nothink": (pj.MODEL, False),
-            "start_think": (str(pj.WORK / "ckpt" / "op0"), True),
-            "kept_think": (str(pj.WORK / "ckpt" / f"op{keep}"), True),
-            "kept_nothink": (str(pj.WORK / "ckpt" / f"op{keep}"), False),
-        }
-        gens, result["heldout"] = {}, {}
-        for label, (model_dir, thinking) in runs.items():
-            gens[label] = pj.generate(
-                f"op_{label}", model_dir, rows, tb.CAP, out, thinking
+        result.update(
+            tb.heldout_check(
+                probs["heldout"],
+                str(pj.WORK / "ckpt" / "op0"),
+                str(pj.WORK / "ckpt" / f"op{keep}"),
+                out,
+                "op",
+                lambda part: summary_path.write_text(
+                    json.dumps({**result, **part}, indent=2)
+                ),
             )
-            result["heldout"][label] = tb.describe(gens[label], thinking)
-            pj.log(event="described", run=label, all=result["heldout"][label]["all"])
-            summary_path.write_text(json.dumps(result, indent=2))
-        result["paired"] = {
-            "kept_think_vs_start_think": tb.compare(
-                gens["start_think"], gens["kept_think"], True, True
-            ),
-            "kept_think_vs_base_nothink": tb.compare(
-                gens["base_nothink"], gens["kept_think"], False, True
-            ),
-            "kept_nothink_vs_base_nothink": tb.compare(
-                gens["base_nothink"], gens["kept_nothink"], False, False
-            ),
-        }
+        )
     summary_path.write_text(json.dumps(result, indent=2))
     pj.log(event="onpolicy_done", kept=keep)
 

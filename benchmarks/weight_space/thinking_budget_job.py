@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 sys.path.insert(0, "/workspace")
@@ -92,6 +93,51 @@ def compare(
             "lenient": paired_compare(b, o),
         }
     return out
+
+
+def heldout_check(
+    rows: list[dict],
+    start_dir: str,
+    kept_dir: str,
+    out: Path,
+    prefix: str,
+    on_update: Callable[[dict], None] | None = None,
+) -> dict:
+    """The held-out set at ``CAP`` for a kept redesign, on one pod.
+
+    Base thinking off, the start and kept checkpoints thinking on, and the
+    kept checkpoint thinking off; described, then paired (kept vs start,
+    kept vs base thinking off, and the kept edit's thinking-off side effect).
+    ``on_update`` receives the partial result after every run.
+    """
+    runs = {
+        "base_nothink": (pj.MODEL, False),
+        "start_think": (start_dir, True),
+        "kept_think": (kept_dir, True),
+        "kept_nothink": (kept_dir, False),
+    }
+    gens: dict[str, list[dict]] = {}
+    result: dict = {"heldout": {}}
+    for label, (model_dir, thinking) in runs.items():
+        gens[label] = pj.generate(
+            f"{prefix}_{label}", model_dir, rows, CAP, out, thinking
+        )
+        result["heldout"][label] = describe(gens[label], thinking)
+        pj.log(event="described", run=label, all=result["heldout"][label]["all"])
+        if on_update is not None:
+            on_update(result)
+    result["paired"] = {
+        "kept_think_vs_start_think": compare(
+            gens["start_think"], gens["kept_think"], True, True
+        ),
+        "kept_think_vs_base_nothink": compare(
+            gens["base_nothink"], gens["kept_think"], False, True
+        ),
+        "kept_nothink_vs_base_nothink": compare(
+            gens["base_nothink"], gens["kept_nothink"], False, False
+        ),
+    }
+    return result
 
 
 def main(argv: list[str] | None = None) -> None:
