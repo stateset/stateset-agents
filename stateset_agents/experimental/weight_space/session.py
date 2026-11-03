@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
+from ...core.errors import StateSetError
 from .deltas import LowRankDelta
 
 if TYPE_CHECKING:
@@ -40,8 +41,10 @@ Splits = Mapping[str, Sequence[tuple[str, str]]]
 MANIFEST_NAME = "weight_space_manifest.json"
 
 
-class BudgetExhausted(RuntimeError):
+class BudgetExhausted(StateSetError, RuntimeError):
     """Raised when a forward pass is requested after the budget is spent."""
+
+    message_only_str = True
 
 
 @dataclass

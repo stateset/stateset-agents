@@ -194,7 +194,7 @@ flowchart TD
 
 | Unit | Imports |
 |------|---------|
-| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `facade`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `verticals` |
+| `cli` | `api`, `config`, `core`, `data`, `errors`, `evaluation`, `exceptions`, `experimental`, `facade`, `finetune`, `flywheel`, `remote`, `rewards`, `scaffolding`, `training`, `tui`, `verticals` |
 | `api` | `_deprecation`, `core`, `errors`, `exceptions`, `experimental`, `facade`, `finetune`, `rewards`, `training`, `utils` |
 | `tui` | `core`, `data`, `evaluation`, `finetune`, `remote` |
 | `finetune` | `core`, `data`, `evaluation`, `facade`, `remote`, `rewards`, `training`, `utils` |
@@ -242,7 +242,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 
 | Unit | Layer | Path (under `stateset_agents/`) | Modules | Lines |
 |------|-------|-------------------------------|--------:|------:|
-| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 25 | ~9.7K |
+| `cli` | entry points | `cli*.py`, `__main__.py`, `mcp_server.py` | 26 | ~10.0K |
 | `api` | interfaces | `api/` | 57 | ~24K |
 | `tui` | interfaces | `tui*.py`, `finetune_evaluation_tui.py` | 11 | ~5.8K |
 | `finetune` | studio | `finetune_*.py` | 11 | ~8.4K |
@@ -251,7 +251,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `scaffolding` | studio | `scaffolding/` | 2 | ~1.0K |
 | `testing` | studio | `testing/` | 4 | ~0.4K |
 | `remote` | remote | `remote/` | 35 | ~14K |
-| `experimental` | research | `experimental/` | 25 | ~16K |
+| `experimental` | research | `experimental/` | 33 | ~18K |
 | `training` | training | `training/` | 180 | ~68K |
 | `environments` | packs | `environments/` | 2 | ~0.3K |
 | `tools` | packs | `tools/` | 2 | ~0.2K |
@@ -265,7 +265,7 @@ trainers, evaluation and the remote runtime into end-to-end studies lives in
 | `_deprecation` | foundation | `_deprecation.py` | 1 | ~0.1K |
 | `exceptions` | foundation | `exceptions.py` | 1 | ~0.1K |
 | `facade` | facade | `__init__.py` | 1 | ~0.4K |
-| **total** | | | 538 | ~222K |
+| **total** | | | 547 | ~224K |
 <!-- package-layout:end -->
 
 Outside the package: `deployment/` (Helm chart and value profiles, Kubernetes

@@ -19,6 +19,8 @@ from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from ...core.errors import StateSetError
+
 if TYPE_CHECKING:
     import torch
 
@@ -34,8 +36,10 @@ __all__ = [
 ]
 
 
-class SpecMismatch(AssertionError):
+class SpecMismatch(StateSetError, AssertionError):
     """A patched checkpoint does not match its edit spec."""
+
+    message_only_str = True
 
 
 @dataclass(frozen=True)
