@@ -1,0 +1,85 @@
+{
+  "design": {
+    "layer": 23,
+    "neuron": 1998,
+    "up_unit": 44,
+    "gain": 4.0,
+    "lam": 100.0,
+    "write_norm": 3.0,
+    "activation_when_firing": 3.294,
+    "heldout_detector_auc": 0.9228,
+    "heldout_activation_auc": 0.4344,
+    "heldout_fire_rate": {
+      "positive": 0.1931,
+      "negative": 0.0173
+    },
+    "heldout_mean_activation": {
+      "positive": 0.3841,
+      "negative": -0.0596
+    },
+    "heldout_fire_rate_by_group": {
+      "answer_newline": 0.1931,
+      "working_newline": 0.0541,
+      "post_think": 0.0,
+      "answer_token": 0.0,
+      "nothink_newline": 0.0067,
+      "prose_newline": 0.0
+    }
+  },
+  "spec_hash": "7bac7db23edf6b2c",
+  "control_hash": "9f6a5c5a17754e4d",
+  "practice": {
+    "n": 200,
+    "lenient": 0.65,
+    "strict": 0.615,
+    "hit_limit": 0.155,
+    "multi_think_close": 0.095
+  },
+  "heldout": {
+    "neuron": {
+      "n": 1000,
+      "lenient": 0.517,
+      "strict": 0.452,
+      "hit_limit": 0.337,
+      "multi_think_close": 0.142
+    },
+    "base": {
+      "n": 1000,
+      "lenient": 0.012,
+      "strict": 0.012,
+      "hit_limit": 0.988,
+      "multi_think_close": 0.0
+    },
+    "control": {
+      "n": 1000,
+      "lenient": 0.043,
+      "strict": 0.043,
+      "hit_limit": 0.954,
+      "multi_think_close": 0.0
+    }
+  },
+  "paired_strict": {
+    "neuron_vs_base": {
+      "n": 1000,
+      "gained": 440,
+      "lost": 0,
+      "delta": 0.44,
+      "delta_95ci": [
+        0.409,
+        0.471
+      ],
+      "mcnemar_p": 7.044203657368268e-133
+    },
+    "neuron_vs_control": {
+      "n": 1000,
+      "gained": 418,
+      "lost": 9,
+      "delta": 0.409,
+      "delta_95ci": [
+        0.378,
+        0.441
+      ],
+      "mcnemar_p": 7.044592826989427e-111
+    }
+  }
+}

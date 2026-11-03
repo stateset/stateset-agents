@@ -7,6 +7,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **v3 conclude neuron** (`benchmark_results/weight_space/20261102/specs/conclude_neuron_v3_spec.json`,
+  hash `7bac7db23edf6b2c`, identical on two pods): the designed Qwen3.5-0.8B
+  neuron retrained with line breaks from thinking-off replies and WikiText
+  prose as negatives, so it fires inside thinking and almost nowhere else.
+  Held-out GSM8K-test + MATH-500 (strict) 45.1% / 45.2% on two pods; vs base
+  +440 / -0 and vs its random-write control +418 / -9 (p < 1e-110); vs v2 on
+  the same pod +4.8 (p = 5e-4).
+- **Side-effect evidence** (`benchmarks/weight_space/side_effect_job.py`):
+  thinking-off GSM8K, zero-shot MMLU and WikiText-2 perplexity, paired against
+  base. No edit changes MMLU; v2 put a stray `</think>` into 22% of
+  thinking-off replies and raised perplexity 5.9%; v3 cuts that to 3.4% and
+  +0.3% (thinking-off GSM8K -2.0 vs base, p = 0.27). With thinking off, the
+  unedited model scores 54.8% on GSM8K-test: the edits repair thinking mode.
+- `ConditionalNeuron.detector` / `.activation(...)`: a design can be checked on
+  any captured contexts before a weight is written; `neuron_job.py` reports
+  fire rates per contrast group and takes extra negative sources.
+- `pod_job.generate(..., thinking=False)` for thinking-off generation.
+
 ## [0.71.1] - 2026-11-02 — Designed neurons as portable edits; scheduled removals move to 0.72.0
 
 ### Added

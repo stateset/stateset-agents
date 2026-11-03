@@ -239,3 +239,54 @@ applied from its spec and verified. Paired against base on the same items.
   GSM8K-test, against 1.8% with thinking on (it loops). The edits repair
   thinking mode (the neuron: 52.8% on GSM8K-test with thinking on); they do not
   exceed the model's non-thinking accuracy.
+
+## v3: a conclude neuron that stays out of normal replies (2026-11-03)
+
+v2 fired at line breaks outside thinking too (stray `</think>` in 22% of
+thinking-off replies, WikiText perplexity +5.9%). v3 is the same construction
+(layer 23 neuron 1998, up unit 44, write 3.0, ridge lam 100) with two more
+negative groups: 300 line breaks from thinking-off GSM8K replies and 150 line
+breaks from WikiText-2 *train* prose. Spec `conclude_neuron_v3_spec.json`, hash
+`7bac7db23edf6b2c`. One L40S pod ($0.83).
+
+Held-out firing rate by contrast group (activation > 0.5, odd-indexed half):
+
+| answer line break (thinking, target) | working line break | after `</think>` | answer token | thinking-off line break | prose line break |
+|---|---|---|---|---|---|
+| 19.3% (v2 22.1%) | 5.4% | 0% | 0% | **0.7%** | **0%** |
+
+Detector AUC 0.923 (v2 0.900).
+
+| | v3 | v2 (same pod) |
+|---|---|---|
+| practice, strict | **57.0%** | 49.5-53.0% (earlier pods) |
+| held-out thinking on, strict | **45.1%** | 40.3% |
+| — lenient / multi-`</think>` / hit limit | 52.7% / 12.1% / 33.5% | 52.8% / 31.6% / 25.4% |
+| **v3 vs v2, paired (strict)** | **+4.8 [+2.1, +7.4], +116 / -68, p = 5e-4** | |
+
+Side effects of v3, paired against base on the same pod:
+
+| | Base | v3 | (v2, earlier pod) |
+|---|---|---|---|
+| GSM8K-test 500, thinking off, strict | 54.0% | 52.0% (-2.0 [-5.2, +1.2], p = 0.27) | 49.2% (-5.6, p = 0.004) |
+| — stray `</think>` in replies | 0.0% | **3.4%** | 21.8% |
+| MMLU 1,000 | 45.0% | 46.1% (+1.1 [+0.2, +2.0], p = 0.03; uncorrected) | 44.0% |
+| WikiText-2 perplexity | 17.378 | 17.430 (**+0.3%**) | 18.400 (+5.9%) |
+| p(`</think>`) per WikiText token | 3e-6 | 4.8e-4 | 8.5e-3 |
+
+v3 is better inside thinking (fewer inline `</think>`, more clean finishes) and
+mostly confined to it. Residual: 3.4% of thinking-off replies still carry a
+stray `</think>`. v3's own control and base were run on a second pod (below).
+
+### v3 with its own control (second pod, 2026-11-03, $1.40)
+
+Rebuilt from scratch on a new pod: identical spec hash `7bac7db23edf6b2c` (and
+control `9f6a5c5a17754e4d`). Held-out, strict, same pod:
+
+| | Accuracy | vs v3, paired |
+|---|---|---|
+| base | 1.2% | v3 +44.0 [+40.9, +47.1], **+440 / -0**, p = 7e-133 |
+| v3 random-write control (+ Wait x0.5) | 4.3% | v3 +40.9 [+37.8, +44.1], **+418 / -9**, p = 7e-111 |
+| **v3** | **45.2%** (first pod: 45.1%) | |
+
+Practice strict on this pod: 61.5% (first pod 57.0%; identical weights).

@@ -16,14 +16,18 @@ direction-ablation edit, which was null here (see Negative results).
 | none (base) | 0 | 1.0–1.3% | — |
 | W5T13: "Wait" rows x0.5, `</think>` row x1.3 | 3,072 | 33.6% | +334 / -0 |
 | W5T15: "Wait" rows x0.5, `</think>` row x1.5 | 3,072 | 39.1% (37.9% on a second pod) | +378 / -0 |
-| **One designed neuron** + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | **42.1%** | +373 / -11 |
+| One designed neuron (v2) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | 42.1% (41.2% from its spec) | +373 / -11 |
+| **Designed neuron v3** (thinking-gated) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | **45.1%** | +418 / -9 (45.2% on a second pod) |
 
 The designed neuron is a single MLP unit rewritten by hand into an "answer
 computed -> conclude" circuit that fires at the line break after the model has
-computed its answer. It beats both global edits (vs W5T13 +8.5 points,
-p = 7e-9; vs W5T15 +3.0, p = 0.07) on thinking-mode math, but it is not
-confined to thinking: it inserts stray `</think>` into 22% of thinking-off
-replies and raises general-text perplexity 5.9%, while W5T13 is nearly free
+computed its answer. v2 beat both global edits (vs W5T13 +8.5 points,
+p = 7e-9; vs W5T15 +3.0, p = 0.07) but was not confined to thinking: it put a
+stray `</think>` into 22% of thinking-off replies and raised general-text
+perplexity 5.9%. v3 adds thinking-off and prose line breaks as negatives: it
+beats v2 on the same pod (+4.8, p = 5e-4), and outside thinking its effect is
+small (stray `</think>` in 3.4% of thinking-off replies, thinking-off GSM8K
+-2.0 vs base with p = 0.27, perplexity +0.3%). W5T13 remains the cleanest edit
 outside thinking (see Side effects).
 
 ## The failure being edited
@@ -154,6 +158,57 @@ AUC on held-out contexts: 0.90. Base held-out accuracy varies by pod between
 0.4% and 1.3% under identical settings. Summary: `summaries/neuron_spec_summary.json`;
 per-problem results: `per_problem/spec_*`.
 
+## v3: a conclude neuron that stays out of normal replies (2026-11-03)
+
+v2 fired at line breaks outside thinking too (stray `</think>` in 22% of
+thinking-off replies, WikiText perplexity +5.9%). v3 is the same construction
+(layer 23 neuron 1998, up unit 44, write 3.0, ridge lam 100) with two more
+negative groups: 300 line breaks from thinking-off GSM8K replies and 150 line
+breaks from WikiText-2 *train* prose. Spec `conclude_neuron_v3_spec.json`, hash
+`7bac7db23edf6b2c`. One L40S pod ($0.83).
+
+Held-out firing rate by contrast group (activation > 0.5, odd-indexed half):
+
+| answer line break (thinking, target) | working line break | after `</think>` | answer token | thinking-off line break | prose line break |
+|---|---|---|---|---|---|
+| 19.3% (v2 22.1%) | 5.4% | 0% | 0% | **0.7%** | **0%** |
+
+Detector AUC 0.923 (v2 0.900).
+
+| | v3 | v2 (same pod) |
+|---|---|---|
+| practice, strict | **57.0%** | 49.5-53.0% (earlier pods) |
+| held-out thinking on, strict | **45.1%** | 40.3% |
+| — lenient / multi-`</think>` / hit limit | 52.7% / 12.1% / 33.5% | 52.8% / 31.6% / 25.4% |
+| **v3 vs v2, paired (strict)** | **+4.8 [+2.1, +7.4], +116 / -68, p = 5e-4** | |
+
+Side effects of v3, paired against base on the same pod:
+
+| | Base | v3 | (v2, earlier pod) |
+|---|---|---|---|
+| GSM8K-test 500, thinking off, strict | 54.0% | 52.0% (-2.0 [-5.2, +1.2], p = 0.27) | 49.2% (-5.6, p = 0.004) |
+| — stray `</think>` in replies | 0.0% | **3.4%** | 21.8% |
+| MMLU 1,000 | 45.0% | 46.1% (+1.1 [+0.2, +2.0], p = 0.03; uncorrected) | 44.0% |
+| WikiText-2 perplexity | 17.378 | 17.430 (**+0.3%**) | 18.400 (+5.9%) |
+| p(`</think>`) per WikiText token | 3e-6 | 4.8e-4 | 8.5e-3 |
+
+v3 is better inside thinking (fewer inline `</think>`, more clean finishes) and
+mostly confined to it. Residual: 3.4% of thinking-off replies still carry a
+stray `</think>`.
+
+### v3 with its own control (second pod, 2026-11-03, $1.40)
+
+Rebuilt from scratch on a new pod: identical spec hash `7bac7db23edf6b2c` (and
+control `9f6a5c5a17754e4d`). Held-out, strict, same pod:
+
+| | Accuracy | vs v3, paired |
+|---|---|---|
+| base | 1.2% | v3 +44.0 [+40.9, +47.1], **+440 / -0**, p = 7e-133 |
+| v3 random-write control (+ Wait x0.5) | 4.3% | v3 +40.9 [+37.8, +44.1], **+418 / -9**, p = 7e-111 |
+| **v3** | **45.2%** (first pod: 45.1%) | |
+
+Practice strict on this pod: 61.5% (first pod 57.0%; identical weights).
+
 ## Mechanism
 
 - Two levers: conclusion pressure (`</think>` up) raises how often the model
@@ -237,7 +292,9 @@ non-thinking accuracy.
 | kernel | interactive circuit/neuron design, neuron held-out + control | L40S | 2.53 |
 | spec | portable-spec regeneration + held-out (one failed start, $0.17) | L40S | 1.55 |
 | side effects | thinking-off GSM8K, MMLU, WikiText for base and three edits | L40S | 0.40 |
-| **total** | all pods terminated | | **24.30** |
+| v3 | thinking-gated neuron: design, held-out vs v2, side effects | L40S | 0.83 |
+| v3 control | v3 rebuilt, held-out vs base and its random-write control | L40S | 1.40 |
+| **total** | all pods terminated | | **26.53** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -265,8 +322,10 @@ completed from the pod shell (`finish_heldout.py`; see
   session: submitted neuron edits, all seven practice evaluations lenient and
   strict, held-out base / neuron / control, and how the held-out run was
   completed after the evaluator's thread failed).
+- `specs/conclude_neuron_v3_spec.json` / `conclude_neuron_v3_control_spec.json`
+  — **v3**, the recommended designed neuron (thinking-gated), and its control.
 - `specs/conclude_neuron_spec.json` / `conclude_neuron_control_spec.json` —
-  the designed neuron and its control as portable `EditSpec`s (the kernel
+  the v2 designed neuron and its control as portable `EditSpec`s (the kernel
   session's own weights were not retained; these were regenerated with the
   packaged recipe and re-validated, see "Portable spec" above).
 - `specs/token_spec*.json` — the token-row / neuron-column edit specs each run
