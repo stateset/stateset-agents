@@ -1,0 +1,88 @@
+{
+  "design": {
+    "layer": 23,
+    "neuron": 1998,
+    "up_unit": 44,
+    "gain": 4.0,
+    "lam": 100.0,
+    "write_norm": 3.0,
+    "activation_when_firing": 3.2331,
+    "heldout_detector_auc": 0.9,
+    "heldout_activation_auc": 0.5459,
+    "heldout_fire_rate": {
+      "positive": 0.2207,
+      "negative": 0.0203
+    },
+    "heldout_mean_activation": {
+      "positive": 0.4603,
+      "negative": -0.0449
+    }
+  },
+  "spec_hash": "749a5d716e564da6",
+  "control_hash": "7b88b5b8a2952497",
+  "practice": {
+    "n": 200,
+    "lenient": 0.62,
+    "strict": 0.495,
+    "hit_limit": 0.14,
+    "multi_think_close": 0.23
+  },
+  "heldout": {
+    "base": {
+      "n": 1000,
+      "lenient": 0.004,
+      "strict": 0.004,
+      "hit_limit": 0.996,
+      "multi_think_close": 0.0
+    },
+    "neuron": {
+      "n": 1000,
+      "lenient": 0.556,
+      "strict": 0.412,
+      "hit_limit": 0.225,
+      "multi_think_close": 0.33
+    },
+    "control": {
+      "n": 1000,
+      "lenient": 0.052,
+      "strict": 0.052,
+      "hit_limit": 0.948,
+      "multi_think_close": 0.0
+    }
+  },
+  "paired_strict": {
+    "neuron_vs_base": {
+      "n": 1000,
+      "gained": 410,
+      "lost": 2,
+      "delta": 0.408,
+      "delta_95ci": [
+        0.377,
+        0.439
+      ],
+      "mcnemar_p": 1.6087707398606697e-119
+    },
+    "neuron_vs_control": {
+      "n": 1000,
+      "gained": 367,
+      "lost": 7,
+      "delta": 0.36,
+      "delta_95ci": [
+        0.329,
+        0.391
+      ],
+      "mcnemar_p": 1.0168837818183622e-98
+    },
+    "control_vs_base": {
+      "n": 1000,
+      "gained": 52,
+      "lost": 4,
+      "delta": 0.048,
+      "delta_95ci": [
+        0.034,
+        0.063
+      ],
+      "mcnemar_p": 1.1008055578187737e-11
+    }
+  }
+}

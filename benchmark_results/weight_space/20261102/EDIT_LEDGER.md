@@ -191,3 +191,23 @@ Read-back error after writing: <= 1e-3 (bf16).
   79.4% → edited 79.8%; loops 5.6% → 5.6%. No damage. Repeated in runs 6 and 8
   (byte-identical): 79.2% → 79.8%, loops 5.2% → 5.6%. Base alone on runs 7 / 9:
   79.4% / 79.0%.
+
+## Portable spec of the designed neuron (2026-11-03)
+
+Regenerated with the packaged recipe (`design_conditional_neuron`, pinned to
+neuron 1998 and up unit 44) from the same contrast prefixes, saved as an
+`EditSpec` (`conclude_neuron_spec.json`, hash `749a5d716e564da6` — identical on
+two pods), applied with `apply_spec_to_checkpoint` and verified tensor by
+tensor. Detector AUC on held-out contexts 0.90; fires on 22% of answer line
+breaks and 2% of negatives.
+
+| Held-out (1,000, strict) | Spec run | Kernel run |
+|---|---|---|
+| base | 0.4% | 1.3% |
+| designed neuron + Wait x0.5 | **41.2%** (55.6% lenient) | 42.1% |
+| random-write control (+ Wait x0.5) | 5.2% | 5.9% |
+| neuron vs control | **+36.0 [+32.9, +39.1], +367 / -7, p = 1e-98** | +36.2, +373 / -11 |
+| neuron vs base | +40.8 [+37.7, +43.9], +410 / -2, p = 2e-119 | +40.8, +409 / -1 |
+
+Practice (200, strict): 49.5% (kernel v2: 53.0%). Base held-out varies by pod
+between 0.4% and 1.3% with identical settings.

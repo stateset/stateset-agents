@@ -21,8 +21,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the least-used neuron as the slot, and a target direction as the write,
   returned as a `NeuronRewrite` with held-out AUC and fire rates. Plus `auc`,
   `ridge_detector`, `near_constant_unit`, `least_used_neuron`.
-- `benchmarks/weight_space/neuron_job.py` regenerates the Qwen3.5-0.8B conclude
-  neuron with the packaged recipe and saves it as a portable spec.
+- **The designed neuron ships as a spec.**
+  `benchmark_results/weight_space/20261102/specs/conclude_neuron_spec.json`
+  (hash `749a5d716e564da6`) is the Qwen3.5-0.8B "answer computed -> conclude"
+  neuron plus the Wait rows, regenerated with the packaged recipe by
+  `benchmarks/weight_space/neuron_job.py` (identical on two pods). Re-validated
+  on held-out GSM8K-test + MATH-500 (strict): 41.2% vs 5.2% for its
+  random-write control (+367 / -7, p = 1e-98) and 0.4% base, reproducing the
+  v0.71.0 kernel result (42.1%). Apply it with
+  `stateset-agents weight-edit apply`.
 
 ### Changed
 

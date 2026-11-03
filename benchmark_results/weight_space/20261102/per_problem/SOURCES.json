@@ -73,5 +73,20 @@
     "n": 1000,
     "source": "run9/gen_base_heldout.jsonl.gz",
     "source_sha256": "6e52890952884200cceccfdfb83ad5016a40ed532b7f9794c732326a533fcdff"
+  },
+  "spec_spec_base_heldout.jsonl": {
+    "n": 1000,
+    "source": "spec/gen_spec_base_heldout.jsonl.gz",
+    "source_sha256": "71e41b6e39a44d2393cbee1b8242a1823f8f8ac308b55ff0d95046349bcbdbd5"
+  },
+  "spec_spec_control_heldout.jsonl": {
+    "n": 1000,
+    "source": "spec/gen_spec_control_heldout.jsonl.gz",
+    "source_sha256": "7b27978c5adfe6f9fe41b1866f2c7396e0d95b11e0070f84d3b12fb6d16e589a"
+  },
+  "spec_spec_neuron_heldout.jsonl": {
+    "n": 1000,
+    "source": "spec/gen_spec_neuron_heldout.jsonl.gz",
+    "source_sha256": "12dba33c4a2fdb2f8a175ef00de602a06befac5c7a2f11f18e4da06f0c14f7da"
   }
 }
