@@ -356,7 +356,7 @@ class WeightSpaceSession:
 
     # --------------------------------------------------------------- helpers
 
-    def _linear(self, module: str) -> Any:
+    def _linear(self, module: str) -> torch.nn.Linear:
         import torch
 
         found = self.model.get_submodule(module)
