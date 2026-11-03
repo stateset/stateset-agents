@@ -1,0 +1,674 @@
+{
+  "config": {
+    "model": "Qwen/Qwen3.5-0.8B",
+    "layers": [
+      15,
+      19
+    ],
+    "k": 64,
+    "alphas": [
+      1.0,
+      2.0,
+      4.0
+    ],
+    "sampling": {
+      "temperature": 0.6,
+      "top_p": 0.95,
+      "top_k": 20
+    },
+    "seed": 1234,
+    "practice_max_tokens": 8192,
+    "heldout_max_tokens": 8192,
+    "env": {
+      "torch": "2.14.0+cu130",
+      "transformers": "5.20.2",
+      "vllm": "0.33.0",
+      "gpu": "NVIDIA L40S"
+    },
+    "direction_mode": "tokens"
+  },
+  "trace": {
+    "all": {
+      "n": 256,
+      "accuracy": 0.0195,
+      "hit_limit": 0.9805,
+      "loop": 0.9766,
+      "mean_tokens": 8058.7
+    },
+    "gsm8k": {
+      "n": 256,
+      "accuracy": 0.0195,
+      "hit_limit": 0.9805,
+      "loop": 0.9766,
+      "mean_tokens": 8058.7
+    },
+    "looped_at_limit": 250
+  },
+  "token_spec": {
+    "note": "Run 9: conclusion-strength sweep on W5T15 (practice 63%) + atlas neuron families stacked on W5T15.",
+    "candidates": [
+      "W5T15",
+      "W5T17",
+      "W5T20",
+      "W5T15_check05",
+      "W5T15_answer13",
+      "W5T15_there13"
+    ],
+    "control_of": {
+      "W5T15": "C_W5T15",
+      "W5T17": "C_W5T17",
+      "W5T20": "C_W5T20",
+      "W5T15_check05": "C15_check",
+      "W5T15_answer13": "C15_answer",
+      "W5T15_there13": "C15_there"
+    },
+    "edits": {
+      "W5T15": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 1.5
+        }
+      ],
+      "W5T17": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 1.7
+        }
+      ],
+      "W5T20": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 2.0
+        }
+      ],
+      "W5T15_check05": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 21,
+          "neurons": [
+            474
+          ],
+          "scale": 0.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 18,
+          "neurons": [
+            1824,
+            1126,
+            2486,
+            1118
+          ],
+          "scale": 0.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 22,
+          "neurons": [
+            865
+          ],
+          "scale": 0.5
+        }
+      ],
+      "W5T15_answer13": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 23,
+          "neurons": [
+            742
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 18,
+          "neurons": [
+            458
+          ],
+          "scale": 1.3
+        }
+      ],
+      "W5T15_there13": [
+        {
+          "ids": [
+            13784,
+            13428
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            248069
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 22,
+          "neurons": [
+            2001
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 14,
+          "neurons": [
+            2590
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 17,
+          "neurons": [
+            3064
+          ],
+          "scale": 1.3
+        }
+      ],
+      "C_W5T15": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 1.5
+        }
+      ],
+      "C_W5T17": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 1.7
+        }
+      ],
+      "C_W5T20": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 2.0
+        }
+      ],
+      "C15_check": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 21,
+          "neurons": [
+            1897
+          ],
+          "scale": 0.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 18,
+          "neurons": [
+            2515,
+            1531,
+            1094,
+            567
+          ],
+          "scale": 0.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 22,
+          "neurons": [
+            762
+          ],
+          "scale": 0.5
+        }
+      ],
+      "C15_answer": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 23,
+          "neurons": [
+            3550
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 18,
+          "neurons": [
+            2772
+          ],
+          "scale": 1.3
+        }
+      ],
+      "C15_there": [
+        {
+          "ids": [
+            1919,
+            1061
+          ],
+          "scale": 0.5
+        },
+        {
+          "ids": [
+            2592,
+            1368
+          ],
+          "scale": 1.5
+        },
+        {
+          "kind": "down_cols",
+          "layer": 22,
+          "neurons": [
+            26
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 14,
+          "neurons": [
+            1385
+          ],
+          "scale": 1.3
+        },
+        {
+          "kind": "down_cols",
+          "layer": 17,
+          "neurons": [
+            2059
+          ],
+          "scale": 1.3
+        }
+      ]
+    },
+    "atlas_neurons": {
+      "check_verify": {
+        "21": [
+          474
+        ],
+        "18": [
+          1824,
+          1126,
+          2486,
+          1118
+        ],
+        "22": [
+          865
+        ]
+      },
+      "answer": {
+        "23": [
+          742
+        ],
+        "18": [
+          458
+        ]
+      },
+      "therefore": {
+        "22": [
+          2001
+        ],
+        "14": [
+          2590
+        ],
+        "17": [
+          3064
+        ]
+      }
+    },
+    "random_control_neurons": {
+      "check_verify": {
+        "21": [
+          1897
+        ],
+        "18": [
+          2515,
+          1531,
+          1094,
+          567
+        ],
+        "22": [
+          762
+        ]
+      },
+      "answer": {
+        "23": [
+          3550
+        ],
+        "18": [
+          2772
+        ]
+      },
+      "therefore": {
+        "22": [
+          26
+        ],
+        "14": [
+          1385
+        ],
+        "17": [
+          2059
+        ]
+      }
+    }
+  },
+  "directions": {
+    "stats": {},
+    "cos_between_layers": null,
+    "layers": []
+  },
+  "select": {
+    "base": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.015,
+        "hit_limit": 0.98,
+        "loop": 0.975,
+        "mean_tokens": 8059.3
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.015,
+        "hit_limit": 0.98,
+        "loop": 0.975,
+        "mean_tokens": 8059.3
+      }
+    },
+    "W5T15": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.63,
+        "hit_limit": 0.165,
+        "loop": 0.27,
+        "mean_tokens": 2277.3
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.63,
+        "hit_limit": 0.165,
+        "loop": 0.27,
+        "mean_tokens": 2277.3
+      }
+    },
+    "W5T17": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.475,
+        "hit_limit": 0.315,
+        "loop": 0.33,
+        "mean_tokens": 2921.0
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.475,
+        "hit_limit": 0.315,
+        "loop": 0.33,
+        "mean_tokens": 2921.0
+      }
+    },
+    "W5T20": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.07,
+        "hit_limit": 0.96,
+        "loop": 0.96,
+        "mean_tokens": 7883.6
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.07,
+        "hit_limit": 0.96,
+        "loop": 0.96,
+        "mean_tokens": 7883.6
+      }
+    },
+    "W5T15_check05": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.58,
+        "hit_limit": 0.17,
+        "loop": 0.27,
+        "mean_tokens": 2226.4
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.58,
+        "hit_limit": 0.17,
+        "loop": 0.27,
+        "mean_tokens": 2226.4
+      }
+    },
+    "W5T15_answer13": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.62,
+        "hit_limit": 0.145,
+        "loop": 0.26,
+        "mean_tokens": 2149.9
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.62,
+        "hit_limit": 0.145,
+        "loop": 0.26,
+        "mean_tokens": 2149.9
+      }
+    },
+    "W5T15_there13": {
+      "all": {
+        "n": 200,
+        "accuracy": 0.615,
+        "hit_limit": 0.155,
+        "loop": 0.265,
+        "mean_tokens": 2175.6
+      },
+      "gsm8k": {
+        "n": 200,
+        "accuracy": 0.615,
+        "hit_limit": 0.155,
+        "loop": 0.265,
+        "mean_tokens": 2175.6
+      }
+    }
+  },
+  "kept": "W5T15",
+  "control": "C_W5T15",
+  "budget": [
+    "base traces on practice_trace (reused from an earlier run of this exact config)",
+    "select: base (reused from an earlier run of this exact config)",
+    "select: W5T15",
+    "select: W5T17",
+    "select: W5T20",
+    "select: W5T15_check05",
+    "select: W5T15_answer13",
+    "select: W5T15_there13"
+  ],
+  "heldout": {
+    "base": {
+      "all": {
+        "n": 1000,
+        "accuracy": 0.01,
+        "hit_limit": 0.989,
+        "loop": 0.969,
+        "mean_tokens": 8120.2
+      },
+      "gsm8k": {
+        "n": 500,
+        "accuracy": 0.018,
+        "hit_limit": 0.98,
+        "loop": 0.978,
+        "mean_tokens": 8061.7
+      },
+      "math": {
+        "n": 500,
+        "accuracy": 0.002,
+        "hit_limit": 0.998,
+        "loop": 0.96,
+        "mean_tokens": 8178.7
+      }
+    },
+    "W5T15": {
+      "all": {
+        "n": 1000,
+        "accuracy": 0.509,
+        "hit_limit": 0.31,
+        "loop": 0.409,
+        "mean_tokens": 3658.4
+      },
+      "gsm8k": {
+        "n": 500,
+        "accuracy": 0.602,
+        "hit_limit": 0.174,
+        "loop": 0.3,
+        "mean_tokens": 2480.9
+      },
+      "math": {
+        "n": 500,
+        "accuracy": 0.416,
+        "hit_limit": 0.446,
+        "loop": 0.518,
+        "mean_tokens": 4835.9
+      }
+    },
+    "W5T15_paired_vs_base": {
+      "n": 1000,
+      "newly_correct": 500,
+      "newly_wrong": 1,
+      "loops_fixed": 569,
+      "loops_created": 9
+    },
+    "C_W5T15": {
+      "all": {
+        "n": 1000,
+        "accuracy": 0.001,
+        "hit_limit": 0.999,
+        "loop": 0.972,
+        "mean_tokens": 8184.6
+      },
+      "gsm8k": {
+        "n": 500,
+        "accuracy": 0.002,
+        "hit_limit": 0.998,
+        "loop": 0.984,
+        "mean_tokens": 8177.2
+      },
+      "math": {
+        "n": 500,
+        "accuracy": 0.0,
+        "hit_limit": 1.0,
+        "loop": 0.96,
+        "mean_tokens": 8192.0
+      }
+    },
+    "C_W5T15_paired_vs_base": {
+      "n": 1000,
+      "newly_correct": 0,
+      "newly_wrong": 9,
+      "loops_fixed": 25,
+      "loops_created": 28
+    }
+  }
+}

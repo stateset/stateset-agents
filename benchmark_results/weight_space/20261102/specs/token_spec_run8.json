@@ -1,0 +1,411 @@
+{
+ "note": "Run 8: W5T13 (Wait x0.5 + </think> x1.3; practice 38%) plus atlas neuron families.",
+ "candidates": [
+  "W5T13",
+  "W5T15",
+  "W0T13",
+  "W5T13_check05",
+  "W5T13_answer13",
+  "W5T13_waitneur05"
+ ],
+ "control_of": {
+  "W5T13": "C_W5T13",
+  "W5T15": "C_W5T15",
+  "W0T13": "C_W0T13",
+  "W5T13_check05": "C_check",
+  "W5T13_answer13": "C_answer",
+  "W5T13_waitneur05": "C_waitneur"
+ },
+ "edits": {
+  "W5T13": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.3
+   }
+  ],
+  "W5T15": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.5
+   }
+  ],
+  "W0T13": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.0
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.3
+   }
+  ],
+  "W5T13_check05": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 21,
+    "neurons": [
+     474
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     1824,
+     1126,
+     2486,
+     1118
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 22,
+    "neurons": [
+     865
+    ],
+    "scale": 0.5
+   }
+  ],
+  "W5T13_answer13": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 23,
+    "neurons": [
+     742
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     458
+    ],
+    "scale": 1.3
+   }
+  ],
+  "W5T13_waitneur05": [
+   {
+    "ids": [
+     13784,
+     13428
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     248069
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 22,
+    "neurons": [
+     573
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 17,
+    "neurons": [
+     1915
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     881
+    ],
+    "scale": 0.5
+   }
+  ],
+  "C_W5T13": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.3
+   }
+  ],
+  "C_W5T15": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.5
+   }
+  ],
+  "C_W0T13": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.0
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.3
+   }
+  ],
+  "C_check": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 21,
+    "neurons": [
+     929
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     1519,
+     1539,
+     517,
+     791
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 22,
+    "neurons": [
+     2887
+    ],
+    "scale": 0.5
+   }
+  ],
+  "C_answer": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 23,
+    "neurons": [
+     179
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     348
+    ],
+    "scale": 1.3
+   }
+  ],
+  "C_waitneur": [
+   {
+    "ids": [
+     1919,
+     1061
+    ],
+    "scale": 0.5
+   },
+   {
+    "ids": [
+     2592,
+     1368
+    ],
+    "scale": 1.3
+   },
+   {
+    "kind": "down_cols",
+    "layer": 22,
+    "neurons": [
+     560
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 17,
+    "neurons": [
+     1013
+    ],
+    "scale": 0.5
+   },
+   {
+    "kind": "down_cols",
+    "layer": 18,
+    "neurons": [
+     3323
+    ],
+    "scale": 0.5
+   }
+  ]
+ },
+ "atlas_neurons": {
+  "check_verify": {
+   "21": [
+    474
+   ],
+   "18": [
+    1824,
+    1126,
+    2486,
+    1118
+   ],
+   "22": [
+    865
+   ]
+  },
+  "answer": {
+   "23": [
+    742
+   ],
+   "18": [
+    458
+   ]
+  },
+  "wait": {
+   "22": [
+    573
+   ],
+   "17": [
+    1915
+   ],
+   "18": [
+    881
+   ]
+  }
+ },
+ "random_control_neurons": {
+  "check_verify": {
+   "21": [
+    929
+   ],
+   "18": [
+    1519,
+    1539,
+    517,
+    791
+   ],
+   "22": [
+    2887
+   ]
+  },
+  "answer": {
+   "23": [
+    179
+   ],
+   "18": [
+    348
+   ]
+  },
+  "wait": {
+   "22": [
+    560
+   ],
+   "17": [
+    1013
+   ],
+   "18": [
+    3323
+   ]
+  }
+ }
+}

@@ -7,6 +7,62 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Weight-space programming** (experimental;
+  `stateset_agents.experimental.weight_space`): edit a model's weights
+  directly — no gradients, no training data — and judge the edit on held-out
+  problems against a structure-matched control.
+  - `WeightSpaceSession`: budgeted read / edit / measure loop with exact,
+    LIFO-revertible low-rank edits (`LowRankDelta`, `direction_ablation`),
+    memory-bounded activation capture, and export to a PEFT LoRA adapter.
+  - `EditSpec`: canonical-JSON token-row and MLP neuron-column edits with a
+    content hash; `TensorLayout` finds a checkpoint's token matrices (tied or
+    stored `lm_head`) and decoder `down_proj` tensors; `matched_control`
+    draws structure-matched random targets.
+  - `checkpoints`: apply a spec to a sharded safetensors checkpoint with a
+    `weight_space_spec.json` manifest, and verify every tensor of an edited
+    checkpoint against base + spec. The final-norm convention (`x * (1 + w)`
+    for Qwen3.5 / Gemma) is read from `config.json`, because learned weights
+    cannot tell the two conventions apart.
+  - `atlas`: weight-only reads of which MLP neurons write toward a token's
+    logit direction and what each neuron promotes.
+  - `protocol`: exact McNemar and bootstrap CIs for paired, same-problem
+    comparisons, plus `clean_finish` / `strict_rows` strict scoring.
+  - MCP tools (`stateset-agents mcp --weight-space`) so an MCP client can act
+    as the weight programmer.
+- **`stateset-agents weight-edit {apply, verify, control, compare, atlas}`**.
+  `compare --strict` credits a row only if generation finished with exactly
+  one end-of-thinking marker: edits that raise the `</think>` logit can emit it
+  inline while the model keeps reasoning, which a grader that splits on the
+  first marker silently rewards (a `</think>` x1.7 edit scored 47.5% lenient,
+  9.5% strict).
+- **Evidence** (`benchmark_results/weight_space/20261102/`, strict scoring,
+  1,000 held-out problems = GSM8K-test[:500] + MATH-500): on Qwen3.5-0.8B with
+  thinking on and an 8,192-token cap, where 97–98% of base traces loop, editing
+  3,072 weights — "Wait" token rows x0.5 and the `</think>` row x1.3 / x1.5 —
+  lifts accuracy from 1.0–1.2% to 33.6% / 39.1% (replicated at 37.9% on a
+  second pod). Structure-matched controls on other tokens score 0.1–0.2%; every
+  edit beats its control with 334–378 problems gained and none lost (p <
+  1e-100). One hand-designed MLP neuron, rewritten into an "answer computed ->
+  conclude" unit that fires at the line break after the answer, plus the Wait
+  rows reaches 42.1% — the best edit — against 5.9% for the same neuron with
+  random output directions (+373 / -11, p = 3e-95). Negative results, the
+  scoring artifact, and what the edits do not show are documented alongside.
+- `benchmarks/weight_space/`: the RunPod harness behind the evidence (pod job,
+  launcher with create-retry/adoption and ASCII-safe polling, an interactive
+  budgeted weights kernel, and the kernel programs that designed the neuron).
+
+### Fixed
+
+- Weight-space activation capture no longer retains every batch's full
+  activations until the end of a call (it OOM'd a 44 GB L40S on 445 long
+  prefixes).
+- `benchmarks/weight_space` generation child: exit as soon as results are
+  written and kill its own vLLM EngineCore first; on vLLM 0.33 EngineCore could
+  hang after a long run (stalling three pods ~30 minutes each), and a bare
+  hard exit orphaned it with its GPU memory.
+
 ## [0.70.0] - 2026-10-27 — Unified RL spine, tool-use RL, distillation and evidence-gated rewards
 
 ### Added

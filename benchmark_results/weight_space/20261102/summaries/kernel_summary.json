@@ -1,0 +1,143 @@
+{
+  "model": "Qwen/Qwen3.5-0.8B@2fc06364715b967f1860aea9cf38778875588b17",
+  "submitted_edits": [
+    {
+      "edit_id": "65e6535a",
+      "module": "model.layers.23.mlp.gate_proj",
+      "rank": 1,
+      "note": "NL2 neuron gate"
+    },
+    {
+      "edit_id": "9e084129",
+      "module": "model.layers.23.mlp.up_proj",
+      "rank": 1,
+      "note": "NL2 neuron up"
+    },
+    {
+      "edit_id": "4e6d7ba7",
+      "module": "model.layers.23.mlp.down_proj",
+      "rank": 1,
+      "note": "NL2 neuron down"
+    }
+  ],
+  "token_rows": [
+    {
+      "ids": [
+        13784,
+        13428
+      ],
+      "scale": 0.5,
+      "note": "Wait x0.5"
+    }
+  ],
+  "forward_pass_budget": {
+    "limit": 12,
+    "used": 11,
+    "remaining": 1,
+    "ledger": [
+      "initial: base model samples on the practice trace set (pre-generated for you)",
+      "capture_many 16 modules on 445 prefixes",
+      "circuit read: 16 modules x 445 prefixes",
+      "evaluate on 200 practice problems with 1 active edits",
+      "evaluate on 200 practice problems with 1 active edits",
+      "evaluate on 200 practice problems with 3 active edits",
+      "evaluate on 200 practice problems with 3 active edits",
+      "evaluate on 200 practice problems with 3 active edits",
+      "newline read: 2 modules x 736 prefixes",
+      "evaluate on 200 practice problems with 3 active edits",
+      "evaluate on 200 practice problems with 3 active edits"
+    ]
+  },
+  "practice_evaluations": {
+    "b_eval1": {
+      "edit": "linear rank-1 circuit L23, beta 5.6, + Wait x0.5",
+      "n": 200,
+      "lenient": 0.025,
+      "strict": 0.0,
+      "hit_limit": 0.845,
+      "multi_think_close": 0.99,
+      "mean_tokens": 6993.2
+    },
+    "b_eval2": {
+      "edit": "linear rank-1 circuit L23, beta 1.0, + Wait x0.5",
+      "n": 200,
+      "lenient": 0.005,
+      "strict": 0.005,
+      "hit_limit": 0.995,
+      "multi_think_close": 0.0,
+      "mean_tokens": 8180.8
+    },
+    "b_eval3": {
+      "edit": "number-anchored neuron L23#1998, write 3.0, + Wait x0.5",
+      "n": 200,
+      "lenient": 0.24,
+      "strict": 0.095,
+      "hit_limit": 0.835,
+      "multi_think_close": 0.215,
+      "mean_tokens": 7057.1
+    },
+    "b_eval4": {
+      "edit": "number-anchored neuron (3.0) + W5T15",
+      "n": 200,
+      "lenient": 0.52,
+      "strict": 0.08,
+      "hit_limit": 0.2,
+      "multi_think_close": 0.855,
+      "mean_tokens": 2419.0
+    },
+    "b_eval5": {
+      "edit": "number-anchored neuron, write 5.0, + Wait x0.5",
+      "n": 200,
+      "lenient": 0.355,
+      "strict": 0.015,
+      "hit_limit": 0.88,
+      "multi_think_close": 0.83,
+      "mean_tokens": 7400.8
+    },
+    "b_eval6": {
+      "edit": "newline-anchored neuron v1, write 3.0, + Wait x0.5",
+      "n": 200,
+      "lenient": 0.64,
+      "strict": 0.525,
+      "hit_limit": 0.11,
+      "multi_think_close": 0.3,
+      "mean_tokens": 1887.8
+    },
+    "b_eval7": {
+      "edit": "newline-anchored neuron v2 (answer-token negatives), write 3.0, + Wait x0.5 (submitted)",
+      "n": 200,
+      "lenient": 0.66,
+      "strict": 0.53,
+      "hit_limit": 0.14,
+      "multi_think_close": 0.25,
+      "mean_tokens": 2111.1
+    }
+  },
+  "heldout": {
+    "base": {
+      "n": 1000,
+      "lenient": 0.013,
+      "strict": 0.013,
+      "hit_limit": 0.986,
+      "multi_think_close": 0.0,
+      "mean_tokens": 8105.9
+    },
+    "claude_edit": {
+      "n": 1000,
+      "lenient": 0.536,
+      "strict": 0.421,
+      "hit_limit": 0.252,
+      "multi_think_close": 0.276,
+      "mean_tokens": 3272.0
+    },
+    "random_control": {
+      "n": 1000,
+      "lenient": 0.06,
+      "strict": 0.059,
+      "hit_limit": 0.94,
+      "multi_think_close": 0.0,
+      "mean_tokens": 7931.6
+    }
+  },
+  "heldout_note": "The evaluator's held-out thread generated base, then failed to construct vLLM for the edit because an orphaned EngineCore from the base generation still held GPU memory. The orphan was killed and benchmarks/weight_space/finish_heldout.py generated the edit from the checkpoint the evaluator had already written and rebuilt the evaluator's seed-7 random-direction control from that checkpoint's deltas (same rows, decoding and token rows). armB_summary.json on the pod predates the failure and lists base only."
+}

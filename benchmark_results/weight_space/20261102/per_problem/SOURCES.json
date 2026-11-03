@@ -1,0 +1,77 @@
+{
+  "kernel_b_heldout_base.jsonl": {
+    "n": 1000,
+    "source": "kernel/gen_b_heldout_base.jsonl.gz",
+    "source_sha256": "fe7b3dc66d106c70d6ebe52aa334bbda9fd1d1514ebea63fbc27cb48cb036ae8"
+  },
+  "kernel_b_heldout_claude_edit.jsonl": {
+    "n": 1000,
+    "source": "kernel/gen_b_heldout_claude_edit.jsonl.gz",
+    "source_sha256": "6f1ea65490ab862b9d723c983d18e7aee87e6bdaed3dda1b3bcf7ebb9a6064a9"
+  },
+  "kernel_b_heldout_random_control.jsonl": {
+    "n": 1000,
+    "source": "kernel/gen_b_heldout_random_control.jsonl.gz",
+    "source_sha256": "f8f2f5dc827e5bb7f3732c8efb0877d0fb330dab15c1353fb577f92f1e0dbd6e"
+  },
+  "run6_base_heldout.jsonl": {
+    "n": 1000,
+    "source": "run6/gen_base_heldout.jsonl.gz",
+    "source_sha256": "a6c59706fdd4829bd7153e2390395aba9eab2bb85d4a77a992005c815aa04ca7"
+  },
+  "run6_this05_if13_heldout.jsonl": {
+    "n": 1000,
+    "source": "run6/gen_this05_if13_heldout.jsonl.gz",
+    "source_sha256": "d86f5dad3226e9eb8414b6802a17ee8a476c1e07d43d7b3829a3ba6286641362"
+  },
+  "run6_wait05_think13_heldout.jsonl": {
+    "n": 1000,
+    "source": "run6/gen_wait05_think13_heldout.jsonl.gz",
+    "source_sha256": "7b9bf8b2229b9898a97064ad17ba6ea24b50715db27353dd288f9e9507799b54"
+  },
+  "run7_base_heldout.jsonl": {
+    "n": 1000,
+    "source": "run7/gen_base_heldout.jsonl.gz",
+    "source_sha256": "fc738cc3b645127211193f3830b1f696845c30421865fbf2794311a69ab5e64b"
+  },
+  "run7_if_c15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run7/gen_if_c15_heldout.jsonl.gz",
+    "source_sha256": "39c32a7b7b88834e1d3af68d6c7fb25c003487386fdc2d2afca9021dd9df3ee7"
+  },
+  "run7_think15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run7/gen_think15_heldout.jsonl.gz",
+    "source_sha256": "2105666499911f0708e55fa372a20346c99ab9e1a826e7a52bbf02c720d55d43"
+  },
+  "run8_C_W5T15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run8/gen_C_W5T15_heldout.jsonl.gz",
+    "source_sha256": "d3d65bdb1856b8b8a809d4226a1d8beb9bfc0958b88b94e41d6eec9eb62bd42c"
+  },
+  "run8_W5T15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run8/gen_W5T15_heldout.jsonl.gz",
+    "source_sha256": "ab06da7f6cedcdd186f09f551b289de195c05b3811bff902c2ca204f8336e1ed"
+  },
+  "run8_base_heldout.jsonl": {
+    "n": 1000,
+    "source": "run8/gen_base_heldout.jsonl.gz",
+    "source_sha256": "b975b6b9dd7c59512d1bff479f1e8d167e593d4f3e84840a6b2f6a7a977e0b12"
+  },
+  "run9_C_W5T15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run9/gen_C_W5T15_heldout.jsonl.gz",
+    "source_sha256": "467701d520e2fedca81b15acb66c4e15831175404b3b9128b6e6a250e6875242"
+  },
+  "run9_W5T15_heldout.jsonl": {
+    "n": 1000,
+    "source": "run9/gen_W5T15_heldout.jsonl.gz",
+    "source_sha256": "ed5007217c2c5bd0819646f42428788ba26e0c04825e18ab6fb8b0c43428184f"
+  },
+  "run9_base_heldout.jsonl": {
+    "n": 1000,
+    "source": "run9/gen_base_heldout.jsonl.gz",
+    "source_sha256": "6e52890952884200cceccfdfb83ad5016a40ed532b7f9794c732326a533fcdff"
+  }
+}
