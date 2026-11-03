@@ -112,7 +112,7 @@ def test_designed_neuron_fires_on_the_concept_and_writes_the_direction() -> None
         2.5, rel=0.05
     )
     report = design.report
-    assert report["heldout_auc"] > 0.97
+    assert report["heldout_detector_auc"] > 0.97
     assert report["up_unit"] == 5
     assert report["neuron"] == 11
 
@@ -138,3 +138,26 @@ def test_design_can_pin_the_neuron_and_the_multiplier_unit() -> None:
     assert design.rewrite.up == pytest.approx(
         tuple(float(v) * scale for v in d["up_weight"][5]), rel=1e-5
     )
+
+
+def test_report_measures_the_detector_score_not_the_squashed_activation() -> None:
+    d = synthetic()
+    design = design_conditional_neuron(
+        layer=0,
+        gate_weight=d["gate_weight"],
+        up_weight=d["up_weight"],
+        down_weight=d["down_weight"],
+        gate_acts=d["gate_acts"],
+        up_acts=d["up_acts"],
+        labels=d["labels"],
+        write_direction=torch.ones(HIDDEN),
+        write_norm=1.0,
+        lam=1.0,
+    )
+    held = torch.arange(N) % 2 == 1
+    score = d["x"] @ torch.tensor(design.rewrite.gate)  # gain x detector score
+    pos, neg = held & (d["labels"] > 0), held & (d["labels"] < 0)
+    assert design.report["heldout_detector_auc"] == pytest.approx(
+        auc(score[pos], score[neg]), abs=1e-3
+    )
+    assert "heldout_activation_auc" in design.report

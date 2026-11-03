@@ -178,6 +178,10 @@ def main() -> None:
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    (pj.WORK / "data").mkdir(
+        parents=True, exist_ok=True
+    )  # pj.generate writes rows here
+    (pj.WORK / "ckpt").mkdir(parents=True, exist_ok=True)
 
     tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)  # nosec B615 - pinned
     model = AutoModelForCausalLM.from_pretrained(

@@ -160,9 +160,10 @@ def design_conditional_neuron(
         else least_used_neuron(current, down_weight, exclude={up_unit})
     )
 
-    act = act_fn(gain * (gate_acts.float() @ c)) * (
-        up_scale * up_acts.float()[:, up_unit]
-    )
+    score = (
+        gate_acts.float() @ c
+    )  # the detector; the new pre-activation is gain * score
+    act = act_fn(gain * score) * (up_scale * up_acts.float()[:, up_unit])
     pos, neg = labels > 0, labels < 0
     firing = act[pos & (act > fire_threshold)]
     act_on = float(firing.mean()) if len(firing) else float(act[pos].mean())
@@ -181,6 +182,7 @@ def design_conditional_neuron(
         down=tuple(float(x) for x in down_col),
     )
     hp, hn = heldout & pos, heldout & neg
+    both = bool(hp.any() and hn.any())
     report: dict[str, Any] = {
         "layer": layer,
         "neuron": v,
@@ -189,9 +191,11 @@ def design_conditional_neuron(
         "lam": lam,
         "write_norm": write_norm,
         "activation_when_firing": round(act_on, 4),
-        "heldout_auc": (
-            round(auc(act[hp], act[hn]), 4) if hp.any() and hn.any() else None
-        ),
+        # Separation by the detector score (what the gate reads). The activation
+        # squashes every non-firing context near zero, so its AUC mostly counts
+        # ties among them and understates the detector.
+        "heldout_detector_auc": round(auc(score[hp], score[hn]), 4) if both else None,
+        "heldout_activation_auc": round(auc(act[hp], act[hn]), 4) if both else None,
         "heldout_fire_rate": {
             "positive": round(float((act[hp] > fire_threshold).float().mean()), 4),
             "negative": round(float((act[hn] > fire_threshold).float().mean()), 4),
