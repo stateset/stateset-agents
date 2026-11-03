@@ -221,6 +221,39 @@ def test_capture_returns_last_token_output_of_module(tiny_model) -> None:
     assert torch.allclose(captured[1], seen["out"][0, -1], atol=1e-6)
 
 
+def test_capture_does_not_retain_earlier_batches(tiny_model) -> None:
+    # Regression (live GPU OOM): capture kept row *views* into every batch's full
+    # (batch x seq x out) activation, so all batches stayed alive until return.
+    import weakref
+
+    class Tracked(torch.Tensor):
+        live: list = []  # weakrefs (WeakSet would compare tensors with ==)
+
+        @classmethod
+        def __torch_function__(cls, func, types, args=(), kwargs=None):
+            out = super().__torch_function__(func, types, args, kwargs or {})
+            for t in out if isinstance(out, (list, tuple)) else [out]:
+                if isinstance(t, Tracked) and t.dim() == 3:  # full activations only
+                    cls.live.append(weakref.ref(t))
+            return out
+
+    alive_at_batch_start: list[int] = []
+
+    def tag(_m, _i, out):
+        alive_at_batch_start.append(sum(r() is not None for r in Tracked.live))
+        tracked = out.as_subclass(Tracked)
+        Tracked.live.append(weakref.ref(tracked))
+        return tracked
+
+    handle = tiny_model.get_submodule(MLP_OUT).register_forward_hook(tag)
+    try:
+        session = make_session(tiny_model)  # batch_size=2 -> 3 batches below
+        session.capture(MLP_OUT, ["ab ab", "xyz", "count", "hi there", "abc", "de"])
+    finally:
+        handle.remove()
+    assert alive_at_batch_start == [0, 0, 0], alive_at_batch_start
+
+
 def test_capture_many_reads_several_modules_in_one_forward_pass(tiny_model) -> None:
     session = make_session(tiny_model, budget=3)
     prompts = ["ab ab ab", "xyz"]

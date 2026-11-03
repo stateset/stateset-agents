@@ -239,32 +239,37 @@ class WeightSpaceSession:
             raise ValueError("capture_many needs at least one module")
         targets = {name: self._linear(name) for name in modules}
         self.budget.spend(reason)
-        seen: dict[str, list[torch.Tensor]] = {name: [] for name in targets}
         rows: dict[str, list[torch.Tensor]] = {name: [] for name in targets}
+        lengths: list[int] = []
+
+        def reduce_in_hook(name: str) -> Any:
+            # Reduce to one row per sequence INSIDE the hook and copy to CPU, so
+            # the full (batch x seq x out) activation dies with the forward pass.
+            # Keeping row views instead pinned every batch until return (OOM).
+            def hook(_m: Any, _i: Any, out: torch.Tensor) -> None:
+                o = out.detach()
+                for i, n in enumerate(lengths):
+                    row = o[i, n - 1] if position == "last" else o[i, :n].mean(0)
+                    rows[name].append(row.float().cpu().clone())
+
+            return hook
+
         handles = [
-            module.register_forward_hook(
-                lambda _m, _i, out, name=name: seen[name].append(out.detach().float())
-            )
+            module.register_forward_hook(reduce_in_hook(name))
             for name, module in targets.items()
         ]
         try:
             for chunk in _chunks([self.encode(p) for p in prompts], self.batch_size):
                 ids, mask = self._pad(chunk)
+                lengths[:] = [len(seq) for seq in chunk]
                 with torch.no_grad():
                     # Only the hooked modules' outputs are needed; skip
                     # materialising (batch x seq x vocab) logits.
                     self.model(input_ids=ids, attention_mask=mask, logits_to_keep=1)
-                for name in targets:
-                    out = seen[name].pop()
-                    for i, seq in enumerate(chunk):
-                        if position == "last":
-                            rows[name].append(out[i, len(seq) - 1])
-                        else:
-                            rows[name].append(out[i, : len(seq)].mean(0))
         finally:
             for handle in handles:
                 handle.remove()
-        return {name: torch.stack(r).cpu() for name, r in rows.items()}
+        return {name: torch.stack(r) for name, r in rows.items()}
 
     def evaluate(self, reason: str = "evaluate") -> dict[str, float]:
         """Mean per-token log-prob of each split's continuations (one forward pass)."""
