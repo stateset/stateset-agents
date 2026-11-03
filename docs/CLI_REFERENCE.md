@@ -1487,9 +1487,13 @@ stateset-agents weight-edit compare base_results.jsonl edited_results.jsonl
   prints `MISMATCH: ...` and exits 1 otherwise.
 - `control SPEC --base DIR|HUB_ID [--seed N]`: print a structure-matched
   control spec (same kinds, layers and scales on random targets).
-- `compare BASE.jsonl OTHER.jsonl [--seed N]`: paired statistics on shared
-  problem ids (rows need `id` and `correct`): gained, lost, delta, bootstrap
-  95% CI, exact McNemar p.
+- `compare BASE.jsonl OTHER.jsonl [--seed N] [--strict] [--end-think TEXT]`:
+  paired statistics on shared problem ids (rows need `id` and `correct`):
+  gained, lost, delta, bootstrap 95% CI, exact McNemar p. `--strict` credits
+  a row only if it finished on its own with exactly one end-of-thinking marker
+  (rows also need `finish` and `text`). Use it for any edit that touches the
+  `</think>` token: such edits can emit it inline while the model keeps
+  reasoning, which a grader that splits on the first marker rewards.
 - `atlas --base DIR|HUB_ID --token-id ID [--token-id ID ...] [--top N] [--against]
   [--norm auto|zero-centered|plain]`: weight-only (no forward passes) list of
   the MLP neurons whose `down_proj` columns write most directly toward (or,

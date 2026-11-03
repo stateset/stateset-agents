@@ -21,8 +21,10 @@ from stateset_agents.experimental.weight_space.edits import (  # noqa: E402
 )
 from stateset_agents.experimental.weight_space.protocol import (  # noqa: E402
     bootstrap_ci,
+    clean_finish,
     mcnemar_exact,
     paired_compare,
+    strict_rows,
 )
 
 EMBED = "model.embed_tokens.weight"
@@ -190,3 +192,32 @@ def test_token_edit_scales_every_token_matrix() -> None:
     assert torch.equal(tensors["lm_head.weight"][2], torch.tensor([10.0, 12.0]))
     assert torch.equal(tensors[EMBED][2], torch.tensor([10.0, 12.0]))
     verify_spec(spec, base, tensors, layout)
+
+
+# --------------------------------------------------------------- strict scoring
+
+
+def test_clean_finish_rejects_inline_end_of_thinking_and_truncation() -> None:
+    # An edit that boosts </think> can emit it inline while the model keeps
+    # reasoning; a grader that splits on the first </think> then credits
+    # whatever the continued reasoning ends on.
+    finished = {"finish": "stop", "text": "work = 18\n</think>\n\n\\boxed{18}"}
+    inline = {"finish": "stop", "text": "J = 12</think> more work\n</think>\\boxed{18}"}
+    truncated = {"finish": "length", "text": "work</think>\\boxed{18} and more..."}
+    never_closed = {"finish": "stop", "text": "\\boxed{18}"}
+    assert clean_finish(finished)
+    assert not clean_finish(inline)
+    assert not clean_finish(truncated)
+    assert not clean_finish(never_closed)
+    assert clean_finish({"finish": "stop", "text": "a<end>b"}, end_think="<end>")
+
+
+def test_strict_rows_only_credits_clean_finishes_and_keeps_inputs_intact() -> None:
+    rows = [
+        {"id": "a", "correct": True, "finish": "stop", "text": "x</think>18"},
+        {"id": "b", "correct": True, "finish": "length", "text": "x</think>18 ..."},
+        {"id": "c", "correct": False, "finish": "stop", "text": "x</think>17"},
+    ]
+    strict = strict_rows(rows)
+    assert [r["correct"] for r in strict] == [True, False, False]
+    assert rows[1]["correct"] is True  # originals untouched

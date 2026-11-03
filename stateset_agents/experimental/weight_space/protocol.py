@@ -12,7 +12,37 @@ import random
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-__all__ = ["bootstrap_ci", "mcnemar_exact", "paired_compare"]
+__all__ = [
+    "bootstrap_ci",
+    "clean_finish",
+    "mcnemar_exact",
+    "paired_compare",
+    "strict_rows",
+]
+
+
+def clean_finish(row: Mapping[str, Any], *, end_think: str = "</think>") -> bool:
+    """True if the generation stopped on its own with exactly one ``end_think``.
+
+    Graders commonly split a reasoning model's output on the first end-of-thinking
+    marker and score what follows. An edit that boosts that marker's logit can
+    emit it inline ("J = 12</think>") while the model keeps reasoning, so the
+    "answer" is the rest of the reasoning and a correct number in it gets
+    credited. Requiring a clean finish closes that loophole.
+    """
+    return (
+        row.get("finish") == "stop" and str(row.get("text", "")).count(end_think) == 1
+    )
+
+
+def strict_rows(
+    rows: Sequence[Mapping[str, Any]], *, end_think: str = "</think>"
+) -> list[dict[str, Any]]:
+    """Copies of ``rows`` with ``correct`` kept only for clean finishes."""
+    return [
+        {**r, "correct": bool(r["correct"]) and clean_finish(r, end_think=end_think)}
+        for r in rows
+    ]
 
 
 def mcnemar_exact(b: int, c: int) -> float:

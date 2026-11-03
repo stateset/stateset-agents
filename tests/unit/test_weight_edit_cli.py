@@ -208,6 +208,32 @@ def test_cli_compare_reports_paired_stats(tmp_path: Path) -> None:
     assert stats["mcnemar_p"] == pytest.approx(2 / 64)
 
 
+def test_cli_compare_strict_discounts_inline_end_of_thinking(tmp_path: Path) -> None:
+    base = tmp_path / "base.jsonl"
+    edit = tmp_path / "edit.jsonl"
+    clean = {"finish": "stop", "text": "work\n</think>\n\\boxed{1}"}
+    inline = {"finish": "length", "text": "x = 1</think> keeps reasoning..."}
+    base.write_text(
+        "".join(
+            json.dumps({"id": i, "correct": False, **clean}) + "\n" for i in range(4)
+        )
+    )
+    edit.write_text(
+        json.dumps({"id": 0, "correct": True, **clean})
+        + "\n"
+        + "".join(
+            json.dumps({"id": i, "correct": True, **inline}) + "\n" for i in (1, 2, 3)
+        )
+    )
+    lenient = runner.invoke(app, ["weight-edit", "compare", str(base), str(edit)])
+    strict = runner.invoke(
+        app, ["weight-edit", "compare", str(base), str(edit), "--strict"]
+    )
+    assert lenient.exit_code == 0 and strict.exit_code == 0, strict.output
+    assert json.loads(lenient.output)["gained"] == 4
+    assert json.loads(strict.output)["gained"] == 1
+
+
 def test_cli_atlas_finds_the_neuron_that_writes_a_token(tmp_path: Path) -> None:
     root = tmp_path / "ckpt"
     root.mkdir()

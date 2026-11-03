@@ -47,7 +47,13 @@ from .edits import (
     matched_control,
     verify_spec,
 )
-from .protocol import bootstrap_ci, mcnemar_exact, paired_compare
+from .protocol import (
+    bootstrap_ci,
+    clean_finish,
+    mcnemar_exact,
+    paired_compare,
+    strict_rows,
+)
 from .session import (
     AppliedEdit,
     BudgetExhausted,
@@ -70,6 +76,7 @@ __all__ = [
     "WeightSpaceSession",
     "apply_spec",
     "bootstrap_ci",
+    "clean_finish",
     "direction_ablation",
     "load_splits",
     "logit_direction",
@@ -77,6 +84,7 @@ __all__ = [
     "mcnemar_exact",
     "neuron_readout",
     "paired_compare",
+    "strict_rows",
     "token_neighbours",
     "top_writers",
     "verify_spec",

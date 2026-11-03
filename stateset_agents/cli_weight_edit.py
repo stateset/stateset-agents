@@ -156,12 +156,35 @@ def compare_cmd(
     ),
     other: Path = typer.Argument(..., help="Edited per-problem results (same format)."),
     seed: int = typer.Option(0, "--seed", help="Bootstrap seed."),
+    strict: bool = typer.Option(
+        False,
+        "--strict",
+        help=(
+            "Credit a row only if it finished on its own (finish == 'stop') with "
+            "exactly one --end-think marker (rows need 'finish' and 'text')."
+        ),
+    ),
+    end_think: str = typer.Option(
+        "</think>", "--end-think", help="End-of-thinking marker for --strict."
+    ),
 ) -> None:
-    """Paired comparison on shared problem ids: flips, delta, 95% CI, McNemar p."""
-    from stateset_agents.experimental.weight_space.protocol import paired_compare
+    """Paired comparison on shared problem ids: flips, delta, 95% CI, McNemar p.
 
+    Use --strict for any edit that touches the end-of-thinking token: such edits
+    can emit it inline while the model keeps reasoning, which a grader that
+    splits on the first marker silently rewards.
+    """
+    from stateset_agents.experimental.weight_space.protocol import (
+        paired_compare,
+        strict_rows,
+    )
+
+    rows_base, rows_other = _load_results(base), _load_results(other)
+    if strict:
+        rows_base = strict_rows(rows_base, end_think=end_think)
+        rows_other = strict_rows(rows_other, end_think=end_think)
     try:
-        stats = paired_compare(_load_results(base), _load_results(other), seed=seed)
+        stats = paired_compare(rows_base, rows_other, seed=seed)
     except ValueError as exc:
         _echo(f"compare failed: {exc}", err=True)
         raise typer.Exit(code=2) from exc
