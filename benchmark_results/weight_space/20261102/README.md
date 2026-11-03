@@ -21,7 +21,10 @@ direction-ablation edit, which was null here (see Negative results).
 The designed neuron is a single MLP unit rewritten by hand into an "answer
 computed -> conclude" circuit that fires at the line break after the model has
 computed its answer. It beats both global edits (vs W5T13 +8.5 points,
-p = 7e-9; vs W5T15 +3.0, p = 0.07).
+p = 7e-9; vs W5T15 +3.0, p = 0.07) on thinking-mode math, but it is not
+confined to thinking: it inserts stray `</think>` into 22% of thinking-off
+replies and raises general-text perplexity 5.9%, while W5T13 is nearly free
+outside thinking (see Side effects).
 
 ## The failure being edited
 
@@ -189,8 +192,25 @@ per-problem results: `per_problem/spec_*`.
 
 The loop-direction edit on a healthy model (Qwen3-0.6B,
 `c1899de289a04d12100db370d81485cdf75e47ca`, GSM8K-test 500): 79.4% -> 79.8%
-and, repeated, 79.2% -> 79.8%; loop rate unchanged. Side effects of the token
-edits on other tasks were not measured.
+and, repeated, 79.2% -> 79.8%; loop rate unchanged.
+
+Outside thinking-mode math (2026-11-03, `summaries/side_effects_summary.json`,
+paired against base):
+
+| | Base | W5T13 | W5T15 | Designed neuron |
+|---|---|---|---|---|
+| GSM8K-test 500, thinking **off**, strict | 54.8% | 51.2% (p = 0.06) | 50.0% (p = 0.013) | 49.2% (p = 0.004) |
+| — replies with a stray `</think>` | 0.0% | 0.4% | 6.4% | **21.8%** |
+| MMLU 1,000, zero-shot | 45.0% | 45.6% | 45.4% | 44.0% (p = 0.15) |
+| WikiText-2 perplexity | 17.378 | +0.01% | +0.05% | **+5.9%** |
+
+No edit measurably changes knowledge. The token-row edits leave general text
+untouched; x1.5 leaks a stray `</think>` into 6% of thinking-off replies. The
+designed neuron is not confined to thinking: it also fires at line breaks in
+thinking-off answers and prose (22% of replies; perplexity +5.9%). With
+thinking off the unedited model already scores 54.8% on GSM8K-test (1.8% with
+thinking on), so the edits repair thinking mode rather than exceed the model's
+non-thinking accuracy.
 
 ## What this does not show
 
@@ -216,7 +236,8 @@ edits on other tasks were not measured.
 | 9 | conclusion sweep, W5T15 replication | L40S | 2.05 |
 | kernel | interactive circuit/neuron design, neuron held-out + control | L40S | 2.53 |
 | spec | portable-spec regeneration + held-out (one failed start, $0.17) | L40S | 1.55 |
-| **total** | all pods terminated | | **23.90** |
+| side effects | thinking-off GSM8K, MMLU, WikiText for base and three edits | L40S | 0.40 |
+| **total** | all pods terminated | | **24.30** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;

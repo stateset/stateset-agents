@@ -211,3 +211,31 @@ breaks and 2% of negatives.
 
 Practice (200, strict): 49.5% (kernel v2: 53.0%). Base held-out varies by pod
 between 0.4% and 1.3% with identical settings.
+
+## Side effects outside thinking-mode math (2026-11-03)
+
+`benchmarks/weight_space/side_effect_job.py`, one L40S pod ($0.40). Each edit
+applied from its spec and verified. Paired against base on the same items.
+
+| | Base | W5T13 | W5T15 | Designed neuron |
+|---|---|---|---|---|
+| GSM8K-test 500, thinking **off**, lenient | 54.8% | 51.6% | 53.0% | 57.6% |
+| — strict (finished, no `</think>` in the reply) | 54.8% | 51.2% | 50.0% | 49.2% |
+| — replies with a stray `</think>` | 0.0% | 0.4% | 6.4% | **21.8%** |
+| — vs base, strict (paired) | — | -3.6 [-7.0, 0.0], p = 0.06 | **-4.8 [-8.4, -1.2], p = 0.013** | **-5.6 [-9.2, -2.0], p = 0.004** |
+| MMLU 1,000 (zero-shot letter, thinking off) | 45.0% | 45.6% | 45.4% | 44.0% |
+| — vs base (paired) | — | +0.6, p = 0.34 | +0.4, p = 0.64 | -1.0, p = 0.15 |
+| WikiText-2 perplexity (65k tokens) | 17.378 | 17.379 (+0.01%) | 17.386 (+0.05%) | **18.400 (+5.9%)** |
+| p(`</think>`) per WikiText token | 3e-6 | 7e-5 | 4e-4 | **8.5e-3** |
+| p(`</think>`) at the MMLU answer position | 1e-5 | 9e-4 | 1.5e-2 | 1.6e-2 |
+
+- No edit measurably changes knowledge (MMLU).
+- The token-row edits leave general text untouched; the stronger global boost
+  (x1.5) leaks a stray `</think>` into 6% of thinking-off replies.
+- The designed neuron is **not** confined to thinking: trained only on thinking
+  traces, it also fires at line breaks in thinking-off answers and in prose,
+  writing `</think>` there (22% of thinking-off replies; perplexity +5.9%).
+- Context: thinking **off**, the unedited model already scores 54.8% on
+  GSM8K-test, against 1.8% with thinking on (it loops). The edits repair
+  thinking mode (the neuron: 52.8% on GSM8K-test with thinking on); they do not
+  exceed the model's non-thinking accuracy.
