@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.71.0`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.71.1`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -469,7 +469,23 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.71.0 (latest candidate; publication pending):**
+**v0.71.1 (latest candidate; publication pending):**
+
+- **Hand-designed neurons as portable edits.** A `neuron_rewrite` edit replaces
+  one MLP neuron's read and write vectors; `stateset-agents weight-edit
+  apply / verify / control` handle it like any other edit, and
+  `weight_space.design_conditional_neuron` builds one from captured
+  activations ("when X, write Y"). The Qwen3.5-0.8B "answer computed →
+  conclude" neuron now ships as a spec in
+  [the evidence](benchmark_results/weight_space/20261102/README.md).
+- **Weight-space programming (from v0.71.0).** Direct weight edits judged on
+  held-out problems against structure-matched controls: held-out GSM8K-test +
+  MATH-500 from 1.2% to 33.6–39.1% (token rows) and 42.1% (one designed neuron)
+  on a model that loops under thinking, with strict scoring.
+- **Deprecation schedule.** Removals scheduled for 0.71.0 move to 0.72.0;
+  nothing is removed in 0.71.x.
+
+**v0.71.0:**
 
 - **Weight-space programming (experimental).** Edit a model's weights
   directly — no gradients, no training data — and judge the edit on held-out
@@ -1561,7 +1577,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.1"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2480,7 +2496,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.1`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 

@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.1] - 2026-11-02 — Designed neurons as portable edits; scheduled removals move to 0.72.0
+
 ### Added
 
 - **Hand-designed neurons as edits.** `NeuronRewrite` (spec kind
