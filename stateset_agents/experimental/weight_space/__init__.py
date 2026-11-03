@@ -21,6 +21,10 @@ This package is the harness, not the programmer:
   (``stateset-agents weight-edit``).
 - :mod:`.atlas` — weight-only reads: which MLP neurons write toward a
   token's logit direction and what each neuron promotes (candidates to test).
+- :mod:`.circuits` — design a conditional MLP neuron ("when X, write Y")
+  from captured activations: ridge detector as the gate, a near-constant
+  unit as the multiplier, the least-used neuron as the slot; emitted as a
+  :class:`NeuronRewrite` edit.
 - :mod:`.protocol` — paired statistics (exact McNemar, bootstrap CI) for
   judging an edit against the base on identical problems.
 
@@ -36,10 +40,19 @@ from .atlas import (
     token_neighbours,
     top_writers,
 )
+from .circuits import (
+    ConditionalNeuron,
+    auc,
+    design_conditional_neuron,
+    least_used_neuron,
+    near_constant_unit,
+    ridge_detector,
+)
 from .deltas import LowRankDelta, direction_ablation
 from .edits import (
     EditSpec,
     NeuronColumnScale,
+    NeuronRewrite,
     SpecMismatch,
     TensorLayout,
     TokenRowScale,
@@ -65,25 +78,32 @@ from .session import (
 __all__ = [
     "AppliedEdit",
     "BudgetExhausted",
+    "ConditionalNeuron",
     "EditSpec",
     "ForwardBudget",
     "LowRankDelta",
     "NeuronColumnScale",
+    "NeuronRewrite",
     "NeuronScore",
     "SpecMismatch",
     "TensorLayout",
     "TokenRowScale",
     "WeightSpaceSession",
     "apply_spec",
+    "auc",
     "bootstrap_ci",
     "clean_finish",
+    "design_conditional_neuron",
     "direction_ablation",
+    "least_used_neuron",
     "load_splits",
     "logit_direction",
     "matched_control",
     "mcnemar_exact",
+    "near_constant_unit",
     "neuron_readout",
     "paired_compare",
+    "ridge_detector",
     "strict_rows",
     "token_neighbours",
     "top_writers",

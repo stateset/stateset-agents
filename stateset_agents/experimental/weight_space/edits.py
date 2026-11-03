@@ -2,7 +2,9 @@
 
 These are the edit kinds that moved Qwen3.5-0.8B on held-out math (see
 ``benchmarks/weight_space``): scaling rows of the (tied) embedding — "say this
-token less/more" — and scaling MLP neuron columns. An :class:`EditSpec` is the
+token less/more" — scaling MLP neuron columns, and rewriting a whole MLP neuron
+(its gate row, up row and output column) into a hand-designed circuit. An
+:class:`EditSpec` is the
 unit of provenance: it serializes to canonical JSON, carries a content hash,
 patches a checkpoint's tensors in place, verifies a patched checkpoint against
 the base, and generates a structure-matched random control.
@@ -12,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import random
 import re
 from collections import Counter
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
 __all__ = [
     "EditSpec",
     "NeuronColumnScale",
+    "NeuronRewrite",
     "SpecMismatch",
     "TensorLayout",
     "TokenRowScale",
@@ -74,7 +78,34 @@ class NeuronColumnScale:
         }
 
 
-Edit = TokenRowScale | NeuronColumnScale
+@dataclass(frozen=True)
+class NeuronRewrite:
+    """Replace MLP neuron ``neuron`` of layer ``layer`` with a hand-designed unit.
+
+    ``gate`` and ``up`` are its new ``gate_proj`` / ``up_proj`` rows (what it
+    reads from the residual stream; its activation is
+    ``act(gate . x) * (up . x)``) and ``down`` its new ``down_proj`` column
+    (what it writes back). All three have the model's hidden size.
+    """
+
+    layer: int
+    neuron: int
+    gate: tuple[float, ...]
+    up: tuple[float, ...]
+    down: tuple[float, ...]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "neuron_rewrite",
+            "layer": self.layer,
+            "neuron": self.neuron,
+            "gate": list(self.gate),
+            "up": list(self.up),
+            "down": list(self.down),
+        }
+
+
+Edit = TokenRowScale | NeuronColumnScale | NeuronRewrite
 
 
 def _edit_from_dict(d: Mapping[str, Any]) -> Edit:
@@ -88,6 +119,14 @@ def _edit_from_dict(d: Mapping[str, Any]) -> Edit:
             layer=int(d["layer"]),
             neurons=tuple(int(j) for j in d["neurons"]),
             scale=float(d["scale"]),
+        )
+    if kind == "neuron_rewrite":
+        return NeuronRewrite(
+            layer=int(d["layer"]),
+            neuron=int(d["neuron"]),
+            gate=tuple(float(x) for x in d["gate"]),
+            up=tuple(float(x) for x in d["up"]),
+            down=tuple(float(x) for x in d["down"]),
         )
     raise ValueError(f"unknown edit kind {kind!r}")
 
@@ -137,6 +176,16 @@ class TensorLayout:
     token_keys: tuple[str, ...]
     down_fmt: str
 
+    @property
+    def gate_fmt(self) -> str:
+        """A layer's MLP ``gate_proj`` name (``{layer}`` field)."""
+        return self.down_fmt.replace("down_proj", "gate_proj")
+
+    @property
+    def up_fmt(self) -> str:
+        """A layer's MLP ``up_proj`` name (``{layer}`` field)."""
+        return self.down_fmt.replace("down_proj", "up_proj")
+
     @classmethod
     def detect(cls, names: Iterable[str]) -> TensorLayout:
         """Infer the layout from a checkpoint's tensor names."""
@@ -167,11 +216,41 @@ def _plan(
                 slots = plan.setdefault(key, {})
                 for i in e.ids:
                     slots[("row", i)] = slots.get(("row", i), 1.0) * e.scale
-        else:
+        elif isinstance(e, NeuronColumnScale):
             slots = plan.setdefault(layout.down_fmt.format(layer=e.layer), {})
             for j in e.neurons:
                 slots[("col", j)] = slots.get(("col", j), 1.0) * e.scale
     return plan
+
+
+def _sets(
+    spec: EditSpec, layout: TensorLayout
+) -> dict[str, dict[tuple[str, int], tuple[float, ...]]]:
+    """key -> {(axis, index): new values} for every slice a NeuronRewrite writes.
+
+    Raises ValueError if a slice is both rewritten and scaled, or rewritten twice.
+    """
+    scaled = _plan(spec, layout)
+    sets: dict[str, dict[tuple[str, int], tuple[float, ...]]] = {}
+    for e in spec.edits:
+        if not isinstance(e, NeuronRewrite):
+            continue
+        for key, slot, values in (
+            (layout.gate_fmt.format(layer=e.layer), ("row", e.neuron), e.gate),
+            (layout.up_fmt.format(layer=e.layer), ("row", e.neuron), e.up),
+            (layout.down_fmt.format(layer=e.layer), ("col", e.neuron), e.down),
+        ):
+            if slot in scaled.get(key, {}) or slot in sets.get(key, {}):
+                raise ValueError(
+                    f"layer {e.layer} neuron {e.neuron} is rewritten and also "
+                    f"edited elsewhere in the spec ({key})"
+                )
+            sets.setdefault(key, {})[slot] = values
+    return sets
+
+
+def _slice(t: torch.Tensor, axis: str, idx: int) -> torch.Tensor:
+    return t[idx] if axis == "row" else t[:, idx]
 
 
 def apply_spec(
@@ -186,8 +265,34 @@ def apply_spec(
     With ``strict=False``, tensors the spec names but ``tensors`` lacks are
     skipped (for patching one shard of a sharded checkpoint at a time).
     """
+    import torch
+
     plan = _plan(spec, layout)
+    sets = _sets(spec, layout)
     changed = 0
+    for key, set_slots in sets.items():
+        if key not in tensors:
+            if not strict:
+                continue
+            raise KeyError(f"{key} not in checkpoint")
+        t = tensors[key]
+        for (axis, idx), values in set_slots.items():
+            limit, length = (
+                (t.shape[0], t.shape[1]) if axis == "row" else (t.shape[1], t.shape[0])
+            )
+            if not 0 <= idx < limit:
+                raise ValueError(f"{axis} {idx} out of range for {key} (size {limit})")
+            if len(values) != length:
+                raise ValueError(
+                    f"{key}: rewrite has {len(values)} values, the {axis} has {length}"
+                )
+        for (axis, idx), values in set_slots.items():
+            new = torch.tensor(values, dtype=torch.float32).to(t.dtype)
+            changed += int((_slice(t, axis, idx) != new).sum())
+            if axis == "row":
+                t[idx] = new
+            else:
+                t[:, idx] = new
     for key, slots in plan.items():
         if key not in tensors:
             if not strict:
@@ -231,15 +336,22 @@ def verify_spec(
     import torch
 
     plan = _plan(spec, layout)
+    sets = _sets(spec, layout)
     for key in base:
         if key not in edited:
             raise SpecMismatch(f"{key} missing from edited checkpoint")
         a, b = base[key], edited[key]
-        if key not in plan:
+        if key not in plan and key not in sets:
             if not torch.equal(a, b):
                 raise SpecMismatch(f"{key} changed but the spec does not touch it")
             continue
-        slots = plan[key]
+        for (axis, idx), values in sets.get(key, {}).items():
+            want = torch.tensor(values, dtype=torch.float32).to(b.dtype)
+            if not torch.equal(_slice(b, axis, idx), want):
+                raise SpecMismatch(
+                    f"{key} {axis} {idx} does not hold the spec's rewritten values"
+                )
+        slots: dict[tuple[str, int], Any] = {**plan.get(key, {}), **sets.get(key, {})}
         diff = a != b
         for i in torch.nonzero(diff.any(dim=1)).flatten().tolist():
             if ("row", i) not in slots and not any(ax == "col" for ax, _ in slots):
@@ -251,7 +363,7 @@ def verify_spec(
                 raise SpecMismatch(
                     f"{key} column {j} changed but the spec does not name it"
                 )
-        for (axis, idx), expected in slots.items():
+        for (axis, idx), expected in plan.get(key, {}).items():
             av = (a[idx] if axis == "row" else a[:, idx]).float()
             bv = (b[idx] if axis == "row" else b[:, idx]).float()
             mask = av.abs() > 1e-3
@@ -275,8 +387,10 @@ def matched_control(
     """Same edit kinds, layers and scales on randomly chosen targets.
 
     Token targets are drawn from ``token_pool`` (e.g. tokens frequency-matched to
-    the originals) or the whole vocabulary; neuron targets are drawn from the
-    same layer, excluding the original neurons.
+    the originals) or the whole vocabulary; neuron-column targets are drawn from
+    the same layer, excluding the original neurons. A :class:`NeuronRewrite`
+    keeps its neuron and read vectors and gets a random write direction of the
+    same norm.
     """
     originals = {i for e in spec.edits if isinstance(e, TokenRowScale) for i in e.ids}
     pool = list(token_pool) if token_pool is not None else list(range(vocab_size))
@@ -286,6 +400,22 @@ def matched_control(
         if isinstance(e, TokenRowScale):
             edits.append(
                 TokenRowScale(ids=tuple(rng.choice(pool) for _ in e.ids), scale=e.scale)
+            )
+        elif isinstance(e, NeuronRewrite):
+            # Same neuron, same read (gate/up); a random write direction of the
+            # same norm — tests what the neuron writes, not that one was written.
+            noise = [rng.gauss(0.0, 1.0) for _ in e.down]
+            ratio = math.sqrt(sum(x * x for x in e.down)) / math.sqrt(
+                sum(x * x for x in noise)
+            )
+            edits.append(
+                NeuronRewrite(
+                    layer=e.layer,
+                    neuron=e.neuron,
+                    gate=e.gate,
+                    up=e.up,
+                    down=tuple(x * ratio for x in noise),
+                )
             )
         else:
             candidates = [j for j in range(n_neurons) if j not in e.neurons]

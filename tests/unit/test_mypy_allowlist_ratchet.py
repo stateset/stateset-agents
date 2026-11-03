@@ -20,7 +20,7 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # shared dependency loader and W&B reporter, round 6's self-contained math
 # final-answer reader, the code verifier's docker isolation backend, and the
 # experimental weight-space package plus its weight-edit CLI.
-ALLOWLIST_FLOOR = 547
+ALLOWLIST_FLOOR = 548
 
 
 def _allowlisted_files() -> list[str]:

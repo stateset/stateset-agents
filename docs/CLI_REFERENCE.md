@@ -1466,9 +1466,17 @@ Apply, verify, control and compare direct weight edits (experimental; see
 ]}
 ```
 
+A `neuron_rewrite` edit replaces one MLP neuron outright —
+`{"kind": "neuron_rewrite", "layer": 23, "neuron": 1998, "gate": [...], "up": [...], "down": [...]}`
+(each a hidden-size vector; build one with
+`stateset_agents.experimental.weight_space.design_conditional_neuron`).
+
 `token_rows` scales those rows of every token matrix (the embedding, and
 `lm_head` when the checkpoint stores one); `down_cols` scales MLP neuron
-columns of one layer's `down_proj`.
+columns of one layer's `down_proj`; `neuron_rewrite` sets a neuron's
+`gate_proj` and `up_proj` rows and `down_proj` column. `control` keeps a
+rewritten neuron's read vectors and draws a random write direction of the
+same norm.
 
 ```bash
 stateset-agents weight-edit apply spec.json --base Qwen/Qwen3.5-0.8B --revision <sha> --out ./edited
