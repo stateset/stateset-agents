@@ -135,7 +135,7 @@ def main(argv: list[str] | None = None) -> None:
     )
     ap.add_argument("--tag", default="")
     a = ap.parse_args(argv)
-    cap = torch.load(a.captures, weights_only=False)  # our own pod output
+    cap = torch.load(a.captures, weights_only=True)  # tensors, lists, str, int only
     gate_acts, up_acts = cap["gate_acts"].float(), cap["up_acts"].float()
     labels, groups, layer = list(cap["labels"]), list(cap["groups"]), cap["layer"]
     w = load_layer(layer)

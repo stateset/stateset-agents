@@ -134,6 +134,7 @@ def capture(prefixes: list[list[int]]) -> tuple:
 
 def main(argv: list[str] | None = None) -> None:
     import torch
+    from transformers import AutoTokenizer
 
     from stateset_agents.experimental.weight_space import (
         EditSpec,
@@ -146,7 +147,6 @@ def main(argv: list[str] | None = None) -> None:
         resolve_checkpoint,
         verify_checkpoint,
     )
-    from transformers import AutoTokenizer
 
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default="/workspace/out")
