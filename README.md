@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.70.0`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.71.0`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -469,7 +469,26 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.70.0 (latest candidate; publication pending):**
+**v0.71.0 (latest candidate; publication pending):**
+
+- **Weight-space programming (experimental).** Edit a model's weights
+  directly — no gradients, no training data — and judge the edit on held-out
+  problems against a structure-matched control:
+  `stateset_agents.experimental.weight_space` plus
+  `stateset-agents weight-edit {apply, verify, control, compare, atlas}` and
+  MCP tools (`stateset-agents mcp --weight-space`).
+- **Evidence on Qwen3.5-0.8B.** With thinking on, the model loops on 97–98% of
+  math problems (held-out 1.2%). Hand-written edits of a few thousand weights
+  lift held-out GSM8K-test + MATH-500 to 33.6–39.1% (token rows), and one
+  hand-designed "answer computed → conclude" neuron reaches 42.1%, each far
+  above its matched control, under strict scoring
+  ([evidence](benchmark_results/weight_space/20261102/README.md)).
+- **Strict scoring for end-of-thinking edits.** `weight-edit compare --strict`
+  closes a grading loophole: edits that boost `</think>` can emit it inline
+  while the model keeps reasoning, which a split-on-first-marker grader
+  rewards.
+
+**v0.70.0:**
 
 - TODO: describe this release.
 
@@ -1542,7 +1561,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.70.0"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.0"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2461,7 +2480,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.70.0`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.0`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
