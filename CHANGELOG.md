@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.2] - 2026-11-03 — Equal-budget evaluation; the conclude neuron ties thinking off
+
 ### Added
 
 - **v3t conclude neuron** (`benchmark_results/weight_space/20261102/specs/conclude_neuron_v3t_spec.json`,
