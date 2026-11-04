@@ -36,6 +36,7 @@ MODEL = "Qwen/Qwen3.5-0.8B"
 # Exact Hub revisions every run used (verified against the local snapshots).
 REVISIONS = {
     "Qwen/Qwen3.5-0.8B": "2fc06364715b967f1860aea9cf38778875588b17",
+    "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
     "Qwen/Qwen3-0.6B": "c1899de289a04d12100db370d81485cdf75e47ca",
 }
 GSM8K_REVISION = "740312add88f781978c0658806c59bc2815b9866"

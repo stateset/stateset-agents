@@ -14,7 +14,10 @@ seed and an 8,192-token cap for every condition, this job generates:
 
   base, thinking off;  then for each edit: thinking on, thinking off.
 
-(Base with thinking on at this cap is on record from the edit runs.)
+(Base with thinking on at this cap is on record from the edit runs for
+Qwen3.5-0.8B; ``--base-think`` adds it, and ``--model`` runs another model
+pinned in ``pod_job.REVISIONS``, e.g. a baseline for Qwen3.5-2B with
+``--model Qwen/Qwen3.5-2B --base-think`` and no specs.)
 
 Scoring is strict: a clean finish with exactly one ``</think>`` (thinking on)
 or none (thinking off). Each condition is also scored at token budgets 512 to
@@ -153,17 +156,32 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument(
         "--spec",
         action="append",
-        required=True,
+        default=[],
         help="NAME=PATH of an EditSpec JSON; repeat to compare edits on one pod "
         "(each later edit is also paired against the first, thinking on)",
     )
+    ap.add_argument(
+        "--model",
+        default=MODEL,
+        help="a model pinned in pod_job.REVISIONS (edits must match its shapes)",
+    )
+    ap.add_argument(
+        "--base-think",
+        action="store_true",
+        help="also run the unedited model with thinking on",
+    )
     ap.add_argument("--tag", default="", help="suffix for output names, e.g. _v3t")
     a = ap.parse_args(argv)
+    if a.model not in pj.REVISIONS:
+        raise SystemExit(f"--model must be pinned in pod_job.REVISIONS: {a.model}")
+    if not a.spec and not a.base_think:
+        raise SystemExit("give at least one --spec or --base-think")
+    pj.MODEL = a.model  # base generations and held-out checks use pj.MODEL
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(parents=True, exist_ok=True)
 
-    base = resolve_checkpoint(MODEL, REVISION)
+    base = resolve_checkpoint(a.model, pj.REVISIONS[a.model]) if a.spec else None
     specs: dict[str, tuple[EditSpec, str, str]] = {}
     for item in a.spec:
         name, _, path = item.partition("=")
@@ -183,10 +201,14 @@ def main(argv: list[str] | None = None) -> None:
 
     rows = pj.load_problems(256, 200, 500)["heldout"]
     runs: dict[str, tuple[str, bool]] = {"base_nothink": (pj.MODEL, False)}
+    if a.base_think:
+        runs["base_think"] = (pj.MODEL, True)
     for name, (_spec, _h, edit_dir) in specs.items():
         runs[f"{name}_think"] = (edit_dir, True)
         runs[f"{name}_nothink"] = (edit_dir, False)
     result: dict = {
+        "model": a.model,
+        "revision": pj.REVISIONS[a.model],
         "specs": {n: {"name": s.name, "hash": h} for n, (s, h, _d) in specs.items()},
         "cap": CAP,
         "budgets": list(BUDGETS),
@@ -195,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
     }
     summary = out / f"thinking_budget_summary{a.tag}.json"
     gens: dict[str, list[dict]] = {}
-    first = next(iter(specs))
+    first = next(iter(specs), None)
     for label, (model_dir, thinking) in runs.items():
         gens[label] = pj.generate(
             f"tb_{label}{a.tag}", model_dir, rows, CAP, out, thinking=thinking
@@ -209,7 +231,11 @@ def main(argv: list[str] | None = None) -> None:
             result["paired"][f"{label}_vs_base_nothink"] = compare(
                 gens["base_nothink"], gens[label], False, thinking
             )
-        if label.endswith("_think") and label != f"{first}_think":
+        if (
+            first is not None
+            and label.endswith("_think")
+            and label not in (f"{first}_think", "base_think")
+        ):
             result["paired"][f"{label}_vs_{first}_think"] = compare(
                 gens[f"{first}_think"], gens[label], True, True
             )
