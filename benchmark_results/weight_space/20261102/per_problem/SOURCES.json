@@ -134,6 +134,16 @@
     "source": "kernel/gen_b_heldout_random_control.jsonl.gz",
     "source_sha256": "f8f2f5dc827e5bb7f3732c8efb0877d0fb330dab15c1353fb577f92f1e0dbd6e"
   },
+  "q2b_tb_base_nothink_2b.jsonl": {
+    "n": 1000,
+    "source": "q2b/gen_tb_base_nothink_2b.jsonl.gz",
+    "source_sha256": "2ddef3c6c998f23d48a2344908dd3c3ce2d05ed383f95e7b501fca0e8ffa8e55"
+  },
+  "q2b_tb_base_think_2b.jsonl": {
+    "n": 1000,
+    "source": "q2b/gen_tb_base_think_2b.jsonl.gz",
+    "source_sha256": "a593c9e1b0c77d16d1a8aebcf1c703c55d62a3c7c353e46cb05b546f67ece563"
+  },
   "run6_base_heldout.jsonl": {
     "n": 1000,
     "source": "run6/gen_base_heldout.jsonl.gz",

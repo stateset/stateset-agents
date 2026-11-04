@@ -44,6 +44,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (p = 0.14), thinking off -1.4 vs the base (p = 0.41). The double closes it
   removes were premature first closes (they now run to the cap instead), so
   thinking on is bounded by where the detector first fires.
+- `thinking_budget_job.py --model` / `--base-think` and `practice_job.py
+  --model` run any model pinned in `pod_job.REVISIONS` (adds Qwen3.5-2B).
+  Qwen3.5-2B baseline: thinking off 77.1% strict on the held-out 1,000,
+  thinking on 25.0% (75% run to the 8,192 cap); 87% (GSM8K) and 67% (MATH) of
+  those capped replies already wrote the correct value early in their
+  thinking, so the 2B model has the 0.8B's failure with more headroom.
 
 ### Fixed
 

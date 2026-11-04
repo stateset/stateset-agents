@@ -518,3 +518,22 @@ Held-out 1,000 at 8,192 (strict, same A40): base thinking off 49.8% (GSM8K
   (GSM8K +0.8, p = 0.79; MATH -6.4, p = 0.006).
 - v2 guard thinking off vs base thinking off: -1.4 [-4.4, +1.7], +116 / -130,
   p = 0.41 (v1: -1.1, p = 0.53; unguarded: -3.9, p = 0.001).
+
+## Qwen3.5-2B baseline (2026-11-04) — the same broken thinking, with more headroom
+
+`thinking_budget_job.py --model Qwen/Qwen3.5-2B --base-think` (revision
+15852e8c; A40, $0.51). Same architecture family as 0.8B (24 layers, full
+attention at 3/7/11/15/19/23, 8 heads over 2 KV heads, head_dim 256, tied
+embedding, same tokenizer), hidden 2,048, MLP 6,144.
+
+Held-out 1,000 at 8,192 (strict): thinking off 77.1% (lenient 79.6%, hit the
+cap 12.0%); thinking on 25.0% (lenient 25.1%, clean finish 25.2%, hit the cap
+74.8%, mean 7,010 tokens). Thinking on vs off -52.1 [-55.2, -48.9],
++5 / -526, p = 1e-148. When it does finish it is right (25.0 of 25.2).
+
+Of the replies that ran to the cap without closing, the correct value is
+already written in the thinking in 312 / 359 on GSM8K (87%) and 258 / 383 on
+MATH (67%), at a median 7% and 11% of the way in. Closing there and answering
+would give about 90% (GSM8K) and 74% (MATH): a ceiling near 82% vs 77.1%
+thinking off (approximate: a gold match can be coincidental and the first
+mention is not always the final answer).

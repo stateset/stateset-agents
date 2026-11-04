@@ -567,6 +567,31 @@ answering), and adding it to v3t's detector moves the detector's AUC from
 0.822 to 0.830 (GSM8K) and 0.743 to 0.760 (MATH) at a weight chosen on the
 same contexts. Neither was worth a generation run.
 
+## Qwen3.5-2B baseline (2026-11-04)
+
+Does the larger model share the failure? `thinking_budget_job.py --model
+Qwen/Qwen3.5-2B --base-think` (revision `15852e8c`, A40, $0.51,
+`summaries/q2b_thinking_budget_summary_2b.json`, `per_problem/q2b_*`). Same
+family and tokenizer as 0.8B (24 layers, full attention at 3/7/11/15/19/23,
+8 query heads over 2 KV heads of 256, tied embedding), hidden 2,048, MLP
+6,144.
+
+| Qwen3.5-2B, held-out 1,000, cap 8,192 | strict | lenient | clean finish | hit the cap |
+|---|---|---|---|---|
+| thinking off | **77.1%** | 79.6% | 87.8% | 12.0% |
+| thinking on | 25.0% | 25.1% | 25.2% | 74.8% |
+
+Thinking on vs off: -52.1 [-55.2, -48.9], +5 / -526, p = 1e-148. The 2B
+model has the 0.8B's broken thinking, in a cleaner form: when it finishes it
+is right (25.0 of 25.2), and of the replies that run to the cap without
+closing, the correct value is already written in the thinking in 87% on GSM8K
+(312 / 359) and 67% on MATH (258 / 383), at a median 7% and 11% of the way in.
+Closing there and answering would give about 90% and 74%, a ceiling near 82%
+against 77.1% with thinking off (approximate: a gold match can be
+coincidental, and the first mention is not always the final answer). Unlike
+the 0.8B, whose closes were often premature, the 2B finds the answer early
+and does not stop.
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd
@@ -685,8 +710,9 @@ non-thinking accuracy.
 | threshold | explicit-threshold grid on v3t (7 on practice), bias +1 held-out | RTX 4090 | 1.35 |
 | guard v1 | `</think>`-seen guard: 4 on practice, bias -1 + guard held-out | RTX 4090 | 0.95 |
 | guard v2 | v2 guard at bias -1 / -1.5 / -2 on practice (cap 8,192), bias -1 held-out | A40 | 1.04 |
+| Qwen3.5-2B baseline | base thinking off vs on, held-out | A40 | 0.51 |
 | failed starts | dependency installs hung on one H100 host (26 min) and one RTX 4090 host (15 min) | H100 / RTX 4090 | 2.32 |
-| **total** | all pods terminated | | **39.88** |
+| **total** | all pods terminated | | **40.39** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;

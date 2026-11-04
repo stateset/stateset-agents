@@ -63,8 +63,16 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--practice-tokens", type=int, default=4096)
     ap.add_argument("--max-stray-rise", type=float, default=0.02)
     ap.add_argument("--heldout", action="store_true")
+    ap.add_argument(
+        "--model",
+        default=nj.MODEL,
+        help="a model pinned in pod_job.REVISIONS (specs must match its shapes)",
+    )
     a = ap.parse_args(argv)
     specs = parse_specs(a.spec)
+    if a.model not in pj.REVISIONS:
+        raise SystemExit(f"--model must be pinned in pod_job.REVISIONS: {a.model}")
+    pj.MODEL = a.model  # the held-out base run uses pj.MODEL
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(parents=True, exist_ok=True)
@@ -73,7 +81,7 @@ def main(argv: list[str] | None = None) -> None:
     probs = pj.load_problems(256, 200, 500)
     mine_set, select_set = op.practice_sets(a.practice_n, probs)
     practice = mine_set + select_set
-    base = resolve_checkpoint(nj.MODEL, nj.REVISION)
+    base = resolve_checkpoint(a.model, pj.REVISIONS[a.model])
     rows: list[dict] = []
     start_gens: dict[str, list[dict]] = {}
     summary_path = out / "practice_summary.json"
