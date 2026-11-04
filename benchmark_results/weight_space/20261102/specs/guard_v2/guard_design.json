@@ -1,0 +1,48 @@
+{
+  "layer": 23,
+  "head": 0,
+  "kv_head": 0,
+  "sequences": 12,
+  "query_read_min": 75.82,
+  "query_norm": 22.573,
+  "weight_on_think_end_after": {
+    "min": 0.9929,
+    "median": 0.9993
+  },
+  "value_read_before": {
+    "p99": 0.0071,
+    "max": 0.0191
+  },
+  "value_read_after": {
+    "min": 0.7676,
+    "median": 1.0269
+  },
+  "residual_rms_median": 0.3065,
+  "flag_write_norm": 1.2875,
+  "flag_residual_use_std": 0.1389,
+  "flag_logit_visibility": 0.0696,
+  "flag_read": 4.2,
+  "gate_weight": 1.5,
+  "specs": [
+    {
+      "start": "conclude-neuron-L23_v3t",
+      "name": "conclude-neuron-L23_v3t+guard",
+      "spec_hash": "0dadf2e7bb570048"
+    },
+    {
+      "start": "conclude-neuron-L23_v3t_b-1.0_w3.0",
+      "name": "conclude-neuron-L23_v3t_b-1.0_w3.0+guard",
+      "spec_hash": "a4ae32cfce21d4d0"
+    },
+    {
+      "start": "conclude-neuron-L23_v3t_b-1.5_w3.0",
+      "name": "conclude-neuron-L23_v3t_b-1.5_w3.0+guard",
+      "spec_hash": "0a9f6dc530e66fdf"
+    },
+    {
+      "start": "conclude-neuron-L23_v3t_b-2.0_w3.0",
+      "name": "conclude-neuron-L23_v3t_b-2.0_w3.0+guard",
+      "spec_hash": "316ef79ea79a29bd"
+    }
+  ]
+}

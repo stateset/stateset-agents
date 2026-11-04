@@ -43,8 +43,10 @@ p = 0.0009): it reasons better but a quarter of its replies are malformed. See
 (v4, v5, on-policy rounds) and an explicit firing threshold all failed to beat
 v3t on held-out; see their sections. A designed attention head that silences
 the neuron once `</think>` is in context removes its thinking-off side effect
-(-1.1 vs base, p = 0.53, was -3.9, p = 0.001) but leaves thinking on level
-with v3t; see "A `</think>` already seen guard".
+(-1.1 and -1.4 vs base on two pods, p = 0.53 and 0.41; was -3.9, p = 0.001)
+and, in v2, edges thinking on past v3t (+2.3, p = 0.14), still short of the
+base with thinking off (-2.8, p = 0.093); see "A `</think>` already seen
+guard".
 
 ## The failure being edited
 
@@ -514,6 +516,44 @@ flag written but unread: 0.93). Guard v2 reads orthogonally to the top 32
 directions of the before outputs and probes the edited model: the leak's p99
 falls from 0.039 to 0.007.
 
+**Guard v2** (A40, $1.04, practice at the full 8,192 cap,
+`summaries/gd2_practice_summary.json`). Strict outcome of every thinking-on
+practice reply:
+
+| candidate | strict correct | never closed | two+ `</think>` | closed once, ran to the cap | clean but wrong | thinking off strict (stray) |
+|---|---|---|---|---|---|---|
+| v3t | 46.2% | 17.0% | 18.8% | 9.5% | 8.5% | 45.3% (20.5%) |
+| **v2 bias -1 + guard** (kept) | **47.0%** | 16.5% | 4.2% | 23.0% | 9.2% | **53.0% (0.0%)** |
+| v2 bias -1.5 + guard | 46.5% | 10.8% | 7.2% | 27.5% | 8.0% | 52.0% (0.3%) |
+| v2 bias -2 + guard | 44.5% | 7.5% | 12.0% | 28.5% | 7.5% | 53.5% (0.5%) |
+
+The double closes the guard removes reappear as replies that close once and
+run to the cap. Read, they are premature first closes: the neuron closed
+after an intermediate result ("22 + 8 = 30." for an answer of 13), sometimes
+mid-sentence, and the model re-reasoned in the answer section. Under v3t the
+neuron then closed again; with the guard the reply runs on. Both fail
+strictly, so on thinking on the guard neither loses nor gains these; what
+bounds thinking on now is where the detector first fires, not what happens
+after.
+
+Held-out, same A40 (absolute rates differ a little by GPU type; all
+comparisons are paired on one pod):
+
+| | strict | GSM8K | MATH | hit the cap |
+|---|---|---|---|---|
+| base, thinking off | 49.8% | 57.4% | 42.2% | 19.7% |
+| v3t, thinking on | 44.7% | 55.0% | 34.4% | 31.9% |
+| v2 guard, thinking on | 47.0% | 58.2% | 35.8% | 39.9% |
+| v2 guard, thinking off | 48.4% | 53.8% | 43.0% | 14.0% |
+
+- Thinking on, v2 guard vs v3t: **+2.3 [-0.7, +5.2], +122 / -99, p = 0.14**
+  (v1: -0.2).
+- Thinking on vs base thinking off: -2.8, p = 0.093 (GSM8K +0.8, p = 0.79;
+  MATH -6.4, p = 0.006).
+- Thinking off vs base thinking off: -1.4 [-4.4, +1.7], p = 0.41. Two
+  independent pods agree the guard removes the neuron's thinking-off cost
+  (v1 -1.1, p = 0.53; unguarded -3.9, p = 0.001).
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd
@@ -631,8 +671,9 @@ non-thinking accuracy.
 | on-policy | practice-gated redesign, 3 rounds (kept v3t; no held-out run) | A40 | 1.10 |
 | threshold | explicit-threshold grid on v3t (7 on practice), bias +1 held-out | RTX 4090 | 1.35 |
 | guard v1 | `</think>`-seen guard: 4 on practice, bias -1 + guard held-out | RTX 4090 | 0.95 |
-| failed start | dependency install hung 26 min on one H100 host | H100 | 2.03 |
-| **total** | all pods terminated | | **38.55** |
+| guard v2 | v2 guard at bias -1 / -1.5 / -2 on practice (cap 8,192), bias -1 held-out | A40 | 1.04 |
+| failed starts | dependency installs hung on one H100 host (26 min) and one RTX 4090 host (15 min) | H100 / RTX 4090 | 2.32 |
+| **total** | all pods terminated | | **39.88** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -679,6 +720,9 @@ bare HTTP 500 (the client now says "no capacity").
   4 (each with a control whose flag is written in a random direction) and
   `guard_design.json` (attention and read diagnostics);
   `summaries/gd_practice_summary.json` with `per_problem/gd_pr_*`.
+- `specs/guard_v2/` — guard v2 on v3t and bias -1 / -1.5 / -2 (with controls)
+  and its `guard_design.json`; `summaries/gd2_practice_summary.json` with
+  `per_problem/gd2_pr_*`.
 - `summaries/thinking_budget_summary_v3t_v4.json` and `per_problem/tb_tb_*` —
   base thinking off vs v3t / v4 thinking on and off, one pod, equal caps,
   strict and lenient, per subset and per token budget, paired.

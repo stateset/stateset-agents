@@ -1,4 +1,64 @@
 {
+  "gd2_pr_base_nothink.jsonl": {
+    "n": 1000,
+    "source": "gd2/gen_pr_base_nothink.jsonl.gz",
+    "source_sha256": "1c854396b7647aa2ad1be568a3b2d3282e003bd1ef4479b46aa52c88e4150aa1"
+  },
+  "gd2_pr_g2_bm15_nothink.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm15_nothink.jsonl.gz",
+    "source_sha256": "1e93bebf8c0040031d31483cdd2b129bc1a3d2aa661f37e7b372667f547e8956"
+  },
+  "gd2_pr_g2_bm15_think.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm15_think.jsonl.gz",
+    "source_sha256": "bc14085272b246bf15435c25ddddf0a9f73dc655dc75bc23febb46d1672880c2"
+  },
+  "gd2_pr_g2_bm1_nothink.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm1_nothink.jsonl.gz",
+    "source_sha256": "9f88b43c4f857ef5344be173e5fd1eb43dc74c3fd8770fb284bdf8cc67f25b3c"
+  },
+  "gd2_pr_g2_bm1_think.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm1_think.jsonl.gz",
+    "source_sha256": "a9166bb29a98d8195d3813fc474405029541a73ab071a03debd2cd2bab5e45dc"
+  },
+  "gd2_pr_g2_bm2_nothink.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm2_nothink.jsonl.gz",
+    "source_sha256": "742d797ec9fb6925191820d501cd076ef49c23f0add82d093b8789d85105a1d5"
+  },
+  "gd2_pr_g2_bm2_think.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_g2_bm2_think.jsonl.gz",
+    "source_sha256": "bb587336b4ee1c8ab21245c2db0d2a093d0d36a024436be35ed5734134c78d3b"
+  },
+  "gd2_pr_kept_nothink.jsonl": {
+    "n": 1000,
+    "source": "gd2/gen_pr_kept_nothink.jsonl.gz",
+    "source_sha256": "bf03a2126dbbfe416a5b2dd88e896ce4a8cb20b886b6c8e7451dcbb69f1aecc7"
+  },
+  "gd2_pr_kept_think.jsonl": {
+    "n": 1000,
+    "source": "gd2/gen_pr_kept_think.jsonl.gz",
+    "source_sha256": "6b6b64d7cf78eca0a31599450ac0fbcb4bf42e3c23af32b302d8622b7ccd4b99"
+  },
+  "gd2_pr_start_think.jsonl": {
+    "n": 1000,
+    "source": "gd2/gen_pr_start_think.jsonl.gz",
+    "source_sha256": "7e06a7204b4a813e506458ffa0ca1038baed787da7b54c59911b6dfe2b15bc6f"
+  },
+  "gd2_pr_v3t_nothink.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_v3t_nothink.jsonl.gz",
+    "source_sha256": "40d5c7efd44a053de65cd4cb7883e28f6d047740326ee55988cfe32f45dc1a76"
+  },
+  "gd2_pr_v3t_think.jsonl": {
+    "n": 400,
+    "source": "gd2/gen_pr_v3t_think.jsonl.gz",
+    "source_sha256": "cffe20822458636ada2f61c0e7c4bc0558801f21d28dc9108ca4e121bfe59bef"
+  },
   "gd_pr_base_nothink.jsonl": {
     "n": 1000,
     "source": "gd/gen_pr_base_nothink.jsonl.gz",

@@ -40,7 +40,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   3.9, p = 0.001), so the edit's thinking-off side effect is gone; thinking on
   level with v3t (-0.2, p = 0.95): double closes vanish but more replies run
   to the cap, traced to a small flag leak before the first close (guard v2
-  cuts it fivefold).
+  cuts it fivefold). Guard v2 on a second pod: thinking on +2.3 vs v3t
+  (p = 0.14), thinking off -1.4 vs the base (p = 0.41). The double closes it
+  removes were premature first closes (they now run to the cap instead), so
+  thinking on is bounded by where the detector first fires.
 
 ### Fixed
 

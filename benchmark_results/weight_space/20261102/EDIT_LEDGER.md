@@ -488,3 +488,33 @@ which sit just above threshold (CPU: first-close P(</think>) 0.93 -> 0.03
 for v3t + guard). Guard v2 (commit 3c0b1ef8) reads orthogonally to the top
 32 directions of the before outputs and probes the edited model: leak p99
 0.039 -> 0.007.
+
+## Guard v2 (2026-11-03) — +2.3 over v3t thinking on (p = 0.14); thinking off repaired again
+
+v2 (commit 3c0b1ef8): value read orthogonal to the top 32 directions of the
+before outputs, edited model probed (leak p99 0.039 -> 0.007). Practice at the
+full 8,192 cap (400; A40, $1.04 with held-out; one 4090 start lost to a stalled
+pip install, $0.29):
+
+| candidate | spec | think strict | two+ close | never closed | closed, ran on | nothink strict | stray |
+|---|---|---|---|---|---|---|---|
+| v3t | f221470a088d0860 | 46.3% | 18.8% | 17.0% | 9.5% | 45.3% | 20.5% |
+| v2 bias -1 + guard (kept) | a4ae32cfce21d4d0 | 47.0% | 4.3% | 16.5% | 23.0% | 53.0% | 0.0% |
+| v2 bias -1.5 + guard | 0a9f6dc530e66fdf | 46.5% | 7.3% | 10.8% | 27.5% | 52.0% | 0.3% |
+| v2 bias -2 + guard | 316ef79ea79a29bd | 44.5% | 12.0% | 7.5% | 28.5% | 53.5% | 0.5% |
+
+The double closes the guard blocks become replies that close once and run to
+the cap: they were premature first closes (the neuron fires after an
+intermediate result, sometimes mid-sentence) followed by re-reasoning in the
+answer section. Both fail strictly, so the guard neither loses nor gains them;
+thinking on is bounded by the detector's precision.
+
+Held-out 1,000 at 8,192 (strict, same A40): base thinking off 49.8% (GSM8K
+57.4, MATH 42.2); v3t 44.7% (55.0 / 34.4); v2 guard thinking on 47.0% (58.2 /
+35.8); v2 guard thinking off 48.4% (53.8 / 43.0).
+
+- v2 guard thinking on vs v3t: +2.3 [-0.7, +5.2], +122 / -99, p = 0.14.
+- v2 guard thinking on vs base thinking off: -2.8 [-5.9, +0.3], p = 0.093
+  (GSM8K +0.8, p = 0.79; MATH -6.4, p = 0.006).
+- v2 guard thinking off vs base thinking off: -1.4 [-4.4, +1.7], +116 / -130,
+  p = 0.41 (v1: -1.1, p = 0.53; unguarded: -3.9, p = 0.001).
