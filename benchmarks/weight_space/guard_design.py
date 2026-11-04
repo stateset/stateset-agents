@@ -14,7 +14,8 @@ query head of the neuron's layer is rewritten into one that does, and it
 writes a private flag that silences the neuron. Every quantity is a mean over
 positions labelled exactly by the token sequence; nothing is fitted.
 
-1. Run the base model over edited-model replies (``--think`` replies that
+1. Run the model with the first start spec applied (its Wait rows change what
+   this layer sees) over edited-model replies (``--think`` replies that
    closed, ``--nothink`` replies), capturing at ``--layer``: the attention input,
    keys (after the key norm) and values of the head's KV group, and the
    residual entering the MLP norm.
@@ -22,8 +23,9 @@ positions labelled exactly by the token sequence; nothing is fitted.
    (position-free dims). Query and gate read the mean attention input, which
    must be positive at every captured position (checked).
 3. Simulate the head's causal attention; ``out_read`` is the mean head output
-   after a ``</think>`` minus before, orthogonal to the before-mean and scaled
-   to read 1 after.
+   after a ``</think>`` minus before, orthogonal to the top ``--before-rank``
+   directions of the before outputs (diffuse mixes of prompt-token values) and
+   scaled to read 1 after.
 4. Flag: :func:`atlas.quiet_direction` (``--quiet-k`` logit-least-visible
    directions, least used by the MLP's input). The head writes
    ``flag_read * median rms`` along it, so the MLP's normalised input carries
@@ -81,6 +83,8 @@ def main(argv: list[str] | None = None) -> None:
         EditSpec,
         HeadRewrite,
         NeuronRewrite,
+        TensorLayout,
+        apply_spec,
         lookback_query,
         quiet_direction,
         silence_on_flag,
@@ -98,6 +102,7 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--flag-read", type=float, default=4.2)
     ap.add_argument("--gate-weight", type=float, default=1.5)
     ap.add_argument("--gate", type=float, default=0.1, help="head output gate weight")
+    ap.add_argument("--before-rank", type=int, default=32)
     a = ap.parse_args(argv)
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -105,6 +110,16 @@ def main(argv: list[str] | None = None) -> None:
     model = AutoModelForCausalLM.from_pretrained(
         MODEL, revision=REVISION, dtype=torch.float32
     ).eval()  # nosec B615 - pinned revision
+    # Probe the model the guard will sit in: the start spec's edits change what
+    # this layer sees (v3t's Wait rows rescale frequent thinking tokens).
+    # Tied embedding: the state dict may list lm_head as the same tensor; scale once.
+    sd0 = model.state_dict()
+    layout = TensorLayout(
+        token_keys=("model.embed_tokens.weight",),
+        down_fmt=TensorLayout.detect(sd0.keys()).down_fmt,
+    )
+    with torch.no_grad():
+        apply_spec(EditSpec.from_json(Path(a.start_spec[0]).read_text()), sd0, layout)
     cfg = model.config
     hd = cfg.head_dim
     rot = int(hd * cfg.rope_parameters["partial_rotary_factor"])
@@ -162,7 +177,11 @@ def main(argv: list[str] | None = None) -> None:
     after, before = torch.stack(after_o), torch.stack(before_o)
     mb, ma = before.mean(0), after.mean(0)
     delta = ma - mb
-    out_read = delta - (delta @ mb) / (mb @ mb) * mb
+    # Before a close the head outputs varying mixes of prompt-token values; read
+    # orthogonally to their top directions, not only to their mean.
+    _, _, vh = torch.linalg.svd(before.double(), full_matrices=False)
+    basis = vh[: a.before_rank].float()
+    out_read = delta - basis.T @ (basis @ delta)
     out_read = out_read / (out_read @ ma)
 
     sd = model.state_dict()
