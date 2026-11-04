@@ -41,7 +41,10 @@ on MATH (33.8%, p = 0.006), and leads only under lenient scoring (+5.5 overall,
 p = 0.0009): it reasons better but a quarter of its replies are malformed. See
 "Thinking on vs thinking off at an equal budget". Redesigns of the neuron
 (v4, v5, on-policy rounds) and an explicit firing threshold all failed to beat
-v3t on held-out; see their sections.
+v3t on held-out; see their sections. A designed attention head that silences
+the neuron once `</think>` is in context removes its thinking-off side effect
+(-1.1 vs base, p = 0.53, was -3.9, p = 0.001) but leaves thinking on level
+with v3t; see "A `</think>` already seen guard".
 
 ## The failure being edited
 
@@ -445,6 +448,72 @@ off (+51 / -90, p = 0.001): the neuron's leak into thinking-off mode costs
 real accuracy. One knob trades unclosed replies against double closes and
 leaks; v3t sits near its best setting.
 
+## A "</think> already seen" guard (2026-11-03)
+
+The neuron also fires after reasoning has closed: a second `</think>` fails a
+thinking-on reply under strict scoring, and with thinking off, whose template
+already ends `<think>\n\n</think>\n\n`, it writes stray closes (the base
+model leaks none). One rule covers both: once `</think>` is in context, the
+neuron must stay silent. No existing head looks back at an earlier
+`</think>` (at most 7% of any full-attention head's weight from later line
+breaks), so one was built, with no fitting (`guard_design.py`): every
+quantity is a mean over positions labelled exactly by the token sequence.
+
+- **Head.** Layer 23, head 0 (`HeadRewrite`). At layer 23 the keys at
+  `</think>` score at least 17.2 along their mean direction (position-free
+  dims) against at most 12.7 at 7,430 other positions, so a constant query
+  along it (`circuits.lookback_query`) puts at least 99.3% of the head's
+  attention on an earlier `</think>`. Heads 1 and 3 of the same KV group hold
+  `</think>` back at line breaks (removing them releases closes) and head 2
+  promotes it; head 0 is the most neutral.
+- **Flag.** The head writes along a residual direction that the unembedding
+  barely sees and the model's residual barely uses (`atlas.quiet_direction`;
+  logit visibility 0.07 of a `</think>` write). The neuron reads it
+  (`circuits.silence_on_flag`): its near-constant multiplier drops by 1 and its
+  gate by 6.3 once the flag is up.
+- **Why not push the logit.** A first version wrote `-</think>` from the head
+  (with `atlas.protected_write`, which keeps `<|im_end|>` and other overlapping
+  tokens' logits exactly unchanged). The final residual is small (rms 0.3), so
+  strengths that blocked second closes also blocked every reply's end and
+  raised ordinary-text loss tenfold on CPU.
+
+Practice (400 problems, cap 4,096; RTX 4090, $0.95 with held-out,
+`summaries/gd_practice_summary.json`):
+
+| candidate | thinking on strict | two+ `</think>` | never closed | thinking off strict | stray `</think>` |
+|---|---|---|---|---|---|
+| v3t | 49.3% | 15.3% | 16.5% | 43.0% | 18.3% |
+| v3t + guard | 47.3% | **0.8%** | 24.3% | **51.0%** | **0.0%** |
+| **bias -1 + guard** (kept) | **50.3%** | 1.5% | 18.3% | **51.8%** | 0.3% |
+| write norm 4 + guard | 49.0% | 2.0% | 19.3% | 50.3% | 0.0% |
+
+Held-out 1,000, cap 8,192, same pod:
+
+| | strict | GSM8K | MATH | hit the cap |
+|---|---|---|---|---|
+| base, thinking off | 48.5% | 56.6% | 40.4% | 20.5% |
+| v3t, thinking on | 46.3% | 57.0% | 35.6% | 30.0% |
+| bias -1 + guard, thinking on | 46.1% | 58.4% | 33.8% | 40.2% |
+| bias -1 + guard, thinking off | 47.4% | 52.4% | 42.4% | 12.8% |
+
+- Thinking off, guard vs base: **-1.1 [-4.3, +2.1], +124 / -135, p = 0.53**.
+  Unguarded, the neuron cost thinking-off accuracy 3.9 points (p = 0.001);
+  the guard removes that side effect.
+- Thinking on, guard vs v3t: -0.2 [-3.1, +2.7], p = 0.95. Double closes are
+  gone, but more replies run to the cap without closing (40.2% vs 30.0%;
+  lenient MATH -7.4, p = 0.0005), so thinking on still trails base thinking
+  off on MATH (-6.6, p = 0.004) while matching it on GSM8K (+1.8, p = 0.53).
+
+Why more replies stay open: before any close the head attends diffusely
+(15-24% on `<think>`, the rest on prompt words), so its value read leaked a
+flag of 0.03-0.09 at the neuron's decision points, which sit just above
+threshold; on CPU the guard alone cut `</think>` probability at v3t's own
+first closes from 0.93 to 0.03 (bias -1 restored it to 0.67). Neither half
+alone does it (head 0 removed: 0.92; neuron rewired without the flag: 0.91;
+flag written but unread: 0.93). Guard v2 reads orthogonally to the top 32
+directions of the before outputs and probes the edited model: the leak's p99
+falls from 0.039 to 0.007.
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd
@@ -561,8 +630,9 @@ non-thinking accuracy.
 | v5 test | base thinking off vs v3t / v5 / v5b thinking on and off | RTX 4090 | 1.06 |
 | on-policy | practice-gated redesign, 3 rounds (kept v3t; no held-out run) | A40 | 1.10 |
 | threshold | explicit-threshold grid on v3t (7 on practice), bias +1 held-out | RTX 4090 | 1.35 |
+| guard v1 | `</think>`-seen guard: 4 on practice, bias -1 + guard held-out | RTX 4090 | 0.95 |
 | failed start | dependency install hung 26 min on one H100 host | H100 | 2.03 |
-| **total** | all pods terminated | | **37.60** |
+| **total** | all pods terminated | | **38.55** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -605,6 +675,10 @@ bare HTTP 500 (the client now says "no capacity").
   (`threshold_grid.json` plus one spec per bias and write norm), and
   `summaries/th_threshold_summary.json` with `per_problem/th_th_*` (practice
   generations on training problems and the held-out runs).
+- `specs/guard_v1/` — the `</think>`-seen guard on v3t, bias -1 and write norm
+  4 (each with a control whose flag is written in a random direction) and
+  `guard_design.json` (attention and read diagnostics);
+  `summaries/gd_practice_summary.json` with `per_problem/gd_pr_*`.
 - `summaries/thinking_budget_summary_v3t_v4.json` and `per_problem/tb_tb_*` —
   base thinking off vs v3t / v4 thinking on and off, one pod, equal caps,
   strict and lenient, per subset and per token budget, paired.

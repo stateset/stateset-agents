@@ -1,4 +1,64 @@
 {
+  "gd_pr_base_nothink.jsonl": {
+    "n": 1000,
+    "source": "gd/gen_pr_base_nothink.jsonl.gz",
+    "source_sha256": "54dde2e0c3d79e951c4d20c33c1fbab0551b262427def52e5858a292c1bbb43e"
+  },
+  "gd_pr_guard_bm1_nothink.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_bm1_nothink.jsonl.gz",
+    "source_sha256": "7a73e1e6d63c489d54e358af6e88a17a890282103f0b9eaf87fbf6325f48d11d"
+  },
+  "gd_pr_guard_bm1_think.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_bm1_think.jsonl.gz",
+    "source_sha256": "b5c2517cc6e2084371c84e2cd177947ba4097a6b71d07302e12476eb2cc2c32f"
+  },
+  "gd_pr_guard_nothink.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_nothink.jsonl.gz",
+    "source_sha256": "52b1a889834f2ba0ae7b7cef45f3117bcb325e0c2012f561c592b7933e81baf1"
+  },
+  "gd_pr_guard_think.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_think.jsonl.gz",
+    "source_sha256": "52079e8a6696d85b52ce05ff3065fbf1566750a30d4f65e55c50713b13109416"
+  },
+  "gd_pr_guard_w4_nothink.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_w4_nothink.jsonl.gz",
+    "source_sha256": "9c343e606084fecb5badf00be95c8c8061a083d7206972abdc065664ac78d58e"
+  },
+  "gd_pr_guard_w4_think.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_guard_w4_think.jsonl.gz",
+    "source_sha256": "2fb37a729c6a42d2f1eb18f61899a1bb49dc2443f76298ee14147e42b7875b01"
+  },
+  "gd_pr_kept_nothink.jsonl": {
+    "n": 1000,
+    "source": "gd/gen_pr_kept_nothink.jsonl.gz",
+    "source_sha256": "252201161e957c695504021ddcaa3cd56fa0426747db017915418a0cd1cc56d3"
+  },
+  "gd_pr_kept_think.jsonl": {
+    "n": 1000,
+    "source": "gd/gen_pr_kept_think.jsonl.gz",
+    "source_sha256": "b697ae53d69757533ac40c070bd17fa5986eaae9d353350d3ba1970a2d0aa9a2"
+  },
+  "gd_pr_start_think.jsonl": {
+    "n": 1000,
+    "source": "gd/gen_pr_start_think.jsonl.gz",
+    "source_sha256": "0e0fe8817c3419563a035fdb3696b4fbdb8c6857854ddbfd42011265632c0e59"
+  },
+  "gd_pr_v3t_nothink.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_v3t_nothink.jsonl.gz",
+    "source_sha256": "b8040f6a901a37fa2225d816d638a0992e665a1386695f04e2eae0f7c0b3592b"
+  },
+  "gd_pr_v3t_think.jsonl": {
+    "n": 400,
+    "source": "gd/gen_pr_v3t_think.jsonl.gz",
+    "source_sha256": "dfe0ce790552438999c63b2deea46b5ff629f212812485af49e96878b536df92"
+  },
   "kernel_b_heldout_base.jsonl": {
     "n": 1000,
     "source": "kernel/gen_b_heldout_base.jsonl.gz",

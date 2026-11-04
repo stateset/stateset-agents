@@ -28,6 +28,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   output parts; keys and values stay shared with its group. Applied and
   verified slice-exact like the other kinds, including sharded checkpoints,
   with a random-write matched control.
+- A `</think>`-seen guard for the conclude neuron, designed with no fitting
+  (`benchmarks/weight_space/guard_design.py`): layer 23 head 0 is rewritten to
+  look back at an earlier `</think>` (`circuits.lookback_query`; >= 99.3% of
+  its attention lands there) and write a private flag
+  (`atlas.quiet_direction`) that switches the neuron off
+  (`circuits.silence_on_flag`). `atlas.protected_write` moves one token's
+  logit with chosen tokens' logits held exactly. `practice_job.py` judges any
+  list of specs on practice problems, then held-out. Held-out (bias -1 +
+  guard): thinking off -1.1 vs the base (p = 0.53; the unguarded neuron cost
+  3.9, p = 0.001), so the edit's thinking-off side effect is gone; thinking on
+  level with v3t (-0.2, p = 0.95): double closes vanish but more replies run
+  to the cap, traced to a small flag leak before the first close (guard v2
+  cuts it fivefold).
 
 ### Fixed
 

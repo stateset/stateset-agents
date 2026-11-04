@@ -447,3 +447,44 @@ bias +1 thinking off 44.6%.
 The threshold trades unclosed replies against double closes and leaks; the
 practice gain (+2.8 on 400, best of 7) did not survive held-out, where the
 higher threshold left more replies running to the cap.
+
+## "</think> already seen" guard (2026-11-03) — fixes thinking-off, ties v3t thinking on
+
+AND gate on the conclude neuron, designed without fitting (`guard_design.py`,
+v1 = commit 60ac1955): layer 23 head 0 (KV head 0; heads 1 and 3 hold
+`</think>` back at line breaks, so not them) gets a constant query along the
+`</think>` key direction (position-free dims) and puts >= 99.3% of its
+attention on an earlier `</think>`; it writes a flag along a residual
+direction the unembedding barely sees (`atlas.quiet_direction`, visibility
+0.07) and the neuron reads it (`circuits.silence_on_flag`: multiplier -1,
+gate -1.5 x 4.2). An earlier version pushed the `</think>` logit down from
+the head instead; on CPU it blocked reply ends too and raised text loss
+tenfold at strengths that worked.
+
+Practice (400, cap 4,096, RTX 4090, $0.95 with held-out):
+
+| candidate | spec | think strict | two+ close | never closed | nothink strict | stray |
+|---|---|---|---|---|---|---|
+| v3t | f221470a088d0860 | 49.3% | 15.3% | 16.5% | 43.0% | 18.3% |
+| v3t + guard | f3fdbd1cde4cb89f | 47.3% | 0.8% | 24.3% | 51.0% | 0.0% |
+| bias -1 + guard (kept) | 1068017e94a3d344 | 50.3% | 1.5% | 18.3% | 51.8% | 0.3% |
+| write norm 4 + guard | 7ed84d47cfaabf54 | 49.0% | 2.0% | 19.3% | 50.3% | 0.0% |
+
+Held-out 1,000 at 8,192 (strict): base thinking off 48.5%; v3t 46.3%;
+bias -1 + guard thinking on 46.1% (GSM8K 58.4, MATH 33.8; hit the cap 40.2%
+vs 30.0%); thinking off 47.4% (GSM8K 52.4, MATH 42.4).
+
+- guard thinking on vs v3t: -0.2 [-3.1, +2.7], +109 / -111, p = 0.95
+  (lenient -3.7, p = 0.017; MATH lenient -7.4, p = 0.0005: more replies run
+  to the cap).
+- guard thinking on vs base thinking off: -2.4, p = 0.17 (GSM8K +1.8,
+  p = 0.53; MATH -6.6, p = 0.004).
+- guard thinking off vs base thinking off: -1.1 [-4.3, +2.1], +124 / -135,
+  p = 0.53 (the unguarded edit: -3.9, p = 0.001).
+
+Cause of the extra unclosed replies: before any close the head attends
+diffusely and leaks a flag of 0.03-0.09 at the neuron's decision points,
+which sit just above threshold (CPU: first-close P(</think>) 0.93 -> 0.03
+for v3t + guard). Guard v2 (commit 3c0b1ef8) reads orthogonally to the top
+32 directions of the before outputs and probes the edited model: leak p99
+0.039 -> 0.007.
