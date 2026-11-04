@@ -26,6 +26,7 @@ __all__ = [
     "logit_direction",
     "neuron_readout",
     "protected_write",
+    "quiet_direction",
     "token_neighbours",
     "top_writers",
 ]
@@ -96,6 +97,36 @@ def protected_write(
             f"protecting {len(protect)} tokens leaves no write that moves token {target}"
         )
     out: torch.Tensor = (v / v.norm()).float()
+    return out
+
+
+def quiet_direction(
+    readout: torch.Tensor, residuals: torch.Tensor, *, k: int
+) -> torch.Tensor:
+    """A unit residual direction the unembedding barely sees and the model barely uses.
+
+    ``readout`` is ``[vocab, hidden]`` (embedding times the final norm's gain);
+    ``residuals`` ``[n, hidden]`` captured residual-stream vectors at the layer
+    that will read the direction. Among the ``k`` directions with the smallest
+    total logit effect (bottom eigenvectors of ``readout^T readout``), returns
+    the one with the smallest second moment of ``residual / rms(residual)``. A
+    designed unit can write a private signal there for a later unit to read,
+    moving logits little and colliding little with what the residual already
+    carries.
+    """
+    import torch
+
+    hidden = readout.shape[1]
+    if not 0 < k <= hidden:
+        raise ValueError(f"k must be in 1..{hidden}, got {k}")
+    r = readout.double()
+    _, vecs = torch.linalg.eigh(r.T @ r)
+    low = vecs[:, :k]
+    x = residuals.double()
+    xn = x / x.pow(2).mean(1, keepdim=True).sqrt().clamp_min(1e-12)
+    _, sub = torch.linalg.eigh(low.T @ (xn.T @ xn / len(xn)) @ low)
+    w = low @ sub[:, 0]
+    out: torch.Tensor = (w / w.norm()).float()
     return out
 
 

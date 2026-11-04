@@ -45,6 +45,7 @@ __all__ = [
     "rewrite_activation",
     "ridge_detector",
     "shift_threshold",
+    "silence_on_flag",
 ]
 
 
@@ -216,6 +217,41 @@ def shift_threshold(
         gate=tuple(g - bias * u for g, u in zip(rewrite.gate, rewrite.up, strict=True)),
         up=rewrite.up,
         down=tuple(write_scale * v for v in rewrite.down),
+    )
+
+
+def silence_on_flag(
+    rewrite: NeuronRewrite,
+    flag: torch.Tensor,
+    *,
+    norm_gain: torch.Tensor,
+    flag_read: float,
+    gate_weight: float,
+) -> NeuronRewrite:
+    """Rewire a designed neuron so a residual flag switches it off (an AND gate).
+
+    ``flag`` is a unit residual direction another unit writes (e.g. a
+    :class:`~.edits.HeadRewrite` that fires after a token); ``norm_gain`` the
+    gain of the norm in front of this MLP (``1 + w`` when zero-centred). When
+    the residual carries the flag so the normalised input holds
+    ``flag_read * flag * norm_gain``, the up read drops by exactly 1 (the
+    near-constant multiplier of :func:`design_conditional_neuron` goes to ~0)
+    and the gate pre-activation by ``gate_weight * flag_read``. Inputs that do
+    not use the flag direction are unchanged.
+    """
+    import math
+
+    if not (math.isfinite(flag_read) and flag_read > 0):
+        raise ValueError(f"flag_read must be positive, got {flag_read}")
+    read = (flag.double() / norm_gain.double()).tolist()
+    return NeuronRewrite(
+        layer=rewrite.layer,
+        neuron=rewrite.neuron,
+        gate=tuple(
+            g - gate_weight * r for g, r in zip(rewrite.gate, read, strict=True)
+        ),
+        up=tuple(u - r / flag_read for u, r in zip(rewrite.up, read, strict=True)),
+        down=rewrite.down,
     )
 
 

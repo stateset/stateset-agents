@@ -97,3 +97,25 @@ def test_protected_write_refuses_impossible_protection(protect: list[int]) -> No
     embed, norm, _ = _readouts()
     with pytest.raises(ValueError):
         protected_write(embed, 3, norm, protect=protect)
+
+
+def test_quiet_direction_avoids_readouts_and_the_residuals_own_use() -> None:
+    from stateset_agents.experimental.weight_space.atlas import quiet_direction
+
+    g = torch.Generator().manual_seed(1)
+    hidden = 6
+    readout = torch.randn(50, hidden, generator=g)
+    readout[:, 4:] *= 0.01  # dims 4 and 5 are nearly invisible to the unembedding
+    residuals = torch.randn(400, hidden, generator=g)
+    residuals[:, 4] *= 5.0  # the model uses dim 4 a lot, dim 5 barely
+    residuals[:, 5] *= 0.01
+    w = quiet_direction(readout, residuals, k=2)
+    assert float(w.norm()) == pytest.approx(1.0, abs=1e-6)
+    assert abs(float(w[5])) > 0.99
+
+
+def test_quiet_direction_refuses_k_outside_the_hidden_size() -> None:
+    from stateset_agents.experimental.weight_space.atlas import quiet_direction
+
+    with pytest.raises(ValueError):
+        quiet_direction(torch.randn(10, 4), torch.randn(20, 4), k=5)

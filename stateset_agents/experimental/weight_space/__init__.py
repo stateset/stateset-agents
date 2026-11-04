@@ -39,6 +39,7 @@ from .atlas import (
     logit_direction,
     neuron_readout,
     protected_write,
+    quiet_direction,
     token_neighbours,
     top_writers,
 )
@@ -52,6 +53,7 @@ from .circuits import (
     rewrite_activation,
     ridge_detector,
     shift_threshold,
+    silence_on_flag,
 )
 from .deltas import LowRankDelta, direction_ablation
 from .edits import (
@@ -116,9 +118,11 @@ __all__ = [
     "neuron_readout",
     "paired_compare",
     "protected_write",
+    "quiet_direction",
     "rewrite_activation",
     "ridge_detector",
     "shift_threshold",
+    "silence_on_flag",
     "strict_rows",
     "token_neighbours",
     "top_writers",

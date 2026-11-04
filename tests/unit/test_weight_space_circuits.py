@@ -381,3 +381,51 @@ def test_lookback_query_refuses_no_free_dims_or_a_dead_gain(
     keys = torch.ones(3, 16)
     with pytest.raises(ValueError):
         lookback_query(keys, torch.full((16,), gain_fill), rotary_dims=rot)
+
+
+def test_silence_on_flag_cancels_the_multiplier_and_lowers_the_gate() -> None:
+    from stateset_agents.experimental.weight_space.circuits import silence_on_flag
+
+    g = torch.Generator().manual_seed(9)
+    hidden = 8
+    gain = 1.0 + 0.2 * torch.rand(hidden, generator=g)
+    flag = torch.zeros(hidden)
+    flag[7] = 1.0
+    rw = NeuronRewrite(
+        layer=3,
+        neuron=5,
+        gate=tuple(float(v) for v in torch.randn(hidden, generator=g)),
+        up=tuple(float(v) for v in torch.randn(hidden, generator=g)),
+        down=tuple(float(v) for v in torch.randn(hidden, generator=g)),
+    )
+    out = silence_on_flag(rw, flag, norm_gain=gain, flag_read=4.0, gate_weight=1.5)
+    base = torch.randn(hidden, generator=g)
+    base[7] = 0.0  # a normalised input that does not use the flag direction
+    flagged = base + 4.0 * flag * gain  # the residual carries the flag at read 4
+    gate, up = torch.tensor(rw.gate), torch.tensor(rw.up)
+    gate2, up2 = torch.tensor(out.gate), torch.tensor(out.up)
+    assert float(up2 @ flagged) == pytest.approx(float(up @ flagged) - 1.0, abs=1e-5)
+    assert float(gate2 @ flagged) == pytest.approx(
+        float(gate @ flagged) - 6.0, abs=1e-5
+    )
+    assert float(up2 @ base) == pytest.approx(
+        float(up @ base), abs=1e-6
+    )  # no flag: unchanged
+    assert float(gate2 @ base) == pytest.approx(float(gate @ base), abs=1e-6)
+    assert out.down == rw.down and (out.layer, out.neuron) == (3, 5)
+
+
+def test_silence_on_flag_refuses_a_non_positive_read() -> None:
+    from stateset_agents.experimental.weight_space.circuits import silence_on_flag
+
+    rw = NeuronRewrite(
+        layer=0, neuron=0, gate=(1.0, 0.0), up=(1.0, 0.0), down=(0.0, 0.0)
+    )
+    with pytest.raises(ValueError):
+        silence_on_flag(
+            rw,
+            torch.tensor([0.0, 1.0]),
+            norm_gain=torch.ones(2),
+            flag_read=0.0,
+            gate_weight=1.0,
+        )
