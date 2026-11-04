@@ -29,6 +29,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EditSpec",
+    "HeadRewrite",
     "NeuronColumnScale",
     "NeuronRewrite",
     "SpecMismatch",
@@ -105,7 +106,59 @@ class NeuronRewrite:
         }
 
 
-Edit = TokenRowScale | NeuronColumnScale | NeuronRewrite
+@dataclass(frozen=True)
+class HeadRewrite:
+    """Replace query head ``head`` of a gated attention layer with a designed head.
+
+    For attention whose ``q_proj`` emits, per head, ``head_dim`` query rows
+    followed by ``head_dim`` output-gate rows (Qwen3.5, Qwen3-Next). Each part is
+    rank one: query rows ``query_out (x) query_in``, gate rows
+    ``gate_out (x) gate_in`` and the head's ``o_proj`` columns
+    ``out_write (x) out_read``. So the head's query is ``query_out`` scaled by
+    ``query_in . x`` (a fixed direction once the per-head norm removes the
+    scale), and it writes ``out_write`` times ``out_read`` of the values it
+    attends to. Keys and values are shared with the other query heads of its
+    key/value group and are not changed. ``*_in`` and ``out_write`` have the
+    hidden size; ``query_out``, ``gate_out`` and ``out_read`` the head dim.
+    """
+
+    layer: int
+    head: int
+    query_out: tuple[float, ...]
+    query_in: tuple[float, ...]
+    gate_out: tuple[float, ...]
+    gate_in: tuple[float, ...]
+    out_write: tuple[float, ...]
+    out_read: tuple[float, ...]
+
+    @property
+    def head_dim(self) -> int:
+        return len(self.query_out)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "kind": "head_rewrite",
+            "layer": self.layer,
+            "head": self.head,
+            "query_out": list(self.query_out),
+            "query_in": list(self.query_in),
+            "gate_out": list(self.gate_out),
+            "gate_in": list(self.gate_in),
+            "out_write": list(self.out_write),
+            "out_read": list(self.out_read),
+        }
+
+
+Edit = TokenRowScale | NeuronColumnScale | NeuronRewrite | HeadRewrite
+
+_HEAD_FIELDS = (
+    "query_out",
+    "query_in",
+    "gate_out",
+    "gate_in",
+    "out_write",
+    "out_read",
+)
 
 
 def _edit_from_dict(d: Mapping[str, Any]) -> Edit:
@@ -127,6 +180,12 @@ def _edit_from_dict(d: Mapping[str, Any]) -> Edit:
             gate=tuple(float(x) for x in d["gate"]),
             up=tuple(float(x) for x in d["up"]),
             down=tuple(float(x) for x in d["down"]),
+        )
+    if kind == "head_rewrite":
+        return HeadRewrite(
+            layer=int(d["layer"]),
+            head=int(d["head"]),
+            **{f: tuple(float(x) for x in d[f]) for f in _HEAD_FIELDS},
         )
     raise ValueError(f"unknown edit kind {kind!r}")
 
@@ -186,6 +245,16 @@ class TensorLayout:
         """A layer's MLP ``up_proj`` name (``{layer}`` field)."""
         return self.down_fmt.replace("down_proj", "up_proj")
 
+    @property
+    def q_fmt(self) -> str:
+        """A layer's attention ``q_proj`` name (``{layer}`` field)."""
+        return self.down_fmt.replace("mlp.down_proj", "self_attn.q_proj")
+
+    @property
+    def o_fmt(self) -> str:
+        """A layer's attention ``o_proj`` name (``{layer}`` field)."""
+        return self.down_fmt.replace("mlp.down_proj", "self_attn.o_proj")
+
     @classmethod
     def detect(cls, names: Iterable[str]) -> TensorLayout:
         """Infer the layout from a checkpoint's tensor names."""
@@ -233,6 +302,9 @@ def _sets(
     scaled = _plan(spec, layout)
     sets: dict[str, dict[tuple[str, int], tuple[float, ...]]] = {}
     for e in spec.edits:
+        if isinstance(e, HeadRewrite):
+            _set_head(e, layout, sets)
+            continue
         if not isinstance(e, NeuronRewrite):
             continue
         for key, slot, values in (
@@ -247,6 +319,66 @@ def _sets(
                 )
             sets.setdefault(key, {})[slot] = values
     return sets
+
+
+def _set_head(
+    e: HeadRewrite,
+    layout: TensorLayout,
+    sets: dict[str, dict[tuple[str, int], tuple[float, ...]]],
+) -> None:
+    """Add a HeadRewrite's q_proj rows and o_proj columns to ``sets``."""
+    hd = e.head_dim
+    if hd == 0 or len(e.gate_out) != hd or len(e.out_read) != hd:
+        raise ValueError(
+            f"layer {e.layer} head {e.head}: query_out, gate_out and out_read must "
+            f"all have the head_dim ({hd}, {len(e.gate_out)}, {len(e.out_read)})"
+        )
+    q_key = layout.q_fmt.format(layer=e.layer)
+    o_key = layout.o_fmt.format(layer=e.layer)
+    first = e.head * 2 * hd
+    slots: list[tuple[str, tuple[str, int], tuple[float, ...]]] = []
+    for r in range(hd):
+        slots.append(
+            (q_key, ("row", first + r), tuple(e.query_out[r] * x for x in e.query_in))
+        )
+        slots.append(
+            (
+                q_key,
+                ("row", first + hd + r),
+                tuple(e.gate_out[r] * x for x in e.gate_in),
+            )
+        )
+        slots.append(
+            (
+                o_key,
+                ("col", e.head * hd + r),
+                tuple(w * e.out_read[r] for w in e.out_write),
+            )
+        )
+    for key, slot, values in slots:
+        if slot in sets.get(key, {}):
+            raise ValueError(
+                f"layer {e.layer} head {e.head} is rewritten twice ({key})"
+            )
+        sets.setdefault(key, {})[slot] = values
+
+
+def _check_gated(
+    spec: EditSpec, tensors: Mapping[str, torch.Tensor], layout: TensorLayout
+) -> None:
+    """A HeadRewrite needs q_proj to hold query and gate rows: 2x o_proj's columns."""
+    for e in spec.edits:
+        if not isinstance(e, HeadRewrite):
+            continue
+        q_key = layout.q_fmt.format(layer=e.layer)
+        o_key = layout.o_fmt.format(layer=e.layer)
+        if q_key in tensors and o_key in tensors:
+            q_rows, o_cols = tensors[q_key].shape[0], tensors[o_key].shape[1]
+            if q_rows != 2 * o_cols:
+                raise ValueError(
+                    f"layer {e.layer}: HeadRewrite needs gated attention (q_proj "
+                    f"rows = 2 x o_proj columns); got {q_rows} and {o_cols}"
+                )
 
 
 def _slice(t: torch.Tensor, axis: str, idx: int) -> torch.Tensor:
@@ -269,6 +401,7 @@ def apply_spec(
 
     plan = _plan(spec, layout)
     sets = _sets(spec, layout)
+    _check_gated(spec, tensors, layout)
     changed = 0
     for key, set_slots in sets.items():
         if key not in tensors:
@@ -415,6 +548,25 @@ def matched_control(
                     gate=e.gate,
                     up=e.up,
                     down=tuple(x * ratio for x in noise),
+                )
+            )
+        elif isinstance(e, HeadRewrite):
+            # Same head, same query, gate and value read; a random write of the
+            # same norm.
+            noise = [rng.gauss(0.0, 1.0) for _ in e.out_write]
+            ratio = math.sqrt(sum(x * x for x in e.out_write)) / math.sqrt(
+                sum(x * x for x in noise)
+            )
+            edits.append(
+                HeadRewrite(
+                    layer=e.layer,
+                    head=e.head,
+                    query_out=e.query_out,
+                    query_in=e.query_in,
+                    gate_out=e.gate_out,
+                    gate_in=e.gate_in,
+                    out_write=tuple(x * ratio for x in noise),
+                    out_read=e.out_read,
                 )
             )
         else:

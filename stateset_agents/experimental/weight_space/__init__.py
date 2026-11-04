@@ -54,6 +54,7 @@ from .circuits import (
 from .deltas import LowRankDelta, direction_ablation
 from .edits import (
     EditSpec,
+    HeadRewrite,
     NeuronColumnScale,
     NeuronRewrite,
     SpecMismatch,
@@ -86,6 +87,7 @@ __all__ = [
     "ConditionalNeuron",
     "EditSpec",
     "ForwardBudget",
+    "HeadRewrite",
     "LowRankDelta",
     "NeuronColumnScale",
     "NeuronRewrite",

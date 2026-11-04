@@ -17,6 +17,7 @@ from typing import Any
 
 from .edits import (
     EditSpec,
+    HeadRewrite,
     NeuronRewrite,
     SpecMismatch,
     TensorLayout,
@@ -146,6 +147,11 @@ def _touched_keys(spec: EditSpec, layout: TensorLayout) -> set[str]:
             keys |= {
                 fmt.format(layer=e.layer)
                 for fmt in (layout.gate_fmt, layout.up_fmt, layout.down_fmt)
+            }
+        elif isinstance(e, HeadRewrite):
+            keys |= {
+                layout.q_fmt.format(layer=e.layer),
+                layout.o_fmt.format(layer=e.layer),
             }
         else:
             keys.add(layout.down_fmt.format(layer=e.layer))
