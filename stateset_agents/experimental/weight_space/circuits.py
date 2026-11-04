@@ -40,6 +40,7 @@ __all__ = [
     "auc",
     "design_conditional_neuron",
     "least_used_neuron",
+    "lookback_query",
     "near_constant_unit",
     "rewrite_activation",
     "ridge_detector",
@@ -216,6 +217,41 @@ def shift_threshold(
         up=rewrite.up,
         down=tuple(write_scale * v for v in rewrite.down),
     )
+
+
+def lookback_query(
+    target_keys: torch.Tensor, q_norm_gain: torch.Tensor, *, rotary_dims: int
+) -> torch.Tensor:
+    """A head's query rows (``query_out``) that look back at one token anywhere.
+
+    ``target_keys`` are ``[n, head_dim]`` keys at the target token as attention
+    sees them (after the per-head key norm, before rotary). Rotary encoding
+    acts on the first ``rotary_dims`` dims; the rest match regardless of
+    distance. ``q_norm_gain`` is the per-head query norm's elementwise gain
+    (``1 + w`` for zero-centred norms). The result is zero on the rotary dims
+    and ``u / gain`` on the rest, ``u`` the unit mean target key there, so the
+    normalised query of any positive multiple of it points along ``u``: with
+    ``query_in`` a read that is positive everywhere, the head attends to the
+    target token wherever it is (see :class:`~.edits.HeadRewrite`).
+    """
+    import torch
+
+    hd = target_keys.shape[-1]
+    if not 0 <= rotary_dims < hd:
+        raise ValueError(
+            f"no position-free dims: rotary_dims={rotary_dims}, head_dim={hd}"
+        )
+    gain = q_norm_gain.double()[rotary_dims:]
+    if bool((gain <= 0).any()):
+        raise ValueError(
+            "the query norm's gain must be positive on the position-free dims"
+        )
+    u = target_keys.double()[:, rotary_dims:].mean(0)
+    u = u / u.norm()
+    out = torch.zeros(hd, dtype=torch.float64)
+    out[rotary_dims:] = u / gain
+    query: torch.Tensor = out.float()
+    return query
 
 
 def design_conditional_neuron(

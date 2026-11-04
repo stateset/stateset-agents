@@ -58,3 +58,42 @@ def test_neuron_readout_lists_the_tokens_a_neuron_promotes() -> None:
 def test_token_neighbours_excludes_the_query_tokens() -> None:
     embed = torch.tensor([[1.0, 0.0], [0.9, 0.1], [0.0, 1.0], [1.0, 0.05]])
     assert token_neighbours(embed, [0], k=2) == [3, 1]
+
+
+def _readouts(vocab: int = 12, hidden: int = 8, seed: int = 0):
+    g = torch.Generator().manual_seed(seed)
+    embed = torch.randn(vocab, hidden, generator=g)
+    norm = torch.randn(hidden, generator=g) * 0.3
+    return embed, norm, embed * (1.0 + norm)
+
+
+def test_protected_write_moves_the_target_and_leaves_protected_tokens_alone() -> None:
+    from stateset_agents.experimental.weight_space.atlas import protected_write
+
+    embed, norm, readout = _readouts()
+    v = protected_write(embed, 3, norm, protect=[0, 5, 7])
+    assert float(v.norm()) == pytest.approx(1.0, abs=1e-6)
+    assert float(readout[3] @ v) > 0
+    for p in (0, 5, 7):
+        assert abs(float(readout[p] @ v)) < 1e-5
+
+
+def test_protected_write_without_protection_is_the_unit_readout() -> None:
+    from stateset_agents.experimental.weight_space.atlas import (
+        logit_direction,
+        protected_write,
+    )
+
+    embed, norm, _ = _readouts()
+    plain = logit_direction(embed, [3], norm)
+    v = protected_write(embed, 3, norm, protect=[])
+    assert torch.allclose(v, plain / plain.norm(), atol=1e-6)
+
+
+@pytest.mark.parametrize("protect", [[3], list(range(8))])
+def test_protected_write_refuses_impossible_protection(protect: list[int]) -> None:
+    from stateset_agents.experimental.weight_space.atlas import protected_write
+
+    embed, norm, _ = _readouts()
+    with pytest.raises(ValueError):
+        protected_write(embed, 3, norm, protect=protect)

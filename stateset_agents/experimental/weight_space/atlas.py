@@ -25,6 +25,7 @@ __all__ = [
     "NeuronScore",
     "logit_direction",
     "neuron_readout",
+    "protected_write",
     "token_neighbours",
     "top_writers",
 ]
@@ -58,6 +59,44 @@ def logit_direction(
     (the tied embedding, or ``lm_head``).
     """
     return embed[list(ids)].float().mean(0) * _gain(norm_weight, zero_centered)
+
+
+def protected_write(
+    embed: torch.Tensor,
+    target: int,
+    norm_weight: torch.Tensor,
+    *,
+    protect: Sequence[int],
+    zero_centered: bool = True,
+) -> torch.Tensor:
+    """Unit residual write that moves ``target``'s logit and no ``protect`` logit.
+
+    Through the final norm a write ``v`` changes token ``t``'s logit by
+    ``(e_t * gain) . v`` over the shared ``rms(x)``. So ``v`` is ``target``'s
+    readout with the protected tokens' readouts projected out: their logits
+    move by exactly zero (to first order) while ``target``'s moves. A plain
+    :func:`logit_direction` write also moves every token whose readout
+    overlaps (on Qwen3.5-0.8B a ``</think>`` write moves ``<|im_end|>`` by 23%
+    as much). Raises ValueError if ``target`` is protected or the protected
+    readouts leave nothing of the target's.
+    """
+    import torch
+
+    if target in set(protect):
+        raise ValueError("the target token cannot also be protected")
+    gain = _gain(norm_weight, zero_centered).double()
+    r = embed[target].double() * gain
+    v = r
+    if protect:
+        q = embed[list(protect)].double() * gain  # [k, hidden]
+        coef = torch.linalg.lstsq(q.T, r.unsqueeze(1)).solution.squeeze(1)
+        v = r - q.T @ coef
+    if float(v.norm()) < 1e-6 * float(r.norm()):
+        raise ValueError(
+            f"protecting {len(protect)} tokens leaves no write that moves token {target}"
+        )
+    out: torch.Tensor = (v / v.norm()).float()
+    return out
 
 
 def top_writers(

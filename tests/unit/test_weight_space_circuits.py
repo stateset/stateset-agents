@@ -344,3 +344,40 @@ def test_rewrite_activation_reads_a_weakly_read_direction_exactly() -> None:
     )
     want = torch.nn.functional.silu(x @ gate_row) * (x @ wu[0])
     assert torch.allclose(got.float(), want, atol=1e-3)
+
+
+def _rms_norm(x: torch.Tensor, gain: torch.Tensor) -> torch.Tensor:
+    return x / x.pow(2).mean().sqrt() * gain
+
+
+def test_lookback_query_points_along_the_target_key_without_rotary_dims() -> None:
+    from stateset_agents.experimental.weight_space.circuits import lookback_query
+
+    g = torch.Generator().manual_seed(5)
+    hd, rot = 16, 4
+    base = torch.randn(hd, generator=g)
+    target_keys = base + 0.05 * torch.randn(6, hd, generator=g)
+    gain = 1.0 + 0.3 * torch.rand(hd, generator=g)
+    q_out = lookback_query(target_keys, gain, rotary_dims=rot)
+    assert torch.equal(q_out[:rot], torch.zeros(rot))
+    u = target_keys[:, rot:].mean(0)
+    u = u / u.norm()
+    for c in (0.01, 1.0, 300.0):  # any positive read gives the same query
+        q = _rms_norm(c * q_out, gain)
+        assert float(q[:rot].abs().max()) == 0.0
+        assert float((q[rot:] / q[rot:].norm()) @ u) == pytest.approx(1.0, abs=1e-5)
+    # It scores the target keys above unrelated keys.
+    others = torch.randn(200, hd, generator=g)
+    q = _rms_norm(q_out, gain)
+    assert float((target_keys @ q).min()) > float((others @ q).max())
+
+
+@pytest.mark.parametrize(("rot", "gain_fill"), [(16, 1.0), (4, 0.0)])
+def test_lookback_query_refuses_no_free_dims_or_a_dead_gain(
+    rot: int, gain_fill: float
+) -> None:
+    from stateset_agents.experimental.weight_space.circuits import lookback_query
+
+    keys = torch.ones(3, 16)
+    with pytest.raises(ValueError):
+        lookback_query(keys, torch.full((16,), gain_fill), rotary_dims=rot)
