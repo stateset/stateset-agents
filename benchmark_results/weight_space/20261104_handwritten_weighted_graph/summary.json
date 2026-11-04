@@ -1,0 +1,1039 @@
+{
+  "config": {
+    "steps": 5000,
+    "batch_size": 64,
+    "eval_every": 500,
+    "train_per_density": 4096,
+    "validation_per_density": 256,
+    "test_per_family": 512,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "learning_rates": [
+      0.001,
+      0.003
+    ],
+    "threads": 2,
+    "nodes": 17,
+    "max_cost": 7,
+    "unreachable": 113,
+    "torch": "2.11.0+cu130",
+    "python": "3.12.12",
+    "device": "cpu",
+    "source_sha256": {
+      "model.py": "fe0750c568fcdde0f32135124f7bd000f9d03ebbbf8c400fc3045ca8f0ebcbbe",
+      "benchmark.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0"
+    },
+    "selection": "validation exact graphs, then lower cost MAE",
+    "loss": "114-class cross entropy per node",
+    "optimizer": "Adam, gradient norm clip 1, cosine LR decay to 0.1 initial"
+  },
+  "splits": {
+    "train_count": 16384,
+    "validation_count": 1024,
+    "test_count": 4096,
+    "unique_cost_matrices": 21504,
+    "train_sha256": "2aa99ab679ba0a001d765141b98b6cbbaee5189e6983eecb4280ffc664e2c7e6",
+    "validation_sha256": "e96dbf141c0b4bdf38f13dcaefc05054d9538f6e6da6a221d85d51e0768bc1fb",
+    "test_sha256": {
+      "er_0.05": "1feaf80cf16540764b09c2071afbb85ac136dde5513c952c7b5aefdb09e63db0",
+      "er_0.12": "38b2a1733673055e4d766f0712b565dc1a94d7544d67b865fd5ddebeedc9e3fb",
+      "er_0.25": "fd27525da6dc0c9cafe89787896c0f2989f9d8035f7a91f97def551ce32791d1",
+      "er_0.5": "5f3cb7bf69ce982b61719d1980f3793d5f0dbb324eb97ece526e85eb41aae61c",
+      "max_cost_chain": "81a061f9e8dd9f8f3e66ff6ce5432a3dd6e31e35509eca19018f78c26169c192",
+      "broken_chain": "f07e01cbd55f369f6faad6fb6fc0935d39b17655c1a2a92ddd873e10e64f8f86",
+      "cheap_detours": "d50837da6ff09c2d034301c6d830880299ad717eefe41f55ef56123a32dd4068",
+      "two_cycles": "bb8dcc49616708bc76feb354ce1624682f16a46161edd48dc5c742e53e7444b7"
+    },
+    "seeds": {
+      "train": 51000,
+      "validation": 52000,
+      "test": 53000
+    }
+  },
+  "handwritten": {
+    "parameters": 2000000,
+    "nonzero_parameters": 5679,
+    "natural_parameters": 1865053,
+    "split_neurons": 137,
+    "optimizer_steps": 0,
+    "test": {
+      "er_0.05": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "er_0.12": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "er_0.25": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "er_0.5": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "max_cost_chain": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "broken_chain": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "cheap_detours": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      },
+      "two_cycles": {
+        "n": 512,
+        "exact_graphs": 512,
+        "graph_accuracy": 1.0,
+        "node_accuracy": 1.0,
+        "distance_mae": 0.0,
+        "max_raw_error": 0.0
+      }
+    },
+    "exhaustive_3node": {
+      "n": 2187,
+      "exact_graphs": 2187,
+      "graph_accuracy": 1.0,
+      "node_accuracy": 1.0,
+      "distance_mae": 0.0,
+      "max_raw_error": 0.0
+    }
+  },
+  "baseline_parameters": 1999988,
+  "trials": [
+    {
+      "seed": 0,
+      "lr": 0.001,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 1500,
+      "selection_key": [
+        144,
+        -20.112706801470587
+      ],
+      "seconds": 144.69602067900087,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.006318933823529412,
+          "distance_mae": 53.567038143382355,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 6,
+          "graph_accuracy": 0.005859375,
+          "node_accuracy": 0.38671875,
+          "distance_mae": 23.67434512867647,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.41848575367647056,
+          "distance_mae": 17.0703125,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 144,
+          "graph_accuracy": 0.140625,
+          "node_accuracy": 0.42400045955882354,
+          "distance_mae": 20.112706801470587,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.42038143382352944,
+          "distance_mae": 17.681755514705884,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 132,
+          "graph_accuracy": 0.12890625,
+          "node_accuracy": 0.42003676470588236,
+          "distance_mae": 16.610121783088236,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.4219324448529412,
+          "distance_mae": 18.539234834558822,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.41940487132352944,
+          "distance_mae": 17.07387408088235,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.41906020220588236,
+          "distance_mae": 17.541130514705884,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.41980698529411764,
+          "distance_mae": 17.05727251838235,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 132,
+          "graph_accuracy": 0.12890625,
+          "node_accuracy": 0.4208984375,
+          "distance_mae": 17.651539522058822,
+          "max_raw_error": null
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "lr": 0.003,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 1500,
+      "selection_key": [
+        145,
+        -21.112247242647058
+      ],
+      "seconds": 273.32879490400046,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.006318933823529412,
+          "distance_mae": 53.567038143382355,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.3768956801470588,
+          "distance_mae": 23.837316176470587,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 140,
+          "graph_accuracy": 0.13671875,
+          "node_accuracy": 0.42468979779411764,
+          "distance_mae": 18.582261029411764,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 145,
+          "graph_accuracy": 0.1416015625,
+          "node_accuracy": 0.4225643382352941,
+          "distance_mae": 21.112247242647058,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 135,
+          "graph_accuracy": 0.1318359375,
+          "node_accuracy": 0.4225643382352941,
+          "distance_mae": 17.082892922794116,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.4225643382352941,
+          "distance_mae": 17.317095588235293,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 132,
+          "graph_accuracy": 0.12890625,
+          "node_accuracy": 0.42227711397058826,
+          "distance_mae": 17.018267463235293,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.4221047794117647,
+          "distance_mae": 18.0126953125,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.42491957720588236,
+          "distance_mae": 17.605641084558822,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.4231387867647059,
+          "distance_mae": 17.714901194852942,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 132,
+          "graph_accuracy": 0.12890625,
+          "node_accuracy": 0.4241727941176471,
+          "distance_mae": 18.024299172794116,
+          "max_raw_error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "lr": 0.001,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 1500,
+      "selection_key": [
+        144,
+        -20.167853860294116
+      ],
+      "seconds": 141.0608090379992,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.005457261029411764,
+          "distance_mae": 52.83392693014706,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 9,
+          "graph_accuracy": 0.0087890625,
+          "node_accuracy": 0.38556985294117646,
+          "distance_mae": 22.921875,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 130,
+          "graph_accuracy": 0.126953125,
+          "node_accuracy": 0.4218175551470588,
+          "distance_mae": 20.00729549632353,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 144,
+          "graph_accuracy": 0.140625,
+          "node_accuracy": 0.42400045955882354,
+          "distance_mae": 20.167853860294116,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 141,
+          "graph_accuracy": 0.1376953125,
+          "node_accuracy": 0.4231962316176471,
+          "distance_mae": 19.646484375,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 136,
+          "graph_accuracy": 0.1328125,
+          "node_accuracy": 0.42078354779411764,
+          "distance_mae": 18.072093290441178,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.421875,
+          "distance_mae": 17.038028492647058,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 137,
+          "graph_accuracy": 0.1337890625,
+          "node_accuracy": 0.4189453125,
+          "distance_mae": 18.798770680147058,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.4202090992647059,
+          "distance_mae": 18.77292049632353,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 127,
+          "graph_accuracy": 0.1240234375,
+          "node_accuracy": 0.4181985294117647,
+          "distance_mae": 15.92578125,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.4182559742647059,
+          "distance_mae": 17.270795036764707,
+          "max_raw_error": null
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "lr": 0.003,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 2000,
+      "selection_key": [
+        143,
+        -20.506089154411764
+      ],
+      "seconds": 184.48424567399888,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.005457261029411764,
+          "distance_mae": 52.83392693014706,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 3,
+          "graph_accuracy": 0.0029296875,
+          "node_accuracy": 0.3785615808823529,
+          "distance_mae": 24.10891544117647,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 114,
+          "graph_accuracy": 0.111328125,
+          "node_accuracy": 0.4211282169117647,
+          "distance_mae": 21.05014935661765,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 142,
+          "graph_accuracy": 0.138671875,
+          "node_accuracy": 0.4289981617647059,
+          "distance_mae": 20.214039522058822,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 143,
+          "graph_accuracy": 0.1396484375,
+          "node_accuracy": 0.4267578125,
+          "distance_mae": 20.506089154411764,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 139,
+          "graph_accuracy": 0.1357421875,
+          "node_accuracy": 0.4234834558823529,
+          "distance_mae": 19.045094209558822,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.42038143382352944,
+          "distance_mae": 16.656192555147058,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 137,
+          "graph_accuracy": 0.1337890625,
+          "node_accuracy": 0.42170266544117646,
+          "distance_mae": 19.48489200367647,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 135,
+          "graph_accuracy": 0.1318359375,
+          "node_accuracy": 0.42227711397058826,
+          "distance_mae": 18.971794577205884,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.4227941176470588,
+          "distance_mae": 17.257697610294116,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.42394301470588236,
+          "distance_mae": 17.842945772058822,
+          "max_raw_error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "lr": 0.001,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 2000,
+      "selection_key": [
+        143,
+        -19.799574908088236
+      ],
+      "seconds": 187.01982040599978,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.006778492647058824,
+          "distance_mae": 53.48494944852941,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 5,
+          "graph_accuracy": 0.0048828125,
+          "node_accuracy": 0.3877527573529412,
+          "distance_mae": 23.045151654411764,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 140,
+          "graph_accuracy": 0.13671875,
+          "node_accuracy": 0.4221047794117647,
+          "distance_mae": 19.529698988970587,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 138,
+          "graph_accuracy": 0.134765625,
+          "node_accuracy": 0.42176011029411764,
+          "distance_mae": 18.657973345588236,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 143,
+          "graph_accuracy": 0.1396484375,
+          "node_accuracy": 0.42198988970588236,
+          "distance_mae": 19.799574908088236,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 135,
+          "graph_accuracy": 0.1318359375,
+          "node_accuracy": 0.42072610294117646,
+          "distance_mae": 17.7861328125,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 131,
+          "graph_accuracy": 0.1279296875,
+          "node_accuracy": 0.41785386029411764,
+          "distance_mae": 15.983283547794118,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 132,
+          "graph_accuracy": 0.12890625,
+          "node_accuracy": 0.4202090992647059,
+          "distance_mae": 17.858685661764707,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 130,
+          "graph_accuracy": 0.126953125,
+          "node_accuracy": 0.42130055147058826,
+          "distance_mae": 16.548828125,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.4216452205882353,
+          "distance_mae": 17.51918658088235,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.42043887867647056,
+          "distance_mae": 17.199448529411764,
+          "max_raw_error": null
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "lr": 0.003,
+      "steps": 5000,
+      "training_draws": 320000,
+      "selected_step": 1500,
+      "selection_key": [
+        141,
+        -18.979721966911764
+      ],
+      "seconds": 154.1124629370006,
+      "history": [
+        {
+          "step": 0,
+          "n": 1024,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.006778492647058824,
+          "distance_mae": 53.48494944852941,
+          "max_raw_error": null
+        },
+        {
+          "step": 500,
+          "n": 1024,
+          "exact_graphs": 1,
+          "graph_accuracy": 0.0009765625,
+          "node_accuracy": 0.37804457720588236,
+          "distance_mae": 22.718003216911764,
+          "max_raw_error": null
+        },
+        {
+          "step": 1000,
+          "n": 1024,
+          "exact_graphs": 134,
+          "graph_accuracy": 0.130859375,
+          "node_accuracy": 0.41940487132352944,
+          "distance_mae": 19.281020220588236,
+          "max_raw_error": null
+        },
+        {
+          "step": 1500,
+          "n": 1024,
+          "exact_graphs": 141,
+          "graph_accuracy": 0.1376953125,
+          "node_accuracy": 0.42107077205882354,
+          "distance_mae": 18.979721966911764,
+          "max_raw_error": null
+        },
+        {
+          "step": 2000,
+          "n": 1024,
+          "exact_graphs": 140,
+          "graph_accuracy": 0.13671875,
+          "node_accuracy": 0.42468979779411764,
+          "distance_mae": 18.694163602941178,
+          "max_raw_error": null
+        },
+        {
+          "step": 2500,
+          "n": 1024,
+          "exact_graphs": 139,
+          "graph_accuracy": 0.1357421875,
+          "node_accuracy": 0.42204733455882354,
+          "distance_mae": 18.852596507352942,
+          "max_raw_error": null
+        },
+        {
+          "step": 3000,
+          "n": 1024,
+          "exact_graphs": 139,
+          "graph_accuracy": 0.1357421875,
+          "node_accuracy": 0.42107077205882354,
+          "distance_mae": 18.88120404411765,
+          "max_raw_error": null
+        },
+        {
+          "step": 3500,
+          "n": 1024,
+          "exact_graphs": 135,
+          "graph_accuracy": 0.1318359375,
+          "node_accuracy": 0.42296645220588236,
+          "distance_mae": 18.198529411764707,
+          "max_raw_error": null
+        },
+        {
+          "step": 4000,
+          "n": 1024,
+          "exact_graphs": 137,
+          "graph_accuracy": 0.1337890625,
+          "node_accuracy": 0.42038143382352944,
+          "distance_mae": 17.671989889705884,
+          "max_raw_error": null
+        },
+        {
+          "step": 4500,
+          "n": 1024,
+          "exact_graphs": 135,
+          "graph_accuracy": 0.1318359375,
+          "node_accuracy": 0.4206112132352941,
+          "distance_mae": 18.43405330882353,
+          "max_raw_error": null
+        },
+        {
+          "step": 5000,
+          "n": 1024,
+          "exact_graphs": 133,
+          "graph_accuracy": 0.1298828125,
+          "node_accuracy": 0.4180261948529412,
+          "distance_mae": 17.854204963235293,
+          "max_raw_error": null
+        }
+      ]
+    }
+  ],
+  "selected": [
+    {
+      "seed": 0,
+      "lr": 0.003,
+      "step": 1500,
+      "weights": "classifier_seed0.safetensors",
+      "weights_sha256": "3f59cb7ba7657e5c86b2fd4d0e3d55dab25986f5a587d457b146930b908f916f",
+      "test": {
+        "er_0.05": {
+          "n": 512,
+          "exact_graphs": 222,
+          "graph_accuracy": 0.43359375,
+          "node_accuracy": 0.8792509191176471,
+          "distance_mae": 12.637063419117647,
+          "max_raw_error": null
+        },
+        "er_0.12": {
+          "n": 512,
+          "exact_graphs": 71,
+          "graph_accuracy": 0.138671875,
+          "node_accuracy": 0.4064797794117647,
+          "distance_mae": 60.28366268382353,
+          "max_raw_error": null
+        },
+        "er_0.25": {
+          "n": 512,
+          "exact_graphs": 1,
+          "graph_accuracy": 0.001953125,
+          "node_accuracy": 0.1625689338235294,
+          "distance_mae": 9.110983455882353,
+          "max_raw_error": null
+        },
+        "er_0.5": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.24908088235294118,
+          "distance_mae": 1.3882123161764706,
+          "max_raw_error": null
+        },
+        "max_cost_chain": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.05778952205882353,
+          "distance_mae": 50.46978400735294,
+          "max_raw_error": null
+        },
+        "broken_chain": {
+          "n": 512,
+          "exact_graphs": 38,
+          "graph_accuracy": 0.07421875,
+          "node_accuracy": 0.5534237132352942,
+          "distance_mae": 32.35592830882353,
+          "max_raw_error": null
+        },
+        "cheap_detours": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.05870863970588235,
+          "distance_mae": 101.01298253676471,
+          "max_raw_error": null
+        },
+        "two_cycles": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.5591681985294118,
+          "distance_mae": 40.97564338235294,
+          "max_raw_error": null
+        }
+      }
+    },
+    {
+      "seed": 1,
+      "lr": 0.001,
+      "step": 1500,
+      "weights": "classifier_seed1.safetensors",
+      "weights_sha256": "2626c4cd3cbd77dc335431b83181c1537416e453e1d47439f396847b6b798f7b",
+      "test": {
+        "er_0.05": {
+          "n": 512,
+          "exact_graphs": 228,
+          "graph_accuracy": 0.4453125,
+          "node_accuracy": 0.8807444852941176,
+          "distance_mae": 12.468290441176471,
+          "max_raw_error": null
+        },
+        "er_0.12": {
+          "n": 512,
+          "exact_graphs": 70,
+          "graph_accuracy": 0.13671875,
+          "node_accuracy": 0.40636488970588236,
+          "distance_mae": 59.53412224264706,
+          "max_raw_error": null
+        },
+        "er_0.25": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.16245404411764705,
+          "distance_mae": 6.686236213235294,
+          "max_raw_error": null
+        },
+        "er_0.5": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.25769761029411764,
+          "distance_mae": 1.3701746323529411,
+          "max_raw_error": null
+        },
+        "max_cost_chain": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.058823529411764705,
+          "distance_mae": 50.35294117647059,
+          "max_raw_error": null
+        },
+        "broken_chain": {
+          "n": 512,
+          "exact_graphs": 38,
+          "graph_accuracy": 0.07421875,
+          "node_accuracy": 0.5544577205882353,
+          "distance_mae": 32.239085477941174,
+          "max_raw_error": null
+        },
+        "cheap_detours": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.058823529411764705,
+          "distance_mae": 101.0,
+          "max_raw_error": null
+        },
+        "two_cycles": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.5598575367647058,
+          "distance_mae": 40.8977481617647,
+          "max_raw_error": null
+        }
+      }
+    },
+    {
+      "seed": 2,
+      "lr": 0.001,
+      "step": 2000,
+      "weights": "classifier_seed2.safetensors",
+      "weights_sha256": "aad40f278176a70bd70f0c3c09b25009818b741d6e23e52115eb4e1017debd46",
+      "test": {
+        "er_0.05": {
+          "n": 512,
+          "exact_graphs": 228,
+          "graph_accuracy": 0.4453125,
+          "node_accuracy": 0.8807444852941176,
+          "distance_mae": 12.468290441176471,
+          "max_raw_error": null
+        },
+        "er_0.12": {
+          "n": 512,
+          "exact_graphs": 64,
+          "graph_accuracy": 0.125,
+          "node_accuracy": 0.40349264705882354,
+          "distance_mae": 58.291015625,
+          "max_raw_error": null
+        },
+        "er_0.25": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.15854779411764705,
+          "distance_mae": 6.328239889705882,
+          "max_raw_error": null
+        },
+        "er_0.5": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.25735294117647056,
+          "distance_mae": 1.3874080882352942,
+          "max_raw_error": null
+        },
+        "max_cost_chain": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.058823529411764705,
+          "distance_mae": 50.35294117647059,
+          "max_raw_error": null
+        },
+        "broken_chain": {
+          "n": 512,
+          "exact_graphs": 38,
+          "graph_accuracy": 0.07421875,
+          "node_accuracy": 0.5544577205882353,
+          "distance_mae": 32.239085477941174,
+          "max_raw_error": null
+        },
+        "cheap_detours": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.058823529411764705,
+          "distance_mae": 101.0,
+          "max_raw_error": null
+        },
+        "two_cycles": {
+          "n": 512,
+          "exact_graphs": 0,
+          "graph_accuracy": 0.0,
+          "node_accuracy": 0.5598575367647058,
+          "distance_mae": 40.8977481617647,
+          "max_raw_error": null
+        }
+      }
+    }
+  ]
+}

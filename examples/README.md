@@ -58,6 +58,19 @@ python examples/quick_start.py
 
 ## 🎓 Training Examples
 
+### Handwritten neural algorithms
+
+These examples construct every neural parameter analytically, without training
+or downloading a model. Run them from the repository root with `PYTHONPATH=.`:
+
+- [`handwritten_decoder.py`](handwritten_decoder.py): recover an encoded byte
+  after up to 95 bit flips using a 100,616-parameter ReLU network.
+- [`handwritten_shortest_paths.py`](handwritten_shortest_paths.py): compute exact
+  hop distances on directed twelve-node graphs with shared Linear/ReLU layers.
+- [`handwritten_weighted_shortest_paths.py`](handwritten_weighted_shortest_paths.py):
+  compute minimum costs on weighted seventeen-node graphs using exactly
+  2,000,000 stored parameters, including 5,679 nonzero coefficients.
+
 ### Refund resolution tool
 
 [`refund_resolution_tool.py`](refund_resolution_tool.py) delegates an explicit

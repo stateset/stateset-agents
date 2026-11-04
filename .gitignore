@@ -188,6 +188,8 @@ benchmark_results/industry_pilot/**/*.pth
 benchmark_results/industry_pilot/**/*.bin
 !benchmark_results/weight_space/
 !benchmark_results/weight_space/**
+benchmark_results/weight_space/**/__pycache__/
+benchmark_results/weight_space/**/*.py[cod]
 benchmark_results/weight_space/**/*.safetensors
 benchmark_results/weight_space/**/*.pt
 benchmark_results/weight_space/**/*.gz

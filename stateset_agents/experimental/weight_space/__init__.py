@@ -28,6 +28,13 @@ This package is the harness, not the programmer:
 - :mod:`.protocol` — paired statistics (exact McNemar, bootstrap CI) for
   judging an edit against the base on identical problems, strict scoring,
   and token-budget curves from one fixed-seed run.
+- :mod:`.handwritten_decoder` — a complete 100,616-parameter ReLU network
+  whose weights implement error correction directly, with no fitting.
+- :mod:`.handwritten_graph` — a 114,984-parameter recurrent ReLU network
+  whose handwritten weights compute exact directed shortest-path distances.
+- :mod:`.handwritten_weighted_graph` — an exactly 2,000,000-parameter
+  Linear/ReLU network for minimum costs on weighted seventeen-node graphs;
+  all weights are analytic, with active neuron splitting to match the budget.
 
 Everything here imports ``torch`` lazily.
 """

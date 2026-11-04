@@ -7,8 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.3] - 2026-11-04 — Handwritten neural algorithms and weighted shortest paths
+
 ### Added
 
+- An exactly 2,000,000-parameter handwritten Linear/ReLU network for weighted
+  shortest-path costs on seventeen-node directed graphs with edge costs 1–7.
+  `experimental.weight_space.handwritten_weighted_graph` compiles sixteen
+  shared Bellman–Ford rounds into affine maps and pairwise ReLU minima, with
+  zero training. The natural circuit has 1,865,053 dense parameters; splitting
+  137 active neurons matches the requested budget without changing its function.
+  Includes an exported checkpoint, independent Dijkstra/NetworkX verification,
+  exhaustive small-graph checks, and a parameter-matched training comparison.
+  Evidence: `benchmark_results/weight_space/20261104_handwritten_weighted_graph/`.
+- A handwritten recurrent ReLU network for exact unweighted directed shortest
+  paths, `experimental.weight_space.handwritten_graph`. On twelve-node graphs
+  it stores 114,984 unique dense parameters (1,308 nonzero), uses eleven rounds
+  of shared Linear/ReLU layers, and returns all source-to-node hop distances,
+  including unreachable nodes. Includes a runnable example, correctness proof,
+  exhaustive small-graph checks, and a disjoint-data comparison with two trained
+  baselines: `benchmark_results/weight_space/20261104_handwritten_graph/`.
+- A complete 100,616-parameter handwritten ReLU network for error correction,
+  `experimental.weight_space.handwritten_decoder`, with an exported weight
+  artifact and runnable example. The `384 -> 256 -> 8` network recovers every
+  8-bit message after up to 95 arbitrary flips of its repeated Reed–Muller
+  encoding. On 28,672 random-noise cases it scores 100%; the same architecture
+  trained with Adam for up to 10,000 steps scores 99.40–99.48% across three
+  seeds (two learning rates selected on validation). This is a constructed
+  algorithmic task and a finite-budget comparison, not a general claim about
+  training. Evidence: `benchmark_results/weight_space/20261104_handwritten_decoder/`.
+- The conclude-neuron design pipeline now supports pinned Qwen3.5-2B as well
+  as 0.8B. `neuron_job.py --model ... --generate-traces --design-only` builds
+  a new model's own training contrast, edit and random-write control.
+  Captures, practice reports and side-effect reports record the source model
+  and revision; offline redesign infers these from captures and refuses a
+  mismatch. The new 2B path chooses its own neuron and multiplier slots.
+  This adds experiment support; no new 2B edit accuracy result is claimed.
 - `weight_space.circuits.shift_threshold`: give a designed neuron an explicit
   firing threshold and write strength (gate row minus `bias` times its up row,
   which reads ~1.0 everywhere, so the pre-activation drops by `bias`). The
@@ -53,6 +87,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Conclude-neuron positives cannot come from an answer after `</think>` or
+  from line breaks that cross the first close. The contrast builder now
+  checks trace IDs and gold answers against pinned GSM8K training records,
+  including post-close negatives. New builds can differ from historical
+  specs; the recorded benchmark results have not been recomputed.
 - `weight_space.circuits.rewrite_activation` solves its read-through in
   float64. Float32 least squares returned residuals from 1e-6 to 2.5e-2 on
   identical inputs on one CPU build and truncates weakly read directions; the

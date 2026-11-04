@@ -15,39 +15,40 @@ post:    prefixes ending inside the answer section (after </think>) of concluded
 from __future__ import annotations
 
 import argparse
-import glob
-import gzip
 import json
 import os
-import re
 from pathlib import Path
+
+import pod_job as pj
+from answer_positions import answer_end, gold_in_question
 
 THINK_END = 248069  # "</think>" in the Qwen3.5 tokenizer
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--trace", required=True, help="base traces (gen_base_trace.jsonl.gz)"
-    )
-    ap.add_argument(
-        "--post-from", default=None, help="concluded traces for post-</think> negatives"
-    )
-    ap.add_argument("--out", required=True)
-    a = ap.parse_args()
+def build_contrast(
+    tok,
+    rows: list[dict],
+    training_rows: list[dict],
+    post_rows: list[dict] | None = None,
+) -> dict:
+    """Build prefixes from identified training problems, never held-out replies.
 
-    os.environ.setdefault("HF_HUB_OFFLINE", "1")
-    import pyarrow.parquet as pq
-    from transformers import AutoTokenizer
-
-    tok = AutoTokenizer.from_pretrained(
-        "Qwen/Qwen3.5-0.8B", revision="2fc06364715b967f1860aea9cf38778875588b17"
-    )
-    pattern = os.path.expanduser(
-        "~/.cache/huggingface/hub/datasets--openai--gsm8k/snapshots/*/main/train-*.parquet"
-    )
-    train = pq.read_table(glob.glob(pattern)[0]).to_pylist()
-    rows = [json.loads(line) for line in gzip.open(a.trace, "rt")]
+    ``training_rows`` supplies the pinned questions and gold answers. Validate
+    every trace before extracting prefixes, including post-close negatives.
+    Only answers written before the first close can become positive examples.
+    """
+    training = {r["id"]: r for r in training_rows}
+    for source in (rows, post_rows or []):
+        seen: set[str] = set()
+        for r in source:
+            expected = training.get(r["id"])
+            if expected is None or not r["id"].startswith("gsm8k-train-"):
+                raise ValueError(f"trace is not in the training split: {r['id']}")
+            if r["id"] in seen:
+                raise ValueError(f"duplicate training trace: {r['id']}")
+            seen.add(r["id"])
+            if r["gold"] != expected["gold"]:
+                raise ValueError(f"trace gold differs from the pinned data: {r['id']}")
 
     def token_index_for_char(gen_ids: list[int], char_end: int) -> int:
         lo, hi = 1, len(gen_ids)
@@ -61,47 +62,81 @@ def main() -> None:
 
     answer, working, meta = [], [], []
     for r in rows:
-        i = int(r["id"].rsplit("-", 1)[1])
+        if r.get("thinking") is False or THINK_END in r["prompt_ids"]:
+            raise ValueError(f"positive trace must have thinking enabled: {r['id']}")
         gold = r["gold"]
-        if re.search(
-            r"(?<![\d.])" + re.escape(gold) + r"(?![\d])", train[i]["question"]
-        ):
+        if gold_in_question(training[r["id"]]["question"], gold):
             continue
-        pat = (
-            r"(?:=|\bis|answer[^\n]{0,15}?|boxed\{)\s*\\?\$?\**\s*"
-            + re.escape(gold)
-            + r"(?![\d])"
-        )
-        m = re.search(pat, r["text"])
-        if not m:
+        # Decode the exact tokens: text offsets must address this token sequence.
+        end = answer_end(tok.decode(r["gen_ids"]), gold)
+        if end is None:
             continue
-        k = token_index_for_char(r["gen_ids"], m.end())
+        k = token_index_for_char(r["gen_ids"], end)
         if k < 24:
             continue
-        P = r["prompt_ids"]
-        answer.append(P + r["gen_ids"][:k])
+        prompt = r["prompt_ids"]
+        answer.append(prompt + r["gen_ids"][:k])
         for f in (0.25, 0.6):
-            working.append(P + r["gen_ids"][: max(8, int(k * f))])
+            working.append(prompt + r["gen_ids"][: max(8, int(k * f))])
         meta.append({"id": r["id"], "answer_token": k})
 
     post = []
-    if a.post_from:
-        for r in (json.loads(line) for line in gzip.open(a.post_from, "rt")):
-            g = r["gen_ids"]
-            if THINK_END not in g:
-                continue
-            k = g.index(THINK_END)
-            tail = len(g) - k - 1
-            if tail < 12:
-                continue
-            for f in (0.3, 0.8):
-                post.append(r["prompt_ids"] + g[: k + 1 + max(2, int(tail * f))])
-    Path(a.out).write_text(
-        json.dumps(
-            {"answer": answer, "working": working, "post": post[:300], "meta": meta}
-        )
+    for r in post_rows or []:
+        g = r["gen_ids"]
+        if THINK_END not in g:
+            continue
+        k = g.index(THINK_END)
+        tail = len(g) - k - 1
+        if tail < 12:
+            continue
+        for f in (0.3, 0.8):
+            post.append(r["prompt_ids"] + g[: k + 1 + max(2, int(tail * f))])
+    return {"answer": answer, "working": working, "post": post[:300], "meta": meta}
+
+
+def main(argv: list[str] | None = None) -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--trace", required=True, help="base traces (gen_base_trace.jsonl.gz)"
     )
-    print(f"answer {len(answer)}, working {len(working)}, post {len(post[:300])}")
+    ap.add_argument(
+        "--post-from", default=None, help="concluded traces for post-</think> negatives"
+    )
+    ap.add_argument("--out", required=True)
+    ap.add_argument(
+        "--model", choices=pj.CONCLUDE_MODELS, default=pj.CONCLUDE_MODELS[0]
+    )
+    a = ap.parse_args(argv)
+
+    os.environ.setdefault("HF_HUB_OFFLINE", "1")
+    from datasets import load_dataset
+    from transformers import AutoTokenizer
+
+    tok = AutoTokenizer.from_pretrained(a.model, revision=pj.REVISIONS[a.model])
+    train = load_dataset(
+        "openai/gsm8k", "main", split="train", revision=pj.GSM8K_REVISION
+    )
+    training = [
+        {
+            "id": f"gsm8k-train-{i}",
+            "question": r["question"],
+            "gold": r["answer"].split("####")[-1].strip().replace(",", ""),
+        }
+        for i, r in enumerate(train)
+    ]
+    rows = pj.read_jsonl(Path(a.trace))
+    post_rows = pj.read_jsonl(Path(a.post_from)) if a.post_from else []
+    # Legacy 0.8B files predate provenance; new-model inputs must identify their source.
+    from neuron_job import validate_design_source
+
+    validate_design_source(rows, a.model)
+    result = build_contrast(tok, rows, training, post_rows)
+    result.update(model=a.model, revision=pj.REVISIONS[a.model])
+    Path(a.out).write_text(json.dumps(result))
+    print(
+        f"answer {len(result['answer'])}, working {len(result['working'])}, "
+        f"post {len(result['post'])}"
+    )
 
 
 if __name__ == "__main__":

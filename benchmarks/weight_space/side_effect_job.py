@@ -161,6 +161,7 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     ap = argparse.ArgumentParser()
+    ap.add_argument("--model", choices=pj.CONCLUDE_MODELS, default=MODEL)
     ap.add_argument("--out", default="/workspace/out")
     ap.add_argument("--neuron-spec", default="/workspace/conclude_neuron_spec.json")
     ap.add_argument("--mmlu", type=int, default=1000)
@@ -174,6 +175,8 @@ def main(argv: list[str] | None = None) -> None:
         "--tag", default="", help="suffix for checkpoint dirs and output files"
     )
     a = ap.parse_args(argv)
+    revision = pj.REVISIONS[a.model]
+    pj.MODEL = a.model
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     (pj.WORK / "data").mkdir(parents=True, exist_ok=True)
@@ -186,7 +189,7 @@ def main(argv: list[str] | None = None) -> None:
     }
     wanted = {m.strip() for m in a.models.split(",")}
     specs = {k: v for k, v in every.items() if k in wanted}
-    base = resolve_checkpoint(MODEL, REVISION)
+    base = resolve_checkpoint(a.model, revision)
     dirs = {"base": str(base)}
     for name, spec in specs.items():
         dst = pj.WORK / "ckpt" / f"side_{name}{a.tag}"
@@ -204,9 +207,12 @@ def main(argv: list[str] | None = None) -> None:
             flush=True,
         )
 
-    tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)  # nosec B615 - pinned
+    tok = AutoTokenizer.from_pretrained(
+        a.model, revision=revision
+    )  # nosec B615 - pinned
     mmlu = mmlu_rows(a.mmlu)
     result: dict = {"models": dirs, "mmlu": {}, "wikitext": {}, "gsm8k_no_thinking": {}}
+    result.update(model=a.model, revision=revision)
     mmlu_rows_by_model = {}
     for name, d in dirs.items():
         model = (

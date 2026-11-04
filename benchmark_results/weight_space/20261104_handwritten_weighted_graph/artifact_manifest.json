@@ -1,0 +1,50 @@
+{
+  "README.md": {
+    "sha256": "d6a6c953ec32dcf6c98ff956721a227a8ba71d37dbbab1739f014a7576952a3c",
+    "bytes": 9859
+  },
+  "classifier_seed0.safetensors": {
+    "sha256": "3f59cb7ba7657e5c86b2fd4d0e3d55dab25986f5a587d457b146930b908f916f",
+    "bytes": 8000256
+  },
+  "classifier_seed1.safetensors": {
+    "sha256": "2626c4cd3cbd77dc335431b83181c1537416e453e1d47439f396847b6b798f7b",
+    "bytes": 8000256
+  },
+  "classifier_seed2.safetensors": {
+    "sha256": "aad40f278176a70bd70f0c3c09b25009818b741d6e23e52115eb4e1017debd46",
+    "bytes": 8000256
+  },
+  "evaluation.safetensors": {
+    "sha256": "dafdfe9721e7db05487df752ecc2d75d4010583ce2ad72e32c0f9031d2421ee3",
+    "bytes": 5571936
+  },
+  "handwritten.safetensors": {
+    "sha256": "be02c50fcf96b6004a7e96e25bcfacc7cde5aa494e923878dbef5e2ea5c2836a",
+    "bytes": 8010280
+  },
+  "release_checks.json": {
+    "sha256": "6e8abc3d5af181139bbd332f034729569fbc6fbb2c86b3a4f1531cce8a5d5b11",
+    "bytes": 1559
+  },
+  "sources/benchmark.py": {
+    "sha256": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0",
+    "bytes": 15332
+  },
+  "sources/model.py": {
+    "sha256": "fe0750c568fcdde0f32135124f7bd000f9d03ebbbf8c400fc3045ca8f0ebcbbe",
+    "bytes": 7194
+  },
+  "sources/model_delivered.py": {
+    "sha256": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+    "bytes": 7239
+  },
+  "summary.json": {
+    "sha256": "1264ca9614e04c6bdd12ef07d50bfea937ae6f6cd2447fa53436ce5177e51b53",
+    "bytes": 29362
+  },
+  "verification.json": {
+    "sha256": "8a2019a1b8aa0109f9b2968e682edb15c2bbd5ba8a4ee23b63aaaafbc43fa3a6",
+    "bytes": 600
+  }
+}

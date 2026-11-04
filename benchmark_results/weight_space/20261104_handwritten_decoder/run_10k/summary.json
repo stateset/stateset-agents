@@ -1,0 +1,760 @@
+{
+  "config": {
+    "steps": 10000,
+    "batch_size": 256,
+    "seeds": [
+      0,
+      1,
+      2
+    ],
+    "learning_rates": [
+      0.001,
+      0.003
+    ],
+    "eval_every": 1000,
+    "test_per_level": 4096,
+    "validation_per_level": 512,
+    "threads": 2,
+    "architecture": [
+      384,
+      256,
+      8
+    ],
+    "activation": "ReLU",
+    "parameters": 100616,
+    "nonzero_parameters": 100608,
+    "training_noise": "uniform integer flip count 0..95; uniform distinct positions",
+    "training_messages": "uniform 0..255, online draws with replacement",
+    "validation_seed": 70000,
+    "test_seed": 80000,
+    "error_levels": [
+      0,
+      16,
+      32,
+      48,
+      64,
+      80,
+      95
+    ],
+    "selection": "best validation exact-message accuracy, then lowest validation BCE",
+    "torch": "2.11.0+cu130",
+    "python": "3.12.12",
+    "device": "cpu",
+    "source_sha256": {
+      "model": "39fddefab9480ca876a4b5c3d3749632d776169583d044b641e65c33756de03c",
+      "benchmark": "7d2c87dcb58aa8bf96c209dce3d396eff57ba4e6e63aa843ba037677098f3c8b"
+    }
+  },
+  "handwritten": {
+    "construction_seconds": 0.0029820319996360922,
+    "optimizer_steps": 0,
+    "training_examples": 0,
+    "weights_sha256": "fb54fa486233d524bcf95508fd9fab8556eac241440058d57166032f6bddb660",
+    "test": {
+      "flips_0": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 0.0
+      },
+      "flips_16": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 0.0
+      },
+      "flips_32": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 0.0
+      },
+      "flips_48": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 1.0145400881711676e-42
+      },
+      "flips_64": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 8.019052889196573e-29
+      },
+      "flips_80": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 6.332080347527195e-15
+      },
+      "flips_95": {
+        "n": 4096,
+        "correct": 4096,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 0.12692804634571075
+      },
+      "boundary_95_shifted": {
+        "n": 65024,
+        "correct": 65024,
+        "message_accuracy": 1.0,
+        "bit_accuracy": 1.0,
+        "erasures": 0,
+        "bce": 0.1269280348471769
+      }
+    }
+  },
+  "trials": [
+    {
+      "seed": 0,
+      "initial_lr": 0.001,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 10000,
+      "validation_message_accuracy": 0.9938616071428571,
+      "validation_bce": 0.0030319673416417153,
+      "seconds": 57.55346054199981,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.004464285714285714,
+          "validation_bce": 0.6981952871595111
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9383370535714286,
+          "validation_bce": 0.027971320710743645
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.9428013392857143,
+          "validation_bce": 0.02160483066940547
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.9623325892857143,
+          "validation_bce": 0.013081168737179334
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9818638392857143,
+          "validation_bce": 0.008169021827987828
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.9860491071428571,
+          "validation_bce": 0.005985258973514159
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9880022321428571,
+          "validation_bce": 0.00473256388295746
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9919084821428571,
+          "validation_bce": 0.003932534478887005
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9913504464285714,
+          "validation_bce": 0.0036472156029484027
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.9938616071428571,
+          "validation_bce": 0.0032752729828822475
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.9938616071428571,
+          "validation_bce": 0.0030319673416417153
+        }
+      ]
+    },
+    {
+      "seed": 0,
+      "initial_lr": 0.003,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 10000,
+      "validation_message_accuracy": 0.9949776785714286,
+      "validation_bce": 0.001773166354719345,
+      "seconds": 54.215095092999036,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.004464285714285714,
+          "validation_bce": 0.6981952871595111
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9430803571428571,
+          "validation_bce": 0.021622307344971756
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.9681919642857143,
+          "validation_bce": 0.011753154841601696
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.9754464285714286,
+          "validation_bce": 0.008591494814542753
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9829799107142857,
+          "validation_bce": 0.00672545597914352
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.98828125,
+          "validation_bce": 0.004347755174547671
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9916294642857143,
+          "validation_bce": 0.003026017865486618
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9916294642857143,
+          "validation_bce": 0.0030932954606982485
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9930245535714286,
+          "validation_bce": 0.0025887928675730936
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.9946986607142857,
+          "validation_bce": 0.0020743758734261624
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.9949776785714286,
+          "validation_bce": 0.001773166354719345
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "initial_lr": 0.001,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 10000,
+      "validation_message_accuracy": 0.9958147321428571,
+      "validation_bce": 0.0026399853123519256,
+      "seconds": 48.73271968100016,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.003627232142857143,
+          "validation_bce": 0.700684768812997
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9388950892857143,
+          "validation_bce": 0.028230910156188265
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.9422433035714286,
+          "validation_bce": 0.02192247678093346
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.9676339285714286,
+          "validation_bce": 0.012070180848240852
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9832589285714286,
+          "validation_bce": 0.007225033619209041
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.9871651785714286,
+          "validation_bce": 0.005242672636273126
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9930245535714286,
+          "validation_bce": 0.00387121575819752
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9921875,
+          "validation_bce": 0.0034554593172145026
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9944196428571429,
+          "validation_bce": 0.003055157770181362
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.9949776785714286,
+          "validation_bce": 0.0027960625470325262
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.9958147321428571,
+          "validation_bce": 0.0026399853123519256
+        }
+      ]
+    },
+    {
+      "seed": 1,
+      "initial_lr": 0.003,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 9000,
+      "validation_message_accuracy": 0.9955357142857143,
+      "validation_bce": 0.001670535706894813,
+      "seconds": 49.082365721000315,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.003627232142857143,
+          "validation_bce": 0.700684768812997
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9416852678571429,
+          "validation_bce": 0.020407544286821837
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.9740513392857143,
+          "validation_bce": 0.00931989247880795
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.9868861607142857,
+          "validation_bce": 0.006295481217195079
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9871651785714286,
+          "validation_bce": 0.004861228028326646
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.9907924107142857,
+          "validation_bce": 0.004131284719679297
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9893973214285714,
+          "validation_bce": 0.0034426068064283394
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9899553571428571,
+          "validation_bce": 0.002694097999171819
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9938616071428571,
+          "validation_bce": 0.0021829460084378458
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.9955357142857143,
+          "validation_bce": 0.001670535706894813
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.9949776785714286,
+          "validation_bce": 0.0017028972445793493
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "initial_lr": 0.001,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 9000,
+      "validation_message_accuracy": 0.994140625,
+      "validation_bce": 0.002972718034606668,
+      "seconds": 46.14655592100098,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.004464285714285714,
+          "validation_bce": 0.7017859390803746
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9391741071428571,
+          "validation_bce": 0.027224873184292977
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.9453125,
+          "validation_bce": 0.020599710069031323
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.96875,
+          "validation_bce": 0.012072687446301902
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9835379464285714,
+          "validation_bce": 0.0070734693726340735
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.98828125,
+          "validation_bce": 0.005268895891804602
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9910714285714286,
+          "validation_bce": 0.004242134838958934
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9921875,
+          "validation_bce": 0.0037460883194791856
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9933035714285714,
+          "validation_bce": 0.0033247716436322072
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.994140625,
+          "validation_bce": 0.002972718034606668
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.9933035714285714,
+          "validation_bce": 0.0030049259434140924
+        }
+      ]
+    },
+    {
+      "seed": 2,
+      "initial_lr": 0.003,
+      "steps": 10000,
+      "batch_size": 256,
+      "training_draws": 2560000,
+      "selected_step": 9000,
+      "validation_message_accuracy": 0.9952566964285714,
+      "validation_bce": 0.0015732880404483022,
+      "seconds": 45.87562076300128,
+      "history": [
+        {
+          "step": 0,
+          "validation_message_accuracy": 0.004464285714285714,
+          "validation_bce": 0.7017859390803746
+        },
+        {
+          "step": 1000,
+          "validation_message_accuracy": 0.9430803571428571,
+          "validation_bce": 0.019388809014344588
+        },
+        {
+          "step": 2000,
+          "validation_message_accuracy": 0.97265625,
+          "validation_bce": 0.011198698239638816
+        },
+        {
+          "step": 3000,
+          "validation_message_accuracy": 0.9787946428571429,
+          "validation_bce": 0.007503158139035142
+        },
+        {
+          "step": 4000,
+          "validation_message_accuracy": 0.9871651785714286,
+          "validation_bce": 0.004520374795133294
+        },
+        {
+          "step": 5000,
+          "validation_message_accuracy": 0.9896763392857143,
+          "validation_bce": 0.003828349999335464
+        },
+        {
+          "step": 6000,
+          "validation_message_accuracy": 0.9907924107142857,
+          "validation_bce": 0.002958320529941877
+        },
+        {
+          "step": 7000,
+          "validation_message_accuracy": 0.9930245535714286,
+          "validation_bce": 0.0024980581006188024
+        },
+        {
+          "step": 8000,
+          "validation_message_accuracy": 0.9933035714285714,
+          "validation_bce": 0.0021625230012602627
+        },
+        {
+          "step": 9000,
+          "validation_message_accuracy": 0.9952566964285714,
+          "validation_bce": 0.0015732880404483022
+        },
+        {
+          "step": 10000,
+          "validation_message_accuracy": 0.994140625,
+          "validation_bce": 0.001709092549500015
+        }
+      ]
+    }
+  ],
+  "selected": [
+    {
+      "seed": 0,
+      "lr": 0.003,
+      "step": 10000,
+      "weights_sha256": "838a132190606af307ef7822fe9863ebbb5baae39942aca8942a6b907b973107",
+      "test": {
+        "flips_0": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 1.8249258007529967e-11
+        },
+        "flips_16": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 1.2097460255766634e-09
+        },
+        "flips_32": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 7.194739914950787e-08
+        },
+        "flips_48": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 6.22236780145613e-06
+        },
+        "flips_64": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 0.00013312490045791492
+        },
+        "flips_80": {
+          "n": 4096,
+          "correct": 4084,
+          "message_accuracy": 0.9970703125,
+          "bit_accuracy": 0.9996337890625,
+          "erasures": 0,
+          "bce": 0.001427337308996357
+        },
+        "flips_95": {
+          "n": 4096,
+          "correct": 3960,
+          "message_accuracy": 0.966796875,
+          "bit_accuracy": 0.99578857421875,
+          "erasures": 0,
+          "bce": 0.011870534857735038
+        },
+        "boundary_95_shifted": {
+          "n": 65024,
+          "correct": 4621,
+          "message_accuracy": 0.07106606791338582,
+          "bit_accuracy": 0.7165796475147638,
+          "erasures": 0,
+          "bce": 0.9890075518390326
+        }
+      }
+    },
+    {
+      "seed": 1,
+      "lr": 0.001,
+      "step": 10000,
+      "weights_sha256": "e7e652bdbf6bb2fc35dc78cb2df0f4e57a41d38550dd3bde60c330aa8fd3cf19",
+      "test": {
+        "flips_0": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 2.5224093924691715e-09
+        },
+        "flips_16": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 2.1591782939367477e-07
+        },
+        "flips_32": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 6.562521889463824e-06
+        },
+        "flips_48": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 7.887623996793991e-05
+        },
+        "flips_64": {
+          "n": 4096,
+          "correct": 4093,
+          "message_accuracy": 0.999267578125,
+          "bit_accuracy": 0.999908447265625,
+          "erasures": 0,
+          "bce": 0.0006712176400469616
+        },
+        "flips_80": {
+          "n": 4096,
+          "correct": 4078,
+          "message_accuracy": 0.99560546875,
+          "bit_accuracy": 0.99945068359375,
+          "erasures": 0,
+          "bce": 0.003555639705155045
+        },
+        "flips_95": {
+          "n": 4096,
+          "correct": 3944,
+          "message_accuracy": 0.962890625,
+          "bit_accuracy": 0.995330810546875,
+          "erasures": 0,
+          "bce": 0.016133287455886602
+        },
+        "boundary_95_shifted": {
+          "n": 65024,
+          "correct": 3943,
+          "message_accuracy": 0.060639148622047244,
+          "bit_accuracy": 0.7077309916338582,
+          "erasures": 0,
+          "bce": 0.6902399997072896
+        }
+      }
+    },
+    {
+      "seed": 2,
+      "lr": 0.003,
+      "step": 9000,
+      "weights_sha256": "0337dc5b9b00c40521ede6fada92076cad746f7ac2ac97dc4e7921dd9e7b98e9",
+      "test": {
+        "flips_0": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 3.8778056286881135e-12
+        },
+        "flips_16": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 4.745076692680428e-10
+        },
+        "flips_32": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 4.2173791126032256e-08
+        },
+        "flips_48": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 1.140111965014512e-05
+        },
+        "flips_64": {
+          "n": 4096,
+          "correct": 4096,
+          "message_accuracy": 1.0,
+          "bit_accuracy": 1.0,
+          "erasures": 0,
+          "bce": 0.00010724909225245938
+        },
+        "flips_80": {
+          "n": 4096,
+          "correct": 4084,
+          "message_accuracy": 0.9970703125,
+          "bit_accuracy": 0.9996337890625,
+          "erasures": 0,
+          "bce": 0.0013795047852909192
+        },
+        "flips_95": {
+          "n": 4096,
+          "correct": 3959,
+          "message_accuracy": 0.966552734375,
+          "bit_accuracy": 0.9957275390625,
+          "erasures": 0,
+          "bce": 0.012569126207381487
+        },
+        "boundary_95_shifted": {
+          "n": 65024,
+          "correct": 3836,
+          "message_accuracy": 0.058993602362204724,
+          "bit_accuracy": 0.6993321696604331,
+          "erasures": 0,
+          "bce": 1.0888839575249378
+        }
+      }
+    }
+  ],
+  "certificate": {
+    "codewords": 256,
+    "minimum_pairwise_distance": 192,
+    "guaranteed_radius": 95,
+    "true_hidden_lower_bound": 2,
+    "other_hidden_upper_bound": 0,
+    "scope": "all binary corruptions of at most 95 distinct positions; analytical bound",
+    "exhaustive_single_flip_test": {
+      "n": 98304,
+      "correct": 98304
+    }
+  }
+}

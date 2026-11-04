@@ -18,6 +18,9 @@ import json
 import random
 from pathlib import Path
 
+import pod_job as pj
+from neuron_job import validate_design_source
+
 MODEL = "Qwen/Qwen3.5-0.8B"
 REVISION = "2fc06364715b967f1860aea9cf38778875588b17"
 THINK_END = 248069
@@ -25,13 +28,14 @@ WAIT_IDS = (13784, 13428)
 PREFIX = "model.language_model"
 
 
-def load_layer(layer: int) -> dict:
+def load_layer(layer: int, model: str = MODEL) -> dict:
+    """Load the selected model's pinned layer and readout weights."""
     from stateset_agents.experimental.weight_space.checkpoints import (
         load_tensors,
         resolve_checkpoint,
     )
 
-    root = resolve_checkpoint(MODEL, REVISION)
+    root = resolve_checkpoint(model, pj.REVISIONS[model])
     mlp = f"{PREFIX}.layers.{layer}.mlp"
     names = {
         f"{mlp}.gate_proj.weight",
@@ -111,13 +115,19 @@ def main(argv: list[str] | None = None) -> None:
     )
 
     ap = argparse.ArgumentParser()
+    ap.add_argument(
+        "--model",
+        choices=pj.CONCLUDE_MODELS,
+        default=None,
+        help="defaults to the model recorded in captures (legacy captures: 0.8B)",
+    )
     ap.add_argument("--captures", required=True)
     ap.add_argument("--out", required=True)
     ap.add_argument("--lam", type=float, default=100.0)
     ap.add_argument("--gain", type=float, default=4.0)
     ap.add_argument("--write-norm", type=float, default=3.0)
-    ap.add_argument("--neuron", type=int, default=1998)
-    ap.add_argument("--up-unit", type=int, default=44)
+    ap.add_argument("--neuron", type=int, default=None)
+    ap.add_argument("--up-unit", type=int, default=None)
     ap.add_argument(
         "--drop-group",
         action="append",
@@ -136,9 +146,17 @@ def main(argv: list[str] | None = None) -> None:
     ap.add_argument("--tag", default="")
     a = ap.parse_args(argv)
     cap = torch.load(a.captures, weights_only=True)  # tensors, lists, str, int only
+    model = a.model or cap.get("model", MODEL)
+    if model not in pj.CONCLUDE_MODELS:
+        ap.error(f"unsupported conclude-neuron model: {model}")
+    validate_design_source([cap], model)
+    # Preserve historical 0.8B sweep defaults; choose slots from 2B's own captures.
+    if model == MODEL:
+        a.neuron = 1998 if a.neuron is None else a.neuron
+        a.up_unit = 44 if a.up_unit is None else a.up_unit
     gate_acts, up_acts = cap["gate_acts"].float(), cap["up_acts"].float()
     labels, groups, layer = list(cap["labels"]), list(cap["groups"]), cap["layer"]
-    w = load_layer(layer)
+    w = load_layer(layer, model)
     direction = logit_direction(w["embed"], [THINK_END], w["norm"], zero_centered=True)
     train, held = split_masks(groups, a.split)
     keep = torch.tensor([g not in a.drop_group for g in groups])
@@ -159,6 +177,8 @@ def main(argv: list[str] | None = None) -> None:
         train=train & keep,
     )
     report = {
+        "model": model,
+        "revision": pj.REVISIONS[model],
         "lam": a.lam,
         "gain": a.gain,
         "dropped_groups": a.drop_group,

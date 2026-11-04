@@ -592,6 +592,54 @@ coincidental, and the first mention is not always the final answer). Unlike
 the 0.8B, whose closes were often premature, the 2B finds the answer early
 and does not stop.
 
+## Preparing a 2B conclude-neuron experiment
+
+The design pipeline now accepts `--model Qwen/Qwen3.5-2B`. This is tooling
+for the next experiment, not a measured 2B edit result. Generate the model's
+own training traces, fit its own neuron and multiplier, and retain the
+captures for CPU redesign. On a configured GPU pod with this checkout's
+wheel and `benchmarks/weight_space/*.py` available:
+
+```bash
+python neuron_job.py --model Qwen/Qwen3.5-2B --generate-traces \
+  --trace-tokens 3072 --nothink-train 256 --prose-negatives 200 \
+  --save-captures --design-only --tag _2b --out /workspace/out
+```
+
+This generates only design traces from GSM8K-train and uses WikiText-train
+prose negatives. `--design-only` stops before candidate evaluation; it does
+not disable the requested trace generation. Upload `neuron_job.py`,
+`build_answer_contrast.py`, `answer_positions.py` and `side_effect_job.py`
+when using `launch.py --entry`; the launcher already uploads `pod_job.py`.
+
+Captures, contrast and summary files identify the pinned model revision.
+`offline_design.py --captures /workspace/out/captures_2b.pt --out designs`
+uses that identity automatically; supplying another `--model` is rejected.
+Legacy captures without provenance remain usable for the original 0.8B model.
+
+For the practice comparison, save `{"name":"base-2b","edits":[]}` as
+`/workspace/base_spec.json`, then use the existing disjoint training sets:
+
+```bash
+python practice_job.py --model Qwen/Qwen3.5-2B --practice-tokens 8192 \
+  --spec base=/workspace/base_spec.json \
+  --spec neuron=/workspace/out/conclude_neuron_2b_spec.json \
+  --out /workspace/practice
+```
+
+Only advance if practice selects the neuron. The held-out comparison must
+include the pinned base with thinking on and off, the candidate, and
+`conclude_neuron_2b_control_spec.json` at the same token budget. Use
+`thinking_budget_job.py --model Qwen/Qwen3.5-2B --base-think --spec ...`
+for that comparison; it must establish the gain over thinking off and over
+the matched control before claiming an improvement.
+
+The contrast builder also fixes two labeling errors: gold answers first
+written after `</think>` cannot be positive examples, and positive line
+breaks cannot cross the first close. It checks IDs and gold answers against
+pinned training records. These corrections may change newly rebuilt 0.8B
+specs; the historical specs and results above have not been recomputed.
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd

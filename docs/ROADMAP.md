@@ -1,6 +1,6 @@
 # StateSet Agents roadmap
 
-Current tagged version: **v0.71.2 (strong beta; publication blocked)**.
+Current tagged version: **v0.71.3 (strong beta; publication pending)**.
 
 The roadmap is evidence-driven. A checked box means the behavior exists and
 has retained tests or live evidence; an unchecked box is not a product claim.

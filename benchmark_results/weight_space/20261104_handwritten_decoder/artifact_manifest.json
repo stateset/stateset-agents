@@ -1,0 +1,60 @@
+{
+  "files": {
+    "README.md": {
+      "sha256": "4428114071ce6089ddd99fb79561f1249405ed6c667cba3be6453c4fd75a2cdb",
+      "bytes": 8880
+    },
+    "accuracy.png": {
+      "sha256": "eba423fdf9b8e369593d63b444c71da79486b8145ddd9d813c8d68dff5cd8b60",
+      "bytes": 180612
+    },
+    "accuracy.svg": {
+      "sha256": "da8288c67aaf1e14ec2bcb5224531e3c0173a4c18931793eddd26f4393709c20",
+      "bytes": 85973
+    },
+    "handwritten.safetensors": {
+      "sha256": "fb54fa486233d524bcf95508fd9fab8556eac241440058d57166032f6bddb660",
+      "bytes": 402752
+    },
+    "run_10k/config.json": {
+      "sha256": "2eb26988281dabe515aba66b319ab17c5be443cf19ae7780cee00ca0fbc59159",
+      "bytes": 982
+    },
+    "run_10k/summary.json": {
+      "sha256": "21c2a66bf774138db3824494fac234b9284fdfe1989eb0dead7a668da2cda3fe",
+      "bytes": 21269
+    },
+    "run_2k/config.json": {
+      "sha256": "cffae33592f62bdeed3e87f07c5fba9e5707d6fdfd16e51b7a8d96a4661a0608",
+      "bytes": 980
+    },
+    "run_2k/summary.json": {
+      "sha256": "da0c335cd9141cef91f8fd4a9e8460b57e27a697041fa779c41b5899e09d9804",
+      "bytes": 21416
+    },
+    "sources/handwritten_decoder.py": {
+      "sha256": "39fddefab9480ca876a4b5c3d3749632d776169583d044b641e65c33756de03c",
+      "bytes": 3690
+    },
+    "sources/handwritten_decoder_job.py": {
+      "sha256": "7d2c87dcb58aa8bf96c209dce3d396eff57ba4e6e63aa843ba037677098f3c8b",
+      "bytes": 13457
+    },
+    "trained_seed0.safetensors": {
+      "sha256": "838a132190606af307ef7822fe9863ebbb5baae39942aca8942a6b907b973107",
+      "bytes": 402752
+    },
+    "trained_seed1.safetensors": {
+      "sha256": "e7e652bdbf6bb2fc35dc78cb2df0f4e57a41d38550dd3bde60c330aa8fd3cf19",
+      "bytes": 402752
+    },
+    "trained_seed2.safetensors": {
+      "sha256": "0337dc5b9b00c40521ede6fada92076cad746f7ac2ac97dc4e7921dd9e7b98e9",
+      "bytes": 402752
+    },
+    "verification.json": {
+      "sha256": "186ab94910fff33bafa2bf16c91f30a7081d172dfcd0db4f4b77c9476e586f11",
+      "bytes": 457
+    }
+  }
+}

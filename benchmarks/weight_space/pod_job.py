@@ -39,6 +39,8 @@ REVISIONS = {
     "Qwen/Qwen3.5-2B": "15852e8c16360a2fea060d615a32b45270f8a8fc",
     "Qwen/Qwen3-0.6B": "c1899de289a04d12100db370d81485cdf75e47ca",
 }
+# The conclude-neuron recipe uses this family's tokenizer and zero-centered RMSNorm.
+CONCLUDE_MODELS = ("Qwen/Qwen3.5-0.8B", "Qwen/Qwen3.5-2B")
 GSM8K_REVISION = "740312add88f781978c0658806c59bc2815b9866"
 MATH500_REVISION = "6e4ed1a2a79af7d8630a6b768ec859cb5af4d3be"
 LAYERS = (15, 19)
@@ -234,6 +236,9 @@ def cmd_generate(a: argparse.Namespace) -> None:
     for r, o in zip(rows, outs, strict=True):
         c = o.outputs[0]
         rec = {
+            "model": a.model,
+            "revision": REVISIONS.get(a.model),
+            "thinking": not a.no_thinking,
             "id": r["id"],
             "kind": r["kind"],
             "gold": r["gold"],

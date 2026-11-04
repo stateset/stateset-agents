@@ -1,0 +1,46 @@
+{
+  "steps": 10000,
+  "batch_size": 256,
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "learning_rates": [
+    0.001,
+    0.003
+  ],
+  "eval_every": 1000,
+  "test_per_level": 4096,
+  "validation_per_level": 512,
+  "threads": 2,
+  "architecture": [
+    384,
+    256,
+    8
+  ],
+  "activation": "ReLU",
+  "parameters": 100616,
+  "nonzero_parameters": 100608,
+  "training_noise": "uniform integer flip count 0..95; uniform distinct positions",
+  "training_messages": "uniform 0..255, online draws with replacement",
+  "validation_seed": 70000,
+  "test_seed": 80000,
+  "error_levels": [
+    0,
+    16,
+    32,
+    48,
+    64,
+    80,
+    95
+  ],
+  "selection": "best validation exact-message accuracy, then lowest validation BCE",
+  "torch": "2.11.0+cu130",
+  "python": "3.12.12",
+  "device": "cpu",
+  "source_sha256": {
+    "model": "39fddefab9480ca876a4b5c3d3749632d776169583d044b641e65c33756de03c",
+    "benchmark": "7d2c87dcb58aa8bf96c209dce3d396eff57ba4e6e63aa843ba037677098f3c8b"
+  }
+}

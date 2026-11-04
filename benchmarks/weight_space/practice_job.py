@@ -83,6 +83,12 @@ def main(argv: list[str] | None = None) -> None:
     practice = mine_set + select_set
     base = resolve_checkpoint(a.model, pj.REVISIONS[a.model])
     rows: list[dict] = []
+    identity = {
+        "model": a.model,
+        "revision": pj.REVISIONS[a.model],
+        "practice_tokens": a.practice_tokens,
+        "max_stray_rise": a.max_stray_rise,
+    }
     start_gens: dict[str, list[dict]] = {}
     summary_path = out / "practice_summary.json"
 
@@ -120,10 +126,15 @@ def main(argv: list[str] | None = None) -> None:
             event="candidate",
             **{k: v for k, v in row.items() if not k.startswith(("vs_", "by_"))},
         )
-        summary_path.write_text(json.dumps({"rows": rows}, indent=2))
+        summary_path.write_text(json.dumps({**identity, "rows": rows}, indent=2))
 
     keep = choose_round(rows, max_stray_rise=a.max_stray_rise)
-    result: dict = {"rows": rows, "kept": keep, "kept_name": rows[keep]["name"]}
+    result: dict = {
+        **identity,
+        "rows": rows,
+        "kept": keep,
+        "kept_name": rows[keep]["name"],
+    }
     pj.log(event="kept", index=keep, name=rows[keep]["name"])
     summary_path.write_text(json.dumps(result, indent=2))
     if a.heldout and keep > 0:

@@ -5,6 +5,17 @@ Runs on a GPU pod with this repository's wheel installed:
     python neuron_job.py --out /workspace/out --contrast answer_contrast.json \\
         --trace gen_b_base_trace.jsonl.gz [--neuron 1998 --up-unit 44]
 
+For a new 2B design, generate its own training traces and stop before evaluation:
+
+    python neuron_job.py --model Qwen/Qwen3.5-2B --generate-traces \\
+        --nothink-train 256 --prose-negatives 200 --save-captures \\
+        --design-only --tag _2b --out /workspace/out
+
+Select candidates with ``practice_job.py --model`` before any held-out run.
+The recipe supports the two pinned Qwen3.5 sizes; it does not transfer the
+0.8B neuron's vectors or slot choices to 2B. Captures and summaries identify
+the model and revision, which ``offline_design.py`` uses for further designs.
+
 1. Rebuild the newline-anchored contrast exactly as the interactive kernel did
    (kernel/nl_read.py + kernel/nl2_write_eval.py): positives = the first two
    line breaks after the gold answer; negatives = working line breaks, post-
@@ -42,6 +53,18 @@ MAXLEN = 3000
 MATH_TRAIN = "DigitalLearningGmbH/MATH-lighteval"
 MATH_TRAIN_FILE = "data/train-00000-of-00001.parquet"
 MATH_TRAIN_REVISION = "0530c78699ea5e8eb5530600900e1f328b48acad"
+
+
+def validate_design_source(records: list[dict], model: str) -> None:
+    """Reject another model's traces/captures; accept legacy files only for 0.8B."""
+    revision = pj.REVISIONS[model]
+    for record in records:
+        if model == MODEL and "model" not in record and "revision" not in record:
+            continue
+        if record.get("model") != model or record.get("revision") != revision:
+            raise ValueError(
+                f"design input must identify {model} at revision {revision}"
+            )
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -240,7 +263,8 @@ def math_contrast(
         k = token_index_for_char(tok, g, end)
         if k < 24:
             continue
-        after = [j for j in range(k, len(g)) if g[j] in newline][:2]
+        stop = g.index(THINK_END) if THINK_END in g else len(g)
+        after = [j for j in range(k, stop) if g[j] in newline][:2]
         before = [j for j in range(int(0.1 * k), int(0.9 * k)) if g[j] in newline]
         for j in after:
             if len(p) + j + 1 <= MAXLEN:
@@ -266,7 +290,10 @@ def contrast_sets(
         if r is None:
             continue
         p, g, k = r["prompt_ids"], r["gen_ids"], m["answer_token"]
-        after = [j for j in range(k, len(g)) if g[j] in newline][:2]
+        stop = g.index(THINK_END) if THINK_END in g else len(g)
+        if k > stop:
+            continue  # old contrasts could match an answer after thinking closed
+        after = [j for j in range(k, stop) if g[j] in newline][:2]
         before = [j for j in range(int(0.1 * k), int(0.9 * k)) if g[j] in newline]
         for j in after:
             if len(p) + j + 1 <= MAXLEN:
@@ -361,7 +388,8 @@ def stats(rows: list[dict]) -> dict:
     }
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
+    """Design and optionally evaluate an edit for a pinned Qwen3.5 model."""
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -384,9 +412,17 @@ def main() -> None:
     )
 
     ap = argparse.ArgumentParser()
+    ap.add_argument("--model", choices=pj.CONCLUDE_MODELS, default=MODEL)
     ap.add_argument("--out", default="/workspace/out")
-    ap.add_argument("--contrast", default="/workspace/answer_contrast.json")
-    ap.add_argument("--trace", default="/workspace/gen_b_base_trace.jsonl.gz")
+    ap.add_argument("--contrast", default=None)
+    ap.add_argument("--trace", default=None)
+    ap.add_argument(
+        "--generate-traces",
+        action="store_true",
+        help="generate the 256 GSM8K-train design traces and build their contrast "
+        "for --model (exclusive with --trace/--contrast)",
+    )
+    ap.add_argument("--trace-tokens", type=int, default=3072)
     ap.add_argument("--neuron", type=int, default=None)
     ap.add_argument("--up-unit", type=int, default=None)
     ap.add_argument("--write-norm", type=float, default=3.0)
@@ -454,14 +490,24 @@ def main() -> None:
     ap.add_argument(
         "--design-only",
         action="store_true",
-        help="stop after the design and its diagnostics (no generation)",
+        help="stop after the design and its diagnostics (no candidate evaluation; "
+        "requested training traces are still generated)",
     )
     ap.add_argument(
         "--side-effects",
         action="store_true",
         help="then run side_effect_job for base and this neuron",
     )
-    a = ap.parse_args()
+    a = ap.parse_args(argv)
+    if a.generate_traces and (a.trace or a.contrast):
+        ap.error("--generate-traces cannot be combined with --trace or --contrast")
+    if a.trace_tokens <= 0:
+        ap.error("--trace-tokens must be positive")
+    if not 0 <= a.nothink_train <= 256:
+        ap.error("--nothink-train must be between 0 and 256")
+    revision = pj.REVISIONS[a.model]
+    identity = {"model": a.model, "revision": revision}
+    pj.MODEL = a.model
     tag = a.tag
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
@@ -471,7 +517,31 @@ def main() -> None:
     (pj.WORK / "ckpt").mkdir(parents=True, exist_ok=True)
 
     probs = pj.load_problems(256, 200, 500)
+    tok = AutoTokenizer.from_pretrained(
+        a.model, revision=revision
+    )  # nosec B615 - pinned
+    if a.generate_traces:
+        from build_answer_contrast import build_contrast
+
+        traces = pj.generate(
+            f"base_trace{tag}", a.model, probs["trace"], a.trace_tokens, out
+        )
+        contrast = {
+            **build_contrast(tok, traces, probs["trace"], post_rows=traces),
+            **identity,
+        }
+        (out / f"answer_contrast{tag}.json").write_text(json.dumps(contrast))
+    else:
+        trace_path = Path(a.trace or "/workspace/gen_b_base_trace.jsonl.gz")
+        contrast_path = Path(a.contrast or "/workspace/answer_contrast.json")
+        traces = read_jsonl(trace_path)
+        contrast = json.loads(contrast_path.read_text())
+    validate_design_source([contrast, *traces], a.model)
+    if not contrast["meta"]:
+        raise ValueError("no answer-before-close contexts found in the design traces")
     nothink_path = Path(a.nothink_negatives) if a.nothink_negatives else None
+    if nothink_path is not None:
+        validate_design_source(read_jsonl(nothink_path), a.model)
     if a.nothink_train:
         # Thinking-off base replies to GSM8K-*train* problems (the trace split,
         # which never overlaps held-out), generated before the HF model loads.
@@ -494,20 +564,11 @@ def main() -> None:
             out,
         )
 
-    tok = AutoTokenizer.from_pretrained(MODEL, revision=REVISION)  # nosec B615 - pinned
-    model = AutoModelForCausalLM.from_pretrained(
-        MODEL, revision=REVISION, dtype=torch.bfloat16
-    )  # nosec B615
-    model = model.to("cuda").eval()
-    prefixes, labels, groups = contrast_sets(
-        tok, json.load(open(a.contrast)), read_jsonl(Path(a.trace))
-    )
+    prefixes, labels, groups = contrast_sets(tok, contrast, traces)
     newline = newline_ids(tok)
     extra: list[tuple[str, list]] = []
     if a.intermediate_negatives:
-        hard = intermediate_negatives(
-            tok, json.load(open(a.contrast)), read_jsonl(Path(a.trace)), newline
-        )
+        hard = intermediate_negatives(tok, contrast, traces, newline)
         hard = random.Random(5).sample(hard, k=min(a.intermediate_negatives, len(hard)))
         extra += [("intermediate_newline", p) for p in hard]
     if math_traces:
@@ -558,6 +619,10 @@ def main() -> None:
         prefixes.append(p)
         labels.append(-1.0)
         groups.append(group)
+    if not any(label > 0 for label in labels):
+        raise ValueError(
+            "no answer line breaks before thinking closed in the design inputs"
+        )
     print(
         json.dumps(
             {
@@ -567,6 +632,10 @@ def main() -> None:
         ),
         flush=True,
     )
+    model = AutoModelForCausalLM.from_pretrained(
+        a.model, revision=revision, dtype=torch.bfloat16
+    )  # nosec B615
+    model = model.to("cuda").eval()
     mlp = f"model.layers.{LAYER}.mlp"
     caps = capture_last(model, [f"{mlp}.gate_proj", f"{mlp}.up_proj"], prefixes)
     w = {
@@ -576,6 +645,7 @@ def main() -> None:
     if a.save_captures:
         torch.save(
             {
+                **identity,
                 "gate_acts": caps[f"{mlp}.gate_proj"].to(torch.bfloat16),
                 "up_acts": caps[f"{mlp}.up_proj"].to(torch.bfloat16),
                 "labels": labels,
@@ -671,6 +741,7 @@ def main() -> None:
         (out / f"neuron{tag}_summary.json").write_text(
             json.dumps(
                 {
+                    **identity,
                     "design": design.report,
                     "spec_hash": spec.content_hash(),
                     "control_hash": control.content_hash(),
@@ -682,7 +753,7 @@ def main() -> None:
         print(json.dumps({"event": "neuron_job_done", "design_only": True}), flush=True)
         return
 
-    base = resolve_checkpoint(MODEL, REVISION)
+    base = resolve_checkpoint(a.model, revision)
     ckpts = {}
     to_build = [("neuron", spec), ("control", control)]
     if a.compare_spec:
@@ -707,6 +778,7 @@ def main() -> None:
         )
 
     result: dict = {
+        **identity,
         "design": design.report,
         "spec_hash": spec.content_hash(),
         "control_hash": control.content_hash(),
@@ -751,6 +823,8 @@ def main() -> None:
 
         side_effect_job.main(
             [
+                "--model",
+                a.model,
                 "--out",
                 str(out),
                 "--neuron-spec",

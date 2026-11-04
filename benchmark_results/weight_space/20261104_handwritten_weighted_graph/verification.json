@@ -1,0 +1,14 @@
+{
+  "networkx_version": "3.6.1",
+  "independent_test_labels_verified": 4096,
+  "all_four_checkpoints_reproduce_metrics": true,
+  "natural_and_split_networks_agree_on_all_test_graphs": true,
+  "exhaustive_three_node_cases_reproduced": 2187,
+  "run_source_snapshots_match_recorded_hashes": true,
+  "delivered_source_sha256": {
+    "model.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+    "benchmark.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0"
+  },
+  "delivered_weights_equal_original_run_constructor": true,
+  "test_input_hashes_verified": true
+}

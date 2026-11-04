@@ -158,7 +158,7 @@ serving, and provider claims.
   CoreWeave, and Nebius reports now carry the exact clean harness commit and
   framework version. Historical schema-v1 or unrelated fresh canaries cannot
   satisfy the A+ gate.
-- **Current Python candidate:** `stateset-agents==0.71.2`, publication pending.
+- **Current Python candidate:** `stateset-agents==0.71.3`, publication pending.
   Publication status and retained runs are listed in
   [release evidence](docs/RELEASE_EVIDENCE.md).
 - **Latest verified PyPI release:** `stateset-agents==0.66.1`, checked October 20,
@@ -469,7 +469,20 @@ coverage, live hardware attempts, and successful inference by provider.
   checkouts before invoking an evaluator. Every model-consuming stage is bound,
   and standalone execution verifies the checkout's exact suite revision.
 
-**v0.71.2 (latest candidate; publication pending):**
+**v0.71.3 (latest candidate; publication pending):**
+
+- **Handwritten neural algorithms:** complete networks for error correction,
+  unweighted shortest paths, and weighted shortest-path costs, with zero optimizer
+  updates. The weighted model stores exactly 2,000,000 parameters (5,679 nonzero);
+  its natural circuit is expanded by active neuron splitting to match that budget.
+- **Reproducible evidence:** independent algorithmic oracles, exhaustive small
+  cases, disjoint evaluation data, and parameter-matched trained baselines.
+  See [the weighted graph report](benchmark_results/weight_space/20261104_handwritten_weighted_graph/README.md).
+- **Weight-edit experiments:** Qwen3.5-2B design support, model provenance checks,
+  and controls for conclude-neuron side effects. Finite-budget comparisons do not
+  establish general superiority over training.
+
+**v0.71.2:**
 
 - **Thinking on vs off at an equal budget.** `weight_space.protocol.at_budget`
   and `budget_curve` score strict accuracy at every token budget from one
@@ -1600,7 +1613,7 @@ asyncio.run(main())
 ```bash
 pip install "stateset-agents==0.66.1" # latest verified PyPI release
 # Tagged candidate; publication is blocked. Post-tag fixes require their own commit.
-pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.2"
+pip install "stateset-agents @ git+https://github.com/stateset/stateset-agents.git@v0.71.3"
 ```
 
 That's enough for the [five-minute demo](#the-improvement-loop), the stub
@@ -2519,7 +2532,7 @@ For complex runs prefer the Python API and the examples folder.
 - [`docs/COOKBOOK.md`](docs/COOKBOOK.md) — copy-paste recipes for 8 common workflows (look up what you need).
 - [`notebooks/README.md`](notebooks/README.md) — a map of the **ten bundled Colab notebooks**: which to open when.
 - [`benchmark_results/whitepaper_v1/`](benchmark_results/whitepaper_v1/) — first-party result artifacts including the §11.7 canonical positive result.
-- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.2`).
+- [`CHANGELOG.md`](CHANGELOG.md) — what changed in each release (latest candidate `v0.71.3`).
 - [`docs/RELEASE_EVIDENCE.md`](docs/RELEASE_EVIDENCE.md) — exact test,
   provider, GPU, cleanup, and publication claims for the current release.
 
