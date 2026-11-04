@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.4] - 2026-11-04 — Handwritten neural solver release metadata
+
+### Changed
+
+- Refresh package, deployment, and documentation version metadata for v0.71.4.
+  Neural solver code, weights, and benchmark results are unchanged from v0.71.3.
+
 ## [0.71.3] - 2026-11-04 — Handwritten neural algorithms and weighted shortest paths
 
 ### Added
