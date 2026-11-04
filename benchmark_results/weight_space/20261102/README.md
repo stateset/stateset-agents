@@ -554,6 +554,19 @@ comparisons are paired on one pod):
   independent pods agree the guard removes the neuron's thinking-off cost
   (v1 -1.1, p = 0.53; unguarded -3.9, p = 0.001).
 
+**Gating the first close (offline negatives, no GPU).** Over the 1,467
+thinking-on practice replies above, no phrase in the thinking marks a good
+first close well enough to gate on: "Final Answer" precedes 49% of good first
+closes and 21% of premature ones, `\boxed` 22% and 11%. The correct value
+after "=" precedes 68% of good and 18% of premature closes, so premature
+closes mostly come before the model has the answer at all. The model's own
+continuation belief (logit lens at layer 23 for "Wait", "But", "Let" and
+similar) is *higher* at final-answer line breaks than at intermediate ones
+(AUC 0.76 the wrong way round for a stop signal: this model re-verifies after
+answering), and adding it to v3t's detector moves the detector's AUC from
+0.822 to 0.830 (GSM8K) and 0.743 to 0.760 (MATH) at a weight chosen on the
+same contexts. Neither was worth a generation run.
+
 ## Design diagnostics: what the held-out fire rates measured
 
 `design_conditional_neuron` fits on even-indexed contexts and reports on odd
