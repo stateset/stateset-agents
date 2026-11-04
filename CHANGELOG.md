@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `weight_space.circuits.shift_threshold`: give a designed neuron an explicit
+  firing threshold and write strength (gate row minus `bias` times its up row,
+  which reads ~1.0 everywhere, so the pre-activation drops by `bias`). The
+  ridge detector has no intercept, so the threshold used to be whatever the
+  fit's shrinkage left.
+- `benchmarks/weight_space/threshold_design.py` builds explicit-threshold
+  variants of a spec on a bias x write-norm grid offline (bias 0 at write
+  norm 3 rebuilds the start spec's hash); `threshold_job.py` judges them by
+  generation on training problems and runs held-out only for a kept winner.
+  `thinking_budget_job.heldout_check` is the shared held-out comparison.
+  Recorded negative result: bias +1 led v3t on practice (51.3% vs 48.5%) but
+  not on held-out (45.6% vs 46.3%, p = 0.62); one threshold trades unclosed
+  replies against double closes and leaks. With thinking off, the neuron's
+  leak costs 3.9 points vs the base (p = 0.001).
+- `weight_space.HeadRewrite` edit kind: rewrite one query head of a gated
+  attention layer (Qwen3.5, Qwen3-Next) as rank-one query, output-gate and
+  output parts; keys and values stay shared with its group. Applied and
+  verified slice-exact like the other kinds, including sharded checkpoints,
+  with a random-write matched control.
+
+### Fixed
+
+- `weight_space.circuits.rewrite_activation` solves its read-through in
+  float64. Float32 least squares returned residuals from 1e-6 to 2.5e-2 on
+  identical inputs on one CPU build and truncates weakly read directions; the
+  span check refused such rows, so no reported value moved by more than 0.1%.
+
 ## [0.71.2] - 2026-11-03 — Equal-budget evaluation; the conclude neuron ties thinking off
 
 ### Added

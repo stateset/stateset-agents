@@ -39,7 +39,9 @@ switched off scores 47.9% strict at the same 8,192-token cap (GSM8K 55.6%,
 MATH 40.2%). v3t with thinking on ties it on GSM8K (57.0%, p = 0.59), trails
 on MATH (33.8%, p = 0.006), and leads only under lenient scoring (+5.5 overall,
 p = 0.0009): it reasons better but a quarter of its replies are malformed. See
-"Thinking on vs thinking off at an equal budget".
+"Thinking on vs thinking off at an equal budget". Redesigns of the neuron
+(v4, v5, on-policy rounds) and an explicit firing threshold all failed to beat
+v3t on held-out; see their sections.
 
 ## The failure being edited
 
@@ -398,7 +400,50 @@ shifts matter. v3t is one draw from this procedure, and v4, v5 and these
 rounds were partly variance, not only their extra data. A stable redesign
 needs a stronger prior (larger `lam`) and an explicit threshold (an offset
 read through a near-constant unit, the way `up_proj` reads unit 44),
-calibrated by practice generation with the detector held fixed.
+calibrated by practice generation with the detector held fixed. The explicit
+threshold was tested next; it did not help on held-out (below).
+
+## Explicit threshold on v3t (negative result, 2026-11-03)
+
+`circuits.shift_threshold` gives the neuron an explicit threshold with v3t's
+detector held fixed: gate row minus `bias` times its own up row. The up row
+reads about 1.0 in every context (mean 1.006, std 0.108 over 2,790 captured
+contexts), so the pre-activation drops by `bias`. The down column is rescaled
+so the mean write when firing is `write_norm`; bias 0 at write norm 3 rebuilds
+v3t's hash exactly. `threshold_design.py` built the grid offline;
+`threshold_job.py` (RTX 4090, $1.35, `summaries/th_threshold_summary.json`)
+scored each candidate by generation on 400 practice problems (200 GSM8K-train
++ 200 MATH-train, cap 4,096), kept the best strict score whose thinking-off
+stray rate rose at most 2 points, then ran held-out.
+
+| bias, write norm | practice, thinking on strict | two+ `</think>` | never closed | thinking off strict | stray `</think>` |
+|---|---|---|---|---|---|
+| 0, 3 (v3t) | 48.5% | 14.0% | 17.0% | 43.0% | 18.3% |
+| -1, 3 | 48.3% | 21.8% | 12.8% | 43.8% | 22.0% |
+| **+1, 3 (kept)** | **51.3%** | 9.3% | 18.8% | 45.5% | 13.8% |
+| +2, 3 | 45.0% | 9.8% | 22.5% | 45.0% | 12.3% |
+| 0, 2 | 47.0% | 4.0% | 31.0% | 45.8% | 5.3% |
+| 0, 4 | 45.8% | 24.3% | 9.8% | 44.0% | 24.3% |
+
+The threshold behaves as designed: lower fires more (fewer unclosed replies,
+more double closes and leaks), higher the reverse, and a weaker write nearly
+removes the leaks (5.3%) but leaves 31% unclosed. On held-out the kept
+candidate did not beat v3t:
+
+| Held-out 1,000, cap 8,192, one pod | strict | GSM8K | MATH | hit the cap |
+|---|---|---|---|---|
+| base, thinking off | 48.5% | 56.6% | 40.4% | 20.5% |
+| v3t, thinking on | 46.3% | 57.0% | 35.6% | 30.0% |
+| bias +1, thinking on | 45.6% | 56.0% | 35.2% | 35.7% |
+| bias +1, thinking off | 44.6% | 53.0% | 36.2% | 8.9% |
+
+Bias +1 vs v3t: -0.7 [-3.0, +1.7], +70 / -77, p = 0.62. Its practice gain
+(+2.8 points, best of seven on 400 problems) was selection noise, and at the
+held-out 8,192-token cap the higher threshold left more replies running to
+the cap. Bias +1 with thinking off is 3.9 points below the base with thinking
+off (+51 / -90, p = 0.001): the neuron's leak into thinking-off mode costs
+real accuracy. One knob trades unclosed replies against double closes and
+leaks; v3t sits near its best setting.
 
 ## Design diagnostics: what the held-out fire rates measured
 
@@ -515,8 +560,9 @@ non-thinking accuracy.
 | v5 design | MATH positives + post-close negatives, captures saved (one superseded start, $0.10) | H100 / A100 | 1.31 |
 | v5 test | base thinking off vs v3t / v5 / v5b thinking on and off | RTX 4090 | 1.06 |
 | on-policy | practice-gated redesign, 3 rounds (kept v3t; no held-out run) | A40 | 1.10 |
+| threshold | explicit-threshold grid on v3t (7 on practice), bias +1 held-out | RTX 4090 | 1.35 |
 | failed start | dependency install hung 26 min on one H100 host | H100 | 2.03 |
-| **total** | all pods terminated | | **36.25** |
+| **total** | all pods terminated | | **37.60** |
 
 Incidents: run 5b's per-problem files were lost when the launcher crashed
 decoding a byte-cut UTF-8 log tail (aggregates survive in its event log;
@@ -555,6 +601,10 @@ bare HTTP 500 (the client now says "no capacity").
   and its control.
 - `specs/conclude_neuron_v4_spec.json` / `conclude_neuron_v4_control_spec.json`
   — v4 (intermediate-result negatives; negative result, kept as evidence).
+- `specs/threshold_grid/` — the explicit-threshold grid on v3t
+  (`threshold_grid.json` plus one spec per bias and write norm), and
+  `summaries/th_threshold_summary.json` with `per_problem/th_th_*` (practice
+  generations on training problems and the held-out runs).
 - `summaries/thinking_budget_summary_v3t_v4.json` and `per_problem/tb_tb_*` —
   base thinking off vs v3t / v4 thinking on and off, one pod, equal caps,
   strict and lenient, per subset and per token budget, paired.

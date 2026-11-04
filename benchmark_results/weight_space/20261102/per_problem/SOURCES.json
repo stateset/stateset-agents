@@ -169,6 +169,86 @@
     "source": "tb/gen_tb_v4_think.jsonl.gz",
     "source_sha256": "0054a45969b8ca43da20a68c6762ddbb11ad4b2579006b7ce82a3e710bbc4f73"
   },
+  "th_th_b+0.0_w2.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w2.0_nothink.jsonl.gz",
+    "source_sha256": "c63334c1039b5ec6456c7d9b32c19167e27a88bfbf06388e8e925d7f8c54c6bc"
+  },
+  "th_th_b+0.0_w2.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w2.0_think.jsonl.gz",
+    "source_sha256": "7fa56ecbd0aaa674ce144ce191c38c8b5049ce9e5d524ee491eab6edf3bb0c7a"
+  },
+  "th_th_b+0.0_w3.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w3.0_nothink.jsonl.gz",
+    "source_sha256": "23f7215e9b0fa98ba9b2bd1250534ef93203b7a5d5dd102d7f5c8008c4407e4a"
+  },
+  "th_th_b+0.0_w3.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w3.0_think.jsonl.gz",
+    "source_sha256": "6effd4f14cbb71b9dd24b765bb9b2c8462b152b496ada43e8af8681e978f9516"
+  },
+  "th_th_b+0.0_w4.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w4.0_nothink.jsonl.gz",
+    "source_sha256": "041414eef341d5e8f96a57467c345530a736be3d0da420e6ac545ce1618624d9"
+  },
+  "th_th_b+0.0_w4.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+0.0_w4.0_think.jsonl.gz",
+    "source_sha256": "6a54f0dcfa8f4bb18041ae1ab3b224051a8f70f4bfb1434e7881b51ec85f29fd"
+  },
+  "th_th_b+1.0_w3.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+1.0_w3.0_nothink.jsonl.gz",
+    "source_sha256": "ca6c9615ac68826097bdec9fc71de61e77840d9f8996841b1b71cf6717f38603"
+  },
+  "th_th_b+1.0_w3.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+1.0_w3.0_think.jsonl.gz",
+    "source_sha256": "c24ff2b0a70e4a8597cf834934a2d1115783d1ad9ba4c0a549d1ed343633e3a2"
+  },
+  "th_th_b+2.0_w3.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+2.0_w3.0_nothink.jsonl.gz",
+    "source_sha256": "a0ebba52d0e004475404a72526d1443540f907edb8e2bf9aa078d67f9f4f9241"
+  },
+  "th_th_b+2.0_w3.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b+2.0_w3.0_think.jsonl.gz",
+    "source_sha256": "20ccf6cdfb6aacd220d19af1db84ec30a1b187a275b231a930ba639fc27c5448"
+  },
+  "th_th_b-1.0_w3.0_nothink.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b-1.0_w3.0_nothink.jsonl.gz",
+    "source_sha256": "dd777ac4425441e5a59fe62796c47b6e54f0984892807b7921072c9205a086b3"
+  },
+  "th_th_b-1.0_w3.0_think.jsonl": {
+    "n": 400,
+    "source": "th/gen_th_b-1.0_w3.0_think.jsonl.gz",
+    "source_sha256": "fdfc97b17ee58b0e1f82ed3ef8904e4098a9e883e5225314544e00ad3aca25e7"
+  },
+  "th_th_base_nothink.jsonl": {
+    "n": 1000,
+    "source": "th/gen_th_base_nothink.jsonl.gz",
+    "source_sha256": "f594379f3b071979327c3e70f61f008093c82dc1bf9d8e27fdb6d5922a132036"
+  },
+  "th_th_kept_nothink.jsonl": {
+    "n": 1000,
+    "source": "th/gen_th_kept_nothink.jsonl.gz",
+    "source_sha256": "a997298e4190254a1b76732b985392a0a389f485dbf104b76e99889499836d50"
+  },
+  "th_th_kept_think.jsonl": {
+    "n": 1000,
+    "source": "th/gen_th_kept_think.jsonl.gz",
+    "source_sha256": "04b97a93e81f64936600acb6ade7b12e52c1d8a69c3f1e76c3845bcf18309f28"
+  },
+  "th_th_start_think.jsonl": {
+    "n": 1000,
+    "source": "th/gen_th_start_think.jsonl.gz",
+    "source_sha256": "74404b5ae142ae3f6a14004763496eea97b5fe2990eef96549ea984023e21ab9"
+  },
   "v3_side_base_v3_gsm_nothink.jsonl": {
     "n": 500,
     "source": "v3/gen_side_base_v3_gsm_nothink.jsonl.gz",

@@ -414,3 +414,36 @@ contexts mined from the edited model's own replies to MINE practice problems
 Kept v3t; no held-out run. Cause: the ridge detector (3,584 features, ~800
 contexts, lam 100) is unstable (half-data fits correlate 0.909; 0.971 at lam
 1,000) and the neuron's firing threshold is set implicitly by shrinkage.
+
+## Explicit threshold on v3t (2026-11-03) — negative on held-out
+
+`circuits.shift_threshold`: gate row minus `bias` x up row (the up row reads
+~1.0 everywhere: mean 1.006, std 0.108 on 2,790 captured contexts), so the
+pre-activation drops by `bias`; the down column is rescaled so the mean write
+when firing is `write_norm`. v3t's detector is fixed (bias 0, write norm 3
+rebuilds v3t's hash `f221470a088d0860`). `threshold_design.py` (offline),
+`threshold_job.py`, one RTX 4090 pod ($1.35). Practice = MINE + SELECT (200
+GSM8K-train + 200 MATH-train, cap 4,096), strict.
+
+| bias, write norm | spec | think strict | two+ close | never closed | nothink strict | stray |
+|---|---|---|---|---|---|---|
+| 0, 3 (v3t) | f221470a088d0860 | 48.5% | 14.0% | 17.0% | 43.0% | 18.3% |
+| -1, 3 | 60308af0b3654402 | 48.3% | 21.8% | 12.8% | 43.8% | 22.0% |
+| +1, 3 (kept) | efae812819cec461 | 51.3% | 9.3% | 18.8% | 45.5% | 13.8% |
+| +2, 3 | 80dd4c89309a3547 | 45.0% | 9.8% | 22.5% | 45.0% | 12.3% |
+| 0, 2 | a2dd8469d9430bfe | 47.0% | 4.0% | 31.0% | 45.8% | 5.3% |
+| 0, 4 | 72c1d8d8c40de507 | 45.8% | 24.3% | 9.8% | 44.0% | 24.3% |
+
+Held-out 1,000 at 8,192 on the same pod (strict): base thinking off 48.5%
+(GSM8K 56.6, MATH 40.4); v3t thinking on 46.3% (57.0 / 35.6, as on the earlier
+4090); bias +1 thinking on 45.6% (56.0 / 35.2), hit the cap 35.7% vs v3t 30.0%;
+bias +1 thinking off 44.6%.
+
+- bias +1 vs v3t, thinking on: -0.7 [-3.0, +1.7], +70 / -77, p = 0.62.
+- bias +1 thinking on vs base thinking off: -2.9, p = 0.066 (MATH -5.2, p = 0.013).
+- bias +1 thinking off vs base thinking off: -3.9 [-6.2, -1.6], +51 / -90,
+  p = 0.001: the leak into thinking-off mode costs accuracy.
+
+The threshold trades unclosed replies against double closes and leaks; the
+practice gain (+2.8 on 400, best of 7) did not survive held-out, where the
+higher threshold left more replies running to the cap.
