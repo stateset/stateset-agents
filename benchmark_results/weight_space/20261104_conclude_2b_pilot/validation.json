@@ -1,0 +1,29 @@
+{
+  "targeted_tests": {
+    "passed": 144,
+    "failed": 0,
+    "groups": [
+      131,
+      13
+    ]
+  },
+  "type_check": {
+    "source_files": 552,
+    "passed": true
+  },
+  "pre_commit_all_files": "passed_before_final_benchmark_additions",
+  "pre_commit_changed_sources": "passed",
+  "full_suite_rerun": false,
+  "full_suite_note": "The existing online-DPO learning-test failure documented with v0.71.3 was not changed or reclassified.",
+  "pilot_strict_outcomes_reproduced": 3200,
+  "lenient_timeout_discrepancies": 3,
+  "longer_timeout_diagnostics_recover_all_saved_lenient_grades": true,
+  "log_sha256": {
+    "sa-weight-next-guards.log": "3fbbbf4dd01d8a256b384f9ed324cb1722f327c7736b5300d0b31abc18b2a9ca",
+    "sa-weight-followup-guards.log": "99637fed520cb77d0628b8fee59431a3b11f13d0bfe0fe8662d965240e887494",
+    "sa-weight-next-types-final.log": "c5139c6004a711be6de0f39fd9232ff6fc09533720d1c0beb2d119b245541966",
+    "sa-weight-next-precommit.log": "4d0d688649ade79623a5bf3e635abec411e61edd2d3ebb5ad8eb53f0521e6575",
+    "sa-weight-followup-precommit.log": "81c0fcd82c4aeca9798a079aec311a02e4cca71eb070cbc7fa52997b4313e742",
+    "sa-weight-pilot-final-checks.log": "81c0fcd82c4aeca9798a079aec311a02e4cca71eb070cbc7fa52997b4313e742"
+  }
+}

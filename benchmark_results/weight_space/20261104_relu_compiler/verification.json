@@ -1,0 +1,585 @@
+{
+  "certificates": [
+    {
+      "key": "nonnegative_add__4__0",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__4__1",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__4__2",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__8x8__0",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__8x8__1",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__8x8__2",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__32x32__0",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__32x32__1",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__32x32__2",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__24x16x8__0",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__24x16x8__1",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "nonnegative_add__24x16x8__2",
+      "reachable_first_layer_units": 1,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__4__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__4__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__4__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__8x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__8x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__8x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__32x32__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__32x32__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__32x32__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__24x16x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__24x16x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "signed_add__24x16x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 0
+    },
+    {
+      "key": "minimum__4__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__4__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__4__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__8x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__8x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__8x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__32x32__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__32x32__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__32x32__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__24x16x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__24x16x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "minimum__24x16x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__4__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__4__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__4__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__8x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__8x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__8x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__32x32__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__32x32__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__32x32__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__24x16x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__24x16x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "maximum__24x16x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__4__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__4__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__4__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__8x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__8x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__8x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__32x32__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__32x32__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__32x32__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__24x16x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__24x16x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "absolute_difference__24x16x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 1
+    },
+    {
+      "key": "clipped_difference__4__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__4__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__4__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__8x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__8x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__8x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__32x32__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__32x32__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__32x32__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__24x16x8__0",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__24x16x8__1",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "clipped_difference__24x16x8__2",
+      "reachable_first_layer_units": 2,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "triangle__4__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__4__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__4__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__8x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__8x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__8x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__32x32__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__32x32__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__32x32__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__24x16x8__0",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__24x16x8__1",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "triangle__24x16x8__2",
+      "reachable_first_layer_units": 3,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 3
+    },
+    {
+      "key": "manhattan_distance__4__0",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__4__1",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__4__2",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__8x8__0",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__8x8__1",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__8x8__2",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__32x32__0",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__32x32__1",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__32x32__2",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__24x16x8__0",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__24x16x8__1",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    },
+    {
+      "key": "manhattan_distance__24x16x8__2",
+      "reachable_first_layer_units": 4,
+      "real_arithmetic_identity": true,
+      "remaining_hinge_terms": 2
+    }
+  ],
+  "graph_checkpoints_equal": 3,
+  "max_abs_error": 8.940696716308594e-07,
+  "passed": true,
+  "predictions_replayed": 492192,
+  "variants": 96
+}

@@ -4,6 +4,41 @@ This page records what was actually exercised for the current release line.
 Registration, authentication, hardware allocation, training, inference, and
 publication are separate claims.
 
+## v0.71.5 candidate — local validation, remote gates pending
+
+This candidate includes complete handwritten weighted routes, a stronger learned
+graph control, the controlled 2B pilot, the 69-coordinate graph repair, and the
+reusable ReLU arithmetic compiler. See the
+[release validation record](../benchmark_results/weight_space/20261104_release_v0715/validation.json)
+for the exact local checks and retained distribution hashes. The experiment
+reports preserve their original protocols, source snapshots, and limitations.
+
+The compiler passes 492,192 replayed predictions across 96 networks and reproduces
+the three graph repairs exactly. Complete routes pass 10,657 oracle cases. These
+results concern supplied arithmetic specifications and constructed graph tasks;
+the 2B language-model pilot failed its promotion gate.
+
+The full suite identified a complexity-limit violation in the new compiler.
+Extracting architecture validation into a helper fixes that check; all 96
+arithmetic checkpoints and three graph repairs remain byte-identical to the
+frozen experiment artifacts. The release validation record binds this comparison
+to both compiler source hashes. The full run also encountered distributed-test
+timeouts, whose individual rerun outcomes are retained separately.
+Four distributed cases passed on the first focused rerun. The remaining
+empty-population case first failed a state-equality assertion, then passed on
+both the unchanged baseline and a final isolated candidate retry. These retries
+do not replace the initial full-suite result.
+
+The online-DPO learning assertion previously recorded for v0.71.3 also reproduces
+in this candidate. It is reported explicitly, without changing its threshold or
+the unrelated trainer. The default Python suite's full outcome is retained in
+the validation record; this release does not claim an all-green suite.
+
+At preparation time, GitHub reported that Actions could not start because the
+account was locked due to billing. Protected `master` requires 14 successful
+checks and enforces them for administrators. A pushed source tag does not establish
+a protected-branch merge, PyPI/npm publication, or a successful release workflow.
+
 ## v0.67.0 tagged candidate — publication blocked
 
 Tagged commit: `d41c5637c3e719a301545c792dae54b34dce1dd6`.

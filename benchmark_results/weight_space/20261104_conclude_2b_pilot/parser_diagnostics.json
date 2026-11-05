@@ -1,0 +1,44 @@
+[
+  {
+    "id": "mathtrain-3646",
+    "condition": "candidate_nothink",
+    "diagnostic_only": true,
+    "recorded_scores_unchanged": true,
+    "saved_correct": true,
+    "finish": "length",
+    "tokens": 8192,
+    "clean_finish": false,
+    "default_parsing_timeout_s": 5,
+    "diagnostic_parsing_timeout_s": 30,
+    "correct_with_longer_timeout": true,
+    "elapsed_s": 6.442
+  },
+  {
+    "id": "mathtrain-3444",
+    "condition": "control_nothink",
+    "diagnostic_only": true,
+    "recorded_scores_unchanged": true,
+    "saved_correct": true,
+    "finish": "length",
+    "tokens": 8192,
+    "clean_finish": false,
+    "default_parsing_timeout_s": 5,
+    "diagnostic_parsing_timeout_s": 30,
+    "correct_with_longer_timeout": true,
+    "elapsed_s": 5.985
+  },
+  {
+    "id": "mathtrain-4419",
+    "condition": "control_nothink",
+    "diagnostic_only": true,
+    "recorded_scores_unchanged": true,
+    "saved_correct": true,
+    "finish": "length",
+    "tokens": 8192,
+    "clean_finish": false,
+    "default_parsing_timeout_s": 5,
+    "diagnostic_parsing_timeout_s": 30,
+    "correct_with_longer_timeout": true,
+    "elapsed_s": 6.418
+  }
+]

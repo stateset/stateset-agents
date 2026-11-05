@@ -1,0 +1,16 @@
+{
+  "targeted_tests": {
+    "passed": 131,
+    "failed": 0,
+    "log": "/tmp/sa-weight-next-guards.log"
+  },
+  "type_check": {
+    "source_files": 552,
+    "passed": true
+  },
+  "pre_commit_all_files": "passed",
+  "additional_verifier_ruff_and_isort": "passed",
+  "full_suite_rerun": false,
+  "full_suite_note": "The pre-existing online-DPO learning-test failure documented with v0.71.3 was not changed or reclassified.",
+  "source_changes_after_initial_benchmark": "Import formatting and an explicit Sequential type assertion; final artifacts were regenerated with delivered source and exported tensors independently checked against the constructor."
+}

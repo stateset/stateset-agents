@@ -116,6 +116,7 @@ def main() -> int:
     ap.add_argument("--max-cost-usd", type=float, default=15.0)
     ap.add_argument("--lifetime-h", type=float, default=3.0)
     ap.add_argument("--disk-gb", type=int, default=100)
+    ap.add_argument("--ledger-model", default="Qwen/Qwen3.5-0.8B")
     ap.add_argument("--job-args", default="")
     ap.add_argument(
         "--entry",
@@ -361,7 +362,7 @@ def main() -> int:
             CostEntry(
                 provider="runpod",
                 job_id=run_id,
-                base_model="Qwen/Qwen3.5-0.8B",
+                base_model=a.ledger_model,
                 gpu=a.gpu,
                 gpu_count=1,
                 cost_per_hr=float(cost_per_hr) if cost_per_hr is not None else None,

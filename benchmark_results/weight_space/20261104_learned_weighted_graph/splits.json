@@ -1,0 +1,23 @@
+{
+  "train_count": 16384,
+  "validation_count": 1024,
+  "test_count": 4096,
+  "unique_cost_matrices": 21504,
+  "train_sha256": "2aa99ab679ba0a001d765141b98b6cbbaee5189e6983eecb4280ffc664e2c7e6",
+  "validation_sha256": "e96dbf141c0b4bdf38f13dcaefc05054d9538f6e6da6a221d85d51e0768bc1fb",
+  "test_sha256": {
+    "er_0.05": "1feaf80cf16540764b09c2071afbb85ac136dde5513c952c7b5aefdb09e63db0",
+    "er_0.12": "38b2a1733673055e4d766f0712b565dc1a94d7544d67b865fd5ddebeedc9e3fb",
+    "er_0.25": "fd27525da6dc0c9cafe89787896c0f2989f9d8035f7a91f97def551ce32791d1",
+    "er_0.5": "5f3cb7bf69ce982b61719d1980f3793d5f0dbb324eb97ece526e85eb41aae61c",
+    "max_cost_chain": "81a061f9e8dd9f8f3e66ff6ce5432a3dd6e31e35509eca19018f78c26169c192",
+    "broken_chain": "f07e01cbd55f369f6faad6fb6fc0935d39b17655c1a2a92ddd873e10e64f8f86",
+    "cheap_detours": "d50837da6ff09c2d034301c6d830880299ad717eefe41f55ef56123a32dd4068",
+    "two_cycles": "bb8dcc49616708bc76feb354ce1624682f16a46161edd48dc5c742e53e7444b7"
+  },
+  "seeds": {
+    "train": 51000,
+    "validation": 52000,
+    "test": 53000
+  }
+}

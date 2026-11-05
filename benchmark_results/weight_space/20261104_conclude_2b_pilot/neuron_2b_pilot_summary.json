@@ -1,0 +1,41 @@
+{
+  "model": "Qwen/Qwen3.5-2B",
+  "revision": "15852e8c16360a2fea060d615a32b45270f8a8fc",
+  "design": {
+    "layer": 23,
+    "neuron": 4831,
+    "up_unit": 2876,
+    "gain": 4.0,
+    "lam": 100.0,
+    "write_norm": 3.0,
+    "activation_when_firing": 3.7122,
+    "heldout_detector_auc": 0.8521,
+    "heldout_activation_auc": 0.3344,
+    "heldout_fire_rate": {
+      "positive": 0.1214,
+      "negative": 0.0165
+    },
+    "heldout_mean_activation": {
+      "positive": 0.2312,
+      "negative": -0.0502
+    },
+    "heldout_fire_rate_by_group": {
+      "answer_newline": 0.1214,
+      "working_newline": 0.0433,
+      "post_think": 0.0,
+      "answer_token": 0.0,
+      "nothink_newline": 0.0067,
+      "prose_newline": 0.0
+    },
+    "heldout_detector_auc_by_group": {
+      "working_newline": 0.7617,
+      "post_think": 0.9126,
+      "answer_token": 0.9061,
+      "nothink_newline": 0.8852,
+      "prose_newline": 0.9071
+    }
+  },
+  "spec_hash": "6663558e6c3c2338",
+  "control_hash": "ea89fa189a32a414",
+  "design_only": true
+}

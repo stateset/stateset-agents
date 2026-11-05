@@ -1,0 +1,64 @@
+{
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "learning_rates": [
+    0.001,
+    0.003
+  ],
+  "steps": 5000,
+  "regimes": [
+    "continued",
+    "coverage"
+  ],
+  "messages_per_step": 18496,
+  "selection": "old random-graph validation exact graphs, then lower raw MAE; includes step zero",
+  "edit": "unit zero in each hidden layer: ReLU(d+c), identity, exclusive output readout",
+  "assigned_coordinates": 69,
+  "parameters": 1185,
+  "control": "same 69 coordinates and total delta L2, random direction; seed 65000+model seed",
+  "fresh_test_seed": 66000,
+  "fresh_test_per_family": 512,
+  "families": [
+    "er_0.05",
+    "er_0.12",
+    "er_0.25",
+    "er_0.5",
+    "max_cost_chain",
+    "broken_chain",
+    "cheap_detours",
+    "two_cycles"
+  ],
+  "test_generation_after_all_training": true,
+  "test_excludes_previous_train_validation_and_test_matrices": true,
+  "known_family_followup_not_unseen_task": true,
+  "rounding": "nearest integer; raw errors retained",
+  "torch": "2.11.0+cu130",
+  "python": "3.12.12",
+  "device": "cpu",
+  "source_sha256": {
+    "repair_weighted_graph_job.py": "35237078e4c8cf682ebbb5ae1800e03302df20e77697a36a88d0fd843789dd4e",
+    "learned_weighted_graph_job.py": "5ecfd385118c5b762362c6b6f69e68e34512ea0f4467a8d86010a6fbb0e0c995",
+    "handwritten_weighted_graph_job.py": "837e4d6bc57278cae65da027cb6fa1d099a060f38a1b02abbd8544ae9a4237c0",
+    "handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a"
+  },
+  "initial_checkpoints": [
+    {
+      "seed": 0,
+      "file": "seed0_lr0.003.safetensors",
+      "sha256": "84969f3faf3566e94e6358912e2454dccf44a938cabe7b9e0315d564a9433472"
+    },
+    {
+      "seed": 1,
+      "file": "seed1_lr0.003.safetensors",
+      "sha256": "c773811b92f8090a04227b30d73f8076e99dffd3616b7e92f301f5c6d7e65372"
+    },
+    {
+      "seed": 2,
+      "file": "seed2_lr0.003.safetensors",
+      "sha256": "8f3f3fec9a22657b8816d41a94eaddd006fc4b34df9311f8057e592130490a74"
+    }
+  ]
+}

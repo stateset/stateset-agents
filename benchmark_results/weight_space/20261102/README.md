@@ -1,13 +1,24 @@
 # Weight-space programming on Qwen3.5-0.8B — 2026-11-02
 
-Direct, hand-designed weight edits (no gradients, no training data) to a small
-reasoning model, judged on held-out math with matched controls and paired
-statistics. Inspired by "Sparks of Weight-Space Programming" (Tsuchida et al.,
-<https://rikiyat.github.io/blog/weight-space-programming/>), which edits weights
-by reading them; this study reproduces the *practice* (read weights and
-activations, write a targeted edit, verify, test held-out) on a different
-model and failure mode. It does **not** reproduce the article's specific
-direction-ablation edit, which was null here (see Negative results).
+Targeted weight edits without gradient descent to a small reasoning model,
+judged on held-out math with matched controls and paired statistics. The token
+edits are hand specified; the conclude-neuron detector is fitted by ridge
+regression on labeled practice activations. It uses training-split examples and
+must not be described as data-free weight construction.
+
+Inspired by ["Sparks of Weight-Space Programming"](https://rikiyat.github.io/blog/weight-space-programming/)
+by Takehi, Teoh, Zhang, and Khattab. Both studies use Qwen3.5-0.8B, but our edit,
+sampling protocol, token cap, and scoring differ. This is not a replication of
+the article's particular direction-ablation result; that edit was null in our
+setup (see Negative results). The article also reports an unsuccessful attempt
+to improve a non-looping Gemma model, distinguishing loop repair from an
+established increase in underlying math ability.
+
+The later [analytic route construction](../20261104_handwritten_routes/README.md)
+is a separate result with no example fitting. Its associated
+[stronger trained cost baseline](../20261104_learned_weighted_graph/README.md)
+shows why architecture and supervision must be considered before claiming that
+writing weights outperforms training generally.
 
 ## Headline (held-out, strict scoring, 1,000 problems)
 
@@ -20,9 +31,10 @@ direction-ablation edit, which was null here (see Negative results).
 | Designed neuron v3 (thinking-gated; negatives touched held-out questions, see caveat) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | 45.1% | +418 / -9 (45.2% on a second pod) |
 | **Designed neuron v3t** (thinking-gated, clean negatives; recommended) + "Wait" rows x0.5 | 3 x 1,024 + 2,048 | **45.9%** | +398 / -9 |
 
-The designed neuron is a single MLP unit rewritten by hand into an "answer
-computed -> conclude" circuit that fires at the line break after the model has
-computed its answer. v2 beat both global edits (vs W5T13 +8.5 points,
+The designed neuron is a single MLP unit rewritten into an "answer computed ->
+conclude" circuit, using a ridge-fitted read vector and a chosen output direction.
+It is intended to fire at a line break after the answer has been computed; it can
+also misfire. v2 beat both global edits (vs W5T13 +8.5 points,
 p = 7e-9; vs W5T15 +3.0, p = 0.07) but was not confined to thinking: it put a
 stray `</think>` into 22% of thinking-off replies and raised general-text
 perplexity 5.9%. v3t adds thinking-off line breaks (from GSM8K-train replies)
@@ -38,7 +50,8 @@ The bar these edits do **not** clear: the unedited model with thinking
 switched off scores 47.9% strict at the same 8,192-token cap (GSM8K 55.6%,
 MATH 40.2%). v3t with thinking on ties it on GSM8K (57.0%, p = 0.59), trails
 on MATH (33.8%, p = 0.006), and leads only under lenient scoring (+5.5 overall,
-p = 0.0009): it reasons better but a quarter of its replies are malformed. See
+p = 0.0009), while a quarter of its replies are malformed. The lenient gain does
+not establish better reasoning or a strict-accuracy improvement. See
 "Thinking on vs thinking off at an equal budget". Redesigns of the neuron
 (v4, v5, on-policy rounds) and an explicit firing threshold all failed to beat
 v3t on held-out; see their sections. A designed attention head that silences
@@ -287,11 +300,11 @@ v3t with thinking on reproduces across GPUs (45.4% here, 45.9% on L40S).
 
 Lenient (grade the text after the first `</think>`), v3t with thinking on is
 ahead: +5.5 [+2.3, +8.7] overall (p = 0.0009), +7.4 on GSM8K (p = 0.002).
-So the edited model reasons better with thinking on than the base does with
-it off, but a quarter of its replies are malformed (early close, then more
-reasoning and a second `</think>`, or the cap), and strict scoring counts
-those as wrong. **Strictly, the edits repair thinking mode to parity with
-thinking off on GSM8K and short of it on MATH; they do not exceed it.** An
+A quarter of its replies are malformed (early close, then more reasoning and
+a second `</think>`, or the cap), and strict scoring counts those as wrong.
+The lenient gain alone does not establish better reasoning. **Strictly, the
+edited thinking-mode score is close to unedited thinking off on GSM8K and
+lower on MATH; these results do not establish an overall improvement.** An
 earlier comparison against a 2,048-token thinking-off run (54.0%) overstated
 v3t's GSM8K lead; at equal caps thinking-off reaches 55.6%. With one budget
 curve per run (`protocol.budget_curve`, valid because each reply is a fixed

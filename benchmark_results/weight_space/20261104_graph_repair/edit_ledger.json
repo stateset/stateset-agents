@@ -1,0 +1,1250 @@
+{
+  "0": [
+    {
+      "tensor": "message.0.weight",
+      "index": 0,
+      "before": 0.17441582679748535,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.weight",
+      "index": 1,
+      "before": 0.4880516529083252,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.bias",
+      "index": 0,
+      "before": 0.44061219692230225,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 0,
+      "before": 0.1505674570798874,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 1,
+      "before": 0.03699960187077522,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 2,
+      "before": -0.039728470146656036,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 3,
+      "before": -0.06292688101530075,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 4,
+      "before": 0.2455296665430069,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 5,
+      "before": 0.23532597720623016,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 6,
+      "before": -0.07707908004522324,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 7,
+      "before": -0.044492002576589584,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 8,
+      "before": -0.15325866639614105,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 9,
+      "before": 0.15466834604740143,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 10,
+      "before": -0.07988138496875763,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 11,
+      "before": -0.044271744787693024,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 12,
+      "before": 0.06830397248268127,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 13,
+      "before": 0.026542145758867264,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 14,
+      "before": 0.3555241525173187,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 15,
+      "before": 0.17474403977394104,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 16,
+      "before": -0.10757552832365036,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 17,
+      "before": 0.3282777965068817,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 18,
+      "before": 0.21763186156749725,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 19,
+      "before": -0.1490727663040161,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 20,
+      "before": 0.11053474992513657,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 21,
+      "before": -0.07335558533668518,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 22,
+      "before": 0.025791911408305168,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 23,
+      "before": -0.07144945859909058,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 24,
+      "before": 0.19850751757621765,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 25,
+      "before": -0.08119621872901917,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 26,
+      "before": -0.07061578333377838,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 27,
+      "before": 0.08749620616436005,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 28,
+      "before": -0.04850345477461815,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 29,
+      "before": 0.06390754878520966,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 30,
+      "before": -0.044252485036849976,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 31,
+      "before": -0.08611028641462326,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.bias",
+      "index": 0,
+      "before": 0.0760098248720169,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 0,
+      "before": -0.30150818824768066,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 1,
+      "before": 0.1064988374710083,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 2,
+      "before": 0.1392979919910431,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 3,
+      "before": -0.15139077603816986,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 4,
+      "before": -0.07885295897722244,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 5,
+      "before": 0.1552598774433136,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 6,
+      "before": 0.0024909854400902987,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 7,
+      "before": 0.18866337835788727,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 8,
+      "before": -0.1335248053073883,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 9,
+      "before": -0.03334464877843857,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 10,
+      "before": -0.08977288752794266,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 11,
+      "before": 0.23323282599449158,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 12,
+      "before": 0.16784444451332092,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 13,
+      "before": -0.09230750799179077,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 14,
+      "before": 0.1469114124774933,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 15,
+      "before": 0.1331133097410202,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 16,
+      "before": -0.021886073052883148,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 17,
+      "before": -0.0739004909992218,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 18,
+      "before": -0.013472854159772396,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 19,
+      "before": 0.13934007287025452,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 20,
+      "before": -0.09472443908452988,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 21,
+      "before": -0.09489132463932037,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 22,
+      "before": -0.03006311133503914,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 23,
+      "before": 0.06979291886091232,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 24,
+      "before": 0.1440427005290985,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 25,
+      "before": -0.00987294688820839,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 26,
+      "before": 0.0061280312947928905,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 27,
+      "before": -0.10718858242034912,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 28,
+      "before": -0.0038211620412766933,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 29,
+      "before": -0.07116204500198364,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 30,
+      "before": 0.22534164786338806,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 31,
+      "before": -0.17207612097263336,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.bias",
+      "index": 0,
+      "before": -0.049549784511327744,
+      "after": 0.0
+    }
+  ],
+  "1": [
+    {
+      "tensor": "message.0.weight",
+      "index": 0,
+      "before": 0.36434608697891235,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.weight",
+      "index": 1,
+      "before": -0.3121015429496765,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.bias",
+      "index": 0,
+      "before": -0.39637550711631775,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 0,
+      "before": 0.06027654558420181,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 1,
+      "before": 0.0023626810871064663,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 2,
+      "before": -0.10141913592815399,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 3,
+      "before": -0.07033058255910873,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 4,
+      "before": 0.16190671920776367,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 5,
+      "before": -0.03270744904875755,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 6,
+      "before": 0.13867947459220886,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 7,
+      "before": 0.0765448734164238,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 8,
+      "before": -0.08791635930538177,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 9,
+      "before": -0.1641068011522293,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 10,
+      "before": 0.30021920800209045,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 11,
+      "before": 0.12029033154249191,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 12,
+      "before": 0.1774216890335083,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 13,
+      "before": 0.03772728890180588,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 14,
+      "before": 0.05685540288686752,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 15,
+      "before": 0.12897853553295135,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 16,
+      "before": 0.16762225329875946,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 17,
+      "before": -0.11730565875768661,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 18,
+      "before": 0.026267176494002342,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 19,
+      "before": 0.14976336061954498,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 20,
+      "before": 0.1521357148885727,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 21,
+      "before": 0.1352936327457428,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 22,
+      "before": -0.12793663144111633,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 23,
+      "before": -0.09540952742099762,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 24,
+      "before": -0.10690952837467194,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 25,
+      "before": 0.13793493807315826,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 26,
+      "before": 0.1941143274307251,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 27,
+      "before": -0.11488715559244156,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 28,
+      "before": 0.19584980607032776,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 29,
+      "before": -0.1111094057559967,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 30,
+      "before": -0.16620822250843048,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 31,
+      "before": -0.045606277883052826,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.bias",
+      "index": 0,
+      "before": 0.15459448099136353,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 0,
+      "before": -0.16665354371070862,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 1,
+      "before": -0.05141928419470787,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 2,
+      "before": 0.043322499841451645,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 3,
+      "before": -0.052098359912633896,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 4,
+      "before": 0.2305620312690735,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 5,
+      "before": -0.20478762686252594,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 6,
+      "before": -0.09829317033290863,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 7,
+      "before": -0.04709452763199806,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 8,
+      "before": -0.14422740042209625,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 9,
+      "before": 0.16428279876708984,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 10,
+      "before": 0.22693678736686707,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 11,
+      "before": -0.20926935970783234,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 12,
+      "before": -0.06571567803621292,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 13,
+      "before": 0.1649799793958664,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 14,
+      "before": -0.12787923216819763,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 15,
+      "before": 0.12174984067678452,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 16,
+      "before": -0.19000346958637238,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 17,
+      "before": -0.15733930468559265,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 18,
+      "before": 0.00026748498203232884,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 19,
+      "before": -0.05446620285511017,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 20,
+      "before": 0.1773967742919922,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 21,
+      "before": -0.08328329026699066,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 22,
+      "before": 0.07465153932571411,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 23,
+      "before": -0.09229128807783127,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 24,
+      "before": 0.14658531546592712,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 25,
+      "before": 0.24812141060829163,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 26,
+      "before": -0.026574788615107536,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 27,
+      "before": -0.10910843312740326,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 28,
+      "before": -0.1402817815542221,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 29,
+      "before": 0.14939120411872864,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 30,
+      "before": 0.07450725883245468,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 31,
+      "before": 0.15097521245479584,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.bias",
+      "index": 0,
+      "before": 0.07848681509494781,
+      "after": 0.0
+    }
+  ],
+  "2": [
+    {
+      "tensor": "message.0.weight",
+      "index": 0,
+      "before": 0.22485613822937012,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.weight",
+      "index": 1,
+      "before": -0.17993487417697906,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.0.bias",
+      "index": 0,
+      "before": 0.5610126256942749,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 0,
+      "before": -0.1542510986328125,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 1,
+      "before": -0.11018389463424683,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 2,
+      "before": -0.13892818987369537,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 3,
+      "before": -0.056816183030605316,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 4,
+      "before": -0.06459851562976837,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 5,
+      "before": -0.04650026559829712,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 6,
+      "before": -0.17101387679576874,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 7,
+      "before": 0.056636013090610504,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 8,
+      "before": 0.1002865880727768,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 9,
+      "before": 0.038010191172361374,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 10,
+      "before": 0.1123339906334877,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 11,
+      "before": 0.11478390544652939,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 12,
+      "before": -0.19252565503120422,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 13,
+      "before": 0.026703020557761192,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 14,
+      "before": 0.16398008167743683,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 15,
+      "before": -0.12811298668384552,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 16,
+      "before": -0.09672681242227554,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 17,
+      "before": -0.00930937472730875,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 18,
+      "before": -0.1099698469042778,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 19,
+      "before": -0.03331919014453888,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 20,
+      "before": -0.026122406125068665,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 21,
+      "before": 0.13954223692417145,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 22,
+      "before": -0.02913164347410202,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 23,
+      "before": 0.07784496992826462,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 24,
+      "before": 0.12944923341274261,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 25,
+      "before": 0.06074213236570358,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 26,
+      "before": -0.1717473417520523,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 27,
+      "before": 0.13249501585960388,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 28,
+      "before": 0.09855922311544418,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 29,
+      "before": -0.14474046230316162,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 30,
+      "before": -0.0630335807800293,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.weight",
+      "index": 31,
+      "before": 0.10230331122875214,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.2.bias",
+      "index": 0,
+      "before": -0.06500665843486786,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 0,
+      "before": -0.05533250421285629,
+      "after": 1.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 1,
+      "before": -0.20100751519203186,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 2,
+      "before": -0.1434752643108368,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 3,
+      "before": 0.023967459797859192,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 4,
+      "before": 0.09514890611171722,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 5,
+      "before": 0.15784290432929993,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 6,
+      "before": -0.1344316452741623,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 7,
+      "before": 0.20287789404392242,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 8,
+      "before": -0.025981761515140533,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 9,
+      "before": -0.042689088732004166,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 10,
+      "before": 0.1881813257932663,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 11,
+      "before": 0.06315041333436966,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 12,
+      "before": -0.06850013881921768,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 13,
+      "before": -0.14533722400665283,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 14,
+      "before": -0.07950421422719955,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 15,
+      "before": 0.1472456157207489,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 16,
+      "before": -0.046441007405519485,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 17,
+      "before": 0.14294853806495667,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 18,
+      "before": -0.0047697024419903755,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 19,
+      "before": 0.13476593792438507,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 20,
+      "before": 0.126973494887352,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 21,
+      "before": 0.13539530336856842,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 22,
+      "before": -0.041210103780031204,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 23,
+      "before": 0.17226478457450867,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 24,
+      "before": 0.18746483325958252,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 25,
+      "before": -0.05259866639971733,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 26,
+      "before": -0.21302582323551178,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 27,
+      "before": 0.11000955104827881,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 28,
+      "before": 0.16730892658233643,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 29,
+      "before": -0.057868070900440216,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 30,
+      "before": 0.1283111721277237,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.weight",
+      "index": 31,
+      "before": 0.20426441729068756,
+      "after": 0.0
+    },
+    {
+      "tensor": "message.4.bias",
+      "index": 0,
+      "before": 0.16391614079475403,
+      "after": 0.0
+    }
+  ]
+}

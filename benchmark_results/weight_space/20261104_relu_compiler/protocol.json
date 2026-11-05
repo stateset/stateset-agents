@@ -1,0 +1,340 @@
+{
+  "absolute_tolerance": 2e-06,
+  "architectures": [
+    [
+      4
+    ],
+    [
+      8,
+      8
+    ],
+    [
+      32,
+      32
+    ],
+    [
+      24,
+      16,
+      8
+    ]
+  ],
+  "graph_dependencies": {
+    "edited_seed0.safetensors": "67136deea5a67f71dac82922b7b2bf92792d735d25e3784f764b688660c325c9",
+    "edited_seed1.safetensors": "7b5e5b341d448d1e6c0e0afec43c59b694fc3ff46689d67a51c600a42b026eef",
+    "edited_seed2.safetensors": "46ef73f2bfa8f2f97ff88200feba02eaba1d3fe949df0349a3da5c39edf1adce",
+    "original_seed0.safetensors": "84969f3faf3566e94e6358912e2454dccf44a938cabe7b9e0315d564a9433472",
+    "original_seed1.safetensors": "c773811b92f8090a04227b30d73f8076e99dffd3616b7e92f301f5c6d7e65372",
+    "original_seed2.safetensors": "8f3f3fec9a22657b8816d41a94eaddd006fc4b34df9311f8057e592130490a74"
+  },
+  "graph_evidence_directory": "20261104_graph_repair",
+  "input_seed_start": 73000,
+  "model_selection": "none; every fixed condition is reported",
+  "optimizer_steps": 0,
+  "runtime": {
+    "device": "cpu",
+    "dtype": "float32",
+    "python": "3.12.12",
+    "threads": 1,
+    "torch": "2.11.0+cu130"
+  },
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "sources": {
+    "relu_compiler_job.py": "02644e9f429c8613313ddbaa32c372f4efd3bedfabd9ddfb8ed9495c815192cc",
+    "relu_program.py": "0a133e8732fa16e3835f105683e596cf52929b1efb1809d21ec2a17de7db9f17",
+    "verify_relu_compiler.py": "b29ae1bba5cc7fd834ecabc0387f1097977eba507d3e1bd06ba709ed151bf936"
+  },
+  "tasks": {
+    "absolute_difference": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              1,
+              -1
+            ]
+          },
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              -1,
+              1
+            ]
+          }
+        ],
+        "linear": [
+          0,
+          0
+        ]
+      }
+    },
+    "clipped_difference": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": -1,
+        "hinges": [
+          {
+            "bias": 1,
+            "scale": 1.0,
+            "weights": [
+              1,
+              -1
+            ]
+          },
+          {
+            "bias": -1,
+            "scale": -1,
+            "weights": [
+              1,
+              -1
+            ]
+          }
+        ],
+        "linear": [
+          0,
+          0
+        ]
+      }
+    },
+    "manhattan_distance": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              1,
+              0,
+              -1,
+              0
+            ]
+          },
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              -1,
+              0,
+              1,
+              0
+            ]
+          },
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              0,
+              1,
+              0,
+              -1
+            ]
+          },
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              0,
+              -1,
+              0,
+              1
+            ]
+          }
+        ],
+        "linear": [
+          0,
+          0,
+          0,
+          0
+        ]
+      }
+    },
+    "maximum": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [
+          {
+            "bias": 0.0,
+            "scale": 1.0,
+            "weights": [
+              1,
+              -1
+            ]
+          }
+        ],
+        "linear": [
+          0,
+          1
+        ]
+      }
+    },
+    "minimum": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [
+          {
+            "bias": 0.0,
+            "scale": -1,
+            "weights": [
+              1,
+              -1
+            ]
+          }
+        ],
+        "linear": [
+          1,
+          0
+        ]
+      }
+    },
+    "nonnegative_add": {
+      "domain": [
+        [
+          0.0,
+          1.0
+        ],
+        [
+          0.0,
+          1.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [],
+        "linear": [
+          1,
+          1
+        ]
+      }
+    },
+    "signed_add": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [],
+        "linear": [
+          1,
+          1
+        ]
+      }
+    },
+    "triangle": {
+      "domain": [
+        [
+          -4.0,
+          4.0
+        ],
+        [
+          -4.0,
+          4.0
+        ]
+      ],
+      "program": {
+        "bias": 0.0,
+        "hinges": [
+          {
+            "bias": 1,
+            "scale": 1.0,
+            "weights": [
+              1,
+              0
+            ]
+          },
+          {
+            "bias": 0,
+            "scale": -2,
+            "weights": [
+              1,
+              0
+            ]
+          },
+          {
+            "bias": -1,
+            "scale": 1.0,
+            "weights": [
+              1,
+              0
+            ]
+          }
+        ],
+        "linear": [
+          0,
+          0
+        ]
+      }
+    }
+  }
+}

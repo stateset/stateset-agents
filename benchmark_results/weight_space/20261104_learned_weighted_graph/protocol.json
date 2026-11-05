@@ -1,0 +1,19 @@
+{
+  "seeds": [
+    0,
+    1,
+    2
+  ],
+  "learning_rates": [
+    0.001,
+    0.003
+  ],
+  "steps": 5000,
+  "batch_size": 64,
+  "architecture": "shared 2->32->32->1 edge-message MLP; masked minimum, 16 rounds",
+  "supervision": "all d[i]+cost[i,j] messages from a random exact intermediate training state",
+  "selection": "validation exact graphs, then lower raw MAE",
+  "rounding": "nearest integer for correctness; raw errors also reported",
+  "test_metrics_after_all_trials": true,
+  "source_sha256": "5ecfd385118c5b762362c6b6f69e68e34512ea0f4467a8d86010a6fbb0e0c995"
+}

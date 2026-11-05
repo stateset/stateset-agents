@@ -70,6 +70,9 @@ or downloading a model. Run them from the repository root with `PYTHONPATH=.`:
 - [`handwritten_weighted_shortest_paths.py`](handwritten_weighted_shortest_paths.py):
   compute minimum costs on weighted seventeen-node graphs using exactly
   2,000,000 stored parameters, including 5,679 nonzero coefficients.
+- [`handwritten_weighted_routes.py`](handwritten_weighted_routes.py): return
+  minimum costs and complete routes with deterministic tie handling, using
+  3,920,670 stored parameters and 13,792 nonzero coefficients.
 
 ### Refund resolution tool
 

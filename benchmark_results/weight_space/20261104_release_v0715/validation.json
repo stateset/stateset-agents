@@ -1,0 +1,153 @@
+{
+  "all_source_types": {
+    "files": 553,
+    "passed": true
+  },
+  "base_commit": "bbda5173dc058912a55cfb228d11081cd24ace5c",
+  "candidate_version": "0.71.5",
+  "date": "2026-11-04",
+  "distribution_sha256": {
+    "stateset_agents-0.71.5-py3-none-any.whl": "d189d294cb3f74e749d63d5bfe24f8d33925793ad9f85fc3686cde8d543e3301",
+    "stateset_agents-0.71.5.tar.gz": "11701d44a83e952e9b2043e0397c1fe83d91467adcffbd45371c2b0bf4a95015"
+  },
+  "experiment_artifact_hashes": {
+    "reports": {
+      "20261104_conclude_2b_pilot": 63,
+      "20261104_graph_repair": 38,
+      "20261104_handwritten_routes": 8,
+      "20261104_learned_weighted_graph": 16,
+      "20261104_relu_compiler": 10
+    },
+    "verified": 135
+  },
+  "full_default_suite": {
+    "command": "PYTHONPATH=/tmp/sa-weight-next-20261104 python -m pytest -q -n 2",
+    "compiler_revision": "before architecture-validation refactor",
+    "default_exclusions": [
+      "performance",
+      "slow",
+      "gpu"
+    ],
+    "duration_seconds": 2241.86,
+    "failed": 7,
+    "failed_nodeids": [
+      "tests/integration/test_ddp_empty_population.py::test_empty_ddp_populations_match_combined_updates_and_resume[shard-0]",
+      "tests/unit/test_complexity_ratchet.py::test_oversized_function_count_never_increases",
+      "tests/learning/test_online_dpo_learns.py::test_sign_flipped_judge_lowers_the_rate[0]",
+      "tests/integration/test_ddp_checkpoint_publication.py::test_collective_checkpoint_publication_rng_and_failure_recovery[runtime]",
+      "tests/integration/test_ddp_checkpoint_publication.py::test_collective_checkpoint_publication_rng_and_failure_recovery[async]",
+      "tests/integration/test_ddp_diagnostics.py::test_ddp_diagnostics_failure_and_checkpoint_recovery",
+      "tests/integration/test_native_ddp_checkpoint.py::test_native_ddp_checkpoint_resume_and_coordinated_recovery"
+    ],
+    "passed": 16902,
+    "skipped": 133,
+    "status": "failed",
+    "subtests_passed": 35,
+    "warnings": 225
+  },
+  "github_preparation_observation": {
+    "billing_message": "The job was not started because your account is locked due to a billing issue.",
+    "enforce_admins": true,
+    "master_required_checks": 14,
+    "merge_or_publication_claimed": false,
+    "observed_check_run": 127000980476,
+    "run_url": "https://github.com/stateset/stateset-agents/actions/runs/41952963542"
+  },
+  "inherited_commits_ahead_of_master": 396,
+  "initial_distribution_sha256": {
+    "stateset_agents-0.71.5-py3-none-any.whl": "2f5d42c41d3cd73cce220987a4dbb4e99d5b92334796e8d78d36685dff61240e",
+    "stateset_agents-0.71.5.tar.gz": "0f949f912edb48b3ad8759a87a4039700404b0e852166b42ed7ed4b3f3c5390e"
+  },
+  "known_baseline_failure": {
+    "after": 0.07981770833333333,
+    "before": 0.10625,
+    "nodeid": "tests/learning/test_online_dpo_learns.py::test_sign_flipped_judge_lowers_the_rate[0]",
+    "prior_evidence": "../20261104_handwritten_weighted_graph/release_checks.json",
+    "reproduced_in_isolation": true,
+    "required_drop": 0.05,
+    "test_and_trainer_changed_by_release": false
+  },
+  "merge_base_commit": "4164974a853bca6c42fab94cbc9142c506a16ebd",
+  "merge_base_version": "0.65.0",
+  "npm": {
+    "initial_environment_note": "Shell default Node 16 is below the declared >=18 floor; validation was rerun successfully on installed Node 20.",
+    "node_version": "20.20.0",
+    "pack_dry_run_passed": true,
+    "runtime_tests_passed": 7,
+    "tests_passed": true,
+    "typecheck_passed": true
+  },
+  "post_suite_checks": {
+    "all_source_types": {
+      "files": 553,
+      "passed": true
+    },
+    "compiler_and_complexity": {
+      "duration_seconds": 24.77,
+      "failed": 0,
+      "passed": 58
+    },
+    "compiler_equivalence": {
+      "all_tensor_bytes_equal": true,
+      "arithmetic_checkpoints": 96,
+      "graph_checkpoints": 3,
+      "record": "compiler_refactor_equivalence.json"
+    },
+    "distributed_baseline_control": {
+      "commit": "bbda5173dc058912a55cfb228d11081cd24ace5c",
+      "duration_seconds": 81.38,
+      "failed": 0,
+      "nodeid": "tests/integration/test_ddp_empty_population.py::test_empty_ddp_populations_match_combined_updates_and_resume[shard-0]",
+      "passed": 1,
+      "version": "0.71.4"
+    },
+    "distributed_final_candidate_retry": {
+      "duration_seconds": 69.11,
+      "failed": 0,
+      "nodeid": "tests/integration/test_ddp_empty_population.py::test_empty_ddp_populations_match_combined_updates_and_resume[shard-0]",
+      "note": "The prior candidate assertion failure and initial full-suite timeout remain recorded; this passing retry is not a new all-green full-suite claim.",
+      "passed": 1
+    },
+    "distributed_rerun": {
+      "duration_seconds": 139.27,
+      "failed": 1,
+      "failure_kind": "state equality assertion in _same(capture_payload(learner), before, torch)",
+      "passed": 4,
+      "remaining_nodeid": "tests/integration/test_ddp_empty_population.py::test_empty_ddp_populations_match_combined_updates_and_resume[shard-0]",
+      "test_and_training_code_changed_by_release": false
+    },
+    "final_wheel_smoke": {
+      "passed": true
+    }
+  },
+  "pre_commit_all_files": {
+    "passed": true
+  },
+  "python": "3.12.12",
+  "python_distributions": {
+    "dependency_note": "Wheel installed into a separate venv outside checkout. Optional dependencies reused from validated development site-packages; every stateset_agents module path was asserted to come from the wheel.",
+    "installed_wheel_smoke_passed": true,
+    "sdist_built": true,
+    "smoke_checks": [
+      "wheel path and version",
+      "lazy torch import",
+      "ReLU program inference",
+      "complete weighted-route inference"
+    ],
+    "source_equivalence_checks": {
+      "differences": 0,
+      "sdist_files": 583,
+      "wheel_files": 568
+    },
+    "twine_passed": true,
+    "wheel_built": true
+  },
+  "release_guards": {
+    "failed": 0,
+    "passed": 64,
+    "skipped": 1
+  },
+  "remaining_reproducible_failure": "tests/learning/test_online_dpo_learns.py::test_sign_flipped_judge_lowers_the_rate[0]",
+  "schema_version": 1,
+  "version_choice": "Compatible experimental additions remain on 0.71.x; 0.72.0 triggers scheduled compatibility removals."
+}

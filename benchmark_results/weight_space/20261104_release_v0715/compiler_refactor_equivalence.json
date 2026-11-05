@@ -1,0 +1,11 @@
+{
+  "all_tensor_bytes_equal": true,
+  "arithmetic_checkpoints": 96,
+  "assignment_counts_equal": true,
+  "frozen_checkpoints_sha256": "e03db07c692c9e9be2056b70f529a2834ed3bc625480eb96a6067ac5ce62c7aa",
+  "frozen_compiler_sha256": "0a133e8732fa16e3835f105683e596cf52929b1efb1809d21ec2a17de7db9f17",
+  "graph_checkpoints": 3,
+  "passed": true,
+  "reason": "Extract architecture validation into a helper to satisfy the existing complexity ratchet without changing any compiled tensors.",
+  "release_compiler_sha256": "e1cf2933d13ea0fc44c0b54f14fce6688ec04b4a541aec3d6c8eea7f98b703cf"
+}

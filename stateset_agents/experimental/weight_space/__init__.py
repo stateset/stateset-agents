@@ -1,7 +1,7 @@
 """Weight-space programming: an LLM edits weights directly, no optimizer.
 
 Experimental (see :mod:`stateset_agents.experimental`). Inspired by
-"Sparks of Weight-Space Programming" (Tsuchida et al.,
+"Sparks of Weight-Space Programming" (Takehi et al.,
 https://rikiyat.github.io/blog/weight-space-programming/): a model reads a
 network's weights, makes targeted edits, checks them against a small budget
 of forward passes, and keeps only what wins.
@@ -35,6 +35,10 @@ This package is the harness, not the programmer:
 - :mod:`.handwritten_weighted_graph` — an exactly 2,000,000-parameter
   Linear/ReLU network for minimum costs on weighted seventeen-node graphs;
   all weights are analytic, with active neuron splitting to match the budget.
+- :mod:`.handwritten_routes` — an analytic Linear/ReLU network that composes
+  distances, deterministic next-hop selection, and traversal into full routes.
+- :mod:`.relu_program` — compile supplied affine-plus-hinge arithmetic into an
+  existing scalar ReLU MLP, with an explicit input domain and scalar edit ledger.
 
 Everything here imports ``torch`` lazily.
 """

@@ -1,0 +1,35 @@
+{
+  "package_sources_sha256": {
+    "stateset_agents/experimental/weight_space/__init__.py": "5a5f6a82a2ffd7e5035e20f30fb337858e42ec032326c2ad95c734b58da77fbb",
+    "stateset_agents/experimental/weight_space/atlas.py": "e2c9cb37f5a24555348a7ffef8d68da6c70263d58172d302aecdbc397fb69f49",
+    "stateset_agents/experimental/weight_space/checkpoints.py": "af96488b24aa6b5854dbb5e07ab3f350ff94d14f198489db81d4f2df90288537",
+    "stateset_agents/experimental/weight_space/circuits.py": "beaf4fa85ef3ea94324382cbb7d96ef64d26860a832f0e1b9a022d4a8158b647",
+    "stateset_agents/experimental/weight_space/deltas.py": "01b0ab8c94fd836edb1a95f941b4ed54b448d3794336e0523b1348d924066d94",
+    "stateset_agents/experimental/weight_space/edits.py": "dc9ca9d66f4b377f180c6749c59cacac6523c5f70f095939dff0cdf514deee44",
+    "stateset_agents/experimental/weight_space/handwritten_decoder.py": "428870b477b60c76581796105a11521dde6cf206d0b517a6ed07e494d0d59139",
+    "stateset_agents/experimental/weight_space/handwritten_graph.py": "0a23957d4059b5688c8d41ff8a4155cd77a69a74a9711e1251aeffa61b854266",
+    "stateset_agents/experimental/weight_space/handwritten_weighted_graph.py": "7540fda391dbc06afc75b800a5a53fbfe47f6f38e720874307012573fef87e0a",
+    "stateset_agents/experimental/weight_space/mcp_tools.py": "47f2c2b8c8b6e331a2fc11ef6d4c9bccf9bb1c748efc983aa95fc2f3498932de",
+    "stateset_agents/experimental/weight_space/protocol.py": "81270ad09062aff0e6943aa7824370145d894c850ffb424ce34a14386a0b36dd",
+    "stateset_agents/experimental/weight_space/session.py": "47169e474c1677787b6b35efe25e58183668636c7e6a241c6f930daf8e77928a"
+  },
+  "base_commit": "bbda5173dc058912a55cfb228d11081cd24ace5c",
+  "pilot_orchestration_changes": [
+    "conclude_pilot_job.py",
+    "launch.py --ledger-model"
+  ],
+  "wheel_name": "stateset_agents-0.71.4-py3-none-any.whl",
+  "wheel_sha256": "1d2a0e513ecc1fae929cee7a2186832fa4324e2e962978c6d576f1a63497132b",
+  "run_script_sha256": "0ec5330aef3438e7e0bbd9155494eff6ebfbb9388dac3ef7fadcf775fc1a8dfd",
+  "gpu": "NVIDIA A40",
+  "quoted_usd_per_hour": 0.59,
+  "max_allocation_usd": 3.0,
+  "cost": {
+    "event": "cost",
+    "duration_s": 5754,
+    "cost_usd": 0.943,
+    "status": "succeeded",
+    "ts": "14:38:57"
+  },
+  "launcher_confirmed_terminated": true
+}

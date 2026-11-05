@@ -1,0 +1,67 @@
+{
+  "practice_problems": 400,
+  "conditions": 8,
+  "regraded_replies": 3200,
+  "all_sources_match": true,
+  "all_spec_hashes_match": true,
+  "control_read_vectors_and_write_norm_match": true,
+  "design_practice_ids_disjoint": true,
+  "all_practice_ids_from_training": true,
+  "all_conditions_have_same_problems_and_prompts": true,
+  "all_lenient_answer_grades_reproduced": false,
+  "lenient_grade_discrepancies": [
+    {
+      "condition": "candidate_nothink",
+      "id": "mathtrain-3646",
+      "finish": "length",
+      "tokens": 8192,
+      "clean_finish": false,
+      "saved_correct": true,
+      "regraded_correct": false
+    },
+    {
+      "condition": "control_nothink",
+      "id": "mathtrain-3444",
+      "finish": "length",
+      "tokens": 8192,
+      "clean_finish": false,
+      "saved_correct": true,
+      "regraded_correct": false
+    },
+    {
+      "condition": "control_nothink",
+      "id": "mathtrain-4419",
+      "finish": "length",
+      "tokens": 8192,
+      "clean_finish": false,
+      "saved_correct": true,
+      "regraded_correct": false
+    }
+  ],
+  "lenient_regrade_accuracy": {
+    "base_think": 0.2075,
+    "base_nothink": 0.7625,
+    "wait_think": 0.3575,
+    "wait_nothink": 0.76,
+    "candidate_think": 0.465,
+    "candidate_nothink": 0.7525,
+    "control_think": 0.32,
+    "control_nothink": 0.7525
+  },
+  "all_strict_answer_grades_reproduced": true,
+  "all_recorded_aggregates_reproduced": true,
+  "paired_statistics_reproduced_from_recorded_grades": true,
+  "promotion_reproduced": true,
+  "gate": {
+    "eligible_for_final_test": false,
+    "checks": {
+      "beats_base_thinking": true,
+      "beats_base_nothinking": false,
+      "beats_wait_ablation": true,
+      "beats_matched_control": true,
+      "preserves_nothinking_accuracy": true,
+      "limits_stray_closes": true
+    }
+  },
+  "verifier_sha256": "c1e22c7fa0a59ebe81afb03f535af1caf0b6a21e14d9e7ed9e61e14306f22273"
+}

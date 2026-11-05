@@ -19,9 +19,9 @@ MYPY_INI = Path(__file__).resolve().parents[2] / "mypy.ini"
 # and their registry, the spine LR schedule plus the dedicated entry points'
 # shared dependency loader and W&B reporter, round 6's self-contained math
 # final-answer reader, the code verifier's docker isolation backend, and the
-# experimental weight-space package, its weight-edit CLI, and the three
-# analytically constructed neural solvers.
-ALLOWLIST_FLOOR = 551
+# experimental weight-space package, its weight-edit CLI, and the four
+# analytically constructed neural solvers and the scalar ReLU program compiler.
+ALLOWLIST_FLOOR = 553
 
 
 def _allowlisted_files() -> list[str]:

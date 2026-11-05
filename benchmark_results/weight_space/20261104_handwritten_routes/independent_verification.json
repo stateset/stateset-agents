@@ -1,0 +1,10 @@
+{
+  "networkx_version": "3.6.1",
+  "cases": 10657,
+  "all_artifact_hashes_match": true,
+  "all_exported_parameters_match_constructor": true,
+  "all_reloaded_outputs_exact": true,
+  "all_networkx_costs_and_lexicographic_routes_exact": true,
+  "checkpoint_sha256": "6eba4e6fe3a7361cedf7cd95e11f325bf36ea2a536dfb1c9fa17110c5dfe4461",
+  "verification_source_sha256": "db343678c3ae20f1bcfff586b2270c13d16c067e91e55ed1abb1aac90df22ec1"
+}

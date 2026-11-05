@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.71.5] - 2026-11-04 — Reusable neural arithmetic and verified weight-editing experiments
+
+### Added
+
+- A reusable affine-plus-hinge compiler for existing scalar Linear/ReLU MLPs,
+  with explicit input domains, exact coefficient validation, edit ledgers,
+  width/depth checks, and conservative overflow guards. Eight fixed arithmetic
+  programs pass 492,192 predictions across 96 networks; an independent rational
+  checker proves the stored circuits' real-arithmetic identities. The compiler
+  reproduces all three earlier 69-coordinate graph repairs exactly.
+  Evidence: `benchmark_results/weight_space/20261104_relu_compiler/`.
+- A controlled repair of a learned graph message MLP: 69 coefficient assignments
+  produce correct rounded costs on all 6,283 cases for three starting models.
+  Equal-budget continuation and full-distance-coverage training compare more
+  original-data updates with changed message supervision; the latter also
+  reaches 100%.
+  Includes exact rational component bounds, fresh-matrix exclusion, edit ledgers,
+  matched random controls, and 94,245 independently checked checkpoint predictions.
+  Evidence: `benchmark_results/weight_space/20261104_graph_repair/`.
+- A graph-aware recurrent learned control with intermediate message supervision
+  on the original weighted-cost splits. Its three validation-selected seeds
+  reach 99.66%, 99.32%, and 36.91% exact random-graph accuracy; all fail the
+  maximum-cost chains. This qualifies the earlier shallow-MLP comparison.
+  Evidence: `benchmark_results/weight_space/20261104_learned_weighted_graph/`.
+- An analytic Linear/ReLU network that returns minimum costs and complete
+  weighted routes, with deterministic tie handling and explicit unreachable
+  output. All 10,657 oracle cases pass exactly; 512 replay cases also pass in
+  float16 and bfloat16. The extension stores 3,920,670 parameters, 13,792 nonzero.
+  Evidence: `benchmark_results/weight_space/20261104_handwritten_routes/`.
+- A prespecified 2B conclude-neuron pilot with training-only practice evaluation,
+  token-only and matched-random controls, and a gate requiring improvement over
+  both unedited thinking modes before independent final-test evaluation. On 400
+  practice problems, candidate thinking on scores 46.25% strict versus 74.0% for
+  unedited thinking off, failing promotion. No final-test answers are generated.
+  Evidence: `benchmark_results/weight_space/20261104_conclude_2b_pilot/`.
+
+### Fixed
+
+- Split ReLU compiler architecture validation into a helper to satisfy the
+  existing function-complexity limit. All 99 recorded compiled checkpoints
+  remain byte-identical after the refactor.
+- Correct the original weight-space report's article attribution and clarify
+  that its conclude-neuron detector uses ridge fitting on practice examples;
+  it is not a data-free weight construction or an exact article replication.
+- Weight-space GPU launchers can identify the actual model in the cost ledger
+  using `--ledger-model`, instead of always recording the original 0.8B model.
+
 ## [0.71.4] - 2026-11-04 — Handwritten neural solver release metadata
 
 ### Changed
